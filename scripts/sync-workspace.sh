@@ -15,11 +15,23 @@ git branch --show-current
 
 echo ""
 echo "📁 Important context files:"
-ls -la AGENTS.md PROJECT_CONTEXT.md
+ls -la AGENTS.md PROJECT_CONTEXT.md AI_WORKSPACE_SYNC.md
+
+echo ""
+echo "🛠 Workspace scripts:"
+ls -la scripts/sync-workspace.sh scripts/agent-start.sh scripts/agent-save.sh
+
+echo ""
+echo "🧾 Shared memory files:"
+if [ -d memory ]; then
+  ls -la memory
+else
+  echo "⚠️ memory/ directory is missing."
+fi
 
 echo ""
 echo "🧠 Agent startup rule:"
-echo "Read AGENTS.md and PROJECT_CONTEXT.md before making changes."
+echo "Read AGENTS.md, PROJECT_CONTEXT.md, AI_WORKSPACE_SYNC.md, and memory/ before making changes."
 
 echo ""
 echo "✅ Workspace sync complete."

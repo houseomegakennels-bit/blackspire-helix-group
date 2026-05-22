@@ -26,7 +26,7 @@ echo ""
 echo "📦 Committing changes..."
 git add .
 
-git commit -m "Auto-save workspace $(date +%Y-%m-%d_%H-%M-%S)" || true
+git commit -m "Auto-save workspace $(date +%Y-%m-%d_%H-%M-%S)"
 
 echo ""
 echo "☁️ Pushing to GitHub..."
