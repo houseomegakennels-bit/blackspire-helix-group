@@ -1,0 +1,19 @@
+{
+  "name": "blackspire-helix-group",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BLACKSPIRE HELIX GROUP AI systems and automation infrastructure.",
+  "scripts": {
+    "dev": "echo \"No app scaffold installed yet. Add frontend/backend packages next.\"",
+    "test": "echo \"No tests configured yet.\"",
+    "build": "echo \"No build configured yet.\""
+  },
+  "keywords": [
+    "ai",
+    "automation",
+    "blackspire",
+    "helix"
+  ],
+  "author": "BLACKSPIRE HELIX GROUP",
+  "license": "UNLICENSED"
+}
