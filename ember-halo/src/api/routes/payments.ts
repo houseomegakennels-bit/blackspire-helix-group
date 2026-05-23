@@ -8,7 +8,7 @@
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-12-18.accel' });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-02-24.acacia' });
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -54,7 +54,8 @@ export async function createPaymentIntent(
     throw new Error('Custom quote orders require admin-approved payment link');
   }
 
-  const admin = order.admins as { stripe_account_id: string; stripe_onboarded: boolean };
+  const adminRecord = Array.isArray(order.admins) ? order.admins[0] : order.admins;
+  const admin = adminRecord as { stripe_account_id: string; stripe_onboarded: boolean };
 
   if (!admin.stripe_account_id || !admin.stripe_onboarded) {
     throw new Error('Admin Stripe account not set up');

@@ -175,7 +175,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, 400, { error: 'Message too long (max 2000 chars)' });
       if (!b.channel || (b.channel !== 'web' && b.channel !== 'sms'))
         return json(res, 400, { error: 'channel must be "web" or "sms"' });
-      return json(res, 200, await handleIncomingMessage(b as Parameters<typeof handleIncomingMessage>[0]));
+      return json(res, 200, await handleIncomingMessage(b as unknown as Parameters<typeof handleIncomingMessage>[0]));
     }
 
     // ── AGREEMENTS ───────────────────────────────────────────
@@ -211,7 +211,7 @@ const server = http.createServer(async (req, res) => {
       const b = body as Record<string, unknown>;
       if (!b.order_id || typeof b.order_id !== 'string')
         return json(res, 400, { error: 'order_id required' });
-      return json(res, 200, await createPaymentIntent(b as Parameters<typeof createPaymentIntent>[0]));
+      return json(res, 200, await createPaymentIntent(b as unknown as Parameters<typeof createPaymentIntent>[0]));
     }
     if (method === 'POST' && path === '/api/payment/manual-link') {
       requireAuth(adminId, res); if (!adminId) return;
@@ -229,7 +229,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (method === 'PATCH' && path === '/api/admin/packages/price') {
       requireAuth(adminId, res); if (!adminId) return;
-      return json(res, 200, await updatePackagePrice({ admin_id: adminId, ...body as object }));
+      const b = body as Record<string, unknown>;
+      if (!b.package_id || typeof b.package_id !== 'string')
+        return json(res, 400, { error: 'package_id required' });
+      return json(res, 200, await updatePackagePrice({ admin_id: adminId, ...b } as Parameters<typeof updatePackagePrice>[0]));
     }
     if (method === 'GET' && path === '/api/admin/special-packages') {
       requireAuth(adminId, res); if (!adminId) return;

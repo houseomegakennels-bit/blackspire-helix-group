@@ -5,10 +5,10 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx --env-file=.env watch src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node --env-file=.env dist/index.js",
-    "seed": "tsx --env-file=.env src/lib/seed.ts"
+    "start": "node dist/index.js",
+    "seed": "tsx src/lib/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",

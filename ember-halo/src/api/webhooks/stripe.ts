@@ -8,7 +8,7 @@ import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { upsertVaultFromOrder } from '../routes/vip-vault.js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-12-18.accel' });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-02-24.acacia' });
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY! // service role bypasses RLS — backend only

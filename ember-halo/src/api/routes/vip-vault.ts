@@ -96,7 +96,7 @@ export async function upsertVaultFromOrder(orderId: string): Promise<void> {
   const { data: existing } = await supabase
     .schema('ember_halo')
     .from('vip_client_vault')
-    .select('id, total_orders, total_spent, first_order_date, preferred_rose_colors')
+    .select('id, total_orders, total_spent, first_order_date, preferred_rose_colors, vip_tag')
     .eq('admin_id', order.admin_id)
     .eq('customer_phone', order.customer_phone)
     .single();
