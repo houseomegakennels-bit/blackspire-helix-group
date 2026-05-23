@@ -46,10 +46,10 @@ fi
 
 echo ""
 echo "🪝 Installing repository git hooks..."
-if [ -x scripts/install-git-hooks.sh ]; then
-  scripts/install-git-hooks.sh
+if [ -f scripts/install-git-hooks.sh ]; then
+  bash scripts/install-git-hooks.sh
 else
-  echo "⚠️ scripts/install-git-hooks.sh is not executable or missing."
+  echo "⚠️ scripts/install-git-hooks.sh is missing."
 fi
 
 echo ""
