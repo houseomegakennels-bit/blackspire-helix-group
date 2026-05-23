@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Agent Start",
+      "type": "shell",
+      "command": "bash",
+      "args": ["./scripts/agent-start.sh"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Agent Save",
+      "type": "shell",
+      "command": "bash",
+      "args": ["./scripts/agent-save.sh"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}
