@@ -53,3 +53,9 @@ Force-refresh `.env` from the current environment variables:
 ```bash
 bash scripts/materialize-env-from-secrets.sh --force
 ```
+
+Switch Codex CLI from ChatGPT-plan auth to API-key auth:
+
+```bash
+bash scripts/codex-use-api-key.sh
+```
