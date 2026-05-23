@@ -15,6 +15,11 @@ fi
 echo "Current Codex auth:"
 codex login status || true
 
+if codex login status >/dev/null 2>&1; then
+  echo ""
+  echo "Codex is already authenticated. Refreshing with API-key auth from OPENAI_API_KEY..."
+fi
+
 echo ""
 echo "Switching Codex to API key auth..."
 codex logout || true

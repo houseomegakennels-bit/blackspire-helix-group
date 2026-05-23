@@ -4,6 +4,8 @@
 
 The source of truth for runtime secrets is **GitHub Codespaces secrets**, not this repository.
 
+For Codex inside Codespaces, this is also the required source of truth for hands-free authentication. Do not depend on ChatGPT OAuth persistence across fresh or rebuilt Codespaces.
+
 Do not store real API keys in:
 
 - `AGENTS.md`
@@ -34,6 +36,15 @@ The current required variables are defined in `.env.example`:
 
 GitHub injects Codespaces secrets as environment variables into the codespace session.
 
+## Codex authentication policy in Codespaces
+
+Codespaces should authenticate Codex with `OPENAI_API_KEY` from GitHub Codespaces secrets.
+
+- This avoids repeated login prompts on fresh or rebuilt Codespaces.
+- This is the required path for hands-free Codex startup in Codespaces.
+- Desktop Codex can keep using its normal local ChatGPT login.
+- Do not copy or sync local desktop `.codex/auth.json` into a Codespace.
+
 ## Useful commands inside the codespace
 
 Check whether all required variables exist:
@@ -58,4 +69,10 @@ Switch Codex CLI from ChatGPT-plan auth to API-key auth:
 
 ```bash
 bash scripts/codex-use-api-key.sh
+```
+
+Bootstrap the full Codespace setup again:
+
+```bash
+bash scripts/bootstrap-codespace.sh
 ```

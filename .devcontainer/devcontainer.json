@@ -4,11 +4,12 @@
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "npm install || true && if [ -d frontend ]; then cd frontend && npm install && cd ..; fi && npm install -g @openai/codex && chmod +x scripts/agent-start.sh scripts/agent-save.sh scripts/sync-workspace.sh scripts/install-git-hooks.sh scripts/check-required-env.sh scripts/materialize-env-from-secrets.sh scripts/env-check scripts/env-sync && scripts/install-git-hooks.sh && echo 'export PATH=\"/workspaces/blackspire-helix-group/scripts:$PATH\"' >> ~/.bashrc && echo 'alias agent-start=\"bash /workspaces/blackspire-helix-group/scripts/agent-start.sh\"' >> ~/.bashrc && echo 'alias agent-save=\"bash /workspaces/blackspire-helix-group/scripts/agent-save.sh\"' >> ~/.bashrc && echo 'alias bh=\"cd /workspaces/blackspire-helix-group\"' >> ~/.bashrc && echo 'alias env-check=\"bash /workspaces/blackspire-helix-group/scripts/check-required-env.sh\"' >> ~/.bashrc && echo 'alias env-sync=\"bash /workspaces/blackspire-helix-group/scripts/materialize-env-from-secrets.sh\"' >> ~/.bashrc",
+  "postCreateCommand": "bash /workspaces/blackspire-helix-group/scripts/bootstrap-codespace.sh",
   "postAttachCommand": "bash /workspaces/blackspire-helix-group/scripts/agent-start.sh",
   "customizations": {
     "vscode": {
       "extensions": [
+        "openai.chatgpt",
         "GitHub.copilot",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode"

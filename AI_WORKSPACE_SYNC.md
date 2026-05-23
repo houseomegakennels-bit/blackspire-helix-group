@@ -7,6 +7,8 @@ The source of truth is this GitHub repo:
 
 `houseomegakennels-bit/blackspire-helix-group`
 
+Codex Desktop and Codex inside VS Code/Codespaces are clients of this repo. They do not share authority through local session state or local auth files.
+
 ## Shared memory files
 Agents must treat these files as shared cloud memory:
 
@@ -29,6 +31,15 @@ Unless the admin explicitly says otherwise, every AI/code session must:
 When the admin uses Codespaces from mobile, that is the same cloud workspace model as Codespaces from desktop. Mobile Codespaces must still use this repo and the same memory files.
 
 Mobile Codespaces + Code, Codespaces + Codex, desktop VS Code, and desktop Codex all sync through GitHub.
+
+## Codespaces Codex policy
+Codespaces should bootstrap Codex automatically from repo configuration:
+
+- install the Codex CLI during Codespace setup
+- install the Codex VS Code extension from devcontainer configuration
+- authenticate Codex with `OPENAI_API_KEY` from GitHub Codespaces secrets
+
+Do not try to sync desktop Codex auth files into Codespaces. Desktop Codex can keep its normal local ChatGPT login.
 
 ## Admin override
 If the admin says:
