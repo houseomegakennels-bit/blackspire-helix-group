@@ -7,3 +7,9 @@
 - Confirmed `AGENTS.md`, `PROJECT_CONTEXT.md`, `AI_WORKSPACE_SYNC.md`, and workspace scripts are readable.
 - Created the shared memory directory and baseline memory files because they were missing locally.
 
+## 2026-05-22 - Workspace automation hardening
+
+- Added VS Code folder-open startup for `Agent Start`.
+- Added Windows Git Bash support for VS Code agent tasks.
+- Switched Codespaces startup sync to `postAttachCommand` so it runs when an editor attaches to the Codespace.
+- Added a repository git hook installer and pre-push frontend build guard.

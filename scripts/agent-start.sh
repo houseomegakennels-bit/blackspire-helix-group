@@ -2,6 +2,7 @@
 set -e
 
 cd "$(git rev-parse --show-toplevel)"
+STASHED_CHANGES=0
 
 echo "🚀 Starting BLACKSPIRE agent session..."
 echo "📍 Repo: $(pwd)"
@@ -13,12 +14,19 @@ if [ -n "$(git status --porcelain)" ]; then
   git status --short
   echo ""
   echo "Stashing local changes before pulling..."
-  git stash push -u -m "auto-stash-before-agent-start-$(date +%Y%m%d-%H%M%S)" || true
+  git stash push -u -m "auto-stash-before-agent-start-$(date +%Y%m%d-%H%M%S)"
+  STASHED_CHANGES=1
 fi
 
 echo ""
 echo "📡 Pulling latest from GitHub..."
 git pull origin main --rebase
+
+if [ "$STASHED_CHANGES" = "1" ]; then
+  echo ""
+  echo "Restoring local changes after pull..."
+  git stash pop
+fi
 
 echo ""
 echo "🧠 Context files available:"
@@ -34,6 +42,14 @@ if [ -d memory ]; then
   ls -la memory
 else
   echo "⚠️ memory/ directory is missing."
+fi
+
+echo ""
+echo "🪝 Installing repository git hooks..."
+if [ -x scripts/install-git-hooks.sh ]; then
+  scripts/install-git-hooks.sh
+else
+  echo "⚠️ scripts/install-git-hooks.sh is not executable or missing."
 fi
 
 echo ""

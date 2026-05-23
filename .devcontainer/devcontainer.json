@@ -4,8 +4,8 @@
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "npm install || true && npm install -g @openai/codex && chmod +x scripts/agent-start.sh scripts/agent-save.sh scripts/sync-workspace.sh && echo 'alias agent-start=\"bash /workspaces/blackspire-helix-group/scripts/agent-start.sh\"' >> ~/.bashrc && echo 'alias agent-save=\"bash /workspaces/blackspire-helix-group/scripts/agent-save.sh\"' >> ~/.bashrc && echo 'alias bh=\"cd /workspaces/blackspire-helix-group\"' >> ~/.bashrc",
-  "postStartCommand": "bash /workspaces/blackspire-helix-group/scripts/agent-start.sh",
+  "postCreateCommand": "npm install || true && npm install -g @openai/codex && chmod +x scripts/agent-start.sh scripts/agent-save.sh scripts/sync-workspace.sh scripts/install-git-hooks.sh && scripts/install-git-hooks.sh && echo 'alias agent-start=\"bash /workspaces/blackspire-helix-group/scripts/agent-start.sh\"' >> ~/.bashrc && echo 'alias agent-save=\"bash /workspaces/blackspire-helix-group/scripts/agent-save.sh\"' >> ~/.bashrc && echo 'alias bh=\"cd /workspaces/blackspire-helix-group\"' >> ~/.bashrc",
+  "postAttachCommand": "bash /workspaces/blackspire-helix-group/scripts/agent-start.sh",
   "customizations": {
     "vscode": {
       "extensions": [

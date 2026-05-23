@@ -6,6 +6,10 @@
       "type": "shell",
       "command": "bash",
       "args": ["./scripts/agent-start.sh"],
+      "windows": {
+        "command": "C:\\Program Files\\Git\\bin\\bash.exe",
+        "args": ["./scripts/agent-start.sh"]
+      },
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -15,6 +19,9 @@
         "clear": true
       },
       "group": "build",
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
       "problemMatcher": []
     },
     {
@@ -22,6 +29,10 @@
       "type": "shell",
       "command": "bash",
       "args": ["./scripts/agent-save.sh"],
+      "windows": {
+        "command": "C:\\Program Files\\Git\\bin\\bash.exe",
+        "args": ["./scripts/agent-save.sh"]
+      },
       "options": {
         "cwd": "${workspaceFolder}"
       },
