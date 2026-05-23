@@ -53,5 +53,15 @@ else
 fi
 
 echo ""
+echo "🔐 Checking required environment variables..."
+if [ -f scripts/check-required-env.sh ]; then
+  if ! bash scripts/check-required-env.sh; then
+    echo "⚠️ Workspace is missing one or more required secrets."
+  fi
+else
+  echo "⚠️ scripts/check-required-env.sh is missing."
+fi
+
+echo ""
 echo "📖 Agent rule: read AGENTS.md, PROJECT_CONTEXT.md, AI_WORKSPACE_SYNC.md, and memory/ before editing."
 echo "✅ Agent session ready."
