@@ -26,6 +26,17 @@ The current required variables are defined in `.env.example`:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `STRIPE_SECRET_KEY`
 
+Ember Halo also needs these secrets for a full backend run:
+
+- `SUPABASE_JWT_SECRET`
+- `ANTHROPIC_API_KEY`
+- `STRIPE_PUBLISHABLE_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_PHONE_NUMBER`
+- `FIRST_ADMIN_EMAIL`
+
 ## Recommended setup
 
 1. In GitHub, open:

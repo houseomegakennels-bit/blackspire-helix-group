@@ -52,6 +52,13 @@ Fill in `.env`:
 | `N8N_WEBHOOK_BASE_URL` | https://cpearson0312.app.n8n.cloud/webhook |
 | `APP_URL` | Your deployed backend URL (or http://localhost:3000 for local) |
 
+In Codespaces, after secrets are configured, you can materialize this file with:
+
+```bash
+bash ember-halo/scripts/sync-env-from-workspace.sh --force
+bash ember-halo/scripts/check-env.sh
+```
+
 ---
 
 ## Step 2 — Install Dependencies
