@@ -1,0 +1,218 @@
+{
+  "name": "Ember Halo — 07 post_service_followup",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ember-halo/post_service_followup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "triggerAtHour": 20, "triggerAtMinute": 0 }]
+        }
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000002",
+      "name": "Scheduled Trigger (8pm daily)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/scheduling_records?status=eq.delivered&post_followup_sent=eq.false&select=order_id,admin_id,conversation_id,customer_phone,delivered_at",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000003",
+      "name": "Find Delivered Orders (no followup yet)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter to only orders delivered 2+ hours ago\nconst items = $input.all();\nconst twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);\n\nconst eligible = [];\nfor (const item of items) {\n  const records = Array.isArray(item.json) ? item.json : [item.json];\n  for (const rec of records) {\n    if (!rec.delivered_at) continue;\n    const deliveredAt = new Date(rec.delivered_at);\n    if (deliveredAt <= twoHoursAgo) {\n      eligible.push({ json: rec });\n    }\n  }\n}\n\n// Also handle direct webhook trigger with explicit order data\nconst webhookData = $('Webhook Trigger').first()?.json;\nif (webhookData?.order_id) {\n  eligible.push({ json: webhookData });\n}\n\nreturn eligible.length > 0 ? eligible : [{ json: { skip: true } }];\n"
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000004",
+      "name": "Filter 2hr Cooldown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "not-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEqual" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000005",
+      "name": "Has Eligible Orders?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMBER_HALO_API_BASE }}/api/conversation/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"admin_id\": \"{{ $json.admin_id }}\",\n  \"customer_session_id\": \"{{ $json.conversation_id }}\",\n  \"customer_message\": \"__SYSTEM_POST_SERVICE_FOLLOWUP__\",\n  \"channel\": \"sms\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000006",
+      "name": "Send AI Retention Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/scheduling_records?order_id=eq.{{ $('Filter 2hr Cooldown').item.json.order_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Profile", "value": "ember_halo" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"post_followup_sent\": true, \"post_followup_at\": \"{{ new Date().toISOString() }}\"}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Mark Followup Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/audit_logs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Profile", "value": "ember_halo" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "admin_id", "value": "={{ $('Filter 2hr Cooldown').item.json.admin_id }}" },
+            { "name": "action", "value": "post_service_followup_sent" },
+            { "name": "entity_type", "value": "order" },
+            { "name": "entity_id", "value": "={{ $('Filter 2hr Cooldown').item.json.order_id }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000008",
+      "name": "Log to Audit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"received\": true}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000009",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1820, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{ "node": "Find Delivered Orders (no followup yet)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Scheduled Trigger (8pm daily)": {
+      "main": [
+        [{ "node": "Find Delivered Orders (no followup yet)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Find Delivered Orders (no followup yet)": {
+      "main": [
+        [{ "node": "Filter 2hr Cooldown", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter 2hr Cooldown": {
+      "main": [
+        [{ "node": "Has Eligible Orders?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Eligible Orders?": {
+      "main": [
+        [{ "node": "Send AI Retention Message", "type": "main", "index": 0 }],
+        [{ "node": "Respond 200", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send AI Retention Message": {
+      "main": [
+        [{ "node": "Mark Followup Sent", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mark Followup Sent": {
+      "main": [
+        [{ "node": "Log to Audit", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log to Audit": {
+      "main": [
+        [{ "node": "Respond 200", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "a1b2c3d4-0007-0007-0007-version-0007",
+  "meta": { "templateCredsSetupCompleted": false },
+  "id": "ember-halo-wf-07",
+  "tags": [{ "name": "ember-halo" }]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "ember-halo-backend",
+  "version": "1.0.0",
+  "description": "Ember Halo — Luxury Rose Concierge Platform Backend",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx --env-file=.env watch src/index.ts",
+    "build": "tsc",
+    "start": "node --env-file=.env dist/index.js",
+    "seed": "tsx --env-file=.env src/lib/seed.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "@supabase/supabase-js": "^2.49.4",
+    "stripe": "^17.7.0",
+    "twilio": "^5.4.5",
+    "sharp": "^0.33.5",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/sharp": "^0.31.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

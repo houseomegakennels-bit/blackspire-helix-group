@@ -1,0 +1,13 @@
+node_modules
+dist
+.env
+.env.*
+*.log
+.git
+.gitignore
+.dockerignore
+README.md
+SETUP.md
+LOVABLE_PROMPT.md
+N8N_WORKFLOWS.md
+n8n-workflows

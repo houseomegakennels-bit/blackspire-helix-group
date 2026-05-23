@@ -1,0 +1,272 @@
+{
+  "name": "Ember Halo — 05 sms_inbound",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ember-halo/sms-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000001",
+      "name": "Twilio Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Twilio fields from URL-encoded body\nconst rawBody = $input.first().json.body ?? '';\nconst params = {};\nfor (const pair of rawBody.split('&')) {\n  const [k, v] = pair.split('=');\n  if (k) params[decodeURIComponent(k)] = decodeURIComponent((v ?? '').replace(/\\+/g, ' '));\n}\n\n// Also check if already parsed as JSON\nconst item = $input.first().json;\nconst From = params.From ?? item.From ?? '';\nconst Body = params.Body ?? item.Body ?? '';\nconst To   = params.To   ?? item.To   ?? '';\n\nreturn [{ json: { From, Body, To, isStop: Body.trim().toUpperCase() === 'STOP', isStart: Body.trim().toUpperCase() === 'START' } }];\n"
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000002",
+      "name": "Parse Twilio Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "is-stop",
+              "leftValue": "={{ $json.isStop }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equal" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000003",
+      "name": "Is STOP?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/conversations?customer_phone=eq.{{ encodeURIComponent($('Parse Twilio Params').item.json.From) }}&is_active=eq.true",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Profile", "value": "ember_halo" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"sms_opt_out\": true, \"is_active\": false}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000004",
+      "name": "Log STOP Opt-Out",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>You have been unsubscribed from Ember Halo SMS. Reply START to re-subscribe.</Message></Response>",
+        "options": { "responseHeaders": { "entries": [{ "name": "Content-Type", "value": "text/xml" }] } }
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "TwiML STOP Reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/admins?twilio_phone_number=eq.{{ encodeURIComponent($('Parse Twilio Params').item.json.To) }}&select=id,active_city",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000006",
+      "name": "Resolve Admin from To Number",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/conversations?customer_phone=eq.{{ encodeURIComponent($('Parse Twilio Params').item.json.From) }}&admin_id=eq.{{ $json[0].id }}&is_active=eq.true&select=id,customer_session_id&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000007",
+      "name": "Find Active Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build session_id: use existing or generate new\nconst conv = $input.first().json;\nconst admin = $('Resolve Admin from To Number').first().json[0];\nconst parsed = $('Parse Twilio Params').first().json;\n\nconst sessionId = (conv && conv.length > 0 && conv[0].customer_session_id)\n  ? conv[0].customer_session_id\n  : 'sms-' + parsed.From.replace(/[^0-9]/g, '') + '-' + Date.now();\n\nconst convId = (conv && conv.length > 0) ? conv[0].id : null;\n\nreturn [{ json: {\n  admin_id: admin?.id,\n  session_id: sessionId,\n  conversation_id: convId,\n  customer_message: parsed.Body,\n  customer_phone: parsed.From,\n  channel: 'sms'\n}}];\n"
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000008",
+      "name": "Build Message Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMBER_HALO_API_BASE }}/api/conversation/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"admin_id\": \"{{ $json.admin_id }}\",\n  \"customer_session_id\": \"{{ $json.session_id }}\",\n  \"customer_message\": \"{{ $json.customer_message }}\",\n  \"customer_phone\": \"{{ $json.customer_phone }}\",\n  \"channel\": \"sms\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000009",
+      "name": "Call AI Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "special-request",
+              "leftValue": "={{ $json.special_request_detected }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equal" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000010",
+      "name": "Special Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMBER_HALO_API_BASE.replace('/webhook', '') }}/webhook/ember-halo/special_request_created",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"special_request_created\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"admin_id\": \"{{ $('Build Message Payload').item.json.admin_id }}\",\n  \"channel\": \"sms\",\n  \"request_summary\": \"SMS special request detected\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000011",
+      "name": "Trigger Special Request WF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 340]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": { "responseHeaders": { "entries": [{ "name": "Content-Type", "value": "text/xml" }] } }
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000012",
+      "name": "TwiML Empty (AI replied via Twilio SDK)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 520]
+    }
+  ],
+  "connections": {
+    "Twilio Webhook": {
+      "main": [
+        [{ "node": "Parse Twilio Params", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Twilio Params": {
+      "main": [
+        [{ "node": "Is STOP?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is STOP?": {
+      "main": [
+        [{ "node": "Log STOP Opt-Out", "type": "main", "index": 0 }],
+        [{ "node": "Resolve Admin from To Number", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log STOP Opt-Out": {
+      "main": [
+        [{ "node": "TwiML STOP Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Resolve Admin from To Number": {
+      "main": [
+        [{ "node": "Find Active Conversation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Find Active Conversation": {
+      "main": [
+        [{ "node": "Build Message Payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Message Payload": {
+      "main": [
+        [{ "node": "Call AI Backend", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call AI Backend": {
+      "main": [
+        [{ "node": "Special Request?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Special Request?": {
+      "main": [
+        [{ "node": "Trigger Special Request WF", "type": "main", "index": 0 }],
+        [{ "node": "TwiML Empty (AI replied via Twilio SDK)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Trigger Special Request WF": {
+      "main": [
+        [{ "node": "TwiML Empty (AI replied via Twilio SDK)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "a1b2c3d4-0005-0005-0005-version-0005",
+  "meta": { "templateCredsSetupCompleted": false },
+  "id": "ember-halo-wf-05",
+  "tags": [{ "name": "ember-halo" }]
+}

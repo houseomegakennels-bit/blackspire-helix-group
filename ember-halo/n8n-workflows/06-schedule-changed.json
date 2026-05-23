@@ -1,0 +1,155 @@
+{
+  "name": "Ember Halo — 06 schedule_changed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ember-halo/schedule_changed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/scheduling_records?id=eq.{{ $json.scheduling_record_id }}&select=order_id,delivery_date,time_window,rose_count,fulfillment_type,customer_phone",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000002",
+      "name": "Get Schedule Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "out-for-delivery",
+              "leftValue": "={{ $('Webhook').item.json.new_status }}",
+              "rightValue": "out_for_delivery",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000003",
+      "name": "Out for Delivery?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMBER_HALO_API_BASE }}/api/conversation/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"admin_id\": \"{{ $('Webhook').item.json.admin_id }}\",\n  \"customer_phone\": \"{{ $('Get Schedule Record').item.json[0].customer_phone }}\",\n  \"customer_message\": \"__SYSTEM_OUT_FOR_DELIVERY__\",\n  \"channel\": \"sms\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000004",
+      "name": "Notify Customer via AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/notification_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Profile", "value": "ember_halo" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "admin_id", "value": "={{ $('Webhook').item.json.admin_id }}" },
+            { "name": "event_type", "value": "schedule_changed" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000005",
+      "name": "Log Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"received\": true}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Get Schedule Record", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Schedule Record": {
+      "main": [
+        [{ "node": "Out for Delivery?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Out for Delivery?": {
+      "main": [
+        [{ "node": "Notify Customer via AI", "type": "main", "index": 0 }],
+        [{ "node": "Log Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify Customer via AI": {
+      "main": [
+        [{ "node": "Log Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Notification": {
+      "main": [
+        [{ "node": "Respond 200", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "a1b2c3d4-0006-0006-0006-version-0006",
+  "meta": { "templateCredsSetupCompleted": false },
+  "id": "ember-halo-wf-06",
+  "tags": [{ "name": "ember-halo" }]
+}

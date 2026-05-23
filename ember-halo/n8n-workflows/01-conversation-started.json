@@ -1,0 +1,225 @@
+{
+  "name": "Ember Halo — 01 conversation_started",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ember-halo/conversation_started",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/admins?id=eq.{{ $json.admin_id }}&select=notify_phone,notify_email,active_city",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "Get Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/notification_preferences?admin_id=eq.{{ $('Webhook').item.json.admin_id }}&event_type=eq.conversation_started",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "Get Notification Prefs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "sms-enabled",
+              "leftValue": "={{ $json[0]?.sms_enabled }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equal" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "SMS Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "from": "={{ $env.TWILIO_FROM_NUMBER }}",
+        "to": "={{ $('Get Admin').item.json[0].notify_phone }}",
+        "message": "=New rose conversation started on {{ $('Webhook').item.json.channel }}. Active city: {{ $('Get Admin').item.json[0].active_city }}. View in your Ember Halo dashboard."
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000005",
+      "name": "SMS Admin",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "credentials": { "twilioApi": { "id": "twilio-cred", "name": "Twilio" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "email-enabled",
+              "leftValue": "={{ $('Get Notification Prefs').item.json[0]?.email_enabled }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equal" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000006",
+      "name": "Email Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@emberhalo.com",
+        "toEmail": "={{ $('Get Admin').item.json[0].notify_email }}",
+        "subject": "New Conversation Started — Ember Halo",
+        "text": "=A new customer conversation has started.\n\nChannel: {{ $('Webhook').item.json.channel }}\nCity: {{ $('Get Admin').item.json[0].active_city }}\nTime: {{ $('Webhook').item.json.timestamp }}\n\nView your dashboard to monitor the conversation.\n\n— Ember Halo"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000007",
+      "name": "Email Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1340, 400],
+      "credentials": { "smtp": { "id": "smtp-cred", "name": "SMTP" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/notification_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Profile", "value": "ember_halo" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "admin_id", "value": "={{ $('Webhook').item.json.admin_id }}" },
+            { "name": "event_type", "value": "conversation_started" },
+            { "name": "conversation_id", "value": "={{ $('Webhook').item.json.conversation_id }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000008",
+      "name": "Log Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"received\": true}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000009",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Get Admin", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Admin": {
+      "main": [
+        [{ "node": "Get Notification Prefs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Notification Prefs": {
+      "main": [
+        [
+          { "node": "SMS Enabled?", "type": "main", "index": 0 },
+          { "node": "Email Enabled?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "SMS Enabled?": {
+      "main": [
+        [{ "node": "SMS Admin", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Email Enabled?": {
+      "main": [
+        [{ "node": "Email Admin", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "SMS Admin": {
+      "main": [
+        [{ "node": "Log Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Email Admin": {
+      "main": [
+        [{ "node": "Log Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Notification": {
+      "main": [
+        [{ "node": "Respond 200", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "a1b2c3d4-0001-0001-0001-version-0001",
+  "meta": { "templateCredsSetupCompleted": false },
+  "id": "ember-halo-wf-01",
+  "tags": [{ "name": "ember-halo" }]
+}

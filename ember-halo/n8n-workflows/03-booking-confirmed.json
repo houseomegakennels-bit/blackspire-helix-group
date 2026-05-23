@@ -1,0 +1,195 @@
+{
+  "name": "Ember Halo — 03 booking_confirmed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ember-halo/booking_confirmed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/orders?id=eq.{{ $json.order_id }}&select=rose_count,fulfillment_type,delivery_date,time_window,conversation_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000002",
+      "name": "Get Order Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/admins?id=eq.{{ $('Webhook').item.json.admin_id }}&select=notify_phone,notify_email,active_city",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Accept-Profile", "value": "ember_halo" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Get Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/scheduling_records?order_id=eq.{{ $('Webhook').item.json.order_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Profile", "value": "ember_halo" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"status\": \"confirmed\"}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000004",
+      "name": "Confirm Schedule Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "from": "={{ $env.TWILIO_FROM_NUMBER }}",
+        "to": "={{ $('Get Admin').item.json[0].notify_phone }}",
+        "message": "=Booking confirmed: {{ $('Get Order Details').item.json[0].rose_count }} roses. {{ $('Get Order Details').item.json[0].fulfillment_type }}. {{ $('Get Order Details').item.json[0].delivery_date }} {{ $('Get Order Details').item.json[0].time_window }}. City: {{ $('Get Admin').item.json[0].active_city }}. ${{ $('Webhook').item.json.amount }} paid."
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000005",
+      "name": "SMS Admin",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "credentials": { "twilioApi": { "id": "twilio-cred", "name": "Twilio" } }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@emberhalo.com",
+        "toEmail": "={{ $('Get Admin').item.json[0].notify_email }}",
+        "subject": "Booking Confirmed — Ember Halo",
+        "text": "=A new booking has been confirmed and payment received.\n\nOrder ID: {{ $('Webhook').item.json.order_id }}\nRoses: {{ $('Get Order Details').item.json[0].rose_count }}\nFulfillment: {{ $('Get Order Details').item.json[0].fulfillment_type }}\nDate: {{ $('Get Order Details').item.json[0].delivery_date }}\nTime Window: {{ $('Get Order Details').item.json[0].time_window }}\nCity: {{ $('Get Admin').item.json[0].active_city }}\nAmount Paid: ${{ $('Webhook').item.json.amount }}\nPayment ID: {{ $('Webhook').item.json.stripe_payment_id }}\n\nView full details in your Ember Halo dashboard.\n\n— Ember Halo"
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000006",
+      "name": "Email Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1120, 420],
+      "credentials": { "smtp": { "id": "smtp-cred", "name": "SMTP" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/notification_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Profile", "value": "ember_halo" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "admin_id", "value": "={{ $('Webhook').item.json.admin_id }}" },
+            { "name": "event_type", "value": "booking_confirmed" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000007",
+      "name": "Log Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"received\": true}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000008",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Get Order Details", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Order Details": {
+      "main": [
+        [{ "node": "Get Admin", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Admin": {
+      "main": [
+        [{ "node": "Confirm Schedule Record", "type": "main", "index": 0 }]
+      ]
+    },
+    "Confirm Schedule Record": {
+      "main": [
+        [
+          { "node": "SMS Admin", "type": "main", "index": 0 },
+          { "node": "Email Admin", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "SMS Admin": {
+      "main": [
+        [{ "node": "Log Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Email Admin": {
+      "main": [
+        [{ "node": "Log Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Notification": {
+      "main": [
+        [{ "node": "Respond 200", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "a1b2c3d4-0003-0003-0003-version-0003",
+  "meta": { "templateCredsSetupCompleted": false },
+  "id": "ember-halo-wf-03",
+  "tags": [{ "name": "ember-halo" }]
+}
