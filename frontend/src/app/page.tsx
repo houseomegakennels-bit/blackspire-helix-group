@@ -1,94 +1,179 @@
-export default function Home() {
+import Link from "next/link";
+
+import { BuyerShell, Metric, Panel, StatusPill } from "@/components/buyer-shell";
+import {
+  environmentReadiness,
+  pendingWork,
+  searchJobSnapshots,
+} from "@/lib/buyer-engine-data";
+import { getLiveCountyCapabilities } from "@/lib/buyer-engine-server";
+
+export default async function Home() {
+  const counties = await getLiveCountyCapabilities(true);
+  const stats = {
+    activeCountyCount: counties.filter((county) => county.status === "active").length,
+    completedRuns: searchJobSnapshots.filter((job) => job.status === "completed").length,
+    totalBuyers: searchJobSnapshots.reduce((sum, job) => sum + job.buyersFound, 0),
+  };
+  const approvedCounties = counties.filter((county) => county.status === "active" && county.supportsPast90Days);
+
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
-      <section className="relative flex min-h-screen items-center justify-center px-6 py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#3b2a11_0%,transparent_35%),radial-gradient(circle_at_bottom_right,#111827_0%,transparent_30%)]" />
-
-        <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] [background-size:72px_72px]" />
-
-        <div className="relative z-10 mx-auto max-w-6xl text-center">
-          <p className="mb-6 text-sm font-semibold uppercase tracking-[0.45em] text-amber-300">
-            BLACKSPIRE HELIX GROUP
-          </p>
-
-          <h1 className="mx-auto max-w-5xl text-5xl font-black tracking-tight text-white md:text-7xl lg:text-8xl">
-            AI systems for businesses ready to stop moving like it is 1999.
-          </h1>
-
-          <p className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-zinc-300 md:text-xl">
-            We build agent-powered websites, automation workflows, sales
-            systems, and digital infrastructure that make ordinary businesses
-            look dangerous online.
-          </p>
-
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <a
-              className="rounded-full bg-amber-300 px-8 py-4 text-sm font-bold uppercase tracking-[0.2em] text-black shadow-[0_0_40px_rgba(252,211,77,.25)] transition hover:scale-105"
-              href="#systems"
-            >
-              Enter the system
-            </a>
-
-            <a
-              className="rounded-full border border-white/15 px-8 py-4 text-sm font-bold uppercase tracking-[0.2em] text-white/80 backdrop-blur transition hover:border-amber-300/70 hover:text-amber-200"
-              href="#contact"
-            >
-              Build with us
-            </a>
-          </div>
-        </div>
+    <BuyerShell
+      eyebrow="Command Deck"
+      title="Blackspire Buyer Engine Workspace"
+      description="The frontend now has live search-job creation, workflow dispatch, a polling queue monitor, and buyer dossier rendering against the real Supabase project. What remains is refinement, not first-pass scaffolding."
+    >
+      <section className="grid gap-4 md:grid-cols-4">
+        <Metric label="Active Counties" value={String(stats.activeCountyCount)} detail="County source rows currently marked active" />
+        <Metric label="Completed Reference Runs" value={String(stats.completedRuns)} detail="Useful baseline counties for frontend QA" />
+        <Metric label="Visible Buyers" value={String(stats.totalBuyers)} detail="Sample count carried into the dashboard model" />
+        <Metric label="Primary Risk" value="Wake timeout" detail="Pull Sales Data still hits the 60s task ceiling" />
       </section>
 
-      <section
-        id="systems"
-        className="relative border-t border-white/10 bg-black px-6 py-24"
-      >
-        <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-3">
-          {[
-            [
-              "Blackspire Social OS",
-              "AI-assisted content, posting strategy, brand voice, and social presence built to make attention compound.",
-            ],
-            [
-              "Blackspire Buyer Engine",
-              "Lead capture, follow-up, offer positioning, and conversion workflows for businesses that need customers now.",
-            ],
-            [
-              "Helix Command Layer",
-              "Internal automations, dashboards, prompts, agents, and operating systems that turn chaos into leverage.",
-            ],
-          ].map(([title, body]) => (
-            <div
-              key={title}
-              className="rounded-3xl border border-white/10 bg-white/[0.03] p-8 shadow-2xl backdrop-blur"
-            >
-              <div className="mb-6 h-12 w-12 rounded-2xl border border-amber-300/30 bg-amber-300/10 shadow-[0_0_35px_rgba(252,211,77,.15)]" />
-
-              <h2 className="text-2xl font-bold text-white">{title}</h2>
-
-              <p className="mt-4 leading-7 text-zinc-400">{body}</p>
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <Panel
+          eyebrow="Reality Check"
+          title="What changed in the repo"
+          description="The repo is now operating as a real command surface. The work left is about stronger operator tooling and backend hardening."
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">
+              <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Now in place</p>
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
+                <li>Real SearchJob inserts into Supabase</li>
+                <li>Asynchronous n8n webhook dispatch after launch</li>
+                <li>Search Jobs monitor with retry and highlight flow</li>
+                <li>Buyer Reports route rendering live BuyerReport rows</li>
+              </ul>
             </div>
-          ))}
-        </div>
-      </section>
+            <div className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">
+              <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Still missing</p>
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
+                <li>Supabase auth and user session flow</li>
+                <li>Exports and AI outreach actions</li>
+                <li>County risk controls for known timeout sources</li>
+                <li>Realtime subscriptions in place of polling</li>
+              </ul>
+            </div>
+          </div>
 
-      <section
-        id="contact"
-        className="border-t border-white/10 bg-[#070707] px-6 py-24 text-center"
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link
+              href="/searches/new"
+              className="inline-flex border border-white/10 bg-[hsl(222_16%_8%)] px-4 py-3 text-sm text-zinc-200 transition hover:border-[hsl(38_92%_55%/.35)] hover:text-white"
+            >
+              Launch a buyer sweep
+            </Link>
+            <Link
+              href="/buyers"
+              className="inline-flex border border-white/10 bg-[hsl(222_16%_8%)] px-4 py-3 text-sm text-zinc-200 transition hover:border-[hsl(38_92%_55%/.35)] hover:text-white"
+            >
+              Review buyer dossiers
+            </Link>
+            <Link
+              href="/searches"
+              className="inline-flex border border-white/10 bg-[hsl(222_16%_8%)] px-4 py-3 text-sm text-zinc-200 transition hover:border-[hsl(38_92%_55%/.35)] hover:text-white"
+            >
+              Watch the queue
+            </Link>
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="System Readiness"
+          title="Environment contract"
+          description="These values are now active in the repo. The remaining integration risk is around behavior, not missing configuration."
+        >
+          <div className="space-y-3">
+            {environmentReadiness.map((item) => (
+              <div key={item.key} className="grid gap-2 border border-white/10 bg-[hsl(222_14%_10%)] px-4 py-3 sm:grid-cols-[1fr_1.2fr_auto]">
+                <div className="text-sm font-medium text-zinc-100">{item.key}</div>
+                <div className="text-sm text-zinc-400">{item.purpose}</div>
+                <div className="text-xs uppercase tracking-[0.24em] text-amber-300">{item.status}</div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <Panel
+          eyebrow="County Coverage"
+          title="Live source network snapshot"
+          description="The dashboard now shows the real county surface area we've already earned in the workflow layer."
+        >
+          <div className="overflow-hidden border border-white/10">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead className="bg-[hsl(222_16%_9%)] text-zinc-400">
+                <tr>
+                  <th className="border-b border-white/10 px-4 py-3 font-medium">County</th>
+                  <th className="border-b border-white/10 px-4 py-3 font-medium">Source</th>
+                  <th className="border-b border-white/10 px-4 py-3 font-medium">Date format</th>
+                  <th className="border-b border-white/10 px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {approvedCounties.slice(0, 12).map((county) => (
+                  <tr key={`${county.county}-${county.sourceTypes.join(",")}`} className="border-b border-white/5 bg-[hsl(222_14%_10%)] text-zinc-200">
+                    <td className="px-4 py-3">
+                      <div>{county.county}</div>
+                      {county.notes[0] ? <div className="mt-1 text-xs text-zinc-500">{county.notes[0]}</div> : null}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-zinc-400">{county.sourceTypes.join(", ")}</td>
+                    <td className="px-4 py-3">{county.dateFormats.join(", ")}</td>
+                    <td className="px-4 py-3">
+                      <StatusPill tone="good" label="90-day ready" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Search Health"
+          title="Reference jobs from live review"
+          description="These are the runs that matter most as we keep tightening the frontend around the production workflow."
+        >
+          <div className="space-y-3">
+            {searchJobSnapshots.map((job) => (
+              <div key={job.id} className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-white">{job.title}</h3>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      {job.state} / {job.county} / {job.propertyType}
+                    </p>
+                  </div>
+                  <StatusPill tone={job.status === "completed" ? "active" : job.status === "failed" ? "bad" : "neutral"} label={job.status} />
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-zinc-300 sm:grid-cols-3">
+                  <div>Range: <span className="tabular-nums">{job.dateRange}</span></div>
+                  <div>Buyers: <span className="tabular-nums">{job.buyersFound}</span></div>
+                  <div>Sales: <span className="tabular-nums">{job.salesAnalyzed}</span></div>
+                </div>
+                {job.notes ? <p className="mt-3 text-sm text-zinc-500">{job.notes}</p> : null}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel
+        eyebrow="Build Queue"
+        title="Next implementation passes"
+        description="This is the shortest path from the current repo to a genuinely usable Buyer Engine frontend."
       >
-        <p className="text-sm font-semibold uppercase tracking-[0.4em] text-amber-300">
-          The future does not wait.
-        </p>
-
-        <h2 className="mx-auto mt-6 max-w-4xl text-4xl font-black md:text-6xl">
-          Bring the machine to your business before your competitors do.
-        </h2>
-
-        <p className="mx-auto mt-6 max-w-2xl text-zinc-400">
-          BLACKSPIRE HELIX GROUP builds the systems, agents, and digital weapons
-          that make your operation feel bigger than the room.
-        </p>
-      </section>
-    </main>
+        <ol className="grid gap-3 text-sm leading-6 text-zinc-300 md:grid-cols-2">
+          {pendingWork.map((item, index) => (
+            <li key={item} className="grid grid-cols-[auto_1fr] gap-3 border border-white/10 bg-[hsl(222_14%_10%)] p-4">
+              <span className="text-[hsl(38_92%_55%)]">{String(index + 1).padStart(2, "0")}</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ol>
+      </Panel>
+    </BuyerShell>
   );
 }
