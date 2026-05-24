@@ -71,6 +71,9 @@ export async function handleIncomingMessage(
   } else if (isSystemTrigger && req.customer_phone) {
     const existing = await findConversationByPhone(req.admin_id, req.customer_phone);
     conversation = existing ?? await createConversation(req);
+  } else if (req.channel === 'web' && req.customer_session_id) {
+    const existing = await findConversationBySession(req.admin_id, req.customer_session_id);
+    conversation = existing ?? await createConversation(req);
   } else {
     conversation = await createConversation(req);
   }
@@ -333,6 +336,20 @@ async function findConversationByPhone(adminId: string, phone: string) {
     .order('last_message_at', { ascending: false })
     .limit(1)
     .maybeSingle();  // returns null when no active conversation found for this phone
+  return data ?? null;
+}
+
+async function findConversationBySession(adminId: string, sessionId: string) {
+  const { data } = await supabase
+    .schema('ember_halo')
+    .from('conversations')
+    .select('*')
+    .eq('admin_id', adminId)
+    .eq('customer_session_id', sessionId)
+    .eq('is_active', true)
+    .order('last_message_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   return data ?? null;
 }
 

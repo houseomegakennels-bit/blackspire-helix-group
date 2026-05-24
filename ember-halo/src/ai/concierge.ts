@@ -99,7 +99,7 @@ export async function processMessage(
   // Build messages with prompt caching on the system prompt (stable, expensive context)
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 300,   // concierge replies should be short
+    max_tokens: 420,   // enough room to confirm details while keeping concierge replies concise
     system: [
       {
         type: 'text',

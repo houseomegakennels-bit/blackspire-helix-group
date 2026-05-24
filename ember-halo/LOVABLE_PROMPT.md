@@ -109,6 +109,9 @@ Custom 200+ shown as "Custom Arrangement — Request Quote" card.
 - Input field always focused
 - Send on Enter or button tap
 - All messages go to `POST /api/conversation/message`
+- Generate one stable `customer_session_id` per browser session and persist it in `localStorage`
+- After the first backend reply, persist the returned `conversation_id` in `localStorage`
+- Send both `customer_session_id` and `conversation_id` on every later chat message so the AI receives the existing conversation history and does not restart the flow
 
 ### Mobile layout
 - Chatbox takes full width
