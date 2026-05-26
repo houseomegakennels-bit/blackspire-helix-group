@@ -163,6 +163,27 @@ body::before {
   color: var(--copy-muted);
 }
 
+.brand-input option,
+.brand-input optgroup {
+  background: hsl(0 0% 6%);
+  color: var(--foreground);
+}
+
+.brand-input option:checked {
+  background: hsl(31 100% 24%);
+  color: white;
+}
+
+.brand-date-input {
+  color-scheme: dark;
+}
+
+.brand-date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(74%) sepia(94%) saturate(1261%) hue-rotate(344deg) brightness(104%) contrast(101%);
+  opacity: 0.95;
+}
+
 .brand-copy-soft {
   color: var(--copy-soft);
 }

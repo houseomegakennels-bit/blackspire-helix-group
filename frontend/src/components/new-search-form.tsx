@@ -212,12 +212,12 @@ export function NewSearchForm({
               value={form.propertyType}
               onChange={(value) => setForm((current) => ({ ...current, propertyType: value }))}
             />
-            <Field
+            <DateField
               label="Date range start"
               value={form.dateRangeStart}
               onChange={(value) => setForm((current) => ({ ...current, dateRangeStart: value }))}
             />
-            <Field
+            <DateField
               label="Date range end"
               value={form.dateRangeEnd}
               onChange={(value) => setForm((current) => ({ ...current, dateRangeEnd: value }))}
@@ -360,6 +360,28 @@ function Field({
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
         className="brand-input w-full px-3 py-2 text-sm outline-none"
+      />
+    </label>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">{label}</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="brand-input brand-date-input w-full px-3 py-2 text-sm outline-none"
       />
     </label>
   );

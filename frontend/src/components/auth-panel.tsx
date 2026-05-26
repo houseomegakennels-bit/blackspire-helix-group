@@ -27,6 +27,11 @@ export function AuthPanel() {
     email: "",
     password: "",
   });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
 
   async function refreshStatus() {
     setLoadingStatus(true);
@@ -93,6 +98,51 @@ export function AuthPanel() {
       router.refresh();
     } catch (signOutError) {
       setError(signOutError instanceof Error ? signOutError.message : "Sign-out failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function changePassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage(null);
+    setError(null);
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setError("New password and confirmation do not match.");
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      });
+
+      const payload = (await response.json()) as AuthStatusPayload & { message?: string };
+      if (!response.ok || !payload.ok) {
+        setError(payload.error ?? "Password change failed.");
+        return;
+      }
+
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setMessage(payload.message ?? "Password changed.");
+      await refreshStatus();
+      router.refresh();
+    } catch (changeError) {
+      setError(changeError instanceof Error ? changeError.message : "Password change failed.");
     } finally {
       setSubmitting(false);
     }
@@ -219,6 +269,59 @@ export function AuthPanel() {
             </div>
           </form>
         </Panel>
+
+        {signedIn ? (
+          <Panel
+            eyebrow="Security"
+            title="Change password"
+            description="Update the signed-in operator password without leaving the app."
+          >
+            <form className="grid gap-5" onSubmit={(event) => void changePassword(event)}>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Current password</span>
+                <input
+                  type="password"
+                  value={passwordForm.currentPassword}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))}
+                  className="brand-input w-full px-3 py-2 text-sm outline-none"
+                  placeholder="Current operator password"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">New password</span>
+                <input
+                  type="password"
+                  value={passwordForm.newPassword}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))}
+                  className="brand-input w-full px-3 py-2 text-sm outline-none"
+                  placeholder="At least 8 characters"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Confirm new password</span>
+                <input
+                  type="password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                  className="brand-input w-full px-3 py-2 text-sm outline-none"
+                  placeholder="Repeat the new password"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={
+                  submitting ||
+                  !passwordForm.currentPassword ||
+                  !passwordForm.newPassword ||
+                  !passwordForm.confirmPassword
+                }
+                className="brand-button px-4 py-2 text-sm disabled:opacity-60"
+              >
+                {submitting ? "Working..." : "Change password"}
+              </button>
+            </form>
+          </Panel>
+        ) : null}
       </div>
     </BuyerShell>
   );
