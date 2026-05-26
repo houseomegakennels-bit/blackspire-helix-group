@@ -11,6 +11,7 @@ const navItems = [
   { href: "/searches", label: "Search Jobs" },
   { href: "/buyers", label: "Buyer Reports" },
   { href: "/workflows", label: "Workflows" },
+  { href: "/admin", label: "Admin" },
 ];
 
 export function BuyerShell({
@@ -98,6 +99,7 @@ export function BuyerShell({
                   }
                 />
                 {operatorStatus.usingFallback ? <StatusPill tone="warn" label="fallback bridge" /> : null}
+                {operatorStatus.isAdmin ? <StatusPill tone="good" label="admin" /> : null}
               </div>
               <div className="mt-3 text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">
                 Active Operator

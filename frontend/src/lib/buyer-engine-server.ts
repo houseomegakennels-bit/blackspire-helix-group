@@ -7,6 +7,9 @@ import {
   getAuthenticatedOperator,
   hasAdminAuthEnv,
   hasPublicAuthEnv,
+  isAuthenticatedOperatorAdmin,
+  listAuthUsers,
+  type AuthAdminUserRecord,
 } from "@/lib/buyer-engine-auth";
 import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
 import {
@@ -129,8 +132,40 @@ export type OperatorShellStatus = {
   bootstrapRequired: boolean;
   usingFallback: boolean;
   requiresAuth: boolean;
+  isAdmin: boolean;
   operatorId: string | null;
   operatorEmail: string | null;
+};
+
+export type BetaTesterSnapshot = {
+  id: string;
+  email: string | null;
+  createdAt: string | null;
+  lastSignInAt: string | null;
+  fullName: string | null;
+  company: string | null;
+  useCase: string | null;
+  accessSource: string | null;
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  totalBuyersFound: number;
+  totalSalesAnalyzed: number;
+  latestCounty: string | null;
+  latestJobCreatedAt: string | null;
+};
+
+export type BetaTesterAnalytics = {
+  totalTesters: number;
+  activeLast7Days: number;
+  signedInLast7Days: number;
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  averageJobsPerTester: number;
+  topCounties: Array<{ county: string; jobs: number }>;
+  topCompanies: Array<{ company: string; testers: number }>;
+  topUseCases: Array<{ useCase: string; testers: number }>;
 };
 
 const OUTREACH_DRAFT_BUCKET = "blackspire-outreach-drafts";
@@ -237,9 +272,10 @@ export function getBuyerEngineRealtimeClientEnv(): BuyerEngineRealtimeClientEnv 
 }
 
 export async function getOperatorShellStatus(): Promise<OperatorShellStatus> {
-  const [operator, authUserCount] = await Promise.all([
+  const [operator, authUserCount, isAdmin] = await Promise.all([
     getAuthenticatedOperator(),
     countAuthUsers().catch(() => 0),
+    isAuthenticatedOperatorAdmin().catch(() => false),
   ]);
 
   if (operator?.id) {
@@ -249,6 +285,7 @@ export async function getOperatorShellStatus(): Promise<OperatorShellStatus> {
       bootstrapRequired: false,
       usingFallback: false,
       requiresAuth: false,
+      isAdmin,
       operatorId: operator.id,
       operatorEmail: operator.email ?? null,
     };
@@ -261,6 +298,7 @@ export async function getOperatorShellStatus(): Promise<OperatorShellStatus> {
       bootstrapRequired: false,
       usingFallback: false,
       requiresAuth: true,
+      isAdmin: false,
       operatorId: null,
       operatorEmail: null,
     };
@@ -273,9 +311,159 @@ export async function getOperatorShellStatus(): Promise<OperatorShellStatus> {
     bootstrapRequired: true,
     usingFallback: Boolean(fallbackUserId),
     requiresAuth: false,
+    isAdmin: false,
     operatorId: fallbackUserId,
     operatorEmail: null,
   };
+}
+
+function pickUserMetadataValue(user: AuthAdminUserRecord, key: string) {
+  const value = user.user_metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function summarizeTopValues(entries: string[], limit = 5) {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    counts.set(entry, (counts.get(entry) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, limit)
+    .map(([value, count]) => ({ value, count }));
+}
+
+export async function getBetaTesterSnapshot() {
+  const env = getEnvState();
+  if (!env.enabled) {
+    return {
+      testers: [] as BetaTesterSnapshot[],
+      analytics: {
+        totalTesters: 0,
+        activeLast7Days: 0,
+        signedInLast7Days: 0,
+        totalJobs: 0,
+        completedJobs: 0,
+        failedJobs: 0,
+        averageJobsPerTester: 0,
+        topCounties: [],
+        topCompanies: [],
+        topUseCases: [],
+      } satisfies BetaTesterAnalytics,
+    };
+  }
+
+  const [isAdmin, users] = await Promise.all([
+    isAuthenticatedOperatorAdmin().catch(() => false),
+    listAuthUsers(),
+  ]);
+
+  if (!isAdmin) {
+    throw new Error("Admin access required.");
+  }
+
+  const adminUserId = users[0]?.id ?? null;
+  const testers = users.filter((user) => user.id !== adminUserId);
+  if (testers.length === 0) {
+    return {
+      testers: [] as BetaTesterSnapshot[],
+      analytics: {
+        totalTesters: 0,
+        activeLast7Days: 0,
+        signedInLast7Days: 0,
+        totalJobs: 0,
+        completedJobs: 0,
+        failedJobs: 0,
+        averageJobsPerTester: 0,
+        topCounties: [],
+        topCompanies: [],
+        topUseCases: [],
+      } satisfies BetaTesterAnalytics,
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const testerIds = testers.map((tester) => tester.id);
+  const { data: jobs, error } = await supabase
+    .from("SearchJob")
+    .select("id,user_id,county,status,total_buyers_found,total_sales_analyzed,created_at")
+    .in("user_id", testerIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const jobsByUser = new Map<string, Array<{
+    county: string;
+    status: SearchJobRecord["status"];
+    total_buyers_found: number | null;
+    total_sales_analyzed: number | null;
+    created_at: string;
+  }>>();
+
+  for (const job of jobs ?? []) {
+    const current = jobsByUser.get(job.user_id) ?? [];
+    current.push(job);
+    jobsByUser.set(job.user_id, current);
+  }
+
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const snapshots = testers.map((user) => {
+    const userJobs = jobsByUser.get(user.id) ?? [];
+    const latestJob = userJobs[0] ?? null;
+
+    return {
+      id: user.id,
+      email: user.email ?? null,
+      createdAt: user.created_at ?? null,
+      lastSignInAt: user.last_sign_in_at ?? null,
+      fullName: pickUserMetadataValue(user, "full_name"),
+      company: pickUserMetadataValue(user, "company"),
+      useCase: pickUserMetadataValue(user, "beta_use_case"),
+      accessSource: pickUserMetadataValue(user, "access_source"),
+      totalJobs: userJobs.length,
+      completedJobs: userJobs.filter((job) => job.status === "completed").length,
+      failedJobs: userJobs.filter((job) => job.status === "failed").length,
+      totalBuyersFound: userJobs.reduce((sum, job) => sum + Number(job.total_buyers_found ?? 0), 0),
+      totalSalesAnalyzed: userJobs.reduce((sum, job) => sum + Number(job.total_sales_analyzed ?? 0), 0),
+      latestCounty: latestJob?.county ?? null,
+      latestJobCreatedAt: latestJob?.created_at ?? null,
+    } satisfies BetaTesterSnapshot;
+  });
+
+  const analytics = {
+    totalTesters: snapshots.length,
+    activeLast7Days: snapshots.filter((tester) => {
+      const ts = Date.parse(tester.latestJobCreatedAt ?? "");
+      return Number.isFinite(ts) && ts >= sevenDaysAgo;
+    }).length,
+    signedInLast7Days: snapshots.filter((tester) => {
+      const ts = Date.parse(tester.lastSignInAt ?? "");
+      return Number.isFinite(ts) && ts >= sevenDaysAgo;
+    }).length,
+    totalJobs: snapshots.reduce((sum, tester) => sum + tester.totalJobs, 0),
+    completedJobs: snapshots.reduce((sum, tester) => sum + tester.completedJobs, 0),
+    failedJobs: snapshots.reduce((sum, tester) => sum + tester.failedJobs, 0),
+    averageJobsPerTester: snapshots.length
+      ? Math.round((snapshots.reduce((sum, tester) => sum + tester.totalJobs, 0) / snapshots.length) * 10) / 10
+      : 0,
+    topCounties: summarizeTopValues(
+      (jobs ?? []).map((job) => job.county).filter(Boolean),
+      6,
+    ).map(({ value, count }) => ({ county: value, jobs: count })),
+    topCompanies: summarizeTopValues(
+      snapshots.map((tester) => tester.company).filter((value): value is string => Boolean(value)),
+      6,
+    ).map(({ value, count }) => ({ company: value, testers: count })),
+    topUseCases: summarizeTopValues(
+      snapshots.map((tester) => tester.useCase).filter((value): value is string => Boolean(value)),
+      6,
+    ).map(({ value, count }) => ({ useCase: value, testers: count })),
+  } satisfies BetaTesterAnalytics;
+
+  return { testers: snapshots, analytics };
 }
 
 export async function listSearchJobs(limit = 12): Promise<SearchJobRecord[]> {

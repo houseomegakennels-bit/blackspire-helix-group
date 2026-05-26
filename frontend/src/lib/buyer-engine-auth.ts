@@ -6,6 +6,14 @@ import { createClient } from "@supabase/supabase-js";
 export const ACCESS_TOKEN_COOKIE = "blackspire-access-token";
 export const REFRESH_TOKEN_COOKIE = "blackspire-refresh-token";
 
+export type AuthAdminUserRecord = {
+  id: string;
+  email?: string | null;
+  created_at?: string | null;
+  last_sign_in_at?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+};
+
 function getSupabaseUrl() {
   return process.env.SUPABASE_URL?.trim() || "";
 }
@@ -95,4 +103,58 @@ export async function countAuthUsers() {
 
   const payload = (await response.json()) as { users?: Array<unknown> };
   return payload.users?.length ?? 0;
+}
+
+export async function listAuthUsers() {
+  if (!hasAdminAuthEnv()) {
+    return [] as AuthAdminUserRecord[];
+  }
+
+  const users: AuthAdminUserRecord[] = [];
+  let page = 1;
+  const perPage = 200;
+
+  while (true) {
+    const response = await fetch(`${getSupabaseUrl()}/auth/v1/admin/users?page=${page}&per_page=${perPage}`, {
+      method: "GET",
+      headers: {
+        apikey: getSupabaseServiceRoleKey(),
+        Authorization: `Bearer ${getSupabaseServiceRoleKey()}`,
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Auth user listing failed with status ${response.status}.`);
+    }
+
+    const payload = (await response.json()) as { users?: AuthAdminUserRecord[] };
+    const pageUsers = payload.users ?? [];
+    users.push(...pageUsers);
+
+    if (pageUsers.length < perPage) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return users.sort((left, right) => {
+    const leftTime = Date.parse(left.created_at ?? "") || 0;
+    const rightTime = Date.parse(right.created_at ?? "") || 0;
+    return leftTime - rightTime;
+  });
+}
+
+export async function isAuthenticatedOperatorAdmin() {
+  const [operator, users] = await Promise.all([
+    getAuthenticatedOperator(),
+    listAuthUsers().catch(() => []),
+  ]);
+
+  if (!operator?.id || users.length === 0) {
+    return false;
+  }
+
+  return users[0]?.id === operator.id;
 }

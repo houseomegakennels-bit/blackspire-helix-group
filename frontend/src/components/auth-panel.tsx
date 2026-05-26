@@ -211,6 +211,7 @@ export function AuthPanel() {
                 bootstrapRequired: Boolean(status.bootstrapRequired),
                 usingFallback: !status.operator && Boolean(status.bootstrapRequired),
                 requiresAuth: !status.operator && !status.bootstrapRequired,
+                isAdmin: false,
                 operatorId: status.operator?.id ?? null,
                 operatorEmail: status.operator?.email ?? null,
               }
