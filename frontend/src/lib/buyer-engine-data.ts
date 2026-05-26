@@ -197,9 +197,10 @@ const countyVerificationOverrides: Record<
       "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, and last-sale date for past-90-day buyer sweeps. Sale price is unavailable in this feed.",
   },
   craven: {
-    supportsPast90Days: true,
-    verificationStatus: "approved",
-    verificationReason: "Current live source is approved for operator-facing past-90-day buyer sweeps.",
+    supportsPast90Days: false,
+    verificationStatus: "blocked",
+    verificationReason:
+      "Craven's official ArcGIS source is live, but direct n8n fetches are currently timing out. Keep it visible as a source lead, but do not launch buyer sweeps until an app-server prefetch or cache path is built.",
   },
   cumberland: {
     supportsPast90Days: true,
@@ -307,8 +308,9 @@ const countyVerificationOverrides: Record<
   },
   macon: {
     supportsPast90Days: false,
-    verificationStatus: "historical_only",
-    verificationReason: "Macon's current live source is historical and not approved for a real past-90-day sweep.",
+    verificationStatus: "blocked",
+    verificationReason:
+      "Macon's configured source failed the latest live source-health check and is not approved for buyer sweeps until the endpoint is replaced or repaired.",
   },
   mecklenburg: {
     supportsPast90Days: true,
@@ -676,6 +678,13 @@ export function getCountyLaunchBlock(county: string, propertyType: string, capab
   const normalizedPropertyType = propertyType.trim().toLowerCase();
 
   if (capability?.status === "inactive") {
+    return {
+      blocked: true,
+      reason: capability.verificationReason,
+    };
+  }
+
+  if (capability?.verificationStatus === "blocked") {
     return {
       blocked: true,
       reason: capability.verificationReason,
