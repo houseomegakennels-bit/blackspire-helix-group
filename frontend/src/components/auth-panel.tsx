@@ -27,6 +27,14 @@ export function AuthPanel() {
     email: "",
     password: "",
   });
+  const [signUpForm, setSignUpForm] = useState({
+    fullName: "",
+    company: "",
+    email: "",
+    password: "",
+    useCase: "",
+    website: "",
+  });
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -79,6 +87,45 @@ export function AuthPanel() {
       router.refresh();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Operator auth request failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function signUp(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/auth/sign-up", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(signUpForm),
+      });
+
+      const payload = (await response.json()) as AuthStatusPayload & { message?: string };
+      if (!response.ok || !payload.ok) {
+        setError(payload.error ?? "Beta access request failed.");
+        return;
+      }
+
+      setMessage(payload.message ?? "Beta access created. You are signed in.");
+      setSignUpForm({
+        fullName: "",
+        company: "",
+        email: "",
+        password: "",
+        useCase: "",
+        website: "",
+      });
+      await refreshStatus();
+      router.refresh();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Beta access request failed.");
     } finally {
       setSubmitting(false);
     }
@@ -269,6 +316,89 @@ export function AuthPanel() {
             </div>
           </form>
         </Panel>
+
+        {!signedIn && !bootstrapRequired ? (
+          <Panel
+            eyebrow="Soft Beta"
+            title="Request access"
+            description="Create a beta operator account for testing live county searches, buyer dossiers, exports, and workflow monitoring."
+          >
+            <form className="grid gap-5" onSubmit={(event) => void signUp(event)}>
+              <input
+                type="text"
+                value={signUpForm.website}
+                onChange={(event) => setSignUpForm((current) => ({ ...current, website: event.target.value }))}
+                className="hidden"
+                tabIndex={-1}
+                autoComplete="off"
+                aria-hidden="true"
+              />
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Name</span>
+                  <input
+                    type="text"
+                    value={signUpForm.fullName}
+                    onChange={(event) => setSignUpForm((current) => ({ ...current, fullName: event.target.value }))}
+                    className="brand-input w-full px-3 py-2 text-sm outline-none"
+                    placeholder="Your name"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Company</span>
+                  <input
+                    type="text"
+                    value={signUpForm.company}
+                    onChange={(event) => setSignUpForm((current) => ({ ...current, company: event.target.value }))}
+                    className="brand-input w-full px-3 py-2 text-sm outline-none"
+                    placeholder="Company or team"
+                  />
+                </label>
+              </div>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Email</span>
+                <input
+                  type="email"
+                  value={signUpForm.email}
+                  onChange={(event) => setSignUpForm((current) => ({ ...current, email: event.target.value }))}
+                  className="brand-input w-full px-3 py-2 text-sm outline-none"
+                  placeholder="you@example.com"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Password</span>
+                <input
+                  type="password"
+                  value={signUpForm.password}
+                  onChange={(event) => setSignUpForm((current) => ({ ...current, password: event.target.value }))}
+                  className="brand-input w-full px-3 py-2 text-sm outline-none"
+                  placeholder="At least 8 characters"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">What are you testing?</span>
+                <textarea
+                  value={signUpForm.useCase}
+                  onChange={(event) => setSignUpForm((current) => ({ ...current, useCase: event.target.value }))}
+                  className="brand-input min-h-24 w-full px-3 py-2 text-sm outline-none"
+                  placeholder="Land buyers, wholesaling, acquisitions, investor research..."
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={submitting || !signUpForm.email || signUpForm.password.length < 8}
+                  className="border border-[hsl(38_92%_55%/.45)] bg-[hsl(38_92%_55%/.12)] px-4 py-2 text-sm font-medium text-[hsl(38_92%_55%)] disabled:opacity-60"
+                >
+                  {submitting ? "Working..." : "Create beta account"}
+                </button>
+                <span className="brand-copy-soft text-xs">
+                  Access is created immediately for soft beta testing.
+                </span>
+              </div>
+            </form>
+          </Panel>
+        ) : null}
 
         {signedIn ? (
           <Panel
