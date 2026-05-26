@@ -3,10 +3,14 @@ import { BuyerReportsMonitor } from "@/components/buyer-reports-monitor";
 import {
   getLiveCountyCapabilities,
   getBuyerEngineEnvStatus,
+  getBuyerEngineRealtimeClientEnv,
+  getOperatorShellStatus,
   getSearchJobById,
   listAllBuyerReports,
   listSearchJobsByIds,
 } from "@/lib/buyer-engine-server";
+
+const INITIAL_REPORT_LIMIT = 20;
 
 export default async function BuyersPage({
   searchParams,
@@ -20,17 +24,24 @@ export default async function BuyersPage({
       : undefined;
 
   const env = getBuyerEngineEnvStatus();
-  const [countyCapabilities, liveReports] = env.enabled
+  const realtime = getBuyerEngineRealtimeClientEnv();
+  const [countyCapabilities, reportPage, operatorStatus] = env.enabled
     ? await Promise.all([
         getLiveCountyCapabilities(true),
-        listAllBuyerReports({ searchJobId }).catch(() => []),
+        listAllBuyerReports({ searchJobId, limit: INITIAL_REPORT_LIMIT, offset: 0 }).catch(() => ({
+          reports: [],
+          total: 0,
+          limit: INITIAL_REPORT_LIMIT,
+          offset: 0,
+        })),
+        getOperatorShellStatus().catch(() => null),
       ])
-    : [[], []];
+    : [[], { reports: [], total: 0, limit: INITIAL_REPORT_LIMIT, offset: 0 }, null];
   const relatedJobs = env.enabled
     ? searchJobId
       ? await getSearchJobById(searchJobId).then((job) => (job ? [job] : [])).catch(() => [])
       : await listSearchJobsByIds(
-          liveReports
+          reportPage.reports
             .map((report) => report.search_job_id)
             .filter((id): id is string => Boolean(id)),
         ).catch(() => [])
@@ -45,7 +56,7 @@ export default async function BuyersPage({
       },
     ]),
   );
-  const reports = liveReports.map((report) => ({
+  const reports = reportPage.reports.map((report) => ({
     id: report.id,
     searchJobId: report.search_job_id ?? "unknown-job",
     county: report.search_job_id ? (jobMap[report.search_job_id]?.county ?? null) : null,
@@ -58,6 +69,8 @@ export default async function BuyersPage({
     totalSpend: Number(report.total_spend ?? 0),
     isLlc: Boolean(report.is_llc),
     isCashBuyer: Boolean(report.is_cash_buyer),
+    buyerIdentityNote: (Array.isArray(report.BuyerProfile) ? report.BuyerProfile[0] : report.BuyerProfile)
+      ?.score_breakdown?.buyer_identity?.note ?? null,
     createdAt: report.created_at,
   }));
 
@@ -70,12 +83,17 @@ export default async function BuyersPage({
           ? `This route is focused on buyer reports for search job ${searchJobId}.`
           : "This route turns completed workflow output into a usable buyer-intelligence surface for ranking, scanning, and outreach prep."
       }
+      operatorStatus={operatorStatus}
     >
       <BuyerReportsMonitor
         initialReports={reports}
+        initialTotalCount={reportPage.total}
+        initialPageSize={INITIAL_REPORT_LIMIT}
         initialEnv={env}
+        realtime={realtime}
         searchJobId={searchJobId}
         countyCapabilities={countyCapabilities}
+        operatorStatus={operatorStatus}
       />
     </BuyerShell>
   );

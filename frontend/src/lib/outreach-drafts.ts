@@ -18,10 +18,23 @@ export type OutreachDraftRecord = {
   createdAt: string;
 };
 
+export type OutreachDraftStoreStatus = {
+  storage: "browser" | "server";
+  supported: boolean;
+};
+
+type OutreachDraftApiPayload = {
+  ok: boolean;
+  supported: boolean;
+  storage: "browser" | "server";
+  drafts?: OutreachDraftRecord[];
+  error?: string;
+};
+
 const STORAGE_KEY = "blackspire-outreach-drafts-v1";
 const MAX_DRAFTS = 12;
 
-export function loadOutreachDrafts(searchJobId?: string) {
+function loadLocalOutreachDrafts(searchJobId?: string) {
   if (typeof window === "undefined") return [] as OutreachDraftRecord[];
 
   try {
@@ -38,10 +51,88 @@ export function loadOutreachDrafts(searchJobId?: string) {
   }
 }
 
-export function persistOutreachDraft(record: OutreachDraftRecord) {
+function persistLocalOutreachDraft(record: OutreachDraftRecord) {
   if (typeof window === "undefined") return [] as OutreachDraftRecord[];
 
-  const next = [record, ...loadOutreachDrafts().filter((draft) => draft.id !== record.id)].slice(0, MAX_DRAFTS);
+  const next = [record, ...loadLocalOutreachDrafts().filter((draft) => draft.id !== record.id)].slice(0, MAX_DRAFTS);
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return next;
+}
+
+export function loadOutreachDrafts(searchJobId?: string) {
+  return loadLocalOutreachDrafts(searchJobId);
+}
+
+export function persistOutreachDraft(record: OutreachDraftRecord) {
+  return persistLocalOutreachDraft(record);
+}
+
+export async function loadOutreachDraftsWithFallback(searchJobId?: string): Promise<{
+  drafts: OutreachDraftRecord[];
+  status: OutreachDraftStoreStatus;
+}> {
+  try {
+    const queryString = searchJobId ? `?searchJobId=${encodeURIComponent(searchJobId)}` : "";
+    const response = await fetch(`/api/outreach-drafts${queryString}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    const payload = (await response.json()) as OutreachDraftApiPayload;
+
+    if (response.ok && payload.ok && payload.supported && payload.drafts) {
+      return {
+        drafts: payload.drafts,
+        status: {
+          storage: payload.storage,
+          supported: payload.supported,
+        },
+      };
+    }
+  } catch {
+    // fall through to browser cache
+  }
+
+  return {
+    drafts: loadLocalOutreachDrafts(searchJobId),
+    status: {
+      storage: "browser",
+      supported: false,
+    },
+  };
+}
+
+export async function persistOutreachDraftWithFallback(record: OutreachDraftRecord): Promise<{
+  drafts: OutreachDraftRecord[];
+  status: OutreachDraftStoreStatus;
+}> {
+  try {
+    const response = await fetch("/api/outreach-drafts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(record),
+    });
+    const payload = (await response.json()) as OutreachDraftApiPayload;
+
+    if (response.ok && payload.ok && payload.supported && payload.drafts) {
+      return {
+        drafts: payload.drafts,
+        status: {
+          storage: payload.storage,
+          supported: payload.supported,
+        },
+      };
+    }
+  } catch {
+    // fall through to browser cache
+  }
+
+  return {
+    drafts: persistLocalOutreachDraft(record),
+    status: {
+      storage: "browser",
+      supported: false,
+    },
+  };
 }

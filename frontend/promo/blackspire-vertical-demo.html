@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blackspire Vertical Demo</title>
+    <style>
+      :root {
+        --gold-soft: #ffe3b3;
+        --gold: #ffac3f;
+        --gold-strong: #ff7300;
+        --copy: rgba(255, 245, 232, 0.98);
+        --copy-soft: rgba(255, 224, 184, 0.82);
+        --copy-muted: rgba(255, 195, 127, 0.58);
+        --line: rgba(255, 167, 58, 0.24);
+        --line-strong: rgba(255, 196, 101, 0.82);
+      }
+
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at 50% 10%, rgba(255, 136, 20, 0.24), transparent 18%),
+          radial-gradient(circle at 50% 90%, rgba(255, 102, 0, 0.16), transparent 15%),
+          linear-gradient(180deg, #010101 0%, #050505 46%, #140b04 100%);
+        color: var(--copy);
+      }
+
+      .frame {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+      }
+
+      .frame::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          repeating-linear-gradient(90deg, transparent 0 82px, rgba(255, 170, 74, 0.03) 82px 83px),
+          repeating-linear-gradient(0deg, transparent 0 82px, rgba(255, 170, 74, 0.022) 82px 83px);
+        opacity: 0.38;
+        pointer-events: none;
+      }
+
+      .logo {
+        position: absolute;
+        left: 50%;
+        top: 56px;
+        width: 250px;
+        transform: translateX(-50%);
+        filter: drop-shadow(0 0 24px rgba(255, 142, 26, 0.22));
+        z-index: 10;
+      }
+
+      .title {
+        position: absolute;
+        left: 72px;
+        right: 72px;
+        top: 378px;
+        z-index: 10;
+        text-align: center;
+      }
+
+      .eyebrow {
+        font-size: 22px;
+        letter-spacing: 0.44em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 72px;
+        line-height: 0.95;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: linear-gradient(180deg, #fff2db 0%, #ffcf86 34%, #ff9d2f 68%, #ff6f00 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .sub {
+        margin-top: 20px;
+        font-size: 28px;
+        line-height: 1.42;
+        color: var(--copy-soft);
+      }
+
+      .rail {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-top: 22px;
+      }
+      .rail-line {
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+      }
+      .target {
+        position: relative;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid var(--line-strong);
+        box-shadow: 0 0 16px rgba(255, 154, 35, 0.28);
+      }
+      .target::before, .target::after {
+        content: "";
+        position: absolute;
+        background: var(--line-strong);
+      }
+      .target::before {
+        inset: 50% 4px auto 4px;
+        height: 1px;
+        transform: translateY(-50%);
+      }
+      .target::after {
+        inset: 4px auto 4px 50%;
+        width: 1px;
+        transform: translateX(-50%);
+      }
+
+      .phone {
+        position: absolute;
+        left: 92px;
+        top: 762px;
+        width: 896px;
+        height: 1018px;
+        border-radius: 34px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 165, 58, 0.28);
+        background: linear-gradient(180deg, rgba(18, 10, 6, 0.98), rgba(22, 12, 7, 0.98));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 214, 156, 0.08),
+          0 30px 70px rgba(0, 0, 0, 0.5);
+      }
+
+      .phone-bar {
+        height: 54px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 18px;
+        border-bottom: 1px solid rgba(255, 167, 58, 0.18);
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 214, 156, 0.22);
+        border: 1px solid rgba(255, 176, 76, 0.26);
+      }
+      .url {
+        margin-left: 10px;
+        flex: 1;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        padding: 0 14px;
+        border: 1px solid rgba(255, 167, 58, 0.16);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--copy-soft);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+      }
+
+      .viewport {
+        position: absolute;
+        inset: 54px 0 0;
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        animation: fade 15s linear infinite;
+      }
+      .scene.two { animation-delay: 5s; }
+      .scene.three { animation-delay: 10s; }
+
+      @keyframes fade {
+        0% { opacity: 0; }
+        4% { opacity: 1; }
+        30% { opacity: 1; }
+        33.333% { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      .scene img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .caption {
+        position: absolute;
+        left: 54px;
+        right: 54px;
+        bottom: 120px;
+        padding: 26px 28px;
+        border-radius: 22px;
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(180deg, rgba(16, 10, 7, 0.96), rgba(27, 15, 8, 0.96)),
+          radial-gradient(circle at top, rgba(255, 153, 51, 0.12), transparent 60%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 214, 156, 0.06),
+          0 18px 40px rgba(0, 0, 0, 0.42);
+        text-align: center;
+        z-index: 11;
+        opacity: 0;
+      }
+      .caption.one { animation: caption1 15s linear infinite; }
+      .caption.two { animation: caption2 15s linear infinite; }
+      .caption.three { animation: caption3 15s linear infinite; }
+      .caption .step {
+        font-size: 15px;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+      }
+      .caption .line1 {
+        margin-top: 12px;
+        font-size: 40px;
+        line-height: 1.08;
+        font-weight: 700;
+        color: white;
+      }
+      .caption .line2 {
+        margin-top: 12px;
+        font-size: 24px;
+        line-height: 1.4;
+        color: var(--copy-soft);
+      }
+      @keyframes caption1 {
+        0%, 6% { opacity: 0; transform: translateY(16px); }
+        9%, 30% { opacity: 1; transform: translateY(0); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes caption2 {
+        0%, 39% { opacity: 0; transform: translateY(16px); }
+        42%, 63% { opacity: 1; transform: translateY(0); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes caption3 {
+        0%, 72% { opacity: 0; transform: translateY(16px); }
+        75%, 96% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; }
+      }
+
+      .cursor {
+        position: absolute;
+        width: 30px;
+        height: 40px;
+        z-index: 8;
+        opacity: 0;
+        filter: drop-shadow(0 0 14px rgba(255, 137, 25, 0.24));
+      }
+      .cursor::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        border-left: 16px solid #fff3df;
+        border-top: 28px solid transparent;
+        transform: rotate(-16deg);
+      }
+      .cursor.one { animation: cursor1 15s linear infinite; }
+      .cursor.two { animation: cursor2 15s linear infinite; }
+      .cursor.three { animation: cursor3 15s linear infinite; }
+
+      @keyframes cursor1 {
+        0%, 8% { opacity: 0; transform: translate(612px, 918px); }
+        11% { opacity: 1; transform: translate(612px, 918px); }
+        22% { opacity: 1; transform: translate(760px, 1170px); }
+        26% { opacity: 1; transform: translate(760px, 1170px) scale(0.95); }
+        30% { opacity: 1; transform: translate(760px, 1170px) scale(1); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes cursor2 {
+        0%, 42% { opacity: 0; transform: translate(742px, 918px); }
+        46% { opacity: 1; transform: translate(742px, 918px); }
+        56% { opacity: 1; transform: translate(500px, 1320px); }
+        60% { opacity: 1; transform: translate(500px, 1320px) scale(0.95); }
+        63% { opacity: 1; transform: translate(500px, 1320px) scale(1); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes cursor3 {
+        0%, 75% { opacity: 0; transform: translate(390px, 1096px); }
+        79% { opacity: 1; transform: translate(390px, 1096px); }
+        90% { opacity: 1; transform: translate(672px, 1330px); }
+        93% { opacity: 1; transform: translate(672px, 1330px) scale(0.95); }
+        96% { opacity: 1; transform: translate(672px, 1330px) scale(1); }
+        100% { opacity: 0; }
+      }
+
+      .footer {
+        position: absolute;
+        left: 50%;
+        bottom: 40px;
+        transform: translateX(-50%);
+        font-size: 17px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        z-index: 10;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <img class="logo" src="../public/brand/blackspire-buyer-engine-logo.png" alt="Blackspire Buyer Engine logo" />
+
+      <section class="title">
+        <div class="eyebrow">Vertical Demo</div>
+        <h1>Search. Queue. Buyer dossiers.</h1>
+        <div class="sub">A real Blackspire walkthrough built from the live app screens.</div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="target"></div>
+          <div class="rail-line"></div>
+        </div>
+      </section>
+
+      <section class="phone">
+        <div class="phone-bar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <div class="url">blackspire.local / operator flow</div>
+        </div>
+        <div class="viewport">
+          <div class="scene one"><img src="./shots/new-search.png" alt="New search" /></div>
+          <div class="scene two"><img src="./shots/searches.png" alt="Search jobs" /></div>
+          <div class="scene three"><img src="./shots/buyers.png" alt="Buyer reports" /></div>
+          <div class="cursor one"></div>
+          <div class="cursor two"></div>
+          <div class="cursor three"></div>
+        </div>
+      </section>
+
+      <div class="caption one">
+        <div class="step">Step 01</div>
+        <div class="line1">Launch a county buyer sweep.</div>
+        <div class="line2">Set the county, property type, and date window in one command surface.</div>
+      </div>
+
+      <div class="caption two">
+        <div class="step">Step 02</div>
+        <div class="line1">Track the job live.</div>
+        <div class="line2">Watch the queue move from pending to processing while the workflow scores buyers.</div>
+      </div>
+
+      <div class="caption three">
+        <div class="step">Step 03</div>
+        <div class="line1">Open ranked buyer dossiers.</div>
+        <div class="line2">Review buyers, export the cohort, and move straight into outreach-ready actions.</div>
+      </div>
+
+      <div class="footer">Blackspire Buyer Engine • 9:16 social demo</div>
+    </div>
+  </body>
+  </html>

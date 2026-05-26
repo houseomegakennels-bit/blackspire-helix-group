@@ -13,9 +13,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Blackspire Buyer Engine",
+  title: "Blackspire Buyer Engine | Blackspire Helix Group",
   description:
-    "Operational workspace for Blackspire Buyer Engine, county coverage, workflow status, and build priorities.",
+    "Blackspire Buyer Engine is a real estate intelligence product powered by Blackspire Helix Group.",
+  icons: {
+    icon: "/brand/blackspire-buyer-engine-logo.png",
+    apple: "/brand/blackspire-buyer-engine-logo.png",
+  },
 };
 
 export default function RootLayout({
@@ -28,7 +32,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-[hsl(222_20%_5%)] text-zinc-100">
+      <body className="min-h-full bg-background text-foreground">
         {children}
       </body>
     </html>

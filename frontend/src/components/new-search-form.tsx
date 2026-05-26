@@ -11,13 +11,16 @@ import {
   getCountyVerificationTone,
   type CountyCapability,
 } from "@/lib/buyer-engine-data";
+import type { OperatorShellStatus } from "@/lib/buyer-engine-server";
 
 export function NewSearchForm({
   initialCountyOptions,
   countyLoadError,
+  operatorStatus,
 }: {
   initialCountyOptions: CountyCapability[];
   countyLoadError?: string | null;
+  operatorStatus?: OperatorShellStatus | null;
 }) {
   const router = useRouter();
   const [countyOptions] = useState<CountyCapability[]>(initialCountyOptions);
@@ -32,6 +35,16 @@ export function NewSearchForm({
   });
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const operatorGate = useMemo(() => {
+    if (!operatorStatus) return null;
+    if (operatorStatus.requiresAuth) {
+      return "Sign in through /auth before launching a buyer sweep. Operator accounts already exist for this project.";
+    }
+    if (operatorStatus.bootstrapRequired) {
+      return "Bootstrap the first operator through /auth before turning Buyer Engine into normal operator mode.";
+    }
+    return null;
+  }, [operatorStatus]);
 
   const countyDetails = useMemo(
     () => getCountyCapability(form.county, countyOptions) ?? countyOptions[0],
@@ -150,6 +163,7 @@ export function NewSearchForm({
       eyebrow="Intelligence Sweep"
       title="New Buyer Search"
       description="This is the first operator workflow we need wired for real. The payload shape already matches the live n8n webhook and SearchJob model."
+      operatorStatus={operatorStatus}
     >
       <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
         <Panel
@@ -216,9 +230,12 @@ export function NewSearchForm({
               onChange={(value) => setForm((current) => ({ ...current, notes: value }))}
             />
 
-            <div className="md:col-span-2 border border-white/10 bg-[hsl(222_14%_10%)] px-4 py-3 text-sm text-zinc-300">
+            <div className="brand-card brand-copy-soft md:col-span-2 px-4 py-3 text-sm">
               <div className="flex flex-wrap items-center gap-3">
-                <StatusPill tone={launchGuard.blocked ? "bad" : "good"} label={launchGuard.blocked ? "launch blocked" : "launchable"} />
+                <StatusPill
+                  tone={launchGuard.blocked || Boolean(operatorGate) ? "bad" : "good"}
+                  label={launchGuard.blocked || operatorGate ? "launch blocked" : "launchable"}
+                />
                 <StatusPill tone={countyRisk.tone} label={countyRisk.label} />
                 {countyDetails ? (
                   <StatusPill
@@ -231,31 +248,34 @@ export function NewSearchForm({
                   />
                 ) : null}
                 {form.county.toLowerCase() === "wake" && form.propertyType.toLowerCase() === "land" ? (
-                  <StatusPill tone="warn" label="wake temporarily blocked" />
+                  <StatusPill tone="good" label="wake prefetch path" />
                 ) : null}
               </div>
-              <p className="mt-3 leading-6 text-zinc-300">{countyRisk.message}</p>
+              <p className="brand-copy-soft mt-3 leading-6">{countyRisk.message}</p>
               {countyDetails ? (
-                <p className="mt-3 leading-6 text-zinc-400">{countyDetails.verificationReason}</p>
+                <p className="mt-3 leading-6 text-[var(--copy-soft)]">{countyDetails.verificationReason}</p>
               ) : null}
               {launchGuard.message ? (
-                <p className="mt-3 leading-6 text-rose-300">{launchGuard.message}</p>
+                <p className="mt-3 leading-6 text-[hsl(22_100%_72%)]">{launchGuard.message}</p>
+              ) : null}
+              {operatorGate ? (
+                <p className="mt-3 leading-6 text-[hsl(22_100%_72%)]">{operatorGate}</p>
               ) : null}
               {countyLoadError ? (
-                <p className="mt-3 leading-6 text-amber-300">{countyLoadError}</p>
+                <p className="mt-3 leading-6 text-[var(--gold)]">{countyLoadError}</p>
               ) : null}
             </div>
 
             <div className="md:col-span-2 flex flex-wrap items-center gap-3">
               <button
                 type="submit"
-                disabled={submitting || launchGuard.blocked}
-                className="border border-[hsl(38_92%_55%/.45)] bg-[hsl(38_92%_55%/.12)] px-4 py-2 text-sm font-medium text-[hsl(38_92%_55%)] disabled:opacity-60"
+                disabled={submitting || launchGuard.blocked || Boolean(operatorGate)}
+                className="brand-button px-4 py-2 text-sm font-medium text-[var(--gold)] disabled:opacity-60"
               >
                 {submitting ? "Launching buyer sweep..." : "Launch Buyer Sweep"}
               </button>
               {result ? (
-                <span className={`text-sm ${result.ok ? "text-emerald-300" : "text-rose-300"}`}>
+                <span className={`text-sm ${result.ok ? "text-[var(--gold-soft)]" : "text-[hsl(22_100%_72%)]"}`}>
                   {result.message}
                 </span>
               ) : null}
@@ -268,36 +288,36 @@ export function NewSearchForm({
           title="Backend path to implement"
           description="The remaining work here is mostly quality-of-operations work: better county heuristics, realtime, exports, and outreach actions."
         >
-          <ol className="space-y-3 text-sm leading-6 text-zinc-300">
-            <li className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">1. SearchJob insert and webhook dispatch are live.</li>
-            <li className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">2. Wake County land searches are blocked at intake until the backend county filter patch is accepted by n8n.</li>
-            <li className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">3. Realtime subscriptions can replace polling once the base operator flow settles.</li>
-            <li className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">4. Export and AI outreach actions are the next user-visible step after queue stability.</li>
+          <ol className="brand-copy-soft space-y-3 text-sm leading-6">
+            <li className="brand-card p-4">1. SearchJob insert and webhook dispatch are live.</li>
+            <li className="brand-card p-4">2. Wake County land runs now prefetch raw sales in the app server before n8n scoring.</li>
+            <li className="brand-card p-4">3. Realtime subscriptions can replace polling once the base operator flow settles.</li>
+            <li className="brand-card p-4">4. Export and AI outreach actions are the next user-visible step after queue stability.</li>
           </ol>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <StatusPill tone="warn" label="Wake timeout risk" />
+            <StatusPill tone="good" label="Wake prefetch active" />
             <StatusPill tone="good" label="Durham stabilized" />
             <StatusPill tone="active" label={`${countyOptions.filter((county) => county.status === "active").length} active counties`} />
           </div>
 
           <div className="mt-5 grid gap-3">
-            <div className="border border-white/10 bg-[hsl(222_14%_10%)] p-4 text-sm leading-6 text-zinc-300">
-              <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">90-Day County Sections</div>
+            <div className="brand-card brand-copy-soft p-4 text-sm leading-6">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">90-Day County Sections</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <StatusPill tone="good" label={`${approvedCounties.length} ready`} />
                 <StatusPill tone="warn" label={`${limitedCounties.length} limited`} />
                 <StatusPill tone="bad" label={`${blockedCounties.length} blocked`} />
               </div>
-              <p className="mt-3 text-zinc-400">
+              <p className="mt-3 text-[var(--copy-soft)]">
                 Approved counties can be marketed as past-90-day ready. Limited counties remain visible but are not approved for true 90-day buyer sweeps.
               </p>
             </div>
 
-            <div className="border border-white/10 bg-[hsl(222_14%_10%)] p-4 text-sm leading-6 text-zinc-300">
-              <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Selected County</div>
+            <div className="brand-card brand-copy-soft p-4 text-sm leading-6">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Selected County</div>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <div>Source: <span className="font-mono text-xs text-zinc-400">{countyDetails?.sourceTypes.join(", ") ?? "n/a"}</span></div>
+                <div>Source: <span className="font-mono text-xs text-[var(--copy-soft)]">{countyDetails?.sourceTypes.join(", ") ?? "n/a"}</span></div>
                 <div>Date shape: <span>{countyDetails?.dateFormats.join(", ") ?? "unknown"}</span></div>
                 <div>Rows: <span>{countyDetails?.sourceRowCount ?? 0}</span></div>
               </div>
@@ -306,11 +326,11 @@ export function NewSearchForm({
                 <div>State: <span>{countyDetails?.state ?? form.state}</span></div>
               </div>
               <div className="mt-3">
-                <span className="text-zinc-500">Reason:</span>{" "}
+                <span className="text-[var(--copy-muted)]">Reason:</span>{" "}
                 <span>{countyDetails?.verificationReason ?? "No county capability metadata available."}</span>
               </div>
               <div className="mt-3">
-                <span className="text-zinc-500">Notes:</span>{" "}
+                <span className="text-[var(--copy-muted)]">Notes:</span>{" "}
                 <span>{countyDetails?.notes[0] ?? "Standard county path"}</span>
               </div>
             </div>
@@ -334,12 +354,12 @@ function Field({
 }) {
   return (
     <label className="space-y-2">
-      <span className="text-xs uppercase tracking-[0.24em] text-zinc-500">{label}</span>
+      <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">{label}</span>
       <input
         readOnly={readOnly}
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
-        className="w-full border border-white/10 bg-[hsl(222_14%_10%)] px-3 py-2 text-sm text-zinc-200 outline-none"
+        className="brand-input w-full px-3 py-2 text-sm outline-none"
       />
     </label>
   );
@@ -358,11 +378,11 @@ function SelectField({
 }) {
   return (
     <label className="space-y-2">
-      <span className="text-xs uppercase tracking-[0.24em] text-zinc-500">{label}</span>
+      <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full border border-white/10 bg-[hsl(222_14%_10%)] px-3 py-2 text-sm text-zinc-200 outline-none"
+        className="brand-input w-full px-3 py-2 text-sm outline-none"
       >
         {optionGroups.map((group) => (
           <optgroup key={group.label} label={group.label}>
@@ -389,12 +409,12 @@ function TextAreaField({
 }) {
   return (
     <label className="space-y-2 md:col-span-2">
-      <span className="text-xs uppercase tracking-[0.24em] text-zinc-500">{label}</span>
+      <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">{label}</span>
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={4}
-        className="w-full border border-white/10 bg-[hsl(222_14%_10%)] px-3 py-2 text-sm text-zinc-200 outline-none"
+        className="brand-input w-full px-3 py-2 text-sm outline-none"
       />
     </label>
   );

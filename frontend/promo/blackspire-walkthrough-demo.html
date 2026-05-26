@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blackspire Walkthrough Demo</title>
+    <style>
+      :root {
+        --line: rgba(255, 164, 58, 0.26);
+        --line-strong: rgba(255, 196, 101, 0.78);
+        --gold-soft: #ffe1af;
+        --copy-soft: rgba(255, 223, 179, 0.82);
+        --copy-muted: rgba(255, 194, 126, 0.54);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      body {
+        background:
+          radial-gradient(circle at 50% 12%, rgba(255, 137, 25, 0.22), transparent 22%),
+          radial-gradient(circle at 50% 92%, rgba(255, 115, 0, 0.14), transparent 16%),
+          linear-gradient(180deg, #010101 0%, #050505 44%, #140b04 100%);
+        color: #fff7eb;
+      }
+      .frame {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .frame::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          repeating-linear-gradient(90deg, transparent 0 100px, rgba(255, 170, 74, 0.03) 100px 101px),
+          repeating-linear-gradient(0deg, transparent 0 100px, rgba(255, 170, 74, 0.022) 100px 101px);
+        opacity: 0.42;
+        pointer-events: none;
+      }
+      .logo {
+        position: absolute;
+        left: 60px;
+        top: 44px;
+        width: 166px;
+        filter: drop-shadow(0 0 24px rgba(255, 142, 26, 0.22));
+        z-index: 10;
+      }
+      .lede {
+        position: absolute;
+        left: 60px;
+        top: 232px;
+        width: 610px;
+        z-index: 10;
+      }
+      .lede .eyebrow {
+        font-size: 19px;
+        letter-spacing: 0.46em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        margin-bottom: 16px;
+      }
+      .lede h1 {
+        margin: 0;
+        font-size: 72px;
+        line-height: 0.95;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: linear-gradient(180deg, #fff2db 0%, #ffcf86 35%, #ff9d2f 70%, #ff6e00 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .lede p {
+        margin: 22px 0 0;
+        font-size: 27px;
+        line-height: 1.42;
+        color: var(--copy-soft);
+      }
+      .rail {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-top: 22px;
+      }
+      .rail-line {
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+      }
+      .target {
+        position: relative;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid var(--line-strong);
+        box-shadow: 0 0 16px rgba(255, 154, 35, 0.28);
+      }
+      .target::before, .target::after {
+        content: "";
+        position: absolute;
+        background: var(--line-strong);
+      }
+      .target::before {
+        inset: 50% 4px auto 4px;
+        height: 1px;
+        transform: translateY(-50%);
+      }
+      .target::after {
+        inset: 4px auto 4px 50%;
+        width: 1px;
+        transform: translateX(-50%);
+      }
+      .browser {
+        position: absolute;
+        right: 58px;
+        top: 52px;
+        width: 1098px;
+        height: 968px;
+        border-radius: 22px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 165, 58, 0.28);
+        background: linear-gradient(180deg, rgba(18, 10, 6, 0.98), rgba(22, 12, 7, 0.98));
+        box-shadow: inset 0 1px 0 rgba(255, 214, 156, 0.08), 0 26px 64px rgba(0, 0, 0, 0.46);
+      }
+      .browser-bar {
+        height: 56px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 18px;
+        border-bottom: 1px solid rgba(255, 167, 58, 0.18);
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 214, 156, 0.22);
+        border: 1px solid rgba(255, 176, 76, 0.26);
+      }
+      .url {
+        margin-left: 10px;
+        flex: 1;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        padding: 0 14px;
+        border: 1px solid rgba(255, 167, 58, 0.16);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--copy-soft);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+      }
+      .viewport {
+        position: absolute;
+        inset: 56px 0 0;
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        animation: fade 15s linear infinite;
+      }
+      .scene.two { animation-delay: 5s; }
+      .scene.three { animation-delay: 10s; }
+      @keyframes fade {
+        0% { opacity: 0; }
+        4% { opacity: 1; }
+        30% { opacity: 1; }
+        33.333% { opacity: 0; }
+        100% { opacity: 0; }
+      }
+      .scene img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .overlay {
+        position: absolute;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 196, 101, 0.86);
+        box-shadow: 0 0 0 1px rgba(255, 196, 101, 0.08), 0 0 40px rgba(255, 140, 31, 0.18);
+        opacity: 0;
+      }
+      .overlay.one.field-a {
+        left: 302px; top: 246px; width: 406px; height: 72px; animation: phase1 15s linear infinite;
+      }
+      .overlay.one.field-b {
+        left: 302px; top: 356px; width: 406px; height: 72px; animation: phase1b 15s linear infinite;
+      }
+      .overlay.one.cta {
+        left: 754px; top: 602px; width: 180px; height: 58px; animation: phase1c 15s linear infinite;
+      }
+      .overlay.two.panel {
+        left: 620px; top: 98px; width: 362px; height: 240px; animation: phase2 15s linear infinite;
+      }
+      .overlay.two.row {
+        left: 90px; top: 546px; width: 924px; height: 150px; animation: phase2b 15s linear infinite;
+      }
+      .overlay.three.card {
+        left: 76px; top: 314px; width: 450px; height: 174px; animation: phase3 15s linear infinite;
+      }
+      .overlay.three.actions {
+        left: 742px; top: 466px; width: 248px; height: 84px; animation: phase3b 15s linear infinite;
+      }
+      @keyframes phase1 {
+        0%, 6% { opacity: 0; transform: scale(0.98); }
+        9%, 15% { opacity: 1; transform: scale(1); }
+        18%, 100% { opacity: 0; }
+      }
+      @keyframes phase1b {
+        0%, 15% { opacity: 0; transform: scale(0.98); }
+        18%, 24% { opacity: 1; transform: scale(1); }
+        27%, 100% { opacity: 0; }
+      }
+      @keyframes phase1c {
+        0%, 24% { opacity: 0; transform: scale(0.98); }
+        27%, 31% { opacity: 1; transform: scale(1); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes phase2 {
+        0%, 37% { opacity: 0; transform: scale(0.98); }
+        40%, 50% { opacity: 1; transform: scale(1); }
+        54%, 100% { opacity: 0; }
+      }
+      @keyframes phase2b {
+        0%, 50% { opacity: 0; transform: scale(0.98); }
+        54%, 63% { opacity: 1; transform: scale(1); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes phase3 {
+        0%, 71% { opacity: 0; transform: scale(0.98); }
+        74%, 84% { opacity: 1; transform: scale(1); }
+        88%, 100% { opacity: 0; }
+      }
+      @keyframes phase3b {
+        0%, 84% { opacity: 0; transform: scale(0.98); }
+        88%, 96% { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; }
+      }
+
+      .cursor {
+        position: absolute;
+        width: 28px;
+        height: 38px;
+        z-index: 7;
+        opacity: 0;
+        filter: drop-shadow(0 0 14px rgba(255, 137, 25, 0.24));
+      }
+      .cursor::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        border-left: 16px solid #fff3df;
+        border-top: 28px solid transparent;
+        transform: rotate(-16deg);
+      }
+      .cursor.one { animation: cursor1 15s linear infinite; }
+      .cursor.two { animation: cursor2 15s linear infinite; }
+      .cursor.three { animation: cursor3 15s linear infinite; }
+      @keyframes cursor1 {
+        0%, 7% { opacity: 0; transform: translate(516px, 264px); }
+        10% { opacity: 1; transform: translate(516px, 264px); }
+        17% { opacity: 1; transform: translate(516px, 374px); }
+        24% { opacity: 1; transform: translate(796px, 618px); }
+        28% { opacity: 1; transform: translate(796px, 618px) scale(0.95); }
+        31% { opacity: 1; transform: translate(796px, 618px) scale(1); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes cursor2 {
+        0%, 40% { opacity: 0; transform: translate(864px, 212px); }
+        43% { opacity: 1; transform: translate(864px, 212px); }
+        53% { opacity: 1; transform: translate(352px, 602px); }
+        57% { opacity: 1; transform: translate(352px, 602px) scale(0.95); }
+        63% { opacity: 1; transform: translate(352px, 602px) scale(1); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes cursor3 {
+        0%, 74% { opacity: 0; transform: translate(336px, 394px); }
+        77% { opacity: 1; transform: translate(336px, 394px); }
+        87% { opacity: 1; transform: translate(852px, 498px); }
+        90% { opacity: 1; transform: translate(852px, 498px) scale(0.95); }
+        96% { opacity: 1; transform: translate(852px, 498px) scale(1); }
+        100% { opacity: 0; }
+      }
+      .chip {
+        position: absolute;
+        right: 44px;
+        bottom: 48px;
+        width: 392px;
+        padding: 18px 20px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(180deg, rgba(16, 10, 7, 0.96), rgba(27, 15, 8, 0.96)),
+          radial-gradient(circle at top, rgba(255, 153, 51, 0.12), transparent 60%);
+        box-shadow: inset 0 1px 0 rgba(255, 214, 156, 0.06), 0 18px 40px rgba(0, 0, 0, 0.42);
+        opacity: 0;
+        z-index: 8;
+      }
+      .chip .step {
+        font-size: 13px;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+      }
+      .chip .title {
+        margin-top: 10px;
+        font-size: 28px;
+        line-height: 1.06;
+        font-weight: 700;
+        color: white;
+      }
+      .chip .body {
+        margin-top: 10px;
+        font-size: 17px;
+        line-height: 1.42;
+        color: var(--copy-soft);
+      }
+      .chip.one { animation: chip1 15s linear infinite; }
+      .chip.two { animation: chip2 15s linear infinite; }
+      .chip.three { animation: chip3 15s linear infinite; }
+      @keyframes chip1 {
+        0%, 7% { opacity: 0; transform: translateY(16px); }
+        10%, 31% { opacity: 1; transform: translateY(0); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes chip2 {
+        0%, 40% { opacity: 0; transform: translateY(16px); }
+        43%, 63% { opacity: 1; transform: translateY(0); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes chip3 {
+        0%, 74% { opacity: 0; transform: translateY(16px); }
+        77%, 96% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; }
+      }
+      .footer {
+        position: absolute;
+        left: 60px;
+        bottom: 52px;
+        font-size: 18px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <img class="logo" src="../public/brand/blackspire-buyer-engine-logo.png" alt="Blackspire Buyer Engine logo" />
+
+      <section class="lede">
+        <div class="eyebrow">Workflow Walkthrough</div>
+        <h1>Fill the search. Launch the sweep. Act on the buyers.</h1>
+        <p>This cut shows the actual Blackspire operator flow using the real app surfaces we built.</p>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="target"></div>
+          <div class="rail-line"></div>
+        </div>
+      </section>
+
+      <section class="browser">
+        <div class="browser-bar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <div class="url">blackspire.local / buyer engine operator flow</div>
+        </div>
+        <div class="viewport">
+          <div class="scene one"><img src="./shots/new-search.png" alt="New search screen" /></div>
+          <div class="scene two"><img src="./shots/searches.png" alt="Search jobs screen" /></div>
+          <div class="scene three"><img src="./shots/buyers.png" alt="Buyer reports screen" /></div>
+
+          <div class="overlay one field-a"></div>
+          <div class="overlay one field-b"></div>
+          <div class="overlay one cta"></div>
+          <div class="overlay two panel"></div>
+          <div class="overlay two row"></div>
+          <div class="overlay three card"></div>
+          <div class="overlay three actions"></div>
+
+          <div class="cursor one"></div>
+          <div class="cursor two"></div>
+          <div class="cursor three"></div>
+        </div>
+      </section>
+
+      <div class="chip one">
+        <div class="step">Step 01</div>
+        <div class="title">Set the search</div>
+        <div class="body">Choose the county, property type, and date range, then launch the buyer sweep from one command surface.</div>
+      </div>
+
+      <div class="chip two">
+        <div class="step">Step 02</div>
+        <div class="title">Monitor the run</div>
+        <div class="body">The queue shows pending, processing, and completed jobs while the workflow scores buyers behind the scenes.</div>
+      </div>
+
+      <div class="chip three">
+        <div class="step">Step 03</div>
+        <div class="title">Work the results</div>
+        <div class="body">Open ranked buyer dossiers, export the cohort, and move directly into outreach-ready operator actions.</div>
+      </div>
+
+      <div class="footer">Blackspire Buyer Engine • actual app walkthrough • 16:9 social demo</div>
+    </div>
+  </body>
+  </html>

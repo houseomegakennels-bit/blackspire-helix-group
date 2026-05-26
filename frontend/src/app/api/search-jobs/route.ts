@@ -118,13 +118,15 @@ export async function POST(request: Request) {
       message: "Search job stored and Buyer Engine triggered.",
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown search job creation failure.";
+    const status = message.startsWith("Sign in required") ? 401 : 500;
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "Unknown search job creation failure.",
+        error: message,
         env: getBuyerEngineEnvStatus(),
       },
-      { status: 500 },
+      { status },
     );
   }
 }

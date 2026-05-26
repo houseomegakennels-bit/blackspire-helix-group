@@ -11,15 +11,28 @@ import {
   type CountyCapability,
 } from "@/lib/buyer-engine-data";
 import {
-  loadOutreachDrafts,
-  persistOutreachDraft,
+  loadOutreachDraftsWithFallback,
+  persistOutreachDraftWithFallback,
+  type OutreachDraftStoreStatus,
   type OutreachDraftRecord,
 } from "@/lib/outreach-drafts";
+import {
+  buildRealtimeChannelName,
+  getBuyerEngineBrowserClient,
+  removeRealtimeChannel,
+} from "@/lib/buyer-engine-browser";
+import type { OperatorShellStatus } from "@/lib/buyer-engine-server";
 
 type SearchJobsEnv = {
   enabled: boolean;
   missing: string[];
   hasDefaultUserId: boolean;
+};
+
+type RealtimeClientEnv = {
+  enabled: boolean;
+  url: string | null;
+  anonKey: string | null;
 };
 
 type SearchJobView = {
@@ -60,6 +73,7 @@ type SearchJobsPayload = {
 type ApiBuyerReport = {
   id: string;
   buyer_name_snapshot: string | null;
+  BuyerProfile?: BuyerProfileApi | BuyerProfileApi[] | null;
   mailing_address_snapshot: string | null;
   score: number | null;
   purchase_count: number | null;
@@ -77,6 +91,7 @@ type BuyerReportView = {
   totalSpend: number;
   isLlc: boolean;
   isCashBuyer: boolean;
+  buyerIdentityNote: string | null;
 };
 
 type OutreachPayload = {
@@ -92,15 +107,19 @@ type OutreachPayload = {
 export function SearchJobsMonitor({
   initialJobs,
   initialEnv,
+  realtime,
   highlightedJobId,
   initialHighlightedReports = [],
   countyCapabilities,
+  operatorStatus,
 }: {
   initialJobs: SearchJobView[];
   initialEnv: SearchJobsEnv;
+  realtime: RealtimeClientEnv;
   highlightedJobId?: string;
   initialHighlightedReports?: BuyerReportView[];
   countyCapabilities: CountyCapability[];
+  operatorStatus?: OperatorShellStatus | null;
 }) {
   const [jobs, setJobs] = useState(initialJobs);
   const [env, setEnv] = useState(initialEnv);
@@ -115,8 +134,21 @@ export function SearchJobsMonitor({
   const [draftStatus, setDraftStatus] = useState<string | null>(null);
   const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
   const [savedDrafts, setSavedDrafts] = useState<OutreachDraftRecord[]>([]);
+  const [draftStoreStatus, setDraftStoreStatus] = useState<OutreachDraftStoreStatus>({
+    storage: "browser",
+    supported: false,
+  });
+  const [realtimeStatus, setRealtimeStatus] = useState<"idle" | "connected" | "fallback">(
+    realtime.enabled ? "idle" : "fallback",
+  );
 
   const liveMode = env.enabled;
+  const writeBlocked = Boolean(operatorStatus?.requiresAuth || operatorStatus?.bootstrapRequired);
+  const writeBlockMessage = operatorStatus?.requiresAuth
+    ? "Sign in through /auth before dispatching jobs, exporting cohorts, or saving drafts."
+    : operatorStatus?.bootstrapRequired
+      ? "Bootstrap the first operator in /auth before using search actions in normal mode."
+      : null;
   const countyCapabilityMap = useMemo(
     () =>
       Object.fromEntries(
@@ -160,13 +192,79 @@ export function SearchJobsMonitor({
 
     const interval = window.setInterval(() => {
       void refreshJobs();
-    }, 5000);
+    }, realtimeStatus === "connected" ? 30000 : 5000);
 
     return () => window.clearInterval(interval);
-  }, [liveMode, refreshJobs]);
+  }, [liveMode, realtimeStatus, refreshJobs]);
 
   useEffect(() => {
-    setSavedDrafts(highlightedJobId ? loadOutreachDrafts(highlightedJobId) : []);
+    if (!liveMode || !realtime.enabled || !realtime.url || !realtime.anonKey) {
+      setRealtimeStatus("fallback");
+      return;
+    }
+
+    const supabase = getBuyerEngineBrowserClient({
+      url: realtime.url,
+      anonKey: realtime.anonKey,
+    });
+    if (!supabase) {
+      setRealtimeStatus("fallback");
+      return;
+    }
+
+    const channel = supabase.channel(buildRealtimeChannelName("search-jobs"));
+    channel
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "SearchJob" },
+        () => {
+          setRealtimeStatus("connected");
+          void refreshJobs();
+        },
+      )
+      .on(
+        "postgres_changes",
+        highlightedJobId
+          ? {
+              event: "*",
+              schema: "public",
+              table: "BuyerReport",
+              filter: `search_job_id=eq.${highlightedJobId}`,
+            }
+          : { event: "*", schema: "public", table: "BuyerReport" },
+        () => {
+          setRealtimeStatus("connected");
+          void refreshJobs();
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeStatus("connected");
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setRealtimeStatus("fallback");
+        }
+      });
+
+    return () => {
+      removeRealtimeChannel(supabase, channel);
+    };
+  }, [highlightedJobId, liveMode, realtime.anonKey, realtime.enabled, realtime.url, refreshJobs]);
+
+  useEffect(() => {
+    if (!highlightedJobId) {
+      setSavedDrafts([]);
+      return;
+    }
+
+    let cancelled = false;
+    void loadOutreachDraftsWithFallback(highlightedJobId).then((result) => {
+      if (cancelled) return;
+      setSavedDrafts(result.drafts);
+      setDraftStoreStatus(result.status);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [highlightedJobId]);
 
   const activeSummary = useMemo(() => {
@@ -349,7 +447,11 @@ export function SearchJobsMonitor({
         createdAt: new Date().toISOString(),
       };
 
-      setSavedDrafts(persistOutreachDraft(record).filter((draft) => draft.searchJobId === highlightedJob.id));
+      const persistence = await persistOutreachDraftWithFallback(record);
+      setDraftStoreStatus(persistence.status);
+      setSavedDrafts(
+        persistence.drafts.filter((draft) => draft.searchJobId === highlightedJob.id),
+      );
       await navigator.clipboard.writeText(payload.draft.body);
       setDraftStatus(`Draft saved for ${report.buyerName} and copied to clipboard.`);
     } catch (draftError) {
@@ -401,6 +503,10 @@ export function SearchJobsMonitor({
                 <StatusPill tone="warn" label="tracking newest job" />
                 {highlightedJob ? <StatusPill tone={statusTone(highlightedJob.status)} label={highlightedJob.status} /> : null}
                 {highlightedRisk ? <StatusPill tone={highlightedRisk.tone} label={highlightedRisk.label} /> : null}
+                <StatusPill
+                  tone={draftStoreStatus.supported ? "good" : "warn"}
+                  label={draftStoreStatus.supported ? "server drafts" : "browser drafts"}
+                />
                 {highlightedCapability ? (
                   <StatusPill
                     tone={getCountyVerificationTone(highlightedCapability.verificationStatus)}
@@ -412,11 +518,11 @@ export function SearchJobsMonitor({
                   />
                 ) : null}
               </div>
-              <div className="font-mono text-sm text-zinc-300">{highlightedJobId}</div>
+              <div className="brand-copy-soft font-mono text-sm">{highlightedJobId}</div>
               <div>
                 <Link
                   href={`/buyers?searchJobId=${encodeURIComponent(highlightedJobId)}`}
-                  className="inline-flex border border-white/10 bg-[hsl(222_16%_8%)] px-3 py-2 text-xs uppercase tracking-[0.22em] text-zinc-200 transition hover:border-[hsl(38_92%_55%/.35)] hover:text-white"
+                  className="brand-button inline-flex px-3 py-2 text-xs uppercase tracking-[0.22em] transition"
                 >
                   Open buyer dossiers
                 </Link>
@@ -426,44 +532,44 @@ export function SearchJobsMonitor({
                   <button
                     type="button"
                     onClick={() => void exportHighlightedReports()}
-                    disabled={savingExport}
-                    className="inline-flex border border-white/10 bg-[hsl(222_16%_8%)] px-3 py-2 text-xs uppercase tracking-[0.22em] text-zinc-200 transition hover:border-[hsl(38_92%_55%/.35)] hover:text-white"
+                    disabled={savingExport || writeBlocked}
+                    className="brand-button inline-flex px-3 py-2 text-xs uppercase tracking-[0.22em] transition disabled:opacity-60"
                   >
                     {savingExport ? "Saving export..." : "Export CSV"}
                   </button>
                 </div>
               ) : null}
               {highlightedJob ? (
-                <dl className="space-y-2 text-sm text-zinc-300">
+                <dl className="brand-copy-soft space-y-2 text-sm">
                   <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">County</dt>
+                    <dt className="brand-copy-muted">County</dt>
                     <dd>{highlightedJob.county}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">Property type</dt>
+                    <dt className="brand-copy-muted">Property type</dt>
                     <dd>{highlightedJob.propertyType}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">Date range</dt>
+                    <dt className="brand-copy-muted">Date range</dt>
                     <dd className="text-right tabular-nums">{highlightedJob.dateRange}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">Buyer count</dt>
+                    <dt className="brand-copy-muted">Buyer count</dt>
                     <dd className="tabular-nums">{highlightedJob.buyersFound}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">Sales analyzed</dt>
+                    <dt className="brand-copy-muted">Sales analyzed</dt>
                     <dd className="tabular-nums">{highlightedJob.salesAnalyzed}</dd>
                   </div>
                 </dl>
               ) : null}
               {highlightedRisk ? (
-                <p className="border border-white/10 bg-[hsl(222_14%_10%)] p-3 text-sm leading-6 text-zinc-300">
+                <p className="brand-card brand-copy-soft p-3 text-sm leading-6">
                   {highlightedRisk.message}
                 </p>
               ) : null}
               {highlightedCapability ? (
-                <p className="border border-white/10 bg-[hsl(222_14%_10%)] p-3 text-sm leading-6 text-zinc-400">
+                <p className="brand-card brand-copy-soft p-3 text-sm leading-6">
                   {highlightedCapability.verificationReason}
                 </p>
               ) : null}
@@ -477,19 +583,24 @@ export function SearchJobsMonitor({
                   {draftStatus}
                 </p>
               ) : null}
+              {writeBlockMessage ? (
+                <p className="border border-[hsl(16_100%_50%/.28)] bg-[hsl(16_100%_44%/.08)] p-3 text-sm leading-6 text-[hsl(22_100%_72%)]">
+                  {writeBlockMessage}
+                </p>
+              ) : null}
             </div>
 
-            <div className="border border-white/10 bg-[hsl(222_14%_10%)] p-4">
+            <div className="brand-card p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Top buyers</div>
-                  <div className="mt-1 text-sm text-zinc-300">
+                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Top buyers</div>
+                  <div className="brand-copy-soft mt-1 text-sm">
                     {reports.length ? `${reports.length} buyer reports loaded` : "No buyer reports available yet for this job."}
                   </div>
                 </div>
                 {reports.length ? (
                   <div className="text-right">
-                    <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Visible spend</div>
+                    <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Visible spend</div>
                     <div className="mt-1 text-lg font-semibold text-white tabular-nums">
                       {formatMoney(highlightedSpend)}
                     </div>
@@ -500,19 +611,25 @@ export function SearchJobsMonitor({
               {reports.length ? (
                 <div className="mt-4 space-y-3">
                   {reports.map((report) => (
-                    <div key={report.id} className="border border-white/10 bg-[hsl(222_16%_8%)] p-3">
+                    <div key={report.id} className="brand-surface p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <div className="font-medium text-white">{report.buyerName}</div>
-                          <div className="mt-1 text-xs text-zinc-500">{report.mailingAddress}</div>
+                          <div className="brand-copy-muted mt-1 text-xs">{report.mailingAddress}</div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <StatusPill tone={report.score >= 60 ? "active" : report.score >= 40 ? "warn" : "neutral"} label={`score ${report.score}`} />
                           {report.isLlc ? <StatusPill tone="good" label="llc" /> : null}
                           {report.isCashBuyer ? <StatusPill tone="warn" label="cash" /> : null}
+                          {report.buyerIdentityNote ? <StatusPill tone="warn" label="identity medium" /> : null}
                         </div>
                       </div>
-                      <div className="mt-3 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">
+                      {report.buyerIdentityNote ? (
+                        <div className="mt-3 border-l border-[hsl(33_100%_50%/.42)] pl-3 text-xs leading-5 text-[hsl(38_100%_76%)]">
+                          {report.buyerIdentityNote}
+                        </div>
+                      ) : null}
+                      <div className="brand-copy-soft mt-3 grid gap-2 text-sm sm:grid-cols-2">
                         <div>Purchases: <span className="tabular-nums">{report.purchaseCount}</span></div>
                         <div>Total spend: <span className="tabular-nums">{formatMoney(report.totalSpend)}</span></div>
                       </div>
@@ -521,15 +638,15 @@ export function SearchJobsMonitor({
                           <button
                             type="button"
                             onClick={() => void copyHighlightedOutreachBrief(report)}
-                            className="border border-white/10 bg-[hsl(222_18%_7%)] px-3 py-2 text-[11px] uppercase tracking-[0.22em] text-zinc-200 transition hover:border-[hsl(38_92%_55%/.35)] hover:text-white"
+                            className="brand-button px-3 py-2 text-[11px] uppercase tracking-[0.22em] transition"
                           >
                             {copiedReportId === report.id ? "Copied" : "Copy outreach"}
                           </button>
                           <button
                             type="button"
                             onClick={() => void saveHighlightedDraft(report)}
-                            disabled={savingDraftId === report.id}
-                            className="border border-white/10 bg-[hsl(222_18%_7%)] px-3 py-2 text-[11px] uppercase tracking-[0.22em] text-zinc-200 transition hover:border-sky-400/35 hover:text-white disabled:opacity-60"
+                            disabled={savingDraftId === report.id || writeBlocked}
+                            className="brand-button px-3 py-2 text-[11px] uppercase tracking-[0.22em] transition disabled:opacity-60"
                           >
                             {savingDraftId === report.id ? "Saving..." : "Save draft"}
                           </button>
@@ -541,20 +658,20 @@ export function SearchJobsMonitor({
               ) : null}
 
               {savedDrafts.length ? (
-                <div className="mt-4 border-t border-white/10 pt-4">
-                  <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Saved drafts</div>
+                <div className="mt-4 border-t border-[var(--line)] pt-4">
+                  <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Saved drafts</div>
                   <div className="mt-3 space-y-3">
                     {savedDrafts.slice(0, 4).map((draft) => (
-                      <div key={draft.id} className="border border-white/10 bg-[hsl(222_18%_7%)] p-3">
+                      <div key={draft.id} className="brand-surface p-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="font-medium text-white">{draft.buyerName}</div>
-                            <div className="mt-1 text-xs text-zinc-500">{draft.subject}</div>
+                            <div className="brand-copy-muted mt-1 text-xs">{draft.subject}</div>
                           </div>
                           <button
                             type="button"
                             onClick={() => void copySavedDraft(draft)}
-                            className="border border-white/10 bg-[hsl(222_16%_8%)] px-3 py-2 text-[11px] uppercase tracking-[0.22em] text-zinc-200 transition hover:border-sky-400/35 hover:text-white"
+                            className="brand-button px-3 py-2 text-[11px] uppercase tracking-[0.22em] transition"
                           >
                             Copy saved draft
                           </button>
@@ -583,39 +700,50 @@ export function SearchJobsMonitor({
         <div className="flex flex-wrap items-center gap-3">
           <StatusPill tone={liveMode ? "active" : "warn"} label={liveMode ? "live mode" : "fallback mode"} />
           <StatusPill tone={env.hasDefaultUserId ? "good" : "neutral"} label={env.hasDefaultUserId ? "default user configured" : "no default user id"} />
+          <StatusPill
+            tone={realtimeStatus === "connected" ? "good" : realtimeStatus === "idle" ? "neutral" : "warn"}
+            label={
+              realtimeStatus === "connected"
+                ? "realtime on"
+                : realtimeStatus === "idle"
+                  ? "realtime starting"
+                  : "polling fallback"
+            }
+          />
           <StatusPill tone="good" label={`${activeSummary.processing} processing`} />
           <StatusPill tone="active" label={`${activeSummary.completed} completed`} />
           {activeSummary.failed ? <StatusPill tone="bad" label={`${activeSummary.failed} failed`} /> : null}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+        <div className="brand-copy-soft mt-4 flex flex-wrap items-center gap-3 text-sm">
           <button
             type="button"
             onClick={() => void refreshJobs()}
             disabled={!liveMode || loading}
-            className="border border-white/10 bg-[hsl(222_14%_10%)] px-3 py-2 text-zinc-200 disabled:opacity-60"
+            className="brand-button px-3 py-2 disabled:opacity-60"
           >
             {loading ? "Refreshing..." : "Refresh now"}
           </button>
           <span>Last checked: {lastCheckedAt ? lastCheckedAt.toLocaleTimeString() : "not yet"}</span>
           {error ? <span className="text-rose-300">{error}</span> : null}
+          {writeBlockMessage ? <span className="text-[hsl(22_100%_72%)]">{writeBlockMessage}</span> : null}
         </div>
       </Panel>
 
       <Panel
         eyebrow="Job Ledger"
         title="Recent runs and current bottlenecks"
-        description="Wake is the county to watch right now. The monitor keeps the ledger fresh while those runs move from pending into workflow execution."
+        description="The monitor keeps the ledger fresh while jobs move from pending into workflow execution, including Wake land runs that now prefetch county data before n8n scoring."
       >
-        <div className="overflow-hidden border border-white/10">
+        <div className="brand-table-shell">
           <table className="w-full border-collapse text-left text-sm">
-            <thead className="bg-[hsl(222_16%_9%)] text-zinc-400">
+            <thead className="brand-table-head">
               <tr>
-                <th className="border-b border-white/10 px-4 py-3 font-medium">Search Job</th>
-                <th className="border-b border-white/10 px-4 py-3 font-medium">Status</th>
-                <th className="border-b border-white/10 px-4 py-3 font-medium">Date Range</th>
-                <th className="border-b border-white/10 px-4 py-3 font-medium">Buyers</th>
-                <th className="border-b border-white/10 px-4 py-3 font-medium">Sales</th>
+                <th className="px-4 py-3 font-medium">Search Job</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Date Range</th>
+                <th className="px-4 py-3 font-medium">Buyers</th>
+                <th className="px-4 py-3 font-medium">Sales</th>
               </tr>
             </thead>
             <tbody>
@@ -628,10 +756,10 @@ export function SearchJobsMonitor({
                   return (
                 <tr
                   key={job.id}
-                  className={`border-b border-white/5 text-zinc-200 ${
+                  className={`text-foreground ${
                     job.id === highlightedJobId
-                      ? "bg-[hsl(38_92%_55%/.10)]"
-                      : "bg-[hsl(222_14%_10%)]"
+                      ? "bg-[hsl(33_100%_50%/.10)]"
+                      : "brand-table-row"
                   }`}
                 >
                   <td className="px-4 py-3">
@@ -652,23 +780,23 @@ export function SearchJobsMonitor({
                         />
                       ) : null}
                     </div>
-                    <div className="mt-1 text-xs text-zinc-500">
+                    <div className="brand-copy-muted mt-1 text-xs">
                       {job.state} / {job.county} / {job.propertyType}
                     </div>
-                    <div className="mt-1 font-mono text-[11px] text-zinc-600">{job.id}</div>
+                    <div className="brand-copy-muted mt-1 font-mono text-[11px]">{job.id}</div>
                     <div className="mt-2">
                       <Link
                         href={`/buyers?searchJobId=${encodeURIComponent(job.id)}`}
-                        className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 underline-offset-4 hover:text-white hover:underline"
+                        className="brand-copy-soft text-[11px] uppercase tracking-[0.22em] underline-offset-4 hover:text-white hover:underline"
                       >
                         View buyer dossiers
                       </Link>
                     </div>
-                    <div className="mt-1 text-xs text-zinc-500">{countyRisk.message}</div>
+                    <div className="brand-copy-muted mt-1 text-xs">{countyRisk.message}</div>
                     {countyCapability ? (
-                      <div className="mt-1 text-xs text-zinc-500">{countyCapability.verificationReason}</div>
+                      <div className="brand-copy-muted mt-1 text-xs">{countyCapability.verificationReason}</div>
                     ) : null}
-                    {job.notes ? <div className="mt-1 text-xs text-zinc-500">{job.notes}</div> : null}
+                    {job.notes ? <div className="brand-copy-muted mt-1 text-xs">{job.notes}</div> : null}
                   </td>
                   <td className="px-4 py-3">
                     <StatusPill tone={statusTone(job.status)} label={job.status} />
@@ -681,8 +809,8 @@ export function SearchJobsMonitor({
                       <button
                         type="button"
                         onClick={() => void dispatchJob(job.id)}
-                        disabled={dispatchingJobId === job.id}
-                        className="mt-2 border border-white/10 bg-[hsl(222_16%_8%)] px-2 py-1 text-[11px] uppercase tracking-[0.22em] text-zinc-200 disabled:opacity-60"
+                        disabled={dispatchingJobId === job.id || writeBlocked}
+                        className="brand-button mt-2 px-2 py-1 text-[11px] uppercase tracking-[0.22em] disabled:opacity-60"
                       >
                         {dispatchingJobId === job.id ? "Queueing..." : job.status === "failed" ? "Retry" : "Dispatch"}
                       </button>
@@ -725,7 +853,21 @@ function mapApiReportToView(report: ApiBuyerReport): BuyerReportView {
     totalSpend: Number(report.total_spend ?? 0),
     isLlc: Boolean(report.is_llc),
     isCashBuyer: Boolean(report.is_cash_buyer),
+    buyerIdentityNote: getBuyerIdentityNote(report.BuyerProfile),
   };
+}
+
+type BuyerProfileApi = {
+  score_breakdown?: {
+    buyer_identity?: {
+      note?: string;
+    };
+  } | null;
+};
+
+function getBuyerIdentityNote(profile: BuyerProfileApi | BuyerProfileApi[] | null | undefined) {
+  const resolved = Array.isArray(profile) ? profile[0] : profile;
+  return resolved?.score_breakdown?.buyer_identity?.note ?? null;
 }
 
 function formatMoney(value: number) {

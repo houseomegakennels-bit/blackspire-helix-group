@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blackspire Buyer Engine Demo</title>
+    <style>
+      :root {
+        --bg: #050505;
+        --panel: rgba(18, 11, 7, 0.92);
+        --panel-strong: rgba(24, 14, 8, 0.98);
+        --line: rgba(255, 154, 32, 0.28);
+        --line-strong: rgba(255, 177, 77, 0.72);
+        --gold: #ffab3d;
+        --gold-strong: #ff7a00;
+        --gold-soft: #ffd18d;
+        --copy: rgba(255, 245, 232, 0.95);
+        --copy-soft: rgba(255, 224, 184, 0.78);
+        --copy-muted: rgba(255, 203, 138, 0.52);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at 50% 14%, rgba(255, 134, 26, 0.22), transparent 23%),
+          radial-gradient(circle at 50% 88%, rgba(255, 106, 0, 0.16), transparent 18%),
+          linear-gradient(180deg, #020202 0%, #060606 42%, #120903 100%);
+        color: var(--copy);
+      }
+
+      .frame {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background:
+          linear-gradient(90deg, transparent 0%, rgba(255, 166, 51, 0.04) 50%, transparent 100%),
+          radial-gradient(circle at center, rgba(255, 150, 42, 0.06), transparent 54%);
+      }
+
+      .frame::before,
+      .frame::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .frame::before {
+        background:
+          repeating-linear-gradient(90deg, transparent 0 96px, rgba(255, 164, 51, 0.03) 96px 97px),
+          repeating-linear-gradient(0deg, transparent 0 96px, rgba(255, 164, 51, 0.025) 96px 97px);
+        opacity: 0.55;
+      }
+
+      .frame::after {
+        background: linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.02) 48%, transparent 100%);
+        animation: scan 4.5s linear infinite;
+      }
+
+      @keyframes scan {
+        0% { transform: translateY(-100%); opacity: 0; }
+        8% { opacity: 0.28; }
+        100% { transform: translateY(100%); opacity: 0; }
+      }
+
+      .halo,
+      .ring,
+      .ring-two,
+      .ring-three {
+        position: absolute;
+        left: 50%;
+        top: 46%;
+        transform: translate(-50%, -50%);
+        border-radius: 999px;
+      }
+
+      .halo {
+        width: 820px;
+        height: 820px;
+        background: radial-gradient(circle, rgba(255, 169, 60, 0.16), rgba(255, 118, 0, 0.04) 45%, transparent 72%);
+        filter: blur(10px);
+        animation: pulse 6s ease-in-out infinite;
+      }
+
+      .ring,
+      .ring-two,
+      .ring-three {
+        border: 1px solid rgba(255, 164, 51, 0.28);
+        box-shadow: 0 0 38px rgba(255, 136, 20, 0.13), inset 0 0 28px rgba(255, 136, 20, 0.08);
+      }
+
+      .ring {
+        width: 720px;
+        height: 720px;
+        animation: spin 18s linear infinite;
+      }
+
+      .ring-two {
+        width: 860px;
+        height: 860px;
+        border-style: dashed;
+        animation: spinReverse 26s linear infinite;
+      }
+
+      .ring-three {
+        width: 980px;
+        height: 980px;
+        opacity: 0.4;
+        animation: spin 38s linear infinite;
+      }
+
+      @keyframes spin {
+        from { transform: translate(-50%, -50%) rotate(0deg); }
+        to { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+
+      @keyframes spinReverse {
+        from { transform: translate(-50%, -50%) rotate(360deg); }
+        to { transform: translate(-50%, -50%) rotate(0deg); }
+      }
+
+      @keyframes pulse {
+        0%, 100% { transform: translate(-50%, -50%) scale(0.97); opacity: 0.72; }
+        50% { transform: translate(-50%, -50%) scale(1.03); opacity: 1; }
+      }
+
+      .logo-lockup {
+        position: absolute;
+        left: 50%;
+        top: 64px;
+        width: 560px;
+        transform: translateX(-50%);
+        text-align: center;
+        animation: enterTop 1.1s ease-out both;
+      }
+
+      .logo-lockup img {
+        width: 100%;
+        height: auto;
+        filter: drop-shadow(0 0 36px rgba(255, 140, 31, 0.22));
+      }
+
+      @keyframes enterTop {
+        from { opacity: 0; transform: translateX(-50%) translateY(-18px) scale(0.98); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+      }
+
+      .hero-copy {
+        position: absolute;
+        left: 90px;
+        bottom: 126px;
+        max-width: 760px;
+        animation: rise 1.2s ease-out 0.2s both;
+      }
+
+      .eyebrow {
+        font-size: 22px;
+        letter-spacing: 0.62em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        margin-bottom: 24px;
+      }
+
+      .headline {
+        font-size: 86px;
+        line-height: 0.98;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        margin: 0;
+        background: linear-gradient(180deg, #fff2db 0%, #ffcf86 35%, #ff9f31 72%, #ff7000 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        text-transform: uppercase;
+      }
+
+      .subhead {
+        margin-top: 26px;
+        font-size: 34px;
+        line-height: 1.4;
+        color: var(--copy-soft);
+      }
+
+      .bar {
+        margin-top: 28px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .hairline {
+        height: 1px;
+        flex: 1;
+        background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+      }
+
+      .target {
+        position: relative;
+        width: 22px;
+        height: 22px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        box-shadow: 0 0 16px rgba(255, 157, 45, 0.28);
+      }
+
+      .target::before,
+      .target::after {
+        content: "";
+        position: absolute;
+        background: var(--line-strong);
+      }
+
+      .target::before {
+        inset: 50% 4px auto 4px;
+        height: 1px;
+        transform: translateY(-50%);
+      }
+
+      .target::after {
+        inset: 4px auto 4px 50%;
+        width: 1px;
+        transform: translateX(-50%);
+      }
+
+      .scene-board {
+        position: absolute;
+        right: 88px;
+        bottom: 112px;
+        width: 720px;
+        height: 420px;
+        animation: rise 1.2s ease-out 0.45s both;
+      }
+
+      .panel {
+        position: absolute;
+        background:
+          linear-gradient(180deg, rgba(16, 10, 7, 0.96), rgba(26, 15, 8, 0.96)),
+          radial-gradient(circle at top, rgba(255, 153, 51, 0.12), transparent 55%);
+        border: 1px solid var(--line);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 209, 141, 0.06),
+          0 18px 44px rgba(0, 0, 0, 0.35);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+
+      .panel.large {
+        left: 0;
+        top: 0;
+        width: 455px;
+        height: 420px;
+      }
+
+      .panel.small.top {
+        right: 0;
+        top: 0;
+        width: 238px;
+        height: 196px;
+      }
+
+      .panel.small.bottom {
+        right: 0;
+        bottom: 0;
+        width: 238px;
+        height: 196px;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px 12px;
+        font-size: 15px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+      }
+
+      .panel-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+        padding: 10px 20px 20px;
+      }
+
+      .metric {
+        padding: 16px;
+        border: 1px solid rgba(255, 164, 51, 0.18);
+        background: rgba(255, 255, 255, 0.015);
+      }
+
+      .metric .label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.24em;
+        color: var(--copy-muted);
+      }
+
+      .metric .value {
+        margin-top: 10px;
+        font-size: 34px;
+        font-weight: 700;
+        color: white;
+      }
+
+      .metric .detail {
+        margin-top: 6px;
+        font-size: 13px;
+        color: var(--copy-soft);
+      }
+
+      .table {
+        padding: 0 20px 20px;
+      }
+
+      .table-row {
+        display: grid;
+        grid-template-columns: 1.4fr 0.75fr 0.9fr;
+        gap: 12px;
+        align-items: center;
+        padding: 14px 0;
+        border-top: 1px solid rgba(255, 164, 51, 0.08);
+        font-size: 15px;
+        color: var(--copy-soft);
+      }
+
+      .table-row strong {
+        color: white;
+        font-weight: 600;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 7px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 177, 77, 0.42);
+        background: rgba(255, 160, 52, 0.12);
+        color: var(--gold-soft);
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+
+      .signal-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 0 18px 18px;
+      }
+
+      .signal {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 14px;
+        border: 1px solid rgba(255, 164, 51, 0.14);
+        background: rgba(255, 255, 255, 0.015);
+      }
+
+      .signal .name {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--copy-soft);
+      }
+
+      .signal .score {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .progress-wrap {
+        padding: 6px 18px 18px;
+      }
+
+      .progress {
+        height: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 164, 51, 0.14);
+        overflow: hidden;
+      }
+
+      .progress > span {
+        display: block;
+        height: 100%;
+        width: 72%;
+        background: linear-gradient(90deg, #ff7a00, #ffcf86);
+        box-shadow: 0 0 24px rgba(255, 140, 31, 0.38);
+        animation: barShift 5s ease-in-out infinite;
+      }
+
+      @keyframes barShift {
+        0%, 100% { width: 72%; }
+        50% { width: 91%; }
+      }
+
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(22px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .footer-tag {
+        position: absolute;
+        right: 92px;
+        top: 88px;
+        font-size: 18px;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: var(--copy-muted);
+        animation: fade 1.1s ease-out 0.8s both;
+      }
+
+      .burst {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255, 210, 133, 1), rgba(255, 131, 0, 0.15));
+        box-shadow: 0 0 20px rgba(255, 162, 51, 0.75);
+        animation: glint 3.5s ease-in-out infinite;
+      }
+
+      .burst.one { left: 320px; top: 180px; animation-delay: 0.2s; }
+      .burst.two { right: 420px; top: 240px; animation-delay: 1.1s; }
+      .burst.three { right: 180px; bottom: 160px; animation-delay: 1.8s; }
+
+      @keyframes glint {
+        0%, 100% { transform: scale(0.6); opacity: 0.35; }
+        50% { transform: scale(1.5); opacity: 1; }
+      }
+
+      @keyframes fade {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .cta {
+        position: absolute;
+        left: 90px;
+        bottom: 54px;
+        font-size: 18px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        animation: fade 1s ease-out 1s both;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <div class="halo"></div>
+      <div class="ring"></div>
+      <div class="ring-two"></div>
+      <div class="ring-three"></div>
+
+      <div class="burst one"></div>
+      <div class="burst two"></div>
+      <div class="burst three"></div>
+
+      <div class="logo-lockup">
+        <img src="../public/brand/blackspire-buyer-engine-logo.png" alt="Blackspire Buyer Engine logo" />
+      </div>
+
+      <div class="footer-tag">15 county buyer intelligence network</div>
+
+      <section class="hero-copy">
+        <div class="eyebrow">Blackspire Buyer Engine</div>
+        <h1 class="headline">Find cash-ready land buyers before your competition.</h1>
+        <div class="subhead">Live county sourcing. Ranked buyer dossiers. Search-to-outreach workflow in one command surface.</div>
+        <div class="bar">
+          <div class="hairline"></div>
+          <div class="target"></div>
+          <div class="hairline"></div>
+        </div>
+      </section>
+
+      <section class="scene-board">
+        <div class="panel large">
+          <div class="panel-header">
+            <span>Operations Pulse</span>
+            <span class="pill">Live</span>
+          </div>
+          <div class="panel-grid">
+            <div class="metric">
+              <div class="label">Active Counties</div>
+              <div class="value">15</div>
+              <div class="detail">Verified sweep network</div>
+            </div>
+            <div class="metric">
+              <div class="label">Buyer Reports</div>
+              <div class="value">242</div>
+              <div class="detail">Ranked live dossiers</div>
+            </div>
+            <div class="metric">
+              <div class="label">Wake Runs</div>
+              <div class="value">35</div>
+              <div class="detail">Sales analyzed</div>
+            </div>
+            <div class="metric">
+              <div class="label">Exports</div>
+              <div class="value">88</div>
+              <div class="detail">Operator actions logged</div>
+            </div>
+          </div>
+          <div class="table">
+            <div class="table-row">
+              <strong>Wake County Land Sweep</strong>
+              <span>Completed</span>
+              <span>35 sales</span>
+            </div>
+            <div class="table-row">
+              <strong>Robeson Buyer Dossier</strong>
+              <span>High score</span>
+              <span>$1.2M spend</span>
+            </div>
+            <div class="table-row">
+              <strong>Outreach Draft Queue</strong>
+              <span>Server saved</span>
+              <span>Ready to launch</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel small top">
+          <div class="panel-header">
+            <span>Scoring Signals</span>
+          </div>
+          <div class="signal-list">
+            <div class="signal"><span class="name">Repeat Buyer</span><span class="score">+25</span></div>
+            <div class="signal"><span class="name">Recent Purchase</span><span class="score">+20</span></div>
+            <div class="signal"><span class="name">Cash Signal</span><span class="score">+15</span></div>
+          </div>
+        </div>
+
+        <div class="panel small bottom">
+          <div class="panel-header">
+            <span>Operator Flow</span>
+          </div>
+          <div class="signal-list">
+            <div class="signal"><span class="name">Search</span><span class="pill">Live</span></div>
+            <div class="signal"><span class="name">Dossier</span><span class="pill">Ranked</span></div>
+            <div class="signal"><span class="name">Outreach</span><span class="pill">Saved</span></div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress"><span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="cta">Real estate intelligence. Data that finds buyers.</div>
+    </div>
+  </body>
+  </html>

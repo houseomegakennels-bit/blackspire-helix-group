@@ -1,8 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: hsl(222 20% 5%);
-  --foreground: hsl(210 20% 96%);
+  --background: hsl(0 0% 3%);
+  --foreground: hsl(210 33% 98%);
+  --panel: hsl(0 0% 5%);
+  --panel-strong: hsl(20 22% 7%);
+  --panel-soft: hsl(24 18% 9%);
+  --line: hsl(31 100% 50% / 0.2);
+  --line-strong: hsl(33 100% 58% / 0.45);
+  --gold: hsl(33 100% 56%);
+  --gold-strong: hsl(28 100% 50%);
+  --gold-soft: hsl(40 96% 79%);
+  --copy-soft: hsl(220 10% 72%);
+  --copy-muted: hsl(220 6% 52%);
+  --success: hsl(39 100% 62%);
+  --warn: hsl(32 100% 52%);
+  --danger: hsl(18 100% 56%);
 }
 
 @theme inline {
@@ -21,10 +34,14 @@ html {
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at top, hsl(32 100% 24% / 0.28), transparent 30%),
+    radial-gradient(circle at bottom, hsl(30 100% 28% / 0.18), transparent 24%),
+    linear-gradient(180deg, hsl(0 0% 2%) 0%, hsl(0 0% 3%) 35%, hsl(18 28% 4%) 100%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   margin: 0;
+  min-height: 100vh;
 }
 
 a {
@@ -37,4 +54,159 @@ select,
 button,
 textarea {
   font: inherit;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0%, hsl(30 100% 50% / 0.02) 50%, transparent 100%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 80px,
+      hsl(31 100% 55% / 0.03) 80px 81px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 80px,
+      hsl(31 100% 55% / 0.03) 80px 81px
+    );
+  opacity: 0.55;
+}
+
+.brand-panel {
+  background:
+    linear-gradient(180deg, hsl(0 0% 5% / 0.98), hsl(18 24% 7% / 0.98)),
+    linear-gradient(135deg, hsl(30 100% 50% / 0.08), transparent 45%);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 1px 0 hsl(34 100% 72% / 0.06),
+    0 0 0 1px hsl(0 0% 100% / 0.02),
+    0 24px 50px hsl(0 0% 0% / 0.45);
+}
+
+.brand-card {
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.95), hsl(24 20% 9% / 0.95)),
+    radial-gradient(circle at top, hsl(31 100% 50% / 0.09), transparent 55%);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.07),
+    0 14px 34px hsl(0 0% 0% / 0.4);
+}
+
+.brand-accent-text {
+  background: linear-gradient(180deg, var(--gold-soft), var(--gold) 48%, var(--gold-strong));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-hairline {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+}
+
+.brand-target {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  box-shadow: 0 0 20px hsl(30 100% 50% / 0.2);
+}
+
+.brand-target::before,
+.brand-target::after {
+  content: "";
+  position: absolute;
+  background: var(--line-strong);
+}
+
+.brand-target::before {
+  inset: 50% 3px auto 3px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.brand-target::after {
+  inset: 3px auto 3px 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.brand-button {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 20% 9% / 0.96)),
+    radial-gradient(circle at top, hsl(31 100% 50% / 0.1), transparent 65%);
+  color: var(--foreground);
+  box-shadow: inset 0 1px 0 hsl(32 100% 76% / 0.06);
+}
+
+.brand-button:hover {
+  border-color: var(--line-strong);
+  color: white;
+}
+
+.brand-input {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 20% 9% / 0.96));
+  color: var(--foreground);
+  box-shadow: inset 0 1px 0 hsl(32 100% 76% / 0.05);
+}
+
+.brand-input::placeholder {
+  color: var(--copy-muted);
+}
+
+.brand-copy-soft {
+  color: var(--copy-soft);
+}
+
+.brand-copy-muted {
+  color: var(--copy-muted);
+}
+
+.brand-surface {
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 20% 9% / 0.96)),
+    radial-gradient(circle at top, hsl(31 100% 50% / 0.07), transparent 60%);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.05),
+    0 12px 26px hsl(0 0% 0% / 0.28);
+}
+
+.brand-table-shell {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, hsl(0 0% 5% / 0.98), hsl(18 24% 7% / 0.98));
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.05),
+    0 20px 40px hsl(0 0% 0% / 0.35);
+}
+
+.brand-table-head {
+  background:
+    linear-gradient(180deg, hsl(0 0% 7% / 0.98), hsl(22 30% 10% / 0.98));
+  color: var(--copy-soft);
+}
+
+.brand-table-head th {
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-table-row {
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.98), hsl(22 22% 9% / 0.98));
+  color: var(--foreground);
+}
+
+.brand-table-row + .brand-table-row td {
+  border-top: 1px solid hsl(31 100% 50% / 0.08);
 }

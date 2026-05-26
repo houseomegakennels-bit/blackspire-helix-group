@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blackspire Guided App Demo</title>
+    <style>
+      :root {
+        --bg: #040404;
+        --panel: rgba(18, 11, 7, 0.92);
+        --line: rgba(255, 160, 54, 0.24);
+        --line-strong: rgba(255, 191, 96, 0.75);
+        --gold: #ffab3d;
+        --gold-strong: #ff7600;
+        --gold-soft: #ffdfaa;
+        --copy: rgba(255, 245, 228, 0.98);
+        --copy-soft: rgba(255, 223, 179, 0.82);
+        --copy-muted: rgba(255, 195, 127, 0.52);
+      }
+
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      body {
+        background:
+          radial-gradient(circle at 50% 12%, rgba(255, 140, 31, 0.22), transparent 22%),
+          radial-gradient(circle at 50% 92%, rgba(255, 115, 0, 0.14), transparent 16%),
+          linear-gradient(180deg, #010101 0%, #050505 44%, #140b04 100%);
+        color: var(--copy);
+      }
+
+      .frame {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .frame::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          repeating-linear-gradient(90deg, transparent 0 100px, rgba(255, 170, 74, 0.03) 100px 101px),
+          repeating-linear-gradient(0deg, transparent 0 100px, rgba(255, 170, 74, 0.022) 100px 101px);
+        opacity: 0.42;
+        pointer-events: none;
+      }
+
+      .logo {
+        position: absolute;
+        left: 68px;
+        top: 56px;
+        width: 184px;
+        z-index: 9;
+        filter: drop-shadow(0 0 26px rgba(255, 142, 26, 0.22));
+      }
+
+      .title {
+        position: absolute;
+        left: 68px;
+        top: 290px;
+        width: 640px;
+        z-index: 9;
+      }
+      .eyebrow {
+        font-size: 20px;
+        letter-spacing: 0.5em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        margin-bottom: 18px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 80px;
+        line-height: 0.95;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: linear-gradient(180deg, #fff2db 0%, #ffcf86 35%, #ff9d2f 70%, #ff6e00 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .sub {
+        margin-top: 24px;
+        font-size: 29px;
+        line-height: 1.42;
+        color: var(--copy-soft);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-top: 24px;
+      }
+      .barline {
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+      }
+      .target {
+        position: relative;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid var(--line-strong);
+        box-shadow: 0 0 16px rgba(255, 154, 35, 0.28);
+      }
+      .target::before,
+      .target::after {
+        content: "";
+        position: absolute;
+        background: var(--line-strong);
+      }
+      .target::before {
+        inset: 50% 4px auto 4px;
+        height: 1px;
+        transform: translateY(-50%);
+      }
+      .target::after {
+        inset: 4px auto 4px 50%;
+        width: 1px;
+        transform: translateX(-50%);
+      }
+
+      .viewport {
+        position: absolute;
+        right: 60px;
+        top: 64px;
+        width: 1086px;
+        height: 950px;
+        border-radius: 22px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 165, 58, 0.28);
+        background:
+          linear-gradient(180deg, rgba(18, 10, 6, 0.98), rgba(22, 12, 7, 0.98));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 214, 156, 0.08),
+          0 26px 64px rgba(0, 0, 0, 0.46);
+      }
+      .browser-bar {
+        height: 56px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 18px;
+        border-bottom: 1px solid rgba(255, 167, 58, 0.18);
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 214, 156, 0.22);
+        border: 1px solid rgba(255, 176, 76, 0.26);
+      }
+      .url {
+        margin-left: 10px;
+        flex: 1;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        padding: 0 14px;
+        border: 1px solid rgba(255, 167, 58, 0.16);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--copy-soft);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+      }
+
+      .stage {
+        position: absolute;
+        inset: 56px 0 0;
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        animation: sceneFade 15s linear infinite;
+      }
+      .scene.two { animation-delay: 5s; }
+      .scene.three { animation-delay: 10s; }
+
+      @keyframes sceneFade {
+        0% { opacity: 0; }
+        4% { opacity: 1; }
+        30% { opacity: 1; }
+        33.333% { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      .scene img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform-origin: center center;
+      }
+      .scene.one img { animation: kenburnsOne 15s linear infinite; }
+      .scene.two img { animation: kenburnsTwo 15s linear infinite; }
+      .scene.three img { animation: kenburnsThree 15s linear infinite; }
+
+      @keyframes kenburnsOne {
+        0% { transform: scale(1.07) translate(-24px, -12px); }
+        33.333%, 100% { transform: scale(1.02) translate(0, 0); }
+      }
+      @keyframes kenburnsTwo {
+        0%, 33.333% { transform: scale(1.06) translate(0, -8px); }
+        66.666%, 100% { transform: scale(1.01) translate(-18px, 0); }
+      }
+      @keyframes kenburnsThree {
+        0%, 66.666% { transform: scale(1.07) translate(16px, -8px); }
+        100% { transform: scale(1.01) translate(0, 0); }
+      }
+
+      .overlay-box {
+        position: absolute;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 191, 96, 0.72);
+        box-shadow: 0 0 0 1px rgba(255, 191, 96, 0.1), 0 0 36px rgba(255, 140, 31, 0.18);
+      }
+      .overlay-box.one {
+        left: 298px;
+        top: 278px;
+        width: 404px;
+        height: 74px;
+        animation: boxOne 15s linear infinite;
+      }
+      .overlay-box.two {
+        left: 692px;
+        top: 145px;
+        width: 220px;
+        height: 104px;
+        animation: boxTwo 15s linear infinite;
+      }
+      .overlay-box.three {
+        left: 54px;
+        top: 316px;
+        width: 428px;
+        height: 124px;
+        animation: boxThree 15s linear infinite;
+      }
+
+      @keyframes boxOne {
+        0%, 4% { opacity: 0; transform: scale(0.98); }
+        7%, 30% { opacity: 1; transform: scale(1); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes boxTwo {
+        0%, 33.333%, 37% { opacity: 0; transform: scale(0.98); }
+        40%, 63% { opacity: 1; transform: scale(1); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes boxThree {
+        0%, 66.666%, 70% { opacity: 0; transform: scale(0.98); }
+        73%, 96% { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; }
+      }
+
+      .cursor {
+        position: absolute;
+        width: 28px;
+        height: 38px;
+        z-index: 6;
+        filter: drop-shadow(0 0 14px rgba(255, 137, 25, 0.24));
+      }
+      .cursor::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        border-left: 16px solid #fff3df;
+        border-top: 28px solid transparent;
+        border-bottom: 0 solid transparent;
+        transform: rotate(-16deg);
+      }
+      .cursor::after {
+        content: "";
+        position: absolute;
+        left: 11px;
+        top: 20px;
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: rgba(255, 161, 58, 0.18);
+        opacity: 0;
+      }
+      .cursor.one { animation: cursorOne 15s linear infinite; }
+      .cursor.two { animation: cursorTwo 15s linear infinite; }
+      .cursor.three { animation: cursorThree 15s linear infinite; }
+
+      @keyframes cursorOne {
+        0%, 4% { opacity: 0; transform: translate(754px, 612px) scale(1); }
+        8% { opacity: 1; transform: translate(754px, 612px) scale(1); }
+        16% { opacity: 1; transform: translate(872px, 612px) scale(1); }
+        18% { opacity: 1; transform: translate(872px, 612px) scale(0.96); }
+        19% { opacity: 1; transform: translate(872px, 612px) scale(1); }
+        30% { opacity: 1; transform: translate(872px, 612px) scale(1); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes cursorTwo {
+        0%, 33.333%, 37% { opacity: 0; transform: translate(814px, 274px) scale(1); }
+        40% { opacity: 1; transform: translate(814px, 274px) scale(1); }
+        53% { opacity: 1; transform: translate(884px, 274px) scale(1); }
+        55% { opacity: 1; transform: translate(884px, 274px) scale(0.96); }
+        57% { opacity: 1; transform: translate(884px, 274px) scale(1); }
+        63% { opacity: 1; transform: translate(884px, 274px) scale(1); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes cursorThree {
+        0%, 66.666%, 71% { opacity: 0; transform: translate(496px, 468px) scale(1); }
+        74% { opacity: 1; transform: translate(496px, 468px) scale(1); }
+        84% { opacity: 1; transform: translate(624px, 468px) scale(1); }
+        86% { opacity: 1; transform: translate(624px, 468px) scale(0.96); }
+        88% { opacity: 1; transform: translate(624px, 468px) scale(1); }
+        96% { opacity: 1; transform: translate(624px, 468px) scale(1); }
+        100% { opacity: 0; }
+      }
+
+      .pulse {
+        position: absolute;
+        width: 52px;
+        height: 52px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 191, 96, 0.62);
+        box-shadow: 0 0 24px rgba(255, 140, 31, 0.26);
+        opacity: 0;
+      }
+      .pulse.one { left: 862px; top: 596px; animation: pulseOne 15s linear infinite; }
+      .pulse.two { left: 874px; top: 258px; animation: pulseTwo 15s linear infinite; }
+      .pulse.three { left: 616px; top: 452px; animation: pulseThree 15s linear infinite; }
+
+      @keyframes pulseOne {
+        0%, 17% { opacity: 0; transform: scale(0.4); }
+        19% { opacity: 1; transform: scale(0.7); }
+        22% { opacity: 0; transform: scale(1.35); }
+        100% { opacity: 0; }
+      }
+      @keyframes pulseTwo {
+        0%, 54% { opacity: 0; transform: scale(0.4); }
+        56% { opacity: 1; transform: scale(0.7); }
+        59% { opacity: 0; transform: scale(1.35); }
+        100% { opacity: 0; }
+      }
+      @keyframes pulseThree {
+        0%, 85% { opacity: 0; transform: scale(0.4); }
+        87% { opacity: 1; transform: scale(0.7); }
+        90% { opacity: 0; transform: scale(1.35); }
+        100% { opacity: 0; }
+      }
+
+      .chip {
+        position: absolute;
+        min-width: 330px;
+        padding: 16px 18px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(180deg, rgba(16, 10, 7, 0.96), rgba(27, 15, 8, 0.96)),
+          radial-gradient(circle at top, rgba(255, 153, 51, 0.12), transparent 60%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 214, 156, 0.06),
+          0 18px 40px rgba(0, 0, 0, 0.42);
+        z-index: 8;
+        opacity: 0;
+      }
+      .chip .step {
+        font-size: 13px;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+      }
+      .chip .title {
+        margin-top: 10px;
+        font-size: 28px;
+        line-height: 1.06;
+        font-weight: 700;
+        color: white;
+      }
+      .chip .text {
+        margin-top: 10px;
+        font-size: 17px;
+        line-height: 1.42;
+        color: var(--copy-soft);
+      }
+      .chip.one {
+        right: 46px;
+        bottom: 64px;
+        animation: chipOne 15s linear infinite;
+      }
+      .chip.two {
+        right: 46px;
+        bottom: 64px;
+        animation: chipTwo 15s linear infinite;
+      }
+      .chip.three {
+        right: 46px;
+        bottom: 64px;
+        animation: chipThree 15s linear infinite;
+      }
+
+      @keyframes chipOne {
+        0%, 5% { opacity: 0; transform: translateY(16px); }
+        8%, 30% { opacity: 1; transform: translateY(0); }
+        33.333%, 100% { opacity: 0; }
+      }
+      @keyframes chipTwo {
+        0%, 33.333%, 38% { opacity: 0; transform: translateY(16px); }
+        41%, 63% { opacity: 1; transform: translateY(0); }
+        66.666%, 100% { opacity: 0; }
+      }
+      @keyframes chipThree {
+        0%, 66.666%, 71% { opacity: 0; transform: translateY(16px); }
+        74%, 96% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; }
+      }
+
+      .footer {
+        position: absolute;
+        left: 68px;
+        bottom: 56px;
+        font-size: 18px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--gold-soft);
+        z-index: 9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <img class="logo" src="../public/brand/blackspire-buyer-engine-logo.png" alt="Blackspire Buyer Engine logo" />
+
+      <section class="title">
+        <div class="eyebrow">Guided Product Demo</div>
+        <h1>See the operator workflow in motion.</h1>
+        <div class="sub">From county sweep intake to live queue visibility to ranked buyer dossiers, this is how Blackspire Buyer Engine works.</div>
+        <div class="bar">
+          <div class="barline"></div>
+          <div class="target"></div>
+          <div class="barline"></div>
+        </div>
+      </section>
+
+      <section class="viewport">
+        <div class="browser-bar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <div class="url">blackspire.local / operator console</div>
+        </div>
+        <div class="stage">
+          <div class="scene one"><img src="./shots/new-search.png" alt="New search" /></div>
+          <div class="scene two"><img src="./shots/searches.png" alt="Search jobs" /></div>
+          <div class="scene three"><img src="./shots/buyers.png" alt="Buyer reports" /></div>
+
+          <div class="overlay-box one"></div>
+          <div class="overlay-box two"></div>
+          <div class="overlay-box three"></div>
+
+          <div class="cursor one"></div>
+          <div class="cursor two"></div>
+          <div class="cursor three"></div>
+
+          <div class="pulse one"></div>
+          <div class="pulse two"></div>
+          <div class="pulse three"></div>
+        </div>
+      </section>
+
+      <div class="chip one">
+        <div class="step">Step 01</div>
+        <div class="title">Launch a buyer sweep</div>
+        <div class="text">Choose county, property type, and timeline. The app sends the job straight into the Buyer Engine workflow.</div>
+      </div>
+
+      <div class="chip two">
+        <div class="step">Step 02</div>
+        <div class="title">Track job progress live</div>
+        <div class="text">Watch the queue update as county data is pulled, normalized, scored, and turned into usable search output.</div>
+      </div>
+
+      <div class="chip three">
+        <div class="step">Step 03</div>
+        <div class="title">Work the buyer dossiers</div>
+        <div class="text">Open ranked buyers, export the cohort, and save outreach drafts without leaving the command surface.</div>
+      </div>
+
+      <div class="footer">Blackspire Buyer Engine • search → queue → dossiers → outreach</div>
+    </div>
+  </body>
+  </html>
