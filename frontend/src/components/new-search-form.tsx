@@ -31,6 +31,7 @@ export function NewSearchForm({
     propertyType: "land",
     dateRangeStart: "2024-01-01",
     dateRangeEnd: "2024-12-31",
+    minPurchases: 2,
     notes: "Frontend intake path wired before workflow trigger step.",
   });
   const [submitting, setSubmitting] = useState(false);
@@ -222,7 +223,13 @@ export function NewSearchForm({
               value={form.dateRangeEnd}
               onChange={(value) => setForm((current) => ({ ...current, dateRangeEnd: value }))}
             />
-            <Field label="Min purchases" value="2" readOnly />
+            <NumberField
+              label="Min purchases"
+              value={form.minPurchases}
+              min={1}
+              max={5}
+              onChange={(value) => setForm((current) => ({ ...current, minPurchases: value }))}
+            />
             <Field label="Workflow path" value="/webhook/buyer-engine" readOnly />
             <TextAreaField
               label="Operator notes"
@@ -382,6 +389,40 @@ function DateField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="brand-input brand-date-input w-full px-3 py-2 text-sm outline-none"
+      />
+    </label>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          if (Number.isInteger(next)) {
+            onChange(Math.min(max, Math.max(min, next)));
+          }
+        }}
+        className="brand-input w-full px-3 py-2 text-sm outline-none"
       />
     </label>
   );

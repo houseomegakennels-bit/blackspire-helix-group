@@ -81,6 +81,7 @@ type CreateSearchJobInput = {
   propertyType: string;
   dateRangeStart: string;
   dateRangeEnd: string;
+  minPurchases: number;
   notes?: string;
 };
 
@@ -364,7 +365,7 @@ export async function createSearchJob(input: CreateSearchJobInput) {
     property_type: input.propertyType,
     date_range_start: toIsoDate(input.dateRangeStart),
     date_range_end: toIsoDate(input.dateRangeEnd),
-    min_purchases: 2,
+    min_purchases: input.minPurchases,
     cash_buyers_only: false,
     llc_buyers_only: false,
     status: "pending",

@@ -46,6 +46,7 @@ export async function POST(request: Request) {
     const propertyType = typeof body.propertyType === "string" ? body.propertyType.trim() : "";
     const dateRangeStart = typeof body.dateRangeStart === "string" ? body.dateRangeStart.trim() : "";
     const dateRangeEnd = typeof body.dateRangeEnd === "string" ? body.dateRangeEnd.trim() : "";
+    const minPurchases = Number(body.minPurchases);
     const notes = typeof body.notes === "string" ? body.notes : "";
 
     if (!title || !state || !county || !propertyType || !dateRangeStart || !dateRangeEnd) {
@@ -67,6 +68,16 @@ export async function POST(request: Request) {
         {
           ok: false,
           error: "dateRangeStart and dateRangeEnd must form a valid chronological range.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!Number.isInteger(minPurchases) || minPurchases < 1 || minPurchases > 5) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "minPurchases must be a whole number between 1 and 5.",
         },
         { status: 400 },
       );
@@ -95,6 +106,7 @@ export async function POST(request: Request) {
       propertyType,
       dateRangeStart,
       dateRangeEnd,
+      minPurchases,
       notes,
     });
 
