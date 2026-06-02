@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 
 import { EcosystemCard } from "@/components/ecosystem-card";
+import { HelixLawnCommandPage } from "@/components/helix-lawn-command-page";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ecosystemProjects, getProjectBySlug } from "@/lib/ecosystem";
 
@@ -20,6 +21,10 @@ export default async function EcosystemProjectPage({
 
   if (!project) {
     notFound();
+  }
+
+  if (project.slug === "helix-lawn-command") {
+    return <HelixLawnCommandPage />;
   }
 
   return (
