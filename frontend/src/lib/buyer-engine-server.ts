@@ -198,23 +198,6 @@ function getDefaultUserId() {
   return process.env.BLACKSPIRE_DEFAULT_USER_ID?.trim() || null;
 }
 
-function getRequiredDefaultUserId(context: string) {
-  const userId = getDefaultUserId();
-  if (!userId) {
-    throw new Error(`Missing BLACKSPIRE_DEFAULT_USER_ID. ${context}`);
-  }
-  return userId;
-}
-
-async function getEffectiveOperatorId(context: string) {
-  const operator = await getAuthenticatedOperator();
-  if (operator?.id) {
-    return operator.id;
-  }
-
-  return getRequiredDefaultUserId(context);
-}
-
 async function getOperatorScope(mode: "read" | "write") {
   const [operator, authUserCount] = await Promise.all([
     getAuthenticatedOperator(),
@@ -241,12 +224,26 @@ async function getOperatorScope(mode: "read" | "write") {
     };
   }
 
+  // No operator accounts exist yet. The default-user bridge is deprecated and
+  // optional: use it only if still configured, otherwise require bootstrap via
+  // /auth so there is no hard env dependency.
+  const fallbackId = getDefaultUserId();
+  if (fallbackId) {
+    return {
+      operatorId: fallbackId,
+      bootstrapComplete: false,
+      requiresAuth: false,
+    };
+  }
+
+  if (mode === "write") {
+    throw new Error("No operator account exists yet. Create the first operator at /auth before creating data.");
+  }
+
   return {
-    operatorId: getRequiredDefaultUserId(
-      "No operator accounts exist yet, so the app is still using the bootstrap fallback identity.",
-    ),
+    operatorId: null,
     bootstrapComplete: false,
-    requiresAuth: false,
+    requiresAuth: true,
   };
 }
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { BuyerShell, Metric, Panel, StatusPill } from "@/components/buyer-shell";
-import { pendingWork, searchJobSnapshots } from "@/lib/buyer-engine-data";
+import { pendingWork } from "@/lib/buyer-engine-data";
 import {
   getBuyerEngineEnvStatus,
   getDashboardSnapshot,
@@ -58,30 +58,24 @@ export async function BuyerEngineHome() {
         null,
       ];
 
-  const referenceJobs = liveJobs.length
-    ? liveJobs.map((job) => ({
-        id: job.id,
-        title: `${job.county} ${formatPropertyType(job.property_type)} buyers sweep`,
-        county: job.county,
-        state: job.state,
-        propertyType: job.property_type,
-        status: job.status,
-        dateRange: `${job.date_range_start ?? "n/a"} to ${job.date_range_end ?? "n/a"}`,
-        buyersFound: job.total_buyers_found ?? 0,
-        salesAnalyzed: job.total_sales_analyzed ?? 0,
-        notes: job.error_message ?? undefined,
-      }))
-    : searchJobSnapshots;
+  // Real operator-scoped jobs only — no sample/reference fallback.
+  const operatorJobs = liveJobs.map((job) => ({
+    id: job.id,
+    title: `${job.county} ${formatPropertyType(job.property_type)} buyers sweep`,
+    county: job.county,
+    state: job.state,
+    propertyType: job.property_type,
+    status: job.status,
+    dateRange: `${job.date_range_start ?? "n/a"} to ${job.date_range_end ?? "n/a"}`,
+    buyersFound: job.total_buyers_found ?? 0,
+    salesAnalyzed: job.total_sales_analyzed ?? 0,
+    notes: job.error_message ?? undefined,
+  }));
 
   const stats = {
     activeCountyCount: counties.filter((county) => county.status === "active").length,
-    completedRuns:
-      dashboardSnapshot.completedJobCount ||
-      referenceJobs.filter((job) => job.status === "completed").length,
-    totalBuyers:
-      dashboardSnapshot.buyerReportCount ||
-      liveReportPage.total ||
-      referenceJobs.reduce((sum, job) => sum + job.buyersFound, 0),
+    completedRuns: dashboardSnapshot.completedJobCount,
+    totalBuyers: dashboardSnapshot.buyerReportCount || liveReportPage.total,
   };
 
   const approvedCounties = counties.filter(
@@ -111,8 +105,8 @@ export async function BuyerEngineHome() {
     },
     {
       key: "BLACKSPIRE_DEFAULT_USER_ID",
-      purpose: "bridge identity until auth is wired",
-      status: env.hasDefaultUserId ? "configured" : "missing",
+      purpose: "Deprecated bootstrap bridge — operator auth is live; safe to remove",
+      status: env.hasDefaultUserId ? "deprecated" : "not set",
     },
   ] as const;
 
@@ -457,15 +451,18 @@ export async function BuyerEngineHome() {
 
         <Panel
           eyebrow="Search Health"
-          title={liveJobs.length ? "Recent live jobs" : "Reference jobs from live review"}
-          description={
-            liveJobs.length
-              ? "This panel is now reading the live SearchJob feed. It falls back to reference snapshots only when the app cannot reach Supabase."
-              : "These are the runs that matter most as we keep tightening the frontend around the production workflow."
-          }
+          title="Recent live jobs"
+          description="Live SearchJob feed for the current operator scope. Launch a sweep to populate this panel."
         >
           <div className="space-y-3">
-            {referenceJobs.map((job) => (
+            {operatorJobs.length === 0 ? (
+              <div className="brand-card brand-copy-soft p-4 text-sm">
+                {operatorStatus?.signedIn
+                  ? "No search jobs yet in your operator scope. Launch a buyer sweep to see live runs here."
+                  : "Sign in through /auth to see your live search jobs."}
+              </div>
+            ) : null}
+            {operatorJobs.map((job) => (
               <div key={job.id} className="brand-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>

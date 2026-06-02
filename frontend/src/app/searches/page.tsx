@@ -1,6 +1,5 @@
 import { BuyerShell } from "@/components/buyer-shell";
 import { SearchJobsMonitor } from "@/components/search-jobs-monitor";
-import { searchJobSnapshots } from "@/lib/buyer-engine-data";
 import {
   getLiveCountyCapabilities,
   getBuyerEngineEnvStatus,
@@ -31,20 +30,20 @@ export default async function SearchJobsPage({
         getOperatorShellStatus().catch(() => null),
       ])
     : [[], [], [], null];
-  const jobs = liveJobs.length
-    ? liveJobs.map((job) => ({
-        id: job.id,
-        title: `${job.county} ${job.property_type.replace("_", " ")} buyers sweep`,
-        county: job.county,
-        state: job.state,
-        propertyType: job.property_type,
-        status: job.status,
-        dateRange: `${job.date_range_start ?? "n/a"} to ${job.date_range_end ?? "n/a"}`,
-        buyersFound: job.total_buyers_found ?? 0,
-        salesAnalyzed: job.total_sales_analyzed ?? 0,
-        notes: job.error_message ?? undefined,
-      }))
-    : searchJobSnapshots;
+  // Real operator-scoped jobs only — no sample/reference fallback. An empty
+  // array renders the monitor's genuine empty state instead of fake data.
+  const jobs = liveJobs.map((job) => ({
+    id: job.id,
+    title: `${job.county} ${job.property_type.replace("_", " ")} buyers sweep`,
+    county: job.county,
+    state: job.state,
+    propertyType: job.property_type,
+    status: job.status,
+    dateRange: `${job.date_range_start ?? "n/a"} to ${job.date_range_end ?? "n/a"}`,
+    buyersFound: job.total_buyers_found ?? 0,
+    salesAnalyzed: job.total_sales_analyzed ?? 0,
+    notes: job.error_message ?? undefined,
+  }));
   const highlightedReports = highlightedJobId && env.enabled
     ? highlightedReportRows.map((report) => ({
         id: report.id,
