@@ -1,6 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import {
+  helixLawnPricingLogic,
+  type HelixLawnCommandSnapshot,
+} from "@/lib/helix-lawn-command-server";
+
 const navItems = [
   "Dashboard",
   "Lawn Leads",
@@ -13,60 +18,11 @@ const navItems = [
   "Settings",
 ] as const;
 
-const metricCards = [
-  { value: "3", label: "New Leads", detail: "awaiting triage" },
-  { value: "1", label: "Estimate Needed", detail: "AI drafting" },
-  { value: "2", label: "Quote Sent", detail: "waiting on reply" },
-  { value: "2", label: "Booked Jobs", detail: "this week" },
-  { value: "1", label: "Completed Jobs", detail: "last 30 days" },
-  { value: "7", label: "Follow-Ups Due", detail: "3 overdue" },
-] as const;
-
-const pipelineColumns = [
-  { label: "New Lead", count: 0, items: [] },
-  { label: "Estimate Needed", count: 1, items: ["Marcus Hill", "Lawn Mowing + Edging"] },
-  { label: "Quote Sent", count: 2, items: ["Dana Pierce", "Mulch Install", "Lacey Brooks", "Yard Cleanup"] },
-  { label: "Booked", count: 2, items: ["Ron Tipton", "Bush Trimming", "Eli Park", "Weekly Mowing"] },
-  { label: "Completed", count: 1, items: ["Tasha Wynn", "Yard Cleanup"] },
-  { label: "Lost", count: 0, items: [] },
-] as const;
-
-const recentLeads = [
-  { name: "Marcus Hill", service: "Lawn Mowing + Edging", address: "412 Oak Ridge Dr, Winston Salem", urgency: "high", estimate: "$145 - $185" },
-  { name: "Dana Pierce", service: "Mulch Install", address: "88 Linden Ln, Clemmons", urgency: "medium", estimate: "$320 - $410" },
-  { name: "Ron Tipton", service: "Bush Trimming", address: "1207 Reynolda Rd, Winston Salem", urgency: "urgent", estimate: "$280 - $360" },
-  { name: "Lacey Brooks", service: "Yard Cleanup", address: "55 Stratford Pl, Winston Salem", urgency: "high", estimate: "$180 - $240" },
-] as const;
-
-const priorityActions = [
-  "Confirm Wednesday visit — Marcus replied yes, confirm time slot and send ETA.",
-  "Send Lacey estimate — storm cleanup quote drafted, review and send.",
-  "Owner alert: hedge job booked — add to crew route.",
-] as const;
-
-const pricingLogic = [
-  "Small city yard mowing: $45-$75",
-  "Medium residential yard: $75-$125",
-  "Large residential yard: $125-$225",
-  "Acreage mowing: usually $75-$150+ per acre depending on terrain and overgrowth",
-  "5+ acres: should trigger manual review, do not estimate under $300",
-  "10 acres: flag as high-value acreage/commercial job, broadly $750-$1,500+",
-  "Overgrowth: can add 25%-100%",
-  "Bush trimming: $10-$25 per bush light, $25-$60 per bush heavy",
-  "Cleanup / debris / leaves: $150-$600+",
-  "Slope, tight access, pets, gates, debris, hauling: increase price or trigger owner review",
-  "Recurring service: can reduce per-visit price vs one-time",
-] as const;
-
-const activityItems = [
-  "New lead captured from website form.",
-  "AI assistant rated lead HOT — high urgency.",
-  "Preliminary estimate $145-$185 generated.",
-  "Owner alert sent via SMS.",
-  "Weekly mowing contract booked.",
-] as const;
-
-export function HelixLawnCommandHome() {
+export function HelixLawnCommandHome({
+  snapshot,
+}: {
+  snapshot: HelixLawnCommandSnapshot;
+}) {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,hsl(135_68%_9%),transparent_36%),linear-gradient(180deg,hsl(148_44%_6%)_0%,hsl(150_44%_5%)_100%)] text-foreground">
       <div className="mx-auto grid min-h-screen max-w-[1660px] gap-6 px-4 py-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:px-6">
@@ -87,7 +43,7 @@ export function HelixLawnCommandHome() {
               </p>
               <h1 className="mt-3 text-2xl font-semibold text-white">Today at Blackspire</h1>
               <p className="mt-3 text-sm leading-6 text-[hsl(120_16%_72%)]">
-                AI assistant is qualifying lawn leads and pricing jobs in real time.
+                Live lawn leads are now flowing into this workspace from the Helix intake experience.
               </p>
             </div>
           </div>
@@ -113,10 +69,15 @@ export function HelixLawnCommandHome() {
               AI assistant online
             </div>
             <p className="mt-3 text-sm leading-6 text-[hsl(120_16%_72%)]">
-              Capturing and qualifying lawn leads 24/7.
+              {snapshot.totalLeadCount
+                ? `Tracking ${snapshot.totalLeadCount} live lead${snapshot.totalLeadCount === 1 ? "" : "s"} in this pipeline.`
+                : "Waiting for the first live lead to hit the system."}
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
-              <Link href="/ecosystem/helix-lawn-command" className="rounded-full border border-[hsl(126_48%_28%/.55)] px-4 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-[hsl(142_36%_12%)]">
+              <Link
+                href="/ecosystem/helix-lawn-command"
+                className="rounded-full border border-[hsl(126_48%_28%/.55)] px-4 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-[hsl(142_36%_12%)]"
+              >
                 Return to offer page
               </Link>
             </div>
@@ -129,8 +90,8 @@ export function HelixLawnCommandHome() {
               <p className="text-[11px] uppercase tracking-[0.44em] text-[hsl(111_87%_65%)]">Helix Lawn Command</p>
               <h2 className="mt-3 text-5xl font-semibold text-white">Today at Blackspire</h2>
               <p className="mt-3 text-base leading-7 text-[hsl(120_16%_72%)]">
-                The old Lovable command-center surface is now preserved inside the repo so the lawn
-                offer has a real operational layer behind it.
+                The old Lovable command-center surface is now backed by live submissions captured inside
+                the repo and persisted through Supabase.
               </p>
             </div>
             <span className="rounded-full border border-[hsl(126_48%_28%/.55)] bg-[hsl(142_36%_10%/.88)] px-4 py-2 text-xs uppercase tracking-[0.24em] text-[hsl(111_87%_65%)]">
@@ -139,7 +100,7 @@ export function HelixLawnCommandHome() {
           </header>
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {metricCards.map((card) => (
+            {snapshot.metricCards.map((card) => (
               <article key={card.label} className="rounded-[22px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.88)] p-5">
                 <div className="text-4xl font-semibold text-white">{card.value}</div>
                 <div className="mt-2 text-lg font-medium text-[hsl(120_10%_86%)]">{card.label}</div>
@@ -151,10 +112,10 @@ export function HelixLawnCommandHome() {
           <section className="rounded-[26px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.84)] p-5">
             <div className="flex items-center justify-between gap-4">
               <h3 className="text-3xl font-semibold text-white">Lead Pipeline</h3>
-              <span className="text-xs uppercase tracking-[0.24em] text-[hsl(120_16%_72%)]">Drag-style stage view</span>
+              <span className="text-xs uppercase tracking-[0.24em] text-[hsl(120_16%_72%)]">Live stage view</span>
             </div>
             <div className="mt-5 grid gap-4 xl:grid-cols-6">
-              {pipelineColumns.map((column) => (
+              {snapshot.pipelineColumns.map((column) => (
                 <div key={column.label} className="rounded-[20px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(150_28%_8%/.75)] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[11px] uppercase tracking-[0.28em] text-[hsl(120_16%_72%)]">{column.label}</div>
@@ -181,27 +142,36 @@ export function HelixLawnCommandHome() {
             <section className="rounded-[26px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.84)] p-5">
               <div className="flex items-center justify-between gap-4">
                 <h3 className="text-3xl font-semibold text-white">Recent Lawn Leads</h3>
-                <span className="text-sm text-[hsl(111_87%_65%)]">View all →</span>
+                <span className="text-sm text-[hsl(111_87%_65%)]">{snapshot.totalLeadCount} total</span>
               </div>
               <div className="mt-5 space-y-3">
-                {recentLeads.map((lead) => (
-                  <div key={lead.name} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-base font-semibold text-white">
-                          {lead.name} <span className="font-normal text-[hsl(120_16%_72%)]">· {lead.service}</span>
+                {snapshot.recentLeads.length ? (
+                  snapshot.recentLeads.map((lead) => (
+                    <div key={lead.id} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-base font-semibold text-white">
+                            {lead.name} <span className="font-normal text-[hsl(120_16%_72%)]">· {lead.service}</span>
+                          </div>
+                          <div className="mt-1 text-sm text-[hsl(120_16%_72%)]">{lead.address}</div>
+                          <div className="mt-1 text-xs uppercase tracking-[0.18em] text-[hsl(120_16%_52%)]">
+                            {lead.stage}
+                          </div>
                         </div>
-                        <div className="mt-1 text-sm text-[hsl(120_16%_72%)]">{lead.address}</div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="rounded-full border border-[hsl(126_48%_20%/.35)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[hsl(111_87%_65%)]">
-                          {lead.urgency}
-                        </span>
-                        <span className="text-lg font-semibold text-[hsl(111_87%_65%)]">{lead.estimate}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="rounded-full border border-[hsl(126_48%_20%/.35)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[hsl(111_87%_65%)]">
+                            {lead.urgency}
+                          </span>
+                          <span className="text-lg font-semibold text-[hsl(111_87%_65%)]">{lead.estimate}</span>
+                        </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4 text-sm leading-6 text-[hsl(120_16%_72%)]">
+                    No live leads yet. Submit the intake form on the offer page to seed the workspace.
                   </div>
-                ))}
+                )}
               </div>
             </section>
 
@@ -209,7 +179,7 @@ export function HelixLawnCommandHome() {
               <div className="rounded-[26px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.84)] p-5">
                 <h3 className="text-3xl font-semibold text-white">Priority Actions</h3>
                 <div className="mt-5 space-y-3">
-                  {priorityActions.map((action) => (
+                  {snapshot.priorityActions.map((action) => (
                     <div key={action} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4 text-sm leading-6 text-[hsl(120_16%_72%)]">
                       {action}
                     </div>
@@ -225,7 +195,7 @@ export function HelixLawnCommandHome() {
                   </span>
                 </div>
                 <div className="mt-4 space-y-3 text-sm leading-7 text-[hsl(120_16%_72%)]">
-                  {pricingLogic.map((line) => (
+                  {helixLawnPricingLogic.map((line) => (
                     <p key={line}>{line}</p>
                   ))}
                 </div>
@@ -236,20 +206,12 @@ export function HelixLawnCommandHome() {
           <section className="rounded-[26px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.84)] p-5">
             <h3 className="text-3xl font-semibold text-white">Activity Stream</h3>
             <div className="mt-5 space-y-4">
-              {activityItems.map((item, index) => (
-                <div key={item} className="flex gap-4">
+              {snapshot.activityItems.map((item) => (
+                <div key={`${item.meta}-${item.message}`} className="flex gap-4">
                   <span className="mt-2 h-2.5 w-2.5 rounded-full bg-[hsl(111_87%_65%)] shadow-[0_0_18px_hsl(111_87%_65%/.45)]" />
                   <div>
-                    <div className="text-base text-white">{item}</div>
-                    <div className="mt-1 text-sm text-[hsl(120_16%_72%)]">
-                      6/2/2026, 8:{20 + index}:00 AM · {[
-                        "lead_captured",
-                        "ai_qualified",
-                        "estimate_generated",
-                        "owner_alert",
-                        "job_booked",
-                      ][index]}
-                    </div>
+                    <div className="text-base text-white">{item.message}</div>
+                    <div className="mt-1 text-sm text-[hsl(120_16%_72%)]">{item.meta}</div>
                   </div>
                 </div>
               ))}

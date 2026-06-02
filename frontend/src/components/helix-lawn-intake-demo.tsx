@@ -2,112 +2,61 @@
 
 import { useMemo, useState } from "react";
 
-type DemoState = {
-  name: string;
-  phone: string;
-  address: string;
-  serviceType: string;
-  preferredDate: string;
-  acreage: string;
-  yardSize: string;
-  grassHeight: string;
-  overgrowth: string;
-  bushes: string;
-  frequency: string;
-  cleanup: string;
-  slope: string;
-  access: string;
-  notes: string;
-  photoAnalysis: string;
-};
+import {
+  computeHelixLawnLeadEstimate,
+  initialHelixLawnLeadInput,
+  serviceLabels,
+  type HelixLawnLeadInput,
+} from "@/lib/helix-lawn-command";
 
-const initialState: DemoState = {
-  name: "",
-  phone: "",
-  address: "",
-  serviceType: "mowing",
-  preferredDate: "",
-  acreage: "",
-  yardSize: "medium",
-  grassHeight: "standard",
-  overgrowth: "light",
-  bushes: "0",
-  frequency: "one-time",
-  cleanup: "none",
-  slope: "",
-  access: "",
-  notes: "",
-  photoAnalysis: "",
-};
-
-const serviceLabels: Record<string, string> = {
-  mowing: "Lawn mowing",
-  mulch: "Mulch install",
-  cleanup: "Yard cleanup",
-  trimming: "Bush trimming",
-};
-
-const yardBase: Record<string, number> = {
-  small: 65,
-  medium: 105,
-  large: 165,
-  acreage: 230,
-};
-
-const grassAdjust: Record<string, number> = {
-  short: 0,
-  standard: 14,
-  tall: 32,
-};
-
-const overgrowthAdjust: Record<string, number> = {
-  light: 0,
-  moderate: 24,
-  heavy: 58,
-};
-
-const cleanupAdjust: Record<string, number> = {
-  none: 0,
-  light: 30,
-  heavy: 70,
-};
-
-const frequencyAdjust: Record<string, number> = {
-  "one-time": 1,
-  weekly: 0.84,
-  biweekly: 0.92,
+type StoredLeadResponse = {
+  id: string;
+  stageLabel: string;
+  urgency: string;
+  confidence: string;
+  summary: string;
+  estimateLow: number;
+  estimateHigh: number;
+  serviceLabel: string;
 };
 
 export function HelixLawnIntakeDemo() {
-  const [form, setForm] = useState(initialState);
-  const [submitted, setSubmitted] = useState(false);
+  const [form, setForm] = useState<HelixLawnLeadInput>(initialHelixLawnLeadInput);
+  const [submittedLead, setSubmittedLead] = useState<StoredLeadResponse | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const result = useMemo(() => {
-    const base = yardBase[form.yardSize] ?? 105;
-    const bushes = Number(form.bushes || 0) * 9;
-    const subtotal =
-      base +
-      (grassAdjust[form.grassHeight] ?? 14) +
-      (overgrowthAdjust[form.overgrowth] ?? 0) +
-      (cleanupAdjust[form.cleanup] ?? 0) +
-      bushes;
-    const multiplier = frequencyAdjust[form.frequency] ?? 1;
-    const adjusted = Math.round(subtotal * multiplier);
-    const low = Math.max(45, Math.round(adjusted * 0.9));
-    const high = Math.round(adjusted * 1.14);
-    const urgency =
-      form.overgrowth === "heavy" ? "high" : form.cleanup === "heavy" ? "medium" : "standard";
-    const confidence =
-      form.photoAnalysis || form.notes || form.acreage ? "higher confidence" : "owner review recommended";
-    const summary = `${serviceLabels[form.serviceType]} lead for ${form.address || "local property"} with ${form.yardSize} yard, ${form.grassHeight} grass, and ${form.overgrowth} overgrowth.`;
-    return {
-      low,
-      high,
-      urgency,
-      confidence,
-      summary,
-    };
-  }, [form]);
+  const preview = useMemo(() => computeHelixLawnLeadEstimate(form), [form]);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/helix-lawn-command/leads", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(form),
+      });
+
+      const payload = (await response.json()) as
+        | { ok: true; lead: StoredLeadResponse }
+        | { ok: false; error?: string };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? "Unable to save lawn lead." : payload.error || "Unable to save lawn lead.");
+      }
+
+      setSubmittedLead(payload.lead);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to save lawn lead.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <section id="demo" className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
@@ -117,8 +66,8 @@ export function HelixLawnIntakeDemo() {
           Submit a lawn lead and watch the assistant qualify it in real time.
         </h2>
         <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
-          This recreates the old Helix Lawn Command demo surface: lead intake, basic qualification,
-          estimate guidance, and a fast owner-facing summary.
+          This now writes into the live Helix Lawn Command pipeline, not just a local demo state.
+          Every submission can flow straight into the command center.
         </p>
 
         <div className="mt-6 space-y-3">
@@ -135,25 +84,44 @@ export function HelixLawnIntakeDemo() {
           ))}
         </div>
 
-        {submitted ? (
+        <div className="brand-card mt-6 space-y-4 p-5">
+          <div className="text-[11px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">
+            Live estimate preview
+          </div>
+          <div className="text-3xl font-semibold text-white">
+            ${preview.low} - ${preview.high}
+          </div>
+          <p className="text-sm leading-7 text-[var(--copy-soft)]">{preview.summary}</p>
+          <div className="flex flex-wrap gap-2">
+            <span className="project-pill">{preview.urgency} urgency</span>
+            <span className="project-pill">{preview.confidence}</span>
+            <span className="project-pill">{serviceLabels[form.serviceType] ?? "Lawn service"}</span>
+          </div>
+        </div>
+
+        {submittedLead ? (
           <div className="brand-card mt-6 space-y-4 p-5">
             <div className="text-[11px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">
-              Intake assistant result
+              Live pipeline result
             </div>
             <div className="text-3xl font-semibold text-white">
-              ${result.low} - ${result.high}
+              ${submittedLead.estimateLow} - ${submittedLead.estimateHigh}
             </div>
-            <p className="text-sm leading-7 text-[var(--copy-soft)]">{result.summary}</p>
+            <p className="text-sm leading-7 text-[var(--copy-soft)]">{submittedLead.summary}</p>
             <div className="flex flex-wrap gap-2">
-              <span className="project-pill">{result.urgency} urgency</span>
-              <span className="project-pill">{result.confidence}</span>
-              <span className="project-pill">{serviceLabels[form.serviceType]}</span>
+              <span className="project-pill">{submittedLead.stageLabel}</span>
+              <span className="project-pill">{submittedLead.urgency} urgency</span>
+              <span className="project-pill">{submittedLead.confidence}</span>
+            </div>
+            <div className="text-xs uppercase tracking-[0.22em] text-[var(--copy-muted)]">
+              Lead saved · {submittedLead.id}
             </div>
             <button
               type="button"
               onClick={() => {
-                setForm(initialState);
-                setSubmitted(false);
+                setForm(initialHelixLawnLeadInput);
+                setSubmittedLead(null);
+                setError(null);
               }}
               className="project-button inline-flex px-4 py-3 text-sm transition"
             >
@@ -164,13 +132,7 @@ export function HelixLawnIntakeDemo() {
       </div>
 
       <div className="brand-panel px-6 py-8">
-        <form
-          className="grid gap-4 md:grid-cols-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setSubmitted(true);
-          }}
-        >
+        <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
           {[
             ["name", "Name *", "Customer name"],
             ["phone", "Phone *", "(336) 555-0000"],
@@ -181,10 +143,11 @@ export function HelixLawnIntakeDemo() {
               <span>{label}</span>
               <input
                 type={key === "preferredDate" ? "date" : "text"}
-                value={form[key as keyof DemoState]}
+                value={form[key as keyof HelixLawnLeadInput]}
                 onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))}
                 placeholder={placeholder}
                 className={`brand-input rounded-[14px] px-4 py-3 ${key === "preferredDate" ? "brand-date-input" : ""}`}
+                required={key === "name" || key === "phone" || key === "address"}
               />
             </label>
           ))}
@@ -224,7 +187,7 @@ export function HelixLawnIntakeDemo() {
             <label key={key} className="grid gap-2 text-sm text-[var(--copy-soft)]">
               <span>{label}</span>
               <select
-                value={form[key as keyof DemoState]}
+                value={form[key as keyof HelixLawnLeadInput]}
                 onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))}
                 className="brand-input rounded-[14px] px-4 py-3"
               >
@@ -289,15 +252,26 @@ export function HelixLawnIntakeDemo() {
           </label>
 
           <div className="md:col-span-2 rounded-[14px] border border-[color:var(--project-edge)] bg-[color:var(--project-surface)] px-4 py-3 text-sm text-[var(--copy-soft)]">
-            Some pricing details are still approximate. The AI may flag this for owner review.
+            Heavy overgrowth, acreage, or unusual access will move the lead into owner review instead
+            of blind auto-pricing.
           </div>
 
+          {error ? (
+            <div className="md:col-span-2 rounded-[14px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {error}
+            </div>
+          ) : null}
+
           <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-            <button type="submit" className="project-button inline-flex px-5 py-4 text-sm transition">
-              Submit lead to AI assistant
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="project-button inline-flex px-5 py-4 text-sm transition disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting ? "Saving live lead..." : "Submit lead to AI assistant"}
             </button>
             <span className="text-xs uppercase tracking-[0.22em] text-[var(--copy-muted)]">
-              Preliminary estimate guidance only
+              Writes into the command center
             </span>
           </div>
         </form>
