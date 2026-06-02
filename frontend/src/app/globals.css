@@ -297,6 +297,125 @@ body::after {
   pointer-events: none;
 }
 
+.project-card::after,
+.brand-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 18%, hsl(0 0% 100% / 0.05) 38%, transparent 58%),
+    radial-gradient(circle at var(--shine-x, 82%) var(--shine-y, 8%), hsl(200 100% 78% / 0.06), transparent 36%);
+  opacity: 0;
+  transition: opacity 280ms ease;
+}
+
+.project-card:hover::after,
+.brand-panel:hover::before {
+  opacity: 1;
+}
+
+.project-card,
+.brand-panel {
+  transition:
+    border-color 260ms ease,
+    box-shadow 260ms ease,
+    transform 260ms ease;
+}
+
+.project-card:hover,
+.brand-panel:hover {
+  box-shadow:
+    inset 0 1px 0 hsl(202 90% 80% / 0.08),
+    0 26px 70px hsl(224 48% 2% / 0.58),
+    0 0 0 1px hsl(200 100% 76% / 0.045);
+}
+
+.division-logo-showcase {
+  min-height: 270px;
+}
+
+.division-logo-showcase::before {
+  inset: -26% auto auto -8%;
+  width: 220px;
+  height: 220px;
+  opacity: 0.95;
+}
+
+.division-logo-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 210px;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--project-accent) 26%, white 5%);
+  background:
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--project-accent) 18%, transparent), transparent 46%),
+    linear-gradient(180deg, hsl(224 22% 6% / 0.86), hsl(0 0% 3% / 0.94));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.04),
+    0 20px 44px hsl(0 0% 0% / 0.32),
+    0 0 42px color-mix(in srgb, var(--project-accent) 10%, transparent);
+  overflow: hidden;
+}
+
+.division-logo-stage::before {
+  content: "";
+  position: absolute;
+  inset: 16px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--project-accent) 18%, transparent);
+  background:
+    linear-gradient(90deg, transparent 0 48%, color-mix(in srgb, var(--project-accent) 22%, transparent) 49% 51%, transparent 52% 100%),
+    linear-gradient(0deg, transparent 0 48%, color-mix(in srgb, var(--project-accent) 16%, transparent) 49% 51%, transparent 52% 100%);
+  opacity: 0.44;
+  transform: scale(0.96);
+  animation: targetingBreath 5.2s ease-in-out infinite;
+}
+
+.division-logo-stage::after {
+  content: "";
+  position: absolute;
+  inset: auto 10% 13%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--project-accent) 70%, white 12%), transparent);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--project-accent) 42%, transparent);
+  animation: signalSweep 3.8s ease-in-out infinite;
+}
+
+.division-logo-stage > * {
+  position: relative;
+  z-index: 1;
+}
+
+.division-logo-orbit {
+  position: absolute;
+  inset: auto -78px -92px auto;
+  width: 240px;
+  height: 240px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--project-accent) 22%, transparent);
+  opacity: 0.55;
+  animation: orbitSpin 24s linear infinite;
+}
+
+.division-logo-orbit::before,
+.division-logo-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 20%;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--project-accent) 18%, transparent);
+}
+
+.division-logo-orbit::after {
+  inset: 39%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--project-accent) 28%, transparent), transparent 72%);
+  border: 0;
+}
+
 .project-pill {
   border: 1px solid color-mix(in srgb, var(--project-accent) 40%, white 14%);
   background: color-mix(in srgb, var(--project-accent) 14%, transparent);
@@ -423,15 +542,51 @@ body::after {
 }
 
 .ecosystem-footer-card {
+  position: relative;
+  overflow: hidden;
   border-radius: 22px;
   border: 1px solid color-mix(in srgb, var(--project-accent) 30%, var(--line));
   background:
     linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 18% 9% / 0.96)),
     radial-gradient(circle at top right, var(--project-surface), transparent 55%);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.045),
+    0 16px 34px hsl(0 0% 0% / 0.34);
+  transition: border-color 240ms ease, box-shadow 240ms ease, transform 240ms ease;
+}
+
+.ecosystem-footer-card::before {
+  content: "";
+  position: absolute;
+  inset: auto 14px 10px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--project-accent) 70%, white 10%), transparent);
+  opacity: 0.44;
+}
+
+.ecosystem-footer-card::after {
+  content: "";
+  position: absolute;
+  inset: -40% -30% auto auto;
+  width: 160px;
+  height: 160px;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--project-accent) 18%, transparent), transparent 68%);
+  opacity: 0;
+  transition: opacity 240ms ease;
 }
 
 .ecosystem-footer-card:hover {
   border-color: color-mix(in srgb, var(--project-accent) 60%, white 8%);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.07),
+    0 22px 48px hsl(0 0% 0% / 0.46),
+    0 0 30px color-mix(in srgb, var(--project-accent) 14%, transparent);
+  transform: translateY(-3px);
+}
+
+.ecosystem-footer-card:hover::after {
+  opacity: 1;
 }
 
 .ecosystem-preview-card {
@@ -510,6 +665,89 @@ body::after {
     linear-gradient(180deg, hsl(228 26% 5%) 0%, hsl(224 28% 4%) 32%, hsl(220 22% 3%) 100%);
 }
 
+.luxury-orbital-field {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.luxury-orbital-ring {
+  position: absolute;
+  border-radius: 999px;
+  border: 1px solid hsl(203 82% 74% / 0.12);
+  opacity: 0.55;
+  filter: drop-shadow(0 0 28px hsl(203 92% 66% / 0.1));
+  animation: orbitalPan 28s linear infinite;
+}
+
+.luxury-orbital-ring::before,
+.luxury-orbital-ring::after {
+  content: "";
+  position: absolute;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: hsl(197 100% 74% / 0.9);
+  box-shadow: 0 0 22px hsl(197 100% 74% / 0.54);
+}
+
+.luxury-orbital-ring::before {
+  left: 16%;
+  top: 18%;
+}
+
+.luxury-orbital-ring::after {
+  right: 18%;
+  bottom: 20%;
+}
+
+.luxury-orbital-ring-a {
+  width: 740px;
+  height: 740px;
+  left: -260px;
+  top: 12vh;
+}
+
+.luxury-orbital-ring-b {
+  width: 620px;
+  height: 620px;
+  right: -260px;
+  top: 24vh;
+  animation-duration: 36s;
+  animation-direction: reverse;
+}
+
+.luxury-orbital-ring-c {
+  width: 860px;
+  height: 860px;
+  left: 48%;
+  bottom: -520px;
+  animation-duration: 42s;
+}
+
+.luxury-scroll-rail {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 60;
+  width: 2px;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, hsl(200 100% 75% / 0.9), hsl(216 88% 62% / 0.18), transparent),
+    linear-gradient(180deg, transparent, hsl(200 100% 75% / 0.32), transparent);
+  transform-origin: top;
+  animation: railAwake 1.1s ease-out both;
+}
+
+@supports (animation-timeline: scroll()) {
+  .luxury-scroll-rail {
+    animation: scrollRailGrow linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0% 100%;
+  }
+}
+
 .luxury-shell::before {
   content: "";
   position: absolute;
@@ -523,6 +761,19 @@ body::after {
   opacity: 1;
   pointer-events: none;
   z-index: -1;
+}
+
+.luxury-shell::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 22%, hsl(201 100% 78% / 0.035) 34%, transparent 48% 100%),
+    radial-gradient(circle at 50% 50%, transparent 0 54%, hsl(220 50% 1% / 0.42) 100%);
+  mix-blend-mode: screen;
+  animation: luxuryAtmosphere 18s ease-in-out infinite;
 }
 
 .luxury-header {
@@ -574,6 +825,11 @@ body::after {
 .luxury-home {
   display: grid;
   gap: 1.5rem;
+}
+
+.luxury-home > section,
+.luxury-shell .brand-panel {
+  animation: premiumFloatIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .luxury-hero {
@@ -1100,6 +1356,21 @@ body::after {
     radial-gradient(circle at 80% 10%, hsl(194 100% 62% / 0.12), transparent 24%);
 }
 
+.luxury-footer {
+  position: relative;
+  overflow: hidden;
+}
+
+.luxury-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 18%, hsl(204 88% 62% / 0.09), transparent 30%),
+    radial-gradient(circle at 88% 0%, hsl(194 100% 62% / 0.08), transparent 22%);
+}
+
 @keyframes beaconPulse {
   0%, 100% { transform: translate(-50%, -50%) scale(0.96); opacity: 0.88; }
   50% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
@@ -1145,6 +1416,49 @@ body::after {
 @keyframes marqueeSlide {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
+}
+
+@keyframes orbitalPan {
+  from { transform: rotate(0deg) translate3d(0, 0, 0); }
+  to { transform: rotate(360deg) translate3d(0, 0, 0); }
+}
+
+@keyframes luxuryAtmosphere {
+  0%, 100% { opacity: 0.55; transform: translate3d(0, 0, 0) scale(1); }
+  50% { opacity: 0.86; transform: translate3d(0, -18px, 0) scale(1.02); }
+}
+
+@keyframes railAwake {
+  from { transform: scaleY(0); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+
+@keyframes scrollRailGrow {
+  from { transform: scaleY(0.08); }
+  to { transform: scaleY(1); }
+}
+
+@keyframes targetingBreath {
+  0%, 100% { opacity: 0.34; transform: scale(0.94) rotate(0deg); }
+  50% { opacity: 0.68; transform: scale(1) rotate(0.4deg); }
+}
+
+@keyframes signalSweep {
+  0%, 100% { opacity: 0.35; transform: translateX(-12%) scaleX(0.72); }
+  50% { opacity: 0.95; transform: translateX(12%) scaleX(1); }
+}
+
+@keyframes premiumFloatIn {
+  from {
+    opacity: 0;
+    transform: translateY(34px) scale(0.985);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1456,6 +1770,14 @@ body::after {
     width: 320px;
     height: 320px;
   }
+
+  .division-logo-showcase {
+    min-height: auto;
+  }
+
+  .division-logo-stage {
+    min-height: 190px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1479,5 +1801,39 @@ body::after {
 
   .luxury-metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .luxury-orbital-ring-a,
+  .luxury-orbital-ring-b,
+  .luxury-orbital-ring-c {
+    opacity: 0.28;
+    transform: scale(0.72);
+  }
+
+  .division-logo-stage {
+    min-height: 180px;
+  }
+
+  .division-logo-stage::before {
+    inset: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .luxury-stage,
+  .brand-card:hover,
+  .brand-panel:hover,
+  .project-card:hover,
+  .ecosystem-footer-card:hover {
+    transform: none !important;
   }
 }
