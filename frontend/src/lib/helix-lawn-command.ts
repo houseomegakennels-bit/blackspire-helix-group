@@ -34,6 +34,68 @@ export type HelixLawnLeadEstimate = {
   stage: HelixLawnLeadStage;
 };
 
+export type HelixLawnCommandSnapshot = {
+  metricCards: Array<{ value: string; label: string; detail: string }>;
+  pipelineColumns: Array<{
+    label: string;
+    count: number;
+    items: Array<{
+      id: string;
+      name: string;
+      service: string;
+      estimate: string;
+      urgency: string;
+    }>;
+  }>;
+  recentLeads: Array<{
+    id: string;
+    name: string;
+    service: string;
+    address: string;
+    urgency: string;
+    estimate: string;
+    stage: string;
+    phone: string;
+    preferredDate: string | null;
+    summary: string;
+    confidence: string;
+    createdAt: string;
+  }>;
+  estimateQueue: Array<{
+    id: string;
+    name: string;
+    service: string;
+    address: string;
+    estimate: string;
+    reason: string;
+  }>;
+  followUps: Array<{
+    id: string;
+    name: string;
+    phone: string;
+    service: string;
+    estimate: string;
+    nextStep: string;
+  }>;
+  outreachDrafts: Array<{
+    id: string;
+    name: string;
+    channel: string;
+    subject: string;
+    body: string;
+  }>;
+  importHistory: Array<{
+    id: string;
+    source: string;
+    status: string;
+    detail: string;
+    createdAt: string;
+  }>;
+  priorityActions: string[];
+  activityItems: Array<{ message: string; meta: string }>;
+  totalLeadCount: number;
+};
+
 export const initialHelixLawnLeadInput: HelixLawnLeadInput = {
   name: "",
   phone: "",
@@ -59,6 +121,20 @@ export const serviceLabels: Record<string, string> = {
   cleanup: "Yard cleanup",
   trimming: "Bush trimming",
 };
+
+export const helixLawnPricingLogic = [
+  "Small city yard mowing: $45-$75",
+  "Medium residential yard: $75-$125",
+  "Large residential yard: $125-$225",
+  "Acreage mowing: usually $75-$150+ per acre depending on terrain and overgrowth",
+  "5+ acres: trigger manual review, do not estimate under $300",
+  "10 acres: flag as high-value acreage/commercial job, broadly $750-$1,500+",
+  "Overgrowth: can add 25%-100%",
+  "Bush trimming: $10-$25 per bush light, $25-$60 per bush heavy",
+  "Cleanup / debris / leaves: $150-$600+",
+  "Slope, tight access, pets, gates, debris, hauling: increase price or trigger owner review",
+  "Recurring service: can reduce per-visit price vs one-time",
+] as const;
 
 const yardBase: Record<string, number> = {
   small: 65,

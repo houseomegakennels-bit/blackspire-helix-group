@@ -5,8 +5,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   computeHelixLawnLeadEstimate,
   formatHelixLawnLeadStage,
+  helixLawnPricingLogic,
   normalizeHelixLawnLeadInput,
   serviceLabels,
+  type HelixLawnCommandSnapshot,
   type HelixLawnLeadInput,
   type HelixLawnLeadStage,
 } from "@/lib/helix-lawn-command";
@@ -45,22 +47,7 @@ export type StoredHelixLawnLead = {
   activity: Array<{ type: string; message: string; createdAt: string }>;
 };
 
-export type HelixLawnCommandSnapshot = {
-  metricCards: Array<{ value: string; label: string; detail: string }>;
-  pipelineColumns: Array<{ label: string; count: number; items: string[] }>;
-  recentLeads: Array<{
-    id: string;
-    name: string;
-    service: string;
-    address: string;
-    urgency: string;
-    estimate: string;
-    stage: string;
-  }>;
-  priorityActions: string[];
-  activityItems: Array<{ message: string; meta: string }>;
-  totalLeadCount: number;
-};
+export type { HelixLawnCommandSnapshot } from "@/lib/helix-lawn-command";
 
 function getSupabaseAdmin(): SupabaseClient {
   const url = process.env.SUPABASE_URL?.trim();
@@ -252,19 +239,7 @@ const stageOrder: HelixLawnLeadStage[] = [
   "lost",
 ];
 
-export const helixLawnPricingLogic = [
-  "Small city yard mowing: $45-$75",
-  "Medium residential yard: $75-$125",
-  "Large residential yard: $125-$225",
-  "Acreage mowing: usually $75-$150+ per acre depending on terrain and overgrowth",
-  "5+ acres: trigger manual review, do not estimate under $300",
-  "10 acres: flag as high-value acreage/commercial job, broadly $750-$1,500+",
-  "Overgrowth: can add 25%-100%",
-  "Bush trimming: $10-$25 per bush light, $25-$60 per bush heavy",
-  "Cleanup / debris / leaves: $150-$600+",
-  "Slope, tight access, pets, gates, debris, hauling: increase price or trigger owner review",
-  "Recurring service: can reduce per-visit price vs one-time",
-] as const;
+export { helixLawnPricingLogic } from "@/lib/helix-lawn-command";
 
 export async function getHelixLawnCommandSnapshot(): Promise<HelixLawnCommandSnapshot> {
   const leads = await listHelixLawnLeads(48);
@@ -318,7 +293,13 @@ export async function getHelixLawnCommandSnapshot(): Promise<HelixLawnCommandSna
     return {
       label: formatHelixLawnLeadStage(stage),
       count: stageCounts.get(stage) ?? 0,
-      items: stageLeads.flatMap((lead) => [lead.name, lead.serviceLabel]),
+      items: stageLeads.map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        service: lead.serviceLabel,
+        estimate: lead.estimateBand,
+        urgency: lead.urgency,
+      })),
     };
   });
 
@@ -330,6 +311,59 @@ export async function getHelixLawnCommandSnapshot(): Promise<HelixLawnCommandSna
     urgency: lead.urgency,
     estimate: lead.estimateBand,
     stage: lead.stageLabel,
+    phone: lead.phone,
+    preferredDate: lead.preferredDate,
+    summary: lead.summary,
+    confidence: lead.confidence,
+    createdAt: lead.createdAt,
+  }));
+
+  const estimateQueue = leads
+    .filter((lead) => lead.stage === "estimate_needed")
+    .slice(0, 8)
+    .map((lead) => ({
+      id: lead.id,
+      name: lead.name,
+      service: lead.serviceLabel,
+      address: lead.address,
+      estimate: lead.estimateBand,
+      reason:
+        lead.cleanup === "heavy" || lead.overgrowth === "heavy" || lead.yardSize === "acreage"
+          ? "Owner review required because the job has heavy, acreage, or complex conditions."
+          : "Owner review recommended before sending the quote.",
+    }));
+
+  const followUps = leads
+    .filter((lead) => lead.stage === "new_lead" || lead.stage === "quote_sent" || lead.stage === "estimate_needed")
+    .slice(0, 8)
+    .map((lead) => ({
+      id: lead.id,
+      name: lead.name,
+      phone: lead.phone,
+      service: lead.serviceLabel,
+      estimate: lead.estimateBand,
+      nextStep:
+        lead.stage === "estimate_needed"
+          ? "Review property details, then call or text with a confirmed range."
+          : lead.stage === "quote_sent"
+            ? "Follow up with schedule options and ask for booking confirmation."
+            : "Send the first estimate response and confirm timing.",
+    }));
+
+  const outreachDrafts = leads.slice(0, 6).map((lead) => ({
+    id: lead.id,
+    name: lead.name,
+    channel: "SMS",
+    subject: `${lead.serviceLabel} estimate follow-up`,
+    body: `Hi ${lead.name}, this is Helix Lawn Command. Based on your ${lead.serviceLabel.toLowerCase()} request at ${lead.address}, the preliminary range is ${lead.estimateBand}. Want us to confirm details and get you on the schedule?`,
+  }));
+
+  const importHistory = leads.slice(0, 8).map((lead) => ({
+    id: lead.id,
+    source: "Website intake",
+    status: lead.stageLabel,
+    detail: `${lead.name} submitted ${lead.serviceLabel.toLowerCase()} and entered ${lead.stageLabel}.`,
+    createdAt: lead.createdAt,
   }));
 
   const priorityActions = leads.slice(0, 4).map((lead) => {
@@ -371,6 +405,10 @@ export async function getHelixLawnCommandSnapshot(): Promise<HelixLawnCommandSna
     metricCards,
     pipelineColumns,
     recentLeads,
+    estimateQueue,
+    followUps,
+    outreachDrafts,
+    importHistory,
     priorityActions,
     activityItems,
     totalLeadCount: leads.length,
