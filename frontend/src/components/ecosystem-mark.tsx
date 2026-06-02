@@ -19,10 +19,10 @@ export function EcosystemMark({
 }) {
   const frameClass =
     variant === "bare"
-      ? "flex min-h-[98px] items-center justify-center px-1 py-1"
+      ? "flex min-h-[98px] w-full items-center justify-center px-1 py-1"
       : variant === "hero"
-        ? "brand-card flex min-h-[208px] items-center justify-center overflow-hidden px-4 py-4"
-        : "brand-card flex min-h-[178px] items-center justify-center overflow-hidden px-3 py-3";
+        ? "brand-card flex min-h-[208px] w-full items-center justify-center overflow-hidden px-4 py-4"
+        : "brand-card flex min-h-[178px] w-full items-center justify-center overflow-hidden px-3 py-3";
 
   const defaultStageClass =
     variant === "bare"
