@@ -63,9 +63,6 @@ export function MarketingShell({
                 {item.label}
               </Link>
             ))}
-            <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-4 py-3 text-xs uppercase tracking-[0.2em] transition">
-              Buyer Engine Workspace
-            </Link>
           </nav>
         </div>
       </header>

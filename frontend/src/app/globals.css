@@ -688,7 +688,7 @@ body::after {
   width: min(72vw, 820px);
   height: auto;
   object-fit: contain;
-  opacity: 0.09;
+  opacity: 0.13;
   filter: grayscale(10%) brightness(1.45);
   mix-blend-mode: screen;
   user-select: none;
@@ -696,7 +696,7 @@ body::after {
 @media (max-width: 640px) {
   .luxury-watermark-img {
     width: 88vw;
-    opacity: 0.1;
+    opacity: 0.14;
   }
 }
 
