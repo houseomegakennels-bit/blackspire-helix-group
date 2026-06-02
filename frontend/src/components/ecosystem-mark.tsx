@@ -7,6 +7,7 @@ export function EcosystemMark({
   variant = "framed",
   logoMaxWidthClass = "max-w-[260px]",
   logoMaxHeightClass = "max-h-[140px]",
+  logoStageClass,
 }: {
   name: string;
   monogram: string;
@@ -14,25 +15,27 @@ export function EcosystemMark({
   variant?: "framed" | "bare" | "hero";
   logoMaxWidthClass?: string;
   logoMaxHeightClass?: string;
+  logoStageClass?: string;
 }) {
   const frameClass =
     variant === "bare"
-      ? "flex min-h-[88px] items-center justify-center px-2 py-2"
+      ? "flex min-h-[98px] items-center justify-center px-1 py-1"
       : variant === "hero"
-        ? "brand-card flex min-h-[144px] items-center justify-center overflow-hidden px-5 py-6"
-        : "brand-card flex min-h-[108px] items-center justify-center overflow-hidden px-4 py-5";
+        ? "brand-card flex min-h-[208px] items-center justify-center overflow-hidden px-4 py-4"
+        : "brand-card flex min-h-[178px] items-center justify-center overflow-hidden px-3 py-3";
 
-  // Height for the logo container per variant
-  const logoContainerHeight =
-    variant === "bare" ? 64 : variant === "hero" ? 120 : 96;
+  const defaultStageClass =
+    variant === "bare"
+      ? "h-[86px]"
+      : variant === "hero"
+        ? "h-[176px]"
+        : "h-[148px]";
 
   if (logoSrc) {
     return (
       <div className={frameClass}>
-        {/* Relative container with fixed height so `fill` + object-contain works correctly */}
         <div
-          className={`relative mx-auto w-full overflow-hidden ${logoMaxWidthClass}`}
-          style={{ height: `${logoContainerHeight}px` }}
+          className={`relative mx-auto w-full overflow-hidden ${logoMaxWidthClass} ${logoMaxHeightClass} ${logoStageClass ?? defaultStageClass}`}
         >
           <Image
             src={logoSrc}

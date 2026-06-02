@@ -24,14 +24,16 @@ export function MarketingShell({
       <header className="luxury-header sticky top-0 z-40 border-b border-[var(--line)] bg-[hsl(0_0%_3%/.72)] backdrop-blur-2xl">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-4 lg:px-6">
           <Link href="/" className="min-w-0 max-w-[270px] transition duration-300 hover:opacity-95">
-            <Image
-              src="/brand/blackspire-helix-group-logo.png"
-              alt="BLACKSPIRE HELIX GROUP logo"
-              width={1792}
-              height={1024}
-              priority
-              className="h-auto w-auto max-w-full object-contain"
-            />
+            <div className="relative h-[74px] w-[96px] overflow-hidden">
+              <Image
+                src="/brand/blackspire-helix-group-logo-fit.png"
+                alt="BLACKSPIRE HELIX GROUP logo"
+                width={1792}
+                height={1024}
+                priority
+                className="h-full w-full object-contain"
+              />
+            </div>
           </Link>
 
           <nav className="flex flex-wrap items-center justify-end gap-2">
@@ -56,13 +58,13 @@ export function MarketingShell({
       <footer className="border-t border-[var(--line)] bg-[hsl(0_0%_2%/.95)]">
         <div className="mx-auto grid max-w-[1400px] gap-8 px-4 py-12 lg:grid-cols-[1.2fr_0.8fr] lg:px-6">
           <div className="space-y-4">
-            <div className="max-w-[320px]">
+            <div className="relative h-[118px] w-[242px] overflow-hidden">
               <Image
-                src="/brand/blackspire-helix-group-logo.png"
+                src="/brand/blackspire-helix-group-logo-fit.png"
                 alt="BLACKSPIRE HELIX GROUP logo"
                 width={1792}
                 height={1024}
-                className="h-auto w-auto max-w-full object-contain"
+                className="h-full w-full object-contain"
               />
             </div>
             <h2 className="brand-display max-w-2xl text-3xl leading-tight text-white">
@@ -93,7 +95,8 @@ export function MarketingShell({
                     logoSrc={project.logoSrc}
                     variant="bare"
                     logoMaxWidthClass={project.logoMaxWidthClass}
-                    logoMaxHeightClass="max-h-[88px]"
+                    logoMaxHeightClass={project.logoMaxHeightClass}
+                    logoStageClass={project.logoStageClass}
                   />
                 </div>
                 <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">

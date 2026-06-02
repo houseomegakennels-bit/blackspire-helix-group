@@ -39,6 +39,7 @@ export function EcosystemCard({
         variant={mode === "stacked" ? "hero" : "framed"}
         logoMaxWidthClass={project.logoMaxWidthClass}
         logoMaxHeightClass={project.logoMaxHeightClass}
+        logoStageClass={project.logoStageClass}
       />
 
       <div className="space-y-3">

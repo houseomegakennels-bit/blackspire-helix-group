@@ -109,6 +109,7 @@ export function HelixLawnCommandPage() {
                     variant="bare"
                     logoMaxWidthClass={project.logoMaxWidthClass}
                     logoMaxHeightClass="max-h-[156px]"
+                    logoStageClass={project.logoStageClass}
                   />
                 </div>
                 <h1 className="brand-display text-5xl leading-[0.94] text-white lg:text-7xl">
