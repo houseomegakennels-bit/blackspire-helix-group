@@ -72,8 +72,10 @@ const countyMetadata: Record<string, { dateFormats: string[] }> = {
   catawba: { dateFormats: ["YYYY-MM-DD DateOnly string"] },
   cherokee: { dateFormats: ["SaleYear + SaleMonth"] },
   chowan: { dateFormats: ["epoch ms"] },
+  columbus: { dateFormats: ["epoch ms"] },
   craven: { dateFormats: ["epoch ms"] },
   cumberland: { dateFormats: ["ISO string"] },
+  dare: { dateFormats: ["epoch ms"] },
   currituck: { dateFormats: ["epoch ms"] },
   davidson: { dateFormats: ["SaleYear + SaleMonth"] },
   davie: { dateFormats: ["SaleYear + SaleMonth"] },
@@ -90,6 +92,7 @@ const countyMetadata: Record<string, { dateFormats: string[] }> = {
   hoke: { dateFormats: ["YYYYMMDD int"] },
   iredell: { dateFormats: ["MM/DD/YYYY"] },
   jackson: { dateFormats: ["epoch ms"] },
+  johnston: { dateFormats: ["epoch ms"] },
   lee: { dateFormats: ["epoch ms"] },
   lincoln: { dateFormats: ["YYYYMMDD int"] },
   macon: { dateFormats: ["epoch ms"] },
@@ -109,6 +112,8 @@ const countyMetadata: Record<string, { dateFormats: string[] }> = {
   rowan: { dateFormats: ["epoch ms"] },
   rutherford: { dateFormats: ["epoch ms"] },
   sampson: { dateFormats: ["YYYY-MM-DD datetime string"] },
+  stanly: { dateFormats: ["epoch ms"] },
+  stokes: { dateFormats: ["epoch ms"] },
   surry: { dateFormats: ["SaleYear + SaleMonth"] },
   wake: { dateFormats: ["epoch ms"] },
   warren: { dateFormats: ["epoch ms"] },
@@ -196,6 +201,12 @@ const countyVerificationOverrides: Record<
     verificationReason:
       "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, and last-sale date for past-90-day buyer sweeps. Sale price is unavailable in this feed.",
   },
+  columbus: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
   craven: {
     supportsPast90Days: false,
     verificationStatus: "blocked",
@@ -212,6 +223,12 @@ const countyVerificationOverrides: Record<
     verificationStatus: "approved",
     verificationReason:
       "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps.",
+  },
+  dare: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, and last-sale date for past-90-day buyer sweeps. Outer Banks vacation and investment market. Sale price unavailable.",
   },
   davidson: {
     supportsPast90Days: true,
@@ -294,6 +311,12 @@ const countyVerificationOverrides: Record<
     verificationStatus: "approved",
     verificationReason:
       "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps.",
+  },
+  johnston: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, and last-sale date for past-90-day buyer sweeps. Verified 2026-05-26 with recent 2026 sale dates. Sale price unavailable.",
   },
   lee: {
     supportsPast90Days: false,
@@ -398,6 +421,18 @@ const countyVerificationOverrides: Record<
     verificationReason:
       "Official Sampson County parcel feed exposes recent record date, current owner, mailing address, site address, sale price, deed reference, and land-use signals for past-90-day buyer sweeps.",
   },
+  stanly: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "Stanly County direct ArcGIS Online endpoint (services6.arcgis.com). DateSold epoch ms, Name1/Name2/Name3 buyer, TaxPayerAddr1/City/State/Zip mailing, SaleAmount sale price, YearBuilt land signal. Smoke-tested 2026-05-26: 128 sales, 72 buyers.",
+  },
+  stokes: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "Official Stokes County ParcelsNew layer exposes current DEED_DATE buyer-owner updates, owner mailing fields, property address, parcel ID, deed book/page, and land-class signals for past-90-day buyer identity sweeps. Sale price is unavailable in this feed.",
+  },
   surry: {
     supportsPast90Days: false,
     verificationStatus: "historical_only",
@@ -446,9 +481,11 @@ export const fallbackCountySourceRows: CountySourceRow[] = [
   { county: "Catawba", state: "NC", source_type: "arcgis", active: true, notes: "Official SearchLayers cc_owner table. sale_date DateOnly string, sale_amount, owner/owner2, mailing address, deed_bk/deed_pg, value fields, yr_built, and class/bldg_value land signals." },
   { county: "Cherokee", state: "NC", source_type: "arcgis_cherokee", active: true, notes: "Month and year sale timing." },
   { county: "Chowan", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. Sale price unavailable." },
+  { county: "Columbus", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. Sale price unavailable." },
   { county: "Craven", state: "NC", source_type: "arcgis_craven", active: true, notes: "SALE_DATE epoch ms." },
   { county: "Cumberland", state: "NC", source_type: "arcgis_cumberland", active: true, notes: "PKG_SALE_DATE ISO string." },
   { county: "Currituck", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy." },
+  { county: "Dare", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. Outer Banks vacation/investment market. Sale price unavailable." },
   { county: "Davidson", state: "NC", source_type: "arcgis_davidson", active: true, notes: "SaleMonth1 and SaleYear1 fields." },
   { county: "Davie", state: "NC", source_type: "arcgis", active: true, notes: "Official Parcel_Sales MapServer. saleyear/salemonth month-level timing, name1/name2 buyer fields, mailing address fields, deed_bk_pg, value fields, acreage, and parcelbuildingvalue land signal." },
   { county: "Durham", state: "NC", source_type: "arcgis_durham", active: true, notes: "PKG_SALE_DATE epoch ms." },
@@ -464,6 +501,7 @@ export const fallbackCountySourceRows: CountySourceRow[] = [
   { county: "Hoke", state: "NC", source_type: "arcgis_hoke", active: true, notes: "DEED_DATE YYYYMMDD integer." },
   { county: "Iredell", state: "NC", source_type: "arcgis_iredell", active: true, notes: "Historical yearly rows only." },
   { county: "Jackson", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy." },
+  { county: "Johnston", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. Verified 2026-05-26 with recent 2026 sale dates. Sale price unavailable." },
   { county: "Lee", state: "NC", source_type: "arcgis_lee", active: true, notes: "Historical yearly rows only." },
   { county: "Lincoln", state: "NC", source_type: "arcgis", active: true, notes: "AMDTSL YYYYMMDD int. Feed is reachable, but observed sales are stale and not approved for past-90-day sweeps." },
   { county: "Macon", state: "NC", source_type: "arcgis_macon", active: true, notes: "Historical source range only." },
@@ -483,6 +521,8 @@ export const fallbackCountySourceRows: CountySourceRow[] = [
   { county: "Rowan", state: "NC", source_type: "arcgis_rowan", active: true, notes: "DATESOLD epoch ms." },
   { county: "Rutherford", state: "NC", source_type: "arcgis_rutherford", active: true, notes: "Deed_Date epoch ms." },
   { county: "Sampson", state: "NC", source_type: "arcgis", active: true, notes: "Official Parcels FeatureServer. DATE_RECOR datetime string, CURRENT_OW buyer field, mailing/site address fields, SALE_PRICE, BK_PG/DEED, and SEG_TYPE_D/PARCEL_CLA/YEAR_BUILT land signals." },
+  { county: "Stanly", state: "NC", source_type: "arcgis", active: true, notes: "Stanly County direct ArcGIS Online (services6.arcgis.com). DateSold epoch ms, Name1/Name2/Name3 buyer, SaleAmount sale price, YearBuilt land signal. Smoke-tested 2026-05-26: 128 sales, 72 buyers." },
+  { county: "Stokes", state: "NC", source_type: "arcgis", active: true, notes: "Official Stokes ParcelsNew feed. DEED_DATE epoch ms, PROPERTY_OWNER_1/2 buyer fields, owner mailing fields, parcel ID, deed book/page, and LAND_CLASS signal. Sale price unavailable. Smoke-tested 2026-06-01: 73 sales, 68 buyers." },
   { county: "Surry", state: "NC", source_type: "arcgis_surry", active: true, notes: "Historical yearly rows only." },
   { county: "Wake", state: "NC", source_type: "arcgis_wake", active: true, notes: "SALE_DATE epoch ms." },
   { county: "Warren", state: "NC", source_type: "arcgis_warren", active: true, notes: "DEEDDATE epoch ms." },
@@ -911,13 +951,36 @@ export function getCountyOperationalRisk(county: string, propertyType: string) {
     } satisfies CountyOperationalRisk;
   }
 
+  if (normalizedCounty === "stanly") {
+    return {
+      county,
+      tone: "good",
+      label: "county feed",
+      message:
+        "Stanly County uses a direct ArcGIS Online parcel feed with sale price, deed reference, and 90-day buyer data. Smoke-tested 2026-05-26: 128 sales, 72 buyers.",
+    } satisfies CountyOperationalRisk;
+  }
+
+  if (normalizedCounty === "stokes") {
+    return {
+      county,
+      tone: "warn",
+      label: "buyer identity",
+      message:
+        "Stokes uses the official ParcelsNew deed/owner feed and passed a 2026-06-01 smoke test with 73 sales and 68 buyers. Sale price is unavailable, so spend totals should be treated as incomplete.",
+    } satisfies CountyOperationalRisk;
+  }
+
   if (
     normalizedCounty === "currituck" ||
     normalizedCounty === "chowan" ||
     normalizedCounty === "jackson" ||
     normalizedCounty === "pamlico" ||
     normalizedCounty === "randolph" ||
-    normalizedCounty === "rockingham"
+    normalizedCounty === "rockingham" ||
+    normalizedCounty === "johnston" ||
+    normalizedCounty === "columbus" ||
+    normalizedCounty === "dare"
   ) {
     return {
       county,

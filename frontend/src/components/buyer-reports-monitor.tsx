@@ -109,6 +109,20 @@ type OutreachPayload = {
   error?: string;
 };
 
+type SummaryPayload = {
+  ok: boolean;
+  aiGenerated?: boolean;
+  summary?: string;
+  error?: string;
+};
+
+type AiSummaryState = {
+  loading: boolean;
+  text: string | null;
+  aiGenerated: boolean;
+  error: string | null;
+};
+
 export function BuyerReportsMonitor({
   initialReports,
   initialTotalCount,
@@ -150,6 +164,7 @@ export function BuyerReportsMonitor({
   const [realtimeStatus, setRealtimeStatus] = useState<"idle" | "connected" | "fallback">(
     realtime.enabled ? "idle" : "fallback",
   );
+  const [aiSummaries, setAiSummaries] = useState<Record<string, AiSummaryState>>({});
 
   const liveMode = env.enabled;
   const writeBlocked = Boolean(operatorStatus?.requiresAuth || operatorStatus?.bootstrapRequired);
@@ -565,6 +580,54 @@ export function BuyerReportsMonitor({
     setDraftStatus(`Saved draft copied for ${draft.buyerName}.`);
   }, []);
 
+  const fetchAiSummary = useCallback(async (report: BuyerReportView) => {
+    setAiSummaries((prev) => ({
+      ...prev,
+      [report.id]: { loading: true, text: null, aiGenerated: false, error: null },
+    }));
+
+    try {
+      const response = await fetch("/api/buyer-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buyerName: report.buyerName,
+          mailingAddress: report.mailingAddress,
+          county: report.county,
+          state: report.state,
+          propertyType: report.propertyType,
+          score: report.score,
+          purchaseCount: report.purchaseCount,
+          totalSpend: report.totalSpend,
+          isLlc: report.isLlc,
+          isCashBuyer: report.isCashBuyer,
+          searchJobId: report.searchJobId,
+        }),
+      });
+      const payload = (await response.json()) as SummaryPayload;
+
+      if (!response.ok || !payload.ok || !payload.summary) {
+        throw new Error(payload.error ?? "Summary generation failed.");
+      }
+
+      setAiSummaries((prev) => ({
+        ...prev,
+        [report.id]: {
+          loading: false,
+          text: payload.summary!,
+          aiGenerated: Boolean(payload.aiGenerated),
+          error: null,
+        },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Summary generation failed.";
+      setAiSummaries((prev) => ({
+        ...prev,
+        [report.id]: { loading: false, text: null, aiGenerated: false, error: msg },
+      }));
+    }
+  }, []);
+
   return (
     <>
       <Panel
@@ -766,7 +829,9 @@ export function BuyerReportsMonitor({
               </tr>
             </thead>
             <tbody>
-              {filteredReports.map((report) => (
+              {filteredReports.map((report) => {
+                const aiSummary = aiSummaries[report.id];
+                return (
                 <tr key={report.id} className="brand-table-row">
                   <td className="px-4 py-3">
                       {(() => {
@@ -813,6 +878,19 @@ export function BuyerReportsMonitor({
                         {report.buyerIdentityNote}
                       </div>
                     ) : null}
+                    {aiSummary?.text ? (
+                      <div className="mt-3 rounded-[8px] border border-[var(--line)] bg-[hsl(33_100%_50%/.06)] px-3 py-2">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--gold-soft)]">
+                            {aiSummary.aiGenerated ? "AI Summary" : "Oracle Summary"}
+                          </span>
+                        </div>
+                        <p className="text-xs leading-5 text-[var(--copy-soft)]">{aiSummary.text}</p>
+                      </div>
+                    ) : null}
+                    {aiSummary?.error ? (
+                      <div className="mt-2 text-[10px] text-[hsl(22_100%_72%)]">{aiSummary.error}</div>
+                    ) : null}
                         </>
                       );
                     })()}
@@ -843,18 +921,27 @@ export function BuyerReportsMonitor({
                       >
                         {copiedReportId === report.id ? "Copied" : "Copy outreach"}
                       </button>
-                    <button
-                      type="button"
-                      onClick={() => void saveOutreachDraft(report)}
-                      disabled={savingDraftId === report.id || writeBlocked}
-                      className="brand-button px-3 py-2 text-[11px] uppercase tracking-[0.22em] transition disabled:opacity-60"
-                    >
+                      <button
+                        type="button"
+                        onClick={() => void saveOutreachDraft(report)}
+                        disabled={savingDraftId === report.id || writeBlocked}
+                        className="brand-button px-3 py-2 text-[11px] uppercase tracking-[0.22em] transition disabled:opacity-60"
+                      >
                         {savingDraftId === report.id ? "Saving..." : "Save draft"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void fetchAiSummary(report)}
+                        disabled={aiSummary?.loading}
+                        className="brand-button px-3 py-2 text-[11px] uppercase tracking-[0.22em] transition disabled:opacity-60"
+                      >
+                        {aiSummary?.loading ? "Analyzing..." : aiSummary?.text ? "Re-analyze" : "AI Summary"}
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

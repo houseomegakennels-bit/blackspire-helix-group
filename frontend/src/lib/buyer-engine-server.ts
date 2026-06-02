@@ -733,6 +733,49 @@ export async function listCountySourceRows(includeInactive = true): Promise<Coun
   return (data ?? []) as CountySourceRow[];
 }
 
+export type AdminCountySourceRow = {
+  id: string;
+  county: string;
+  state: string;
+  source_type: string;
+  source_url: string | null;
+  active: boolean;
+  notes: string | null;
+  created_at: string | null;
+};
+
+export async function listAdminCountySourceRows(): Promise<AdminCountySourceRow[]> {
+  const env = getEnvState();
+  if (!env.enabled) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("CountyDataSource")
+    .select("id,county,state,source_type,source_url,active,notes,created_at")
+    .order("county", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as AdminCountySourceRow[];
+}
+
+export async function toggleCountySourceActive(id: string, active: boolean): Promise<void> {
+  const env = getEnvState();
+  if (!env.enabled) throw new Error("Supabase env not configured.");
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("CountyDataSource")
+    .update({ active })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 const getCachedCountyCapabilities = unstable_cache(
   async () => {
     const rows = await listCountySourceRows(true).catch(() => []);
