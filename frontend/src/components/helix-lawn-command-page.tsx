@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 
+import { HelixLawnIntakeDemo } from "@/components/helix-lawn-intake-demo";
 import { EcosystemMark } from "@/components/ecosystem-mark";
 import { MarketingShell } from "@/components/marketing-shell";
 import { getProjectBySlug } from "@/lib/ecosystem";
@@ -127,6 +128,9 @@ export function HelixLawnCommandPage() {
                 <Link href="/services" className="project-button inline-flex px-5 py-4 text-sm transition">
                   Review automation scope
                 </Link>
+                <Link href="/workspace/helix-lawn-command" className="project-button inline-flex px-5 py-4 text-sm transition">
+                  Open command center
+                </Link>
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
@@ -188,6 +192,10 @@ export function HelixLawnCommandPage() {
             </div>
           </div>
         </section>
+
+        <div className="mt-8" style={projectStyle}>
+          <HelixLawnIntakeDemo />
+        </div>
 
         <section className="mt-8 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="brand-panel px-6 py-8" style={projectStyle}>
