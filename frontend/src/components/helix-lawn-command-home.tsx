@@ -75,7 +75,7 @@ export function HelixLawnCommandHome({
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <Link
-                href="/ecosystem/helix-lawn-command"
+                href="/helix-lawn-command"
                 className="rounded-full border border-[hsl(126_48%_28%/.55)] px-4 py-2 text-xs uppercase tracking-[0.22em] text-white transition hover:bg-[hsl(142_36%_12%)]"
               >
                 Return to offer page

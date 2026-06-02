@@ -7,6 +7,7 @@ import { parentBrand, ecosystemProjects } from "@/lib/ecosystem";
 
 const marketingNav = [
   { href: "/ecosystem", label: "Ecosystem" },
+  { href: "/helix-lawn-command", label: "Lawn Command" },
   { href: "/services", label: "Services" },
   { href: "/industries", label: "Industries" },
   { href: "/demos", label: "Demos" },

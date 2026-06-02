@@ -68,7 +68,7 @@ export const ecosystemProjects: EcosystemProject[] = [
     accent: "#63D11F",
     glow: "rgba(99, 209, 31, 0.34)",
     cta: "Automate My Lawn Business",
-    href: "/ecosystem/helix-lawn-command",
+    href: "/helix-lawn-command",
     productHref: "/workspace/helix-lawn-command",
     status: "live",
     targetUser: "Lawn and landscaping companies",
