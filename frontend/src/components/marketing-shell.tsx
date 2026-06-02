@@ -20,10 +20,10 @@ export function MarketingShell({
   children: ReactNode;
 }) {
   return (
-    <main className="min-h-screen text-foreground">
-      <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[hsl(0_0%_3%/.84)] backdrop-blur-xl">
+    <main className="luxury-shell min-h-screen text-foreground">
+      <header className="luxury-header sticky top-0 z-40 border-b border-[var(--line)] bg-[hsl(0_0%_3%/.72)] backdrop-blur-2xl">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-4 lg:px-6">
-          <Link href="/" className="min-w-0 max-w-[260px]">
+          <Link href="/" className="min-w-0 max-w-[270px] transition duration-300 hover:opacity-95">
             <Image
               src="/brand/blackspire-helix-group-logo.png"
               alt="BLACKSPIRE HELIX GROUP logo"
@@ -39,7 +39,7 @@ export function MarketingShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className="rounded-full border border-[var(--line)] px-3 py-2 text-xs uppercase tracking-[0.2em] text-[var(--copy-soft)] transition hover:border-[var(--line-strong)] hover:text-white"
+                className="luxury-nav-link rounded-full border border-[var(--line)] px-3 py-2 text-xs uppercase tracking-[0.2em] text-[var(--copy-soft)] transition hover:border-[var(--line-strong)] hover:text-white"
               >
                 {item.label}
               </Link>
@@ -65,7 +65,7 @@ export function MarketingShell({
                 className="h-auto w-auto max-w-full object-contain"
               />
             </div>
-            <h2 className="max-w-2xl text-2xl font-semibold text-white">
+            <h2 className="brand-display max-w-2xl text-3xl leading-tight text-white">
               Building AI employees, workflow automations, and command surfaces for modern businesses.
             </h2>
             <p className="max-w-2xl text-sm leading-6 text-[var(--copy-soft)]">

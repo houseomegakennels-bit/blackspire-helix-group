@@ -1,8 +1,8 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 
 import { EcosystemCard } from "@/components/ecosystem-card";
+import { LuxuryHeroStage } from "@/components/luxury-hero-stage";
 import { MarketingShell } from "@/components/marketing-shell";
 import {
   ecosystemProjects,
@@ -12,231 +12,312 @@ import {
   useCases,
 } from "@/lib/ecosystem";
 
+const marqueeItems = [
+  "Luxury automation systems",
+  "Lead capture intelligence",
+  "Workflow command surfaces",
+  "Vertical AI operating systems",
+  "Founder-grade product strategy",
+  "Premium client acquisition design",
+] as const;
+
+const proofMetrics = [
+  { label: "Division systems", value: "05", copy: "Specialized operating layers under one command brand." },
+  { label: "Automation lanes", value: "24/7", copy: "Always-on flows for leads, routing, follow-up, and visibility." },
+  { label: "Operator posture", value: "Elite", copy: "Built to feel like a command center, not SaaS clutter." },
+] as const;
+
 export default function Home() {
+  const featuredProjects = ecosystemProjects.slice(0, 2);
+  const supportingProjects = ecosystemProjects.slice(2);
+
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1400px] px-4 py-12 lg:px-6 lg:py-16">
-        <section className="brand-panel overflow-hidden px-6 py-10 lg:px-8 lg:py-12">
-          <div className="grid gap-10 xl:grid-cols-[1.05fr_0.95fr]">
-            <div className="space-y-6">
-              <div className="space-y-3">
-                <div className="max-w-[360px]">
-                  <Image
-                    src="/brand/blackspire-helix-group-logo.png"
-                    alt="BLACKSPIRE HELIX GROUP logo"
-                    width={1792}
-                    height={1024}
-                    priority
-                    className="h-auto w-auto max-w-full object-contain"
-                  />
+      <div className="mx-auto max-w-[1500px] px-4 py-8 lg:px-6 lg:py-10">
+        <div className="luxury-home">
+          <section className="luxury-hero brand-panel px-6 py-8 lg:px-8 lg:py-10">
+            <div className="grid gap-10 xl:grid-cols-[0.95fr_1.05fr] xl:items-center">
+              <div className="luxury-hero-copy space-y-8">
+                <div className="space-y-5">
+                  <div className="luxury-badge">
+                    <span className="luxury-badge-dot" />
+                    <span className="luxury-kicker">BLACKSPIRE HELIX GROUP / Parent command brand</span>
+                  </div>
+                  <div className="space-y-4">
+                    <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold-soft)]">
+                      Premium AI infrastructure
+                    </p>
+                    <h1 className="luxury-hero-title brand-display brand-accent-text">
+                      Design AI employees that feel engineered for power, speed, and taste.
+                    </h1>
+                    <p className="luxury-hero-subtitle text-[var(--copy-soft)]">
+                      {parentBrand.description} We build luminous command surfaces, specialized
+                      vertical systems, and automations that make operators feel unfairly well-armed.
+                    </p>
+                  </div>
                 </div>
-                <h1 className="brand-accent-text max-w-4xl text-5xl font-semibold leading-[1.04] lg:text-6xl">
-                  Build AI Employees That Work 24/7
-                </h1>
-                <p className="max-w-3xl text-base leading-8 text-[var(--copy-soft)]">
-                  {parentBrand.description}
-                </p>
-              </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Link href="/contact" className="brand-button inline-flex px-5 py-4 text-sm transition">
-                  Book Strategy Call
-                </Link>
-                <Link href="/ecosystem" className="brand-button inline-flex px-5 py-4 text-sm transition">
-                  Explore Ecosystem
-                </Link>
-                <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm transition">
-                  Open Buyer Engine Workspace
-                </Link>
-              </div>
+                <div className="luxury-hero-cta">
+                  <Link href="/contact" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                    Book Strategy Call
+                  </Link>
+                  <Link href="/ecosystem" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                    Tour the Ecosystem
+                  </Link>
+                  <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                    Open Buyer Engine
+                  </Link>
+                </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="brand-card p-4">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                    Positioning
-                  </div>
-                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
-                    Premium AI command center, not a generic chatbot agency.
-                  </div>
-                </div>
-                <div className="brand-card p-4">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                    Focus
-                  </div>
-                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
-                    Leads, follow-up, operations, content, dashboards, and workflow routing.
-                  </div>
-                </div>
-                <div className="brand-card p-4">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                    Outcome
-                  </div>
-                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
-                    Less manual drag. Faster response. Cleaner systems.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="brand-panel relative overflow-hidden px-6 py-8">
-              <div className="brand-orb brand-orb-gold" />
-              <div className="brand-orb brand-orb-silver" />
-              <div className="relative space-y-5">
-                <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">
-                  Command Center Thesis
-                </p>
-                <h2 className="text-3xl font-semibold text-white">
-                  One master identity. Multiple specialized divisions.
-                </h2>
-                <p className="text-sm leading-7 text-[var(--copy-soft)]">
-                  The ecosystem is the proof. Each division demonstrates how BLACKSPIRE HELIX GROUP can turn the same automation philosophy into a niche operating system.
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {ecosystemProjects.map((project) => (
-                    <div
-                      key={project.slug}
-                      className="ecosystem-preview-card p-4"
-                      style={
-                        {
-                          "--project-accent": project.accent,
-                          "--project-surface": project.surfaceTint,
-                        } as CSSProperties
-                      }
-                    >
-                      <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                        {project.role}
-                      </div>
-                      <div className="mt-2 text-base font-semibold text-white">{project.name}</div>
-                      <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{project.primaryOutcome}</div>
-                    </div>
+                <div className="luxury-metric-grid">
+                  {proofMetrics.map((metric) => (
+                    <article key={metric.label} className="luxury-metric-card">
+                      <div className="luxury-metric-label">{metric.label}</div>
+                      <div className="mt-3 luxury-metric-value">{metric.value}</div>
+                      <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{metric.copy}</p>
+                    </article>
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
 
-        <section className="mt-8 grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-          <div className="brand-panel px-6 py-8">
-            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">The problem</p>
-            <h2 className="mt-3 text-3xl font-semibold text-white">
-              Missed leads, slow follow-up, and scattered tools quietly cost businesses money.
-            </h2>
-            <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
-              Most businesses do not need more disconnected software. They need one system that can capture intent, move information, trigger action, and show operators what matters.
-            </p>
-          </div>
-
-          <div className="brand-panel px-6 py-8">
-            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">The solution</p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              {serviceLines.map((service) => (
-                <div key={service} className="brand-card p-4 text-sm leading-6 text-[var(--copy-soft)]">
-                  {service}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-8 brand-panel px-6 py-8">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Ecosystem divisions</p>
-              <h2 className="mt-3 text-3xl font-semibold text-white">
-                Five proof points under one parent brand.
-              </h2>
-            </div>
-            <Link href="/ecosystem" className="brand-button inline-flex px-4 py-3 text-sm transition">
-              View full ecosystem
-            </Link>
-          </div>
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-            {ecosystemProjects.map((project) => (
-              <EcosystemCard key={project.slug} project={project} />
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-8 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="brand-panel px-6 py-8">
-            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">How it works</p>
-            <div className="mt-5 grid gap-4">
-              {["Discover", "Design", "Build", "Automate", "Optimize"].map((step, index) => (
-                <div key={step} className="brand-card flex items-center gap-4 p-4">
-                  <span className="brand-accent-text text-2xl font-semibold">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <div className="text-base font-semibold text-white">{step}</div>
-                    <div className="mt-1 text-sm leading-6 text-[var(--copy-soft)]">
-                      Move from business friction to a system that can actually run.
+              <div className="space-y-5">
+                <LuxuryHeroStage />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="brand-card p-4">
+                    <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                      Positioning
+                    </div>
+                    <div className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                      Luxury command systems for operators who want leverage without visual compromise.
+                    </div>
+                  </div>
+                  <div className="brand-card p-4">
+                    <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                      Surface
+                    </div>
+                    <div className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                      Every division becomes a proof-grade product with its own visual and strategic lane.
+                    </div>
+                  </div>
+                  <div className="brand-card p-4">
+                    <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                      Outcome
+                    </div>
+                    <div className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                      Faster response, cleaner systems, stronger perception, and higher-value automation.
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="luxury-marquee">
+            <div className="luxury-marquee-track">
+              {[...marqueeItems, ...marqueeItems].map((item, index) => (
+                <span key={`${item}-${index}`} className="luxury-marquee-item">
+                  {item}
+                </span>
               ))}
             </div>
-          </div>
+          </section>
 
-          <div className="brand-panel px-6 py-8">
-            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">AI employee use cases</p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              {useCases.map((useCase) => (
-                <div key={useCase} className="brand-card p-4 text-sm leading-6 text-[var(--copy-soft)]">
-                  {useCase}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="brand-panel px-6 py-8">
-            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Industry fit</p>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              {industries.map((industry) => (
-                <div key={industry.name} className="brand-card p-4">
-                  <div className="text-base font-semibold text-white">{industry.name}</div>
-                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{industry.summary}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="brand-panel px-6 py-8">
-            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Founder vision</p>
-            <h2 className="mt-3 text-3xl font-semibold text-white">
-              A portfolio of niche AI-powered business systems.
-            </h2>
-            <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
-              The parent brand exists to make the entire ecosystem legible: one operating philosophy, multiple vertical applications, and room for each division to become a serious product in its own right.
-            </p>
-            <Link href="/about" className="brand-button mt-6 inline-flex px-4 py-3 text-sm transition">
-              Read the founder thesis
-            </Link>
-          </div>
-        </section>
-
-        <section className="mt-8 brand-panel px-6 py-8">
-          <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Final CTA</p>
-          <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <h2 className="text-3xl font-semibold text-white">Tell us what you want automated.</h2>
-              <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                The contact surface is now in place for strategy calls and AI-readiness intake. Next we can wire the form directly into n8n and your lead-routing stack.
+          <section className="luxury-split-grid">
+            <article className="brand-panel luxury-story-card col-span-12 px-6 py-8 xl:col-span-5">
+              <div className="luxury-section-heading">
+                <p className="luxury-kicker">The blackspire thesis</p>
+                <h2>One parent identity. Multiple division-grade systems.</h2>
+              </div>
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-[var(--copy-soft)]">
+                BLACKSPIRE HELIX GROUP is not positioned like a template-heavy AI agency. The
+                parent experience needs to telegraph discretion, engineering depth, and founder
+                taste. Every division below is proof that the same operating philosophy can be
+                translated into a different market with its own visual language and revenue logic.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/contact" className="brand-button inline-flex px-5 py-4 text-sm transition">
-                Start intake
+              <div className="mt-8 grid gap-3">
+                {["Luxury brand language", "Operator-first interfaces", "Verticalized AI systems"].map((item) => (
+                  <div key={item} className="brand-card flex items-center gap-4 px-4 py-4">
+                    <span className="brand-target" />
+                    <span className="text-sm tracking-[0.14em] text-white uppercase">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="brand-panel col-span-12 px-6 py-8 xl:col-span-7">
+              <div className="luxury-section-heading">
+                <p className="luxury-kicker">Service architecture</p>
+                <h2>Advanced automation feels different when the experience is curated.</h2>
+              </div>
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {serviceLines.map((service, index) => (
+                  <div key={service} className="brand-card p-5">
+                    <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                      Layer {String(index + 1).padStart(2, "0")}
+                    </div>
+                    <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{service}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section className="brand-panel px-6 py-8 lg:px-8">
+            <div className="flex flex-wrap items-end justify-between gap-5">
+              <div className="luxury-section-heading max-w-3xl">
+                <p className="luxury-kicker">Division proof points</p>
+                <h2>The ecosystem should feel like a private portfolio of elite software houses.</h2>
+              </div>
+              <Link href="/ecosystem" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                View all divisions
               </Link>
-              <Link href="/demos" className="brand-button inline-flex px-5 py-4 text-sm transition">
-                Review demo plan
-              </Link>
             </div>
-          </div>
-        </section>
+
+            <div className="mt-8 grid gap-6 xl:grid-cols-[1.06fr_0.94fr]">
+              <div className="grid gap-6">
+                {featuredProjects.map((project) => (
+                  <EcosystemCard key={project.slug} project={project} mode="stacked" />
+                ))}
+              </div>
+
+              <div className="grid gap-6">
+                {supportingProjects.map((project) => (
+                  <article
+                    key={project.slug}
+                    className="project-card brand-panel p-5"
+                    style={
+                      {
+                        "--project-accent": project.accent,
+                        "--project-glow": project.glow,
+                        "--project-surface": project.surfaceTint,
+                        "--project-edge": project.edgeTint,
+                      } as CSSProperties
+                    }
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                          {project.role}
+                        </div>
+                        <h3 className="mt-2 text-2xl font-semibold text-white">{project.name}</h3>
+                      </div>
+                      <span className="project-pill">{project.iconCue}</span>
+                    </div>
+                    <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">{project.description}</p>
+                    <div className="mt-5 grid gap-3">
+                      <div className="project-signal text-xs uppercase tracking-[0.22em]">
+                        <span className="project-signal-label">{project.vibe}</span>
+                        <span className="project-signal-separator">/</span>
+                        <span className="project-signal-copy">{project.primaryOutcome}</span>
+                      </div>
+                      <Link href={project.href} className="project-button inline-flex w-fit px-4 py-3 text-sm transition">
+                        {project.cta}
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="luxury-split-grid">
+            <article className="brand-panel col-span-12 px-6 py-8 xl:col-span-6">
+              <div className="luxury-section-heading">
+                <p className="luxury-kicker">Execution sequence</p>
+                <h2>From founder friction to a system that can actually run without hand-holding.</h2>
+              </div>
+
+              <div className="mt-8 luxury-process-list">
+                {["Discover", "System design", "Build", "Automation routing", "Operator refinement"].map((step, index) => (
+                  <article key={step} className="luxury-process-step" data-step={String(index + 1).padStart(2, "0")}>
+                    <h3 className="text-lg font-semibold text-white">{step}</h3>
+                    <p className="text-sm leading-7 text-[var(--copy-soft)]">
+                      We translate business bottlenecks into elegant automations, branded interfaces,
+                      and the kind of visibility operators can actually use under pressure.
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </article>
+
+            <article className="brand-panel col-span-12 px-6 py-8 xl:col-span-6">
+              <div className="luxury-section-heading">
+                <p className="luxury-kicker">Use-case matrix</p>
+                <h2>Use cases that make AI employees feel tangible, profitable, and immediate.</h2>
+              </div>
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {useCases.map((useCase, index) => (
+                  <div key={useCase} className="brand-card p-5">
+                    <div className="text-[11px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">
+                      Signal {String(index + 1).padStart(2, "0")}
+                    </div>
+                    <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{useCase}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section className="luxury-split-grid">
+            <article className="brand-panel col-span-12 px-6 py-8 xl:col-span-7">
+              <div className="luxury-section-heading">
+                <p className="luxury-kicker">Industry fit</p>
+                <h2>Luxury doesn’t mean vague. It means every niche gets a tailored operating logic.</h2>
+              </div>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                {industries.map((industry) => (
+                  <div key={industry.name} className="brand-card p-5">
+                    <div className="text-lg font-semibold text-white">{industry.name}</div>
+                    <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{industry.summary}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="luxury-cta-panel brand-panel col-span-12 px-6 py-8 xl:col-span-5">
+              <div className="luxury-section-heading">
+                <p className="luxury-kicker">Founder thesis</p>
+                <h2>Systems should feel expensive because clarity is expensive.</h2>
+              </div>
+              <p className="mt-5 text-sm leading-7 text-[var(--copy-soft)]">
+                The parent brand exists to make the whole portfolio legible: one command philosophy,
+                multiple revenue-grade products, and enough visual polish that each surface feels
+                built for serious operators rather than casual experimentation.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/about" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Read the thesis
+                </Link>
+                <Link href="/demos" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Review demos
+                </Link>
+              </div>
+            </article>
+          </section>
+
+          <section className="luxury-cta-panel brand-panel px-6 py-8 lg:px-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-4xl">
+                <p className="luxury-kicker">Final call</p>
+                <h2 className="brand-display mt-3 text-4xl text-white lg:text-5xl">
+                  Tell us what you want automated, then let’s make it look and behave like a flagship system.
+                </h2>
+                <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
+                  Strategy calls, AI-readiness intake, operator dashboards, lead routing, and branded
+                  product surfaces can all live under one luxury-grade command identity.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Link href="/contact" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Start intake
+                </Link>
+                <Link href="/services" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Review service map
+                </Link>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     </MarketingShell>
   );
