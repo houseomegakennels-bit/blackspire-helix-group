@@ -3,58 +3,202 @@ import Link from "next/link";
 import { MarketingShell } from "@/components/marketing-shell";
 import { serviceLines, useCases } from "@/lib/ecosystem";
 
+const engagementModes = [
+  {
+    id: "01",
+    title: "Strategy Call",
+    tagline: "Architecture before build",
+    copy: "Best when you need system architecture, positioning clarity, or a fast audit before build work starts. We map the problem, identify the automation gaps, and give you a prioritized build sequence.",
+    cta: "Book strategy call",
+    href: "/contact",
+  },
+  {
+    id: "02",
+    title: "Build Engagement",
+    tagline: "Full-stack delivery",
+    copy: "Best when you know the business problem and want the workflow, interface, and automation stack built cleanly. We scope, build, and hand off a running system.",
+    cta: "Start build intake",
+    href: "/contact",
+  },
+  {
+    id: "03",
+    title: "Operator Upgrade",
+    tagline: "Elevate what's already built",
+    copy: "Best when you have tools in place but the surface still feels fragmented, slow, or under-designed. We audit what exists and upgrade the pieces that limit your leverage.",
+    cta: "Request upgrade audit",
+    href: "/contact",
+  },
+] as const;
+
+const serviceIcons = ["⚙️", "🛰️", "🎯", "📡", "🔬", "🏗️", "🔐", "📊"];
+
 export default function ServicesPage() {
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] px-4 py-16 lg:px-6">
-        <section className="brand-panel overflow-hidden px-6 py-8 lg:px-8">
-          <p className="text-xs uppercase tracking-[0.48em] text-[var(--gold-soft)]">Services</p>
-          <h1 className="brand-accent-text mt-3 text-4xl font-semibold lg:text-5xl">
-            AI employees, workflow automations, and digital operating systems.
-          </h1>
-          <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-            BLACKSPIRE HELIX GROUP translates automation into practical business language: more
-            leads, faster follow-up, cleaner operations, and better visibility.
-          </p>
+      <div className="mx-auto max-w-[1450px] px-4 py-16 lg:px-6 space-y-8">
+
+        {/* ── HERO ─────────────────────────────────────────────────── */}
+        <section className="brand-panel relative overflow-hidden px-6 py-12 lg:px-10 lg:py-16">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-[radial-gradient(circle,hsl(38_92%_55%/.11),transparent_65%)] blur-3xl" />
+            <div className="absolute -bottom-16 left-1/3 h-60 w-60 rounded-full bg-[radial-gradient(circle,hsl(210_80%_60%/.07),transparent_65%)] blur-3xl" />
+          </div>
+          <div className="relative z-10 grid gap-8 xl:grid-cols-[1.1fr_0.9fr] xl:items-center">
+            <div>
+              <div className="flex items-center gap-3">
+                <span className="live-dot" />
+                <p className="cmd-text">BLACKSPIRE HELIX GROUP / Service Architecture</p>
+              </div>
+              <h1 className="brand-accent-text mt-4 text-5xl font-black leading-none tracking-tight lg:text-7xl">
+                AI EMPLOYEES.<br />
+                <span className="text-white">BUILT TO SCALE.</span>
+              </h1>
+              <p className="mt-5 max-w-2xl text-base leading-8 text-[var(--copy-soft)]">
+                BLACKSPIRE HELIX GROUP translates automation into practical business leverage:
+                more leads, faster follow-up, cleaner operations, and operators who feel
+                unfairly well-armed.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/contact" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Start intake
+                </Link>
+                <Link href="/demos" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  See proof gallery
+                </Link>
+              </div>
+            </div>
+            {/* stat cluster */}
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { value: "8", label: "Service layers" },
+                { value: "3", label: "Engagement modes" },
+                { value: "24/7", label: "Automation uptime" },
+                { value: "Elite", label: "Build standard" },
+              ].map((s, i) => (
+                <div key={s.label} className={`stat-badge reveal-scale stagger-${i + 1}`}>
+                  <span className="stat-badge-value brand-accent-text">{s.value}</span>
+                  <span className="stat-badge-label">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
-        <section className="mt-8 grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-          <article className="brand-panel px-6 py-8">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Core service lines</p>
-                <h2 className="brand-display mt-3 text-3xl text-white">The build layers behind the Blackspire offer</h2>
+        {/* ── SERVICE LAYERS TIMELINE ───────────────────────────────── */}
+        <section className="brand-panel px-6 py-10 lg:px-10">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Core service layers</p>
+              <h2 className="brand-display mt-3 text-4xl text-white">The build architecture behind every Blackspire engagement</h2>
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-3 lg:grid-cols-2">
+            {serviceLines.map((service, index) => (
+              <div key={service} className={`service-timeline-card shine-card reveal-up stagger-${(index % 4) + 1}`}>
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 text-xl">{serviceIcons[index] ?? "⚡"}</div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="ghost-number text-[2.2rem] leading-none opacity-[0.12]">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <div className="signal-bar flex-1 h-[2px]" />
+                    </div>
+                    <p className="text-sm leading-7 text-[var(--copy-soft)]">{service}</p>
+                  </div>
+                </div>
               </div>
-              <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                Start intake
+            ))}
+          </div>
+        </section>
+
+        <div className="glow-line" />
+
+        {/* ── ENGAGEMENT MODES ──────────────────────────────────────── */}
+        <section>
+          <div className="mb-6">
+            <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Engagement modes</p>
+            <h2 className="brand-display mt-3 text-4xl text-white">How we work with you</h2>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            {engagementModes.map((mode, i) => (
+              <article
+                key={mode.id}
+                className={`brand-panel relative overflow-hidden px-6 py-8 shine-card reveal-up stagger-${i + 1}`}
+              >
+                <div className="pointer-events-none absolute right-4 top-4 ghost-number text-[5rem] opacity-[0.05]">
+                  {mode.id}
+                </div>
+                <div className="relative z-10 flex h-full flex-col gap-4">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--gold-soft)]">{mode.tagline}</p>
+                    <h3 className="mt-2 text-2xl font-bold text-white">{mode.title}</h3>
+                  </div>
+                  <div className="signal-bar w-12" />
+                  <p className="flex-1 text-sm leading-7 text-[var(--copy-soft)]">{mode.copy}</p>
+                  <Link href={mode.href} className="brand-button mt-2 inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                    {mode.cta}
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {/* ── USE CASE MATRIX ───────────────────────────────────────── */}
+        <section className="brand-panel px-6 py-10 lg:px-10">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Use-case matrix</p>
+              <h2 className="brand-display mt-3 text-4xl text-white">What we make AI employees do</h2>
+            </div>
+            <Link href="/industries" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+              View industries
+            </Link>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {useCases.map((useCase, index) => (
+              <div key={useCase} className={`brand-card shine-card p-5 reveal-up stagger-${(index % 3) + 1}`}>
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="signal-bar w-8" />
+                  <span className="text-[10px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">
+                    Signal {String(index + 1).padStart(2, "0")}
+                  </span>
+                </div>
+                <p className="text-sm leading-7 text-[var(--copy-soft)]">{useCase}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── CTA ───────────────────────────────────────────────────── */}
+        <section className="brand-panel relative overflow-hidden px-6 py-12 lg:px-10">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute left-1/2 top-0 h-60 w-60 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_92%_55%/.1),transparent_65%)] blur-3xl" />
+          </div>
+          <div className="relative z-10 text-center max-w-3xl mx-auto">
+            <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Ready to build</p>
+            <h2 className="brand-display mt-3 text-4xl text-white lg:text-5xl">
+              Tell us what needs to run better.
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
+              Strategy calls, AI-readiness intake, operator dashboards, lead routing, and branded
+              product surfaces — all under one flagship command identity.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link href="/contact" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition">
+                Book strategy call
+              </Link>
+              <Link href="/ecosystem" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition">
+                Tour the ecosystem
               </Link>
             </div>
-            <div className="mt-6 grid gap-4">
-              {serviceLines.map((service, index) => (
-                <div key={service} className="brand-card p-5">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                    Layer {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{service}</p>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="brand-panel px-6 py-8">
-            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Use-case matrix</p>
-            <div className="mt-5 grid gap-4">
-              {useCases.map((useCase, index) => (
-                <div key={useCase} className="brand-card p-5">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                    Use Case {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{useCase}</p>
-                </div>
-              ))}
-            </div>
-          </article>
+          </div>
         </section>
+
       </div>
     </MarketingShell>
   );

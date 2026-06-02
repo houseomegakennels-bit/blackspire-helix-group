@@ -1147,6 +1147,297 @@ body::after {
   to { transform: translateX(-50%); }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   ADVANCED VISUALS — animations, reveals, components
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Scroll-driven reveal animations (progressive enhancement) ── */
+@keyframes revealUp {
+  from { opacity: 0; translate: 0 40px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+@keyframes revealLeft {
+  from { opacity: 0; translate: -32px 0; }
+  to   { opacity: 1; translate: 0 0; }
+}
+@keyframes revealScale {
+  from { opacity: 0; scale: 0.93; }
+  to   { opacity: 1; scale: 1; }
+}
+
+.reveal-up {
+  opacity: 0;
+  animation: revealUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.reveal-left {
+  opacity: 0;
+  animation: revealLeft 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.reveal-scale {
+  opacity: 0;
+  animation: revealScale 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@supports (animation-timeline: view()) {
+  .reveal-up, .reveal-left, .reveal-scale {
+    opacity: 1;
+    animation-fill-mode: both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 44%;
+  }
+}
+
+/* Stagger delays */
+.stagger-1 { animation-delay: 0.06s; }
+.stagger-2 { animation-delay: 0.14s; }
+.stagger-3 { animation-delay: 0.22s; }
+.stagger-4 { animation-delay: 0.30s; }
+.stagger-5 { animation-delay: 0.38s; }
+.stagger-6 { animation-delay: 0.46s; }
+
+/* ── Enhanced brand-card hover ── */
+.brand-card {
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+.brand-card:hover {
+  border-color: var(--line-strong);
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.12),
+    0 20px 46px hsl(0 0% 0% / 0.52),
+    0 0 0 1px hsl(31 100% 50% / 0.07);
+  transform: translateY(-2px);
+}
+
+/* ── Glow divider ── */
+.glow-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold) 38%, var(--gold-soft) 50%, var(--gold) 62%, transparent);
+  box-shadow: 0 0 14px hsl(33 100% 56% / 0.38);
+}
+
+/* ── Section ghost number ── */
+.ghost-number {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(4.5rem, 10vw, 8rem);
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px hsl(33 100% 56% / 0.18);
+  user-select: none;
+  pointer-events: none;
+  letter-spacing: -0.04em;
+}
+
+/* ── Service timeline card ── */
+.service-timeline-card {
+  position: relative;
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.4rem 1.5rem 1.4rem 1.8rem;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  border-left: 3px solid hsl(33 100% 56% / 0.7);
+  background:
+    linear-gradient(180deg, hsl(0 0% 7% / 0.95), hsl(24 20% 10% / 0.95)),
+    radial-gradient(circle at left, hsl(33 100% 56% / 0.06), transparent 55%);
+  transition: border-left-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+  overflow: hidden;
+}
+.service-timeline-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 28%, hsl(0 0% 100% / 0.025) 50%, transparent 72%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.service-timeline-card:hover {
+  border-left-color: var(--gold-soft);
+  box-shadow: -5px 0 28px hsl(33 100% 56% / 0.14), 0 20px 46px hsl(0 0% 0% / 0.44);
+  transform: translateY(-2px) translateX(2px);
+}
+.service-timeline-card:hover::after {
+  opacity: 1;
+}
+
+/* ── Industry card ── */
+.industry-card {
+  position: relative;
+  overflow: hidden;
+  padding: 1.4rem 1.4rem 1.6rem;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 18% 9% / 0.96));
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+.industry-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold-strong), var(--gold-soft), transparent);
+  opacity: 0.5;
+  transition: opacity 0.22s ease;
+}
+.industry-card:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-3px);
+  box-shadow: 0 24px 52px hsl(0 0% 0% / 0.52), 0 0 0 1px hsl(31 100% 50% / 0.06);
+}
+.industry-card:hover::before {
+  opacity: 1;
+}
+
+/* ── Live pulse dot ── */
+@keyframes livePulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(142 70% 50% / 0.5); }
+  50% { box-shadow: 0 0 0 7px hsl(142 70% 50% / 0); }
+}
+.live-dot {
+  width: 8px; height: 8px;
+  border-radius: 999px;
+  background: hsl(142 70% 52%);
+  animation: livePulse 2.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Gradient border card (animated) ── */
+@keyframes borderGlow {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.gradient-border-card {
+  position: relative;
+  border-radius: 24px;
+  background: linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 18% 9% / 0.96));
+}
+.gradient-border-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--gold), transparent 40%, transparent 60%, var(--gold-soft));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  animation: borderGlow 3.2s ease-in-out infinite;
+}
+
+/* ── Shine card on hover ── */
+.shine-card {
+  position: relative;
+  overflow: hidden;
+}
+.shine-card::after {
+  content: "";
+  position: absolute;
+  top: -60%;
+  left: -80%;
+  width: 48%;
+  height: 220%;
+  background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.055), transparent);
+  transform: skewX(-22deg);
+  transition: left 0.65s ease;
+  pointer-events: none;
+}
+.shine-card:hover::after {
+  left: 130%;
+}
+
+/* ── Contact form inputs ── */
+.contact-input {
+  width: 100%;
+  padding: 0.9rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: hsl(0 0% 5% / 0.97);
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+  resize: none;
+}
+.contact-input::placeholder {
+  color: var(--copy-muted);
+}
+.contact-input:focus {
+  border-color: hsl(33 100% 56% / 0.7);
+  box-shadow: 0 0 0 3px hsl(33 100% 56% / 0.07), inset 0 1px 0 hsl(32 100% 76% / 0.06);
+}
+
+/* ── Ecosystem division strip ── */
+.division-strip {
+  display: flex;
+  gap: 0.25rem;
+  border-radius: 999px;
+  overflow: hidden;
+  height: 6px;
+}
+.division-strip-seg {
+  flex: 1;
+  border-radius: 999px;
+  animation: tierPulse 3s ease-in-out infinite;
+}
+
+@keyframes tierPulse {
+  0%, 100% { opacity: 0.62; }
+  50% { opacity: 1; }
+}
+
+/* ── Counter display number ── */
+.display-counter {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(3.5rem, 7vw, 6rem);
+  line-height: 1;
+  color: white;
+  letter-spacing: -0.03em;
+}
+
+/* ── Floating stat badge ── */
+.stat-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 18px;
+  border: 1px solid var(--line-strong);
+  background: hsl(0 0% 4% / 0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.45);
+}
+.stat-badge-value {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.7rem;
+  line-height: 1;
+  color: white;
+}
+.stat-badge-label {
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--copy-muted);
+  text-align: center;
+}
+
+/* ── Cmd / monospace accent ── */
+.cmd-text {
+  font-family: var(--font-mono), monospace;
+  color: var(--gold-soft);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+/* ── Progress / signal bar ── */
+.signal-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gold-strong), var(--gold-soft));
+  box-shadow: 0 0 10px hsl(33 100% 56% / 0.35);
+}
+
 @media (max-width: 1024px) {
   .luxury-hero {
     min-height: auto;

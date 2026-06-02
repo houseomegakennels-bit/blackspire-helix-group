@@ -27,21 +27,27 @@ const founderPlan = [
 export default function AboutPage() {
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] px-4 py-16 lg:px-6">
+      <div className="mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6">
 
         {/* ── Meet the Founder ─────────────────────────────────────────── */}
         <section className="brand-panel overflow-hidden px-6 py-10 lg:px-10">
-          {/* Subtle gold radial glow top-right */}
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-[40%] bg-[radial-gradient(circle_at_80%_20%,hsl(38_92%_55%/.09),transparent_65%)]" />
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-[30%] bg-[radial-gradient(circle_at_20%_80%,hsl(198_100%_70%/.05),transparent_65%)]" />
+          {/* Background orbs */}
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -right-12 -top-12 h-72 w-72 rounded-full bg-[radial-gradient(circle,hsl(38_92%_55%/.12),transparent_65%)] blur-3xl" />
+            <div className="absolute -bottom-16 -left-8 h-56 w-56 rounded-full bg-[radial-gradient(circle,hsl(198_100%_70%/.07),transparent_65%)] blur-3xl" />
+            <div className="absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_92%_55%/.04),transparent_65%)] blur-3xl" />
+          </div>
 
-          <p className="text-xs uppercase tracking-[0.48em] text-[var(--gold-soft)]">Meet the Founder</p>
+          <div className="flex items-center gap-3">
+            <span className="live-dot" />
+            <p className="cmd-text">BLACKSPIRE HELIX GROUP / Founder Profile</p>
+          </div>
 
           <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_1.12fr] xl:gap-12">
 
             {/* Left — founder photo */}
-            <div className="relative">
-              <div className="brand-card overflow-hidden p-2">
+            <div className="reveal-scale relative">
+              <div className="brand-card shine-card overflow-hidden p-2">
                 <Image
                   src="/brand/carlos-pearson-founder.jpg"
                   alt="Carlos Pearson — Founder & Owner of Blackspire Helix Group"
@@ -63,7 +69,7 @@ export default function AboutPage() {
             <div className="flex flex-col justify-center gap-6">
 
               {/* Name block */}
-              <div>
+              <div className="reveal-left">
                 <h1 className="brand-accent-text text-5xl font-black leading-none tracking-tight lg:text-6xl xl:text-7xl">
                   CARLOS<br />PEARSON
                 </h1>
@@ -75,8 +81,8 @@ export default function AboutPage() {
               </div>
 
               {/* Bio cards */}
-              <div className="grid gap-3">
-                <div className="brand-card p-5">
+              <div className="grid gap-3 reveal-up stagger-2">
+                <div className="brand-card shine-card p-5">
                   <div className="flex gap-3">
                     <span className="mt-0.5 text-[var(--gold)] shrink-0">⚙️</span>
                     <p className="text-sm leading-7 text-[var(--copy-soft)]">
@@ -88,7 +94,7 @@ export default function AboutPage() {
                     </p>
                   </div>
                 </div>
-                <div className="brand-card p-5">
+                <div className="brand-card shine-card p-5">
                   <div className="flex gap-3">
                     <span className="mt-0.5 text-[var(--gold)] shrink-0">🚀</span>
                     <p className="text-sm leading-7 text-[var(--copy-soft)]">
@@ -152,9 +158,12 @@ export default function AboutPage() {
           </div>
         </section>
 
+        {/* glow divider */}
+        <div className="glow-line" />
+
         {/* ── Founder Vision + Brand Philosophy ───────────────────────── */}
-        <section className="mt-8 grid gap-6 xl:grid-cols-[1.04fr_0.96fr]">
-          <article className="brand-panel px-6 py-8">
+        <section className="grid gap-6 xl:grid-cols-[1.04fr_0.96fr]">
+          <article className="brand-panel px-6 py-8 reveal-up">
             <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Founder vision</p>
             <div className="mt-5 grid gap-4">
               <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
@@ -174,7 +183,7 @@ export default function AboutPage() {
             </div>
           </article>
 
-          <article className="brand-panel px-6 py-8">
+          <article className="brand-panel shine-card px-6 py-8 reveal-up stagger-2">
             <div className="flex items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Brand philosophy</p>
