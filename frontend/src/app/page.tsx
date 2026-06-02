@@ -1,365 +1,243 @@
+import Image from "next/image";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 
-import { BuyerShell, Metric, Panel, StatusPill } from "@/components/buyer-shell";
+import { EcosystemCard } from "@/components/ecosystem-card";
+import { MarketingShell } from "@/components/marketing-shell";
 import {
-  pendingWork,
-  searchJobSnapshots,
-} from "@/lib/buyer-engine-data";
-import {
-  getBuyerEngineEnvStatus,
-  getDashboardSnapshot,
-  getLiveCountyCapabilities,
-  getOperatorShellStatus,
-  listAllBuyerReports,
-  listExports,
-  listSearchJobs,
-} from "@/lib/buyer-engine-server";
+  ecosystemProjects,
+  industries,
+  parentBrand,
+  serviceLines,
+  useCases,
+} from "@/lib/ecosystem";
 
-export default async function Home() {
-  const env = getBuyerEngineEnvStatus();
-  const counties = await getLiveCountyCapabilities(true);
-  const [liveJobs, liveReportPage, dashboardSnapshot, recentExports, operatorStatus] = env.enabled
-    ? await Promise.all([
-        listSearchJobs(6).catch(() => []),
-        listAllBuyerReports({ limit: 1, offset: 0 }).catch(() => ({
-          reports: [],
-          total: 0,
-          limit: 1,
-          offset: 0,
-        })),
-        getDashboardSnapshot().catch(() => ({
-          operatorId: null,
-          searchJobCount: 0,
-          completedJobCount: 0,
-          processingJobCount: 0,
-          failedJobCount: 0,
-          buyerReportCount: 0,
-          exportCount: 0,
-          outreachDraftCount: 0,
-        })),
-        listExports({ limit: 5 }).catch(() => []),
-        getOperatorShellStatus().catch(() => null),
-      ])
-    : [
-        [],
-        { reports: [], total: 0, limit: 1, offset: 0 },
-        {
-          operatorId: null,
-          searchJobCount: 0,
-          completedJobCount: 0,
-          processingJobCount: 0,
-          failedJobCount: 0,
-          buyerReportCount: 0,
-          exportCount: 0,
-          outreachDraftCount: 0,
-        },
-        [],
-        null,
-      ];
-  const referenceJobs = liveJobs.length
-    ? liveJobs.map((job) => ({
-        id: job.id,
-        title: `${job.county} ${job.property_type.replace("_", " ")} buyers sweep`,
-        county: job.county,
-        state: job.state,
-        propertyType: job.property_type,
-        status: job.status,
-        dateRange: `${job.date_range_start ?? "n/a"} to ${job.date_range_end ?? "n/a"}`,
-        buyersFound: job.total_buyers_found ?? 0,
-        salesAnalyzed: job.total_sales_analyzed ?? 0,
-        notes: job.error_message ?? undefined,
-      }))
-    : searchJobSnapshots;
-  const stats = {
-    activeCountyCount: counties.filter((county) => county.status === "active").length,
-    completedRuns: dashboardSnapshot.completedJobCount || referenceJobs.filter((job) => job.status === "completed").length,
-    totalBuyers: dashboardSnapshot.buyerReportCount || liveReportPage.total || referenceJobs.reduce((sum, job) => sum + job.buyersFound, 0),
-  };
-  const approvedCounties = counties.filter((county) => county.status === "active" && county.supportsPast90Days);
-  const readinessRows = [
-    {
-      key: "OPENAI_API_KEY",
-      purpose: "AI generation modules and server actions",
-      status: process.env.OPENAI_API_KEY ? "configured" : "missing",
-    },
-    {
-      key: "SUPABASE_URL",
-      purpose: "Buyer Engine read/write integration",
-      status: process.env.SUPABASE_URL ? "configured" : "missing",
-    },
-    {
-      key: "SUPABASE_ANON_KEY",
-      purpose: "client-side Supabase access",
-      status: process.env.SUPABASE_ANON_KEY ? "configured" : "missing",
-    },
-    {
-      key: "SUPABASE_SERVICE_ROLE_KEY",
-      purpose: "server-side admin and workflow handoff",
-      status: process.env.SUPABASE_SERVICE_ROLE_KEY ? "configured" : "missing",
-    },
-    {
-      key: "BLACKSPIRE_DEFAULT_USER_ID",
-      purpose: "bridge identity until auth is wired",
-      status: env.hasDefaultUserId ? "configured" : "missing",
-    },
-  ] as const;
-
+export default function Home() {
   return (
-    <BuyerShell
-      eyebrow="Command Deck"
-      title="Blackspire Buyer Engine Workspace"
-      description="Blackspire Buyer Engine is a Blackspire Helix Group product focused on buyer intelligence workflows. The frontend now has live search-job creation, workflow dispatch, a polling queue monitor, and buyer dossier rendering against the real Supabase project."
-      operatorStatus={operatorStatus}
-    >
-      <section className="grid gap-4 md:grid-cols-4">
-        <Metric label="Active Counties" value={String(stats.activeCountyCount)} detail="County source rows currently marked active" />
-        <Metric label="Completed Jobs" value={String(stats.completedRuns)} detail="Completed SearchJob rows for the current operator scope" />
-        <Metric label="Live Buyer Reports" value={String(stats.totalBuyers)} detail="Current BuyerReport count in the live system" />
-        <Metric
-          label="Primary Risk"
-          value={
-            operatorStatus?.signedIn
-              ? "operator trail"
-              : operatorStatus?.bootstrapRequired
-                ? "bootstrap mode"
-                : operatorStatus?.requiresAuth
-                  ? "sign-in gate"
-                  : "operator state"
-          }
-          detail={
-            operatorStatus?.signedIn
-              ? "The app is now working through a real signed-in operator session."
-              : operatorStatus?.bootstrapRequired
-                ? "No auth users exist yet. /auth can bootstrap the first operator."
-                : operatorStatus?.requiresAuth
-                  ? "Operator accounts exist. Sign in through /auth to create and read scoped data."
-                  : "Operator status could not be resolved cleanly."
-          }
-        />
-      </section>
+    <MarketingShell>
+      <div className="mx-auto max-w-[1400px] px-4 py-12 lg:px-6 lg:py-16">
+        <section className="brand-panel overflow-hidden px-6 py-10 lg:px-8 lg:py-12">
+          <div className="grid gap-10 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <div className="max-w-[360px]">
+                  <Image
+                    src="/brand/blackspire-helix-group-logo.png"
+                    alt="BLACKSPIRE HELIX GROUP logo"
+                    width={1792}
+                    height={1024}
+                    priority
+                    className="h-auto w-auto max-w-full object-contain"
+                  />
+                </div>
+                <h1 className="brand-accent-text max-w-4xl text-5xl font-semibold leading-[1.04] lg:text-6xl">
+                  Build AI Employees That Work 24/7
+                </h1>
+                <p className="max-w-3xl text-base leading-8 text-[var(--copy-soft)]">
+                  {parentBrand.description}
+                </p>
+              </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <Panel
-          eyebrow="Reality Check"
-          title="What changed in the repo"
-          description="The repo is operating as a real command surface now. What remains is backend hardening, admin tooling, and durable operator artifacts."
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="brand-card p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Now in place</p>
-              <ul className="brand-copy-soft mt-3 space-y-2 text-sm leading-6">
-                <li>Real SearchJob inserts into Supabase</li>
-                <li>Asynchronous n8n webhook dispatch after launch</li>
-                <li>Search Jobs monitor with retry and highlight flow</li>
-                <li>Buyer Reports route rendering live BuyerReport rows</li>
-                <li>Realtime subscriptions with polling fallback</li>
-                <li>CSV export logging and outreach draft generation</li>
-                <li>Operator auth bootstrap and cookie-based sign-in</li>
-              </ul>
-            </div>
-            <div className="brand-card p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Still open</p>
-              <ul className="brand-copy-soft mt-3 space-y-2 text-sm leading-6">
-                <li>Retire the default-user fallback once the first operator account is created</li>
-                <li>Fully live dashboard metrics and history</li>
-                <li>County administration and role management</li>
-                <li>Operational analytics beyond the current queue and dossier views</li>
-              </ul>
-            </div>
-          </div>
+              <div className="flex flex-wrap gap-3">
+                <Link href="/contact" className="brand-button inline-flex px-5 py-4 text-sm transition">
+                  Book Strategy Call
+                </Link>
+                <Link href="/ecosystem" className="brand-button inline-flex px-5 py-4 text-sm transition">
+                  Explore Ecosystem
+                </Link>
+                <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm transition">
+                  Open Buyer Engine Workspace
+                </Link>
+              </div>
 
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Link
-              href="/searches/new"
-              className="brand-button inline-flex px-4 py-3 text-sm transition"
-            >
-              Launch a buyer sweep
-            </Link>
-            <Link
-              href="/buyers"
-              className="brand-button inline-flex px-4 py-3 text-sm transition"
-            >
-              Review buyer dossiers
-            </Link>
-            <Link
-              href="/searches"
-              className="brand-button inline-flex px-4 py-3 text-sm transition"
-            >
-              Watch the queue
-            </Link>
-          </div>
-        </Panel>
-
-        <Panel
-          eyebrow="System Readiness"
-          title="Environment contract"
-          description="These values are active in the repo. The remaining risk is operational behavior and workflow reliability."
-        >
-          <div className="space-y-3">
-            {readinessRows.map((item) => (
-              <div key={item.key} className="brand-card grid gap-2 px-4 py-3 sm:grid-cols-[1fr_1.2fr_auto]">
-                <div className="text-sm font-medium text-white">{item.key}</div>
-                <div className="brand-copy-soft text-sm">{item.purpose}</div>
-                <div
-                  className={`text-xs uppercase tracking-[0.24em] ${
-                    item.status === "configured" ? "text-emerald-300" : "text-amber-300"
-                  }`}
-                >
-                  {item.status}
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="brand-card p-4">
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                    Positioning
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
+                    Premium AI command center, not a generic chatbot agency.
+                  </div>
+                </div>
+                <div className="brand-card p-4">
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                    Focus
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
+                    Leads, follow-up, operations, content, dashboards, and workflow routing.
+                  </div>
+                </div>
+                <div className="brand-card p-4">
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                    Outcome
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
+                    Less manual drag. Faster response. Cleaner systems.
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </Panel>
-      </div>
+            </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Panel
-          eyebrow="Operations Pulse"
-          title="Live operator snapshot"
-          description="These counts are server-read from the current project scope rather than derived from sample fixtures."
-        >
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="brand-card p-4">
-              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Search jobs</div>
-              <div className="mt-2 text-2xl font-semibold text-white tabular-nums">{dashboardSnapshot.searchJobCount}</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <StatusPill tone="active" label={`${dashboardSnapshot.completedJobCount} completed`} />
-                <StatusPill tone="good" label={`${dashboardSnapshot.processingJobCount} processing`} />
-                {dashboardSnapshot.failedJobCount ? <StatusPill tone="bad" label={`${dashboardSnapshot.failedJobCount} failed`} /> : null}
-              </div>
-            </div>
-            <div className="brand-card p-4">
-              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Export records</div>
-              <div className="mt-2 text-2xl font-semibold text-white tabular-nums">{dashboardSnapshot.exportCount}</div>
-              <div className="brand-copy-soft mt-1 text-xs">CSV actions recorded in Supabase</div>
-            </div>
-            <div className="brand-card p-4">
-              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Saved drafts</div>
-              <div className="mt-2 text-2xl font-semibold text-white tabular-nums">{dashboardSnapshot.outreachDraftCount}</div>
-              <div className="brand-copy-soft mt-1 text-xs">Server-side outreach drafts in private storage</div>
-            </div>
-            <div className="brand-card p-4">
-              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Operator scope</div>
-              <div className="mt-2 text-sm font-medium text-white break-all">
-                {dashboardSnapshot.operatorId ?? "Fallback default operator"}
-              </div>
-              <div className="brand-copy-soft mt-1 text-xs">The app uses this owner id when reading and writing scoped records</div>
-            </div>
-          </div>
-        </Panel>
-
-        <Panel
-          eyebrow="County Coverage"
-          title="Live source network snapshot"
-          description="The dashboard now shows the real county surface area we've already earned in the workflow layer."
-        >
-          <div className="brand-table-shell">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="brand-table-head">
-                <tr>
-                  <th className="px-4 py-3 font-medium">County</th>
-                  <th className="px-4 py-3 font-medium">Source</th>
-                  <th className="px-4 py-3 font-medium">Date format</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {approvedCounties.slice(0, 12).map((county) => (
-                  <tr key={`${county.county}-${county.sourceTypes.join(",")}`} className="brand-table-row">
-                    <td className="px-4 py-3">
-                      <div>{county.county}</div>
-                      {county.notes[0] ? <div className="brand-copy-muted mt-1 text-xs">{county.notes[0]}</div> : null}
-                    </td>
-                    <td className="brand-copy-soft px-4 py-3 font-mono text-xs">{county.sourceTypes.join(", ")}</td>
-                    <td className="px-4 py-3">{county.dateFormats.join(", ")}</td>
-                    <td className="px-4 py-3">
-                      <StatusPill tone="good" label="90-day ready" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-
-        <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <Panel
-            eyebrow="Search Health"
-            title={liveJobs.length ? "Recent live jobs" : "Reference jobs from live review"}
-            description={
-              liveJobs.length
-                ? "This panel is now reading the live SearchJob feed. It falls back to reference snapshots only when the app cannot reach Supabase."
-                : "These are the runs that matter most as we keep tightening the frontend around the production workflow."
-            }
-          >
-            <div className="space-y-3">
-              {referenceJobs.map((job) => (
-                <div key={job.id} className="brand-card p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-white">{job.title}</h3>
-                      <p className="brand-copy-soft mt-1 text-sm">
-                        {job.state} / {job.county} / {job.propertyType}
-                      </p>
+            <div className="brand-panel relative overflow-hidden px-6 py-8">
+              <div className="brand-orb brand-orb-gold" />
+              <div className="brand-orb brand-orb-silver" />
+              <div className="relative space-y-5">
+                <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">
+                  Command Center Thesis
+                </p>
+                <h2 className="text-3xl font-semibold text-white">
+                  One master identity. Multiple specialized divisions.
+                </h2>
+                <p className="text-sm leading-7 text-[var(--copy-soft)]">
+                  The ecosystem is the proof. Each division demonstrates how BLACKSPIRE HELIX GROUP can turn the same automation philosophy into a niche operating system.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {ecosystemProjects.map((project) => (
+                    <div
+                      key={project.slug}
+                      className="ecosystem-preview-card p-4"
+                      style={
+                        {
+                          "--project-accent": project.accent,
+                          "--project-surface": project.surfaceTint,
+                        } as CSSProperties
+                      }
+                    >
+                      <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                        {project.role}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-white">{project.name}</div>
+                      <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{project.primaryOutcome}</div>
                     </div>
-                    <StatusPill tone={job.status === "completed" ? "active" : job.status === "failed" ? "bad" : "neutral"} label={job.status} />
-                  </div>
-                  <div className="brand-copy-soft mt-3 grid gap-2 text-sm sm:grid-cols-3">
-                    <div>Range: <span className="tabular-nums">{job.dateRange}</span></div>
-                    <div>Buyers: <span className="tabular-nums">{job.buyersFound}</span></div>
-                    <div>Sales: <span className="tabular-nums">{job.salesAnalyzed}</span></div>
-                  </div>
-                  {job.notes ? <p className="brand-copy-muted mt-3 text-sm">{job.notes}</p> : null}
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-8 grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="brand-panel px-6 py-8">
+            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">The problem</p>
+            <h2 className="mt-3 text-3xl font-semibold text-white">
+              Missed leads, slow follow-up, and scattered tools quietly cost businesses money.
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
+              Most businesses do not need more disconnected software. They need one system that can capture intent, move information, trigger action, and show operators what matters.
+            </p>
+          </div>
+
+          <div className="brand-panel px-6 py-8">
+            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">The solution</p>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              {serviceLines.map((service) => (
+                <div key={service} className="brand-card p-4 text-sm leading-6 text-[var(--copy-soft)]">
+                  {service}
                 </div>
               ))}
             </div>
-          </Panel>
+          </div>
+        </section>
 
-          <Panel
-            eyebrow="Operator Trail"
-            title="Recent export activity"
-            description="This keeps the operator artifact trail visible on the dashboard instead of forcing a jump into the dossier pages."
-          >
-            <div className="space-y-3">
-              {recentExports.length ? (
-                recentExports.map((record) => (
-                  <div key={record.id} className="brand-card p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-base font-semibold text-white">{record.file_name}</div>
-                        <div className="brand-copy-muted mt-1 font-mono text-xs">{record.search_job_id ?? "no search job id"}</div>
-                      </div>
-                      <StatusPill tone="good" label={`${record.row_count ?? 0} rows`} />
-                    </div>
-                    <div className="brand-copy-soft mt-3 text-sm">{record.storage_path}</div>
-                    <div className="brand-copy-muted mt-2 text-xs">{new Date(record.created_at).toLocaleString()}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="brand-card brand-copy-soft p-4 text-sm">
-                  No export records yet in the current operator scope.
-                </div>
-              )}
+        <section className="mt-8 brand-panel px-6 py-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Ecosystem divisions</p>
+              <h2 className="mt-3 text-3xl font-semibold text-white">
+                Five proof points under one parent brand.
+              </h2>
             </div>
-          </Panel>
-        </div>
-      </div>
+            <Link href="/ecosystem" className="brand-button inline-flex px-4 py-3 text-sm transition">
+              View full ecosystem
+            </Link>
+          </div>
 
-      <Panel
-        eyebrow="Build Queue"
-        title="Next implementation passes"
-        description="This is the shortest path from the current repo to a genuinely usable Buyer Engine frontend."
-      >
-        <ol className="brand-copy-soft grid gap-3 text-sm leading-6 md:grid-cols-2">
-          {pendingWork.map((item, index) => (
-            <li key={item} className="brand-card grid grid-cols-[auto_1fr] gap-3 p-4">
-              <span className="text-[hsl(38_92%_55%)]">{String(index + 1).padStart(2, "0")}</span>
-              <span>{item}</span>
-            </li>
-          ))}
-        </ol>
-      </Panel>
-    </BuyerShell>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+            {ecosystemProjects.map((project) => (
+              <EcosystemCard key={project.slug} project={project} />
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-8 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="brand-panel px-6 py-8">
+            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">How it works</p>
+            <div className="mt-5 grid gap-4">
+              {["Discover", "Design", "Build", "Automate", "Optimize"].map((step, index) => (
+                <div key={step} className="brand-card flex items-center gap-4 p-4">
+                  <span className="brand-accent-text text-2xl font-semibold">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <div className="text-base font-semibold text-white">{step}</div>
+                    <div className="mt-1 text-sm leading-6 text-[var(--copy-soft)]">
+                      Move from business friction to a system that can actually run.
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="brand-panel px-6 py-8">
+            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">AI employee use cases</p>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              {useCases.map((useCase) => (
+                <div key={useCase} className="brand-card p-4 text-sm leading-6 text-[var(--copy-soft)]">
+                  {useCase}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="brand-panel px-6 py-8">
+            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Industry fit</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {industries.map((industry) => (
+                <div key={industry.name} className="brand-card p-4">
+                  <div className="text-base font-semibold text-white">{industry.name}</div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{industry.summary}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="brand-panel px-6 py-8">
+            <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Founder vision</p>
+            <h2 className="mt-3 text-3xl font-semibold text-white">
+              A portfolio of niche AI-powered business systems.
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
+              The parent brand exists to make the entire ecosystem legible: one operating philosophy, multiple vertical applications, and room for each division to become a serious product in its own right.
+            </p>
+            <Link href="/about" className="brand-button mt-6 inline-flex px-4 py-3 text-sm transition">
+              Read the founder thesis
+            </Link>
+          </div>
+        </section>
+
+        <section className="mt-8 brand-panel px-6 py-8">
+          <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Final CTA</p>
+          <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <h2 className="text-3xl font-semibold text-white">Tell us what you want automated.</h2>
+              <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                The contact surface is now in place for strategy calls and AI-readiness intake. Next we can wire the form directly into n8n and your lead-routing stack.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/contact" className="brand-button inline-flex px-5 py-4 text-sm transition">
+                Start intake
+              </Link>
+              <Link href="/demos" className="brand-button inline-flex px-5 py-4 text-sm transition">
+                Review demo plan
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
+    </MarketingShell>
   );
 }

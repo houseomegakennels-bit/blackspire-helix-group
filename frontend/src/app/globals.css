@@ -218,6 +218,212 @@ body::before {
   color: var(--copy-soft);
 }
 
+.project-card {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--project-accent) 40%, var(--line));
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.97), hsl(24 18% 9% / 0.97)),
+    radial-gradient(circle at top right, var(--project-surface), transparent 58%),
+    radial-gradient(circle at bottom left, hsl(0 0% 100% / 0.02), transparent 42%);
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.05),
+    0 16px 34px hsl(0 0% 0% / 0.42),
+    0 0 0 1px hsl(0 0% 100% / 0.02);
+}
+
+.project-card::before {
+  content: "";
+  position: absolute;
+  inset: -30% auto auto -10%;
+  width: 160px;
+  height: 160px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--project-glow), transparent 68%);
+  pointer-events: none;
+}
+
+.project-pill {
+  border: 1px solid color-mix(in srgb, var(--project-accent) 40%, white 14%);
+  background: color-mix(in srgb, var(--project-accent) 14%, transparent);
+  color: white;
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.project-metric {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.project-metric-label {
+  color: var(--copy-muted);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.project-signal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.project-signal-label {
+  border: 1px solid color-mix(in srgb, var(--project-accent) 42%, white 10%);
+  background: color-mix(in srgb, var(--project-accent) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  color: white;
+}
+
+.project-signal-copy {
+  color: color-mix(in srgb, var(--project-accent) 42%, var(--copy-soft));
+}
+
+.project-signal-separator {
+  color: color-mix(in srgb, var(--project-accent) 55%, white 18%);
+}
+
+.project-motif {
+  border-top: 1px solid color-mix(in srgb, var(--project-accent) 28%, transparent);
+  padding-top: 1rem;
+}
+
+.project-button {
+  border: 1px solid color-mix(in srgb, var(--project-accent) 42%, var(--line));
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 20% 9% / 0.96)),
+    radial-gradient(circle at top, var(--project-surface), transparent 68%);
+  color: white;
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.06),
+    0 0 22px color-mix(in srgb, var(--project-accent) 10%, transparent);
+}
+
+.project-button:hover {
+  border-color: color-mix(in srgb, var(--project-accent) 65%, white 10%);
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.06),
+    0 0 26px color-mix(in srgb, var(--project-accent) 18%, transparent);
+}
+
+.project-accent-text {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 82%, var(--project-accent) 18%),
+      color-mix(in srgb, var(--project-accent) 52%, white 48%) 48%,
+      color-mix(in srgb, var(--project-accent) 88%, black 12%)
+    );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.project-lead {
+  color: color-mix(in srgb, var(--project-accent) 32%, white 68%);
+}
+
+.project-hero-panel {
+  position: relative;
+  border-color: color-mix(in srgb, var(--project-edge) 55%, var(--line));
+  background:
+    linear-gradient(180deg, hsl(0 0% 5% / 0.98), hsl(18 22% 8% / 0.98)),
+    radial-gradient(circle at top right, var(--project-surface), transparent 56%),
+    radial-gradient(circle at bottom left, color-mix(in srgb, var(--project-accent) 12%, transparent), transparent 50%);
+}
+
+.project-hero-orb {
+  position: absolute;
+  top: -40px;
+  right: -20px;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--project-glow), transparent 68%);
+  filter: blur(14px);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.project-detail-card {
+  border: 1px solid color-mix(in srgb, var(--project-edge) 55%, var(--line));
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 18% 9% / 0.96)),
+    radial-gradient(circle at top right, var(--project-surface), transparent 62%);
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.05),
+    0 12px 28px hsl(0 0% 0% / 0.28);
+}
+
+.project-detail-label {
+  color: color-mix(in srgb, var(--project-accent) 38%, var(--copy-muted));
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.ecosystem-footer-card {
+  border: 1px solid color-mix(in srgb, var(--project-accent) 30%, var(--line));
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 18% 9% / 0.96)),
+    radial-gradient(circle at top right, var(--project-surface), transparent 55%);
+}
+
+.ecosystem-footer-card:hover {
+  border-color: color-mix(in srgb, var(--project-accent) 60%, white 8%);
+}
+
+.ecosystem-preview-card {
+  border: 1px solid color-mix(in srgb, var(--project-accent) 30%, var(--line));
+  background:
+    linear-gradient(180deg, hsl(0 0% 6% / 0.96), hsl(24 18% 9% / 0.96)),
+    radial-gradient(circle at top right, var(--project-surface), transparent 55%);
+  box-shadow:
+    inset 0 1px 0 hsl(32 100% 76% / 0.05),
+    0 12px 28px hsl(0 0% 0% / 0.28);
+}
+
+.ecosystem-spectrum {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--project-accent) 30%, transparent),
+      color-mix(in srgb, var(--project-accent) 85%, white 15%),
+      color-mix(in srgb, var(--project-accent) 38%, transparent)
+    );
+  box-shadow: 0 0 18px color-mix(in srgb, var(--project-accent) 20%, transparent);
+}
+
+.brand-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(14px);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.brand-orb-gold {
+  top: -30px;
+  right: -10px;
+  width: 160px;
+  height: 160px;
+  background: radial-gradient(circle, hsl(38 100% 62% / 0.28), transparent 65%);
+}
+
+.brand-orb-silver {
+  bottom: -50px;
+  left: -20px;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, hsl(210 20% 88% / 0.14), transparent 65%);
+}
+
 .brand-table-head th {
   border-bottom: 1px solid var(--line);
 }

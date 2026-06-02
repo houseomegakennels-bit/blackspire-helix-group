@@ -13,12 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Blackspire Buyer Engine | Blackspire Helix Group",
+  title: "BLACKSPIRE HELIX GROUP",
   description:
-    "Blackspire Buyer Engine is a real estate intelligence product powered by Blackspire Helix Group.",
+    "BLACKSPIRE HELIX GROUP is an AI automation and digital infrastructure company building niche AI-powered business systems.",
   icons: {
-    icon: "/brand/blackspire-buyer-engine-logo.png",
-    apple: "/brand/blackspire-buyer-engine-logo.png",
+    icon: "/brand/blackspire-helix-group-logo.png",
+    apple: "/brand/blackspire-helix-group-logo.png",
   },
 };
 

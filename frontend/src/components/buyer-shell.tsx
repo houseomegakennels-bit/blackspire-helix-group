@@ -5,13 +5,15 @@ import { ReactNode } from "react";
 import type { OperatorShellStatus } from "@/lib/buyer-engine-server";
 
 const navItems = [
-  { href: "/", label: "Dashboard" },
+  { href: "/", label: "Marketing Site" },
+  { href: "/workspace/buyer-engine", label: "Dashboard" },
   { href: "/auth", label: "Auth" },
   { href: "/searches/new", label: "New Search" },
   { href: "/searches", label: "Search Jobs" },
   { href: "/buyers", label: "Buyer Reports" },
   { href: "/workflows", label: "Workflows" },
   { href: "/admin", label: "Admin" },
+  { href: "/admin/county-sources", label: "County Sources" },
 ];
 
 export function BuyerShell({
