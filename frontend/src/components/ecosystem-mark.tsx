@@ -22,16 +22,26 @@ export function EcosystemMark({
         ? "brand-card flex min-h-[144px] items-center justify-center overflow-hidden px-5 py-6"
         : "brand-card flex min-h-[108px] items-center justify-center overflow-hidden px-4 py-5";
 
+  // Height for the logo container per variant
+  const logoContainerHeight =
+    variant === "bare" ? 64 : variant === "hero" ? 120 : 96;
+
   if (logoSrc) {
     return (
       <div className={frameClass}>
-        <Image
-          src={logoSrc}
-          alt={`${name} logo`}
-          width={768}
-          height={1365}
-          className={`mx-auto h-auto w-auto max-w-full object-contain ${logoMaxWidthClass} ${logoMaxHeightClass}`}
-        />
+        {/* Relative container with fixed height so `fill` + object-contain works correctly */}
+        <div
+          className={`relative mx-auto w-full overflow-hidden ${logoMaxWidthClass}`}
+          style={{ height: `${logoContainerHeight}px` }}
+        >
+          <Image
+            src={logoSrc}
+            alt={`${name} logo`}
+            fill
+            className="object-contain"
+            sizes="(max-width: 640px) 180px, 300px"
+          />
+        </div>
       </div>
     );
   }
