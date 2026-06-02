@@ -12,6 +12,10 @@ import {
   listSearchJobs,
 } from "@/lib/buyer-engine-server";
 
+function formatPropertyType(value: string) {
+  return value.replaceAll("_", " ");
+}
+
 export async function BuyerEngineHome() {
   const env = getBuyerEngineEnvStatus();
   const counties = await getLiveCountyCapabilities(true);
@@ -53,10 +57,11 @@ export async function BuyerEngineHome() {
         [],
         null,
       ];
+
   const referenceJobs = liveJobs.length
     ? liveJobs.map((job) => ({
         id: job.id,
-        title: `${job.county} ${job.property_type.replace("_", " ")} buyers sweep`,
+        title: `${job.county} ${formatPropertyType(job.property_type)} buyers sweep`,
         county: job.county,
         state: job.state,
         propertyType: job.property_type,
@@ -67,6 +72,7 @@ export async function BuyerEngineHome() {
         notes: job.error_message ?? undefined,
       }))
     : searchJobSnapshots;
+
   const stats = {
     activeCountyCount: counties.filter((county) => county.status === "active").length,
     completedRuns:
@@ -77,9 +83,11 @@ export async function BuyerEngineHome() {
       liveReportPage.total ||
       referenceJobs.reduce((sum, job) => sum + job.buyersFound, 0),
   };
+
   const approvedCounties = counties.filter(
     (county) => county.status === "active" && county.supportsPast90Days,
   );
+
   const readinessRows = [
     {
       key: "OPENAI_API_KEY",
@@ -108,13 +116,155 @@ export async function BuyerEngineHome() {
     },
   ] as const;
 
+  const commandSignals = [
+    {
+      label: "County Surface",
+      value: `${stats.activeCountyCount} live`,
+      detail: "County rows actively supporting the current acquisition surface.",
+    },
+    {
+      label: "Dossier Volume",
+      value: `${stats.totalBuyers}`,
+      detail: "Live buyer reports available to operators right now.",
+    },
+    {
+      label: "Run Completion",
+      value: `${stats.completedRuns}`,
+      detail: "Completed sweeps already pushed through the current stack.",
+    },
+  ];
+
+  const heroSignals = [
+    env.enabled ? "Supabase path online" : "Supabase contract incomplete",
+    operatorStatus?.signedIn
+      ? "real operator session"
+      : operatorStatus?.bootstrapRequired
+        ? "bootstrap operator path"
+        : "auth gate still matters",
+    dashboardSnapshot.processingJobCount
+      ? `${dashboardSnapshot.processingJobCount} runs processing`
+      : "queue calm right now",
+  ];
+
+  const commandLanes = [
+    {
+      label: "Sweep Launch",
+      description: "County-targeted search jobs with operator-aware scope and async dispatch.",
+      href: "/searches/new",
+    },
+    {
+      label: "Dossier Review",
+      description: "Buyer report rendering, summaries, and exports for active acquisition campaigns.",
+      href: "/buyers",
+    },
+    {
+      label: "Queue Monitor",
+      description: "Live search-job visibility, retries, and operational pulse across the workflow layer.",
+      href: "/searches",
+    },
+  ];
+
+  const scoreTone =
+    operatorStatus?.signedIn
+      ? "good"
+      : operatorStatus?.bootstrapRequired
+        ? "warn"
+        : operatorStatus?.requiresAuth
+          ? "bad"
+          : "neutral";
+
   return (
     <BuyerShell
       eyebrow="Command Deck"
       title="Blackspire Buyer Engine Workspace"
-      description="Blackspire Buyer Engine is a Blackspire Helix Group product focused on buyer intelligence workflows. The frontend now has live search-job creation, workflow dispatch, a polling queue monitor, and buyer dossier rendering against the real Supabase project."
+      description="Buyer Engine is no longer framed like a generic internal tool. This workspace is the premium operating layer for land-buyer intelligence, county readiness, and operator execution across the Blackspire stack."
       operatorStatus={operatorStatus}
     >
+      <section className="brand-panel overflow-hidden px-6 py-7">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-[38%] bg-[radial-gradient(circle_at_center,hsl(35_100%_62%/.12),transparent_72%)]" />
+        <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="relative space-y-6">
+            <div>
+              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">
+                Intel Chamber
+              </p>
+              <h3 className="brand-display mt-3 text-4xl leading-tight text-white lg:text-5xl">
+                A luxury operator view for land intelligence, not a commodity dashboard.
+              </h3>
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
+                The system is built to launch sweeps, qualify buyer momentum, and keep the operator
+                trail visible without forcing the team to bounce between admin screens and rough
+                utility views.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Link href="/searches/new" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
+                Launch buyer sweep
+              </Link>
+              <Link href="/buyers" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
+                Open dossiers
+              </Link>
+              <Link href="/searches" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
+                Watch queue
+              </Link>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              {commandSignals.map((signal) => (
+                <div key={signal.label} className="brand-card p-4">
+                  <div className="text-[11px] uppercase tracking-[0.26em] text-[var(--copy-muted)]">
+                    {signal.label}
+                  </div>
+                  <div className="brand-accent-text mt-3 text-2xl font-semibold">{signal.value}</div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{signal.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="relative grid gap-4 content-start">
+            <div className="brand-card overflow-hidden p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.3em] text-[var(--gold-soft)]">
+                    Operator posture
+                  </div>
+                  <div className="mt-3 text-2xl font-semibold text-white">Acquisition signal</div>
+                </div>
+                <StatusPill tone={scoreTone} label={heroSignals[1]} />
+              </div>
+              <div className="mt-5 space-y-3">
+                {heroSignals.map((item) => (
+                  <div key={item} className="flex items-center gap-3 rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3 text-sm text-[var(--copy-soft)]">
+                    <span className="h-2 w-2 rounded-full bg-[var(--gold)] shadow-[0_0_16px_hsl(33_100%_55%/.45)]" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="brand-card p-5">
+              <div className="text-[11px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">
+                Command lanes
+              </div>
+              <div className="mt-4 space-y-3">
+                {commandLanes.map((lane) => (
+                  <Link
+                    key={lane.href}
+                    href={lane.href}
+                    className="block rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-4 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]"
+                  >
+                    <div className="text-base font-semibold text-white">{lane.label}</div>
+                    <div className="mt-1 text-sm leading-6 text-[var(--copy-soft)]">{lane.description}</div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-4">
         <Metric
           label="Active Counties"
@@ -154,18 +304,16 @@ export async function BuyerEngineHome() {
         />
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
         <Panel
-          eyebrow="Reality Check"
-          title="What changed in the repo"
-          description="The repo is operating as a real command surface now. What remains is backend hardening, admin tooling, and durable operator artifacts."
+          eyebrow="System Transformation"
+          title="What shifted from concept shell to working command product"
+          description="Buyer Engine is now positioned like a premium vertical system: live data in the middle, operator context on the edges, and clearer next actions throughout."
         >
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="brand-card p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">
-                Now in place
-              </p>
-              <ul className="brand-copy-soft mt-3 space-y-2 text-sm leading-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="brand-card p-5">
+              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Now in place</p>
+              <ul className="brand-copy-soft mt-4 space-y-3 text-sm leading-6">
                 <li>Real SearchJob inserts into Supabase</li>
                 <li>Asynchronous n8n webhook dispatch after launch</li>
                 <li>Search Jobs monitor with retry and highlight flow</li>
@@ -175,11 +323,9 @@ export async function BuyerEngineHome() {
                 <li>Operator auth bootstrap and cookie-based sign-in</li>
               </ul>
             </div>
-            <div className="brand-card p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">
-                Still open
-              </p>
-              <ul className="brand-copy-soft mt-3 space-y-2 text-sm leading-6">
+            <div className="brand-card p-5">
+              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Still open</p>
+              <ul className="brand-copy-soft mt-4 space-y-3 text-sm leading-6">
                 <li>Retire the default-user fallback once the first operator account is created</li>
                 <li>Fully live dashboard metrics and history</li>
                 <li>County administration and role management</li>
@@ -187,28 +333,16 @@ export async function BuyerEngineHome() {
               </ul>
             </div>
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Link href="/searches/new" className="brand-button inline-flex px-4 py-3 text-sm transition">
-              Launch a buyer sweep
-            </Link>
-            <Link href="/buyers" className="brand-button inline-flex px-4 py-3 text-sm transition">
-              Review buyer dossiers
-            </Link>
-            <Link href="/searches" className="brand-button inline-flex px-4 py-3 text-sm transition">
-              Watch the queue
-            </Link>
-          </div>
         </Panel>
 
         <Panel
-          eyebrow="System Readiness"
-          title="Environment contract"
-          description="These values are active in the repo. The remaining risk is operational behavior and workflow reliability."
+          eyebrow="Environment Contract"
+          title="Production readiness surface"
+          description="The environment layer is now framed as an executive readiness board instead of a plain checklist."
         >
           <div className="space-y-3">
             {readinessRows.map((item) => (
-              <div key={item.key} className="brand-card grid gap-2 px-4 py-3 sm:grid-cols-[1fr_1.2fr_auto]">
+              <div key={item.key} className="brand-card grid gap-2 px-4 py-4 sm:grid-cols-[1fr_1.2fr_auto]">
                 <div className="text-sm font-medium text-white">{item.key}</div>
                 <div className="brand-copy-soft text-sm">{item.purpose}</div>
                 <div
@@ -224,21 +358,21 @@ export async function BuyerEngineHome() {
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <Panel
           eyebrow="Operations Pulse"
           title="Live operator snapshot"
-          description="These counts are server-read from the current project scope rather than derived from sample fixtures."
+          description="These counts are server-read from the current project scope and staged like a mission room, not a spreadsheet."
         >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="brand-card p-4">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">
                 Search jobs
               </div>
-              <div className="mt-2 text-2xl font-semibold text-white tabular-nums">
+              <div className="mt-2 text-3xl font-semibold text-white tabular-nums">
                 {dashboardSnapshot.searchJobCount}
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <StatusPill tone="active" label={`${dashboardSnapshot.completedJobCount} completed`} />
                 <StatusPill tone="good" label={`${dashboardSnapshot.processingJobCount} processing`} />
                 {dashboardSnapshot.failedJobCount ? (
@@ -250,18 +384,16 @@ export async function BuyerEngineHome() {
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">
                 Export records
               </div>
-              <div className="mt-2 text-2xl font-semibold text-white tabular-nums">
+              <div className="mt-2 text-3xl font-semibold text-white tabular-nums">
                 {dashboardSnapshot.exportCount}
               </div>
-              <div className="brand-copy-soft mt-1 text-xs">
-                CSV actions recorded in Supabase
-              </div>
+              <div className="brand-copy-soft mt-1 text-xs">CSV actions recorded in Supabase</div>
             </div>
             <div className="brand-card p-4">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">
                 Saved drafts
               </div>
-              <div className="mt-2 text-2xl font-semibold text-white tabular-nums">
+              <div className="mt-2 text-3xl font-semibold text-white tabular-nums">
                 {dashboardSnapshot.outreachDraftCount}
               </div>
               <div className="brand-copy-soft mt-1 text-xs">
@@ -285,7 +417,7 @@ export async function BuyerEngineHome() {
         <Panel
           eyebrow="County Coverage"
           title="Live source network snapshot"
-          description="The dashboard now shows the real county surface area we've already earned in the workflow layer."
+          description="The dashboard now shows the real county surface area already earned in the workflow layer."
         >
           <div className="brand-table-shell">
             <table className="w-full border-collapse text-left text-sm">
@@ -323,92 +455,90 @@ export async function BuyerEngineHome() {
           </div>
         </Panel>
 
-        <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <Panel
-            eyebrow="Search Health"
-            title={liveJobs.length ? "Recent live jobs" : "Reference jobs from live review"}
-            description={
-              liveJobs.length
-                ? "This panel is now reading the live SearchJob feed. It falls back to reference snapshots only when the app cannot reach Supabase."
-                : "These are the runs that matter most as we keep tightening the frontend around the production workflow."
-            }
-          >
-            <div className="space-y-3">
-              {referenceJobs.map((job) => (
-                <div key={job.id} className="brand-card p-4">
+        <Panel
+          eyebrow="Search Health"
+          title={liveJobs.length ? "Recent live jobs" : "Reference jobs from live review"}
+          description={
+            liveJobs.length
+              ? "This panel is now reading the live SearchJob feed. It falls back to reference snapshots only when the app cannot reach Supabase."
+              : "These are the runs that matter most as we keep tightening the frontend around the production workflow."
+          }
+        >
+          <div className="space-y-3">
+            {referenceJobs.map((job) => (
+              <div key={job.id} className="brand-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-white">{job.title}</h3>
+                    <p className="brand-copy-soft mt-1 text-sm">
+                      {job.state} / {job.county} / {job.propertyType}
+                    </p>
+                  </div>
+                  <StatusPill
+                    tone={
+                      job.status === "completed"
+                        ? "active"
+                        : job.status === "failed"
+                          ? "bad"
+                          : "neutral"
+                    }
+                    label={job.status}
+                  />
+                </div>
+                <div className="brand-copy-soft mt-3 grid gap-2 text-sm sm:grid-cols-3">
+                  <div>
+                    Range: <span className="tabular-nums">{job.dateRange}</span>
+                  </div>
+                  <div>
+                    Buyers: <span className="tabular-nums">{job.buyersFound}</span>
+                  </div>
+                  <div>
+                    Sales: <span className="tabular-nums">{job.salesAnalyzed}</span>
+                  </div>
+                </div>
+                {job.notes ? <p className="brand-copy-muted mt-3 text-sm">{job.notes}</p> : null}
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Operator Trail"
+          title="Recent export activity"
+          description="The operator artifact trail stays visible on the workspace instead of hiding behind secondary pages."
+        >
+          <div className="space-y-3">
+            {recentExports.length ? (
+              recentExports.map((record) => (
+                <div key={record.id} className="brand-card p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-base font-semibold text-white">{job.title}</h3>
-                      <p className="brand-copy-soft mt-1 text-sm">
-                        {job.state} / {job.county} / {job.propertyType}
-                      </p>
-                    </div>
-                    <StatusPill
-                      tone={
-                        job.status === "completed"
-                          ? "active"
-                          : job.status === "failed"
-                            ? "bad"
-                            : "neutral"
-                      }
-                      label={job.status}
-                    />
-                  </div>
-                  <div className="brand-copy-soft mt-3 grid gap-2 text-sm sm:grid-cols-3">
-                    <div>
-                      Range: <span className="tabular-nums">{job.dateRange}</span>
-                    </div>
-                    <div>
-                      Buyers: <span className="tabular-nums">{job.buyersFound}</span>
-                    </div>
-                    <div>
-                      Sales: <span className="tabular-nums">{job.salesAnalyzed}</span>
-                    </div>
-                  </div>
-                  {job.notes ? <p className="brand-copy-muted mt-3 text-sm">{job.notes}</p> : null}
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel
-            eyebrow="Operator Trail"
-            title="Recent export activity"
-            description="This keeps the operator artifact trail visible on the dashboard instead of forcing a jump into the dossier pages."
-          >
-            <div className="space-y-3">
-              {recentExports.length ? (
-                recentExports.map((record) => (
-                  <div key={record.id} className="brand-card p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-base font-semibold text-white">{record.file_name}</div>
-                        <div className="brand-copy-muted mt-1 font-mono text-xs">
-                          {record.search_job_id ?? "no search job id"}
-                        </div>
+                      <div className="text-base font-semibold text-white">{record.file_name}</div>
+                      <div className="brand-copy-muted mt-1 font-mono text-xs">
+                        {record.search_job_id ?? "no search job id"}
                       </div>
-                      <StatusPill tone="good" label={`${record.row_count ?? 0} rows`} />
                     </div>
-                    <div className="brand-copy-soft mt-3 text-sm">{record.storage_path}</div>
-                    <div className="brand-copy-muted mt-2 text-xs">
-                      {new Date(record.created_at).toLocaleString()}
-                    </div>
+                    <StatusPill tone="good" label={`${record.row_count ?? 0} rows`} />
                   </div>
-                ))
-              ) : (
-                <div className="brand-card brand-copy-soft p-4 text-sm">
-                  No export records yet in the current operator scope.
+                  <div className="brand-copy-soft mt-3 text-sm">{record.storage_path}</div>
+                  <div className="brand-copy-muted mt-2 text-xs">
+                    {new Date(record.created_at).toLocaleString()}
+                  </div>
                 </div>
-              )}
-            </div>
-          </Panel>
-        </div>
+              ))
+            ) : (
+              <div className="brand-card brand-copy-soft p-4 text-sm">
+                No export records yet in the current operator scope.
+              </div>
+            )}
+          </div>
+        </Panel>
       </div>
 
       <Panel
         eyebrow="Build Queue"
         title="Next implementation passes"
-        description="This is the shortest path from the current repo to a genuinely usable Buyer Engine frontend."
+        description="This is still the shortest path from the current repo to a genuinely dominant Buyer Engine front end."
       >
         <ol className="brand-copy-soft grid gap-3 text-sm leading-6 md:grid-cols-2">
           {pendingWork.map((item, index) => (

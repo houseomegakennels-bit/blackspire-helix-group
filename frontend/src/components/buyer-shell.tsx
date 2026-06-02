@@ -30,9 +30,10 @@ export function BuyerShell({
   operatorStatus?: OperatorShellStatus | null;
 }) {
   return (
-    <main className="min-h-screen text-foreground">
-      <div className="mx-auto grid min-h-screen max-w-[1600px] gap-6 px-4 py-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:px-6">
-        <aside className="brand-panel p-5">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,hsl(31_100%_34%/.14),transparent_28%),radial-gradient(circle_at_82%_14%,hsl(210_92%_58%/.08),transparent_24%),linear-gradient(180deg,hsl(0_0%_1%)_0%,hsl(220_18%_3%)_24%,hsl(12_28%_4%)_100%)] text-foreground">
+      <div className="mx-auto grid min-h-screen max-w-[1700px] gap-6 px-4 py-4 lg:grid-cols-[290px_minmax(0,1fr)] lg:px-6">
+        <aside className="brand-panel sticky top-4 h-fit overflow-hidden p-5">
+          <div className="pointer-events-none absolute inset-x-6 top-0 h-32 rounded-b-[40px] bg-[radial-gradient(circle_at_top,hsl(34_100%_62%/.12),transparent_74%)]" />
           <div className="space-y-4 border-b border-[var(--line)] pb-5">
             <div className="brand-card overflow-hidden p-3">
               <Image
@@ -41,23 +42,21 @@ export function BuyerShell({
                 width={768}
                 height={1365}
                 priority
-                className="h-auto w-full"
+                className="h-auto w-full object-contain"
               />
             </div>
             <div className="space-y-2">
               <p className="text-[11px] uppercase tracking-[0.5em] text-[var(--gold-soft)]">
                 Blackspire Helix Group Product
               </p>
-              <h1 className="text-xl font-semibold text-white">
-                Command Surface
-              </h1>
+              <h1 className="brand-display text-2xl leading-tight text-white">Command Surface</h1>
               <div className="flex items-center gap-3">
                 <div className="brand-hairline flex-1" />
                 <div className="brand-target" />
                 <div className="brand-hairline flex-1" />
               </div>
               <p className="text-sm leading-6 text-[var(--copy-soft)]">
-                Buyer intelligence operations for the Blackspire Helix Group ecosystem, wrapped in the exact Blackspire visual system.
+                Buyer intelligence operations for the Blackspire Helix Group ecosystem, framed like a luxury operator deck instead of a generic SaaS back office.
               </p>
             </div>
           </div>
@@ -67,7 +66,7 @@ export function BuyerShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className="block rounded-[8px] border border-[var(--line)] bg-[hsl(0_0%_5%/.88)] px-4 py-3 text-sm uppercase tracking-[0.18em] text-[var(--copy-soft)] transition hover:border-[var(--line-strong)] hover:text-white"
+                className="block rounded-[16px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(18_22%_9%/.92))] px-4 py-3 text-sm uppercase tracking-[0.18em] text-[var(--copy-soft)] transition hover:-translate-y-[1px] hover:border-[var(--line-strong)] hover:text-white hover:shadow-[0_16px_30px_hsl(0_0%_0%/.28)]"
               >
                 {item.label}
               </Link>
@@ -79,7 +78,7 @@ export function BuyerShell({
               System Focus
             </p>
             <p className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
-              Wake land runs are moving through app-server prefetch before n8n scoring. The next visual and operational step is tightening the live operator trail and admin surface for Buyer Engine as a standalone Helix product.
+              Wake land runs are moving through app-server prefetch before n8n scoring. The next level is a fully theatrical operator view with airtight audit trails and sharper decision framing.
             </p>
           </div>
 
@@ -117,16 +116,17 @@ export function BuyerShell({
         </aside>
 
         <section className="space-y-6">
-          <header className="brand-panel px-5 py-5">
+          <header className="brand-panel overflow-hidden px-6 py-6">
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-[34%] bg-[radial-gradient(circle_at_center,hsl(35_100%_66%/.08),transparent_72%)]" />
             <div className="flex items-center gap-3">
               <p className="text-xs uppercase tracking-[0.48em] text-[var(--gold-soft)]">
                 {eyebrow}
               </p>
               <div className="brand-target h-[14px] w-[14px]" />
             </div>
-            <h2 className="brand-accent-text mt-3 text-3xl font-semibold">{title}</h2>
-            <div className="mt-3 brand-hairline" />
-            <p className="mt-4 max-w-4xl text-sm leading-6 text-[var(--copy-soft)]">{description}</p>
+            <h2 className="brand-accent-text mt-3 text-4xl font-semibold lg:text-5xl">{title}</h2>
+            <div className="mt-4 brand-hairline" />
+            <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">{description}</p>
           </header>
 
           {children}
