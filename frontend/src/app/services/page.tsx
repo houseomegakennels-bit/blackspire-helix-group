@@ -1,7 +1,19 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { serviceLines, useCases } from "@/lib/ecosystem";
+
+const useCaseIcons = ["🎯", "📨", "🤝", "🎬", "💎", "📊"];
+
+const useCaseAccents = [
+  { color: "hsl(38 92% 55%)" },
+  { color: "hsl(210 90% 60%)" },
+  { color: "hsl(20 100% 55%)" },
+  { color: "hsl(270 80% 62%)" },
+  { color: "hsl(340 80% 60%)" },
+  { color: "hsl(142 70% 45%)" },
+];
 
 const engagementModes = [
   {
@@ -93,21 +105,19 @@ export default function ServicesPage() {
             </div>
           </div>
 
-          <div className="mt-8 grid gap-3 lg:grid-cols-2">
+          <div className="mt-8 grid gap-4 lg:grid-cols-2">
             {serviceLines.map((service, index) => (
               <div key={service} className={`service-timeline-card shine-card reveal-up stagger-${(index % 4) + 1}`}>
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 text-xl">{serviceIcons[index] ?? "⚡"}</div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="ghost-number text-[2.2rem] leading-none opacity-[0.12]">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <div className="signal-bar flex-1 h-[2px]" />
-                    </div>
-                    <p className="text-sm leading-7 text-[var(--copy-soft)]">{service}</p>
+                <div className="flex items-center gap-4">
+                  <div className="service-icon-badge shrink-0">
+                    <span className="text-2xl">{serviceIcons[index] ?? "⚡"}</span>
                   </div>
+                  <span className="brand-accent-text text-3xl font-black leading-none">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div className="signal-bar h-[3px] flex-1" />
                 </div>
+                <p className="mt-4 text-[15px] leading-7 text-[var(--copy-soft)]">{service}</p>
               </div>
             ))}
           </div>
@@ -160,17 +170,24 @@ export default function ServicesPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {useCases.map((useCase, index) => (
-              <div key={useCase} className={`brand-card shine-card p-5 reveal-up stagger-${(index % 3) + 1}`}>
-                <div className="mb-3 flex items-center gap-2">
-                  <div className="signal-bar w-8" />
-                  <span className="text-[10px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">
-                    Signal {String(index + 1).padStart(2, "0")}
-                  </span>
+            {useCases.map((useCase, index) => {
+              const accent = useCaseAccents[index % useCaseAccents.length];
+              return (
+                <div
+                  key={useCase}
+                  className={`use-case-card shine-card reveal-up stagger-${(index % 3) + 1}`}
+                  style={{ "--uc-accent": accent.color } as CSSProperties}
+                >
+                  <div className="absolute inset-x-0 top-0 h-[2px]" style={{ background: `linear-gradient(90deg, ${accent.color}, transparent)` }} />
+                  <div className="mb-4 flex items-center justify-between">
+                    <span className="use-case-icon">{useCaseIcons[index] ?? "⚡"}</span>
+                    <span className="cmd-text opacity-60">signal.{String(index + 1).padStart(2, "0")}</span>
+                  </div>
+                  <p className="text-[15px] leading-7 text-white/90">{useCase}</p>
+                  <div className="mt-4 signal-bar h-[3px] w-10" style={{ background: `linear-gradient(90deg, ${accent.color}, transparent)`, boxShadow: `0 0 10px ${accent.color}55` }} />
                 </div>
-                <p className="text-sm leading-7 text-[var(--copy-soft)]">{useCase}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
