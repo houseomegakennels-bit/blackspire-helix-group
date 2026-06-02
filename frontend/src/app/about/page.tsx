@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
@@ -8,30 +9,158 @@ const brandPrinciples = [
   "One ecosystem, many industry-specific surfaces.",
 ] as const;
 
+const founderGoals = [
+  "Financial Freedom",
+  "Time Freedom",
+  "Help Others",
+  "Legacy",
+] as const;
+
+const founderPlan = [
+  "Goals",
+  "Discipline",
+  "Consistency",
+  "Time & Focus",
+  "Financial Freedom",
+] as const;
+
 export default function AboutPage() {
   return (
     <MarketingShell>
       <div className="mx-auto max-w-[1450px] px-4 py-16 lg:px-6">
-        <section className="brand-panel overflow-hidden px-6 py-8 lg:px-8">
-          <p className="text-xs uppercase tracking-[0.48em] text-[var(--gold-soft)]">About</p>
-          <h1 className="brand-accent-text mt-3 text-4xl font-semibold lg:text-5xl">
-            Building a portfolio of niche AI-powered business systems.
-          </h1>
-          <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-            BLACKSPIRE HELIX GROUP is positioned as a premium AI automation and digital
-            infrastructure company. The goal is not to sell a generic chatbot. The goal is to build
-            industry-specific operating systems that make real work move faster.
-          </p>
+
+        {/* ── Meet the Founder ─────────────────────────────────────────── */}
+        <section className="brand-panel overflow-hidden px-6 py-10 lg:px-10">
+          {/* Subtle gold radial glow top-right */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-[40%] bg-[radial-gradient(circle_at_80%_20%,hsl(38_92%_55%/.09),transparent_65%)]" />
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-[30%] bg-[radial-gradient(circle_at_20%_80%,hsl(198_100%_70%/.05),transparent_65%)]" />
+
+          <p className="text-xs uppercase tracking-[0.48em] text-[var(--gold-soft)]">Meet the Founder</p>
+
+          <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_1.12fr] xl:gap-12">
+
+            {/* Left — founder photo */}
+            <div className="relative">
+              <div className="brand-card overflow-hidden p-2">
+                <Image
+                  src="/brand/carlos-pearson-founder.jpg"
+                  alt="Carlos Pearson — Founder & Owner of Blackspire Helix Group"
+                  width={900}
+                  height={1100}
+                  className="w-full rounded-[18px] object-cover object-top"
+                  priority
+                />
+              </div>
+              {/* CEO badge */}
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
+                <span className="rounded-full border border-[var(--gold)] bg-[hsl(0_0%_4%/.85)] px-5 py-2 text-[11px] uppercase tracking-[0.32em] text-[var(--gold)] backdrop-blur-sm">
+                  CEO of My Life
+                </span>
+              </div>
+            </div>
+
+            {/* Right — name, title, bio, stats */}
+            <div className="flex flex-col justify-center gap-6">
+
+              {/* Name block */}
+              <div>
+                <h1 className="brand-accent-text text-5xl font-black leading-none tracking-tight lg:text-6xl xl:text-7xl">
+                  CARLOS<br />PEARSON
+                </h1>
+                <p className="mt-3 text-xs uppercase tracking-[0.34em] text-[var(--copy-muted)]">
+                  Founder &amp; Owner of{" "}
+                  <span className="text-[var(--gold-soft)]">Blackspire Helix Group</span>
+                </p>
+                <div className="mt-3 h-[2px] w-16 bg-[var(--gold)]" />
+              </div>
+
+              {/* Bio cards */}
+              <div className="grid gap-3">
+                <div className="brand-card p-5">
+                  <div className="flex gap-3">
+                    <span className="mt-0.5 text-[var(--gold)] shrink-0">⚙️</span>
+                    <p className="text-sm leading-7 text-[var(--copy-soft)]">
+                      Carlos Pearson is the founder and owner of{" "}
+                      <span className="font-semibold text-[var(--gold-soft)]">BLACKSPIRE HELIX GROUP</span>
+                      {" "}— a modern technology and digital innovation company focused on automation,
+                      AI systems, branding, real estate intelligence, and next-generation business
+                      infrastructure.
+                    </p>
+                  </div>
+                </div>
+                <div className="brand-card p-5">
+                  <div className="flex gap-3">
+                    <span className="mt-0.5 text-[var(--gold)] shrink-0">🚀</span>
+                    <p className="text-sm leading-7 text-[var(--copy-soft)]">
+                      Known for blending creativity with technology, Carlos built{" "}
+                      <span className="font-semibold text-[var(--gold-soft)]">BLACKSPIRE HELIX GROUP</span>
+                      {" "}with the vision of helping businesses and entrepreneurs operate smarter,
+                      move faster, and compete at a higher level in the digital era.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Goals + Plan side-by-side */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="brand-card p-5">
+                  <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--copy-muted)]">Goals</p>
+                  <ul className="mt-3 space-y-1.5">
+                    {founderGoals.map((g) => (
+                      <li key={g} className="flex items-center gap-2 text-sm text-[var(--copy-soft)]">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--gold)] shrink-0" />
+                        {g}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="brand-card p-5">
+                  <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--copy-muted)]">The Plan</p>
+                  <ol className="mt-3 space-y-1.5">
+                    {founderPlan.map((step, i) => (
+                      <li key={step} className="flex items-center gap-2 text-sm text-[var(--copy-soft)]">
+                        <span className="text-[10px] font-bold text-[var(--gold)]">{i + 1}.</span>
+                        {step}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+
+              {/* Mantras row */}
+              <div className="flex flex-wrap gap-2">
+                {["Faith · Focus · Finish", "Discipline · Grind · Success", "Sacrifice Today · Freedom Tomorrow"].map((m) => (
+                  <span
+                    key={m}
+                    className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] text-[var(--copy-muted)]"
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
+
+              {/* CTA */}
+              <div className="flex flex-wrap gap-3">
+                <Link href="/ecosystem" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  Tour the ecosystem
+                </Link>
+                <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  Work with us
+                </Link>
+              </div>
+            </div>
+          </div>
         </section>
 
+        {/* ── Founder Vision + Brand Philosophy ───────────────────────── */}
         <section className="mt-8 grid gap-6 xl:grid-cols-[1.04fr_0.96fr]">
           <article className="brand-panel px-6 py-8">
             <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Founder vision</p>
             <div className="mt-5 grid gap-4">
               <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
-                The ecosystem concept in the project PDF is still the right frame: one parent company,
-                multiple proof-point divisions, and a consistent promise to replace repetitive work
-                with intelligent automation.
+                The ecosystem concept is still the right frame: one parent company, multiple
+                proof-point divisions, and a consistent promise to replace repetitive work with
+                intelligent automation.
               </div>
               <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
                 In practice, that means every division demonstrates a different expression of the
@@ -69,6 +198,7 @@ export default function AboutPage() {
             </div>
           </article>
         </section>
+
       </div>
     </MarketingShell>
   );
