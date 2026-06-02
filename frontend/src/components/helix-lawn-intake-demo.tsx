@@ -20,9 +20,37 @@ type StoredLeadResponse = {
   serviceLabel: string;
 };
 
+type LawnVisionAnalysis = {
+  photoAnalysis: string;
+  yardSize?: HelixLawnLeadInput["yardSize"];
+  grassHeight?: HelixLawnLeadInput["grassHeight"];
+  overgrowth?: HelixLawnLeadInput["overgrowth"];
+  cleanup?: HelixLawnLeadInput["cleanup"];
+  acreage?: string;
+  slope?: string;
+  access?: string;
+  notes?: string;
+  confidence?: string;
+};
+
+type VisionAnalysisResponse =
+  | { ok: true; analysis: LawnVisionAnalysis; imageCount: number }
+  | { ok: false; error?: string };
+
+function mergeNotes(current: string, incoming?: string) {
+  const next = incoming?.trim();
+  if (!next) return current;
+  if (!current.trim()) return next;
+  if (current.includes(next)) return current;
+  return `${current.trim()}\n\nAI vision notes: ${next}`;
+}
+
 export function HelixLawnIntakeDemo() {
   const [form, setForm] = useState<HelixLawnLeadInput>(initialHelixLawnLeadInput);
   const [submittedLead, setSubmittedLead] = useState<StoredLeadResponse | null>(null);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [visionResult, setVisionResult] = useState<LawnVisionAnalysis | null>(null);
+  const [isAnalyzingImages, setIsAnalyzingImages] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +83,52 @@ export function HelixLawnIntakeDemo() {
       setError(submitError instanceof Error ? submitError.message : "Unable to save lawn lead.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleImageAnalysis() {
+    setError(null);
+    setVisionResult(null);
+
+    if (!selectedImages.length) {
+      setError("Upload at least one yard photo before running AI vision.");
+      return;
+    }
+
+    setIsAnalyzingImages(true);
+
+    try {
+      const imagePayload = new FormData();
+      selectedImages.slice(0, 4).forEach((image) => imagePayload.append("images", image));
+
+      const response = await fetch("/api/helix-lawn-command/analyze-photo", {
+        method: "POST",
+        body: imagePayload,
+      });
+
+      const payload = (await response.json()) as VisionAnalysisResponse;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? "Unable to analyze lawn photos." : payload.error || "Unable to analyze lawn photos.");
+      }
+
+      const analysis = payload.analysis;
+      setVisionResult(analysis);
+      setForm((prev) => ({
+        ...prev,
+        yardSize: analysis.yardSize || prev.yardSize,
+        grassHeight: analysis.grassHeight || prev.grassHeight,
+        overgrowth: analysis.overgrowth || prev.overgrowth,
+        cleanup: analysis.cleanup || prev.cleanup,
+        acreage: analysis.acreage || prev.acreage,
+        slope: analysis.slope || prev.slope,
+        access: analysis.access || prev.access,
+        notes: mergeNotes(prev.notes, analysis.notes),
+        photoAnalysis: analysis.photoAnalysis || prev.photoAnalysis,
+      }));
+    } catch (analysisError) {
+      setError(analysisError instanceof Error ? analysisError.message : "Unable to analyze lawn photos.");
+    } finally {
+      setIsAnalyzingImages(false);
     }
   }
 
@@ -121,6 +195,8 @@ export function HelixLawnIntakeDemo() {
               onClick={() => {
                 setForm(initialHelixLawnLeadInput);
                 setSubmittedLead(null);
+                setSelectedImages([]);
+                setVisionResult(null);
                 setError(null);
               }}
               className="project-button inline-flex px-4 py-3 text-sm transition"
@@ -242,11 +318,50 @@ export function HelixLawnIntakeDemo() {
           </label>
 
           <label className="grid gap-2 text-sm text-[var(--copy-soft)] md:col-span-2">
-            <span>Photo analysis (optional)</span>
+            <span>Upload yard photos for AI vision</span>
+            <div className="brand-card grid gap-4 p-4">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+                onChange={(event) => setSelectedImages(Array.from(event.target.files || []).slice(0, 4))}
+                className="brand-input rounded-[14px] px-4 py-3 file:mr-4 file:rounded-full file:border-0 file:bg-[var(--project-accent)] file:px-4 file:py-2 file:text-xs file:font-semibold file:uppercase file:tracking-[0.18em] file:text-black"
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleImageAnalysis}
+                  disabled={!selectedImages.length || isAnalyzingImages}
+                  className="project-button inline-flex px-4 py-3 text-xs transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isAnalyzingImages ? "Reading yard photos..." : "Analyze photos with AI vision"}
+                </button>
+                <span className="text-xs uppercase tracking-[0.2em] text-[var(--copy-muted)]">
+                  {selectedImages.length ? `${selectedImages.length} image${selectedImages.length === 1 ? "" : "s"} selected` : "Up to 4 images"}
+                </span>
+              </div>
+              <p className="text-xs leading-6 text-[var(--copy-muted)]">
+                The assistant looks for visible grass height, overgrowth, debris, slope, fences, gates,
+                access issues, acreage cues, and manual-review risks before updating the quote fields.
+              </p>
+              {visionResult ? (
+                <div className="rounded-[14px] border border-[color:var(--project-edge)] bg-black/20 px-4 py-3 text-xs leading-6 text-[var(--copy-soft)]">
+                  <span className="block text-[10px] uppercase tracking-[0.24em] text-[var(--project-accent)]">
+                    Vision analysis applied
+                  </span>
+                  {visionResult.confidence ? <span className="block">Confidence: {visionResult.confidence}</span> : null}
+                  <span className="block">{visionResult.photoAnalysis}</span>
+                </div>
+              ) : null}
+            </div>
+          </label>
+
+          <label className="grid gap-2 text-sm text-[var(--copy-soft)] md:col-span-2">
+            <span>AI photo analysis / manual photo notes</span>
             <textarea
               value={form.photoAnalysis}
               onChange={(event) => setForm((prev) => ({ ...prev, photoAnalysis: event.target.value }))}
-              placeholder="Describe yard photos, e.g. overgrown 0.25 acre with slope"
+              placeholder="AI vision will fill this after upload, or describe yard photos manually."
               className="brand-input min-h-[110px] rounded-[14px] px-4 py-3"
             />
           </label>
