@@ -673,6 +673,33 @@ body::after {
   pointer-events: none;
 }
 
+/* ── Parent-brand watermark (every page) ── */
+.luxury-watermark {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+.luxury-watermark-img {
+  width: min(68vw, 760px);
+  height: auto;
+  object-fit: contain;
+  opacity: 0.04;
+  filter: grayscale(15%) brightness(1.4);
+  mix-blend-mode: screen;
+  user-select: none;
+}
+@media (max-width: 640px) {
+  .luxury-watermark-img {
+    width: 86vw;
+    opacity: 0.05;
+  }
+}
+
 .luxury-orbital-ring {
   position: absolute;
   border-radius: 999px;

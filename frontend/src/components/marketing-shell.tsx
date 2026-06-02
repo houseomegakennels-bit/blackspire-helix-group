@@ -27,6 +27,16 @@ export function MarketingShell({
         <span className="luxury-orbital-ring luxury-orbital-ring-b" />
         <span className="luxury-orbital-ring luxury-orbital-ring-c" />
       </div>
+      <div className="luxury-watermark" aria-hidden="true">
+        <Image
+          src="/brand/blackspire-helix-group-logo-fit.png"
+          alt=""
+          width={1792}
+          height={1024}
+          aria-hidden="true"
+          className="luxury-watermark-img"
+        />
+      </div>
       <div className="luxury-scroll-rail" aria-hidden="true" />
       <header className="luxury-header sticky top-0 z-40 border-b border-[var(--line)] bg-[hsl(0_0%_3%/.72)] backdrop-blur-2xl">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-4 lg:px-6">
