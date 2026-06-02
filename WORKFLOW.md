@@ -162,6 +162,18 @@ git pull
 git status
 ```
 
+Or use the automated safe-start command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\safe-start.ps1
+```
+
+Optional frontend build check:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\safe-start.ps1 -FrontendBuild
+```
+
 Do work.
 
 Then:
@@ -182,3 +194,21 @@ The main live frontend is:
 The parent brand and ecosystem marketing pages now live inside that frontend.
 
 Keep that structure unless there is a deliberate refactor decision.
+
+## Automation Helpers
+
+This repo includes:
+
+- [scripts/safe-start.ps1](C:/Users/USER/Desktop/blackspire-helix-group/scripts/safe-start.ps1)
+- [SESSION_START_PROMPT.txt](C:/Users/USER/Desktop/blackspire-helix-group/SESSION_START_PROMPT.txt)
+
+Use `safe-start.ps1` before opening a work session in Codex or Claude Code.
+It will:
+
+- show the current branch
+- pull latest changes unless skipped
+- show `git status`
+- list top-level workspace items
+- print the frontend package summary
+- optionally run the frontend build
+- print the shared session-start prompt

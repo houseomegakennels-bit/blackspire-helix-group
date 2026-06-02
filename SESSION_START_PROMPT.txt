@@ -1,0 +1,22 @@
+Treat C:\Users\USER\Desktop\blackspire-helix-group as the only source of truth.
+
+Before editing:
+- run git status
+- inspect current repo state
+- preserve unrelated local changes
+- do not overwrite or revert work you did not make
+
+If the repo is dirty:
+- work around existing changes where possible
+- call out overlaps before editing the same files
+
+Project context:
+- main live frontend is C:\Users\USER\Desktop\blackspire-helix-group\frontend
+- parent brand and ecosystem pages now live inside that frontend
+- do not create parallel copies of the app unless explicitly requested
+
+After changes:
+- summarize what changed
+- list touched files
+- run the relevant build/test when possible
+- report any remaining uncommitted changes
