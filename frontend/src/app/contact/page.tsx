@@ -100,7 +100,7 @@ export default function ContactPage() {
             </p>
 
             <form
-              action="mailto:clos0312@gmail.com"
+              action="mailto:BHG@blackspirehelix.com"
               method="POST"
               encType="text/plain"
               className="mt-6 space-y-4"
@@ -178,6 +178,20 @@ export default function ContactPage() {
                 <span className="live-dot" />
               </button>
             </form>
+
+            {/* Direct email */}
+            <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-5 text-sm text-[var(--copy-soft)]">
+              <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
+                Prefer email?
+              </span>
+              <a
+                href="mailto:BHG@blackspirehelix.com"
+                className="inline-flex items-center gap-2 font-semibold text-[var(--gold-soft)] transition hover:text-[var(--gold)]"
+              >
+                <span aria-hidden="true">✉️</span>
+                BHG@blackspirehelix.com
+              </a>
+            </div>
           </section>
 
           {/* ── INTAKE GUIDE ─────────────────────────────────────────── */}
