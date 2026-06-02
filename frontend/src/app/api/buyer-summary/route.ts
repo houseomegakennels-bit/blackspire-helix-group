@@ -14,31 +14,50 @@ type SummaryRequest = {
   searchJobId?: string;
 };
 
-/** Call the Supabase summarize-buyer edge function. */
-async function callSummarizeBuyer(payload: SummaryRequest): Promise<string | null> {
-  const supabaseUrl = process.env.SUPABASE_URL?.trim();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!supabaseUrl || !serviceKey) return null;
+/** Generate the buyer summary with OpenAI directly. Returns null on any failure. */
+async function callOpenAiSummary(payload: SummaryRequest): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const model = process.env.OPENAI_TEXT_MODEL?.trim() || "gpt-4.1-mini";
+  const market =
+    payload.county && payload.state ? `${payload.county}, ${payload.state}` : "the target market";
+  const propType = payload.propertyType?.replace("_", " ") ?? "property";
+
+  const prompt = `You are an intelligence analyst for a land and real-estate wholesaler. Write a concise 2-3 sentence intelligence summary of this buyer for an operator deciding whether to reach out. Focus on what makes them valuable, their buying pattern, and the best approach angle. Return only the summary text — no preamble, no labels.
+
+Buyer data:
+- Name: ${payload.buyerName ?? "Unknown buyer"}
+- Entity type: ${payload.isLlc ? "LLC / investment entity" : "individual buyer"}
+- Cash buyer: ${payload.isCashBuyer ? "yes" : "no"}
+- Recorded purchases (this sweep): ${payload.purchaseCount ?? 0}
+- Visible spend: $${Number(payload.totalSpend ?? 0).toLocaleString()}
+- Property type: ${propType}
+- Market: ${market}
+- Score: ${payload.score ?? 0}/100`;
 
   try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/summarize-buyer`, {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.4,
+        max_tokens: 220,
+      }),
       signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) return null;
-    const json = await res.json() as Record<string, unknown>;
-
-    // Accept { summary: "..." } or { analysis: "..." } or bare string
-    if (typeof json.summary === "string") return json.summary;
-    if (typeof json.analysis === "string") return json.analysis;
-    if (typeof json === "string") return json;
-    return null;
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = json.choices?.[0]?.message?.content?.trim();
+    return text || null;
   } catch {
     return null;
   }
@@ -114,7 +133,7 @@ export async function POST(request: NextRequest) {
     const isLlc = Boolean(body.isLlc);
     const isCashBuyer = Boolean(body.isCashBuyer);
 
-    const aiSummary = await callSummarizeBuyer(body);
+    const aiSummary = await callOpenAiSummary(body);
     const summary =
       aiSummary ??
       buildLocalSummary(buyerName, county, state, propertyType, score, purchaseCount, totalSpend, isLlc, isCashBuyer);

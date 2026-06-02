@@ -22,32 +22,57 @@ type EdgeFnDraft = {
   body: string;
 };
 
-/** Try the Supabase generate-outreach edge function. Returns null on any failure. */
-async function tryEdgeFnOutreach(payload: OutreachRequest): Promise<EdgeFnDraft | null> {
-  const supabaseUrl = process.env.SUPABASE_URL?.trim();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!supabaseUrl || !serviceKey) return null;
+/** Generate the outreach draft with OpenAI directly. Returns null on any failure. */
+async function callOpenAiOutreach(payload: OutreachRequest): Promise<EdgeFnDraft | null> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const model = process.env.OPENAI_TEXT_MODEL?.trim() || "gpt-4.1-mini";
+  const market =
+    payload.county && payload.state ? `${payload.county}, ${payload.state}` : "their market";
+  const propType = payload.propertyType?.replace("_", " ") ?? "land";
+
+  const prompt = `You are a real-estate wholesaler's outreach copywriter. Write a short, professional, personalized outreach letter to a buyer who has been acquiring ${propType} in ${market}. Reference their activity naturally, keep it concise and action-oriented, and end with a clear call to action asking whether they are still buying in the area.
+
+Buyer data:
+- Name: ${payload.buyerName}
+- Entity type: ${payload.isLlc ? "LLC / investment entity" : "individual buyer"}
+- Cash buyer: ${payload.isCashBuyer ? "yes" : "no"}
+- Recorded purchases (this sweep): ${payload.purchaseCount ?? 0}
+- Visible spend: $${Number(payload.totalSpend ?? 0).toLocaleString()}
+- Score: ${payload.score ?? 0}/100
+
+Respond with a JSON object using exactly these keys:
+- "subject": a short subject line
+- "angle": one sentence describing the outreach strategy
+- "body": the full letter text, using \\n for line breaks`;
 
   try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/generate-outreach`, {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(12_000),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 600,
+        response_format: { type: "json_object" },
+      }),
+      signal: AbortSignal.timeout(20_000),
     });
 
     if (!res.ok) return null;
-    const json = await res.json() as Record<string, unknown>;
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = json.choices?.[0]?.message?.content?.trim();
+    if (!content) return null;
 
-    // Accept either { draft: { subject, angle, body } } or { subject, angle, body }
-    const draft = (json.draft ?? json) as Record<string, unknown>;
-    if (
-      typeof draft.subject === "string" &&
-      typeof draft.body === "string"
-    ) {
+    const draft = JSON.parse(content) as Record<string, unknown>;
+    if (typeof draft.subject === "string" && typeof draft.body === "string") {
       return {
         subject: draft.subject,
         angle: typeof draft.angle === "string" ? draft.angle : "",
@@ -128,8 +153,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Try AI edge function first, fall back to template
-    const edgeDraft = await tryEdgeFnOutreach(body);
+    // Try OpenAI first, fall back to deterministic template
+    const edgeDraft = await callOpenAiOutreach(body);
     const draft = edgeDraft ?? buildTemplateDraft(
       buyerName, mailingAddress, county, state, propertyType,
       score, purchaseCount, totalSpend, isLlc, isCashBuyer, searchJobId,
