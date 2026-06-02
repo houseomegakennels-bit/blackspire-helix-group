@@ -57,11 +57,11 @@ function PanelShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[26px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.84)] p-5">
+    <section className="min-w-0 rounded-[24px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.84)] p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-[0.34em] text-[hsl(111_87%_65%)]">{eyebrow}</p>
-          <h3 className="mt-2 text-3xl font-semibold text-white">{title}</h3>
+          <h3 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">{title}</h3>
         </div>
       </div>
       <div className="mt-5">{children}</div>
@@ -121,10 +121,10 @@ export function HelixLawnCommandHome({
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,hsl(135_68%_9%),transparent_36%),linear-gradient(180deg,hsl(148_44%_6%)_0%,hsl(150_44%_5%)_100%)] text-foreground">
-      <div className="mx-auto grid min-h-screen max-w-[1660px] gap-6 px-4 py-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:px-6">
-        <aside className="rounded-[28px] border border-[hsl(126_48%_22%/.45)] bg-[hsl(150_42%_7%/.92)] p-5 shadow-[0_24px_80px_hsl(0_0%_0%/.4)]">
-          <div className="space-y-4 border-b border-[hsl(126_48%_22%/.35)] pb-5">
-            <div className="overflow-hidden rounded-[18px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.9)] p-3">
+      <div className="mx-auto grid min-h-screen max-w-[1660px] gap-5 px-4 py-4 xl:grid-cols-[310px_minmax(0,1fr)] xl:px-6">
+        <aside className="min-w-0 rounded-[28px] border border-[hsl(126_48%_22%/.45)] bg-[hsl(150_42%_7%/.92)] p-4 shadow-[0_24px_80px_hsl(0_0%_0%/.4)] sm:p-5 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:overflow-y-auto">
+          <div className="grid gap-4 border-b border-[hsl(126_48%_22%/.35)] pb-5 sm:grid-cols-[120px_1fr] sm:items-center xl:grid-cols-1">
+            <div className="max-w-[140px] overflow-hidden rounded-[18px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.9)] p-3 xl:max-w-none">
               <Image
                 src="/brand/helix-lawn-command-logo.png"
                 alt="Helix Lawn Command logo"
@@ -137,14 +137,14 @@ export function HelixLawnCommandHome({
               <p className="text-[11px] uppercase tracking-[0.42em] text-[hsl(111_87%_65%)]">
                 Command center
               </p>
-              <h1 className="mt-3 text-2xl font-semibold text-white">Today at Blackspire</h1>
+              <h1 className="mt-3 text-xl font-semibold text-white sm:text-2xl">Today at Blackspire</h1>
               <p className="mt-3 text-sm leading-6 text-[hsl(120_16%_72%)]">
                 Live lawn leads are flowing from the Helix intake page into this workspace.
               </p>
             </div>
           </div>
 
-          <nav className="mt-5 space-y-2" aria-label="Helix Lawn Command sections">
+          <nav className="mt-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-1" aria-label="Helix Lawn Command sections">
             {navItems.map((item) => {
               const active = activeTab === item;
               return (
@@ -152,7 +152,7 @@ export function HelixLawnCommandHome({
                   key={item}
                   href={`/workspace/helix-lawn-command?tab=${tabSlugs[item]}#${tabSlugs[item]}`}
                   onClick={() => activateTab(item)}
-                  className={`w-full rounded-[16px] border px-4 py-3 text-left text-sm uppercase tracking-[0.18em] transition ${
+                  className={`block min-w-0 rounded-[16px] border px-3 py-3 text-left text-[11px] uppercase leading-5 tracking-[0.16em] transition sm:text-xs xl:px-4 ${
                     active
                       ? "border-[hsl(126_48%_28%/.75)] bg-[hsl(142_36%_11%/.95)] text-white shadow-[0_0_28px_hsl(111_87%_45%/.13)]"
                       : "border-[hsl(126_48%_18%/.4)] bg-[hsl(150_28%_8%/.75)] text-[hsl(120_16%_72%)] hover:border-[hsl(126_48%_28%/.58)] hover:text-white"
@@ -186,11 +186,11 @@ export function HelixLawnCommandHome({
           </div>
         </aside>
 
-        <section className="space-y-6 rounded-[30px] border border-[hsl(126_48%_18%/.24)] bg-[hsl(150_42%_7%/.62)] p-6 shadow-[0_28px_90px_hsl(0_0%_0%/.34)] backdrop-blur-xl">
+        <section className="min-w-0 space-y-5 rounded-[30px] border border-[hsl(126_48%_18%/.24)] bg-[hsl(150_42%_7%/.62)] p-4 shadow-[0_28px_90px_hsl(0_0%_0%/.34)] backdrop-blur-xl sm:p-6">
           <header className="flex flex-wrap items-center justify-between gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-[0.44em] text-[hsl(111_87%_65%)]">Helix Lawn Command</p>
-              <h2 className="mt-3 text-5xl font-semibold text-white">{activeTab}</h2>
+              <h2 className="mt-3 text-4xl font-semibold text-white sm:text-5xl">{activeTab}</h2>
               <p className="mt-3 text-base leading-7 text-[hsl(120_16%_72%)]">{headerCopy[activeTab]}</p>
             </div>
             <span className="rounded-full border border-[hsl(126_48%_28%/.55)] bg-[hsl(142_36%_10%/.88)] px-4 py-2 text-xs uppercase tracking-[0.24em] text-[hsl(111_87%_65%)]">
@@ -202,7 +202,7 @@ export function HelixLawnCommandHome({
             <>
               <MetricGrid snapshot={snapshot} />
               <PipelinePanel snapshot={snapshot} compact />
-              <div className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
+              <div className="grid gap-5 2xl:grid-cols-[1.12fr_0.88fr]">
                 <LeadsPanel snapshot={snapshot} compact />
                 <PriorityPanel snapshot={snapshot} />
               </div>
@@ -228,9 +228,9 @@ function MetricGrid({ snapshot }: { snapshot: HelixLawnCommandSnapshot }) {
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {snapshot.metricCards.map((card) => (
-        <article key={card.label} className="rounded-[22px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.88)] p-5">
-          <div className="text-4xl font-semibold text-white">{card.value}</div>
-          <div className="mt-2 text-lg font-medium text-[hsl(120_10%_86%)]">{card.label}</div>
+        <article key={card.label} className="min-w-0 rounded-[22px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.88)] p-4 sm:p-5">
+          <div className="text-3xl font-semibold text-white sm:text-4xl">{card.value}</div>
+          <div className="mt-2 text-base font-medium text-[hsl(120_10%_86%)] sm:text-lg">{card.label}</div>
           <div className="mt-2 text-sm text-[hsl(111_68%_54%)]">{card.detail}</div>
         </article>
       ))}
@@ -247,17 +247,17 @@ function PipelinePanel({
 }) {
   return (
     <PanelShell title="Lead Pipeline" eyebrow="Live stage view">
-      <div className="grid gap-4 xl:grid-cols-6">
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-6">
         {snapshot.pipelineColumns.map((column) => (
-          <div key={column.label} className="rounded-[20px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(150_28%_8%/.75)] p-4">
+          <div key={column.label} className="min-w-0 rounded-[20px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(150_28%_8%/.75)] p-4">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-[11px] uppercase tracking-[0.28em] text-[hsl(120_16%_72%)]">{column.label}</div>
+              <div className="text-[11px] uppercase leading-5 tracking-[0.24em] text-[hsl(120_16%_72%)]">{column.label}</div>
               <div className="text-xs text-[hsl(111_87%_65%)]">{column.count}</div>
             </div>
             <div className="mt-3 space-y-3">
               {column.items.length ? (
                 column.items.slice(0, compact ? 3 : undefined).map((lead) => (
-                  <div key={lead.id} className="rounded-[14px] border border-[hsl(126_48%_18%/.25)] bg-[hsl(145_22%_11%/.92)] px-3 py-3">
+                  <div key={lead.id} className="min-w-0 rounded-[14px] border border-[hsl(126_48%_18%/.25)] bg-[hsl(145_22%_11%/.92)] px-3 py-3">
                     <div className="text-sm font-medium text-white">{lead.name}</div>
                     <div className="mt-1 text-xs text-[hsl(120_16%_72%)]">{lead.service}</div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-[hsl(111_87%_65%)]">
@@ -291,7 +291,7 @@ function LeadsPanel({
       <div className="space-y-3">
         {leads.length ? (
           leads.map((lead) => (
-            <div key={lead.id} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
+            <div key={lead.id} className="min-w-0 rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-base font-semibold text-white">
@@ -329,7 +329,7 @@ function EstimateQueuePanel({ snapshot }: { snapshot: HelixLawnCommandSnapshot }
       <div className="space-y-3">
         {snapshot.estimateQueue.length ? (
           snapshot.estimateQueue.map((lead) => (
-            <div key={lead.id} className="rounded-[18px] border border-[hsl(53_72%_38%/.32)] bg-[hsl(53_42%_9%/.42)] px-4 py-4">
+            <div key={lead.id} className="min-w-0 rounded-[18px] border border-[hsl(53_72%_38%/.32)] bg-[hsl(53_42%_9%/.42)] px-4 py-4">
               <div className="flex flex-wrap justify-between gap-3">
                 <div>
                   <div className="text-lg font-semibold text-white">{lead.name}</div>
@@ -354,7 +354,7 @@ function FollowUpsPanel({ snapshot }: { snapshot: HelixLawnCommandSnapshot }) {
       <div className="space-y-3">
         {snapshot.followUps.length ? (
           snapshot.followUps.map((lead) => (
-            <div key={lead.id} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
+            <div key={lead.id} className="min-w-0 rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
               <div className="flex flex-wrap justify-between gap-3">
                 <div>
                   <div className="text-lg font-semibold text-white">{lead.name}</div>
@@ -376,10 +376,10 @@ function FollowUpsPanel({ snapshot }: { snapshot: HelixLawnCommandSnapshot }) {
 function OutreachDraftsPanel({ snapshot }: { snapshot: HelixLawnCommandSnapshot }) {
   return (
     <PanelShell title="Outreach Drafts" eyebrow="Ready-to-send copy">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {snapshot.outreachDrafts.length ? (
           snapshot.outreachDrafts.map((draft) => (
-            <article key={draft.id} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] p-4">
+            <article key={draft.id} className="min-w-0 rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] p-4">
               <div className="text-[11px] uppercase tracking-[0.28em] text-[hsl(111_87%_65%)]">{draft.channel}</div>
               <h4 className="mt-2 text-lg font-semibold text-white">{draft.subject}</h4>
               <p className="mt-3 text-sm leading-6 text-[hsl(120_16%_72%)]">{draft.body}</p>
@@ -399,7 +399,7 @@ function ImportHistoryPanel({ snapshot }: { snapshot: HelixLawnCommandSnapshot }
       <div className="space-y-3">
         {snapshot.importHistory.length ? (
           snapshot.importHistory.map((item) => (
-            <div key={item.id} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
+            <div key={item.id} className="min-w-0 rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4">
               <div className="flex flex-wrap justify-between gap-3">
                 <div>
                   <div className="text-base font-semibold text-white">{item.source}</div>
@@ -429,9 +429,9 @@ function PriorityPanel({
 }) {
   return (
     <PanelShell title="Priority Actions" eyebrow="What to do next">
-      <div className={expanded ? "grid gap-3 lg:grid-cols-2" : "space-y-3"}>
+      <div className={expanded ? "grid gap-3 xl:grid-cols-2" : "space-y-3"}>
         {snapshot.priorityActions.map((action) => (
-          <div key={action} className="rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4 text-sm leading-6 text-[hsl(120_16%_72%)]">
+          <div key={action} className="min-w-0 rounded-[18px] border border-[hsl(126_48%_18%/.3)] bg-[hsl(145_22%_11%/.92)] px-4 py-4 text-sm leading-6 text-[hsl(120_16%_72%)]">
             {action}
           </div>
         ))}
@@ -460,7 +460,7 @@ function ActivityPanel({ snapshot }: { snapshot: HelixLawnCommandSnapshot }) {
 
 function SettingsPanel() {
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+    <div className="grid gap-5 2xl:grid-cols-[0.92fr_1.08fr]">
       <PanelShell title="Realistic Pricing Logic" eyebrow="Owner reference">
         <div className="space-y-3 text-sm leading-7 text-[hsl(120_16%_72%)]">
           {helixLawnPricingLogic.map((line) => (
