@@ -4,9 +4,9 @@ import Link from "next/link";
 import { MarketingShell } from "@/components/marketing-shell";
 
 const brandPrinciples = [
-  "Premium, not generic.",
-  "Operational, not theoretical.",
-  "One ecosystem, many industry-specific surfaces.",
+  "We build AI employees that do real work — not demos that only impress in a meeting.",
+  "Every client gets leverage: more leads, faster follow-up, and cleaner operations.",
+  "One trusted partner across every industry we serve — never a generic agency.",
 ] as const;
 
 const founderGoals = [
@@ -167,18 +167,18 @@ export default function AboutPage() {
             <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Founder vision</p>
             <div className="mt-5 grid gap-4">
               <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
-                The ecosystem concept is still the right frame: one parent company, multiple
-                proof-point divisions, and a consistent promise to replace repetitive work with
-                intelligent automation.
+                Blackspire Helix Group exists to give everyday businesses the kind of automation
+                and infrastructure that used to belong only to large companies — so they can
+                compete and win without hiring an army.
               </div>
               <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
-                In practice, that means every division demonstrates a different expression of the
-                same core idea: AI employees that can capture demand, route information, reduce
-                delay, and create cleaner operations.
+                We put AI to work on the repetitive tasks that drain time and money — capturing
+                leads, following up fast, and keeping operations clean — so owners can focus on
+                growth, family, and the life they&apos;re building.
               </div>
               <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
-                The site should feel like a command-grade holding company with enough polish that
-                each product reads as serious, valuable, and intentionally built.
+                We&apos;re building a lasting company rooted in faith, discipline, and integrity —
+                one that creates real freedom for our clients and a legacy worth leaving behind.
               </div>
             </div>
           </article>
@@ -186,8 +186,8 @@ export default function AboutPage() {
           <article className="brand-panel shine-card px-6 py-8 reveal-up stagger-2">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Brand philosophy</p>
-                <h2 className="brand-display mt-3 text-3xl text-white">How the parent brand should behave</h2>
+                <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">What we stand for</p>
+                <h2 className="brand-display mt-3 text-3xl text-white">The standards we hold on every build</h2>
               </div>
             </div>
             <div className="mt-6 grid gap-4">
