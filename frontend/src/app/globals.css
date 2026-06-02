@@ -685,18 +685,18 @@ body::after {
   pointer-events: none;
 }
 .luxury-watermark-img {
-  width: min(68vw, 760px);
+  width: min(72vw, 820px);
   height: auto;
   object-fit: contain;
-  opacity: 0.04;
-  filter: grayscale(15%) brightness(1.4);
+  opacity: 0.09;
+  filter: grayscale(10%) brightness(1.45);
   mix-blend-mode: screen;
   user-select: none;
 }
 @media (max-width: 640px) {
   .luxury-watermark-img {
-    width: 86vw;
-    opacity: 0.05;
+    width: 88vw;
+    opacity: 0.1;
   }
 }
 
