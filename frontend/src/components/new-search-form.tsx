@@ -163,14 +163,14 @@ export function NewSearchForm({
     <BuyerShell
       eyebrow="Intelligence Sweep"
       title="New Buyer Search"
-      description="This is the first operator workflow we need wired for real. The payload shape already matches the live n8n webhook and SearchJob model."
+      description="Launch a county-targeted buyer sweep. The job is created in Supabase and dispatched to the live n8n workflow for scoring."
       operatorStatus={operatorStatus}
     >
       <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
         <Panel
           eyebrow="Search Intake"
-          title="Job payload shape"
-          description="This form now creates a live SearchJob, then queues the Buyer Engine webhook after the response returns."
+          title="Search parameters"
+          description="Set the county, property type, and date range. We create the job and dispatch the sweep to the workflow."
         >
           <form className="grid gap-5 md:grid-cols-2" onSubmit={handleSubmit}>
             <Field
@@ -291,15 +291,15 @@ export function NewSearchForm({
         </Panel>
 
         <Panel
-          eyebrow="Trigger Contract"
-          title="Backend path to implement"
-          description="The remaining work here is mostly quality-of-operations work: better county heuristics, realtime, exports, and outreach actions."
+          eyebrow="How it works"
+          title="What happens when you launch"
+          description="From the moment you submit, the sweep runs end to end and results stream back into the workspace."
         >
           <ol className="brand-copy-soft space-y-3 text-sm leading-6">
-            <li className="brand-card p-4">1. SearchJob insert and webhook dispatch are live.</li>
-            <li className="brand-card p-4">2. Wake County land runs now prefetch raw sales in the app server before n8n scoring.</li>
-            <li className="brand-card p-4">3. Realtime subscriptions can replace polling once the base operator flow settles.</li>
-            <li className="brand-card p-4">4. Export and AI outreach actions are the next user-visible step after queue stability.</li>
+            <li className="brand-card p-4">1. Your search is saved as a job in Supabase.</li>
+            <li className="brand-card p-4">2. The live n8n workflow pulls county sales and scores buyers.</li>
+            <li className="brand-card p-4">3. Results stream into the queue and Buyer Reports in real time.</li>
+            <li className="brand-card p-4">4. Export, AI summaries, and outreach drafts are one click away.</li>
           </ol>
 
           <div className="mt-5 flex flex-wrap gap-3">

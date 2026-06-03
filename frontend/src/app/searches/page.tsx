@@ -63,7 +63,7 @@ export default async function SearchJobsPage({
     <BuyerShell
       eyebrow="Dossiers"
       title="Search Jobs"
-      description="This page now watches the live Buyer Engine queue and refreshes itself while jobs advance through the workflow."
+      description="The live Buyer Engine queue, refreshing automatically as jobs advance through the workflow."
       operatorStatus={operatorStatus}
     >
       <SearchJobsMonitor

@@ -18,6 +18,8 @@ const featuredDemoSlots = [
       "A live walkthrough of the Buyer Engine command surface, showing how the Blackspire product layer turns buyer intelligence into a premium operator experience.",
     src: "/demos/buyer-engine-demo-final.mp4",
     badge: "Flagship workflow",
+    whyItMatters:
+      "Wholesalers and investors see a working intelligence surface — county sweeps, scored buyer dossiers, and outreach — not a slide deck. It's the fastest way to show what automated buyer-finding actually looks like.",
   },
   {
     id: "02",
@@ -26,6 +28,8 @@ const featuredDemoSlots = [
       "Helix Lawn Command in action: AI captures every missed lawn-care call and web inquiry 24/7, qualifies the lead, and turns it into a booked $150-$1,500 job before it ever goes cold.",
     src: "/demos/helix-lawn-command-demo.mp4",
     badge: "Lawn automation",
+    whyItMatters:
+      "Service-business owners get it instantly: every missed call is lost revenue, and the AI books the job around the clock. It turns an abstract automation pitch into money they can picture.",
   },
 ] as const;
 
@@ -40,8 +44,8 @@ export default function DemosPage() {
             Proof that feels curated, not improvised.
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-            The demos page now reads like a private proof library. Your next two real demo assets can
-            drop straight into the featured slots below without changing the page structure again.
+            Real product walkthroughs from across the Blackspire ecosystem — see the systems running
+            live before you ever get on a call. Every clip is an actual workflow, not a concept.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
@@ -90,10 +94,7 @@ export default function DemosPage() {
                       <div className="text-[11px] uppercase tracking-[0.26em] text-[var(--copy-muted)]">
                         Why it matters
                       </div>
-                      <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                        The gallery now opens with real video proof instead of conceptual placeholders,
-                        which makes the parent brand feel substantially more legitimate and complete.
-                      </p>
+                      <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{slot.whyItMatters}</p>
                     </div>
                   </div>
                 </div>
@@ -121,8 +122,7 @@ export default function DemosPage() {
                     <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">{project.role}</p>
                     <h2 className="mt-3 text-2xl font-semibold text-white">{project.name}</h2>
                     <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
-                      {project.name} can collect reels, screenshots, workflow clips, and case-study proof
-                      without breaking the parent gallery’s hierarchy.
+                      {project.tagline}
                     </p>
                     <Link href={project.href} className="brand-button mt-5 inline-flex px-4 py-3 text-sm transition">
                       Open project overview

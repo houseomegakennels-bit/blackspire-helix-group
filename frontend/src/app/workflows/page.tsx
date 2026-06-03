@@ -1,7 +1,6 @@
 import { BuyerShell, Metric, Panel, StatusPill } from "@/components/buyer-shell";
 import {
   getCountyVerificationTone,
-  pendingWork,
   workflows,
 } from "@/lib/buyer-engine-data";
 import { getLiveCountyCapabilities, getOperatorShellStatus } from "@/lib/buyer-engine-server";
@@ -135,20 +134,6 @@ export default async function WorkflowsPage() {
         </Panel>
       </div>
 
-      <Panel
-        eyebrow="Open Work"
-        title="Build queue"
-        description="This is the direct handoff list between frontend and workflow work after exports, outreach actions, and realtime landed."
-      >
-        <ol className="brand-copy-soft space-y-3 text-sm leading-6">
-            {pendingWork.map((item, index) => (
-              <li key={item} className="brand-card grid grid-cols-[auto_1fr] gap-3 p-4">
-                <span className="text-[hsl(38_92%_55%)]">{String(index + 1).padStart(2, "0")}</span>
-                <span>{item}</span>
-              </li>
-            ))}
-        </ol>
-      </Panel>
     </BuyerShell>
   );
 }

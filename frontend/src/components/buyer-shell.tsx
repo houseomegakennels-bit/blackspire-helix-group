@@ -56,7 +56,7 @@ export function BuyerShell({
                 <div className="brand-hairline flex-1" />
               </div>
               <p className="text-sm leading-6 text-[var(--copy-soft)]">
-                Buyer intelligence operations for the Blackspire Helix Group ecosystem, framed like a luxury operator deck instead of a generic SaaS back office.
+                A premium operator deck for finding, scoring, and activating real-estate buyers across the Blackspire Helix Group ecosystem.
               </p>
             </div>
           </div>

@@ -167,7 +167,7 @@ export default function Home() {
             <div className="flex flex-wrap items-end justify-between gap-5">
               <div className="luxury-section-heading max-w-3xl">
                 <p className="luxury-kicker">Division proof points</p>
-                <h2>The ecosystem should feel like a private portfolio of elite software houses.</h2>
+                <h2>A private portfolio of elite software houses, under one roof.</h2>
               </div>
               <Link href="/ecosystem" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
                 View all divisions

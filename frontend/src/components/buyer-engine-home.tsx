@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { BuyerShell, Metric, Panel, StatusPill } from "@/components/buyer-shell";
-import { pendingWork } from "@/lib/buyer-engine-data";
 import {
   getBuyerEngineEnvStatus,
   getDashboardSnapshot,
@@ -171,7 +170,7 @@ export async function BuyerEngineHome() {
     <BuyerShell
       eyebrow="Command Deck"
       title="Blackspire Buyer Engine Workspace"
-      description="Buyer Engine is no longer framed like a generic internal tool. This workspace is the premium operating layer for land-buyer intelligence, county readiness, and operator execution across the Blackspire stack."
+      description="The premium operating layer for land-buyer intelligence, county readiness, and operator execution across the Blackspire stack."
       operatorStatus={operatorStatus}
     >
       <section className="brand-panel overflow-hidden px-6 py-7">
@@ -300,39 +299,39 @@ export async function BuyerEngineHome() {
 
       <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
         <Panel
-          eyebrow="System Transformation"
-          title="What shifted from concept shell to working command product"
-          description="Buyer Engine is now positioned like a premium vertical system: live data in the middle, operator context on the edges, and clearer next actions throughout."
+          eyebrow="Inside the workspace"
+          title="Everything the Buyer Engine workspace runs"
+          description="Live data at the center, operator context on the edges, and a clear next action at every step — built for serious acquisition operators."
         >
           <div className="grid gap-4 md:grid-cols-2">
             <div className="brand-card p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Now in place</p>
+              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Included</p>
               <ul className="brand-copy-soft mt-4 space-y-3 text-sm leading-6">
-                <li>Real SearchJob inserts into Supabase</li>
-                <li>Asynchronous n8n webhook dispatch after launch</li>
-                <li>Search Jobs monitor with retry and highlight flow</li>
-                <li>Buyer Reports route rendering live BuyerReport rows</li>
-                <li>Realtime subscriptions with polling fallback</li>
-                <li>CSV export logging and outreach draft generation</li>
-                <li>Operator auth bootstrap and cookie-based sign-in</li>
+                <li>County buyer sweeps dispatched to the live n8n workflow</li>
+                <li>Search-jobs monitor with retry and live highlight flow</li>
+                <li>Buyer Reports rendering scored, ranked buyer dossiers</li>
+                <li>Realtime updates with automatic polling fallback</li>
+                <li>One-click CSV export with a recoverable export ledger</li>
+                <li>AI buyer summaries and outreach draft generation</li>
+                <li>Secure operator sign-in and admin controls</li>
               </ul>
             </div>
             <div className="brand-card p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Still open</p>
+              <p className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">What that gets you</p>
               <ul className="brand-copy-soft mt-4 space-y-3 text-sm leading-6">
-                <li>Retire the default-user fallback once the first operator account is created</li>
-                <li>Fully live dashboard metrics and history</li>
-                <li>County administration and role management</li>
-                <li>Operational analytics beyond the current queue and dossier views</li>
+                <li>Every buyer captured and scored automatically</li>
+                <li>Faster dispositions — buyers matched to deals in seconds</li>
+                <li>A recoverable trail of exports and outreach, not clipboard work</li>
+                <li>One secure command surface instead of scattered spreadsheets</li>
               </ul>
             </div>
           </div>
         </Panel>
 
         <Panel
-          eyebrow="Environment Contract"
-          title="Production readiness surface"
-          description="The environment layer is now framed as an executive readiness board instead of a plain checklist."
+          eyebrow="Environment"
+          title="Integration status"
+          description="Live status of the integrations that power the workspace."
         >
           <div className="space-y-3">
             {readinessRows.map((item) => (
@@ -532,20 +531,6 @@ export async function BuyerEngineHome() {
         </Panel>
       </div>
 
-      <Panel
-        eyebrow="Build Queue"
-        title="Next implementation passes"
-        description="This is still the shortest path from the current repo to a genuinely dominant Buyer Engine front end."
-      >
-        <ol className="brand-copy-soft grid gap-3 text-sm leading-6 md:grid-cols-2">
-          {pendingWork.map((item, index) => (
-            <li key={item} className="brand-card grid grid-cols-[auto_1fr] gap-3 p-4">
-              <span className="text-[hsl(38_92%_55%)]">{String(index + 1).padStart(2, "0")}</span>
-              <span>{item}</span>
-            </li>
-          ))}
-        </ol>
-      </Panel>
     </BuyerShell>
   );
 }

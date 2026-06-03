@@ -691,7 +691,7 @@ export function SearchJobsMonitor({
         title={liveMode ? "Live search job records" : "Sample search job records"}
         description={
           liveMode
-            ? "This page now polls the Buyer Engine API every five seconds so long-running workflow updates become visible without a manual refresh."
+            ? "Search jobs refresh automatically every few seconds, so long-running workflow updates appear without a manual refresh."
             : env.enabled
               ? "Supabase is configured, but no accessible rows were returned for the current default user."
               : `The repo is still missing env values: ${env.missing.join(", ")}`
