@@ -57,6 +57,9 @@ export default function ContactPage() {
                 and branded product surfaces — all built under one flagship command identity.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  Explore Recon Engine
+                </Link>
                 <Link href="/services" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
                   Review services
                 </Link>
@@ -220,7 +223,7 @@ export default function ContactPage() {
                   <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--copy-muted)] mb-2">We build</p>
                   <p className="text-sm leading-7 text-[var(--copy-soft)]">
                     Lead capture systems, buyer intelligence, service-business intake, operator
-                    dashboards, workflow routing, and premium product surfaces built around
+                    dashboards, Recon Engine opportunity intelligence, workflow routing, and premium product surfaces built around
                     business leverage.
                   </p>
                 </div>
@@ -233,6 +236,9 @@ export default function ContactPage() {
                 </div>
               </div>
               <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  View Recon Engine
+                </Link>
                 <Link href="/ecosystem" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
                   Explore ecosystem
                 </Link>

@@ -104,6 +104,23 @@ export default function DemosPage() {
 
           <div className="space-y-6">
             <section className="brand-panel px-6 py-8">
+              <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Recon Surface</p>
+              <h2 className="brand-display mt-3 text-2xl text-white">See the opportunity feed live</h2>
+              <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
+                Recon Engine is already live inside the ecosystem with a public landing page,
+                industry-specific entry points, and a dashboard for opportunity review.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  Open Recon Engine
+                </Link>
+                <Link href="/recon-engine/dashboard" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  View live dashboard
+                </Link>
+              </div>
+            </section>
+
+            <section className="brand-panel px-6 py-8">
               <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Proof lanes</p>
               <div className="mt-5 grid gap-4">
                 {proofLanes.map((lane) => (

@@ -37,7 +37,7 @@ export const ecosystemProjects: EcosystemProject[] = [
     glow: "rgba(139, 92, 246, 0.34)",
     cta: "Explore Recon Engine",
     href: "/recon-engine",
-    status: "building",
+    status: "live",
     targetUser: "Service businesses chasing contracts",
     primaryOutcome: "Find contracts, grants, and vendor programs before competitors.",
     logoSrc: "/brand/blackspire-recon-engine-logo.png",

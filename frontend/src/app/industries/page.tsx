@@ -55,6 +55,14 @@ export default function IndustriesPage() {
               They become powerful when shaped around how a specific industry actually sells,
               routes work, and closes revenue. Each niche gets its own automation language.
             </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/recon-engine" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                Explore Recon Engine
+              </Link>
+              <Link href="/services" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                View service architecture
+              </Link>
+            </div>
             <div className="mt-6 flex items-center gap-6 flex-wrap">
               <div className="stat-badge">
                 <span className="stat-badge-value brand-accent-text">6+</span>
@@ -147,8 +155,8 @@ export default function IndustriesPage() {
               <Link href="/contact" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition whitespace-nowrap">
                 Book strategy call
               </Link>
-              <Link href="/ecosystem" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition whitespace-nowrap">
-                Tour the ecosystem
+              <Link href="/recon-engine" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition whitespace-nowrap">
+                View Recon Engine
               </Link>
             </div>
           </div>

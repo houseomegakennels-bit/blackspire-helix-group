@@ -22,13 +22,17 @@ const marqueeItems = [
   "Premium client acquisition design",
 ] as const;
 
-const proofMetrics = [
-  { label: "Division systems", value: "05", copy: "Specialized operating layers under one command brand." },
+const proofMetricBase = [
   { label: "Automation lanes", value: "24/7", copy: "Always-on flows for leads, routing, follow-up, and visibility." },
   { label: "Operator posture", value: "Elite", copy: "Built to feel like a command center, not SaaS clutter." },
 ] as const;
 
 export default function Home() {
+  const divisionCount = String(ecosystemProjects.length).padStart(2, "0");
+  const proofMetrics = [
+    { label: "Division systems", value: divisionCount, copy: "Specialized operating layers under one command brand." },
+    ...proofMetricBase,
+  ];
   const featuredProjects = ecosystemProjects.slice(0, 2);
   const supportingProjects = ecosystemProjects.slice(2);
 
@@ -65,8 +69,8 @@ export default function Home() {
                   <Link href="/ecosystem" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
                     Tour the Ecosystem
                   </Link>
-                  <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
-                    Open Buyer Engine
+                  <Link href="/recon-engine" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                    Open Recon Engine
                   </Link>
                 </div>
 
@@ -301,6 +305,9 @@ export default function Home() {
                 <Link href="/about" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                   Read the thesis
                 </Link>
+                <Link href="/recon-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Explore Recon Engine
+                </Link>
                 <Link href="/demos" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                   Review demos
                 </Link>
@@ -323,6 +330,9 @@ export default function Home() {
               <div className="flex flex-wrap gap-3">
                 <Link href="/contact" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
                   Start intake
+                </Link>
+                <Link href="/recon-engine/dashboard" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  View live opportunities
                 </Link>
                 <Link href="/services" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
                   Review service map

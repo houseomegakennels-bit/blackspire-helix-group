@@ -147,6 +147,9 @@ export default function AboutPage() {
 
               {/* CTA */}
               <div className="flex flex-wrap gap-3">
+                <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  View Recon Engine
+                </Link>
                 <Link href="/ecosystem" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
                   Tour the ecosystem
                 </Link>
@@ -198,6 +201,9 @@ export default function AboutPage() {
               ))}
             </div>
             <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                Explore Recon Engine
+              </Link>
               <Link href="/ecosystem" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
                 Review ecosystem
               </Link>

@@ -74,6 +74,9 @@ export default function ServicesPage() {
                 <Link href="/contact" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
                   Start intake
                 </Link>
+                <Link href="/recon-engine" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Explore Recon Engine
+                </Link>
                 <Link href="/demos" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
                   See proof gallery
                 </Link>
@@ -209,8 +212,8 @@ export default function ServicesPage() {
               <Link href="/contact" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition">
                 Book strategy call
               </Link>
-              <Link href="/ecosystem" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Tour the ecosystem
+              <Link href="/recon-engine" className="brand-button inline-flex px-7 py-4 text-sm uppercase tracking-[0.18em] transition">
+                See Recon Engine
               </Link>
             </div>
           </div>

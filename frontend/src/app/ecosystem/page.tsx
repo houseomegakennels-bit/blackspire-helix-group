@@ -22,6 +22,8 @@ const commandStats = [
 ];
 
 export default function EcosystemPage() {
+  const systemCount = String(ecosystemProjects.length).padStart(2, "0");
+
   return (
     <MarketingShell>
       <div className="mx-auto max-w-[1450px] px-4 py-16 lg:px-6">
@@ -42,7 +44,7 @@ export default function EcosystemPage() {
               </div>
               <h1 className="brand-accent-text mt-4 text-5xl font-black leading-none tracking-tight lg:text-7xl">
                 ONE PARENT.<br />
-                <span className="text-white">FIVE SYSTEMS.</span>
+                <span className="text-white">{systemCount} SYSTEMS.</span>
               </h1>
               <p className="mt-5 max-w-3xl text-base leading-8 text-[var(--copy-soft)]">
                 BLACKSPIRE HELIX GROUP operates as a command-center holding company. Each division
