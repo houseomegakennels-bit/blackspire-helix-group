@@ -210,3 +210,112 @@ export function buildOpportunitySnapshot(input: LeadScanInput): string {
     .filter(Boolean)
     .join("\n");
 }
+
+/* ── SEO industry landing pages (/recon-engine/[industry]) ── */
+
+export type ReconIndustryPage = {
+  slug: string;
+  industry: string; // must match a value in reconIndustries
+  headline: string;
+  intro: string;
+  pains: string[];
+  metaTitle: string;
+  metaDescription: string;
+};
+
+export const reconIndustryPages: ReconIndustryPage[] = [
+  {
+    slug: "lawn-care",
+    industry: "Lawn Care",
+    headline: "Government & Commercial Contracts for Lawn Care Businesses in North Carolina",
+    intro:
+      "Cities, counties, schools, and HOAs put grounds-maintenance and mowing work out to bid every year. Most local lawn-care operators never see those opportunities. Recon Engine finds them, scores your fit, and tells you exactly how to respond.",
+    pains: [
+      "Recurring mowing and grounds contracts are awarded to whoever bids — not whoever is best.",
+      "Public parks, schools, and facilities need vendors year-round.",
+      "Registering once can put you in front of dozens of agencies.",
+    ],
+    metaTitle: "Lawn Care Government Contracts in NC | Blackspire Recon Engine",
+    metaDescription:
+      "Find government and commercial lawn-care and grounds-maintenance contracts in North Carolina before your competition. AI-matched opportunities from Blackspire Recon Engine.",
+  },
+  {
+    slug: "cleaning",
+    industry: "Cleaning",
+    headline: "Janitorial & Commercial Cleaning Contracts in North Carolina",
+    intro:
+      "Government buildings, schools, and offices need cleaning every single day. These are some of the most reliable recurring contracts available — and Recon Engine surfaces them for you first.",
+    pains: [
+      "Janitorial contracts are long-term, recurring revenue.",
+      "Agencies re-bid cleaning work on predictable cycles.",
+      "Set-aside programs favor small and diverse cleaning vendors.",
+    ],
+    metaTitle: "Janitorial & Cleaning Contracts in NC | Blackspire Recon Engine",
+    metaDescription:
+      "Discover government and commercial janitorial and cleaning contracts across North Carolina before competitors. AI opportunity intelligence from Blackspire Recon Engine.",
+  },
+  {
+    slug: "construction",
+    industry: "Construction",
+    headline: "Construction & Trades Bids and RFPs in North Carolina",
+    intro:
+      "Public construction, renovation, and trades work flows through state and county procurement constantly. Recon Engine tracks the bids, summarizes the requirements, and scores your fit so you can respond fast.",
+    pains: [
+      "Construction RFPs are buried across dozens of portals.",
+      "Deadlines and bonding requirements are easy to miss.",
+      "Prime and subcontracting opportunities both exist if you can find them.",
+    ],
+    metaTitle: "Construction Bids & RFPs in NC | Blackspire Recon Engine",
+    metaDescription:
+      "Track public construction and trades bids and RFPs across North Carolina. AI-summarized, fit-scored opportunities from Blackspire Recon Engine.",
+  },
+  {
+    slug: "security",
+    industry: "Security",
+    headline: "Security Services Contracts in North Carolina",
+    intro:
+      "Government facilities, events, and properties need security vendors. These contracts are recurring and relationship-driven — Recon Engine helps you find and win them before competitors do.",
+    pains: [
+      "Facility and event security work is awarded on contract.",
+      "Agencies prefer vendors already registered and responsive.",
+      "Veteran-owned security firms qualify for set-asides.",
+    ],
+    metaTitle: "Security Services Contracts in NC | Blackspire Recon Engine",
+    metaDescription:
+      "Find government and commercial security services contracts in North Carolina before your competition with Blackspire Recon Engine.",
+  },
+  {
+    slug: "pressure-washing",
+    industry: "Pressure Washing",
+    headline: "Pressure Washing & Exterior Cleaning Contracts in North Carolina",
+    intro:
+      "Sidewalks, fleets, buildings, and public facilities all need exterior cleaning. Recon Engine surfaces the contracts and tells you how to qualify and respond.",
+    pains: [
+      "Facility and fleet washing is recurring, schedulable revenue.",
+      "Most pressure-washing operators never bid on public work.",
+      "A single registration can unlock multiple agencies.",
+    ],
+    metaTitle: "Pressure Washing Contracts in NC | Blackspire Recon Engine",
+    metaDescription:
+      "Discover government and commercial pressure-washing and exterior-cleaning contracts in North Carolina before competitors with Blackspire Recon Engine.",
+  },
+  {
+    slug: "it-services",
+    industry: "IT Services",
+    headline: "IT Services & Technology Contracts in North Carolina",
+    intro:
+      "State and local agencies spend heavily on IT support, managed services, and technology projects. Recon Engine finds the opportunities, decodes the requirements, and scores your fit.",
+    pains: [
+      "Government IT spend is large and continuous.",
+      "Requirements and certifications are hard to parse — AI summaries fix that.",
+      "Small and diverse IT vendors qualify for targeted programs.",
+    ],
+    metaTitle: "IT Services Government Contracts in NC | Blackspire Recon Engine",
+    metaDescription:
+      "Find government IT services, managed services, and technology contracts across North Carolina before competitors with Blackspire Recon Engine.",
+  },
+];
+
+export function getReconIndustryPage(slug: string): ReconIndustryPage | undefined {
+  return reconIndustryPages.find((page) => page.slug === slug);
+}

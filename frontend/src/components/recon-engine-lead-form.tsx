@@ -14,8 +14,10 @@ const initialInput: LeadScanInput = {
   state: "NC",
 };
 
-export function ReconEngineLeadForm() {
-  const [form, setForm] = useState<LeadScanInput>(initialInput);
+export function ReconEngineLeadForm({ defaultIndustry }: { defaultIndustry?: string } = {}) {
+  const [form, setForm] = useState<LeadScanInput>(
+    defaultIndustry ? { ...initialInput, industry: defaultIndustry } : initialInput,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<string | null>(null);
