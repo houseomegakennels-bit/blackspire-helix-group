@@ -66,7 +66,7 @@ export default async function ReconDashboardPage() {
           ) : null}
         </section>
 
-        <ReconDashboard opportunities={opportunities} initialProfile={initialProfile} />
+        <ReconDashboard opportunities={opportunities} initialProfile={initialProfile} isAuthed={Boolean(customer)} />
       </div>
     </MarketingShell>
   );

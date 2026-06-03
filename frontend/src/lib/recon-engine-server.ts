@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { isAuthenticatedOperatorAdmin } from "@/lib/buyer-engine-auth";
 import { analyzeOpportunity } from "@/lib/ai/analyzeOpportunity";
+import { generateProposal, type ProposalDraft } from "@/lib/ai/generateProposal";
 import { fetchSamDescription, fetchSamGovOpportunities } from "@/lib/recon-engine/fetchers/samGovFetcher";
 import {
   buildOpportunitySnapshot,
@@ -222,6 +223,64 @@ export async function getReconAdminMetrics(): Promise<ReconAdminMetrics> {
     subscribers: subs.count ?? 0,
     topIndustries,
   };
+}
+
+export type ReconProposalResult = ProposalDraft & { bidId: string; bidTitle: string };
+
+type ProposalBidRow = {
+  id: string;
+  title: string;
+  agency: string | null;
+  location: string | null;
+  bid_analysis:
+    | { summary: string | null; requirements: string | null; best_fit_industries: string[] | null }
+    | { summary: string | null; requirements: string | null; best_fit_industries: string[] | null }[]
+    | null;
+};
+
+/** Generate (and persist) an AI proposal pack for an opportunity, scoped to a Recon account. */
+export async function generateProposalForBid(
+  account: { id: string; companyName: string | null; industry: string | null; serviceKeywords: string[] },
+  bidId: string,
+): Promise<ReconProposalResult> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("bids")
+    .select("id,title,agency,location,bid_analysis(summary,requirements,best_fit_industries)")
+    .eq("id", bidId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Opportunity not found.");
+
+  const bid = data as ProposalBidRow;
+  const analysis = Array.isArray(bid.bid_analysis) ? bid.bid_analysis[0] : bid.bid_analysis;
+
+  const draft = await generateProposal({
+    bidTitle: bid.title,
+    agency: bid.agency,
+    location: bid.location,
+    summary: analysis?.summary ?? null,
+    requirements: analysis?.requirements ?? null,
+    bestFitIndustries: analysis?.best_fit_industries ?? [],
+    company: account.companyName,
+    industry: account.industry,
+    services: account.serviceKeywords.join(", "),
+  });
+
+  await supabase
+    .from("proposal_drafts")
+    .insert({
+      user_id: account.id,
+      bid_id: bidId,
+      cover_letter: draft.coverLetter,
+      capability_statement: draft.capabilityStatement,
+      response_checklist: draft.responseChecklist,
+      procurement_questions: draft.procurementQuestions,
+      proposal_outline: draft.proposalOutline,
+    })
+    .then(() => undefined, () => undefined);
+
+  return { ...draft, bidId, bidTitle: bid.title };
 }
 
 export type AlertRecipient = { email: string; isSubscriber: boolean };
