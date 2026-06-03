@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import type Stripe from "stripe";
 
 import {
   getPlanMode,
+  getPlanPricing,
   getPriceId,
   getStripe,
   isStripeConfigured,
@@ -24,20 +26,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Invalid plan." }, { status: 400 });
     }
 
-    const price = getPriceId(body.planId);
-    if (!price) {
-      return NextResponse.json(
-        { ok: false, error: "This plan isn't available for checkout yet." },
-        { status: 503 },
-      );
+    const mode = getPlanMode(body.planId);
+    const presetPrice = getPriceId(body.planId);
+
+    // Prefer a configured Price ID; otherwise build the price inline so no
+    // setup script / price-ID env vars are needed.
+    let lineItem: Stripe.Checkout.SessionCreateParams.LineItem;
+    if (presetPrice) {
+      lineItem = { price: presetPrice, quantity: 1 };
+    } else {
+      const pricing = getPlanPricing(body.planId);
+      lineItem = {
+        quantity: 1,
+        price_data: {
+          currency: "usd",
+          unit_amount: pricing.amountCents,
+          product_data: { name: pricing.name },
+          ...(pricing.interval ? { recurring: { interval: pricing.interval } } : {}),
+        },
+      };
     }
 
     const origin = request.headers.get("origin") || new URL(request.url).origin;
     const stripe = getStripe();
 
     const session = await stripe.checkout.sessions.create({
-      mode: getPlanMode(body.planId),
-      line_items: [{ price, quantity: 1 }],
+      mode,
+      line_items: [lineItem],
       customer_email: body.email?.trim() || undefined,
       allow_promotion_codes: true,
       success_url: `${origin}/recon-engine?checkout=success&plan=${body.planId}`,

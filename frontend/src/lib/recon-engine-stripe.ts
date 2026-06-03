@@ -35,3 +35,20 @@ export function getPlanMode(plan: ReconPlanId): "subscription" | "payment" {
 export function isValidPlan(value: unknown): value is ReconPlanId {
   return value === "scout" || value === "operator" || value === "commander" || value === "payg";
 }
+
+/**
+ * Inline plan pricing — checkout creates prices on the fly via `price_data`,
+ * so no pre-created Stripe Price IDs or setup script are required.
+ */
+export type PlanPricing = { name: string; amountCents: number; interval: "month" | null };
+
+const PLAN_PRICING: Record<ReconPlanId, PlanPricing> = {
+  scout: { name: "Recon Engine — Scout", amountCents: 3000, interval: "month" },
+  operator: { name: "Recon Engine — Operator", amountCents: 6000, interval: "month" },
+  commander: { name: "Recon Engine — Commander", amountCents: 10000, interval: "month" },
+  payg: { name: "Recon Engine — Opportunity Unlock", amountCents: 3000, interval: null },
+};
+
+export function getPlanPricing(plan: ReconPlanId): PlanPricing {
+  return PLAN_PRICING[plan];
+}
