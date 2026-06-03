@@ -6,15 +6,16 @@ import { MarketingShell } from "@/components/marketing-shell";
 import { ecosystemProjects } from "@/lib/ecosystem";
 
 const divisionColors = [
-  { seg: "bg-[hsl(38_92%_55%)]", label: "Helix Lawn Command", delay: "0s" },
-  { seg: "bg-[hsl(270_80%_62%)]", label: "Blackspire Social OS", delay: "0.4s" },
-  { seg: "bg-[hsl(20_100%_55%)]", label: "Blackspire Buyer Engine", delay: "0.8s" },
+  { seg: "bg-[hsl(258_90%_66%)]", label: "Blackspire Recon Engine", delay: "0s" },
+  { seg: "bg-[hsl(38_92%_55%)]", label: "Helix Lawn Command", delay: "0.3s" },
+  { seg: "bg-[hsl(270_80%_62%)]", label: "Blackspire Social OS", delay: "0.6s" },
+  { seg: "bg-[hsl(20_100%_55%)]", label: "Blackspire Buyer Engine", delay: "0.9s" },
   { seg: "bg-[hsl(340_80%_60%)]", label: "Ember Halo", delay: "1.2s" },
-  { seg: "bg-[hsl(210_90%_60%)]", label: "Blackspire Helix Group", delay: "1.6s" },
+  { seg: "bg-[hsl(210_90%_60%)]", label: "Oracle Helix", delay: "1.5s" },
 ];
 
 const commandStats = [
-  { value: "05", label: "Active divisions" },
+  { value: "06", label: "Active divisions" },
   { value: "24/7", label: "Automation uptime" },
   { value: "56+", label: "Counties indexed" },
   { value: "Elite", label: "Operator posture" },
@@ -84,7 +85,7 @@ export default function EcosystemPage() {
         </section>
 
         {/* ── DIVISION QUICK-NAV ─────────────────────────────────────── */}
-        <section className="mt-6 grid grid-cols-5 gap-3">
+        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {ecosystemProjects.map((project, i) => (
             <div
               key={project.slug}

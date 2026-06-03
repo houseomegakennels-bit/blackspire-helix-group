@@ -27,6 +27,35 @@ export type EcosystemProject = {
 
 export const ecosystemProjects: EcosystemProject[] = [
   {
+    slug: "recon-engine",
+    name: "Blackspire Recon Engine",
+    role: "Opportunity Intelligence",
+    tagline: "Opportunity Intelligence Before the Competition.",
+    description:
+      "AI-powered opportunity intelligence that discovers government contracts, grants, vendor programs, and revenue opportunities before your competition — then fit-scores and matches them to your business.",
+    accent: "#8B5CF6",
+    glow: "rgba(139, 92, 246, 0.34)",
+    cta: "Explore Recon Engine",
+    href: "/recon-engine",
+    status: "building",
+    targetUser: "Service businesses chasing contracts",
+    primaryOutcome: "Find contracts, grants, and vendor programs before competitors.",
+    logoSrc: "/brand/blackspire-recon-engine-logo.png",
+    monogram: "BRE",
+    motif: "Radar sweeps, targeting reticles, and opportunity signal pings.",
+    vibe: "Strategic, predictive, and first-to-market.",
+    surfaceTint: "rgba(139, 92, 246, 0.12)",
+    edgeTint: "rgba(212, 175, 55, 0.40)",
+    iconCue: "Opportunity radar",
+    logoMaxWidthClass: "max-w-[200px]",
+    logoMaxHeightClass: "max-h-[150px]",
+    featureBullets: [
+      "AI scans contracts, grants, and vendor programs",
+      "Fit-scored matches to your business and geography",
+      "Deadline tracking plus AI proposal and capability drafts",
+    ],
+  },
+  {
     slug: "buyer-engine",
     name: "Blackspire Buyer Engine",
     role: "Real Estate Intelligence",
