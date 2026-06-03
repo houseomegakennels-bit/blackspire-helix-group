@@ -21,11 +21,11 @@ const featuredDemoSlots = [
   },
   {
     id: "02",
-    title: "ElevenLabs x Lovable Demo",
+    title: "Helix Lawn Command Demo",
     summary:
-      "A second proof piece that adds range to the gallery and shows how polished AI-driven product experiences can sit beside the Blackspire command-brand story.",
+      "Helix Lawn Command in action: AI captures every missed lawn-care call and web inquiry 24/7, qualifies the lead, and turns it into a booked $150-$1,500 job before it ever goes cold.",
     src: "/demos/elevenlabs-lovable-demo.mp4",
-    badge: "Product proof",
+    badge: "Lawn automation",
   },
 ] as const;
 
