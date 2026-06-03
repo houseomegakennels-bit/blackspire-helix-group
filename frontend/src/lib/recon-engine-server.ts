@@ -70,3 +70,24 @@ export async function createLeadScan(input: Partial<LeadScanInput>): Promise<Lea
     createdAt: data.created_at as string,
   };
 }
+
+export type ReconCheckoutRecord = {
+  email: string | null;
+  plan: string | null;
+  mode: string | null;
+  amountTotal: number | null;
+  customerId: string | null;
+};
+
+/** Record a completed Recon Engine checkout (from the Stripe webhook). */
+export async function recordReconCheckout(record: ReconCheckoutRecord): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("users_profile").insert({
+    email: record.email,
+    selected_plan: record.plan,
+    billing_model: record.mode === "payment" ? "payg" : "subscription",
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}

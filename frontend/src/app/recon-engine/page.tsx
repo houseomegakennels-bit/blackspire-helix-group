@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
+import { ReconCheckoutButton } from "@/components/recon-checkout-button";
 import { ReconEngineLeadForm } from "@/components/recon-engine-lead-form";
 import { reconEngineBrand, reconPillars, reconPlans, reconIndustries } from "@/lib/recon-engine";
 
@@ -150,12 +151,11 @@ export default function ReconEnginePage() {
                     </li>
                   ))}
                 </ul>
-                <Link
-                  href="#scan"
-                  className={`${plan.highlighted ? "recon-button" : "brand-button"} mt-6 inline-flex justify-center px-5 py-3 text-sm uppercase tracking-[0.16em] transition`}
-                >
-                  {plan.billingModel === "payg" ? "Unlock an opportunity" : `Choose ${plan.name}`}
-                </Link>
+                <ReconCheckoutButton
+                  planId={plan.id}
+                  highlighted={plan.highlighted}
+                  label={plan.billingModel === "payg" ? "Unlock an opportunity" : `Choose ${plan.name}`}
+                />
               </div>
             ))}
           </div>
