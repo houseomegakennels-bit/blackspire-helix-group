@@ -2,8 +2,9 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { isAuthenticatedOperatorAdmin } from "@/lib/buyer-engine-auth";
 import { analyzeOpportunity } from "@/lib/ai/analyzeOpportunity";
-import { fetchSamGovOpportunities } from "@/lib/recon-engine/fetchers/samGovFetcher";
+import { fetchSamDescription, fetchSamGovOpportunities } from "@/lib/recon-engine/fetchers/samGovFetcher";
 import {
   buildOpportunitySnapshot,
   normalizeLeadScanInput,
@@ -56,6 +57,7 @@ export async function createLeadScan(input: Partial<LeadScanInput>): Promise<Lea
       services: normalized.services || null,
       county: normalized.county || null,
       state: normalized.state || null,
+      referral_code: normalized.referralCode || null,
       report_generated: true,
       report_snapshot: snapshot,
     })
@@ -163,6 +165,82 @@ function getEnvState(): { enabled: boolean } {
   return { enabled: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) };
 }
 
+export type ReconAdminMetrics = {
+  totalLeads: number;
+  leadsLast7Days: number;
+  totalOpportunities: number;
+  analyzedOpportunities: number;
+  subscribers: number;
+  topIndustries: Array<{ industry: string; count: number }>;
+};
+
+/** Admin-only Recon metrics. Throws if the operator is not an admin. */
+export async function getReconAdminMetrics(): Promise<ReconAdminMetrics> {
+  const isAdmin = await isAuthenticatedOperatorAdmin().catch(() => false);
+  if (!isAdmin) throw new Error("Admin access required.");
+
+  const supabase = getSupabaseAdmin();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [leads, recentLeads, opps, analyzed, subs, industryRows] = await Promise.all([
+    supabase.from("lead_scans").select("id", { count: "exact", head: true }),
+    supabase.from("lead_scans").select("id", { count: "exact", head: true }).gte("created_at", sevenDaysAgo),
+    supabase.from("bids").select("id", { count: "exact", head: true }),
+    supabase.from("bid_analysis").select("id", { count: "exact", head: true }),
+    supabase.from("users_profile").select("id", { count: "exact", head: true }),
+    supabase.from("bid_analysis").select("best_fit_industries").limit(500),
+  ]);
+
+  const counts = new Map<string, number>();
+  for (const row of (industryRows.data ?? []) as Array<{ best_fit_industries: string[] | null }>) {
+    for (const ind of row.best_fit_industries ?? []) {
+      counts.set(ind, (counts.get(ind) ?? 0) + 1);
+    }
+  }
+  const topIndustries = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([industry, count]) => ({ industry, count }));
+
+  return {
+    totalLeads: leads.count ?? 0,
+    leadsLast7Days: recentLeads.count ?? 0,
+    totalOpportunities: opps.count ?? 0,
+    analyzedOpportunities: analyzed.count ?? 0,
+    subscribers: subs.count ?? 0,
+    topIndustries,
+  };
+}
+
+export type AlertRecipient = { email: string; isSubscriber: boolean };
+
+/** Distinct alert recipients: free-scan leads + paying subscribers. */
+export async function listAlertRecipients(limit = 500): Promise<AlertRecipient[]> {
+  const env = getEnvState();
+  if (!env.enabled) return [];
+  const supabase = getSupabaseAdmin();
+
+  const [{ data: leads }, { data: subs }] = await Promise.all([
+    supabase.from("lead_scans").select("email").not("email", "is", null).limit(limit),
+    supabase.from("users_profile").select("email").not("email", "is", null).limit(limit),
+  ]);
+
+  const subscriberEmails = new Set(
+    (subs ?? []).map((r: { email: string | null }) => r.email?.toLowerCase()).filter(Boolean) as string[],
+  );
+  const byEmail = new Map<string, AlertRecipient>();
+
+  for (const email of subscriberEmails) {
+    byEmail.set(email, { email, isSubscriber: true });
+  }
+  for (const row of leads ?? []) {
+    const email = (row as { email: string | null }).email?.toLowerCase();
+    if (email && !byEmail.has(email)) byEmail.set(email, { email, isSubscriber: false });
+  }
+
+  return [...byEmail.values()].slice(0, limit);
+}
+
 export type IngestSummary = {
   fetched: number;
   inserted: number;
@@ -180,6 +258,7 @@ type InsertedBidRow = {
   description: string | null;
   raw_text: string | null;
   deadline: string | null;
+  document_url: string | null;
 };
 
 /**
@@ -237,7 +316,7 @@ export async function ingestSamGovOpportunities(opts?: {
         raw_text: o.rawText,
       })),
     )
-    .select("id,title,agency,category,location,description,raw_text,deadline");
+    .select("id,title,agency,category,location,description,raw_text,deadline,document_url");
 
   if (insertErr) {
     summary.errors.push(insertErr.message);
@@ -250,12 +329,17 @@ export async function ingestSamGovOpportunities(opts?: {
   const analyzeMax = opts?.analyzeMax ?? 10;
   for (const bid of rows.slice(0, analyzeMax)) {
     try {
+      // Enrich with the full SAM description for a far better AI analysis.
+      const fullDescription = bid.document_url
+        ? await fetchSamDescription(bid.document_url).catch(() => null)
+        : null;
+
       const analysis = await analyzeOpportunity({
         title: bid.title,
         agency: bid.agency,
         category: bid.category,
         location: bid.location,
-        description: bid.description,
+        description: fullDescription || bid.description,
         rawText: bid.raw_text,
         deadline: bid.deadline,
       });

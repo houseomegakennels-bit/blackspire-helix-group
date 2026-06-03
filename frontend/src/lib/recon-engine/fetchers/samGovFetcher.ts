@@ -102,7 +102,7 @@ export async function fetchSamGovOpportunities(
       opportunitiesData?: SamOpportunity[];
     };
 
-    return (data.opportunitiesData ?? []).map((opp) => {
+    const mapped = (data.opportunitiesData ?? []).map((opp) => {
       const city = opp.placeOfPerformance?.city?.name;
       const st = opp.placeOfPerformance?.state?.code ?? opp.placeOfPerformance?.state?.name;
       const location = [city, st].filter(Boolean).join(", ") || null;
@@ -131,6 +131,47 @@ export async function fetchSamGovOpportunities(
         rawText,
       } satisfies NormalizedOpportunity;
     });
+
+    // NC-first: keep national/HQ listings (null location) and NC; drop listings
+    // whose place of performance is an explicit non-NC state.
+    return mapped.filter((o) => {
+      if (!o.location) return true;
+      if (/\bNC\b|north carolina/i.test(o.location)) return true;
+      // location ends in a 2-letter state code that isn't NC -> drop
+      return !/,\s*[A-Z]{2}\b/.test(o.location);
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Fetch the full opportunity description text from SAM's description URL.
+ * The api_key must be appended. Returns null on any failure.
+ */
+export async function fetchSamDescription(descriptionUrl: string): Promise<string | null> {
+  const apiKey = process.env.SAM_GOV_API_KEY?.trim();
+  if (!apiKey || !descriptionUrl) return null;
+
+  const sep = descriptionUrl.includes("?") ? "&" : "?";
+  const url = `${descriptionUrl}${sep}api_key=${encodeURIComponent(apiKey)}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal, headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const text = await res.text();
+    // SAM returns either JSON ({ description }) or raw HTML/text.
+    try {
+      const json = JSON.parse(text) as { description?: string };
+      if (typeof json.description === "string") return json.description.replace(/<[^>]+>/g, " ").trim();
+    } catch {
+      // not JSON — treat as raw text/html
+    }
+    return text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 8000) || null;
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }

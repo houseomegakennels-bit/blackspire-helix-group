@@ -146,6 +146,7 @@ export type LeadScanInput = {
   services: string;
   county: string;
   state: string;
+  referralCode: string;
 };
 
 export function normalizeLeadScanInput(
@@ -159,6 +160,7 @@ export function normalizeLeadScanInput(
     services: input?.services?.trim() ?? "",
     county: input?.county?.trim() ?? "",
     state: input?.state?.trim() ?? "",
+    referralCode: input?.referralCode?.trim().slice(0, 32) ?? "",
   };
 }
 
