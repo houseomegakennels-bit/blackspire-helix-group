@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { matchOpportunity } from "@/lib/matching/matchOpportunity";
 import { reconIndustries } from "@/lib/recon-engine";
@@ -25,11 +25,50 @@ function fitTone(score: number): string {
   return "#9ca3af"; // gray
 }
 
+const PROFILE_KEY = "recon.profile.v1";
+const SAVED_KEY = "recon.saved.v1";
+
 export function ReconDashboard({ opportunities }: { opportunities: RecentOpportunity[] }) {
   const [industry, setIndustry] = useState("");
   const [services, setServices] = useState("");
   const [county, setCounty] = useState("");
   const [state, setState] = useState("NC");
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Load persisted profile + saved opportunities (browser-local, no account needed).
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "null");
+      if (p) {
+        if (typeof p.industry === "string") setIndustry(p.industry);
+        if (typeof p.services === "string") setServices(p.services);
+        if (typeof p.county === "string") setCounty(p.county);
+        if (typeof p.state === "string") setState(p.state);
+      }
+      const s = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]");
+      if (Array.isArray(s)) setSavedIds(s.filter((x) => typeof x === "string"));
+    } catch {
+      /* ignore */
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ industry, services, county, state }));
+  }, [hydrated, industry, services, county, state]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(SAVED_KEY, JSON.stringify(savedIds));
+  }, [hydrated, savedIds]);
+
+  const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
+  function toggleSave(id: string) {
+    setSavedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   const scored = useMemo<ScoredOpportunity[]>(() => {
     const profile = {
@@ -137,17 +176,46 @@ export function ReconDashboard({ opportunities }: { opportunities: RecentOpportu
       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
         {/* Opportunity feed */}
         <section className="space-y-3">
-          <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Opportunity feed</p>
-          {scored.map((opp) => (
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Opportunity feed</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSavedOnly(false)}
+                className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.16em] transition ${!showSavedOnly ? "border-[hsl(258_90%_70%/.6)] text-white" : "border-[var(--line)] text-[var(--copy-muted)]"}`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSavedOnly(true)}
+                className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.16em] transition ${showSavedOnly ? "border-[hsl(258_90%_70%/.6)] text-white" : "border-[var(--line)] text-[var(--copy-muted)]"}`}
+              >
+                Saved ({savedIds.length})
+              </button>
+            </div>
+          </div>
+          {scored.filter((opp) => (showSavedOnly ? savedSet.has(opp.id) : true)).map((opp) => (
             <article key={opp.id} className="brand-card p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-base font-semibold text-white">{opp.title}</h3>
                   <p className="mt-1 text-xs text-[var(--copy-muted)]">{opp.agency ?? "—"}{opp.location ? ` · ${opp.location}` : ""}</p>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="text-2xl font-black leading-none" style={{ color: fitTone(opp.score) }}>{opp.score}</div>
-                  <div className="text-[9px] uppercase tracking-[0.2em] text-[var(--copy-muted)]">fit</div>
+                <div className="flex shrink-0 items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleSave(opp.id)}
+                    aria-label={savedSet.has(opp.id) ? "Unsave" : "Save"}
+                    className="text-lg leading-none transition"
+                    style={{ color: savedSet.has(opp.id) ? "#c4b5fd" : "var(--copy-muted)" }}
+                  >
+                    {savedSet.has(opp.id) ? "★" : "☆"}
+                  </button>
+                  <div className="text-right">
+                    <div className="text-2xl font-black leading-none" style={{ color: fitTone(opp.score) }}>{opp.score}</div>
+                    <div className="text-[9px] uppercase tracking-[0.2em] text-[var(--copy-muted)]">fit</div>
+                  </div>
                 </div>
               </div>
               {opp.summary ? <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{opp.summary}</p> : null}
@@ -172,6 +240,11 @@ export function ReconDashboard({ opportunities }: { opportunities: RecentOpportu
               </div>
             </article>
           ))}
+          {showSavedOnly && savedIds.length === 0 ? (
+            <div className="brand-card p-5 text-sm text-[var(--copy-soft)]">
+              No saved opportunities yet. Tap the ☆ on any opportunity to save it here.
+            </div>
+          ) : null}
           {!scored.length ? (
             <div className="brand-card p-5 text-sm text-[var(--copy-soft)]">
               No opportunities yet. The daily fetch will populate the feed.
