@@ -46,8 +46,8 @@ export default function ReconEnginePage() {
                 <Link href="#scan" className="recon-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em]">
                   Get free opportunity scan
                 </Link>
-                <Link href="#pricing" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
-                  Start tracking opportunities
+                <Link href="/recon-engine/dashboard" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  View live opportunities
                 </Link>
               </div>
               <p className="mt-4 text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">

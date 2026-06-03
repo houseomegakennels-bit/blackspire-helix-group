@@ -94,6 +94,75 @@ export async function recordReconCheckout(record: ReconCheckoutRecord): Promise<
   }
 }
 
+export type RecentOpportunity = {
+  id: string;
+  title: string;
+  agency: string | null;
+  location: string | null;
+  deadline: string | null;
+  category: string | null;
+  originalUrl: string | null;
+  summary: string | null;
+  bestFitIndustries: string[];
+  keywords: string[];
+};
+
+type BidAnalysisJoin = {
+  summary: string | null;
+  best_fit_industries: string[] | null;
+  keywords: string[] | null;
+};
+
+type BidJoinRow = {
+  id: string;
+  title: string;
+  agency: string | null;
+  location: string | null;
+  deadline: string | null;
+  category: string | null;
+  original_url: string | null;
+  bid_analysis: BidAnalysisJoin | BidAnalysisJoin[] | null;
+};
+
+/** Live opportunities (bids + their AI analysis) for the Recon dashboard. */
+export async function listRecentOpportunities(limit = 30): Promise<RecentOpportunity[]> {
+  const env = getEnvState();
+  if (!env.enabled) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("bids")
+    .select(
+      "id,title,agency,location,deadline,category,original_url,bid_analysis(summary,best_fit_industries,keywords)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as BidJoinRow[]).map((row) => {
+    const analysis = Array.isArray(row.bid_analysis) ? row.bid_analysis[0] : row.bid_analysis;
+    return {
+      id: row.id,
+      title: row.title,
+      agency: row.agency,
+      location: row.location,
+      deadline: row.deadline,
+      category: row.category,
+      originalUrl: row.original_url,
+      summary: analysis?.summary ?? null,
+      bestFitIndustries: analysis?.best_fit_industries ?? [],
+      keywords: analysis?.keywords ?? [],
+    };
+  });
+}
+
+function getEnvState(): { enabled: boolean } {
+  return { enabled: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) };
+}
+
 export type IngestSummary = {
   fetched: number;
   inserted: number;

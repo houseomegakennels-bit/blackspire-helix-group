@@ -1,0 +1,222 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+import { matchOpportunity } from "@/lib/matching/matchOpportunity";
+import { reconIndustries } from "@/lib/recon-engine";
+import type { RecentOpportunity } from "@/lib/recon-engine-server";
+
+type ScoredOpportunity = RecentOpportunity & {
+  score: number;
+  reasons: string[];
+  daysLeft: number | null;
+};
+
+function daysUntil(deadline: string | null): number | null {
+  if (!deadline) return null;
+  const ms = Date.parse(deadline);
+  if (!Number.isFinite(ms)) return null;
+  return Math.ceil((ms - Date.now()) / (24 * 60 * 60 * 1000));
+}
+
+function fitTone(score: number): string {
+  if (score >= 70) return "#34d399"; // green
+  if (score >= 45) return "#c4b5fd"; // purple
+  return "#9ca3af"; // gray
+}
+
+export function ReconDashboard({ opportunities }: { opportunities: RecentOpportunity[] }) {
+  const [industry, setIndustry] = useState("");
+  const [services, setServices] = useState("");
+  const [county, setCounty] = useState("");
+  const [state, setState] = useState("NC");
+
+  const scored = useMemo<ScoredOpportunity[]>(() => {
+    const profile = {
+      industry,
+      serviceKeywords: services.split(",").map((s) => s.trim()).filter(Boolean),
+      countiesServed: county ? [county] : [],
+      state,
+    };
+    return opportunities
+      .map((opp) => {
+        const match = matchOpportunity(
+          {
+            title: opp.title,
+            category: opp.category,
+            location: opp.location,
+            opportunityType: opp.category,
+            bestFitIndustries: opp.bestFitIndustries,
+            keywords: opp.keywords,
+          },
+          profile,
+        );
+        return { ...opp, score: match.score, reasons: match.reasons, daysLeft: daysUntil(opp.deadline) };
+      })
+      .sort((a, b) => b.score - a.score);
+  }, [opportunities, industry, services, county, state]);
+
+  const stats = useMemo(() => {
+    const total = scored.length;
+    const deadlineSoon = scored.filter((o) => o.daysLeft !== null && o.daysLeft >= 0 && o.daysLeft <= 14).length;
+    const highFit = scored.filter((o) => o.score >= 60).length;
+    const avg = total ? Math.round(scored.reduce((s, o) => s + o.score, 0) / total) : 0;
+    return { total, deadlineSoon, highFit, avg };
+  }, [scored]);
+
+  const recommendations = scored.slice(0, 3);
+  const deadlines = [...scored]
+    .filter((o) => o.daysLeft !== null && o.daysLeft >= 0)
+    .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0))
+    .slice(0, 6);
+
+  const profileActive = Boolean(industry || services || county);
+
+  return (
+    <div className="space-y-8">
+      {/* Profile controls */}
+      <section className="brand-panel px-6 py-6">
+        <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>
+          Your business profile
+        </p>
+        <p className="mt-2 text-sm text-[var(--copy-soft)]">
+          Set your profile to fit-score every live opportunity in real time.
+        </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-4">
+          <label className="grid gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">Industry</span>
+            <select className="contact-input brand-input" value={industry} onChange={(e) => setIndustry(e.target.value)}>
+              <option value="">Any</option>
+              {reconIndustries.map((i) => (
+                <option key={i} value={i}>{i}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">Services (comma-sep)</span>
+            <input className="contact-input" value={services} onChange={(e) => setServices(e.target.value)} placeholder="mowing, cleanup" />
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">County</span>
+            <input className="contact-input" value={county} onChange={(e) => setCounty(e.target.value)} placeholder="Forsyth" />
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">State</span>
+            <input className="contact-input" value={state} onChange={(e) => setState(e.target.value)} placeholder="NC" />
+          </label>
+        </div>
+      </section>
+
+      {/* Stat cards */}
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Live opportunities" value={String(stats.total)} detail="In the current feed" />
+        <Stat label="Closing in 14 days" value={String(stats.deadlineSoon)} detail="Act soon" />
+        <Stat label="Strong fits" value={String(stats.highFit)} detail={profileActive ? "Score 60+ for your profile" : "Set a profile to score"} />
+        <Stat label="Avg fit score" value={profileActive ? `${stats.avg}` : "—"} detail="Across the feed" />
+      </section>
+
+      {/* AI recommendations */}
+      <section className="brand-panel px-6 py-6">
+        <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>AI recommendations</p>
+        <h2 className="brand-display mt-2 text-2xl text-white">Top opportunities for you right now</h2>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {recommendations.length ? recommendations.map((opp) => (
+            <div key={opp.id} className="brand-card p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Fit</span>
+                <span className="text-lg font-black" style={{ color: fitTone(opp.score) }}>{opp.score}</span>
+              </div>
+              <h3 className="mt-1 text-sm font-semibold text-white line-clamp-2">{opp.title}</h3>
+              <p className="mt-1 text-xs text-[var(--copy-muted)]">{opp.agency ?? "—"}</p>
+              {opp.reasons[0] ? <p className="mt-2 text-xs leading-5 text-[var(--copy-soft)]">{opp.reasons[0]}</p> : null}
+            </div>
+          )) : <p className="text-sm text-[var(--copy-soft)]">No opportunities yet — the daily feed will populate this.</p>}
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
+        {/* Opportunity feed */}
+        <section className="space-y-3">
+          <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Opportunity feed</p>
+          {scored.map((opp) => (
+            <article key={opp.id} className="brand-card p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-semibold text-white">{opp.title}</h3>
+                  <p className="mt-1 text-xs text-[var(--copy-muted)]">{opp.agency ?? "—"}{opp.location ? ` · ${opp.location}` : ""}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-2xl font-black leading-none" style={{ color: fitTone(opp.score) }}>{opp.score}</div>
+                  <div className="text-[9px] uppercase tracking-[0.2em] text-[var(--copy-muted)]">fit</div>
+                </div>
+              </div>
+              {opp.summary ? <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{opp.summary}</p> : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {opp.bestFitIndustries.slice(0, 4).map((ind) => (
+                  <span key={ind} className="recon-pill">{ind}</span>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--copy-muted)]">
+                <span>
+                  {opp.daysLeft !== null
+                    ? opp.daysLeft >= 0
+                      ? `Closes in ${opp.daysLeft} day${opp.daysLeft === 1 ? "" : "s"}`
+                      : "Closed"
+                    : "No deadline listed"}
+                </span>
+                {opp.originalUrl ? (
+                  <a href={opp.originalUrl} target="_blank" rel="noopener noreferrer" className="font-semibold" style={{ color: "#c4b5fd" }}>
+                    View on SAM.gov →
+                  </a>
+                ) : null}
+              </div>
+            </article>
+          ))}
+          {!scored.length ? (
+            <div className="brand-card p-5 text-sm text-[var(--copy-soft)]">
+              No opportunities yet. The daily fetch will populate the feed.
+            </div>
+          ) : null}
+        </section>
+
+        {/* Sidebar: deadlines + plan */}
+        <aside className="space-y-6">
+          <section className="brand-panel px-5 py-5">
+            <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Upcoming deadlines</p>
+            <div className="mt-3 space-y-2">
+              {deadlines.length ? deadlines.map((opp) => (
+                <div key={opp.id} className="brand-card p-3">
+                  <p className="text-xs font-semibold text-white line-clamp-2">{opp.title}</p>
+                  <p className="mt-1 text-[11px]" style={{ color: opp.daysLeft !== null && opp.daysLeft <= 7 ? "#f59e0b" : "var(--copy-muted)" }}>
+                    {opp.daysLeft} days left
+                  </p>
+                </div>
+              )) : <p className="text-sm text-[var(--copy-soft)]">No upcoming deadlines.</p>}
+            </div>
+          </section>
+
+          <section className="brand-panel px-5 py-5">
+            <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Your plan</p>
+            <p className="mt-2 text-sm text-[var(--copy-soft)]">
+              You&apos;re previewing the live feed. Subscribe to unlock fit-scored alerts, saved
+              opportunities, and AI proposal drafts.
+            </p>
+            <a href="/recon-engine#pricing" className="recon-button mt-4 inline-flex w-full justify-center px-5 py-3 text-sm uppercase tracking-[0.16em]">
+              View plans
+            </a>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="brand-card p-5">
+      <div className="text-[11px] uppercase tracking-[0.26em] text-[var(--copy-muted)]">{label}</div>
+      <div className="brand-accent-text mt-2 text-3xl font-black">{value}</div>
+      <div className="mt-1 text-xs text-[var(--copy-soft)]">{detail}</div>
+    </div>
+  );
+}
