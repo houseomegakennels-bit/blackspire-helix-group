@@ -3,15 +3,23 @@
 import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 
-const orbitNodes = [
+import { ecosystemProjects } from "@/lib/ecosystem";
+
+const orbitNodeBase = [
   { label: "Lead velocity", value: "4.3x", tone: "gold", x: "16%", y: "18%" },
-  { label: "Systems online", value: "05", tone: "silver", x: "74%", y: "20%" },
   { label: "Response lag", value: "-82%", tone: "gold", x: "14%", y: "74%" },
   { label: "Live automations", value: "128", tone: "silver", x: "72%", y: "78%" },
 ] as const;
 
 export function LuxuryHeroStage() {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const systemCount = String(ecosystemProjects.length).padStart(2, "0");
+  const orbitNodes = [
+    orbitNodeBase[0],
+    { label: "Systems online", value: systemCount, tone: "silver", x: "74%", y: "20%" },
+    orbitNodeBase[1],
+    orbitNodeBase[2],
+  ] as const;
 
   const stageStyle = useMemo(
     () =>
