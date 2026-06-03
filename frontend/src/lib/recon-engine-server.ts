@@ -86,13 +86,25 @@ export type ReconCheckoutRecord = {
 /** Record a completed Recon Engine checkout (from the Stripe webhook). */
 export async function recordReconCheckout(record: ReconCheckoutRecord): Promise<void> {
   const supabase = getSupabaseAdmin();
+  const billingModel = record.mode === "payment" ? "payg" : "subscription";
+
+  // Ledger row.
   const { error } = await supabase.from("users_profile").insert({
     email: record.email,
     selected_plan: record.plan,
-    billing_model: record.mode === "payment" ? "payg" : "subscription",
+    billing_model: billingModel,
   });
   if (error) {
     throw new Error(error.message);
+  }
+
+  // If the buyer already has a Recon account, attach the plan to it.
+  if (record.email) {
+    await supabase
+      .from("recon_accounts")
+      .update({ plan: record.plan, billing_model: billingModel, updated_at: new Date().toISOString() })
+      .eq("email", record.email.toLowerCase())
+      .then(() => undefined, () => undefined);
   }
 }
 

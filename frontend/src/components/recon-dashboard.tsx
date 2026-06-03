@@ -28,11 +28,17 @@ function fitTone(score: number): string {
 const PROFILE_KEY = "recon.profile.v1";
 const SAVED_KEY = "recon.saved.v1";
 
-export function ReconDashboard({ opportunities }: { opportunities: RecentOpportunity[] }) {
-  const [industry, setIndustry] = useState("");
-  const [services, setServices] = useState("");
-  const [county, setCounty] = useState("");
-  const [state, setState] = useState("NC");
+export function ReconDashboard({
+  opportunities,
+  initialProfile,
+}: {
+  opportunities: RecentOpportunity[];
+  initialProfile?: { industry?: string; services?: string; county?: string; state?: string };
+}) {
+  const [industry, setIndustry] = useState(initialProfile?.industry ?? "");
+  const [services, setServices] = useState(initialProfile?.services ?? "");
+  const [county, setCounty] = useState(initialProfile?.county ?? "");
+  const [state, setState] = useState(initialProfile?.state ?? "NC");
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -40,12 +46,15 @@ export function ReconDashboard({ opportunities }: { opportunities: RecentOpportu
   // Load persisted profile + saved opportunities (browser-local, no account needed).
   useEffect(() => {
     try {
-      const p = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "null");
-      if (p) {
-        if (typeof p.industry === "string") setIndustry(p.industry);
-        if (typeof p.services === "string") setServices(p.services);
-        if (typeof p.county === "string") setCounty(p.county);
-        if (typeof p.state === "string") setState(p.state);
+      // A logged-in account profile takes precedence; otherwise restore from localStorage.
+      if (!initialProfile) {
+        const p = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "null");
+        if (p) {
+          if (typeof p.industry === "string") setIndustry(p.industry);
+          if (typeof p.services === "string") setServices(p.services);
+          if (typeof p.county === "string") setCounty(p.county);
+          if (typeof p.state === "string") setState(p.state);
+        }
       }
       const s = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]");
       if (Array.isArray(s)) setSavedIds(s.filter((x) => typeof x === "string"));

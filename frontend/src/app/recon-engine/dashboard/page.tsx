@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { ReconDashboard } from "@/components/recon-dashboard";
+import { getReconCustomer } from "@/lib/recon-auth";
 import { listRecentOpportunities } from "@/lib/recon-engine-server";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,19 @@ export const metadata: Metadata = {
 };
 
 export default async function ReconDashboardPage() {
-  const opportunities = await listRecentOpportunities(40).catch(() => []);
+  const [opportunities, customer] = await Promise.all([
+    listRecentOpportunities(40).catch(() => []),
+    getReconCustomer().catch(() => null),
+  ]);
+
+  const initialProfile = customer
+    ? {
+        industry: customer.industry ?? "",
+        services: customer.serviceKeywords.join(", "),
+        county: customer.countiesServed[0] ?? "",
+        state: "NC",
+      }
+    : undefined;
 
   return (
     <MarketingShell>
@@ -37,13 +50,23 @@ export default async function ReconDashboardPage() {
                 The feed refreshes automatically every day.
               </p>
             </div>
-            <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-              Back to Recon Engine
-            </Link>
+            <div className="flex gap-3">
+              <Link href={customer ? "/recon-engine/account" : "/recon-engine/login"} className="recon-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em]">
+                {customer ? "Account" : "Log in"}
+              </Link>
+              <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                Back
+              </Link>
+            </div>
           </div>
+          {customer ? (
+            <p className="relative z-10 mt-3 text-xs" style={{ color: "#c4b5fd" }}>
+              Signed in as {customer.email} — fit scores use your saved profile.
+            </p>
+          ) : null}
         </section>
 
-        <ReconDashboard opportunities={opportunities} />
+        <ReconDashboard opportunities={opportunities} initialProfile={initialProfile} />
       </div>
     </MarketingShell>
   );
