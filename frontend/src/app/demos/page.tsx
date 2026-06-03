@@ -24,7 +24,7 @@ const featuredDemoSlots = [
     title: "Helix Lawn Command Demo",
     summary:
       "Helix Lawn Command in action: AI captures every missed lawn-care call and web inquiry 24/7, qualifies the lead, and turns it into a booked $150-$1,500 job before it ever goes cold.",
-    src: "/demos/elevenlabs-lovable-demo.mp4",
+    src: "/demos/helix-lawn-command-demo.mp4",
     badge: "Lawn automation",
   },
 ] as const;
