@@ -247,12 +247,17 @@ export function BuyerReportsMonitor({
   }, [liveMode, searchJobId]);
 
   useEffect(() => {
-    void refreshExports();
+    const timer = window.setTimeout(() => {
+      void refreshExports();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [refreshExports]);
 
   useEffect(() => {
     if (!liveMode || !realtime.enabled || !realtime.url || !realtime.anonKey) {
-      setRealtimeStatus("fallback");
       return;
     }
 
@@ -261,7 +266,6 @@ export function BuyerReportsMonitor({
       anonKey: realtime.anonKey,
     });
     if (!supabase) {
-      setRealtimeStatus("fallback");
       return;
     }
 
@@ -800,7 +804,7 @@ export function BuyerReportsMonitor({
             ))
           ) : (
             <div className="brand-card brand-copy-soft p-4 text-sm">
-              No saved outreach drafts yet. Use "Save draft" on a buyer row to build the first one.
+              No saved outreach drafts yet. Use &quot;Save draft&quot; on a buyer row to build the first one.
             </div>
           )}
         </div>

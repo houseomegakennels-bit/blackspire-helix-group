@@ -1,30 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { reconIndustries } from "@/lib/recon-engine";
 
 export function ReconAuthPanel() {
   const router = useRouter();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const initialRef =
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("ref")?.slice(0, 32) ?? null;
+  const [mode, setMode] = useState<"signin" | "signup">(initialRef ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [industry, setIndustry] = useState("");
   const [services, setServices] = useState("");
   const [county, setCounty] = useState("");
-  const [referredBy, setReferredBy] = useState("");
+  const [referredBy] = useState(initialRef ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ref = new URLSearchParams(window.location.search).get("ref");
-    if (ref) {
-      setReferredBy(ref.slice(0, 32));
-      setMode("signup");
-    }
-  }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

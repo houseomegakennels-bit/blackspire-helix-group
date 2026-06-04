@@ -7,6 +7,8 @@ import type { OperatorShellStatus } from "@/lib/buyer-engine-server";
 const navItems = [
   { href: "/", label: "Marketing Site" },
   { href: "/workspace/buyer-engine", label: "Dashboard" },
+  { href: "/workspace/deal-engine", label: "Deal Engine" },
+  { href: "/seller-engine", label: "Seller Engine" },
   { href: "/auth", label: "Auth" },
   { href: "/searches/new", label: "New Search" },
   { href: "/searches", label: "Search Jobs" },

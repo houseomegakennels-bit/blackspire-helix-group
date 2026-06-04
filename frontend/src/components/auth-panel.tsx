@@ -59,7 +59,32 @@ export function AuthPanel() {
   }
 
   useEffect(() => {
-    void refreshStatus();
+    let cancelled = false;
+
+    async function loadInitialStatus() {
+      try {
+        const response = await fetch("/api/auth/status", { cache: "no-store" });
+        const payload = (await response.json()) as AuthStatusPayload;
+        if (cancelled) return;
+        setStatus(payload);
+        if (!response.ok || !payload.ok) {
+          setError(payload.error ?? "Auth status could not be loaded.");
+        }
+      } catch (statusError) {
+        if (cancelled) return;
+        setError(statusError instanceof Error ? statusError.message : "Auth status could not be loaded.");
+      } finally {
+        if (!cancelled) {
+          setLoadingStatus(false);
+        }
+      }
+    }
+
+    void loadInitialStatus();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function submit(path: "/api/auth/bootstrap" | "/api/auth/sign-in") {

@@ -199,7 +199,6 @@ export function SearchJobsMonitor({
 
   useEffect(() => {
     if (!liveMode || !realtime.enabled || !realtime.url || !realtime.anonKey) {
-      setRealtimeStatus("fallback");
       return;
     }
 
@@ -208,7 +207,6 @@ export function SearchJobsMonitor({
       anonKey: realtime.anonKey,
     });
     if (!supabase) {
-      setRealtimeStatus("fallback");
       return;
     }
 
@@ -252,7 +250,6 @@ export function SearchJobsMonitor({
 
   useEffect(() => {
     if (!highlightedJobId) {
-      setSavedDrafts([]);
       return;
     }
 

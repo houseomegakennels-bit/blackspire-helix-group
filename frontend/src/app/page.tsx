@@ -67,6 +67,9 @@ export default function Home() {
                   <Link href="/recon-engine" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
                     Open Recon Engine
                   </Link>
+                  <Link href="/workspace/deal-engine" className="brand-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em] transition">
+                    Open Deal Engine
+                  </Link>
                 </div>
 
                 <div className="luxury-metric-grid">
@@ -224,7 +227,7 @@ export default function Home() {
             <article className="brand-panel col-span-12 px-6 py-8 xl:col-span-7">
               <div className="luxury-section-heading">
                 <p className="luxury-kicker">Industry fit</p>
-                <h2>Luxury doesn't mean vague. It means every niche gets a tailored operating logic.</h2>
+                <h2>Luxury doesn&apos;t mean vague. It means every niche gets a tailored operating logic.</h2>
               </div>
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 {industries.map((industry) => (
@@ -253,6 +256,9 @@ export default function Home() {
                 <Link href="/recon-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                   Explore Recon Engine
                 </Link>
+                <Link href="/workspace/deal-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
+                  Open Deal Engine
+                </Link>
                 <Link href="/demos" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                   Review demos
                 </Link>
@@ -265,7 +271,7 @@ export default function Home() {
               <div className="max-w-4xl">
                 <p className="luxury-kicker">Final call</p>
                 <h2 className="brand-display mt-3 text-4xl text-white lg:text-5xl">
-                  Tell us what you want automated, then let's make it look and behave like a flagship system.
+                  Tell us what you want automated, then let&apos;s make it look and behave like a flagship system.
                 </h2>
                 <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
                   Strategy calls, AI-readiness intake, operator dashboards, lead routing, and branded

@@ -9,6 +9,8 @@ import { ecosystemProjects } from "@/lib/ecosystem";
 const marketingNav = [
   { href: "/ecosystem", label: "Ecosystem" },
   { href: "/recon-engine", label: "Recon Engine" },
+  { href: "/seller-engine", label: "Seller Engine" },
+  { href: "/workspace/deal-engine", label: "Deal Engine" },
   { href: "/helix-lawn-command", label: "Lawn Command" },
   { href: "/services", label: "Services" },
   { href: "/industries", label: "Industries" },

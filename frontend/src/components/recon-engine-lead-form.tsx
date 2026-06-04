@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { reconIndustries, type LeadScanInput } from "@/lib/recon-engine";
 
@@ -16,8 +16,14 @@ const initialInput: LeadScanInput = {
 };
 
 export function ReconEngineLeadForm({ defaultIndustry }: { defaultIndustry?: string } = {}) {
+  const referralCode =
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("ref")?.slice(0, 32) ?? "";
   const [form, setForm] = useState<LeadScanInput>(
-    defaultIndustry ? { ...initialInput, industry: defaultIndustry } : initialInput,
+    defaultIndustry
+      ? { ...initialInput, industry: defaultIndustry, referralCode }
+      : { ...initialInput, referralCode },
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +32,6 @@ export function ReconEngineLeadForm({ defaultIndustry }: { defaultIndustry?: str
   function update<K extends keyof LeadScanInput>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
-
-  // Capture inbound referral code from the URL (?ref=CODE) for attribution.
-  useEffect(() => {
-    const ref = new URLSearchParams(window.location.search).get("ref");
-    if (ref) setForm((prev) => ({ ...prev, referralCode: ref.slice(0, 32) }));
-  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

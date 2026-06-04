@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -86,7 +87,8 @@ export function ReconAccountPanel({ account }: { account: AccountView }) {
             {status ? <span className="text-sm text-emerald-300">{status}</span> : null}
           </div>
           <p className="text-xs text-[var(--copy-muted)]">
-            Your profile auto-fills fit scoring on the <a href="/recon-engine/dashboard" style={{ color: "#c4b5fd" }}>dashboard</a>.
+            Your profile auto-fills fit scoring on the{" "}
+            <Link href="/recon-engine/dashboard" style={{ color: "#c4b5fd" }}>dashboard</Link>.
           </p>
         </div>
       </section>
@@ -95,9 +97,9 @@ export function ReconAccountPanel({ account }: { account: AccountView }) {
         <section className="brand-panel px-5 py-5">
           <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Plan</p>
           <p className="brand-accent-text mt-2 text-2xl font-black capitalize">{account.plan || "Free preview"}</p>
-          <a href="/recon-engine#pricing" className="recon-button mt-4 inline-flex w-full justify-center px-5 py-3 text-sm uppercase tracking-[0.16em]">
+          <Link href="/recon-engine#pricing" className="recon-button mt-4 inline-flex w-full justify-center px-5 py-3 text-sm uppercase tracking-[0.16em]">
             {account.plan ? "Manage plan" : "Upgrade"}
-          </a>
+          </Link>
         </section>
 
         <section className="brand-panel px-5 py-5">

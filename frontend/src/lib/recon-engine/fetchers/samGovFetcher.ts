@@ -6,19 +6,7 @@ import "server-only";
  * and normalizes them into the shared opportunity shape that maps onto `bids`.
  * Docs: https://open.gsa.gov/api/get-opportunities-public-api/
  */
-
-export type NormalizedOpportunity = {
-  sourceName: string;
-  title: string;
-  agency: string | null;
-  location: string | null;
-  deadline: string | null; // ISO timestamp
-  category: string | null;
-  description: string | null;
-  originalUrl: string | null;
-  documentUrl: string | null;
-  rawText: string | null;
-};
+import type { NormalizedOpportunity } from "@/lib/recon-engine/fetchers/opportunityTypes";
 
 type SamOpportunity = {
   noticeId?: string;
