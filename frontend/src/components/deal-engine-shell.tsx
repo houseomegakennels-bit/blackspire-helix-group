@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { brandAssets } from "@/lib/brand-assets";
 
@@ -13,9 +13,32 @@ const navItems = [
   { href: "/", label: "Blackspire Helix" },
 ];
 
+/**
+ * Deal Engine palette — pulled directly from the division logo:
+ * teal/cyan primary ("D" + "DEAL ENGINE" wordmark), silver/platinum
+ * structure ("E" + "BLACKSPIRE"), and gold accents (helix sword, gear,
+ * "CLOSE"). Remaps the shared --gold/--line token families so every
+ * brand-* component on the Deal Engine surface inherits the right color
+ * instead of the amber root default (which belongs to the Buyer Engine).
+ */
+const dealEngineTheme = {
+  "--line": "hsl(190 80% 52% / 0.22)",
+  "--line-strong": "hsl(190 85% 60% / 0.46)",
+  "--gold": "hsl(190 72% 56%)",
+  "--gold-strong": "hsl(193 88% 50%)",
+  "--gold-soft": "hsl(186 72% 80%)",
+  "--project-accent": "#3FB6C9",
+  "--project-glow": "rgba(63, 182, 201, 0.34)",
+  "--project-surface": "rgba(63, 182, 201, 0.12)",
+  "--project-edge": "rgba(201, 162, 63, 0.42)",
+} as CSSProperties;
+
 export function DealEngineShell({ children }: { children: ReactNode }) {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.12),transparent_28%),radial-gradient(circle_at_80%_16%,hsl(44_73%_62%/.10),transparent_24%),linear-gradient(180deg,hsl(224_24%_4%)_0%,hsl(213_20%_4%)_24%,hsl(218_20%_6%)_100%)] text-foreground">
+    <main
+      style={dealEngineTheme}
+      className="min-h-screen bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.12),transparent_28%),radial-gradient(circle_at_80%_16%,hsl(44_73%_62%/.10),transparent_24%),linear-gradient(180deg,hsl(224_24%_4%)_0%,hsl(213_20%_4%)_24%,hsl(218_20%_6%)_100%)] text-foreground"
+    >
       <div className="mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-5">
         <aside className="brand-panel sticky top-3 h-fit overflow-hidden p-5">
           <div className="pointer-events-none absolute inset-x-8 top-0 h-36 rounded-b-[42px] bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.14),transparent_74%)]" />
