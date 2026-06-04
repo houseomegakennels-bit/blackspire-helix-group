@@ -1,14 +1,25 @@
+import type { CSSProperties } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { CSSProperties } from "react";
 
-import { EcosystemCard } from "@/components/ecosystem-card";
 import { HelixLawnCommandPage } from "@/components/helix-lawn-command-page";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ecosystemProjects, getProjectBySlug } from "@/lib/ecosystem";
 
+const THEME_CLASSES: Record<string, string> = {
+  "recon-engine": "theme-recon-engine",
+  "buyer-engine": "theme-buyer-engine",
+  "deal-engine": "theme-deal-engine",
+  "seller-engine": "theme-seller-engine",
+  "helix-lawn-command": "theme-lawn-command",
+  "social-os": "theme-social-os",
+  "ember-halo": "theme-ember-halo",
+  "oracle-helix": "theme-oracle-helix",
+};
+
 export function generateStaticParams() {
-  return ecosystemProjects.map((project) => ({ slug: project.slug }));
+  return ecosystemProjects.map((p) => ({ slug: p.slug }));
 }
 
 export default async function EcosystemProjectPage({
@@ -19,104 +30,179 @@ export default async function EcosystemProjectPage({
   const { slug } = await params;
   const project = getProjectBySlug(slug);
 
-  if (!project) {
-    notFound();
-  }
+  if (!project) notFound();
+  if (project.slug === "helix-lawn-command") return <HelixLawnCommandPage />;
 
-  if (project.slug === "helix-lawn-command") {
-    return <HelixLawnCommandPage />;
-  }
+  const themeClass = THEME_CLASSES[slug] ?? "";
+
+  const projectStyle = {
+    "--project-accent": project.accent,
+    "--project-glow": project.glow,
+    "--project-surface": project.surfaceTint,
+    "--project-edge": project.edgeTint,
+  } as CSSProperties;
 
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1400px] px-4 py-16 lg:px-6">
-        <section
-          className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]"
-          style={
-            {
-              "--project-accent": project.accent,
-              "--project-glow": project.glow,
-              "--project-surface": project.surfaceTint,
-              "--project-edge": project.edgeTint,
-            } as CSSProperties
-          }
-        >
-          <EcosystemCard project={project} mode="stacked" />
+      <div className={themeClass} style={projectStyle}>
 
-          <div className="space-y-6">
-            <section className="brand-panel project-hero-panel overflow-hidden px-6 py-8">
-              <div className="project-hero-orb" />
-              <p className="relative text-xs uppercase tracking-[0.42em] text-white/85">
-                {project.role}
-              </p>
-              <h1 className="project-accent-text relative mt-3 text-4xl font-semibold">{project.name}</h1>
-              <p className="project-lead relative mt-3 max-w-3xl text-lg leading-8">
-                {project.tagline}
-              </p>
-              <p className="relative mt-4 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
-                {project.description}
-              </p>
-              <div className="relative mt-5 grid gap-4 md:grid-cols-3">
-                <div className="project-detail-card p-4">
-                  <div className="project-detail-label">Motif</div>
-                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{project.motif}</div>
+        {/* ── HERO ────────────────────────────────────────────────────── */}
+        <section className="division-hero relative overflow-hidden">
+          {/* Division-specific animated background motif */}
+          <div className="division-motif-canvas" aria-hidden="true">
+            <div className="motif-center-glow" />
+            <div className="motif-ring motif-ring-1" />
+            <div className="motif-ring motif-ring-2" />
+            <div className="motif-ring motif-ring-3" />
+            <div className="motif-sweep" />
+            <div className="motif-grid" />
+          </div>
+
+          <div className="relative z-10 mx-auto max-w-[1400px] px-4 py-20 lg:px-6 xl:py-28">
+            <div className="grid gap-10 xl:grid-cols-[1fr_340px] xl:items-center">
+
+              {/* ── Text content ── */}
+              <div>
+                <div className="flex items-center gap-3">
+                  {project.status === "live" ? (
+                    <span className="live-dot" />
+                  ) : (
+                    <span className="division-building-dot" />
+                  )}
+                  <p className="cmd-text">
+                    {project.status === "live" ? "Live Division" : "In Development"}&nbsp;/&nbsp;BLACKSPIRE HELIX GROUP
+                  </p>
                 </div>
-                <div className="project-detail-card p-4">
-                  <div className="project-detail-label">Signal</div>
-                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{project.iconCue}</div>
-                </div>
-                <div className="project-detail-card p-4">
-                  <div className="project-detail-label">Vibe</div>
-                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{project.vibe}</div>
-                </div>
-              </div>
-              <div className="mt-6 flex flex-wrap gap-3">
-                {project.productHref ? (
-                  <Link href={project.productHref} className="project-button inline-flex px-4 py-3 text-sm transition">
-                    Open live workspace
+
+                <p className="mt-5 text-[11px] uppercase tracking-[0.44em] brand-accent-text">
+                  {project.role}
+                </p>
+                <h1 className="mt-2 text-4xl font-black leading-[1.04] tracking-tight text-white sm:text-5xl lg:text-6xl">
+                  {project.name}
+                </h1>
+                <p className="mt-4 max-w-xl text-base font-medium leading-8 brand-accent-text">
+                  {project.tagline}
+                </p>
+                <p className="mt-3 max-w-xl text-sm leading-8 text-[var(--copy-soft)]">
+                  {project.description}
+                </p>
+
+                <div className="mt-8 flex flex-wrap gap-3">
+                  {project.productHref && (
+                    <Link
+                      href={project.productHref}
+                      className="brand-button inline-flex px-6 py-3 text-sm uppercase tracking-[0.18em] transition"
+                    >
+                      Open workspace
+                    </Link>
+                  )}
+                  <Link
+                    href="/contact"
+                    className="brand-button inline-flex px-6 py-3 text-sm uppercase tracking-[0.18em] transition"
+                  >
+                    Start a strategy call
                   </Link>
-                ) : null}
-                <Link href="/contact" className="project-button inline-flex px-4 py-3 text-sm transition">
-                  Start a strategy call
-                </Link>
-              </div>
-            </section>
-
-            <section className="grid gap-6 md:grid-cols-2">
-              <div className="brand-panel project-detail-card px-6 py-6">
-                <p className="text-xs uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                  Target user
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold text-white">{project.targetUser}</h2>
-                <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
-                  This division exists to translate the Blackspire operating model into a market-specific system with clearer workflows and better outcomes.
-                </p>
+                </div>
               </div>
 
-              <div className="brand-panel project-detail-card px-6 py-6">
-                <p className="text-xs uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                  Primary outcome
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold text-white">{project.primaryOutcome}</h2>
-                <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
-                  The focus is not generic AI. It is specific business leverage: cleaner intake, faster action, and less manual drag.
-                </p>
-              </div>
-            </section>
-
-            <section className="brand-panel project-detail-card px-6 py-8">
-              <p className="text-xs uppercase tracking-[0.36em] text-white/85">System shape</p>
-              <div className="mt-5 grid gap-4">
-                {project.featureBullets.map((bullet) => (
-                  <div key={bullet} className="project-detail-card flex gap-3 p-4">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--project-accent)]" />
-                    <p className="text-sm leading-6 text-[var(--copy-soft)]">{bullet}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
+              {/* ── Logo ── */}
+              {project.logoSrc && (
+                <div className="division-logo-frame hidden xl:flex items-center justify-center">
+                  <Image
+                    src={project.logoSrc}
+                    alt={`${project.name} logo`}
+                    width={320}
+                    height={200}
+                    className={`object-contain ${project.logoMaxWidthClass ?? "max-w-[260px]"} ${project.logoMaxHeightClass ?? "max-h-[160px]"}`}
+                    priority
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </section>
+
+        {/* ── GLOW DIVIDER ─────────────────────────────────────────────── */}
+        <div className="glow-line" />
+
+        {/* ── CAPABILITIES ─────────────────────────────────────────────── */}
+        <section className="mx-auto max-w-[1400px] px-4 py-16 lg:px-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.42em] brand-accent-text">System shape</p>
+              <h2 className="brand-display mt-2 text-3xl text-white">Core capabilities</h2>
+            </div>
+            <div
+              className="h-px flex-1 min-w-[40px] max-w-[200px]"
+              style={{ background: "linear-gradient(90deg, var(--project-accent), transparent)" }}
+            />
+          </div>
+
+          <div className="mt-8 grid gap-6 md:grid-cols-3">
+            {project.featureBullets.map((bullet, i) => (
+              <div
+                key={bullet}
+                className={`brand-panel division-capability-card p-6 reveal-up stagger-${i + 1}`}
+              >
+                <div
+                  className="mb-4 h-px w-10"
+                  style={{ background: `linear-gradient(90deg, var(--project-accent), transparent)` }}
+                />
+                <p className="text-sm leading-7 text-[var(--copy-soft)]">{bullet}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── DETAILS ───────────────────────────────────────────────────── */}
+        <section className="mx-auto max-w-[1400px] px-4 pb-12 lg:px-6">
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="brand-panel division-detail-card p-6">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">Target User</p>
+              <p className="mt-3 text-lg font-semibold text-white leading-tight">{project.targetUser}</p>
+            </div>
+            <div className="brand-panel division-detail-card p-6">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">Primary Outcome</p>
+              <p className="mt-3 text-base font-semibold text-white leading-tight">{project.primaryOutcome}</p>
+            </div>
+            <div className="brand-panel division-detail-card p-6">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">Visual Motif</p>
+              <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{project.motif}</p>
+            </div>
+            <div className="brand-panel division-detail-card p-6">
+              <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">Division Vibe</p>
+              <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{project.vibe}</p>
+            </div>
+          </div>
+        </section>
+
+        {/* ── CTA ──────────────────────────────────────────────────────── */}
+        <section className="mx-auto max-w-[1400px] px-4 pb-20 lg:px-6">
+          <div className="brand-panel division-cta-panel relative overflow-hidden px-8 py-14 text-center">
+            <div className="division-cta-glow" aria-hidden="true" />
+            <p className="relative z-10 cmd-text">Ready to deploy?</p>
+            <h2 className="relative z-10 brand-display mt-3 text-3xl text-white sm:text-4xl lg:text-5xl">
+              {project.cta}
+            </h2>
+            <div className="relative z-10 mt-6 flex flex-wrap justify-center gap-3">
+              {project.productHref && (
+                <Link
+                  href={project.productHref}
+                  className="brand-button inline-flex px-8 py-4 text-sm uppercase tracking-[0.2em] transition"
+                >
+                  Open workspace
+                </Link>
+              )}
+              <Link
+                href="/contact"
+                className="brand-button inline-flex px-8 py-4 text-sm uppercase tracking-[0.2em] transition"
+              >
+                Start a strategy call
+              </Link>
+            </div>
+          </div>
+        </section>
+
       </div>
     </MarketingShell>
   );
