@@ -5,8 +5,7 @@ import { EcosystemCard } from "@/components/ecosystem-card";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ecosystemProjects } from "@/lib/ecosystem";
 
-const commandStats = [
-  { value: "06", label: "Active divisions" },
+const commandStatsBase = [
   { value: "24/7", label: "Automation uptime" },
   { value: "56+", label: "Counties indexed" },
   { value: "Elite", label: "Operator posture" },
@@ -14,6 +13,10 @@ const commandStats = [
 
 export default function EcosystemPage() {
   const systemCount = String(ecosystemProjects.length).padStart(2, "0");
+  const commandStats = [
+    { value: systemCount, label: "Active divisions" },
+    ...commandStatsBase,
+  ];
 
   return (
     <MarketingShell>
