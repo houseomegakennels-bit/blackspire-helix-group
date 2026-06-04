@@ -2,8 +2,10 @@ import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { DivisionWatermark } from "@/components/division-watermark";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ReconDashboard } from "@/components/recon-dashboard";
+import { brandAssets } from "@/lib/brand-assets";
 import { getReconCustomer } from "@/lib/recon-auth";
 import { listRecentOpportunities } from "@/lib/recon-engine-server";
 
@@ -32,13 +34,14 @@ export default async function ReconDashboardPage() {
 
   return (
     <MarketingShell>
+      <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6"
         style={{
-          "--project-accent": "#8B5CF6",
+          "--project-accent": "#D4AF37",
           "--project-glow": "rgba(139,92,246,0.34)",
-          "--project-surface": "rgba(139,92,246,0.12)",
-          "--project-edge": "rgba(196,181,253,0.40)",
+          "--project-surface": "rgba(212,175,55,0.12)",
+          "--project-edge": "rgba(139,92,246,0.40)",
         } as CSSProperties}
       >
         <section className="brand-panel relative overflow-hidden px-6 py-10 lg:px-10">

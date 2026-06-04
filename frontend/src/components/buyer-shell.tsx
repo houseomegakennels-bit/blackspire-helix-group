@@ -1,7 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
-import { CSSProperties, ReactNode } from "react";
+import { ReactNode } from "react";
 
+import { DivisionWatermark } from "@/components/division-watermark";
+import { brandAssets } from "@/lib/brand-assets";
 import type { OperatorShellStatus } from "@/lib/buyer-engine-server";
 
 const navItems = [
@@ -31,19 +33,12 @@ export function BuyerShell({
   children: ReactNode;
   operatorStatus?: OperatorShellStatus | null;
 }) {
-  const divisionStyle: CSSProperties = {
-    "--project-accent": "#FF8A00",
-    "--project-glow": "rgba(255,138,0,0.35)",
-    "--project-surface": "rgba(255,138,0,0.12)",
-    "--project-edge": "rgba(255,193,99,0.42)",
-  } as CSSProperties;
-
   return (
     <main
-      style={divisionStyle}
-      className="theme-buyer-engine min-h-screen bg-[radial-gradient(circle_at_top,hsl(31_100%_34%/.16),transparent_30%),radial-gradient(circle_at_80%_12%,hsl(33_100%_50%/.06),transparent_26%),linear-gradient(180deg,hsl(0_0%_1%)_0%,hsl(22_18%_3%)_24%,hsl(14_22%_4%)_100%)] text-foreground"
+      className="theme-buyer-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,hsl(31_100%_34%/.16),transparent_30%),radial-gradient(circle_at_80%_12%,hsl(33_100%_50%/.06),transparent_26%),linear-gradient(180deg,hsl(0_0%_1%)_0%,hsl(22_18%_3%)_24%,hsl(14_22%_4%)_100%)] text-foreground"
     >
-      <div className="mx-auto grid min-h-screen max-w-[1700px] gap-6 px-4 py-4 lg:grid-cols-[290px_minmax(0,1fr)] lg:px-6">
+      <DivisionWatermark logoSrc={brandAssets.buyerEngine.logo} />
+      <div className="relative z-10 mx-auto grid min-h-screen max-w-[1700px] gap-6 px-4 py-4 lg:grid-cols-[290px_minmax(0,1fr)] lg:px-6">
         <aside className="brand-panel h-fit overflow-hidden p-5 lg:sticky lg:top-4">
           <div className="pointer-events-none absolute inset-x-6 top-0 h-32 rounded-b-[40px] bg-[radial-gradient(circle_at_top,hsl(34_100%_62%/.12),transparent_74%)]" />
           <div className="space-y-4 border-b border-[var(--line)] pb-5">

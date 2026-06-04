@@ -899,6 +899,36 @@ body::after {
   }
 }
 
+/* ── Division-logo watermark for workspace command decks ──
+   Scoped inside a division <main> (relative + overflow-hidden); deck
+   content sits above it via `relative z-10`. Same spirit as the parent
+   .luxury-watermark, tinted faintly by the division's own logo. */
+.workspace-watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+.workspace-watermark-img {
+  width: min(62vw, 720px);
+  height: auto;
+  object-fit: contain;
+  opacity: 0.05;
+  filter: grayscale(10%) brightness(1.35);
+  mix-blend-mode: screen;
+  user-select: none;
+}
+@media (max-width: 640px) {
+  .workspace-watermark-img {
+    width: 92vw;
+    opacity: 0.06;
+  }
+}
+
 .luxury-orbital-ring {
   position: absolute;
   border-radius: 999px;
@@ -1734,16 +1764,17 @@ body::after {
 }
 
 /* Seller Engine */
+/* Seller Engine logo palette: crimson spire/wordmark + chrome/silver "BS". */
 .seller-shell {
-  --seller-gold: hsl(42 94% 62%);
-  --seller-gold-soft: hsl(45 86% 78%);
-  --seller-silver: hsl(205 28% 78%);
-  --seller-line: hsl(42 88% 62% / 0.18);
-  --seller-line-strong: hsl(42 92% 68% / 0.5);
+  --seller-gold: hsl(4 80% 60%);
+  --seller-gold-soft: hsl(6 82% 76%);
+  --seller-silver: hsl(208 18% 80%);
+  --seller-line: hsl(4 74% 58% / 0.20);
+  --seller-line-strong: hsl(4 82% 64% / 0.5);
   background:
-    radial-gradient(circle at 12% 8%, hsl(43 82% 24% / 0.24), transparent 22%),
-    radial-gradient(circle at 86% 10%, hsl(191 70% 32% / 0.14), transparent 24%),
-    linear-gradient(180deg, hsl(216 22% 3%), hsl(216 24% 2%) 42%, hsl(40 24% 3%));
+    radial-gradient(circle at 12% 8%, hsl(4 72% 28% / 0.26), transparent 22%),
+    radial-gradient(circle at 86% 10%, hsl(208 18% 40% / 0.12), transparent 24%),
+    linear-gradient(180deg, hsl(216 22% 3%), hsl(216 24% 2%) 42%, hsl(4 24% 4%));
 }
 .seller-panel, .seller-card {
   position: relative;
@@ -1755,11 +1786,11 @@ body::after {
 .seller-card { border-radius: 18px; }
 .seller-hero::after {
   content: ""; position: absolute; width: 420px; height: 420px; right: -120px; top: -160px; border-radius: 999px;
-  background: radial-gradient(circle, hsl(43 95% 60% / .16), transparent 64%); pointer-events: none;
+  background: radial-gradient(circle, hsl(4 85% 58% / .16), transparent 64%); pointer-events: none;
 }
 .seller-radar {
   position: absolute; width: 260px; height: 260px; border-radius: 999px; right: -150px; top: -100px;
-  border: 1px solid var(--seller-line); box-shadow: 0 0 80px hsl(43 95% 60% / .08);
+  border: 1px solid var(--seller-line); box-shadow: 0 0 80px hsl(4 85% 58% / .08);
 }
 .seller-nav-link {
   display: block; border-radius: 14px; border: 1px solid var(--seller-line); padding: .78rem 1rem;
@@ -1771,14 +1802,14 @@ body::after {
 .seller-button {
   display: inline-flex; align-items: center; border: 1px solid var(--seller-line-strong); border-radius: 999px;
   padding: .75rem 1.05rem; color: white; font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
-  background: linear-gradient(135deg, hsl(42 70% 20% / .72), hsl(215 18% 8%)); transition: .2s ease;
+  background: linear-gradient(135deg, hsl(4 60% 26% / .72), hsl(215 18% 8%)); transition: .2s ease;
 }
-.seller-button:hover { transform: translateY(-1px); box-shadow: 0 10px 28px hsl(42 80% 45% / .16); }
+.seller-button:hover { transform: translateY(-1px); box-shadow: 0 10px 28px hsl(4 80% 48% / .16); }
 .seller-input {
   width: 100%; border: 1px solid var(--seller-line); border-radius: 13px; background: hsl(215 20% 5% / .94);
   color: white; padding: .78rem .9rem; outline: none; color-scheme: dark;
 }
-.seller-input:focus { border-color: var(--seller-line-strong); box-shadow: 0 0 0 3px hsl(43 90% 55% / .08); }
+.seller-input:focus { border-color: var(--seller-line-strong); box-shadow: 0 0 0 3px hsl(4 85% 55% / .08); }
 .seller-input option { background: hsl(215 20% 5%); }
 .seller-kicker { color: var(--seller-gold); font-size: .67rem; letter-spacing: .32em; text-transform: uppercase; }
 .seller-score {
@@ -1790,7 +1821,7 @@ body::after {
 .seller-score-watch { color: hsl(190 80% 78%); border-color: hsl(190 80% 65% / .42); background: hsl(190 80% 45% / .1); }
 .seller-score-low { color: var(--copy-muted); border-color: hsl(0 0% 100% / .14); background: hsl(0 0% 100% / .03); }
 .seller-signal {
-  display: inline-flex; border-radius: 999px; border: 1px solid var(--seller-line); background: hsl(42 80% 42% / .1);
+  display: inline-flex; border-radius: 999px; border: 1px solid var(--seller-line); background: hsl(4 72% 46% / .1);
   padding: .28rem .52rem; color: var(--seller-gold-soft); font-size: .58rem; letter-spacing: .13em; text-transform: uppercase;
 }
 

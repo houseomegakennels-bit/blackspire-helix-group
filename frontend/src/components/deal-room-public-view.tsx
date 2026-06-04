@@ -1,27 +1,16 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 
 import { DealRoomInterestForm } from "@/components/deal-room-interest-form";
+import { DivisionWatermark } from "@/components/division-watermark";
 import { Panel, StatusPill } from "@/components/buyer-shell";
+import { brandAssets } from "@/lib/brand-assets";
 import type { DealEngineDealDetail } from "@/lib/deal-engine-server";
 
 /**
- * Deal Engine palette (teal primary / silver / gold accent), matching the
- * division logo. Mirrors the tokens applied in DealEngineShell so the public
- * investor deal room — which renders its own <main> — stays on-brand.
+ * Deal Engine surface uses the shared `theme-deal-engine` class for its logo
+ * palette (teal primary / silver / gold accent), matching DealEngineShell so
+ * the public investor deal room — which renders its own <main> — stays on-brand.
  */
-const dealEngineTheme = {
-  "--line": "hsl(190 80% 52% / 0.22)",
-  "--line-strong": "hsl(190 85% 60% / 0.46)",
-  "--gold": "hsl(190 72% 56%)",
-  "--gold-strong": "hsl(193 88% 50%)",
-  "--gold-soft": "hsl(186 72% 80%)",
-  "--project-accent": "#3FB6C9",
-  "--project-glow": "rgba(63, 182, 201, 0.34)",
-  "--project-surface": "rgba(63, 182, 201, 0.12)",
-  "--project-edge": "rgba(201, 162, 63, 0.42)",
-} as CSSProperties;
-
 export function DealRoomPublicView({
   detail,
 }: {
@@ -29,10 +18,10 @@ export function DealRoomPublicView({
 }) {
   return (
     <main
-      style={dealEngineTheme}
-      className="min-h-screen bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.14),transparent_28%),radial-gradient(circle_at_78%_12%,hsl(44_73%_62%/.12),transparent_20%),linear-gradient(180deg,hsl(224_24%_4%)_0%,hsl(213_20%_4%)_24%,hsl(218_20%_6%)_100%)] text-foreground"
+      className="theme-deal-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.14),transparent_28%),radial-gradient(circle_at_78%_12%,hsl(44_73%_62%/.12),transparent_20%),linear-gradient(180deg,hsl(224_24%_4%)_0%,hsl(213_20%_4%)_24%,hsl(218_20%_6%)_100%)] text-foreground"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:px-8 lg:py-8">
+      <DivisionWatermark logoSrc={brandAssets.dealEngine.logo} />
+      <div className="relative z-10 mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:px-8 lg:py-8">
         <header className="brand-panel overflow-hidden px-6 py-7">
           <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
             <div className="space-y-5">

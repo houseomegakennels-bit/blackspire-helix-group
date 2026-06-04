@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { CSSProperties, useEffect, useState } from "react";
 
+import { DivisionWatermark } from "@/components/division-watermark";
+import { brandAssets } from "@/lib/brand-assets";
 import {
   helixLawnPricingLogic,
   type HelixLawnCommandSnapshot,
@@ -127,9 +129,10 @@ export function HelixLawnCommandHome({
         "--project-surface": "rgba(99,209,31,0.12)",
         "--project-edge": "rgba(155,255,94,0.42)",
       } as CSSProperties}
-      className="theme-lawn-command min-h-screen bg-[radial-gradient(circle_at_top,hsl(130_68%_9%/.9),transparent_36%),radial-gradient(circle_at_78%_10%,hsl(116_74%_28%/.10),transparent_28%),linear-gradient(180deg,hsl(148_44%_5%)_0%,hsl(150_40%_4%)_100%)] text-foreground"
+      className="theme-lawn-command relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,hsl(130_68%_9%/.9),transparent_36%),radial-gradient(circle_at_78%_10%,hsl(116_74%_28%/.10),transparent_28%),linear-gradient(180deg,hsl(148_44%_5%)_0%,hsl(150_40%_4%)_100%)] text-foreground"
     >
-      <div className="mx-auto grid min-h-screen max-w-[1660px] gap-5 px-4 py-4 xl:grid-cols-[310px_minmax(0,1fr)] xl:px-6">
+      <DivisionWatermark logoSrc={brandAssets.helixLawnCommand.logo} />
+      <div className="relative z-10 mx-auto grid min-h-screen max-w-[1660px] gap-5 px-4 py-4 xl:grid-cols-[310px_minmax(0,1fr)] xl:px-6">
         <aside className="min-w-0 rounded-[28px] border border-[hsl(126_48%_22%/.45)] bg-[hsl(150_42%_7%/.92)] p-4 shadow-[0_24px_80px_hsl(0_0%_0%/.4)] sm:p-5 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:overflow-y-auto">
           <div className="grid gap-4 border-b border-[hsl(126_48%_22%/.35)] pb-5 sm:grid-cols-[120px_1fr] sm:items-center xl:grid-cols-1">
             <div className="max-w-[140px] overflow-hidden rounded-[18px] border border-[hsl(126_48%_22%/.35)] bg-[hsl(149_34%_9%/.9)] p-3 xl:max-w-none">

@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { DivisionWatermark } from "@/components/division-watermark";
 import { brandAssets } from "@/lib/brand-assets";
 
 const navItems = [
@@ -17,8 +18,9 @@ const navItems = [
 
 export function SellerEngineShell({ children }: { children: ReactNode }) {
   return (
-    <main className="seller-shell min-h-screen text-foreground">
-      <div className="mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[270px_minmax(0,1fr)] lg:px-5">
+    <main className="seller-shell relative min-h-screen overflow-hidden text-foreground">
+      <DivisionWatermark logoSrc={brandAssets.sellerEngine.logo} />
+      <div className="relative z-10 mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[270px_minmax(0,1fr)] lg:px-5">
         <aside className="seller-panel sticky top-3 h-fit overflow-hidden p-5">
           <div className="seller-radar" />
           <div className="relative border-b border-[var(--seller-line)] pb-5">
@@ -39,7 +41,7 @@ export function SellerEngineShell({ children }: { children: ReactNode }) {
             <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
               Motivated seller discovery, distress intelligence, and qualified lead handoff.
             </p>
-            <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-emerald-300">
+            <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-[var(--seller-silver)]">
               <span className="live-dot" /> Intelligence surface online
             </div>
           </div>

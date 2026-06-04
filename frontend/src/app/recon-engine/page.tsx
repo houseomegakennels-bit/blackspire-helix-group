@@ -3,9 +3,11 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
+import { DivisionWatermark } from "@/components/division-watermark";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ReconCheckoutButton } from "@/components/recon-checkout-button";
 import { ReconEngineLeadForm } from "@/components/recon-engine-lead-form";
+import { brandAssets } from "@/lib/brand-assets";
 import { reconEngineBrand, reconPillars, reconPlans, reconIndustries } from "@/lib/recon-engine";
 
 export const metadata: Metadata = {
@@ -17,13 +19,14 @@ export const metadata: Metadata = {
 export default function ReconEnginePage() {
   return (
     <MarketingShell>
+      <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] space-y-10 px-4 py-16 lg:px-6"
         style={{
-          "--project-accent": "#8B5CF6",
+          "--project-accent": "#D4AF37",
           "--project-glow": "rgba(139,92,246,0.34)",
-          "--project-surface": "rgba(139,92,246,0.12)",
-          "--project-edge": "rgba(196,181,253,0.40)",
+          "--project-surface": "rgba(212,175,55,0.12)",
+          "--project-edge": "rgba(139,92,246,0.40)",
         } as CSSProperties}
       >
 
