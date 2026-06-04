@@ -44,7 +44,18 @@ export default async function EcosystemProjectPage({
 
   return (
     <MarketingShell>
-      <div className={themeClass} style={projectStyle}>
+      <div className={`division-page ${themeClass}`} style={projectStyle}>
+        {project.logoSrc ? (
+          <div className="division-watermark" aria-hidden="true">
+            <Image
+              src={project.logoSrc}
+              alt=""
+              width={1200}
+              height={1200}
+              className="division-watermark-img"
+            />
+          </div>
+        ) : null}
 
         {/* ── HERO ────────────────────────────────────────────────────── */}
         <section className="division-hero relative overflow-hidden">
