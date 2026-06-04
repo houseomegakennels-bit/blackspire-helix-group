@@ -5,6 +5,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isAuthenticatedOperatorAdmin } from "@/lib/buyer-engine-auth";
 import { analyzeOpportunity } from "@/lib/ai/analyzeOpportunity";
 import { generateProposal, type ProposalDraft } from "@/lib/ai/generateProposal";
+import { fetchNcEvpOpportunities } from "@/lib/recon-engine/fetchers/ncEvpFetcher";
+import type { NormalizedOpportunity } from "@/lib/recon-engine/fetchers/opportunityTypes";
 import { fetchSamDescription, fetchSamGovOpportunities } from "@/lib/recon-engine/fetchers/samGovFetcher";
 import {
   buildOpportunitySnapshot,
@@ -332,23 +334,11 @@ type InsertedBidRow = {
   document_url: string | null;
 };
 
-/**
- * Phase 3 ingest: fetch SAM.gov opportunities -> dedupe -> insert into `bids`
- * -> AI-analyze the new ones into `bid_analysis`. Returns a run summary.
- */
-export async function ingestSamGovOpportunities(opts?: {
-  lookbackDays?: number;
-  limit?: number;
-  analyzeMax?: number;
-  state?: string;
-}): Promise<IngestSummary> {
-  const supabase = getSupabaseAdmin();
-  const fetched = await fetchSamGovOpportunities({
-    lookbackDays: opts?.lookbackDays,
-    limit: opts?.limit,
-    state: opts?.state,
-  });
-
+async function insertAndAnalyzeOpportunities(
+  supabase: SupabaseClient,
+  fetched: NormalizedOpportunity[],
+  analyzeMax = 10,
+): Promise<IngestSummary> {
   const summary: IngestSummary = {
     fetched: fetched.length,
     inserted: 0,
@@ -358,7 +348,10 @@ export async function ingestSamGovOpportunities(opts?: {
   };
   if (!fetched.length) return summary;
 
-  const urls = fetched.map((o) => o.originalUrl).filter((u): u is string => Boolean(u));
+  const uniqueFetched = [...new Map(fetched.filter((o) => o.originalUrl).map((o) => [o.originalUrl, o])).values()];
+  summary.skipped += fetched.length - uniqueFetched.length;
+
+  const urls = uniqueFetched.map((o) => o.originalUrl).filter((u): u is string => Boolean(u));
   const { data: existing } = await supabase
     .from("bids")
     .select("original_url")
@@ -367,8 +360,8 @@ export async function ingestSamGovOpportunities(opts?: {
     (existing ?? []).map((row: { original_url: string | null }) => row.original_url),
   );
 
-  const toInsert = fetched.filter((o) => o.originalUrl && !existingSet.has(o.originalUrl));
-  summary.skipped = fetched.length - toInsert.length;
+  const toInsert = uniqueFetched.filter((o) => o.originalUrl && !existingSet.has(o.originalUrl));
+  summary.skipped += uniqueFetched.length - toInsert.length;
   if (!toInsert.length) return summary;
 
   const { data: insertedRows, error: insertErr } = await supabase
@@ -397,11 +390,10 @@ export async function ingestSamGovOpportunities(opts?: {
   const rows = (insertedRows ?? []) as InsertedBidRow[];
   summary.inserted = rows.length;
 
-  const analyzeMax = opts?.analyzeMax ?? 10;
   for (const bid of rows.slice(0, analyzeMax)) {
     try {
-      // Enrich with the full SAM description for a far better AI analysis.
-      const fullDescription = bid.document_url
+      const shouldEnrichFromSam = /sam\.gov/i.test(bid.document_url ?? "");
+      const fullDescription = shouldEnrichFromSam && bid.document_url
         ? await fetchSamDescription(bid.document_url).catch(() => null)
         : null;
 
@@ -432,4 +424,61 @@ export async function ingestSamGovOpportunities(opts?: {
   }
 
   return summary;
+}
+
+/**
+ * Phase 3 ingest: fetch multi-source Recon opportunities -> dedupe -> insert
+ * into `bids` -> AI-analyze the new ones into `bid_analysis`.
+ */
+export async function ingestReconOpportunities(opts?: {
+  lookbackDays?: number;
+  limit?: number;
+  analyzeMax?: number;
+  state?: string;
+  includeSam?: boolean;
+  includeNcEvp?: boolean;
+}): Promise<IngestSummary> {
+  const supabase = getSupabaseAdmin();
+  const includeSam = opts?.includeSam ?? true;
+  const includeNcEvp = opts?.includeNcEvp ?? true;
+
+  const fetches = await Promise.allSettled([
+    includeSam
+      ? fetchSamGovOpportunities({
+          lookbackDays: opts?.lookbackDays,
+          limit: opts?.limit,
+          state: opts?.state,
+        })
+      : Promise.resolve([]),
+    includeNcEvp ? fetchNcEvpOpportunities({ limit: opts?.limit }) : Promise.resolve([]),
+  ]);
+
+  const errors = fetches
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => (result.reason instanceof Error ? result.reason.message : "source fetch failed"));
+  const fetched = fetches
+    .filter((result): result is PromiseFulfilledResult<NormalizedOpportunity[]> => result.status === "fulfilled")
+    .flatMap((result) => result.value);
+
+  const summary = await insertAndAnalyzeOpportunities(supabase, fetched, opts?.analyzeMax ?? 10);
+  summary.errors.push(...errors);
+  return summary;
+}
+
+/**
+ * Backwards-compatible SAM-only ingest entrypoint.
+ */
+export async function ingestSamGovOpportunities(opts?: {
+  lookbackDays?: number;
+  limit?: number;
+  analyzeMax?: number;
+  state?: string;
+}): Promise<IngestSummary> {
+  const supabase = getSupabaseAdmin();
+  const fetched = await fetchSamGovOpportunities({
+    lookbackDays: opts?.lookbackDays,
+    limit: opts?.limit,
+    state: opts?.state,
+  });
+  return insertAndAnalyzeOpportunities(supabase, fetched, opts?.analyzeMax ?? 10);
 }

@@ -5,7 +5,6 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   computeHelixLawnLeadEstimate,
   formatHelixLawnLeadStage,
-  helixLawnPricingLogic,
   normalizeHelixLawnLeadInput,
   serviceLabels,
   type HelixLawnCommandSnapshot,

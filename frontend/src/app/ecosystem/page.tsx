@@ -7,11 +7,13 @@ import { ecosystemProjects } from "@/lib/ecosystem";
 
 const divisionColors = [
   { seg: "bg-[hsl(258_90%_66%)]", label: "Blackspire Recon Engine", delay: "0s" },
-  { seg: "bg-[hsl(38_92%_55%)]", label: "Helix Lawn Command", delay: "0.3s" },
-  { seg: "bg-[hsl(270_80%_62%)]", label: "Blackspire Social OS", delay: "0.6s" },
+  { seg: "bg-[hsl(42_62%_58%)]", label: "Blackspire Seller Engine", delay: "0.3s" },
+  { seg: "bg-[hsl(190_100%_60%)]", label: "Blackspire Deal Engine", delay: "0.6s" },
   { seg: "bg-[hsl(20_100%_55%)]", label: "Blackspire Buyer Engine", delay: "0.9s" },
-  { seg: "bg-[hsl(340_80%_60%)]", label: "Ember Halo", delay: "1.2s" },
-  { seg: "bg-[hsl(210_90%_60%)]", label: "Oracle Helix", delay: "1.5s" },
+  { seg: "bg-[hsl(102_74%_47%)]", label: "Helix Lawn Command", delay: "1.2s" },
+  { seg: "bg-[hsl(270_80%_62%)]", label: "Blackspire Social OS", delay: "1.5s" },
+  { seg: "bg-[hsl(340_80%_60%)]", label: "Ember Halo", delay: "1.8s" },
+  { seg: "bg-[hsl(210_90%_60%)]", label: "Oracle Helix", delay: "2.1s" },
 ];
 
 const commandStatsBase = [

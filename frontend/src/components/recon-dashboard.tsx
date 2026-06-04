@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { matchOpportunity } from "@/lib/matching/matchOpportunity";
@@ -90,7 +91,7 @@ export function ReconDashboard({
       /* ignore */
     }
     setHydrated(true);
-  }, []);
+  }, [initialProfile]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -188,7 +189,7 @@ export function ReconDashboard({
         <Stat label="Live opportunities" value={String(stats.total)} detail="In the current feed" />
         <Stat label="Closing in 14 days" value={String(stats.deadlineSoon)} detail="Act soon" />
         <Stat label="Strong fits" value={String(stats.highFit)} detail={profileActive ? "Score 60+ for your profile" : "Set a profile to score"} />
-        <Stat label="Avg fit score" value={profileActive ? `${stats.avg}` : "—"} detail="Across the feed" />
+        <Stat label="Avg fit score" value={profileActive ? `${stats.avg}` : "--"} detail="Across the feed" />
       </section>
 
       {/* AI recommendations */}
@@ -203,10 +204,10 @@ export function ReconDashboard({
                 <span className="text-lg font-black" style={{ color: fitTone(opp.score) }}>{opp.score}</span>
               </div>
               <h3 className="mt-1 text-sm font-semibold text-white line-clamp-2">{opp.title}</h3>
-              <p className="mt-1 text-xs text-[var(--copy-muted)]">{opp.agency ?? "—"}</p>
+              <p className="mt-1 text-xs text-[var(--copy-muted)]">{opp.agency ?? "--"}</p>
               {opp.reasons[0] ? <p className="mt-2 text-xs leading-5 text-[var(--copy-soft)]">{opp.reasons[0]}</p> : null}
             </div>
-          )) : <p className="text-sm text-[var(--copy-soft)]">No opportunities yet — the daily feed will populate this.</p>}
+          )) : <p className="text-sm text-[var(--copy-soft)]">No opportunities yet -- the daily feed will populate this.</p>}
         </div>
       </section>
 
@@ -237,7 +238,7 @@ export function ReconDashboard({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-base font-semibold text-white">{opp.title}</h3>
-                  <p className="mt-1 text-xs text-[var(--copy-muted)]">{opp.agency ?? "—"}{opp.location ? ` · ${opp.location}` : ""}</p>
+                  <p className="mt-1 text-xs text-[var(--copy-muted)]">{opp.agency ?? "--"}{opp.location ? ` | ${opp.location}` : ""}</p>
                 </div>
                 <div className="flex shrink-0 items-start gap-3">
                   <button
@@ -292,9 +293,9 @@ export function ReconDashboard({
                         : "Generate proposal"}
                   </button>
                 ) : (
-                  <a href="/recon-engine/login" className="text-xs font-semibold" style={{ color: "#c4b5fd" }}>
+                  <Link href="/recon-engine/login" className="text-xs font-semibold" style={{ color: "#c4b5fd" }}>
                     Sign in to generate an AI proposal →
-                  </a>
+                  </Link>
                 )}
                 {proposals[opp.id]?.error ? (
                   <p className="mt-2 text-xs text-amber-300">{proposals[opp.id]?.error}</p>
@@ -345,9 +346,9 @@ export function ReconDashboard({
               You&apos;re previewing the live feed. Subscribe to unlock fit-scored alerts, saved
               opportunities, and AI proposal drafts.
             </p>
-            <a href="/recon-engine#pricing" className="recon-button mt-4 inline-flex w-full justify-center px-5 py-3 text-sm uppercase tracking-[0.16em]">
+            <Link href="/recon-engine#pricing" className="recon-button mt-4 inline-flex w-full justify-center px-5 py-3 text-sm uppercase tracking-[0.16em]">
               View plans
-            </a>
+            </Link>
           </section>
         </aside>
       </div>

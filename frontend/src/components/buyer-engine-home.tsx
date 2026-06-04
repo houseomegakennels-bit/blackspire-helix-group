@@ -141,6 +141,11 @@ export async function BuyerEngineHome() {
 
   const commandLanes = [
     {
+      label: "Deal Relay",
+      description: "Move from seller-qualified opportunity into underwriting and disposition packaging.",
+      href: "/workspace/deal-engine",
+    },
+    {
       label: "Sweep Launch",
       description: "County-targeted search jobs with operator-aware scope and async dispatch.",
       href: "/searches/new",
@@ -197,6 +202,9 @@ export async function BuyerEngineHome() {
               </Link>
               <Link href="/buyers" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Open dossiers
+              </Link>
+              <Link href="/workspace/deal-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
+                Open Deal Engine
               </Link>
               <Link href="/searches" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Watch queue

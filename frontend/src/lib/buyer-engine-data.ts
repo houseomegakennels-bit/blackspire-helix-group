@@ -714,8 +714,6 @@ export function getCountyVerificationTone(status: CountyVerificationStatus) {
 
 export function getCountyLaunchBlock(county: string, propertyType: string, capabilities: CountyCapability[] = fallbackCountyCapabilities) {
   const capability = getCountyCapability(county, capabilities);
-  const normalizedCounty = county.trim().toLowerCase();
-  const normalizedPropertyType = propertyType.trim().toLowerCase();
 
   if (capability?.status === "inactive") {
     return {

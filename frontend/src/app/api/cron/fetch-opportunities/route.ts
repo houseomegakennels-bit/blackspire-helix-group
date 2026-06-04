@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { ingestSamGovOpportunities } from "@/lib/recon-engine-server";
+import { ingestReconOpportunities } from "@/lib/recon-engine-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,12 +31,16 @@ async function run(request: NextRequest) {
     const analyzeMax = Number(url.searchParams.get("analyzeMax") ?? "8");
     const lookbackDays = Number(url.searchParams.get("lookbackDays") ?? "30");
     const state = url.searchParams.get("state") ?? "NC";
+    const includeSam = url.searchParams.get("includeSam") !== "false";
+    const includeNcEvp = url.searchParams.get("includeNcEvp") !== "false";
 
-    const summary = await ingestSamGovOpportunities({
+    const summary = await ingestReconOpportunities({
       limit: Number.isFinite(limit) ? limit : 25,
       analyzeMax: Number.isFinite(analyzeMax) ? analyzeMax : 8,
       lookbackDays: Number.isFinite(lookbackDays) ? lookbackDays : 30,
       state,
+      includeSam,
+      includeNcEvp,
     });
 
     return NextResponse.json({ ok: true, ...summary });

@@ -945,7 +945,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   }
 
   let jobQuery = supabase.from("SearchJob").select("status", { count: "exact" });
-  let reportQuery = supabase.from("BuyerReport").select("id", { count: "exact", head: true });
+  const reportQuery = supabase.from("BuyerReport").select("id", { count: "exact", head: true });
   let exportQuery = supabase.from("exports").select("id", { count: "exact", head: true });
 
   jobQuery = jobQuery.eq("user_id", operatorId);
