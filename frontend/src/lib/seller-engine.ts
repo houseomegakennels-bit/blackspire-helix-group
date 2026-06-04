@@ -49,6 +49,9 @@ export const SELLER_LIVE_SOURCE_KEYS = [
   "orange_county_absentee_owners",
   "nash_county_absentee_owners",
   "edgecombe_county_absentee_owners",
+  "ashe_county_absentee_owners",
+  "avery_county_absentee_owners",
+  "burke_county_absentee_owners",
 ] as const;
 
 export type SellerLeadStatus = (typeof SELLER_LEAD_STATUSES)[number];
@@ -221,6 +224,24 @@ export const SELLER_LIVE_SOURCES: Array<{
     key: "edgecombe_county_absentee_owners",
     label: "Edgecombe County Absentee Owners",
     description: "Official Edgecombe County parcel records filtered into live absentee-owner seller leads from the county parcel service.",
+    sourceType: "absentee_owner",
+  },
+  {
+    key: "ashe_county_absentee_owners",
+    label: "Ashe County Absentee Owners",
+    description: "Official Ashe County parcel records filtered into live absentee-owner seller leads from the county parcel service.",
+    sourceType: "absentee_owner",
+  },
+  {
+    key: "avery_county_absentee_owners",
+    label: "Avery County Absentee Owners",
+    description: "Official Avery County parcel records filtered into live absentee-owner seller leads from the county parcel service.",
+    sourceType: "absentee_owner",
+  },
+  {
+    key: "burke_county_absentee_owners",
+    label: "Burke County Absentee Owners",
+    description: "Official Burke County parcel records filtered into live absentee-owner seller leads from the county parcel service.",
     sourceType: "absentee_owner",
   },
 ];

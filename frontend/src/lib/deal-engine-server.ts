@@ -78,6 +78,12 @@ export type DealEngineWorkspaceSnapshot = {
   leads: DealEngineLead[];
   metrics: DealEngineMetric[];
   heroSignals: string[];
+  stageBoard: Array<{
+    label: string;
+    count: number;
+    detail: string;
+    deals: DealEngineLead[];
+  }>;
   sellerSignals: DealEngineSellerSignal[];
   buyerSignals: DealEngineBuyerSignal[];
   contractDrafts: DealEngineContractDraft[];
@@ -115,6 +121,18 @@ export type DealEngineDealDetail = {
     body: string;
     createdAt: string;
   }>;
+  investorResponses: Array<{
+    id: string;
+    investorName: string;
+    investorEmail: string;
+    interestType: string;
+    notes: string;
+    submittedAt: string;
+    followUpStatus: string;
+    followUpOwner: string;
+    nextStep: string;
+    lastUpdatedAt: string;
+  }>;
 };
 
 type BuyerReportView = {
@@ -149,6 +167,13 @@ type DealRoomRow = {
   downloadable_pdf_label: string | null;
   submit_interest_label: string | null;
   request_walkthrough_label: string | null;
+};
+
+type DispositionLogRow = {
+  id: string | number;
+  action_type: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string | null;
 };
 
 function getEnvState(): EnvState {
@@ -481,6 +506,22 @@ type SaveInvestorInterestInput = {
   notes: string;
 };
 
+type SaveDealStageUpdateInput = {
+  dealId: string;
+  status: string;
+  nextAction: string;
+  note: string;
+};
+
+type SaveInvestorFollowUpInput = {
+  dealId: string;
+  investorEmail: string;
+  followUpStatus: string;
+  followUpOwner: string;
+  nextStep: string;
+  notes: string;
+};
+
 function buildDraftBody(input: {
   buyerName: string;
   market: string;
@@ -537,6 +578,102 @@ function buildFallbackRoom(lead: DealEngineLead, packet: DealEngineDealDetail["p
     submitInterestLabel: "Submit investor interest",
     requestWalkthroughLabel: "Request walkthrough",
   };
+}
+
+function normalizeStage(status: string) {
+  const value = status.toLowerCase();
+  if (value.includes("under contract") || value.includes("packet")) return "Contract / Packet";
+  if (value.includes("buyer interest") || value.includes("marketed") || value.includes("disposition")) {
+    return "Buyer Follow-Up";
+  }
+  if (value.includes("negotiating")) return "Negotiating";
+  if (value.includes("offer ready")) return "Offer Ready";
+  if (value.includes("analysis") || value.includes("review")) return "Underwriting";
+  return "New Intake";
+}
+
+function buildStageBoard(leads: DealEngineLead[]) {
+  const lanes = [
+    {
+      label: "New Intake",
+      detail: "Fresh handoffs still being normalized from Seller Engine into Deal Engine.",
+    },
+    {
+      label: "Underwriting",
+      detail: "Live deals where MAO, condition, and contract strategy are still being shaped.",
+    },
+    {
+      label: "Negotiating",
+      detail: "Seller-facing conversations moving through price, timing, and term alignment.",
+    },
+    {
+      label: "Offer Ready",
+      detail: "Terms are assembled and the deal is nearly ready to paper or release.",
+    },
+    {
+      label: "Contract / Packet",
+      detail: "Deals with contract posture or packet work active ahead of buyer release.",
+    },
+    {
+      label: "Buyer Follow-Up",
+      detail: "Investor responses are in and the disposition lane now needs active follow-up.",
+    },
+  ] as const;
+
+  return lanes.map((lane) => {
+    const deals = leads.filter((lead) => normalizeStage(lead.status) === lane.label);
+    return {
+      label: lane.label,
+      count: deals.length,
+      detail: lane.detail,
+      deals,
+    };
+  });
+}
+
+function parseDispositionLogs(logs: DispositionLogRow[]) {
+  const followUps = new Map<string, {
+    followUpStatus: string;
+    followUpOwner: string;
+    nextStep: string;
+    notes: string;
+    lastUpdatedAt: string;
+  }>();
+
+  for (const log of logs) {
+    if (log.action_type !== "investor_follow_up") continue;
+    const payload = log.payload ?? {};
+    const investorEmail = String(payload.investorEmail ?? "").trim().toLowerCase();
+    if (!investorEmail) continue;
+    followUps.set(investorEmail, {
+      followUpStatus: String(payload.followUpStatus ?? "New response"),
+      followUpOwner: String(payload.followUpOwner ?? "Unassigned"),
+      nextStep: String(payload.nextStep ?? "Review response and assign next move."),
+      notes: String(payload.notes ?? ""),
+      lastUpdatedAt: String(payload.updatedAt ?? log.created_at ?? new Date().toISOString()),
+    });
+  }
+
+  return logs
+    .filter((log) => log.action_type === "investor_interest")
+    .map((log) => {
+      const payload = log.payload ?? {};
+      const investorEmail = String(payload.investorEmail ?? "").trim();
+      const followUp = followUps.get(investorEmail.toLowerCase());
+      return {
+        id: String(log.id),
+        investorName: String(payload.investorName ?? "Unknown investor"),
+        investorEmail,
+        interestType: String(payload.interestType ?? "Interested"),
+        notes: String(payload.notes ?? ""),
+        submittedAt: String(payload.submittedAt ?? log.created_at ?? new Date().toISOString()),
+        followUpStatus: followUp?.followUpStatus ?? "New response",
+        followUpOwner: followUp?.followUpOwner ?? "Unassigned",
+        nextStep: followUp?.nextStep ?? "Review response and determine walkthrough or packet follow-up.",
+        lastUpdatedAt: followUp?.lastUpdatedAt ?? String(log.created_at ?? new Date().toISOString()),
+      };
+    })
+    .sort((left, right) => Date.parse(right.submittedAt) - Date.parse(left.submittedAt));
 }
 
 export async function createDealFromSellerLead(input: CreateDealFromSellerLeadInput) {
@@ -836,6 +973,97 @@ export async function saveInvestorInterest(input: SaveInvestorInterestInput) {
   return { ok: true as const };
 }
 
+export async function saveDealStageUpdate(input: SaveDealStageUpdateInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const [leadUpdate, conversationUpdate, logInsert] = await Promise.all([
+    supabase
+      .from("deal_leads")
+      .update({
+        status: input.status,
+        recommended_next_action: input.nextAction,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.dealId),
+    supabase
+      .from("seller_conversations")
+      .update({
+        next_action: input.nextAction,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "stage_update",
+      payload: {
+        status: input.status,
+        nextAction: input.nextAction,
+        note: input.note,
+        updatedAt: new Date().toISOString(),
+      },
+    }),
+  ]);
+
+  const error = leadUpdate.error?.message || conversationUpdate.error?.message || logInsert.error?.message;
+  if (error) {
+    return { ok: false as const, error };
+  }
+
+  return { ok: true as const };
+}
+
+export async function saveInvestorFollowUp(input: SaveInvestorFollowUpInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const normalizedStatus = input.followUpStatus.trim() || "Investor follow-up";
+  const nextAction =
+    input.nextStep.trim()
+    || `Continue investor follow-up with ${input.investorEmail} under ${normalizedStatus}.`;
+
+  const [leadUpdate, conversationUpdate, logInsert] = await Promise.all([
+    supabase
+      .from("deal_leads")
+      .update({
+        status: "Buyer Follow-Up",
+        recommended_next_action: nextAction,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.dealId),
+    supabase
+      .from("seller_conversations")
+      .update({
+        next_action: `Buyer follow-up active: ${nextAction}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "investor_follow_up",
+      payload: {
+        investorEmail: input.investorEmail,
+        followUpStatus: normalizedStatus,
+        followUpOwner: input.followUpOwner,
+        nextStep: nextAction,
+        notes: input.notes,
+        updatedAt: new Date().toISOString(),
+      },
+    }),
+  ]);
+
+  const error = leadUpdate.error?.message || conversationUpdate.error?.message || logInsert.error?.message;
+  if (error) {
+    return { ok: false as const, error };
+  }
+
+  return { ok: true as const };
+}
+
 export async function getDealEngineDealDetail(dealId: string): Promise<DealEngineDealDetail | null> {
   const [leads, sellerSignals, buyerSignals, drafts] = await Promise.all([
     listDealEngineLeads(100),
@@ -868,6 +1096,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       body: draft.body,
       createdAt: draft.createdAt,
     }));
+  let investorResponses: DealEngineDealDetail["investorResponses"] = [];
   let packet = buildFallbackPacket(
     lead,
     contractDraft,
@@ -914,6 +1143,16 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
         requestWalkthroughLabel: liveRoom.request_walkthrough_label ?? room.requestWalkthroughLabel,
       };
     }
+
+    const { data: dispositionData } = await supabase
+      .from("disposition_logs")
+      .select("id,action_type,payload,created_at")
+      .eq("lead_id", dealId)
+      .in("action_type", ["investor_interest", "investor_follow_up"])
+      .order("created_at", { ascending: false });
+    investorResponses = dispositionData?.length
+      ? parseDispositionLogs(dispositionData as DispositionLogRow[])
+      : [];
   }
 
   return {
@@ -924,6 +1163,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     room,
     packet,
     relatedDrafts,
+    investorResponses,
   };
 }
 
@@ -966,6 +1206,7 @@ export async function getDealEngineWorkspaceSnapshot(): Promise<DealEngineWorksp
         ? `${offerReadyCount} offer-ready / ${negotiatingCount} negotiating`
         : "analysis lane ready for first live handoff",
     ],
+    stageBoard: buildStageBoard(leads),
     sellerSignals,
     buyerSignals,
     contractDrafts: buildContractDrafts(leads, sellerSignals, buyerSignals),

@@ -453,6 +453,86 @@ type EdgecombeParcelAttributes = {
   deeddatestr?: string;
 };
 
+type AsheParcelAttributes = {
+  ParcelNumb?: string;
+  GPIN?: string;
+  Name1?: string;
+  Address1?: string;
+  Address2?: string;
+  Address3?: string;
+  City?: string;
+  State?: string;
+  ZipCode?: string;
+  LegalLandU?: string;
+  LegalLandT?: string;
+  DeedDate?: number;
+  DeedBook?: string;
+  DeedPage?: string;
+  SalePrice?: number;
+  SaleYear?: number;
+  ParcelProp?: string;
+  LegalDescr?: string;
+  ParcelLand?: number;
+  ParcelBuil?: number;
+  ParcelObxf?: number;
+  TotalMarke?: number;
+  TotalAsses?: number;
+  OwnershipT?: string;
+};
+
+type AveryParcelAttributes = {
+  PIN?: string;
+  OWNER_NAME?: string;
+  NAME_1?: string;
+  ADDR_1?: string;
+  ADDR_2?: string;
+  ADDR_3?: string;
+  CITY?: string;
+  STATE?: string;
+  ZIP?: string;
+  ADDRESS?: string;
+  DEED_DATE?: number;
+  DEEDBOOK?: string;
+  DEEDPAGE?: string;
+  SALEPRICE?: number;
+  LAND_VALU?: number;
+  BUILD_VALU?: number;
+  TOTAL_VALU?: number;
+  AYB?: number;
+  ACREAGE?: number;
+  LEGAL_1?: string;
+  LEGAL_2?: string;
+  PARNUM?: string;
+  ACCT_NO?: string;
+  TAX_YEAR?: string;
+};
+
+type BurkeParcelAttributes = {
+  PARCEL_PK?: string;
+  PIN?: string;
+  PIN_EXT?: string;
+  LOCATION_ADDR?: string;
+  LAND_CLASS?: string;
+  DEEDED_ACRES?: number;
+  PROPERTY_OWNER?: string;
+  OWNER_MAIL_1?: string;
+  OWNER_MAIL_2?: string;
+  OWNER_MAIL_3?: string;
+  OWNER_MAIL_CITY?: string;
+  OWNER_MAIL_STATE?: string;
+  OWNER_MAIL_ZIP?: string;
+  TOTAL_LAND_VALUE_ASSESSED?: number;
+  TOTAL_BLDG_VALUE_ASSESSED?: number;
+  LAND_USE_VALUE?: number;
+  DEED_DATE?: number;
+  DEED_BOOK?: string;
+  DEED_PAGE?: string;
+  PKG_SALE_DATE?: number;
+  PKG_SALE_PRICE?: number;
+  LAND_SALE_DATE?: number;
+  LAND_SALE_PRICE?: number;
+};
+
 type XlsxSharedStrings = string[];
 
 type BuyerCountyRegistryRow = {
@@ -2644,6 +2724,230 @@ async function fetchEdgecombeCountyAbsenteeRows(input: LiveSellerSearchInput): P
   return rankSellerRows(rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" }))).slice(0, requestedLimit);
 }
 
+async function fetchAsheCountyAbsenteeRows(input: LiveSellerSearchInput): Promise<SellerImportRow[]> {
+  const requestedLimit = Math.min(Math.max(input.limit ?? 25, 1), 100);
+  const endpoint = (await getBuyerCountyRegistrySource("Ashe"))?.source_url?.split("?")[0];
+  if (!endpoint) throw new Error("Ashe County source row is missing a live source_url.");
+  const params = new URLSearchParams({
+    where: "DeedDate IS NOT NULL",
+    outFields: "ParcelNumb,GPIN,Name1,Address1,Address2,Address3,City,State,ZipCode,LegalLandU,LegalLandT,DeedDate,DeedBook,DeedPage,SalePrice,SaleYear,ParcelProp,LegalDescr,ParcelLand,ParcelBuil,ParcelObxf,TotalMarke,TotalAsses,OwnershipT",
+    returnGeometry: "false",
+    orderByFields: "DeedDate DESC",
+    resultRecordCount: String(Math.min(Math.max(requestedLimit * 4, 100), 500)),
+    f: "json",
+  });
+  const payload = await fetch(`${endpoint}?${params.toString()}`, { cache: "no-store" })
+    .then((response) => {
+      if (!response.ok) throw new Error(`Ashe absentee fetch failed with status ${response.status}.`);
+      return response.json();
+    }) as { error?: { message?: string }; features?: Array<{ attributes?: AsheParcelAttributes }> };
+  if (payload.error?.message) throw new Error(payload.error.message);
+
+  const cityFilter = input.city?.trim().toUpperCase();
+  const rows = (payload.features ?? [])
+    .map((feature) => feature.attributes ?? {})
+    .flatMap((attributes) => {
+      const propertyAddress = normalizeArcGisText(attributes.ParcelProp || attributes.LegalDescr);
+      const ownerName = normalizeArcGisText(attributes.Name1);
+      const mailingAddress = [
+        normalizeArcGisText(attributes.Address1),
+        normalizeArcGisText(attributes.Address2),
+        normalizeArcGisText(attributes.Address3),
+        normalizeArcGisText(attributes.City),
+        normalizeArcGisText(attributes.State),
+        normalizeArcGisText(attributes.ZipCode),
+      ].filter(Boolean).join(", ");
+      const parcelId = normalizeArcGisText(attributes.GPIN || attributes.ParcelNumb);
+      const propertyCity = input.city?.trim() || inferCityFromPropertyAddress(propertyAddress, "Ashe County");
+      const absentee = normalizeAddressForComparison(propertyAddress) !== normalizeAddressForComparison(normalizeArcGisText(attributes.Address1));
+      if (!propertyAddress || !ownerName || !mailingAddress || !parcelId || !absentee) return [];
+
+      return [{
+        property_address: propertyAddress,
+        parcel_id: parcelId,
+        county: "Ashe",
+        city: propertyCity,
+        zip_code: normalizeArcGisText(attributes.ZipCode),
+        property_type: normalizeArcGisText(attributes.LegalLandU || attributes.LegalLandT || attributes.OwnershipT) || "Property",
+        assessed_value: attributes.TotalAsses ? String(Math.round(attributes.TotalAsses)) : "",
+        last_sale_date: normalizeArcGisDate(attributes.DeedDate),
+        last_sale_price: attributes.SalePrice ? String(Math.round(attributes.SalePrice)) : "",
+        owner_name: ownerName,
+        owner_mailing_address: mailingAddress,
+        owner_occupancy_status: isCorporateOwnerName(ownerName) ? "Absentee / Corporate" : "Absentee",
+        tax_delinquent: "false",
+        foreclosure: "false",
+        probate: "false",
+        vacant: !attributes.ParcelBuil ? "true" : "false",
+        code_violation: "false",
+        years_owned: yearsSince(attributes.DeedDate),
+        estimated_equity: "",
+        multiple_properties: "false",
+        source_name: "Ashe County Absentee Owners",
+        deed_reference: [normalizeArcGisText(attributes.DeedBook), normalizeArcGisText(attributes.DeedPage)].filter(Boolean).join("/"),
+      } satisfies SellerImportRow];
+    })
+    .filter((row) => !cityFilter || row.city.toUpperCase().includes(cityFilter) || row.property_address.toUpperCase().includes(cityFilter));
+
+  const ownerCounts = rows.reduce<Record<string, number>>((counts, row) => {
+    const key = row.owner_name.trim().toUpperCase();
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  return rankSellerRows(rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" }))).slice(0, requestedLimit);
+}
+
+async function fetchAveryCountyAbsenteeRows(input: LiveSellerSearchInput): Promise<SellerImportRow[]> {
+  const requestedLimit = Math.min(Math.max(input.limit ?? 25, 1), 100);
+  const endpoint = (await getBuyerCountyRegistrySource("Avery"))?.source_url?.split("?")[0];
+  if (!endpoint) throw new Error("Avery County source row is missing a live source_url.");
+  const params = new URLSearchParams({
+    where: "DEED_DATE IS NOT NULL AND ADDRESS IS NOT NULL",
+    outFields: "PIN,OWNER_NAME,NAME_1,ADDR_1,ADDR_2,ADDR_3,CITY,STATE,ZIP,ADDRESS,DEED_DATE,DEEDBOOK,DEEDPAGE,SALEPRICE,LAND_VALU,BUILD_VALU,TOTAL_VALU,AYB,ACREAGE,LEGAL_1,LEGAL_2,PARNUM,ACCT_NO,TAX_YEAR",
+    returnGeometry: "false",
+    orderByFields: "DEED_DATE DESC",
+    resultRecordCount: String(Math.min(Math.max(requestedLimit * 4, 100), 500)),
+    f: "json",
+  });
+  const payload = await fetch(`${endpoint}?${params.toString()}`, { cache: "no-store" })
+    .then((response) => {
+      if (!response.ok) throw new Error(`Avery absentee fetch failed with status ${response.status}.`);
+      return response.json();
+    }) as { error?: { message?: string }; features?: Array<{ attributes?: AveryParcelAttributes }> };
+  if (payload.error?.message) throw new Error(payload.error.message);
+
+  const cityFilter = input.city?.trim().toUpperCase();
+  const rows = (payload.features ?? [])
+    .map((feature) => feature.attributes ?? {})
+    .flatMap((attributes) => {
+      const propertyAddress = normalizeArcGisText(attributes.ADDRESS);
+      const ownerName = normalizeArcGisText(attributes.OWNER_NAME || attributes.NAME_1);
+      const mailingAddress = [
+        normalizeArcGisText(attributes.ADDR_1),
+        normalizeArcGisText(attributes.ADDR_2),
+        normalizeArcGisText(attributes.ADDR_3),
+        normalizeArcGisText(attributes.CITY),
+        normalizeArcGisText(attributes.STATE),
+        normalizeArcGisText(attributes.ZIP),
+      ].filter(Boolean).join(", ");
+      const parcelId = normalizeArcGisText(attributes.PIN || attributes.PARNUM || attributes.ACCT_NO);
+      const propertyCity = input.city?.trim() || inferCityFromPropertyAddress(propertyAddress, "Avery County");
+      const absentee = normalizeAddressForComparison(propertyAddress) !== normalizeAddressForComparison(normalizeArcGisText(attributes.ADDR_1));
+      if (!propertyAddress || !ownerName || !mailingAddress || !parcelId || !absentee) return [];
+
+      return [{
+        property_address: propertyAddress,
+        parcel_id: parcelId,
+        county: "Avery",
+        city: propertyCity,
+        zip_code: normalizeArcGisText(attributes.ZIP),
+        property_type: normalizeArcGisText(attributes.LEGAL_1 || attributes.LEGAL_2) || "Property",
+        assessed_value: attributes.TOTAL_VALU ? String(Math.round(attributes.TOTAL_VALU)) : "",
+        last_sale_date: normalizeArcGisDate(attributes.DEED_DATE),
+        last_sale_price: attributes.SALEPRICE ? String(Math.round(attributes.SALEPRICE)) : "",
+        owner_name: ownerName,
+        owner_mailing_address: mailingAddress,
+        owner_occupancy_status: isCorporateOwnerName(ownerName) ? "Absentee / Corporate" : "Absentee",
+        tax_delinquent: "false",
+        foreclosure: "false",
+        probate: "false",
+        vacant: !attributes.BUILD_VALU ? "true" : "false",
+        code_violation: "false",
+        years_owned: yearsSince(attributes.DEED_DATE),
+        estimated_equity: "",
+        multiple_properties: "false",
+        source_name: "Avery County Absentee Owners",
+        deed_reference: [normalizeArcGisText(attributes.DEEDBOOK), normalizeArcGisText(attributes.DEEDPAGE)].filter(Boolean).join("/"),
+        year_built: attributes.AYB ? String(attributes.AYB) : "",
+      } satisfies SellerImportRow];
+    })
+    .filter((row) => !cityFilter || row.city.toUpperCase().includes(cityFilter) || row.property_address.toUpperCase().includes(cityFilter));
+
+  const ownerCounts = rows.reduce<Record<string, number>>((counts, row) => {
+    const key = row.owner_name.trim().toUpperCase();
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  return rankSellerRows(rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" }))).slice(0, requestedLimit);
+}
+
+async function fetchBurkeCountyAbsenteeRows(input: LiveSellerSearchInput): Promise<SellerImportRow[]> {
+  const requestedLimit = Math.min(Math.max(input.limit ?? 25, 1), 100);
+  const endpoint = (await getBuyerCountyRegistrySource("Burke"))?.source_url?.split("?")[0];
+  if (!endpoint) throw new Error("Burke County source row is missing a live source_url.");
+  const params = new URLSearchParams({
+    where: "PKG_SALE_DATE IS NOT NULL AND LOCATION_ADDR IS NOT NULL",
+    outFields: "PARCEL_PK,PIN,PIN_EXT,LOCATION_ADDR,LAND_CLASS,DEEDED_ACRES,PROPERTY_OWNER,OWNER_MAIL_1,OWNER_MAIL_2,OWNER_MAIL_3,OWNER_MAIL_CITY,OWNER_MAIL_STATE,OWNER_MAIL_ZIP,TOTAL_LAND_VALUE_ASSESSED,TOTAL_BLDG_VALUE_ASSESSED,LAND_USE_VALUE,DEED_DATE,DEED_BOOK,DEED_PAGE,PKG_SALE_DATE,PKG_SALE_PRICE,LAND_SALE_DATE,LAND_SALE_PRICE",
+    returnGeometry: "false",
+    orderByFields: "PKG_SALE_DATE DESC",
+    resultRecordCount: String(Math.min(Math.max(requestedLimit * 4, 100), 500)),
+    f: "json",
+  });
+  const payload = await fetch(`${endpoint}?${params.toString()}`, { cache: "no-store" })
+    .then((response) => {
+      if (!response.ok) throw new Error(`Burke absentee fetch failed with status ${response.status}.`);
+      return response.json();
+    }) as { error?: { message?: string }; features?: Array<{ attributes?: BurkeParcelAttributes }> };
+  if (payload.error?.message) throw new Error(payload.error.message);
+
+  const cityFilter = input.city?.trim().toUpperCase();
+  const rows = (payload.features ?? [])
+    .map((feature) => feature.attributes ?? {})
+    .flatMap((attributes) => {
+      const propertyAddress = normalizeArcGisText(attributes.LOCATION_ADDR);
+      const ownerName = normalizeArcGisText(attributes.PROPERTY_OWNER);
+      const mailingAddress = [
+        normalizeArcGisText(attributes.OWNER_MAIL_1),
+        normalizeArcGisText(attributes.OWNER_MAIL_2),
+        normalizeArcGisText(attributes.OWNER_MAIL_3),
+        normalizeArcGisText(attributes.OWNER_MAIL_CITY),
+        normalizeArcGisText(attributes.OWNER_MAIL_STATE),
+        normalizeArcGisText(attributes.OWNER_MAIL_ZIP),
+      ].filter(Boolean).join(", ");
+      const parcelId = normalizeArcGisText(attributes.PIN || attributes.PIN_EXT || attributes.PARCEL_PK);
+      const propertyCity = input.city?.trim() || inferCityFromPropertyAddress(propertyAddress, "Burke County");
+      const absentee = normalizeAddressForComparison(propertyAddress) !== normalizeAddressForComparison(normalizeArcGisText(attributes.OWNER_MAIL_1));
+      if (!propertyAddress || !ownerName || !mailingAddress || !parcelId || !absentee) return [];
+
+      return [{
+        property_address: propertyAddress,
+        parcel_id: parcelId,
+        county: "Burke",
+        city: propertyCity,
+        zip_code: normalizeArcGisText(attributes.OWNER_MAIL_ZIP),
+        property_type: normalizeArcGisText(attributes.LAND_CLASS) || "Property",
+        assessed_value: attributes.TOTAL_LAND_VALUE_ASSESSED || attributes.TOTAL_BLDG_VALUE_ASSESSED
+          ? String(Math.round((attributes.TOTAL_LAND_VALUE_ASSESSED ?? 0) + (attributes.TOTAL_BLDG_VALUE_ASSESSED ?? 0)))
+          : "",
+        last_sale_date: normalizeArcGisDate(attributes.PKG_SALE_DATE || attributes.DEED_DATE || attributes.LAND_SALE_DATE),
+        last_sale_price: attributes.PKG_SALE_PRICE || attributes.LAND_SALE_PRICE
+          ? String(Math.round(attributes.PKG_SALE_PRICE ?? attributes.LAND_SALE_PRICE ?? 0))
+          : "",
+        owner_name: ownerName,
+        owner_mailing_address: mailingAddress,
+        owner_occupancy_status: isCorporateOwnerName(ownerName) ? "Absentee / Corporate" : "Absentee",
+        tax_delinquent: "false",
+        foreclosure: "false",
+        probate: "false",
+        vacant: !attributes.TOTAL_BLDG_VALUE_ASSESSED ? "true" : "false",
+        code_violation: "false",
+        years_owned: yearsSince(attributes.PKG_SALE_DATE || attributes.DEED_DATE || attributes.LAND_SALE_DATE),
+        estimated_equity: "",
+        multiple_properties: "false",
+        source_name: "Burke County Absentee Owners",
+        deed_reference: [normalizeArcGisText(attributes.DEED_BOOK), normalizeArcGisText(attributes.DEED_PAGE)].filter(Boolean).join("/"),
+      } satisfies SellerImportRow];
+    })
+    .filter((row) => !cityFilter || row.city.toUpperCase().includes(cityFilter) || row.property_address.toUpperCase().includes(cityFilter));
+
+  const ownerCounts = rows.reduce<Record<string, number>>((counts, row) => {
+    const key = row.owner_name.trim().toUpperCase();
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  return rankSellerRows(rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" }))).slice(0, requestedLimit);
+}
+
 async function fetchMecklenburgDelinquentRows(input: LiveSellerSearchInput): Promise<SellerImportRow[]> {
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const [individualRows, businessRows] = await Promise.all([
@@ -2753,6 +3057,12 @@ export async function runSellerLiveSearch(input: LiveSellerSearchInput) {
       ? await fetchNashCountyAbsenteeRows({ sourceKey, county, city, limit })
     : sourceKey === "edgecombe_county_absentee_owners"
       ? await fetchEdgecombeCountyAbsenteeRows({ sourceKey, county, city, limit })
+    : sourceKey === "ashe_county_absentee_owners"
+      ? await fetchAsheCountyAbsenteeRows({ sourceKey, county, city, limit })
+    : sourceKey === "avery_county_absentee_owners"
+      ? await fetchAveryCountyAbsenteeRows({ sourceKey, county, city, limit })
+    : sourceKey === "burke_county_absentee_owners"
+      ? await fetchBurkeCountyAbsenteeRows({ sourceKey, county, city, limit })
     : await fetchNcOneMapAbsenteeRows({
         sourceKey,
         county,
@@ -2802,6 +3112,12 @@ export async function runSellerLiveSearch(input: LiveSellerSearchInput) {
               ? "buyer_registry:Nash"
             : sourceKey === "edgecombe_county_absentee_owners"
               ? "buyer_registry:Edgecombe"
+            : sourceKey === "ashe_county_absentee_owners"
+              ? "buyer_registry:Ashe"
+            : sourceKey === "avery_county_absentee_owners"
+              ? "buyer_registry:Avery"
+            : sourceKey === "burke_county_absentee_owners"
+              ? "buyer_registry:Burke"
         : "https://services.arcgis.com/04HiymDgLlsbhaV4/arcgis/rest/services/NCOneMap_Parcels/FeatureServer/79";
   const result = await importSellerRows({
     rows,

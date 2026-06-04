@@ -102,6 +102,49 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
         />
       </Panel>
 
+      <Panel
+        eyebrow="Pipeline Board"
+        title="Stage-by-stage deal movement"
+        description="This is the operator view of where every active opportunity sits right now, from fresh intake through investor follow-up."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          {snapshot.stageBoard.map((lane) => (
+            <div key={lane.label} className="brand-card p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-lg font-semibold text-white">{lane.label}</div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{lane.detail}</div>
+                </div>
+                <StatusPill
+                  tone={lane.count ? "good" : "neutral"}
+                  label={String(lane.count).padStart(2, "0")}
+                />
+              </div>
+              <div className="mt-4 space-y-3">
+                {lane.deals.length ? (
+                  lane.deals.slice(0, 3).map((lead) => (
+                    <Link
+                      key={lead.id}
+                      href={`/workspace/deal-engine/${encodeURIComponent(lead.id)}`}
+                      className="block rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]"
+                    >
+                      <div className="text-sm font-semibold text-white">{lead.propertyAddress}</div>
+                      <div className="mt-1 text-xs text-[var(--copy-muted)]">
+                        {lead.id} / {lead.status}
+                      </div>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3 text-sm text-[var(--copy-soft)]">
+                    No deals are parked in this lane yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
       <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
         <Panel
           eyebrow="Pipeline"
