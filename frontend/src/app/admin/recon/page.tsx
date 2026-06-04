@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 
+import { DivisionWatermark } from "@/components/division-watermark";
 import { MarketingShell } from "@/components/marketing-shell";
+import { brandAssets } from "@/lib/brand-assets";
+import { divisionThemeStyle } from "@/lib/division-theme";
 import { getReconAdminMetrics, type ReconAdminMetrics } from "@/lib/recon-engine-server";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +23,11 @@ export default async function ReconAdminPage() {
 
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6">
+      <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
+      <div
+        className="theme-recon-engine mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6"
+        style={divisionThemeStyle("recon-engine")}
+      >
         <section className="brand-panel px-6 py-8">
           <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Admin / Recon Engine</p>
           <h1 className="brand-accent-text mt-3 text-4xl font-black tracking-tight">Recon Analytics</h1>

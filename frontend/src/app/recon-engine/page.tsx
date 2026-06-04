@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -8,6 +7,7 @@ import { MarketingShell } from "@/components/marketing-shell";
 import { ReconCheckoutButton } from "@/components/recon-checkout-button";
 import { ReconEngineLeadForm } from "@/components/recon-engine-lead-form";
 import { brandAssets } from "@/lib/brand-assets";
+import { divisionThemeStyle } from "@/lib/division-theme";
 import { reconEngineBrand, reconPillars, reconPlans, reconIndustries } from "@/lib/recon-engine";
 
 export const metadata: Metadata = {
@@ -22,12 +22,7 @@ export default function ReconEnginePage() {
       <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] space-y-10 px-4 py-16 lg:px-6"
-        style={{
-          "--project-accent": "#D4AF37",
-          "--project-glow": "rgba(139,92,246,0.34)",
-          "--project-surface": "rgba(212,175,55,0.12)",
-          "--project-edge": "rgba(139,92,246,0.40)",
-        } as CSSProperties}
+        style={divisionThemeStyle("recon-engine")}
       >
 
         {/* ── HERO ───────────────────────────────────────────────── */}
