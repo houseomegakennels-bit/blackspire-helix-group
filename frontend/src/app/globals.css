@@ -2695,20 +2695,20 @@ body::after {
   100% { top: 100%;   opacity: 0; }
 }
 
-/* ── DEAL ENGINE — Teal contract-targeting radar ────────── */
+/* ── DEAL ENGINE — Cyan/teal contract-targeting radar (#3FB6C9) ─── */
 .theme-deal-engine .motif-center-glow {
   top: 50%;
   left: 50%;
   width: 500px;
   height: 500px;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle, hsl(190 100% 60% / 0.20), transparent 68%);
+  background: radial-gradient(circle, hsl(188 58% 56% / 0.20), transparent 68%);
   filter: blur(20px);
 }
 .theme-deal-engine .motif-ring {
   top: 50%;
   left: 50%;
-  border-color: hsl(190 100% 60% / 0.46);
+  border-color: hsl(188 58% 56% / 0.46);
   opacity: 0.3;
 }
 .theme-deal-engine .motif-ring-1 {
@@ -2739,16 +2739,16 @@ body::after {
   background: conic-gradient(
     from 0deg,
     transparent 0deg,
-    hsl(190 100% 60% / 0.30) 22deg,
-    hsl(190 100% 60% / 0.07) 44deg,
+    hsl(188 58% 56% / 0.30) 22deg,
+    hsl(188 58% 56% / 0.07) 44deg,
     transparent 58deg
   );
   animation: dealSweep 6s linear infinite;
 }
 .theme-deal-engine .motif-grid {
   background:
-    repeating-linear-gradient(90deg, transparent 0 50px, hsl(190 100% 60% / 0.07) 50px 51px),
-    repeating-linear-gradient(0deg, transparent 0 50px, hsl(190 100% 60% / 0.07) 50px 51px);
+    repeating-linear-gradient(90deg, transparent 0 50px, hsl(188 58% 56% / 0.07) 50px 51px),
+    repeating-linear-gradient(0deg, transparent 0 50px, hsl(188 58% 56% / 0.07) 50px 51px);
   mask-image: radial-gradient(circle at 50% 50%, black, transparent 72%);
 }
 @keyframes dealRingPulse {
@@ -2760,14 +2760,14 @@ body::after {
   to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
-/* ── SELLER ENGINE — Gold pressure-signal sonar ─────────── */
+/* ── SELLER ENGINE — Crimson pressure-signal sonar w/ silver beam (#E33A32) ─── */
 .theme-seller-engine .motif-center-glow {
   top: 50%;
   left: 50%;
   width: 460px;
   height: 460px;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle, hsl(44 72% 58% / 0.22), hsl(38 80% 50% / 0.10) 44%, transparent 68%);
+  background: radial-gradient(circle, hsl(4 78% 56% / 0.24), hsl(0 82% 48% / 0.10) 44%, transparent 68%);
   filter: blur(18px);
   animation: sellerGlowBreathe 4s ease-in-out infinite;
 }
@@ -2776,7 +2776,7 @@ body::after {
   left: 50%;
   width: 560px;
   height: 560px;
-  border-color: hsl(44 72% 60% / 0.55);
+  border-color: hsl(4 80% 58% / 0.55);
   opacity: 0;
 }
 .theme-seller-engine .motif-ring-1 {
@@ -2796,20 +2796,20 @@ body::after {
   background: linear-gradient(
     90deg,
     transparent,
-    hsl(44 72% 72% / 0.80) 28%,
-    hsl(44 90% 88% / 1) 50%,
-    hsl(44 72% 72% / 0.80) 72%,
+    hsl(4 82% 64% / 0.80) 28%,
+    hsl(0 0% 94% / 1) 50%,
+    hsl(4 82% 64% / 0.80) 72%,
     transparent
   );
   box-shadow:
-    0 0 16px hsl(44 72% 60% / 0.45),
-    0 0 44px hsl(44 72% 60% / 0.16);
+    0 0 16px hsl(4 80% 58% / 0.45),
+    0 0 44px hsl(4 80% 58% / 0.16);
   animation: sellerScanBeam 5.5s linear infinite;
 }
 .theme-seller-engine .motif-grid {
   background:
-    repeating-linear-gradient(90deg, transparent 0 56px, hsl(44 72% 58% / 0.07) 56px 57px),
-    repeating-linear-gradient(0deg, transparent 0 56px, hsl(44 72% 58% / 0.07) 56px 57px);
+    repeating-linear-gradient(90deg, transparent 0 56px, hsl(4 78% 56% / 0.07) 56px 57px),
+    repeating-linear-gradient(0deg, transparent 0 56px, hsl(4 78% 56% / 0.07) 56px 57px);
   mask-image: radial-gradient(circle at 50% 50%, black, transparent 72%);
 }
 @keyframes sellerGlowBreathe {
