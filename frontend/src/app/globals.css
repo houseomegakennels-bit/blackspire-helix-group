@@ -208,8 +208,9 @@ body::after {
   position: relative;
   border-radius: 28px;
   background:
-    linear-gradient(180deg, hsl(0 0% 6% / 0.98), hsl(18 24% 8% / 0.98)),
-    linear-gradient(135deg, hsl(30 100% 50% / 0.1), transparent 45%);
+    linear-gradient(135deg, var(--project-surface, hsl(30 100% 50% / 0.1)), transparent 48%),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--project-accent, #d4af37) 13%, transparent), transparent 54%),
+    linear-gradient(180deg, hsl(0 0% 6% / 0.98), hsl(0 0% 4.5% / 0.98));
   border: 1px solid var(--line);
   box-shadow:
     inset 0 1px 0 hsl(34 100% 72% / 0.06),
@@ -230,8 +231,9 @@ body::after {
   position: relative;
   border-radius: 22px;
   background:
-    linear-gradient(180deg, hsl(0 0% 7% / 0.95), hsl(24 20% 10% / 0.95)),
-    radial-gradient(circle at top, hsl(31 100% 50% / 0.11), transparent 55%);
+    radial-gradient(circle at top, var(--project-surface, hsl(31 100% 50% / 0.11)), transparent 58%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--project-accent, #d4af37) 9%, transparent), transparent 52%),
+    linear-gradient(180deg, hsl(0 0% 7% / 0.95), hsl(0 0% 5% / 0.95));
   border: 1px solid var(--line);
   box-shadow:
     inset 0 1px 0 hsl(32 100% 76% / 0.07),
@@ -381,7 +383,7 @@ body::after {
 
 .brand-table-head {
   background:
-    linear-gradient(180deg, hsl(0 0% 7% / 0.98), hsl(22 30% 10% / 0.98));
+    linear-gradient(180deg, hsl(0 0% 7% / 0.98), color-mix(in srgb, var(--project-accent, #d4af37) 10%, hsl(0 0% 6% / 0.98)));
   color: var(--copy-soft);
 }
 
@@ -1772,15 +1774,19 @@ body::after {
   --seller-line: hsl(4 74% 58% / 0.20);
   --seller-line-strong: hsl(4 82% 64% / 0.5);
   background:
-    radial-gradient(circle at 12% 8%, hsl(4 72% 28% / 0.26), transparent 22%),
-    radial-gradient(circle at 86% 10%, hsl(208 18% 40% / 0.12), transparent 24%),
-    linear-gradient(180deg, hsl(216 22% 3%), hsl(216 24% 2%) 42%, hsl(4 24% 4%));
+    radial-gradient(circle at 16% 2%, hsl(4 80% 42% / 0.30), transparent 40%),
+    radial-gradient(circle at 86% 8%, hsl(208 20% 52% / 0.16), transparent 38%),
+    radial-gradient(circle at 50% 122%, hsl(4 70% 34% / 0.20), transparent 52%),
+    linear-gradient(180deg, hsl(218 24% 4%) 0%, hsl(216 26% 3%) 44%, hsl(4 30% 5%) 100%);
 }
 .seller-panel, .seller-card {
   position: relative;
   border: 1px solid var(--seller-line);
-  background: linear-gradient(155deg, hsl(214 22% 7% / .98), hsl(40 22% 6% / .96));
-  box-shadow: inset 0 1px 0 hsl(45 90% 88% / .04), 0 22px 50px hsl(0 0% 0% / .4);
+  background:
+    linear-gradient(135deg, hsl(4 70% 40% / .14), transparent 50%),
+    radial-gradient(circle at 100% 0%, hsl(208 18% 60% / .10), transparent 54%),
+    linear-gradient(155deg, hsl(214 22% 7% / .98), hsl(4 26% 5% / .97));
+  box-shadow: inset 0 1px 0 hsl(208 30% 88% / .05), 0 22px 50px hsl(0 0% 0% / .4);
 }
 .seller-panel { border-radius: 26px; }
 .seller-card { border-radius: 18px; }

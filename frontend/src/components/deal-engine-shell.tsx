@@ -25,7 +25,7 @@ const navItems = [
 export function DealEngineShell({ children }: { children: ReactNode }) {
   return (
     <main
-      className="theme-deal-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.12),transparent_28%),radial-gradient(circle_at_80%_16%,hsl(44_73%_62%/.10),transparent_24%),linear-gradient(180deg,hsl(224_24%_4%)_0%,hsl(213_20%_4%)_24%,hsl(218_20%_6%)_100%)] text-foreground"
+      className="theme-deal-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_-2%,hsl(190_92%_56%/.20),transparent_42%),radial-gradient(circle_at_88%_8%,hsl(44_82%_60%/.14),transparent_38%),radial-gradient(circle_at_50%_120%,hsl(196_72%_34%/.16),transparent_52%),linear-gradient(180deg,hsl(208_34%_6%)_0%,hsl(206_32%_4%)_46%,hsl(214_30%_5%)_100%)] text-foreground"
     >
       <DivisionWatermark logoSrc={brandAssets.dealEngine.logo} />
       <div className="relative z-10 mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-5">
