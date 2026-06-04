@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 
 import { Metric, Panel, StatusPill } from "@/components/buyer-shell";
 import { DealEngineShell } from "@/components/deal-engine-shell";
@@ -11,6 +11,7 @@ import type { DealEngineDealDetail } from "@/lib/deal-engine-server";
 function statusTone(status: string) {
   if (status === "Negotiating") return "warn";
   if (status === "Offer Ready" || status === "Under Contract") return "good";
+  if (status === "Buyer Follow-Up") return "active";
   return "neutral";
 }
 
@@ -42,8 +43,34 @@ export function DealEngineDealDetailView({
   const [contactInstructions, setContactInstructions] = useState(detail.packet.contactInstructions);
   const [deadlineToSubmitOffer, setDeadlineToSubmitOffer] = useState(detail.packet.deadlineToSubmitOffer);
   const [comps, setComps] = useState(detail.packet.comps.join("\n"));
+  const [stageStatus, setStageStatus] = useState(detail.lead.status);
+  const [stageNextAction, setStageNextAction] = useState(detail.lead.nextAction);
+  const [stageNote, setStageNote] = useState("");
+  const [selectedInvestorEmail, setSelectedInvestorEmail] = useState(
+    detail.investorResponses[0]?.investorEmail ?? "",
+  );
+  const [followUpStatus, setFollowUpStatus] = useState(
+    detail.investorResponses[0]?.followUpStatus ?? "Response received",
+  );
+  const [followUpOwner, setFollowUpOwner] = useState(
+    detail.investorResponses[0]?.followUpOwner ?? "Blackspire operator",
+  );
+  const [followUpNextStep, setFollowUpNextStep] = useState(
+    detail.investorResponses[0]?.nextStep ?? "Reach out and confirm walkthrough or packet follow-up.",
+  );
+  const [followUpNotes, setFollowUpNotes] = useState(detail.investorResponses[0]?.notes ?? "");
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"contract" | "buyer" | "packet" | null>(null);
+  const [working, setWorking] = useState<"buyer" | "contract" | "packet" | "response" | "stage" | null>(null);
+
+  function syncInvestorFollowUp(email: string) {
+    const investor = detail.investorResponses.find((item) => item.investorEmail === email);
+    setSelectedInvestorEmail(email);
+    if (!investor) return;
+    setFollowUpStatus(investor.followUpStatus);
+    setFollowUpOwner(investor.followUpOwner);
+    setFollowUpNextStep(investor.nextStep);
+    setFollowUpNotes(investor.notes);
+  }
 
   async function saveContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,7 +88,7 @@ export function DealEngineDealDetailView({
           earnestMoney: Number(earnestMoney),
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; error?: string; message?: string };
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Contract save failed.");
       setStatus(payload.message ?? "Contract posture saved.");
       router.refresh();
@@ -85,7 +112,7 @@ export function DealEngineDealDetailView({
           buyerSignalId: selectedBuyerSignalId,
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; error?: string; message?: string };
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Buyer draft failed.");
       setStatus(payload.message ?? "Buyer draft created.");
       router.refresh();
@@ -115,12 +142,67 @@ export function DealEngineDealDetailView({
           comps: comps.split("\n").map((item) => item.trim()).filter(Boolean),
         }),
       });
-      const payload = (await response.json()) as { ok?: boolean; error?: string; message?: string };
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Packet save failed.");
       setStatus(payload.message ?? "Deal packet saved.");
       router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Packet save failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function saveStageUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("stage");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/update-stage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          status: stageStatus,
+          nextAction: stageNextAction,
+          note: stageNote,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Stage update failed.");
+      setStatus(payload.message ?? "Deal stage updated.");
+      setStageNote("");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Stage update failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function saveInvestorResponse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("response");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/investor-follow-up", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          investorEmail: selectedInvestorEmail,
+          followUpStatus,
+          followUpOwner,
+          nextStep: followUpNextStep,
+          notes: followUpNotes,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Investor follow-up failed.");
+      setStatus(payload.message ?? "Investor follow-up saved.");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Investor follow-up failed.");
     } finally {
       setWorking(null);
     }
@@ -137,7 +219,7 @@ export function DealEngineDealDetailView({
                 {detail.lead.propertyAddress}
               </h2>
               <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                {detail.lead.ownerName} / {detail.lead.county} County. This is the live workbench for underwriting posture, contract movement, and buyer activation around deal {dealId}.
+                {detail.lead.ownerName} / {detail.lead.county} County. This is the live workbench for underwriting posture, contract movement, buyer activation, and investor follow-up around deal {dealId}.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -183,7 +265,7 @@ export function DealEngineDealDetailView({
         <Metric label="Motivation Score" value={String(detail.lead.motivationScore)} detail="Seller urgency and context from upstream intelligence" />
         <Metric label="Buyer Matches" value={String(detail.buyerSignals.length).padStart(2, "0")} detail="Relevant Buyer Engine signals for this county lane" />
         <Metric label="Saved Drafts" value={String(detail.relatedDrafts.length).padStart(2, "0")} detail="Existing outreach drafts already connected to this market" />
-        <Metric label="Contract Mode" value={detail.contractDraft ? "Live" : "Draft"} detail="Contract posture assembled from the current deal snapshot" />
+        <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
@@ -209,6 +291,52 @@ export function DealEngineDealDetailView({
         </Panel>
 
         <Panel
+          eyebrow="Stage Control"
+          title="Move the deal through the pipeline"
+          description="Update the active stage and next action so the command deck reflects what this deal needs now."
+        >
+          <form onSubmit={saveStageUpdate} className="grid gap-4">
+            <select
+              value={stageStatus}
+              onChange={(event) => setStageStatus(event.target.value)}
+              className="brand-input w-full px-3 py-3 text-sm outline-none"
+            >
+              {[
+                "Needs Analysis",
+                "Underwriting",
+                "Negotiating",
+                "Offer Ready",
+                "Under Contract",
+                "Contract / Packet",
+                "Buyer Follow-Up",
+                "Closed",
+              ].map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <textarea
+              value={stageNextAction}
+              onChange={(event) => setStageNextAction(event.target.value)}
+              className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none"
+              placeholder="Next action"
+            />
+            <textarea
+              value={stageNote}
+              onChange={(event) => setStageNote(event.target.value)}
+              className="brand-input min-h-20 w-full px-3 py-3 text-sm outline-none"
+              placeholder="Optional stage note"
+            />
+            <button type="submit" disabled={working === "stage"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "stage" ? "Saving stage..." : "Save pipeline stage"}
+            </button>
+          </form>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
           eyebrow="Contract Console"
           title="Save underwriting and terms"
           description="Adjust the contract lane directly from the deal workstation and push the updated posture back into Deal Engine tables."
@@ -224,6 +352,47 @@ export function DealEngineDealDetailView({
               {working === "contract" ? "Saving..." : "Save contract posture"}
             </button>
           </form>
+        </Panel>
+
+        <Panel
+          eyebrow="Investor Responses"
+          title="Triage buyer interest from the external deal room"
+          description="Every investor response captured from the public room can now be assigned an owner, next step, and follow-up status."
+        >
+          <div className="space-y-4">
+            {detail.investorResponses.length ? (
+              detail.investorResponses.map((response) => (
+                <button
+                  key={response.id}
+                  type="button"
+                  onClick={() => syncInvestorFollowUp(response.investorEmail)}
+                  className="brand-card block w-full p-4 text-left transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-base font-semibold text-white">{response.investorName}</div>
+                      <div className="mt-1 text-xs text-[var(--copy-muted)]">{response.investorEmail}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <StatusPill tone="good" label={response.interestType.toLowerCase()} />
+                      <StatusPill tone="warn" label={response.followUpStatus.toLowerCase()} />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
+                    {response.notes || "No investor note was submitted."}
+                  </div>
+                  <div className="mt-3 text-xs text-[var(--copy-muted)]">
+                    Submitted {new Date(response.submittedAt).toLocaleString()} / owner {response.followUpOwner}
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">Next step: {response.nextStep}</div>
+                </button>
+              ))
+            ) : (
+              <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">
+                No investor responses have come in through the external deal room yet.
+              </div>
+            )}
+          </div>
         </Panel>
       </div>
 
@@ -270,6 +439,58 @@ export function DealEngineDealDetailView({
         </Panel>
 
         <Panel
+          eyebrow="Follow-Up Console"
+          title="Assign owner and next move"
+          description="Use this form after an investor responds so the deal shifts from passive packet distribution into an active disposition workflow."
+        >
+          <form onSubmit={saveInvestorResponse} className="grid gap-4">
+            <select
+              value={selectedInvestorEmail}
+              onChange={(event) => syncInvestorFollowUp(event.target.value)}
+              className="brand-input w-full px-3 py-3 text-sm outline-none"
+            >
+              <option value="">Select investor response</option>
+              {detail.investorResponses.map((response) => (
+                <option key={response.id} value={response.investorEmail}>
+                  {response.investorName} / {response.investorEmail}
+                </option>
+              ))}
+            </select>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input
+                value={followUpStatus}
+                onChange={(event) => setFollowUpStatus(event.target.value)}
+                className="brand-input px-3 py-3 text-sm outline-none"
+                placeholder="Follow-up status"
+              />
+              <input
+                value={followUpOwner}
+                onChange={(event) => setFollowUpOwner(event.target.value)}
+                className="brand-input px-3 py-3 text-sm outline-none"
+                placeholder="Follow-up owner"
+              />
+            </div>
+            <textarea
+              value={followUpNextStep}
+              onChange={(event) => setFollowUpNextStep(event.target.value)}
+              className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none"
+              placeholder="Next step"
+            />
+            <textarea
+              value={followUpNotes}
+              onChange={(event) => setFollowUpNotes(event.target.value)}
+              className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none"
+              placeholder="Internal notes"
+            />
+            <button type="submit" disabled={!selectedInvestorEmail || working === "response"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "response" ? "Saving follow-up..." : "Save investor follow-up"}
+            </button>
+          </form>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
           eyebrow="Draft Ledger"
           title="Saved outreach artifacts"
           description="These are the saved buyer drafts already tied to the same buyer-market lane as this deal."
@@ -292,6 +513,8 @@ export function DealEngineDealDetailView({
             )}
           </div>
         </Panel>
+
+        <div />
       </div>
 
       <Panel
