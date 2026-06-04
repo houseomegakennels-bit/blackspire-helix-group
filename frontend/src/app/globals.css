@@ -129,6 +129,9 @@ body {
   font-family: var(--font-body), Arial, Helvetica, sans-serif;
   margin: 0;
   min-height: 100vh;
+  /* Guard against stray horizontal scroll on mobile. `clip` (not `hidden`)
+     does not create a scroll container, so it never breaks the sticky header. */
+  overflow-x: clip;
 }
 
 a {
@@ -999,6 +1002,10 @@ body::after {
 
 .luxury-nav-link {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   overflow: hidden;
   border-radius: 999px;
 }
