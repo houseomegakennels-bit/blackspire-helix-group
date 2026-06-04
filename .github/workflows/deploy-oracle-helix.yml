@@ -1,0 +1,31 @@
+name: Deploy Oracle Helix API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'oracle-helix/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel (production)
+        run: |
+          cd oracle-helix
+          vercel deploy --prod --yes \
+            --token "$VERCEL_TOKEN" \
+            --env SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --env SUPABASE_SERVICE_ROLE_KEY="${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            --env ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            --env CLAUDE_MODEL="claude-sonnet-4-6" \
+            --env THE_ODDS_API_KEY="${{ secrets.THE_ODDS_API_KEY }}" \
+            --env FRONTEND_URL="https://blackspirehelix.com"
