@@ -48,6 +48,22 @@ export default async function EcosystemProjectPage({
 
         {/* ── HERO ────────────────────────────────────────────────────── */}
         <section className="division-hero relative overflow-hidden">
+          {/* Translucent division-logo watermark (parent-logo spirit) */}
+          {project.logoSrc && (
+            <div className="division-watermark" aria-hidden="true">
+              <div className="division-watermark-stage">
+                <Image
+                  src={project.logoSrc}
+                  alt=""
+                  fill
+                  aria-hidden="true"
+                  className="division-watermark-img object-contain"
+                  sizes="(max-width: 640px) 84vw, 600px"
+                />
+              </div>
+            </div>
+          )}
+
           {/* Division-specific animated background motif */}
           <div className="division-motif-canvas" aria-hidden="true">
             <div className="motif-center-glow" />
