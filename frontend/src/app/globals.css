@@ -397,9 +397,38 @@ body::after {
   transition: opacity 280ms ease;
 }
 
-.project-card:hover::after,
 .brand-panel:hover::before {
   opacity: 1;
+}
+
+/* Accent-tinted shine sweep — each card sweeps in its own branch color */
+.project-card::after {
+  background:
+    linear-gradient(
+      115deg,
+      transparent 30%,
+      color-mix(in srgb, var(--project-accent, #d4af37) 26%, transparent) 46%,
+      color-mix(in srgb, var(--project-accent, #d4af37) 8%, transparent) 52%,
+      transparent 66%
+    );
+  opacity: 0;
+  transform: translateX(-26%);
+  transition: opacity 320ms ease, transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.project-card:hover::after {
+  opacity: 1;
+  transform: translateX(26%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-card::after {
+    transition: opacity 320ms ease;
+    transform: none;
+  }
+  .project-card:hover::after {
+    transform: none;
+  }
 }
 
 .project-card,
