@@ -5,15 +5,6 @@ import { EcosystemCard } from "@/components/ecosystem-card";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ecosystemProjects } from "@/lib/ecosystem";
 
-const divisionColors = [
-  { seg: "bg-[hsl(258_90%_66%)]", label: "Blackspire Recon Engine", delay: "0s" },
-  { seg: "bg-[hsl(38_92%_55%)]", label: "Helix Lawn Command", delay: "0.3s" },
-  { seg: "bg-[hsl(270_80%_62%)]", label: "Blackspire Social OS", delay: "0.6s" },
-  { seg: "bg-[hsl(20_100%_55%)]", label: "Blackspire Buyer Engine", delay: "0.9s" },
-  { seg: "bg-[hsl(340_80%_60%)]", label: "Ember Halo", delay: "1.2s" },
-  { seg: "bg-[hsl(210_90%_60%)]", label: "Oracle Helix", delay: "1.5s" },
-];
-
 const commandStats = [
   { value: "06", label: "Active divisions" },
   { value: "24/7", label: "Automation uptime" },
@@ -56,18 +47,22 @@ export default function EcosystemPage() {
               <div className="mt-8 space-y-2">
                 <p className="text-[10px] uppercase tracking-[0.36em] text-[var(--copy-muted)]">Division spectrum</p>
                 <div className="division-strip h-2">
-                  {divisionColors.map((d) => (
+                  {ecosystemProjects.map((project, i) => (
                     <div
-                      key={d.label}
-                      className={`division-strip-seg ${d.seg}`}
-                      style={{ animationDelay: d.delay }}
+                      key={project.slug}
+                      className="division-strip-seg"
+                      style={{ background: project.accent, animationDelay: `${i * 0.3}s` }}
                     />
                   ))}
                 </div>
                 <div className="flex gap-0">
-                  {divisionColors.map((d) => (
-                    <div key={d.label} className="flex-1 text-center text-[9px] uppercase tracking-[0.16em] text-[var(--copy-muted)] leading-4 px-1">
-                      {d.label.split(" ").slice(-1)}
+                  {ecosystemProjects.map((project) => (
+                    <div
+                      key={project.slug}
+                      className="flex-1 text-center text-[9px] uppercase tracking-[0.16em] leading-4 px-1"
+                      style={{ color: `color-mix(in srgb, ${project.accent} 55%, var(--copy-muted))` }}
+                    >
+                      {project.name.split(" ").slice(-1)}
                     </div>
                   ))}
                 </div>

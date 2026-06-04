@@ -366,6 +366,7 @@ body::after {
     radial-gradient(circle at top right, var(--project-surface), transparent 58%),
     radial-gradient(circle at bottom left, hsl(0 0% 100% / 0.02), transparent 42%);
   box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 60%, transparent),
     inset 0 1px 0 hsl(32 100% 76% / 0.05),
     0 16px 34px hsl(0 0% 0% / 0.42),
     0 0 0 1px hsl(0 0% 100% / 0.02);
@@ -415,6 +416,18 @@ body::after {
     inset 0 1px 0 hsl(202 90% 80% / 0.08),
     0 26px 70px hsl(224 48% 2% / 0.58),
     0 0 0 1px hsl(200 100% 76% / 0.045);
+}
+
+/* Per-division accent hover — each card glows in its own branch color */
+.project-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--project-accent, #d4af37) 62%, var(--line));
+  box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 85%, transparent),
+    inset 0 1px 0 hsl(32 100% 76% / 0.08),
+    0 28px 74px hsl(0 0% 0% / 0.6),
+    0 0 0 1px color-mix(in srgb, var(--project-accent, #d4af37) 28%, transparent),
+    0 0 46px color-mix(in srgb, var(--project-accent, #d4af37) 22%, transparent);
 }
 
 .division-logo-showcase {
@@ -1665,6 +1678,20 @@ body::after {
 .stagger-4 { animation-delay: 0.30s; }
 .stagger-5 { animation-delay: 0.38s; }
 .stagger-6 { animation-delay: 0.46s; }
+
+/* Scroll-driven choreography — progressive enhancement.
+   Browsers that support scroll/view timelines animate reveals as they
+   enter the viewport, giving long pages a curated, advanced cadence.
+   Others keep the reliable on-load reveal above. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal-up, .reveal-left, .reveal-scale {
+      animation-timeline: view();
+      animation-range: entry 4% cover 26%;
+      animation-delay: 0s; /* range-driven, not time-driven */
+    }
+  }
+}
 
 /* ── Enhanced brand-card hover ── */
 .brand-card {
