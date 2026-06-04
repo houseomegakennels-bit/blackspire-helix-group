@@ -18,6 +18,16 @@ export const brandAssets = {
     name: "Blackspire Buyer Engine",
     logo: "/brand/blackspire-buyer-engine-logo-v2.png",
   },
+  sellerEngine: {
+    name: "Blackspire Seller Engine",
+    logo: "/brand/blackspire-seller-engine-logo.png",
+    tagline: "Find Motivated Sellers. Fuel Great Deals.",
+  },
+  dealEngine: {
+    name: "Blackspire Deal Engine",
+    logo: "/brand/blackspire-deal-engine-logo.png",
+    tagline: "Analyze. Acquire. Match. Close.",
+  },
   helixLawnCommand: {
     name: "Helix Lawn Command",
     logo: "/brand/helix-lawn-command-logo.png",
