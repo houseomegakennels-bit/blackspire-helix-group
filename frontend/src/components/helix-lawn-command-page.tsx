@@ -112,7 +112,7 @@ export function HelixLawnCommandPage() {
                     logoStageClass={project.logoStageClass}
                   />
                 </div>
-                <h1 className="brand-display text-5xl leading-[0.94] text-white lg:text-7xl">
+                <h1 className="brand-display text-3xl leading-[1.04] text-white sm:text-4xl sm:leading-[0.96] lg:text-7xl lg:leading-[0.94]">
                   Premium websites, faster lead follow-up, and cleaner lawn-service growth systems.
                 </h1>
                 <p className="max-w-3xl text-base leading-8 text-[var(--copy-soft)]">

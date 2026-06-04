@@ -33,7 +33,7 @@ export default function EcosystemPage() {
                 <span className="live-dot" />
                 <p className="cmd-text">BLACKSPIRE HELIX GROUP / Ecosystem Command</p>
               </div>
-              <h1 className="brand-accent-text mt-4 text-5xl font-black leading-none tracking-tight lg:text-7xl">
+              <h1 className="brand-accent-text mt-4 text-4xl font-black leading-[1.05] tracking-tight sm:text-5xl sm:leading-none lg:text-7xl">
                 ONE PARENT.<br />
                 <span className="text-white">{systemCount} SYSTEMS.</span>
               </h1>

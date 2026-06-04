@@ -47,7 +47,7 @@ export default function ContactPage() {
                 <span className="live-dot" />
                 <p className="cmd-text">BLACKSPIRE HELIX GROUP / Strategy Intake</p>
               </div>
-              <h1 className="brand-accent-text mt-4 text-5xl font-black leading-none tracking-tight lg:text-7xl">
+              <h1 className="brand-accent-text mt-4 text-4xl font-black leading-[1.05] tracking-tight sm:text-5xl sm:leading-none lg:text-7xl">
                 TELL US<br />
                 <span className="text-white">WHAT NEEDS TO</span><br />
                 <span className="text-white">RUN BETTER.</span>
