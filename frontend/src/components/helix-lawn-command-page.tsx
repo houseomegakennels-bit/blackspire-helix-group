@@ -92,7 +92,7 @@ export function HelixLawnCommandPage() {
 
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1480px] px-4 py-10 lg:px-6">
+      <div className="theme-lawn-command mx-auto max-w-[1480px] px-4 py-10 lg:px-6" style={projectStyle}>
         <section className="brand-panel overflow-hidden px-6 py-8 lg:px-8 lg:py-10" style={projectStyle}>
           <div className="grid gap-8 xl:grid-cols-[1fr_0.95fr] xl:items-center">
             <div className="space-y-7">
