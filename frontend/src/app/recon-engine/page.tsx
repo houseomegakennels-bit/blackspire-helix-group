@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -16,7 +17,15 @@ export const metadata: Metadata = {
 export default function ReconEnginePage() {
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] space-y-10 px-4 py-16 lg:px-6">
+      <div
+        className="theme-recon-engine mx-auto max-w-[1450px] space-y-10 px-4 py-16 lg:px-6"
+        style={{
+          "--project-accent": "#8B5CF6",
+          "--project-glow": "rgba(139,92,246,0.34)",
+          "--project-surface": "rgba(139,92,246,0.12)",
+          "--project-edge": "rgba(196,181,253,0.40)",
+        } as CSSProperties}
+      >
 
         {/* ── HERO ───────────────────────────────────────────────── */}
         <section className="brand-panel relative overflow-hidden px-6 py-12 lg:px-10 lg:py-16">

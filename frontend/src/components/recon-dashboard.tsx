@@ -219,14 +219,14 @@ export function ReconDashboard({
               <button
                 type="button"
                 onClick={() => setShowSavedOnly(false)}
-                className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.16em] transition ${!showSavedOnly ? "border-[hsl(258_90%_70%/.6)] text-white" : "border-[var(--line)] text-[var(--copy-muted)]"}`}
+                className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 text-[11px] uppercase tracking-[0.16em] transition ${!showSavedOnly ? "border-[hsl(258_90%_70%/.6)] text-white" : "border-[var(--line)] text-[var(--copy-muted)]"}`}
               >
                 All
               </button>
               <button
                 type="button"
                 onClick={() => setShowSavedOnly(true)}
-                className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.16em] transition ${showSavedOnly ? "border-[hsl(258_90%_70%/.6)] text-white" : "border-[var(--line)] text-[var(--copy-muted)]"}`}
+                className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 text-[11px] uppercase tracking-[0.16em] transition ${showSavedOnly ? "border-[hsl(258_90%_70%/.6)] text-white" : "border-[var(--line)] text-[var(--copy-muted)]"}`}
               >
                 Saved ({savedIds.length})
               </button>

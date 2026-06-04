@@ -3,7 +3,8 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
 import { EcosystemMark } from "@/components/ecosystem-mark";
-import { parentBrand, ecosystemProjects } from "@/lib/ecosystem";
+import { MarketingNav } from "@/components/marketing-nav";
+import { ecosystemProjects } from "@/lib/ecosystem";
 
 const marketingNav = [
   { href: "/ecosystem", label: "Ecosystem" },
@@ -54,17 +55,7 @@ export function MarketingShell({
             </div>
           </Link>
 
-          <nav className="flex flex-wrap items-center justify-end gap-2">
-            {marketingNav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="luxury-nav-link rounded-full border border-[var(--line)] px-3 py-2 text-xs uppercase tracking-[0.2em] text-[var(--copy-soft)] transition hover:border-[var(--line-strong)] hover:text-white"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <MarketingNav items={marketingNav} />
         </div>
       </header>
 

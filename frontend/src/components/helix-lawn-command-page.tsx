@@ -92,7 +92,7 @@ export function HelixLawnCommandPage() {
 
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1480px] px-4 py-10 lg:px-6">
+      <div className="theme-lawn-command mx-auto max-w-[1480px] px-4 py-10 lg:px-6" style={projectStyle}>
         <section className="brand-panel overflow-hidden px-6 py-8 lg:px-8 lg:py-10" style={projectStyle}>
           <div className="grid gap-8 xl:grid-cols-[1fr_0.95fr] xl:items-center">
             <div className="space-y-7">
@@ -112,7 +112,7 @@ export function HelixLawnCommandPage() {
                     logoStageClass={project.logoStageClass}
                   />
                 </div>
-                <h1 className="brand-display text-5xl leading-[0.94] text-white lg:text-7xl">
+                <h1 className="brand-display text-3xl leading-[1.04] text-white sm:text-4xl sm:leading-[0.96] lg:text-7xl lg:leading-[0.94]">
                   Premium websites, faster lead follow-up, and cleaner lawn-service growth systems.
                 </h1>
                 <p className="max-w-3xl text-base leading-8 text-[var(--copy-soft)]">

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -31,7 +32,15 @@ export default async function ReconDashboardPage() {
 
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6">
+      <div
+        className="theme-recon-engine mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6"
+        style={{
+          "--project-accent": "#8B5CF6",
+          "--project-glow": "rgba(139,92,246,0.34)",
+          "--project-surface": "rgba(139,92,246,0.12)",
+          "--project-edge": "rgba(196,181,253,0.40)",
+        } as CSSProperties}
+      >
         <section className="brand-panel relative overflow-hidden px-6 py-10 lg:px-10">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute right-0 top-0 h-80 w-80 rounded-full bg-[radial-gradient(circle,hsl(258_90%_60%/.14),transparent_65%)] blur-3xl" />

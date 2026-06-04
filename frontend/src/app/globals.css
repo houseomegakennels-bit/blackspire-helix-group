@@ -18,6 +18,91 @@
   --danger: hsl(18 100% 56%);
 }
 
+/* ── DIVISION THEME CLASSES ──────────────────────────────────────────────
+   Apply to the outermost wrapper of each division workspace or page.
+   Overrides --line / --gold token families so brand-* components and
+   every var(--gold*) / var(--line*) reference inherits division color.
+   --project-* vars are picked up by all .project-* component classes.
+──────────────────────────────────────────────────────────────────────── */
+
+/* Blackspire Buyer Engine — Signal Amber */
+.theme-buyer-engine {
+  --line: hsl(31 100% 50% / 0.22);
+  --line-strong: hsl(33 100% 58% / 0.48);
+  --gold: hsl(33 100% 56%);
+  --gold-strong: hsl(28 100% 50%);
+  --gold-soft: hsl(40 96% 79%);
+  --project-accent: #FF8A00;
+  --project-glow: rgba(255, 138, 0, 0.35);
+  --project-surface: rgba(255, 138, 0, 0.12);
+  --project-edge: rgba(255, 193, 99, 0.42);
+}
+
+/* Helix Lawn Command — Command Green */
+.theme-lawn-command {
+  --line: hsl(120 72% 38% / 0.22);
+  --line-strong: hsl(122 78% 44% / 0.46);
+  --gold: hsl(116 74% 47%);
+  --gold-strong: hsl(110 88% 40%);
+  --gold-soft: hsl(130 72% 74%);
+  --project-accent: #63D11F;
+  --project-glow: rgba(99, 209, 31, 0.34);
+  --project-surface: rgba(99, 209, 31, 0.12);
+  --project-edge: rgba(155, 255, 94, 0.42);
+}
+
+/* Blackspire Recon Engine — Violet Signal */
+.theme-recon-engine {
+  --line: hsl(258 72% 60% / 0.22);
+  --line-strong: hsl(260 78% 65% / 0.46);
+  --gold: hsl(258 84% 68%);
+  --gold-strong: hsl(255 90% 60%);
+  --gold-soft: hsl(265 76% 82%);
+  --project-accent: #8B5CF6;
+  --project-glow: rgba(139, 92, 246, 0.34);
+  --project-surface: rgba(139, 92, 246, 0.12);
+  --project-edge: rgba(196, 181, 253, 0.40);
+}
+
+/* Blackspire Social OS — Velocity Purple */
+.theme-social-os {
+  --line: hsl(270 72% 62% / 0.22);
+  --line-strong: hsl(268 78% 66% / 0.46);
+  --gold: hsl(265 78% 70%);
+  --gold-strong: hsl(268 88% 62%);
+  --gold-soft: hsl(270 72% 84%);
+  --project-accent: #9B5CFF;
+  --project-glow: rgba(155, 92, 255, 0.34);
+  --project-surface: rgba(155, 92, 255, 0.12);
+  --project-edge: rgba(113, 179, 255, 0.42);
+}
+
+/* Ember Halo — Ember Flame */
+.theme-ember-halo {
+  --line: hsl(14 92% 52% / 0.22);
+  --line-strong: hsl(14 92% 56% / 0.46);
+  --gold: hsl(16 92% 58%);
+  --gold-strong: hsl(10 100% 46%);
+  --gold-soft: hsl(22 88% 76%);
+  --project-accent: #FF3B1F;
+  --project-glow: rgba(255, 59, 31, 0.34);
+  --project-surface: rgba(255, 90, 31, 0.12);
+  --project-edge: rgba(231, 201, 162, 0.36);
+}
+
+/* Oracle Helix — Oracle Blue */
+.theme-oracle-helix {
+  --line: hsl(224 88% 64% / 0.20);
+  --line-strong: hsl(225 88% 68% / 0.44);
+  --gold: hsl(224 88% 68%);
+  --gold-strong: hsl(225 96% 60%);
+  --gold-soft: hsl(220 84% 82%);
+  --project-accent: #4C7DFF;
+  --project-glow: rgba(76, 125, 255, 0.34);
+  --project-surface: rgba(76, 125, 255, 0.12);
+  --project-edge: rgba(185, 196, 216, 0.38);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -44,6 +129,9 @@ body {
   font-family: var(--font-body), Arial, Helvetica, sans-serif;
   margin: 0;
   min-height: 100vh;
+  /* Guard against stray horizontal scroll on mobile. `clip` (not `hidden`)
+     does not create a scroll container, so it never breaks the sticky header. */
+  overflow-x: clip;
 }
 
 a {
@@ -281,6 +369,7 @@ body::after {
     radial-gradient(circle at top right, var(--project-surface), transparent 58%),
     radial-gradient(circle at bottom left, hsl(0 0% 100% / 0.02), transparent 42%);
   box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 60%, transparent),
     inset 0 1px 0 hsl(32 100% 76% / 0.05),
     0 16px 34px hsl(0 0% 0% / 0.42),
     0 0 0 1px hsl(0 0% 100% / 0.02);
@@ -311,9 +400,38 @@ body::after {
   transition: opacity 280ms ease;
 }
 
-.project-card:hover::after,
 .brand-panel:hover::before {
   opacity: 1;
+}
+
+/* Accent-tinted shine sweep — each card sweeps in its own branch color */
+.project-card::after {
+  background:
+    linear-gradient(
+      115deg,
+      transparent 30%,
+      color-mix(in srgb, var(--project-accent, #d4af37) 26%, transparent) 46%,
+      color-mix(in srgb, var(--project-accent, #d4af37) 8%, transparent) 52%,
+      transparent 66%
+    );
+  opacity: 0;
+  transform: translateX(-26%);
+  transition: opacity 320ms ease, transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.project-card:hover::after {
+  opacity: 1;
+  transform: translateX(26%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-card::after {
+    transition: opacity 320ms ease;
+    transform: none;
+  }
+  .project-card:hover::after {
+    transform: none;
+  }
 }
 
 .project-card,
@@ -330,6 +448,18 @@ body::after {
     inset 0 1px 0 hsl(202 90% 80% / 0.08),
     0 26px 70px hsl(224 48% 2% / 0.58),
     0 0 0 1px hsl(200 100% 76% / 0.045);
+}
+
+/* Per-division accent hover — each card glows in its own branch color */
+.project-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--project-accent, #d4af37) 62%, var(--line));
+  box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 85%, transparent),
+    inset 0 1px 0 hsl(32 100% 76% / 0.08),
+    0 28px 74px hsl(0 0% 0% / 0.6),
+    0 0 0 1px color-mix(in srgb, var(--project-accent, #d4af37) 28%, transparent),
+    0 0 46px color-mix(in srgb, var(--project-accent, #d4af37) 22%, transparent);
 }
 
 .division-logo-showcase {
@@ -872,6 +1002,10 @@ body::after {
 
 .luxury-nav-link {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   overflow: hidden;
   border-radius: 999px;
 }
@@ -1580,6 +1714,20 @@ body::after {
 .stagger-4 { animation-delay: 0.30s; }
 .stagger-5 { animation-delay: 0.38s; }
 .stagger-6 { animation-delay: 0.46s; }
+
+/* Scroll-driven choreography — progressive enhancement.
+   Browsers that support scroll/view timelines animate reveals as they
+   enter the viewport, giving long pages a curated, advanced cadence.
+   Others keep the reliable on-load reveal above. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal-up, .reveal-left, .reveal-scale {
+      animation-timeline: view();
+      animation-range: entry 4% cover 26%;
+      animation-delay: 0s; /* range-driven, not time-driven */
+    }
+  }
+}
 
 /* ── Enhanced brand-card hover ── */
 .brand-card {

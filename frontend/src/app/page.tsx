@@ -1,8 +1,6 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 
 import { EcosystemCard } from "@/components/ecosystem-card";
-import { EcosystemMark } from "@/components/ecosystem-mark";
 import { LuxuryHeroStage } from "@/components/luxury-hero-stage";
 import { MarketingShell } from "@/components/marketing-shell";
 import {
@@ -33,9 +31,6 @@ export default function Home() {
     { label: "Division systems", value: divisionCount, copy: "Specialized operating layers under one command brand." },
     ...proofMetricBase,
   ];
-  const featuredProjects = ecosystemProjects.slice(0, 2);
-  const supportingProjects = ecosystemProjects.slice(2);
-
   return (
     <MarketingShell>
       <div className="mx-auto max-w-[1500px] px-4 py-8 lg:px-6 lg:py-10">
@@ -178,62 +173,12 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="mt-8 grid gap-6 xl:grid-cols-[1.06fr_0.94fr]">
-              <div className="grid gap-6">
-                {featuredProjects.map((project) => (
-                  <EcosystemCard key={project.slug} project={project} mode="stacked" />
-                ))}
-              </div>
-
-              <div className="grid gap-6">
-                {supportingProjects.map((project) => (
-                  <article
-                    key={project.slug}
-                    className="project-card division-logo-showcase brand-panel p-5"
-                    style={
-                      {
-                        "--project-accent": project.accent,
-                        "--project-glow": project.glow,
-                        "--project-surface": project.surfaceTint,
-                        "--project-edge": project.edgeTint,
-                      } as CSSProperties
-                    }
-                  >
-                    <div className="division-logo-orbit" aria-hidden="true" />
-                    <div className="grid gap-5 md:grid-cols-[0.78fr_1fr] md:items-center">
-                      <div className="division-logo-stage">
-                        <EcosystemMark
-                          name={project.name}
-                          monogram={project.monogram}
-                          logoSrc={project.logoSrc}
-                          variant="bare"
-                          logoMaxWidthClass={project.logoMaxWidthClass}
-                          logoMaxHeightClass={project.logoMaxHeightClass}
-                          logoStageClass={project.logoStageClass}
-                        />
-                      </div>
-
-                      <div className="relative z-10">
-                        <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">
-                          {project.role}
-                        </div>
-                        <h3 className="mt-2 text-2xl font-semibold text-white">{project.name}</h3>
-                        <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">{project.description}</p>
-                        <div className="mt-5 grid gap-3">
-                          <div className="project-signal text-xs uppercase tracking-[0.22em]">
-                            <span className="project-signal-label">{project.vibe}</span>
-                            <span className="project-signal-separator">/</span>
-                            <span className="project-signal-copy">{project.primaryOutcome}</span>
-                          </div>
-                          <Link href={project.href} className="project-button inline-flex w-fit px-4 py-3 text-sm transition">
-                            {project.cta}
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
+            <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {ecosystemProjects.map((project, index) => (
+                <div key={project.slug} className={`reveal-up stagger-${(index % 3) + 1}`}>
+                  <EcosystemCard project={project} />
+                </div>
+              ))}
             </div>
           </section>
 
