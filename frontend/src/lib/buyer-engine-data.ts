@@ -119,6 +119,23 @@ const countyMetadata: Record<string, { dateFormats: string[] }> = {
   warren: { dateFormats: ["epoch ms"] },
   wilson: { dateFormats: ["YYYYMMDD int"] },
   yadkin: { dateFormats: ["epoch ms"] },
+  // ── Wave 2 / Wave 3 parity (NC OneMap statewide feed) ──────────────────────
+  caldwell: { dateFormats: ["epoch ms"] },
+  chatham: { dateFormats: ["epoch ms"] },
+  cleveland: { dateFormats: ["epoch ms"] },
+  franklin: { dateFormats: ["epoch ms"] },
+  halifax: { dateFormats: ["epoch ms"] },
+  lenoir: { dateFormats: ["epoch ms"] },
+  mcdowell: { dateFormats: ["epoch ms"] },
+  montgomery: { dateFormats: ["epoch ms"] },
+  pasquotank: { dateFormats: ["epoch ms"] },
+  polk: { dateFormats: ["epoch ms"] },
+  transylvania: { dateFormats: ["epoch ms"] },
+  union: { dateFormats: ["epoch ms"] },
+  vance: { dateFormats: ["epoch ms"] },
+  watauga: { dateFormats: ["epoch ms"] },
+  wayne: { dateFormats: ["epoch ms"] },
+  yancey: { dateFormats: ["epoch ms"] },
 };
 
 const countyVerificationOverrides: Record<
@@ -465,6 +482,103 @@ const countyVerificationOverrides: Record<
     verificationStatus: "approved",
     verificationReason: "Current live source is approved for operator-facing past-90-day buyer sweeps.",
   },
+  // ── Wave 2 / Wave 3 parity (NC OneMap statewide feed) ──────────────────────
+  caldwell: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  chatham: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  cleveland: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  franklin: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  halifax: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  lenoir: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  mcdowell: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  montgomery: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  pasquotank: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  polk: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  transylvania: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  union: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  vance: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  watauga: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  wayne: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
+  yancey: {
+    supportsPast90Days: true,
+    verificationStatus: "approved",
+    verificationReason:
+      "NC OneMap parcel feed exposes current owner, mailing address, parcel, vacant/structure signal, valuation, and last-sale date for past-90-day buyer sweeps. Sale price unavailable.",
+  },
 };
 
 export const fallbackCountySourceRows: CountySourceRow[] = [
@@ -529,6 +643,23 @@ export const fallbackCountySourceRows: CountySourceRow[] = [
   { county: "Wilkes", state: "NC", source_type: "arcgis", active: true, notes: "Official Wilkes County Parcels_Data layer. SALEDATE epoch ms, SALEPRICE, OWNER1, mailing address lines, PIN, parcel ID, land/building values, year built, sale validity, and land type." },
   { county: "Wilson", state: "NC", source_type: "arcgis_wilson", active: true, notes: "DateSold YYYYMMDD int." },
   { county: "Yadkin", state: "NC", source_type: "arcgis_yadkin", active: true, notes: "DEED_DATE epoch ms." },
+  // ── Wave 2 / Wave 3 parity (NC OneMap statewide feed) ──────────────────────
+  { county: "Caldwell", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Chatham", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Cleveland", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Franklin", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Halifax", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Lenoir", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "McDowell", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Montgomery", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Pasquotank", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Polk", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Transylvania", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Union", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Vance", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Watauga", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Wayne", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
+  { county: "Yancey", state: "NC", source_type: "arcgis", active: true, notes: "NC OneMap parcel feed. saledate epoch ms and ownname/mailadd buyer fields. parval used as valuation proxy. Sale price unavailable." },
 ];
 
 export function buildCountyCapabilities(rows: CountySourceRow[]): CountyCapability[] {
