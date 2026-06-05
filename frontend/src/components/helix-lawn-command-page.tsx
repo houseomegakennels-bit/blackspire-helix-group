@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 
+import { DivisionWatermark } from "@/components/division-watermark";
 import { HelixLawnIntakeDemo } from "@/components/helix-lawn-intake-demo";
 import { EcosystemMark } from "@/components/ecosystem-mark";
 import { MarketingShell } from "@/components/marketing-shell";
@@ -91,10 +92,11 @@ export function HelixLawnCommandPage() {
   } as CSSProperties;
 
   return (
-    <MarketingShell>
+    <MarketingShell watermarkLogoSrc={project.logoSrc} themeStyle={projectStyle}>
       <div className="theme-lawn-command mx-auto max-w-[1480px] px-4 py-10 lg:px-6" style={projectStyle}>
-        <section className="brand-panel overflow-hidden px-6 py-8 lg:px-8 lg:py-10" style={projectStyle}>
-          <div className="grid gap-8 xl:grid-cols-[1fr_0.95fr] xl:items-center">
+        <section className="brand-panel relative overflow-hidden px-6 py-8 lg:px-8 lg:py-10" style={projectStyle}>
+          {project.logoSrc ? <DivisionWatermark logoSrc={project.logoSrc} /> : null}
+          <div className="relative z-10 grid gap-8 xl:grid-cols-[1fr_0.95fr] xl:items-center">
             <div className="space-y-7">
               <div className="space-y-4">
                 <div className="inline-flex items-center gap-3 rounded-full border border-[color:var(--project-edge)] bg-[color:var(--project-surface)] px-4 py-2 text-[11px] uppercase tracking-[0.28em] text-white/90">

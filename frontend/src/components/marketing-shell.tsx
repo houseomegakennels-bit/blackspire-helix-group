@@ -42,13 +42,19 @@ export function MarketingShell({
   const isDivisionWatermark = Boolean(watermarkLogoSrc);
   const watermarkSrc = watermarkLogoSrc ?? "/brand/blackspire-helix-group-logo-fit.png";
   return (
-    <main className="luxury-shell min-h-screen text-foreground" style={themeStyle}>
+    <main
+      className={`luxury-shell min-h-screen text-foreground ${isDivisionWatermark ? "luxury-shell-division" : ""}`}
+      style={themeStyle}
+    >
       <div className="luxury-orbital-field" aria-hidden="true">
         <span className="luxury-orbital-ring luxury-orbital-ring-a" />
         <span className="luxury-orbital-ring luxury-orbital-ring-b" />
         <span className="luxury-orbital-ring luxury-orbital-ring-c" />
       </div>
-      <div className="luxury-watermark" aria-hidden="true">
+      <div
+        className={`luxury-watermark ${isDivisionWatermark ? "luxury-watermark-division" : ""}`}
+        aria-hidden="true"
+      >
         <Image
           src={watermarkSrc}
           alt=""
