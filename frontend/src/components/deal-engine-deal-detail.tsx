@@ -8,6 +8,9 @@ import { Metric, Panel, StatusPill } from "@/components/buyer-shell";
 import { DealEngineShell } from "@/components/deal-engine-shell";
 import type { DealEngineDealDetail } from "@/lib/deal-engine-server";
 
+type ChecklistItem = DealEngineDealDetail["coordination"]["closingChecklist"][number];
+type ClosingDocument = DealEngineDealDetail["coordination"]["closingDocuments"][number];
+
 function statusTone(status: string) {
   if (status === "Negotiating") return "warn";
   if (status === "Offer Ready" || status === "Under Contract") return "good";
@@ -76,6 +79,8 @@ export function DealEngineDealDetailView({
   const [contractSent, setContractSent] = useState(detail.coordination.contractSent);
   const [contractSigned, setContractSigned] = useState(detail.coordination.contractSigned);
   const [coordinationNotes, setCoordinationNotes] = useState(detail.coordination.coordinationNotes);
+  const [closingChecklist, setClosingChecklist] = useState(detail.coordination.closingChecklist);
+  const [closingDocuments, setClosingDocuments] = useState(detail.coordination.closingDocuments);
   const [taskId, setTaskId] = useState(detail.operatorTasks[0]?.id ?? "");
   const [taskTitle, setTaskTitle] = useState(detail.operatorTasks[0]?.title ?? "");
   const [taskOwner, setTaskOwner] = useState(detail.operatorTasks[0]?.owner ?? "Blackspire operator");
@@ -106,6 +111,44 @@ export function DealEngineDealDetailView({
     setTaskPriority(task.priority);
     setTaskStatus(task.status);
     setTaskNotes(task.notes);
+  }
+
+  function updateChecklistItem(id: string, field: keyof ChecklistItem, value: string) {
+    setClosingChecklist((items) =>
+      items.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
+    );
+  }
+
+  function updateClosingDocument(id: string, field: keyof ClosingDocument, value: string) {
+    setClosingDocuments((items) =>
+      items.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
+    );
+  }
+
+  function addChecklistItem() {
+    setClosingChecklist((items) => [
+      ...items,
+      {
+        id: `checklist-${Date.now()}`,
+        title: "",
+        status: "Open",
+        owner: "Unassigned",
+        dueDate: "",
+      },
+    ]);
+  }
+
+  function addClosingDocument() {
+    setClosingDocuments((items) => [
+      ...items,
+      {
+        id: `document-${Date.now()}`,
+        name: "",
+        status: "Requested",
+        owner: "Unassigned",
+        notes: "",
+      },
+    ]);
   }
 
   async function saveContract(event: FormEvent<HTMLFormElement>) {
@@ -296,6 +339,8 @@ export function DealEngineDealDetailView({
           contractSent,
           contractSigned,
           coordinationNotes,
+          closingChecklist,
+          closingDocuments,
         }),
       });
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
@@ -529,6 +574,99 @@ export function DealEngineDealDetailView({
               </label>
             </div>
             <textarea value={coordinationNotes} onChange={(event) => setCoordinationNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Coordination notes" />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Close checklist</div>
+                <button type="button" onClick={addChecklistItem} className="brand-button inline-flex px-3 py-2 text-xs uppercase tracking-[0.18em] transition">
+                  Add item
+                </button>
+              </div>
+              <div className="space-y-3">
+                {closingChecklist.map((item) => (
+                  <div key={item.id} className="brand-card p-4">
+                    <div className="grid gap-3 md:grid-cols-[1.3fr_0.7fr]">
+                      <input
+                        value={item.title}
+                        onChange={(event) => updateChecklistItem(item.id, "title", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                        placeholder="Checklist item"
+                      />
+                      <select
+                        value={item.status}
+                        onChange={(event) => updateChecklistItem(item.id, "status", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                      >
+                        <option>Open</option>
+                        <option>In Progress</option>
+                        <option>Done</option>
+                        <option>Blocked</option>
+                      </select>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <input
+                        value={item.owner}
+                        onChange={(event) => updateChecklistItem(item.id, "owner", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                        placeholder="Owner"
+                      />
+                      <input
+                        value={item.dueDate}
+                        onChange={(event) => updateChecklistItem(item.id, "dueDate", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                        placeholder="Due date"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Closing documents</div>
+                <button type="button" onClick={addClosingDocument} className="brand-button inline-flex px-3 py-2 text-xs uppercase tracking-[0.18em] transition">
+                  Add document
+                </button>
+              </div>
+              <div className="space-y-3">
+                {closingDocuments.map((item) => (
+                  <div key={item.id} className="brand-card p-4">
+                    <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
+                      <input
+                        value={item.name}
+                        onChange={(event) => updateClosingDocument(item.id, "name", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                        placeholder="Document name"
+                      />
+                      <select
+                        value={item.status}
+                        onChange={(event) => updateClosingDocument(item.id, "status", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                      >
+                        <option>Requested</option>
+                        <option>Received</option>
+                        <option>Reviewed</option>
+                        <option>Final</option>
+                        <option>Missing</option>
+                      </select>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-[0.7fr_1.3fr]">
+                      <input
+                        value={item.owner}
+                        onChange={(event) => updateClosingDocument(item.id, "owner", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                        placeholder="Owner"
+                      />
+                      <input
+                        value={item.notes}
+                        onChange={(event) => updateClosingDocument(item.id, "notes", event.target.value)}
+                        className="brand-input px-3 py-3 text-sm outline-none"
+                        placeholder="Notes"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
             <button type="submit" disabled={working === "coordination"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "coordination" ? "Saving coordination..." : "Save closing coordination"}
             </button>
@@ -541,17 +679,48 @@ export function DealEngineDealDetailView({
           description="This is the live coordination snapshot for title, signatures, access, and payout readiness."
         >
           <div className="space-y-3 text-sm text-[var(--copy-soft)]">
-            <div>Title company: <span className="font-semibold text-white">{detail.coordination.titleCompany}</span></div>
-            <div>Title officer: <span className="font-semibold text-white">{detail.coordination.titleOfficer}</span></div>
-            <div>Walkthrough: <span className="font-semibold text-white">{detail.coordination.walkthroughAt || "Not scheduled"}</span></div>
-            <div>Inspection end: <span className="font-semibold text-white">{detail.coordination.inspectionEndsOn || "Not set"}</span></div>
-            <div>Closing date: <span className="font-semibold text-white">{detail.coordination.closingDate || "Not set"}</span></div>
-            <div>Assignment: <span className="font-semibold text-white">{detail.coordination.buyerAssignmentStatus}</span></div>
-            <div>Earnest money: <span className="font-semibold text-white">{detail.coordination.earnestMoneyStatus}</span></div>
-            <div>Payout: <span className="font-semibold text-white">{detail.coordination.payoutStatus}</span></div>
+            <div>Title company: <span className="font-semibold text-white">{titleCompany || "Not set"}</span></div>
+            <div>Title officer: <span className="font-semibold text-white">{titleOfficer || "Not set"}</span></div>
+            <div>Walkthrough: <span className="font-semibold text-white">{walkthroughAt || "Not scheduled"}</span></div>
+            <div>Inspection end: <span className="font-semibold text-white">{inspectionEndsOn || "Not set"}</span></div>
+            <div>Closing date: <span className="font-semibold text-white">{closingDate || "Not set"}</span></div>
+            <div>Assignment: <span className="font-semibold text-white">{buyerAssignmentStatus || "Not set"}</span></div>
+            <div>Earnest money: <span className="font-semibold text-white">{earnestMoneyStatus || "Not set"}</span></div>
+            <div>Payout: <span className="font-semibold text-white">{payoutStatus || "Not set"}</span></div>
             <div className="flex gap-2 pt-2">
-              <StatusPill tone={detail.coordination.contractSent ? "good" : "neutral"} label={detail.coordination.contractSent ? "contract sent" : "contract not sent"} />
-              <StatusPill tone={detail.coordination.contractSigned ? "good" : "warn"} label={detail.coordination.contractSigned ? "signed" : "unsigned"} />
+              <StatusPill tone={contractSent ? "good" : "neutral"} label={contractSent ? "contract sent" : "contract not sent"} />
+              <StatusPill tone={contractSigned ? "good" : "warn"} label={contractSigned ? "signed" : "unsigned"} />
+            </div>
+            <div className="pt-3">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Checklist progress</div>
+              <div className="mt-2 space-y-2">
+                {closingChecklist.map((item) => (
+                  <div key={item.id} className="rounded-[14px] border border-[var(--line)] px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold text-white">{item.title || "Untitled item"}</div>
+                      <StatusPill tone={item.status === "Done" ? "good" : item.status === "Blocked" ? "warn" : "neutral"} label={item.status.toLowerCase()} />
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--copy-muted)]">
+                      {item.owner || "Unassigned"}{item.dueDate ? ` / due ${item.dueDate}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="pt-3">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Document posture</div>
+              <div className="mt-2 space-y-2">
+                {closingDocuments.map((item) => (
+                  <div key={item.id} className="rounded-[14px] border border-[var(--line)] px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold text-white">{item.name || "Untitled document"}</div>
+                      <StatusPill tone={item.status === "Final" ? "good" : item.status === "Missing" ? "warn" : "neutral"} label={item.status.toLowerCase()} />
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--copy-muted)]">{item.owner || "Unassigned"}</div>
+                    {item.notes ? <div className="mt-2 text-sm text-[var(--copy-soft)]">{item.notes}</div> : null}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </Panel>

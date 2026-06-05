@@ -106,8 +106,20 @@ export type DealEngineDealDetail = {
     contractSent: boolean;
     contractSigned: boolean;
     coordinationNotes: string;
-    closingChecklist: string[];
-    closingDocuments: string[];
+    closingChecklist: Array<{
+      id: string;
+      title: string;
+      status: string;
+      owner: string;
+      dueDate: string;
+    }>;
+    closingDocuments: Array<{
+      id: string;
+      name: string;
+      status: string;
+      owner: string;
+      notes: string;
+    }>;
   };
   room: {
     slug: string;
@@ -593,8 +605,20 @@ type SaveDealCoordinationInput = {
   contractSent: boolean;
   contractSigned: boolean;
   coordinationNotes: string;
-  closingChecklist: string[];
-  closingDocuments: string[];
+  closingChecklist: Array<{
+    id: string;
+    title: string;
+    status: string;
+    owner: string;
+    dueDate: string;
+  }>;
+  closingDocuments: Array<{
+    id: string;
+    name: string;
+    status: string;
+    owner: string;
+    notes: string;
+  }>;
 };
 
 function buildDraftBody(input: {
@@ -672,18 +696,126 @@ function buildFallbackCoordination(
     contractSigned: false,
     coordinationNotes: "Use this lane to coordinate title, walkthrough access, signatures, and close-table readiness.",
     closingChecklist: [
-      "Confirm title company and escrow contact",
-      "Schedule buyer walkthrough or access window",
-      "Verify earnest money and assignment paperwork",
-      "Review closing statement and payout timing",
+      {
+        id: "checklist-title",
+        title: "Confirm title company and escrow contact",
+        status: "Open",
+        owner: "Disposition coordinator",
+        dueDate: "",
+      },
+      {
+        id: "checklist-walkthrough",
+        title: "Schedule buyer walkthrough or access window",
+        status: "Open",
+        owner: "Acquisitions / Dispo",
+        dueDate: "",
+      },
+      {
+        id: "checklist-assignment",
+        title: "Verify earnest money and assignment paperwork",
+        status: "Open",
+        owner: "Closer",
+        dueDate: "",
+      },
+      {
+        id: "checklist-statement",
+        title: "Review closing statement and payout timing",
+        status: "Open",
+        owner: "Operator",
+        dueDate: "",
+      },
     ],
     closingDocuments: [
-      "Purchase agreement",
-      "Assignment agreement",
-      "Earnest money receipt",
-      "Closing statement / HUD or ALTA",
+      {
+        id: "document-purchase",
+        name: "Purchase agreement",
+        status: "Requested",
+        owner: "Closer",
+        notes: "",
+      },
+      {
+        id: "document-assignment",
+        name: "Assignment agreement",
+        status: "Requested",
+        owner: "Disposition coordinator",
+        notes: "",
+      },
+      {
+        id: "document-emd",
+        name: "Earnest money receipt",
+        status: "Requested",
+        owner: "Operator",
+        notes: "",
+      },
+      {
+        id: "document-closing-statement",
+        name: "Closing statement / HUD or ALTA",
+        status: "Requested",
+        owner: "Title officer",
+        notes: "",
+      },
     ],
   };
+}
+
+function normalizeChecklistItems(
+  value: unknown,
+  fallback: DealEngineDealDetail["coordination"]["closingChecklist"],
+): DealEngineDealDetail["coordination"]["closingChecklist"] {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.map((item, index) => {
+    if (typeof item === "string") {
+      return {
+        id: `legacy-checklist-${index + 1}`,
+        title: item,
+        status: "Open",
+        owner: "Unassigned",
+        dueDate: "",
+      };
+    }
+    const payload = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const title = String(payload.title ?? payload.label ?? "").trim();
+    if (!title) return null;
+    return {
+      id: String(payload.id ?? `checklist-${index + 1}`),
+      title,
+      status: String(payload.status ?? "Open"),
+      owner: String(payload.owner ?? "Unassigned"),
+      dueDate: String(payload.dueDate ?? ""),
+    };
+  }).filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return items.length ? items : fallback;
+}
+
+function normalizeClosingDocuments(
+  value: unknown,
+  fallback: DealEngineDealDetail["coordination"]["closingDocuments"],
+): DealEngineDealDetail["coordination"]["closingDocuments"] {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.map((item, index) => {
+    if (typeof item === "string") {
+      return {
+        id: `legacy-document-${index + 1}`,
+        name: item,
+        status: "Requested",
+        owner: "Unassigned",
+        notes: "",
+      };
+    }
+    const payload = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const name = String(payload.name ?? payload.title ?? payload.label ?? "").trim();
+    if (!name) return null;
+    return {
+      id: String(payload.id ?? `document-${index + 1}`),
+      name,
+      status: String(payload.status ?? "Requested"),
+      owner: String(payload.owner ?? "Unassigned"),
+      notes: String(payload.notes ?? ""),
+    };
+  }).filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return items.length ? items : fallback;
 }
 
 function normalizeStage(status: string) {
@@ -1563,12 +1695,8 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
           contractSent: Boolean(payload.contractSent ?? coordination.contractSent),
           contractSigned: Boolean(payload.contractSigned ?? coordination.contractSigned),
           coordinationNotes: String(payload.coordinationNotes ?? coordination.coordinationNotes),
-          closingChecklist: Array.isArray(payload.closingChecklist)
-            ? payload.closingChecklist.map((item) => String(item)).filter(Boolean)
-            : coordination.closingChecklist,
-          closingDocuments: Array.isArray(payload.closingDocuments)
-            ? payload.closingDocuments.map((item) => String(item)).filter(Boolean)
-            : coordination.closingDocuments,
+          closingChecklist: normalizeChecklistItems(payload.closingChecklist, coordination.closingChecklist),
+          closingDocuments: normalizeClosingDocuments(payload.closingDocuments, coordination.closingDocuments),
         };
       }
     }
