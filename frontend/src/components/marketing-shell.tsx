@@ -22,6 +22,7 @@ const marketingNav = [
 export function MarketingShell({
   children,
   watermarkLogoSrc,
+  themeStyle,
 }: {
   children: ReactNode;
   /**
@@ -31,11 +32,17 @@ export function MarketingShell({
    * division logo reads cleanly instead of fighting the parent one.
    */
   watermarkLogoSrc?: string;
+  /**
+   * Division --project-* tokens (from divisionThemeStyle). When set, the
+   * shell background, top glow, and header underline adopt the division's
+   * logo palette instead of the parent blue. Defaults preserve the parent.
+   */
+  themeStyle?: CSSProperties;
 }) {
   const isDivisionWatermark = Boolean(watermarkLogoSrc);
   const watermarkSrc = watermarkLogoSrc ?? "/brand/blackspire-helix-group-logo-fit.png";
   return (
-    <main className="luxury-shell min-h-screen text-foreground">
+    <main className="luxury-shell min-h-screen text-foreground" style={themeStyle}>
       <div className="luxury-orbital-field" aria-hidden="true">
         <span className="luxury-orbital-ring luxury-orbital-ring-a" />
         <span className="luxury-orbital-ring luxury-orbital-ring-b" />

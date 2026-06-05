@@ -17,7 +17,7 @@ export default async function ReconAccountPage() {
   const account = await getReconCustomer().catch(() => null);
 
   return (
-    <MarketingShell watermarkLogoSrc={brandAssets.reconEngine.logo}>
+    <MarketingShell watermarkLogoSrc={brandAssets.reconEngine.logo} themeStyle={divisionThemeStyle("recon-engine")}>
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6"
         style={divisionThemeStyle("recon-engine")}

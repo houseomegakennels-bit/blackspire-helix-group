@@ -861,9 +861,10 @@ body::after {
   --copy-soft: hsl(215 16% 78%);
   --copy-muted: hsl(217 12% 58%);
   background:
-    radial-gradient(circle at 18% 10%, hsl(214 70% 22% / 0.28), transparent 24%),
-    radial-gradient(circle at 82% 12%, hsl(200 100% 26% / 0.18), transparent 20%),
-    linear-gradient(180deg, hsl(228 26% 5%) 0%, hsl(224 28% 4%) 32%, hsl(220 22% 3%) 100%);
+    radial-gradient(circle at 18% 8%, color-mix(in srgb, var(--project-accent, hsl(214 80% 48%)) 26%, transparent), transparent 30%),
+    radial-gradient(circle at 84% 12%, color-mix(in srgb, var(--project-edge, hsl(200 100% 50%)) 18%, transparent), transparent 26%),
+    radial-gradient(circle at 50% 122%, color-mix(in srgb, var(--project-accent, hsl(214 60% 40%)) 14%, transparent), transparent 52%),
+    linear-gradient(180deg, color-mix(in srgb, black 93%, var(--project-accent, hsl(214 80% 48%)) 7%) 0%, hsl(0 0% 3%) 42%, hsl(0 0% 2.5%) 100%);
 }
 
 .luxury-orbital-field {
@@ -1055,8 +1056,8 @@ body::after {
   inset: 0 0 auto 0;
   height: 720px;
   background:
-    radial-gradient(circle at 18% 16%, hsl(212 84% 58% / 0.18), transparent 20%),
-    radial-gradient(circle at 74% 10%, hsl(194 100% 60% / 0.12), transparent 22%),
+    radial-gradient(circle at 18% 16%, color-mix(in srgb, var(--project-accent, hsl(212 84% 58%)) 22%, transparent), transparent 22%),
+    radial-gradient(circle at 74% 10%, color-mix(in srgb, var(--project-edge, hsl(194 100% 60%)) 16%, transparent), transparent 24%),
     linear-gradient(180deg, hsl(0 0% 100% / 0.015), transparent 58%);
   filter: blur(24px);
   opacity: 1;
@@ -1090,7 +1091,7 @@ body::after {
   position: absolute;
   inset: auto 0 -1px 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, hsl(204 86% 72% / 0.6), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--project-accent, hsl(204 86% 72%)) 60%, transparent), transparent);
 }
 
 .luxury-header::after {
@@ -2298,11 +2299,13 @@ body::after {
   position: relative;
   isolation: isolate;
   min-height: 100vh;
+  /* Transparent accent radials only — the themed shell behind provides the
+     near-black division base and the division-logo watermark, so this layer
+     just adds depth glows without hiding the watermark. */
   background:
-    radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--project-accent) 18%, transparent), transparent 24%),
-    radial-gradient(circle at 84% 16%, color-mix(in srgb, var(--project-edge) 22%, transparent), transparent 22%),
-    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--project-surface) 96%, transparent), transparent 38%),
-    linear-gradient(180deg, hsl(0 0% 2%) 0%, color-mix(in srgb, black 86%, var(--project-accent) 14%) 42%, color-mix(in srgb, black 88%, var(--project-edge) 12%) 100%);
+    radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--project-accent) 15%, transparent), transparent 28%),
+    radial-gradient(circle at 84% 16%, color-mix(in srgb, var(--project-edge) 18%, transparent), transparent 26%),
+    radial-gradient(circle at 50% 110%, color-mix(in srgb, var(--project-accent) 11%, transparent), transparent 44%);
 }
 
 .division-page::before {
