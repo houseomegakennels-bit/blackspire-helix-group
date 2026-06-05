@@ -571,12 +571,12 @@ export function SearchJobsMonitor({
                 </p>
               ) : null}
               {exportStatus ? (
-                <p className="border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm leading-6 text-emerald-200">
+                <p className="border border-[hsl(38_100%_60%/.28)] bg-[hsl(38_100%_50%/.10)] p-3 text-sm leading-6 text-[hsl(40_100%_78%)]">
                   {exportStatus}
                 </p>
               ) : null}
               {draftStatus ? (
-                <p className="border border-sky-500/20 bg-sky-500/10 p-3 text-sm leading-6 text-sky-200">
+                <p className="border border-[hsl(33_100%_50%/.24)] bg-[hsl(33_100%_50%/.07)] p-3 text-sm leading-6 text-[hsl(38_100%_80%)]">
                   {draftStatus}
                 </p>
               ) : null}
@@ -722,7 +722,7 @@ export function SearchJobsMonitor({
             {loading ? "Refreshing..." : "Refresh now"}
           </button>
           <span>Last checked: {lastCheckedAt ? lastCheckedAt.toLocaleTimeString() : "not yet"}</span>
-          {error ? <span className="text-rose-300">{error}</span> : null}
+          {error ? <span className="text-[hsl(16_100%_66%)]">{error}</span> : null}
           {writeBlockMessage ? <span className="text-[hsl(22_100%_72%)]">{writeBlockMessage}</span> : null}
         </div>
       </Panel>

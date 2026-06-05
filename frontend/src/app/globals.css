@@ -387,6 +387,49 @@ body::after {
   color: var(--copy-soft);
 }
 
+/* Status pills — shared across divisions. active/good/neutral/inactive
+   derive from --gold (remapped per theme class) so the pill adopts the
+   division's primary color. warn (amber) and bad (red) stay semantic. */
+.status-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 0.25rem 0.5rem;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+}
+.status-pill-active {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  color: var(--gold-soft);
+}
+.status-pill-good {
+  border-color: color-mix(in srgb, var(--gold) 46%, var(--line));
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  color: var(--gold-soft);
+}
+.status-pill-warn {
+  border-color: hsl(38 100% 56% / 0.45);
+  background: hsl(34 100% 46% / 0.12);
+  color: hsl(40 100% 76%);
+}
+.status-pill-neutral {
+  border-color: var(--line);
+  background: hsl(0 0% 100% / 0.03);
+  color: var(--copy-soft);
+}
+.status-pill-inactive {
+  border-color: hsl(220 8% 40% / 0.45);
+  background: hsl(0 0% 100% / 0.02);
+  color: var(--copy-soft);
+}
+.status-pill-bad {
+  border-color: hsl(8 90% 56% / 0.5);
+  background: hsl(8 86% 48% / 0.12);
+  color: hsl(10 100% 80%);
+}
+
 .project-card {
   position: relative;
   overflow: hidden;

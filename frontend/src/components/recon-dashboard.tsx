@@ -21,9 +21,9 @@ function daysUntil(deadline: string | null): number | null {
 }
 
 function fitTone(score: number): string {
-  if (score >= 70) return "#34d399"; // green
-  if (score >= 45) return "#c4b5fd"; // purple
-  return "#9ca3af"; // gray
+  if (score >= 70) return "#F2CB57"; // gold (high fit — Recon primary)
+  if (score >= 45) return "#c4b5fd"; // violet (mid fit — radar accent)
+  return "#9ca3af"; // gray (low fit)
 }
 
 const PROFILE_KEY = "recon.profile.v1";

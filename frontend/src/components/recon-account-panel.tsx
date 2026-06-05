@@ -84,7 +84,7 @@ export function ReconAccountPanel({ account }: { account: AccountView }) {
             <button type="button" onClick={save} disabled={saving} className="recon-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.16em] disabled:opacity-60">
               {saving ? "Saving..." : "Save profile"}
             </button>
-            {status ? <span className="text-sm text-emerald-300">{status}</span> : null}
+            {status ? <span className="text-sm text-[var(--gold-soft)]">{status}</span> : null}
           </div>
           <p className="text-xs text-[var(--copy-muted)]">
             Your profile auto-fills fit scoring on the{" "}

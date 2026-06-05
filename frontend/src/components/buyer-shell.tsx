@@ -196,16 +196,16 @@ export function StatusPill({
   label: string;
 }) {
   const tones = {
-    active: "border-[var(--line-strong)] bg-[hsl(33_100%_50%/.14)] text-[var(--gold-soft)]",
-    inactive: "border-[hsl(28_16%_40%/.45)] bg-[hsl(0_0%_100%/.02)] text-[var(--copy-soft)]",
-    good: "border-[hsl(40_100%_72%/.45)] bg-[hsl(38_100%_54%/.12)] text-[var(--gold-soft)]",
-    warn: "border-[hsl(30_100%_48%/.45)] bg-[hsl(28_100%_40%/.12)] text-[var(--gold)]",
-    neutral: "border-[var(--line)] bg-[hsl(0_0%_100%/.03)] text-[var(--copy-soft)]",
-    bad: "border-[hsl(16_100%_50%/.45)] bg-[hsl(16_100%_44%/.1)] text-[hsl(22_100%_72%)]",
+    active: "status-pill-active",
+    inactive: "status-pill-inactive",
+    good: "status-pill-good",
+    warn: "status-pill-warn",
+    neutral: "status-pill-neutral",
+    bad: "status-pill-bad",
   } as const;
 
   return (
-    <span className={`inline-flex rounded-[999px] border px-2 py-1 text-[11px] uppercase tracking-[0.22em] ${tones[tone]}`}>
+    <span className={`status-pill ${tones[tone]}`}>
       {label}
     </span>
   );

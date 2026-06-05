@@ -696,9 +696,9 @@ export function BuyerReportsMonitor({
             {loading ? "Refreshing..." : "Refresh now"}
           </button>
           <span className="brand-copy-soft text-sm">Last checked: {lastCheckedAt ? lastCheckedAt.toLocaleTimeString() : "not yet"}</span>
-          {error ? <span className="text-sm text-rose-300">{error}</span> : null}
-          {exportStatus ? <span className="text-sm text-emerald-300">{exportStatus}</span> : null}
-          {draftStatus ? <span className="text-sm text-sky-300">{draftStatus}</span> : null}
+          {error ? <span className="text-sm text-[hsl(16_100%_66%)]">{error}</span> : null}
+          {exportStatus ? <span className="text-sm text-[hsl(40_100%_72%)]">{exportStatus}</span> : null}
+          {draftStatus ? <span className="text-sm text-[hsl(38_100%_78%)]">{draftStatus}</span> : null}
           {writeBlockMessage ? <span className="text-sm text-[hsl(22_100%_72%)]">{writeBlockMessage}</span> : null}
         </div>
 

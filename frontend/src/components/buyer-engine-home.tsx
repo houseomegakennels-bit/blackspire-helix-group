@@ -348,7 +348,7 @@ export async function BuyerEngineHome() {
                 <div className="brand-copy-soft text-sm">{item.purpose}</div>
                 <div
                   className={`text-xs uppercase tracking-[0.24em] ${
-                    item.status === "configured" ? "text-emerald-300" : "text-amber-300"
+                    item.status === "configured" ? "text-[hsl(40_100%_72%)]" : "text-[hsl(16_100%_66%)]"
                   }`}
                 >
                   {item.status}
