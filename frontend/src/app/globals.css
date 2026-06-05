@@ -1822,9 +1822,9 @@ body::after {
   display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; border: 1px solid;
   font-family: var(--font-mono), monospace; font-size: 1.15rem; font-weight: 700;
 }
-.seller-score-hot { color: hsl(14 100% 72%); border-color: hsl(14 100% 60% / .55); background: hsl(14 100% 48% / .12); }
-.seller-score-warm { color: var(--seller-gold-soft); border-color: var(--seller-line-strong); background: hsl(42 90% 50% / .12); }
-.seller-score-watch { color: hsl(190 80% 78%); border-color: hsl(190 80% 65% / .42); background: hsl(190 80% 45% / .1); }
+.seller-score-hot { color: hsl(4 100% 75%); border-color: hsl(4 100% 62% / .6); background: hsl(4 100% 50% / .16); }
+.seller-score-warm { color: hsl(354 90% 80%); border-color: var(--seller-line-strong); background: hsl(354 84% 55% / .13); }
+.seller-score-watch { color: hsl(208 30% 84%); border-color: hsl(208 24% 68% / .42); background: hsl(208 24% 55% / .12); }
 .seller-score-low { color: var(--copy-muted); border-color: hsl(0 0% 100% / .14); background: hsl(0 0% 100% / .03); }
 .seller-signal {
   display: inline-flex; border-radius: 999px; border: 1px solid var(--seller-line); background: hsl(4 72% 46% / .1);
