@@ -21,9 +21,19 @@ const marketingNav = [
 
 export function MarketingShell({
   children,
+  watermarkLogoSrc,
 }: {
   children: ReactNode;
+  /**
+   * When set, the full-viewport background watermark shows this division
+   * logo instead of the parent BLACKSPIRE HELIX mark. Division pages should
+   * pass their own logo here rather than layering a second watermark, so the
+   * division logo reads cleanly instead of fighting the parent one.
+   */
+  watermarkLogoSrc?: string;
 }) {
+  const isDivisionWatermark = Boolean(watermarkLogoSrc);
+  const watermarkSrc = watermarkLogoSrc ?? "/brand/blackspire-helix-group-logo-fit.png";
   return (
     <main className="luxury-shell min-h-screen text-foreground">
       <div className="luxury-orbital-field" aria-hidden="true">
@@ -33,10 +43,10 @@ export function MarketingShell({
       </div>
       <div className="luxury-watermark" aria-hidden="true">
         <Image
-          src="/brand/blackspire-helix-group-logo-fit.png"
+          src={watermarkSrc}
           alt=""
-          width={1792}
-          height={1024}
+          width={isDivisionWatermark ? 1254 : 1792}
+          height={isDivisionWatermark ? 1254 : 1024}
           aria-hidden="true"
           className="luxury-watermark-img"
         />

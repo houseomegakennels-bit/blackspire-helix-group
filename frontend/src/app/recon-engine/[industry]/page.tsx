@@ -3,7 +3,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DivisionWatermark } from "@/components/division-watermark";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ReconEngineLeadForm } from "@/components/recon-engine-lead-form";
 import { brandAssets } from "@/lib/brand-assets";
@@ -44,8 +43,7 @@ export default async function ReconIndustryPage({
   if (!page) notFound();
 
   return (
-    <MarketingShell>
-      <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
+    <MarketingShell watermarkLogoSrc={brandAssets.reconEngine.logo}>
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] space-y-10 px-4 py-16 lg:px-6"
         style={divisionThemeStyle("recon-engine")}

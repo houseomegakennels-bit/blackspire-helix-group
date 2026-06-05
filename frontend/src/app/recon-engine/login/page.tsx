@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { DivisionWatermark } from "@/components/division-watermark";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ReconAuthPanel } from "@/components/recon-auth-panel";
 import { brandAssets } from "@/lib/brand-assets";
@@ -19,8 +18,7 @@ export default async function ReconLoginPage() {
   if (customer) redirect("/recon-engine/account");
 
   return (
-    <MarketingShell>
-      <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
+    <MarketingShell watermarkLogoSrc={brandAssets.reconEngine.logo}>
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] px-4 py-16 lg:px-6"
         style={divisionThemeStyle("recon-engine")}

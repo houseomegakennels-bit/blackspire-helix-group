@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { DivisionWatermark } from "@/components/division-watermark";
 import { MarketingShell } from "@/components/marketing-shell";
 import { brandAssets } from "@/lib/brand-assets";
 import { divisionThemeStyle } from "@/lib/division-theme";
@@ -22,8 +21,7 @@ export default async function ReconAdminPage() {
   }
 
   return (
-    <MarketingShell>
-      <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
+    <MarketingShell watermarkLogoSrc={brandAssets.reconEngine.logo}>
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6"
         style={divisionThemeStyle("recon-engine")}

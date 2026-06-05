@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { DivisionWatermark } from "@/components/division-watermark";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ReconAccountPanel } from "@/components/recon-account-panel";
 import { brandAssets } from "@/lib/brand-assets";
@@ -18,8 +17,7 @@ export default async function ReconAccountPage() {
   const account = await getReconCustomer().catch(() => null);
 
   return (
-    <MarketingShell>
-      <DivisionWatermark logoSrc={brandAssets.reconEngine.logo} fixed />
+    <MarketingShell watermarkLogoSrc={brandAssets.reconEngine.logo}>
       <div
         className="theme-recon-engine mx-auto max-w-[1450px] space-y-8 px-4 py-16 lg:px-6"
         style={divisionThemeStyle("recon-engine")}
