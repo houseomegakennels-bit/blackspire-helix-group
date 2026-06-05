@@ -35,7 +35,7 @@ export function BuyerShell({
 }) {
   return (
     <main
-      className="theme-buyer-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,hsl(31_100%_34%/.16),transparent_30%),radial-gradient(circle_at_80%_12%,hsl(33_100%_50%/.06),transparent_26%),linear-gradient(180deg,hsl(0_0%_1%)_0%,hsl(22_18%_3%)_24%,hsl(14_22%_4%)_100%)] text-foreground"
+      className="theme-buyer-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_16%_-2%,hsl(32_100%_46%/.24),transparent_42%),radial-gradient(circle_at_86%_8%,hsl(20_94%_48%/.16),transparent_38%),radial-gradient(circle_at_50%_122%,hsl(28_100%_40%/.16),transparent_54%),linear-gradient(180deg,hsl(24_30%_4%)_0%,hsl(18_26%_3%)_46%,hsl(14_30%_4%)_100%)] text-foreground"
     >
       <DivisionWatermark logoSrc={brandAssets.buyerEngine.logo} />
       <div className="relative z-10 mx-auto grid min-h-screen max-w-[1700px] gap-6 px-4 py-4 lg:grid-cols-[290px_minmax(0,1fr)] lg:px-6">

@@ -287,11 +287,11 @@ export function SellerEngineDashboard({ initialLeads, alerts, sources }: { initi
         </div>
         <div className="mt-5 overflow-x-auto rounded-[20px] border border-[var(--seller-line)]">
           <table className="w-full min-w-[980px] text-left text-sm">
-            <thead className="bg-[hsl(214_22%_7%/.96)] text-[10px] uppercase tracking-[0.22em] text-[var(--copy-muted)]">
+            <thead className="bg-[hsl(0_0%_7%/.96)] text-[10px] uppercase tracking-[0.22em] text-[var(--copy-muted)]">
               <tr>{["Score", "Owner / Property", "Location", "Signals", "Equity", "Status", "Action"].map((item) => <th key={item} className="px-4 py-3">{item}</th>)}</tr>
             </thead>
             <tbody>{filtered.map((lead) => (
-              <tr key={lead.id} className="border-t border-[var(--seller-line)] bg-[hsl(215_20%_5%/.82)] hover:bg-[hsl(4_70%_16%/.30)]">
+              <tr key={lead.id} className="border-t border-[var(--seller-line)] bg-[hsl(0_0%_5%/.82)] hover:bg-[hsl(4_70%_16%/.30)]">
                 <td className="px-4 py-4"><button onClick={() => setSelected(lead)} className={`seller-score ${scoreTone(lead.score)}`}>{lead.score}</button><div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">{lead.category}</div></td>
                 <td className="px-4 py-4"><button onClick={() => setSelected(lead)} className="text-left"><div className="font-semibold text-white">{lead.ownerName}</div><div className="mt-1 text-xs text-[var(--copy-soft)]">{lead.propertyAddress}</div></button></td>
                 <td className="px-4 py-4 text-[var(--copy-soft)]">{lead.city}, {lead.county}<div className="mt-1 text-xs text-[var(--copy-muted)]">{lead.zipCode}</div></td>
