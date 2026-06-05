@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { DEMO_SELLER_LEADS, type SellerLeadView } from "@/lib/seller-engine-demo";
+import type { SellerLeadView } from "@/lib/seller-engine-demo";
 import { SELLER_COUNTY_STARTER_SOURCES } from "@/lib/seller-county-sources";
 import {
   calculateSellerLeadScore,
@@ -601,10 +601,51 @@ type BuyerCountyRegistryRow = {
 const NC_ONEMAP_LEGACY_ABSENTEE_MAX_SALEDATE = "2016-01-01";
 const NC_ONEMAP_HIGH_VALUE_MIN_ASSESSED = 300000;
 const NC_ONEMAP_CORPORATE_OWNER_PATTERN = /\b(LLC|LP|LLP|INC|CORP|CO\b|COMPANY|HOLDINGS?|PROPERTIES|INVESTMENTS?|TRUST|TR)\b/i;
+const DISTRESS_SOURCE_TYPES = new Set<SellerSourceType>(["foreclosure", "tax_delinquent", "probate", "code_violation", "vacancy", "public_auction"]);
+const COUNTY_BLEND_SOURCE_KEYS = new Set<SellerLiveSourceKey>(["county_distress_blend", "county_operational_blend"]);
+
+type SellerSourceRecord = {
+  id: string;
+  name: string;
+  county: string | null;
+  state: string | null;
+  source_type: string;
+  source_url: string | null;
+  integration_type: string;
+  configuration: Record<string, unknown> | null;
+  active: boolean;
+  last_imported_at: string | null;
+  created_at: string | null;
+};
+
+function countySlug(value: string) {
+  return value.trim().toLowerCase().replace(/county$/i, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function inferLiveSourceKeyFromCountySource(county: string, sourceType: string): SellerLiveSourceKey | null {
+  const slug = countySlug(county);
+  if (!slug) return null;
+  const candidate = SELLER_LIVE_SOURCES.find((source) => {
+    if (COUNTY_BLEND_SOURCE_KEYS.has(source.key)) return false;
+    if (!source.key.startsWith(`${slug}_county_`)) return false;
+    return source.sourceType === sourceType;
+  });
+  return candidate?.key ?? null;
+}
+
+function mergeSourceConfiguration(
+  existing: Record<string, unknown> | null | undefined,
+  incoming: Record<string, unknown> | null | undefined,
+) {
+  return {
+    ...(existing ?? {}),
+    ...(incoming ?? {}),
+  };
+}
 
 export async function listSellerLeads(): Promise<SellerLeadView[]> {
   const supabase = getSupabaseAdmin();
-  if (!supabase) return DEMO_SELLER_LEADS;
+  if (!supabase) return [];
 
   const { data, error } = await supabase
     .from("seller_leads")
@@ -612,7 +653,7 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
     .order("motivation_score", { ascending: false })
     .limit(500);
 
-  if (error) return DEMO_SELLER_LEADS;
+  if (error) return [];
   if (!data?.length) return [];
 
   return (data as unknown as SellerLeadJoin[]).map(mapSellerLead);
@@ -620,9 +661,7 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
 
 export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | null> {
   const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    return DEMO_SELLER_LEADS.find((lead) => lead.id === id) ?? null;
-  }
+  if (!supabase) return null;
 
   const { data, error } = await supabase
     .from("seller_leads")
@@ -684,7 +723,7 @@ async function ensureSellerSource(
   const integrationType = input.integrationType || "manual_csv";
   const { data: existing } = await supabase
     .from("data_sources")
-    .select("id")
+    .select("id,configuration")
     .eq("name", input.sourceName)
     .eq("source_type", input.sourceType)
     .eq("integration_type", integrationType)
@@ -698,7 +737,7 @@ async function ensureSellerSource(
       .from("data_sources")
       .update({
         source_url: input.sourceUrl || null,
-        configuration: input.configuration ?? {},
+        configuration: mergeSourceConfiguration(existing.configuration as Record<string, unknown> | null, input.configuration),
         last_imported_at: new Date().toISOString(),
         active: true,
       })
@@ -711,12 +750,12 @@ async function ensureSellerSource(
     .insert({
       name: input.sourceName,
       source_type: input.sourceType,
-      county: input.county || null,
-      integration_type: integrationType,
-      source_url: input.sourceUrl || null,
-      configuration: input.configuration ?? {},
-      last_imported_at: new Date().toISOString(),
-    })
+        county: input.county || null,
+        integration_type: integrationType,
+        source_url: input.sourceUrl || null,
+        configuration: input.configuration ?? {},
+        last_imported_at: new Date().toISOString(),
+      })
     .select("id")
     .single();
   if (sourceError) throw new Error(sourceError.message);
@@ -887,7 +926,7 @@ export async function updateSellerWeights(weights: SellerScoringWeights) {
 export async function listSellerSources() {
   const supabase = getSupabaseAdmin();
   if (!supabase) return [];
-  const { data } = await supabase.from("data_sources").select("*").order("created_at", { ascending: false }).limit(100);
+  const { data } = await supabase.from("data_sources").select("*").order("created_at", { ascending: false }).limit(250);
   return data ?? [];
 }
 
@@ -927,6 +966,51 @@ async function getBuyerCountyRegistrySource(county: string, state = "NC"): Promi
 
   if (error) throw new Error(error.message);
   return (data as BuyerCountyRegistryRow | null) ?? null;
+}
+
+async function getCountyLiveSourceKeys(
+  county: string,
+  mode: "distress" | "operational",
+): Promise<SellerLiveSourceKey[]> {
+  const keys = new Set<SellerLiveSourceKey>();
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    const { data } = await supabase
+      .from("data_sources")
+      .select("source_type,configuration,name")
+      .eq("county", county)
+      .eq("integration_type", "live_api")
+      .eq("active", true);
+
+    for (const row of (data ?? []) as Array<{ source_type: string; configuration: Record<string, unknown> | null; name: string }>) {
+      const sourceType = row.source_type as SellerSourceType;
+      const include = mode === "operational"
+        ? sourceType === "absentee_owner" || DISTRESS_SOURCE_TYPES.has(sourceType)
+        : DISTRESS_SOURCE_TYPES.has(sourceType);
+      if (!include) continue;
+      const configKey = typeof row.configuration?.liveSourceKey === "string" ? row.configuration.liveSourceKey : null;
+      const resolved = configKey && SELLER_LIVE_SOURCES.some((source) => source.key === configKey)
+        ? configKey as SellerLiveSourceKey
+        : inferLiveSourceKeyFromCountySource(county, sourceType);
+      if (resolved && !COUNTY_BLEND_SOURCE_KEYS.has(resolved)) {
+        keys.add(resolved);
+      }
+    }
+  }
+
+  if (!keys.size) {
+    const slug = countySlug(county);
+    for (const source of SELLER_LIVE_SOURCES) {
+      if (COUNTY_BLEND_SOURCE_KEYS.has(source.key)) continue;
+      if (!source.key.startsWith(`${slug}_county_`)) continue;
+      const include = mode === "operational"
+        ? source.sourceType === "absentee_owner" || DISTRESS_SOURCE_TYPES.has(source.sourceType)
+        : DISTRESS_SOURCE_TYPES.has(source.sourceType);
+      if (include) keys.add(source.key);
+    }
+  }
+
+  return [...keys];
 }
 
 export async function syncSellerSourcesFromBuyerRegistry() {
@@ -988,7 +1072,7 @@ export async function createSellerSource(input: {
       .from("data_sources")
       .update({
         source_url: input.sourceUrl || null,
-        configuration,
+        configuration: mergeSourceConfiguration(existing.configuration as Record<string, unknown> | null, configuration),
         active: input.active ?? true,
       })
       .eq("id", existing.id)
@@ -3023,326 +3107,6 @@ async function fetchBurkeCountyAbsenteeRows(input: LiveSellerSearchInput): Promi
   return rankSellerRows(rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" }))).slice(0, requestedLimit);
 }
 
-async function fetchGenericNcCountyAbsenteeRows(
-  input: LiveSellerSearchInput,
-  countyName: string,
-  defaultCity: string,
-  sourceName: string,
-): Promise<SellerImportRow[]> {
-  const requestedLimit = Math.min(Math.max(input.limit ?? 25, 1), 100);
-  const registrySource = await getBuyerCountyRegistrySource(countyName);
-
-  // No curated county endpoint — fall back to the statewide NC OneMap service.
-  if (!registrySource?.source_url) {
-    return fetchNcOneMapAbsenteeRows({ ...input, county: countyName });
-  }
-
-  let rows: SellerImportRow[] = [];
-  try {
-    rows = await queryCuratedCountyEndpoint(registrySource.source_url, {
-      requestedLimit,
-      countyName,
-      defaultCity,
-      sourceName,
-      cityFilter: input.city?.trim().toUpperCase(),
-      inputCity: input.city?.trim(),
-    });
-  } catch {
-    rows = [];
-  }
-
-  // If the curated endpoint is unreachable or yields nothing usable, fall back
-  // to the statewide service so the county is never a dead entry.
-  if (!rows.length) {
-    return fetchNcOneMapAbsenteeRows({ ...input, county: countyName });
-  }
-
-  return rows;
-}
-
-async function queryCuratedCountyEndpoint(
-  sourceUrl: string,
-  opts: {
-    requestedLimit: number;
-    countyName: string;
-    defaultCity: string;
-    sourceName: string;
-    cityFilter?: string;
-    inputCity?: string;
-  },
-): Promise<SellerImportRow[]> {
-  const { requestedLimit, countyName, defaultCity, sourceName, cityFilter, inputCity } = opts;
-
-  const [rawEndpoint, queryString = ""] = sourceUrl.split("?");
-  const endpoint = rawEndpoint.endsWith("/query") ? rawEndpoint : `${rawEndpoint}/query`;
-  const stored = new URLSearchParams(queryString);
-
-  // Preserve the county's curated WHERE filter (e.g. SalePrice > 0) but always
-  // request every field so the case-insensitive mapper can find what it needs.
-  const params = new URLSearchParams({
-    where: stored.get("where") || "1=1",
-    outFields: "*",
-    returnGeometry: "false",
-    resultRecordCount: String(Math.min(Math.max(requestedLimit * 6, 200), 2000)),
-    f: "json",
-  });
-  const orderBy = stored.get("orderByFields");
-  if (orderBy) params.set("orderByFields", orderBy);
-
-  const payload = await postArcgisQueryWithTimeout(endpoint, params, 25000) as {
-    error?: { message?: string };
-    features?: Array<{ attributes?: Record<string, string | number | null> }>;
-  };
-  if (payload.error?.message) throw new Error(payload.error.message);
-
-  const rows = (payload.features ?? [])
-    .map((feature) => feature.attributes ?? {})
-    .flatMap((raw) => {
-      // Case-insensitive attribute lookup — NC counties use wildly different
-      // field name casing (OWNER1 / Owner1 / ownname / CURR_NAME1, etc.).
-      const lower: Record<string, string | number | null> = {};
-      for (const [key, value] of Object.entries(raw)) lower[key.toLowerCase()] = value;
-
-      const text = (...names: string[]) => {
-        for (const name of names) {
-          const value = lower[name.toLowerCase()];
-          if (value !== undefined && value !== null && String(value).trim() !== "") {
-            return normalizeArcGisText(value as string | number);
-          }
-        }
-        return "";
-      };
-      const num = (...names: string[]) => {
-        for (const name of names) {
-          const value = lower[name.toLowerCase()];
-          if (typeof value === "number" && Number.isFinite(value)) return value;
-          if (typeof value === "string" && value.trim()) {
-            const parsed = Number(value.replace(/[$,]/g, ""));
-            if (Number.isFinite(parsed)) return parsed;
-          }
-        }
-        return undefined;
-      };
-      const street = (no: string[], dir: string[], name: string[], type: string[], suf: string[]) =>
-        [text(...no), text(...dir), text(...name), text(...type), text(...suf)].filter(Boolean).join(" ").trim();
-
-      const parcelId = text(
-        "PIN_NUM", "PIN14", "PIN4", "PIN", "PINNUM", "PinNum", "PARCEL_ID", "PARCEL_NUMBER", "PARID",
-        "GIS_PIN", "TAX_PIN", "GIS_PARID", "TAX_PARID", "REID", "PARCEL_PK", "GPIN", "GPINLONG",
-        "NCPIN", "TWN_PIN", "ncpin", "parno", "PID",
-      );
-      const ownerName = [
-        text(
-          "OWNER", "OWNER1", "OWN1", "PROPERTY_OWNER", "OWNNAME", "OWNAM1", "NAME1", "NAME",
-          "CURR_NAME1", "AcctName1", "BUYER1", "OwnerName", "ownname", "name1", "Name",
-        ),
-        text("OWNER2", "OWN2", "OWNAM2", "NAME2", "CURR_NAME2", "AcctName2", "BUYER2", "ownname2", "name2"),
-      ].filter(Boolean).join(" / ");
-
-      const mailLine1 = text(
-        "OWNER_MAIL_1", "MAIL_ADDR1", "MAILADD", "MAILADDR1", "MAILINGADDRESS", "MAILING_AD",
-        "ADDR1", "ADDR", "ADDRESS1", "ADD1", "ADDRLINE1", "OWNER_ADDR1", "OWNERADDR1", "OwnerAddress1",
-        "CURR_ADDR1", "TAXADD1", "TaxpayerAddress1", "TMADDR", "OWADR1", "mailadd", "MailingAddress",
-      ) || street(["MailADRNO"], ["MailADRDIR"], ["MailADRSTR"], ["MailADRSUF"], []);
-      const mailLine2 = text("OWNER_MAIL_2", "MAIL_ADDR2", "ADDR2", "ADDRESS2", "ADD2", "ADDRLINE2",
-        "OWNER_ADDR2", "OwnerAddress2", "CURR_ADDR2", "TAXADD2", "munit");
-      const mailLine3 = text("OWNER_MAIL_3", "ADDRESS3", "OWNER_ADDR3", "OwnerAddress3");
-      const mailCity = text("OWNER_MAIL_CITY", "MAIL_CITY", "MAILCITY", "MailCity", "CITY", "OWNER_CITY",
-        "OWCITY", "CURR_CITY", "CITYNM", "TaxpayerCity", "City", "mcity");
-      const mailState = text("OWNER_MAIL_STATE", "MAIL_STATE", "MAILSTATE", "MailState", "STATE", "OWNER_STATE",
-        "OWSTA", "CURR_STATE", "TAXSTE", "State", "mstate");
-      const mailZipCombined = text("CityStateZip", "CITYSTATEZIP", "ML_C_ST_Z");
-      const mailZip = text("OWNER_MAIL_ZIP", "MAIL_ZIP", "MAILZIP", "MailZip", "MailZipCode", "ZIP",
-        "ZIPCODE", "OWNER_ZIP", "OWZIPA", "CURR_ZIPCODE", "ZIPCode", "Zip", "mzip")
-        || (mailZipCombined.match(/\b(\d{5})(?:-\d{4})?\b/)?.[1] ?? "");
-
-      const directProperty = text(
-        "SITE_ADDRESS", "PROP_ADDR", "PROP_ADDRESS", "PROPERTY_ADDRESS", "PropertyAddress", "PROP_ADDRESS",
-        "LOCATION_ADDR", "PHYSICAL_ADDRESS", "PHYSICALADDRESS", "PHYSICALADDR", "PHYS_ADDR",
-        "PHYSSTRADD", "PARCEL_ADD", "PhyStreetAddr", "FullAdd", "FULLADD", "PropAddr",
-        "FormattedPropertyAddress", "siteadd",
-      );
-      const propertyAddress = directProperty
-        || street(["HouseNumber", "saddno"], ["StreetDirection", "SDIR", "saddpref"],
-          ["StreetName", "STREET", "streetname", "saddstr", "saddstname"],
-          ["StreetType", "STYPE", "saddsttyp"], ["StreetSuffix", "saddstsuf"]);
-
-      const propertyCity = inputCity
-        || text("CITY_DECODE", "PHYS_ADDR_CITY", "scity", "CityName")
-        || inferCityFromPropertyAddress(propertyAddress, defaultCity);
-
-      // Sale date arrives as an epoch (ms) for date fields, or year/month parts.
-      const saleEpoch = num("DEED_DATE", "DEEDDATE", "SALEDATE", "SALE_DATE", "PKG_SALE_DATE", "Sale_Date",
-        "DATESOLD", "DateSold", "DeedDate", "RECENT_SALEDT", "AMDTSL", "SALEDT", "date_dt", "deed_date", "sale_date", "saledate");
-      const saleYear = num("SaleYear", "SaleYear1", "SALE_YEAR");
-      const assessedValue = num("TOTAL_VALUE_ASSD", "TOT_VAL", "ASM_VAL", "APR_VAL", "ASSESSED_V",
-        "VALUATION", "parval", "TotalASVCurrent", "TotalAsses", "AssessedValue", "total_value",
-        "totalassessedvalue", "TotalMarketValue") || 0;
-      const hasBuildingValue = Boolean(
-        num("BLDG_VAL", "BLDGVALUE", "TOT_B_VAL", "bldg_value", "parcelbuildingvalue",
-          "NBR_BLDG", "BLDGCNT", "ActualYearBuilt", "yr_built", "ResComYrBlt"),
-      );
-      const propertyType = text("LAND_USE", "LANDTYPE", "LAND_CLASS", "TYPE_USE_DECODE", "UseCode", "UseCd",
-        "LAND_CLASS_DECODE", "parusedesc", "parusedsc2", "PROPTYPE", "PARCEL_CLA", "class", "LegalLandT");
-
-      const mailingAddress = [mailLine1, mailLine2, mailLine3, mailCity, mailState, mailZip, mailZipCombined]
-        .filter(Boolean)
-        .filter((value, index, all) => all.indexOf(value) === index)
-        .join(", ");
-
-      // Absentee: owner's mailing street differs from the property street. When
-      // the layer exposes no property address, fall back to out-of-state owner.
-      const absentee = propertyAddress
-        ? normalizeAddressForComparison(propertyAddress) !== normalizeAddressForComparison(mailLine1)
-        : Boolean(mailState && mailState.toUpperCase() !== "NC");
-
-      if (!ownerName || !parcelId || !absentee) return [];
-      if (!propertyAddress && !mailingAddress) return [];
-
-      const saleDate = saleEpoch
-        ? normalizeArcGisDate(saleEpoch)
-        : (saleYear ? `${Math.round(saleYear)}-01-01` : "");
-
-      return [{
-        property_address: propertyAddress || `${countyName} County parcel ${parcelId}`,
-        parcel_id: parcelId,
-        county: countyName,
-        city: propertyCity,
-        zip_code: mailZip,
-        property_type: propertyType || "Property",
-        assessed_value: assessedValue ? String(Math.round(assessedValue)) : "",
-        last_sale_date: saleDate,
-        last_sale_price: "",
-        owner_name: ownerName,
-        owner_mailing_address: mailingAddress,
-        owner_occupancy_status: isCorporateOwnerName(ownerName) ? "Absentee / Corporate" : "Absentee",
-        tax_delinquent: "false",
-        foreclosure: "false",
-        probate: "false",
-        vacant: !hasBuildingValue ? "true" : "false",
-        code_violation: "false",
-        years_owned: saleEpoch ? yearsSince(saleEpoch) : "",
-        estimated_equity: "",
-        multiple_properties: "false",
-        source_name: sourceName,
-      } satisfies SellerImportRow];
-    })
-    .filter((row) => !cityFilter || row.city.toUpperCase().includes(cityFilter) || row.property_address.toUpperCase().includes(cityFilter));
-
-  const ownerCounts = rows.reduce<Record<string, number>>((counts, row) => {
-    const key = row.owner_name.trim().toUpperCase();
-    counts[key] = (counts[key] ?? 0) + 1;
-    return counts;
-  }, {});
-
-  return rankSellerRows(
-    rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" })),
-  ).slice(0, requestedLimit);
-}
-
-// ── Triangle / Piedmont ──────────────────────────────────────────────────────
-async function fetchDurhamCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Durham", "Durham", "Durham County Absentee Owners");
-}
-async function fetchChathamCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Chatham", "Pittsboro", "Chatham County Absentee Owners");
-}
-async function fetchJohnstonCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Johnston", "Smithfield", "Johnston County Absentee Owners");
-}
-async function fetchHarnettCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Harnett", "Lillington", "Harnett County Absentee Owners");
-}
-// ── Charlotte metro ───────────────────────────────────────────────────────────
-async function fetchCabarrusCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Cabarrus", "Concord", "Cabarrus County Absentee Owners");
-}
-async function fetchUnionCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Union", "Monroe", "Union County Absentee Owners");
-}
-async function fetchIredellCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Iredell", "Statesville", "Iredell County Absentee Owners");
-}
-async function fetchGastonCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Gaston", "Gastonia", "Gaston County Absentee Owners");
-}
-async function fetchLincolnCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Lincoln", "Lincolnton", "Lincoln County Absentee Owners");
-}
-// ── Piedmont Triad ────────────────────────────────────────────────────────────
-async function fetchRowanCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Rowan", "Salisbury", "Rowan County Absentee Owners");
-}
-async function fetchDavidsonCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Davidson", "Lexington", "Davidson County Absentee Owners");
-}
-async function fetchAlamanceCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Alamance", "Graham", "Alamance County Absentee Owners");
-}
-async function fetchRandolphCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Randolph", "Asheboro", "Randolph County Absentee Owners");
-}
-async function fetchCatawbaCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Catawba", "Newton", "Catawba County Absentee Owners");
-}
-// ── Western NC / Mountains ────────────────────────────────────────────────────
-async function fetchBuncombeCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Buncombe", "Asheville", "Buncombe County Absentee Owners");
-}
-async function fetchHendersonCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Henderson", "Hendersonville", "Henderson County Absentee Owners");
-}
-async function fetchWataugaCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Watauga", "Boone", "Watauga County Absentee Owners");
-}
-async function fetchSurryCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Surry", "Dobson", "Surry County Absentee Owners");
-}
-async function fetchCaldwellCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Caldwell", "Lenoir", "Caldwell County Absentee Owners");
-}
-// ── Coastal / Cape Fear ───────────────────────────────────────────────────────
-async function fetchNewHanoverCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "New Hanover", "Wilmington", "New Hanover County Absentee Owners");
-}
-async function fetchBrunswickCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Brunswick", "Bolivia", "Brunswick County Absentee Owners");
-}
-async function fetchPenderCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Pender", "Burgaw", "Pender County Absentee Owners");
-}
-async function fetchOnslowCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Onslow", "Jacksonville", "Onslow County Absentee Owners");
-}
-async function fetchCravenCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Craven", "New Bern", "Craven County Absentee Owners");
-}
-// ── Eastern NC ────────────────────────────────────────────────────────────────
-async function fetchPittCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Pitt", "Greenville", "Pitt County Absentee Owners");
-}
-async function fetchWayneCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Wayne", "Goldsboro", "Wayne County Absentee Owners");
-}
-async function fetchWilsonCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Wilson", "Wilson", "Wilson County Absentee Owners");
-}
-async function fetchVanceCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Vance", "Henderson", "Vance County Absentee Owners");
-}
-async function fetchMooreCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Moore", "Carthage", "Moore County Absentee Owners");
-}
-async function fetchLeeCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Lee", "Sanford", "Lee County Absentee Owners");
-}
-async function fetchDuplinCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Duplin", "Kenansville", "Duplin County Absentee Owners");
-}
-async function fetchHalifaxCountyAbsenteeRows(input: LiveSellerSearchInput) {
-  return fetchGenericNcCountyAbsenteeRows(input, "Halifax", "Halifax", "Halifax County Absentee Owners");
-}
-
 async function fetchMecklenburgDelinquentRows(input: LiveSellerSearchInput): Promise<SellerImportRow[]> {
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const [individualRows, businessRows] = await Promise.all([
@@ -3392,16 +3156,11 @@ async function fetchMecklenburgDelinquentRows(input: LiveSellerSearchInput): Pro
   return rows.slice(0, limit);
 }
 
-export async function runSellerLiveSearch(input: LiveSellerSearchInput) {
-  const sourceKey = input.sourceKey ?? SELLER_LIVE_SOURCE_KEY;
-  const county = input.county.trim();
-  const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
-  if (!county) throw new Error("County is required for a live seller search.");
-  const source = SELLER_LIVE_SOURCES.find((item) => item.key === sourceKey);
-  if (!source) throw new Error("Unsupported live seller source.");
-
-  const city = input.city?.trim() || undefined;
-  const rows = sourceKey === "nc_onemap_full_recon_sweep"
+async function fetchRowsForLiveSource(input: Required<Pick<LiveSellerSearchInput, "county" | "limit">> & Pick<LiveSellerSearchInput, "city"> & {
+  sourceKey: SellerLiveSourceKey;
+}): Promise<SellerImportRow[]> {
+  const { sourceKey, county, city, limit } = input;
+  return sourceKey === "nc_onemap_full_recon_sweep"
     ? mergeSellerRowsByParcel(
         rankSellerRows(
           (
@@ -3414,240 +3173,143 @@ export async function runSellerLiveSearch(input: LiveSellerSearchInput) {
           ).flat(),
         ),
       ).slice(0, limit)
-    : sourceKey === "cumberland_county_foreclosure_sales"
-      ? await fetchCumberlandForeclosureRows({ sourceKey, county, city, limit })
+    : sourceKey === "county_distress_blend" || sourceKey === "county_operational_blend"
+      ? (() => {
+          throw new Error("County blend sources are resolved at the live-search layer.");
+        })()
+      : sourceKey === "cumberland_county_foreclosure_sales"
+        ? await fetchCumberlandForeclosureRows({ sourceKey, county, city, limit })
+      : sourceKey === "cumberland_county_delinquent_taxes"
+        ? await fetchCumberlandDelinquentTaxRows({ sourceKey, county, city, limit })
+      : sourceKey === "forsyth_county_foreclosure_sales"
+        ? await fetchForsythForeclosureRows({ sourceKey, county, city, limit })
+      : sourceKey === "guilford_county_foreclosure_research"
+        ? await fetchGuilfordForeclosureRows({ sourceKey, county, city, limit })
+      : sourceKey === "mecklenburg_county_foreclosure_properties"
+        ? await fetchMecklenburgForeclosureRows({ sourceKey, county, city, limit })
+      : sourceKey === "mecklenburg_county_delinquent_taxpayers"
+        ? await fetchMecklenburgDelinquentRows({ sourceKey, county, city, limit })
+      : sourceKey === "wake_county_absentee_owners"
+        ? await fetchWakeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "beaufort_county_absentee_owners"
+        ? await fetchBeaufortCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "granville_county_absentee_owners"
+        ? await fetchGranvilleCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "sampson_county_absentee_owners"
+        ? await fetchSampsonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "stokes_county_absentee_owners"
+        ? await fetchStokesCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "stanly_county_absentee_owners"
+        ? await fetchStanlyCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "wilkes_county_absentee_owners"
+        ? await fetchWilkesCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "warren_county_absentee_owners"
+        ? await fetchWarrenCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "robeson_county_absentee_owners"
+        ? await fetchRobesonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "rockingham_county_absentee_owners"
+        ? await fetchRockinghamCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "orange_county_absentee_owners"
+        ? await fetchOrangeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "nash_county_absentee_owners"
+        ? await fetchNashCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "edgecombe_county_absentee_owners"
+        ? await fetchEdgecombeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "ashe_county_absentee_owners"
+        ? await fetchAsheCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "avery_county_absentee_owners"
+        ? await fetchAveryCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "burke_county_absentee_owners"
+        ? await fetchBurkeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : await fetchNcOneMapAbsenteeRows({ sourceKey, county, city, limit });
+}
+
+function resolveLiveSourceUrl(sourceKey: SellerLiveSourceKey) {
+  return sourceKey === "cumberland_county_foreclosure_sales"
+    ? "https://www.cumberlandcountync.gov/departments/tax-group/tax/tax-foreclosure-sales"
     : sourceKey === "cumberland_county_delinquent_taxes"
-      ? await fetchCumberlandDelinquentTaxRows({ sourceKey, county, city, limit })
+      ? "https://www.cumberlandcountync.gov/CustomContent/tax/delinquent_taxes/delinquent_taxes.aspx?TaxDelinquent_GVChangePage=91_20"
     : sourceKey === "forsyth_county_foreclosure_sales"
-      ? await fetchForsythForeclosureRows({ sourceKey, county, city, limit })
+      ? "https://co.forsyth.nc.us/tax/foreclosure_prop.aspx"
     : sourceKey === "guilford_county_foreclosure_research"
-      ? await fetchGuilfordForeclosureRows({ sourceKey, county, city, limit })
+      ? "https://gcgis.guilfordcountync.gov/arcgis/rest/services/Foreclosure/ForeclosuresPublic/FeatureServer/0"
     : sourceKey === "mecklenburg_county_foreclosure_properties"
-      ? await fetchMecklenburgForeclosureRows({ sourceKey, county, city, limit })
+      ? "https://tax.mecknc.gov/services/tax-foreclosure-properties"
     : sourceKey === "mecklenburg_county_delinquent_taxpayers"
-      ? await fetchMecklenburgDelinquentRows({ sourceKey, county, city, limit })
+      ? "https://tax.mecknc.gov/services/Delinquent-Taxpayer-Lists"
     : sourceKey === "wake_county_absentee_owners"
-      ? await fetchWakeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://maps.wake.gov/arcgis/rest/services/Property/Parcels/MapServer/0"
     : sourceKey === "beaufort_county_absentee_owners"
-      ? await fetchBeaufortCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://services1.arcgis.com/oXsk9nimtmSEU8Ko/arcgis/rest/services/Beaufort_Service/FeatureServer/4"
     : sourceKey === "granville_county_absentee_owners"
-      ? await fetchGranvilleCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://services8.arcgis.com/dT3Tew5pivPd2bWH/arcgis/rest/services/Granville_Service/FeatureServer/8"
     : sourceKey === "sampson_county_absentee_owners"
-      ? await fetchSampsonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://services3.arcgis.com/fM4kjZmPOS4ay2Ff/arcgis/rest/services/Parcels/FeatureServer/0"
     : sourceKey === "stokes_county_absentee_owners"
-      ? await fetchStokesCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://stokescountygis.com/server/rest/services/ParcelsNew/MapServer/2"
     : sourceKey === "stanly_county_absentee_owners"
-      ? await fetchStanlyCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://services6.arcgis.com/w1igg0Q14weqYXUh/arcgis/rest/services/parcel_records_base_2/FeatureServer/3"
     : sourceKey === "wilkes_county_absentee_owners"
-      ? await fetchWilkesCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://gis.wilkescounty.net/arcgis/rest/services/Parcels_Data/MapServer/0"
     : sourceKey === "warren_county_absentee_owners"
-      ? await fetchWarrenCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://arcgis4.roktech.net/arcgis/rest/services/Warren/RokMap/MapServer/4"
     : sourceKey === "robeson_county_absentee_owners"
-      ? await fetchRobesonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://arcgis4.roktech.net/arcgis/rest/services/robeson/ROKMAPS_v2/MapServer/15"
     : sourceKey === "rockingham_county_absentee_owners"
-      ? await fetchRockinghamCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "https://services.gis.nc.gov/secure/rest/services/NC1Map_Parcels/FeatureServer/0"
     : sourceKey === "orange_county_absentee_owners"
-      ? await fetchOrangeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "buyer_registry:Orange"
     : sourceKey === "nash_county_absentee_owners"
-      ? await fetchNashCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "buyer_registry:Nash"
     : sourceKey === "edgecombe_county_absentee_owners"
-      ? await fetchEdgecombeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "buyer_registry:Edgecombe"
     : sourceKey === "ashe_county_absentee_owners"
-      ? await fetchAsheCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "buyer_registry:Ashe"
     : sourceKey === "avery_county_absentee_owners"
-      ? await fetchAveryCountyAbsenteeRows({ sourceKey, county, city, limit })
+      ? "buyer_registry:Avery"
     : sourceKey === "burke_county_absentee_owners"
-      ? await fetchBurkeCountyAbsenteeRows({ sourceKey, county, city, limit })
-    // ── Triangle / Piedmont ──────────────────────────────────────────────
-    : sourceKey === "durham_county_absentee_owners"
-      ? await fetchDurhamCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "chatham_county_absentee_owners"
-      ? await fetchChathamCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "johnston_county_absentee_owners"
-      ? await fetchJohnstonCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "harnett_county_absentee_owners"
-      ? await fetchHarnettCountyAbsenteeRows({ sourceKey, county, city, limit })
-    // ── Charlotte metro ──────────────────────────────────────────────────
-    : sourceKey === "cabarrus_county_absentee_owners"
-      ? await fetchCabarrusCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "union_county_absentee_owners"
-      ? await fetchUnionCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "iredell_county_absentee_owners"
-      ? await fetchIredellCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "gaston_county_absentee_owners"
-      ? await fetchGastonCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "lincoln_county_absentee_owners"
-      ? await fetchLincolnCountyAbsenteeRows({ sourceKey, county, city, limit })
-    // ── Piedmont Triad ───────────────────────────────────────────────────
-    : sourceKey === "rowan_county_absentee_owners"
-      ? await fetchRowanCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "davidson_county_absentee_owners"
-      ? await fetchDavidsonCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "alamance_county_absentee_owners"
-      ? await fetchAlamanceCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "randolph_county_absentee_owners"
-      ? await fetchRandolphCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "catawba_county_absentee_owners"
-      ? await fetchCatawbaCountyAbsenteeRows({ sourceKey, county, city, limit })
-    // ── Western NC / Mountains ───────────────────────────────────────────
-    : sourceKey === "buncombe_county_absentee_owners"
-      ? await fetchBuncombeCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "henderson_county_absentee_owners"
-      ? await fetchHendersonCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "watauga_county_absentee_owners"
-      ? await fetchWataugaCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "surry_county_absentee_owners"
-      ? await fetchSurryCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "caldwell_county_absentee_owners"
-      ? await fetchCaldwellCountyAbsenteeRows({ sourceKey, county, city, limit })
-    // ── Coastal / Cape Fear ──────────────────────────────────────────────
-    : sourceKey === "new_hanover_county_absentee_owners"
-      ? await fetchNewHanoverCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "brunswick_county_absentee_owners"
-      ? await fetchBrunswickCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "pender_county_absentee_owners"
-      ? await fetchPenderCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "onslow_county_absentee_owners"
-      ? await fetchOnslowCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "craven_county_absentee_owners"
-      ? await fetchCravenCountyAbsenteeRows({ sourceKey, county, city, limit })
-    // ── Eastern NC ──────────────────────────────────────────────────────
-    : sourceKey === "pitt_county_absentee_owners"
-      ? await fetchPittCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "wayne_county_absentee_owners"
-      ? await fetchWayneCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "wilson_county_absentee_owners"
-      ? await fetchWilsonCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "vance_county_absentee_owners"
-      ? await fetchVanceCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "moore_county_absentee_owners"
-      ? await fetchMooreCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "lee_county_absentee_owners"
-      ? await fetchLeeCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "duplin_county_absentee_owners"
-      ? await fetchDuplinCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : sourceKey === "halifax_county_absentee_owners"
-      ? await fetchHalifaxCountyAbsenteeRows({ sourceKey, county, city, limit })
-    : await fetchNcOneMapAbsenteeRows({
-        sourceKey,
-        county,
-        city,
-        limit,
-      });
+      ? "buyer_registry:Burke"
+    : "https://services.arcgis.com/04HiymDgLlsbhaV4/arcgis/rest/services/NCOneMap_Parcels/FeatureServer/79";
+}
+
+export async function runSellerLiveSearch(input: LiveSellerSearchInput) {
+  const sourceKey = input.sourceKey ?? SELLER_LIVE_SOURCE_KEY;
+  const county = input.county.trim();
+  const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
+  if (!county) throw new Error("County is required for a live seller search.");
+  const source = SELLER_LIVE_SOURCES.find((item) => item.key === sourceKey);
+  if (!source) throw new Error("Unsupported live seller source.");
+
+  const city = input.city?.trim() || undefined;
+  const blendedSourceKeys = COUNTY_BLEND_SOURCE_KEYS.has(sourceKey)
+    ? await getCountyLiveSourceKeys(county, sourceKey === "county_operational_blend" ? "operational" : "distress")
+    : [];
+  const rows = COUNTY_BLEND_SOURCE_KEYS.has(sourceKey)
+    ? mergeSellerRowsByParcel(
+        rankSellerRows(
+          (
+            await Promise.all(
+              blendedSourceKeys.map((key) => fetchRowsForLiveSource({ sourceKey: key, county, city, limit })),
+            )
+          ).flat(),
+        ),
+      ).slice(0, limit)
+    : await fetchRowsForLiveSource({ sourceKey, county, city, limit });
   if (!rows.length) {
-    return { imported: 0, total: 0, errors: [], sourceName: source.label, sourceDescription: source.description, sourceKey };
+    return {
+      imported: 0,
+      total: 0,
+      errors: [],
+      sourceName: source.label,
+      sourceDescription: source.description,
+      sourceKey,
+      blendedSourceKeys,
+    };
   }
 
-  const sourceUrl =
-    sourceKey === "cumberland_county_foreclosure_sales"
-      ? "https://www.cumberlandcountync.gov/departments/tax-group/tax/tax-foreclosure-sales"
-      : sourceKey === "cumberland_county_delinquent_taxes"
-        ? "https://www.cumberlandcountync.gov/CustomContent/tax/delinquent_taxes/delinquent_taxes.aspx?TaxDelinquent_GVChangePage=91_20"
-        : sourceKey === "forsyth_county_foreclosure_sales"
-          ? "https://co.forsyth.nc.us/tax/foreclosure_prop.aspx"
-          : sourceKey === "guilford_county_foreclosure_research"
-            ? "https://gcgis.guilfordcountync.gov/arcgis/rest/services/Foreclosure/ForeclosuresPublic/FeatureServer/0"
-            : sourceKey === "mecklenburg_county_foreclosure_properties"
-              ? "https://tax.mecknc.gov/services/tax-foreclosure-properties"
-            : sourceKey === "mecklenburg_county_delinquent_taxpayers"
-              ? "https://tax.mecknc.gov/services/Delinquent-Taxpayer-Lists"
-            : sourceKey === "wake_county_absentee_owners"
-              ? "https://maps.wake.gov/arcgis/rest/services/Property/Parcels/MapServer/0"
-            : sourceKey === "beaufort_county_absentee_owners"
-              ? "https://services1.arcgis.com/oXsk9nimtmSEU8Ko/arcgis/rest/services/Beaufort_Service/FeatureServer/4"
-            : sourceKey === "granville_county_absentee_owners"
-              ? "https://services8.arcgis.com/dT3Tew5pivPd2bWH/arcgis/rest/services/Granville_Service/FeatureServer/8"
-            : sourceKey === "sampson_county_absentee_owners"
-              ? "https://services3.arcgis.com/fM4kjZmPOS4ay2Ff/arcgis/rest/services/Parcels/FeatureServer/0"
-            : sourceKey === "stokes_county_absentee_owners"
-              ? "https://stokescountygis.com/server/rest/services/ParcelsNew/MapServer/2"
-            : sourceKey === "stanly_county_absentee_owners"
-              ? "https://services6.arcgis.com/w1igg0Q14weqYXUh/arcgis/rest/services/parcel_records_base_2/FeatureServer/3"
-            : sourceKey === "wilkes_county_absentee_owners"
-              ? "https://gis.wilkescounty.net/arcgis/rest/services/Parcels_Data/MapServer/0"
-            : sourceKey === "warren_county_absentee_owners"
-              ? "https://arcgis4.roktech.net/arcgis/rest/services/Warren/RokMap/MapServer/4"
-            : sourceKey === "robeson_county_absentee_owners"
-              ? "https://arcgis4.roktech.net/arcgis/rest/services/robeson/ROKMAPS_v2/MapServer/15"
-            : sourceKey === "rockingham_county_absentee_owners"
-              ? "https://services.gis.nc.gov/secure/rest/services/NC1Map_Parcels/FeatureServer/0"
-            : sourceKey === "orange_county_absentee_owners"
-              ? "buyer_registry:Orange"
-            : sourceKey === "nash_county_absentee_owners"
-              ? "buyer_registry:Nash"
-            : sourceKey === "edgecombe_county_absentee_owners"
-              ? "buyer_registry:Edgecombe"
-            : sourceKey === "ashe_county_absentee_owners"
-              ? "buyer_registry:Ashe"
-            : sourceKey === "avery_county_absentee_owners"
-              ? "buyer_registry:Avery"
-            : sourceKey === "burke_county_absentee_owners"
-              ? "buyer_registry:Burke"
-            : sourceKey === "durham_county_absentee_owners"
-              ? "buyer_registry:Durham"
-            : sourceKey === "chatham_county_absentee_owners"
-              ? "buyer_registry:Chatham"
-            : sourceKey === "johnston_county_absentee_owners"
-              ? "buyer_registry:Johnston"
-            : sourceKey === "harnett_county_absentee_owners"
-              ? "buyer_registry:Harnett"
-            : sourceKey === "cabarrus_county_absentee_owners"
-              ? "buyer_registry:Cabarrus"
-            : sourceKey === "union_county_absentee_owners"
-              ? "buyer_registry:Union"
-            : sourceKey === "iredell_county_absentee_owners"
-              ? "buyer_registry:Iredell"
-            : sourceKey === "gaston_county_absentee_owners"
-              ? "buyer_registry:Gaston"
-            : sourceKey === "lincoln_county_absentee_owners"
-              ? "buyer_registry:Lincoln"
-            : sourceKey === "rowan_county_absentee_owners"
-              ? "buyer_registry:Rowan"
-            : sourceKey === "davidson_county_absentee_owners"
-              ? "buyer_registry:Davidson"
-            : sourceKey === "alamance_county_absentee_owners"
-              ? "buyer_registry:Alamance"
-            : sourceKey === "randolph_county_absentee_owners"
-              ? "buyer_registry:Randolph"
-            : sourceKey === "catawba_county_absentee_owners"
-              ? "buyer_registry:Catawba"
-            : sourceKey === "buncombe_county_absentee_owners"
-              ? "buyer_registry:Buncombe"
-            : sourceKey === "henderson_county_absentee_owners"
-              ? "buyer_registry:Henderson"
-            : sourceKey === "watauga_county_absentee_owners"
-              ? "buyer_registry:Watauga"
-            : sourceKey === "surry_county_absentee_owners"
-              ? "buyer_registry:Surry"
-            : sourceKey === "caldwell_county_absentee_owners"
-              ? "buyer_registry:Caldwell"
-            : sourceKey === "new_hanover_county_absentee_owners"
-              ? "buyer_registry:New Hanover"
-            : sourceKey === "brunswick_county_absentee_owners"
-              ? "buyer_registry:Brunswick"
-            : sourceKey === "pender_county_absentee_owners"
-              ? "buyer_registry:Pender"
-            : sourceKey === "onslow_county_absentee_owners"
-              ? "buyer_registry:Onslow"
-            : sourceKey === "craven_county_absentee_owners"
-              ? "buyer_registry:Craven"
-            : sourceKey === "pitt_county_absentee_owners"
-              ? "buyer_registry:Pitt"
-            : sourceKey === "wayne_county_absentee_owners"
-              ? "buyer_registry:Wayne"
-            : sourceKey === "wilson_county_absentee_owners"
-              ? "buyer_registry:Wilson"
-            : sourceKey === "vance_county_absentee_owners"
-              ? "buyer_registry:Vance"
-            : sourceKey === "moore_county_absentee_owners"
-              ? "buyer_registry:Moore"
-            : sourceKey === "lee_county_absentee_owners"
-              ? "buyer_registry:Lee"
-            : sourceKey === "duplin_county_absentee_owners"
-              ? "buyer_registry:Duplin"
-            : sourceKey === "halifax_county_absentee_owners"
-              ? "buyer_registry:Halifax"
-        : "https://services.arcgis.com/04HiymDgLlsbhaV4/arcgis/rest/services/NCOneMap_Parcels/FeatureServer/79";
+  const sourceUrl = COUNTY_BLEND_SOURCE_KEYS.has(sourceKey)
+    ? `blend:${blendedSourceKeys.map((key) => `${key}|${resolveLiveSourceUrl(key)}`).join(",")}`
+    : resolveLiveSourceUrl(sourceKey);
   const result = await importSellerRows({
     rows,
     sourceName: source.label,
@@ -3659,10 +3321,86 @@ export async function runSellerLiveSearch(input: LiveSellerSearchInput) {
       liveSourceKey: sourceKey,
       city: city ?? null,
       limit,
+      blendedSourceKeys,
+      blendedSourceTypes: blendedSourceKeys
+        .map((key) => SELLER_LIVE_SOURCES.find((item) => item.key === key)?.sourceType ?? null)
+        .filter(Boolean),
     },
   });
 
-  return { ...result, sourceName: source.label, sourceDescription: source.description, sourceKey };
+  return { ...result, sourceName: source.label, sourceDescription: source.description, sourceKey, blendedSourceKeys };
+}
+
+async function resolveSellerSourceProbeUrl(source: SellerSourceRecord) {
+  if (!source.source_url) return null;
+  if (!source.source_url.startsWith("buyer_registry:")) return source.source_url;
+  const county = source.source_url.split(":")[1]?.trim() || source.county || "";
+  if (!county) return null;
+  const registry = await getBuyerCountyRegistrySource(county, source.state || "NC");
+  return registry?.source_url ?? null;
+}
+
+async function probeSellerSource(source: SellerSourceRecord) {
+  const resolvedUrl = await resolveSellerSourceProbeUrl(source);
+  if (!resolvedUrl) {
+    return {
+      status: "missing_url",
+      checkedAt: new Date().toISOString(),
+      detail: "No resolvable source URL is configured.",
+      resolvedUrl: null,
+    };
+  }
+
+  const probeUrl = /\/(FeatureServer|MapServer)\//i.test(resolvedUrl)
+    ? `${resolvedUrl}${resolvedUrl.includes("?") ? "&" : "?"}f=pjson`
+    : resolvedUrl;
+
+  try {
+    let response = await fetch(probeUrl, { method: "HEAD", redirect: "follow" });
+    if (!response.ok || response.status === 405) {
+      response = await fetch(probeUrl, { method: "GET", redirect: "follow", headers: { Range: "bytes=0-2048" } });
+    }
+
+    return {
+      status: response.ok ? "healthy" : response.status >= 500 ? "down" : "degraded",
+      checkedAt: new Date().toISOString(),
+      detail: response.ok ? "Endpoint reachable." : `Endpoint returned HTTP ${response.status}.`,
+      httpStatus: response.status,
+      resolvedUrl,
+    };
+  } catch (error) {
+    return {
+      status: "down",
+      checkedAt: new Date().toISOString(),
+      detail: error instanceof Error ? error.message : "Endpoint probe failed.",
+      resolvedUrl,
+    };
+  }
+}
+
+export async function probeSellerSourceHealth(id?: string) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) throw new Error("Supabase server credentials are required to run source health checks.");
+
+  let query = supabase
+    .from("data_sources")
+    .select("*")
+    .order("active", { ascending: false })
+    .order("county", { ascending: true });
+  if (id) query = query.eq("id", id);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as SellerSourceRecord[];
+  const healthChecks: Array<{ id: string; name: string; health: Record<string, unknown> }> = [];
+  for (const source of rows) {
+    const health = await probeSellerSource(source);
+    const configuration = mergeSourceConfiguration(source.configuration, { health });
+    await supabase.from("data_sources").update({ configuration }).eq("id", source.id);
+    healthChecks.push({ id: source.id, name: source.name, health });
+  }
+
+  return { checked: healthChecks.length, rows: healthChecks };
 }
 
 export async function generateSellerLeadSummary(lead: SellerLeadView) {
@@ -3722,27 +3460,9 @@ export async function generateSellerLeadSummary(lead: SellerLeadView) {
 
 export async function listSellerAlerts() {
   const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    return DEMO_SELLER_LEADS.slice(0, 3).map((lead) => ({
-      id: `alert-${lead.id}`,
-      title: `${lead.category}: ${lead.ownerName}`,
-      message: `${lead.propertyAddress} scored ${lead.score}. ${lead.recommendedAction}`,
-      alert_type: lead.score >= 80 ? "new_hot_lead" : "distress_signal",
-      read: false,
-      created_at: lead.importedAt,
-    }));
-  }
+  if (!supabase) return [];
   const { data, error } = await supabase.from("seller_alerts").select("*").order("created_at", { ascending: false }).limit(50);
-  if (error) {
-    return DEMO_SELLER_LEADS.slice(0, 3).map((lead) => ({
-      id: `alert-${lead.id}`,
-      title: `${lead.category}: ${lead.ownerName}`,
-      message: `${lead.propertyAddress} scored ${lead.score}. ${lead.recommendedAction}`,
-      alert_type: lead.score >= 80 ? "new_hot_lead" : "distress_signal",
-      read: false,
-      created_at: lead.importedAt,
-    }));
-  }
+  if (error) return [];
   if (!data?.length) return [];
   return data;
 }

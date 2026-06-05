@@ -5,6 +5,7 @@ import {
   createSellerSource,
   listSellerSources,
   listBuyerCountyRegistrySources,
+  probeSellerSourceHealth,
   syncSellerSourcesFromBuyerRegistry,
   toggleSellerSourceActive,
 } from "@/lib/seller-engine-server";
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
       sourceType?: string;
       sourceUrl?: string;
       integrationType?: string;
+      id?: string;
     };
     if (body.action === "bootstrap_starter_pack") {
       return NextResponse.json({ ok: true, ...(await bootstrapSellerCountyStarterSources()) });
@@ -31,6 +33,9 @@ export async function POST(request: NextRequest) {
     }
     if (body.action === "preview_buyer_registry") {
       return NextResponse.json({ ok: true, rows: await listBuyerCountyRegistrySources(true) });
+    }
+    if (body.action === "probe_health") {
+      return NextResponse.json({ ok: true, ...(await probeSellerSourceHealth(body.id)) });
     }
     if (!body.name || !body.sourceType) return NextResponse.json({ ok: false, error: "Source name and type are required." }, { status: 400 });
     return NextResponse.json({ ok: true, source: await createSellerSource({ name: body.name, county: body.county, sourceType: body.sourceType, sourceUrl: body.sourceUrl, integrationType: body.integrationType }) });

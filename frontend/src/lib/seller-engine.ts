@@ -18,6 +18,7 @@ export const SELLER_SOURCE_TYPES = [
   "code_violation",
   "vacancy",
   "public_auction",
+  "blended_search",
 ] as const;
 
 export const SELLER_LIVE_SOURCE_KEY = "nc_onemap_absentee_search";
@@ -30,6 +31,8 @@ export const SELLER_LIVE_SOURCE_KEYS = [
   "nc_onemap_legacy_portfolio_absentee_search",
   "nc_onemap_motivated_seller_sweep",
   "nc_onemap_full_recon_sweep",
+  "county_distress_blend",
+  "county_operational_blend",
   "cumberland_county_foreclosure_sales",
   "cumberland_county_delinquent_taxes",
   "forsyth_county_foreclosure_sales",
@@ -143,6 +146,18 @@ export const SELLER_LIVE_SOURCES: Array<{
     label: "NC OneMap Full Recon Sweep",
     description: "Runs the strongest NC-wide parcel-based absentee-owner profiles together, de-duplicates the results, and ranks them by overlapping motivation patterns.",
     sourceType: "absentee_owner",
+  },
+  {
+    key: "county_distress_blend",
+    label: "County Distress Blend",
+    description: "Runs every active distress adapter for the selected county, merges the results, and ranks the strongest motivated-seller records first.",
+    sourceType: "blended_search",
+  },
+  {
+    key: "county_operational_blend",
+    label: "County Operational Blend",
+    description: "Runs the active county distress adapters plus the local absentee-owner feed, then merges everything into one ranked seller queue.",
+    sourceType: "blended_search",
   },
   {
     key: "cumberland_county_foreclosure_sales",

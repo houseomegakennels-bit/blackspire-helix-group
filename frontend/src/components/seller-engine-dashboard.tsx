@@ -34,16 +34,33 @@ type SourceRow = {
   source_url?: string | null;
   active: boolean;
   last_imported_at?: string | null;
-  configuration?: { notes?: string; starterPack?: boolean; buyerRegistry?: boolean } | null;
+  configuration?: {
+    notes?: string;
+    starterPack?: boolean;
+    buyerRegistry?: boolean;
+    blendedSourceKeys?: string[];
+    blendedSourceTypes?: string[];
+    health?: {
+      status?: string;
+      checkedAt?: string;
+      detail?: string;
+      httpStatus?: number;
+      resolvedUrl?: string | null;
+    };
+  } | null;
 };
 
 type CoverageRow = {
   county: string;
   activeCount: number;
   sourceCount: number;
+  healthyCount: number;
+  degradedCount: number;
   sourceTypes: string[];
   distressTypes: string[];
   integrations: string[];
+  gaps: string[];
+  coverageMode: string;
 };
 
 const DISTRESS_SOURCE_TYPES = new Set([
@@ -62,6 +79,10 @@ const LIVE_SEARCH_PRESETS: Array<{
   limit: number;
   sourceKey: SellerLiveSourceKey;
 }> = [
+  { label: "Charlotte Distress Blend", county: "Mecklenburg", city: "Charlotte", limit: 25, sourceKey: "county_distress_blend" },
+  { label: "Fayetteville Distress Blend", county: "Cumberland", city: "Fayetteville", limit: 25, sourceKey: "county_distress_blend" },
+  { label: "Charlotte Operational Blend", county: "Mecklenburg", city: "Charlotte", limit: 25, sourceKey: "county_operational_blend" },
+  { label: "Raleigh Operational Blend", county: "Wake", city: "Raleigh", limit: 25, sourceKey: "county_operational_blend" },
   { label: "Charlotte Full Sweep", county: "Mecklenburg", city: "Charlotte", limit: 25, sourceKey: "nc_onemap_full_recon_sweep" },
   { label: "Raleigh Full Sweep", county: "Wake", city: "Raleigh", limit: 25, sourceKey: "nc_onemap_full_recon_sweep" },
   { label: "Winston-Salem Sweep", county: "Forsyth", city: "Winston-Salem", limit: 25, sourceKey: "nc_onemap_full_recon_sweep" },
@@ -107,6 +128,10 @@ function formatSourceType(value: string | undefined) {
   return (value ?? "unknown").replaceAll("_", " ");
 }
 
+function formatHealthStatus(value: string | undefined) {
+  return (value ?? "unknown").replaceAll("_", " ");
+}
+
 function formatTimestamp(value: string | undefined) {
   if (!value) return "Not recorded";
   const parsed = Date.parse(value);
@@ -121,9 +146,13 @@ function buildCoverageRows(sourceList: SourceRow[]): CoverageRow[] {
       county,
       activeCount: 0,
       sourceCount: 0,
+      healthyCount: 0,
+      degradedCount: 0,
       sourceTypes: [],
       distressTypes: [],
       integrations: [],
+      gaps: [],
+      coverageMode: "Registry Only",
     };
     existing.sourceCount += 1;
     if (source.active) existing.activeCount += 1;
@@ -131,11 +160,36 @@ function buildCoverageRows(sourceList: SourceRow[]): CoverageRow[] {
     if (DISTRESS_SOURCE_TYPES.has(source.source_type) && !existing.distressTypes.includes(source.source_type)) {
       existing.distressTypes.push(source.source_type);
     }
+    for (const blendedType of source.configuration?.blendedSourceTypes ?? []) {
+      if (!existing.sourceTypes.includes(blendedType)) existing.sourceTypes.push(blendedType);
+      if (DISTRESS_SOURCE_TYPES.has(blendedType) && !existing.distressTypes.includes(blendedType)) {
+        existing.distressTypes.push(blendedType);
+      }
+    }
     if (!existing.integrations.includes(source.integration_type)) existing.integrations.push(source.integration_type);
+    const health = source.configuration?.health?.status;
+    if (health === "healthy") existing.healthyCount += 1;
+    if (health === "degraded" || health === "down" || health === "missing_url") existing.degradedCount += 1;
     grouped.set(county, existing);
   }
 
-  return [...grouped.values()].sort((left, right) => {
+  return [...grouped.values()].map((row) => {
+    const sourceTypes = new Set(row.sourceTypes);
+    row.gaps = [
+      sourceTypes.has("absentee_owner") ? null : "absentee_owner",
+      sourceTypes.has("foreclosure") ? null : "foreclosure",
+      sourceTypes.has("tax_delinquent") ? null : "tax_delinquent",
+      sourceTypes.has("probate") ? null : "probate",
+    ].filter(Boolean) as string[];
+    row.coverageMode = row.distressTypes.length && sourceTypes.has("absentee_owner")
+      ? "Operational Blend Ready"
+      : row.distressTypes.length
+        ? "Distress Partial"
+        : sourceTypes.has("absentee_owner")
+          ? "Absentee Only"
+          : "Registry Only";
+    return row;
+  }).sort((left, right) => {
     if (left.county === "Statewide") return 1;
     if (right.county === "Statewide") return -1;
     return left.county.localeCompare(right.county);
@@ -215,6 +269,11 @@ export function SellerEngineDashboard({
     starterPack: sourceList.filter((source) => source.configuration?.starterPack).length,
     distressReady: coverageRows.filter((row) => row.distressTypes.length > 0).length,
     registryBacked: sourceList.filter((source) => source.configuration?.buyerRegistry).length,
+    healthy: sourceList.filter((source) => source.configuration?.health?.status === "healthy").length,
+    degraded: sourceList.filter((source) => {
+      const status = source.configuration?.health?.status;
+      return status === "degraded" || status === "down" || status === "missing_url";
+    }).length,
   };
 
   const metrics = {
@@ -444,6 +503,21 @@ export function SellerEngineDashboard({
     }
   }
 
+  async function probeSourceHealth(id?: string) {
+    setMessage(id ? "Checking source health..." : "Running Seller Engine source health checks...");
+    const response = await fetch("/api/seller-engine/sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "probe_health", id }),
+    });
+    const payload = await response.json();
+    setMessage(response.ok ? `Health checked for ${payload.checked} seller sources.` : payload.error);
+    if (response.ok) {
+      const refreshedSources = await fetch("/api/seller-engine/sources").then((item) => item.json()).catch(() => null);
+      if (refreshedSources?.ok) setSourceList(refreshedSources.sources as SourceRow[]);
+    }
+  }
+
   async function toggleSource(source: SourceRow) {
     const response = await fetch("/api/seller-engine/sources", {
       method: "PATCH",
@@ -490,6 +564,7 @@ export function SellerEngineDashboard({
               ["Distress coverage", `${metrics.foreclosure + metrics.probate + metrics.tax} signals`],
               ["Highest priority", `${metrics.hot} hot leads`],
               ["County footprint", `${sourceMetrics.distressReady} distress-ready counties`],
+              ["Command mode", "Live-only / no demo fallback"],
             ].map(([label, value]) => (
               <div key={label} className="border-l border-[var(--seller-line-strong)] pl-4">
                 <div className="text-xs uppercase tracking-[0.22em] text-[var(--copy-muted)]">{label}</div>
@@ -629,6 +704,11 @@ export function SellerEngineDashboard({
             </tbody>
           </table>
         </div>
+        {!leads.length ? (
+          <div className="seller-card mt-5 p-4 text-sm leading-6 text-[var(--copy-soft)]">
+            No live seller leads are loaded yet. Seller Engine now stays in live-only mode, so this command deck remains empty until a county search or CSV import lands real records.
+          </div>
+        ) : null}
       </section>
 
       {selected ? (
@@ -782,6 +862,8 @@ export function SellerEngineDashboard({
           <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-[var(--copy-muted)]">
             <span className="seller-signal">{selectedLiveSource?.label}</span>
             <span className="seller-signal">{selectedLiveSource?.description}</span>
+            {liveSourceKey === "county_distress_blend" ? <span className="seller-signal">Blends active distress feeds for this county</span> : null}
+            {liveSourceKey === "county_operational_blend" ? <span className="seller-signal">Blends distress + absentee feeds for this county</span> : null}
           </div>
           <button className="seller-button mt-5 w-full justify-center" type="submit">Run live seller search</button>
         </form>
@@ -814,6 +896,7 @@ export function SellerEngineDashboard({
             <div className="flex flex-wrap gap-2">
               <button type="button" className="seller-button py-2" onClick={() => void bootstrapStarterPack()}>Load county starter pack</button>
               <button type="button" className="seller-button py-2" onClick={() => void syncBuyerRegistry()}>Sync buyer registry</button>
+              <button type="button" className="seller-button py-2" onClick={() => void probeSourceHealth()}>Run source health checks</button>
             </div>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -821,8 +904,9 @@ export function SellerEngineDashboard({
               ["Sources", sourceMetrics.total],
               ["Active", sourceMetrics.active],
               ["Counties", sourceMetrics.countyCount],
-              ["Starter pack", sourceMetrics.starterPack],
               ["Distress ready", sourceMetrics.distressReady],
+              ["Healthy", sourceMetrics.healthy],
+              ["Degraded", sourceMetrics.degraded],
               ["Registry backed", sourceMetrics.registryBacked],
             ].map(([label, value]) => (
               <div key={label} className="seller-card p-4">
@@ -841,9 +925,19 @@ export function SellerEngineDashboard({
                   </div>
                   {source.configuration?.notes ? <div className="mt-2 text-xs leading-5 text-[var(--copy-soft)]">{source.configuration.notes}</div> : null}
                   {source.last_imported_at ? <div className="mt-2 text-xs text-[var(--copy-muted)]">Last imported: {formatTimestamp(source.last_imported_at)}</div> : null}
+                  {source.configuration?.health?.checkedAt ? (
+                    <div className="mt-2 text-xs text-[var(--copy-muted)]">
+                      Health: {formatHealthStatus(source.configuration.health.status)} · checked {formatTimestamp(source.configuration.health.checkedAt)}
+                    </div>
+                  ) : null}
+                  {source.configuration?.health?.detail ? (
+                    <div className="mt-2 text-xs leading-5 text-[var(--copy-soft)]">{source.configuration.health.detail}</div>
+                  ) : null}
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <span className="seller-signal h-fit">{source.active ? "Active" : "Inactive"}</span>
+                  <span className="seller-signal h-fit">{formatHealthStatus(source.configuration?.health?.status)}</span>
+                  <button type="button" className="seller-button py-2" onClick={() => void probeSourceHealth(source.id)}>Check health</button>
                   <button type="button" className="seller-button py-2" onClick={() => void toggleSource(source)}>
                     {source.active ? "Deactivate" : "Activate"}
                   </button>
@@ -870,7 +964,7 @@ export function SellerEngineDashboard({
                   <div className="text-lg font-semibold text-white">{row.county}</div>
                   <div className="mt-1 text-xs text-[var(--copy-muted)]">{row.activeCount} active / {row.sourceCount} total sources</div>
                 </div>
-                <span className="seller-signal">{row.distressTypes.length ? "Distress Ready" : "Absentee Only"}</span>
+                <span className="seller-signal">{row.coverageMode}</span>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {row.sourceTypes.map((type) => (
@@ -879,6 +973,12 @@ export function SellerEngineDashboard({
               </div>
               <div className="mt-4 text-xs text-[var(--copy-muted)]">
                 Integrations: {row.integrations.map((item) => item.replaceAll("_", " ")).join(", ")}
+              </div>
+              <div className="mt-3 text-xs text-[var(--copy-muted)]">
+                Health: {row.healthyCount} healthy / {row.degradedCount} degraded
+              </div>
+              <div className="mt-3 text-xs text-[var(--copy-soft)]">
+                Gaps: {row.gaps.length ? row.gaps.map((gap) => formatSourceType(gap)).join(", ") : "No primary signal gaps"}
               </div>
             </div>
           ))}
