@@ -94,6 +94,21 @@ export type DealEngineDealDetail = {
   sellerSignal: DealEngineSellerSignal | null;
   buyerSignals: DealEngineBuyerSignal[];
   contractDraft: DealEngineContractDraft | null;
+  coordination: {
+    titleCompany: string;
+    titleOfficer: string;
+    walkthroughAt: string;
+    inspectionEndsOn: string;
+    closingDate: string;
+    buyerAssignmentStatus: string;
+    earnestMoneyStatus: string;
+    payoutStatus: string;
+    contractSent: boolean;
+    contractSigned: boolean;
+    coordinationNotes: string;
+    closingChecklist: string[];
+    closingDocuments: string[];
+  };
   room: {
     slug: string;
     propertySummary: string;
@@ -127,11 +142,32 @@ export type DealEngineDealDetail = {
     investorEmail: string;
     interestType: string;
     notes: string;
+    preferredWalkthroughAt: string;
+    attendeeCount: string;
+    proofOfFundsStatus: string;
     submittedAt: string;
     followUpStatus: string;
     followUpOwner: string;
     nextStep: string;
     lastUpdatedAt: string;
+  }>;
+  operatorTasks: Array<{
+    id: string;
+    title: string;
+    owner: string;
+    dueDate: string;
+    priority: string;
+    status: string;
+    notes: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  activityFeed: Array<{
+    id: string;
+    title: string;
+    detail: string;
+    timestamp: string;
+    tone: "neutral" | "good" | "warn" | "active";
   }>;
 };
 
@@ -156,6 +192,14 @@ type DealPacketRow = {
   contact_instructions: string | null;
   deadline_to_submit_offer: string | null;
   comps_placeholder: string[] | null;
+};
+
+type ContractRow = {
+  contract_sent: boolean | null;
+  contract_signed: boolean | null;
+  inspection_period: string | null;
+  earnest_money_deposit: number | null;
+  assignment_status: string | null;
 };
 
 type DealRoomRow = {
@@ -504,6 +548,9 @@ type SaveInvestorInterestInput = {
   investorEmail: string;
   interestType: string;
   notes: string;
+  preferredWalkthroughAt: string;
+  attendeeCount: string;
+  proofOfFundsStatus: string;
 };
 
 type SaveDealStageUpdateInput = {
@@ -520,6 +567,34 @@ type SaveInvestorFollowUpInput = {
   followUpOwner: string;
   nextStep: string;
   notes: string;
+};
+
+type SaveOperatorTaskInput = {
+  dealId: string;
+  taskId?: string;
+  title: string;
+  owner: string;
+  dueDate: string;
+  priority: string;
+  status: string;
+  notes: string;
+};
+
+type SaveDealCoordinationInput = {
+  dealId: string;
+  titleCompany: string;
+  titleOfficer: string;
+  walkthroughAt: string;
+  inspectionEndsOn: string;
+  closingDate: string;
+  buyerAssignmentStatus: string;
+  earnestMoneyStatus: string;
+  payoutStatus: string;
+  contractSent: boolean;
+  contractSigned: boolean;
+  coordinationNotes: string;
+  closingChecklist: string[];
+  closingDocuments: string[];
 };
 
 function buildDraftBody(input: {
@@ -577,6 +652,37 @@ function buildFallbackRoom(lead: DealEngineLead, packet: DealEngineDealDetail["p
     downloadablePdfLabel: "Download Blackspire deal packet",
     submitInterestLabel: "Submit investor interest",
     requestWalkthroughLabel: "Request walkthrough",
+  };
+}
+
+function buildFallbackCoordination(
+  lead: DealEngineLead,
+  contractDraft: DealEngineContractDraft | null,
+): DealEngineDealDetail["coordination"] {
+  return {
+    titleCompany: `${lead.county} County title partner`,
+    titleOfficer: "Unassigned",
+    walkthroughAt: "",
+    inspectionEndsOn: contractDraft ? "14 days from signed contract" : "",
+    closingDate: "",
+    buyerAssignmentStatus: "Packaging buyer handoff",
+    earnestMoneyStatus: contractDraft ? `Target ${contractDraft.earnestMoney}` : "Not funded",
+    payoutStatus: "Awaiting close statement",
+    contractSent: false,
+    contractSigned: false,
+    coordinationNotes: "Use this lane to coordinate title, walkthrough access, signatures, and close-table readiness.",
+    closingChecklist: [
+      "Confirm title company and escrow contact",
+      "Schedule buyer walkthrough or access window",
+      "Verify earnest money and assignment paperwork",
+      "Review closing statement and payout timing",
+    ],
+    closingDocuments: [
+      "Purchase agreement",
+      "Assignment agreement",
+      "Earnest money receipt",
+      "Closing statement / HUD or ALTA",
+    ],
   };
 }
 
@@ -666,6 +772,9 @@ function parseDispositionLogs(logs: DispositionLogRow[]) {
         investorEmail,
         interestType: String(payload.interestType ?? "Interested"),
         notes: String(payload.notes ?? ""),
+        preferredWalkthroughAt: String(payload.preferredWalkthroughAt ?? ""),
+        attendeeCount: String(payload.attendeeCount ?? ""),
+        proofOfFundsStatus: String(payload.proofOfFundsStatus ?? ""),
         submittedAt: String(payload.submittedAt ?? log.created_at ?? new Date().toISOString()),
         followUpStatus: followUp?.followUpStatus ?? "New response",
         followUpOwner: followUp?.followUpOwner ?? "Unassigned",
@@ -674,6 +783,128 @@ function parseDispositionLogs(logs: DispositionLogRow[]) {
       };
     })
     .sort((left, right) => Date.parse(right.submittedAt) - Date.parse(left.submittedAt));
+}
+
+function parseOperatorTasks(logs: DispositionLogRow[]) {
+  const tasks = new Map<string, DealEngineDealDetail["operatorTasks"][number]>();
+
+  for (const log of logs) {
+    if (log.action_type !== "operator_task") continue;
+    const payload = log.payload ?? {};
+    const taskId = String(payload.taskId ?? log.id);
+    tasks.set(taskId, {
+      id: taskId,
+      title: String(payload.title ?? "Untitled task"),
+      owner: String(payload.owner ?? "Unassigned"),
+      dueDate: String(payload.dueDate ?? ""),
+      priority: String(payload.priority ?? "Normal"),
+      status: String(payload.status ?? "Open"),
+      notes: String(payload.notes ?? ""),
+      createdAt: String(payload.createdAt ?? log.created_at ?? new Date().toISOString()),
+      updatedAt: String(payload.updatedAt ?? log.created_at ?? new Date().toISOString()),
+    });
+  }
+
+  return [...tasks.values()].sort((left, right) => {
+    const leftDue = Date.parse(left.dueDate || left.updatedAt);
+    const rightDue = Date.parse(right.dueDate || right.updatedAt);
+    return leftDue - rightDue;
+  });
+}
+
+function buildActivityFeed(logs: DispositionLogRow[]) {
+  return logs.map((log) => {
+    const payload = log.payload ?? {};
+    const timestamp = String(log.created_at ?? new Date().toISOString());
+
+    if (log.action_type === "investor_interest") {
+      return {
+        id: String(log.id),
+        title: `Investor response: ${String(payload.investorName ?? "Unknown investor")}`,
+        detail: String(payload.interestType ?? "Interested"),
+        timestamp,
+        tone: "good" as const,
+      };
+    }
+
+    if (log.action_type === "investor_follow_up") {
+      return {
+        id: String(log.id),
+        title: `Investor follow-up: ${String(payload.investorEmail ?? "Unknown investor")}`,
+        detail: String(payload.nextStep ?? "Disposition follow-up updated."),
+        timestamp,
+        tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "stage_update") {
+      return {
+        id: String(log.id),
+        title: `Pipeline moved to ${String(payload.status ?? "Updated stage")}`,
+        detail: String(payload.nextAction ?? "Next action updated."),
+        timestamp,
+        tone: "warn" as const,
+      };
+    }
+
+    if (log.action_type === "contract_update") {
+      return {
+        id: String(log.id),
+        title: "Contract posture updated",
+        detail: String(payload.summary ?? "Contract terms were revised."),
+        timestamp,
+        tone: "good" as const,
+      };
+    }
+
+    if (log.action_type === "packet_update") {
+      return {
+        id: String(log.id),
+        title: "Disposition packet updated",
+        detail: String(payload.summary ?? "Buyer-facing packet content changed."),
+        timestamp,
+        tone: "neutral" as const,
+      };
+    }
+
+    if (log.action_type === "buyer_draft_created") {
+      return {
+        id: String(log.id),
+        title: `Buyer draft created for ${String(payload.buyerName ?? "buyer lane")}`,
+        detail: String(payload.subject ?? "Outreach draft saved."),
+        timestamp,
+        tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "operator_task") {
+      return {
+        id: String(log.id),
+        title: `Task: ${String(payload.title ?? "Untitled task")}`,
+        detail: `${String(payload.status ?? "Open")} / ${String(payload.owner ?? "Unassigned")}`,
+        timestamp,
+        tone: "neutral" as const,
+      };
+    }
+
+    if (log.action_type === "coordination_update") {
+      return {
+        id: String(log.id),
+        title: "Closing coordination updated",
+        detail: String(payload.summary ?? "Title and closing coordination changed."),
+        timestamp,
+        tone: "active" as const,
+      };
+    }
+
+    return {
+      id: String(log.id),
+      title: String(log.action_type ?? "Deal activity"),
+      detail: "Deal activity recorded.",
+      timestamp,
+      tone: "neutral" as const,
+    };
+  }).sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
 }
 
 export async function createDealFromSellerLead(input: CreateDealFromSellerLeadInput) {
@@ -786,6 +1017,16 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
       earnest_money_deposit: sellerLead.score >= 85 ? 5000 : 3000,
       assignment_status: "Drafting",
     }),
+    supabase.from("deal_packets").insert({
+      lead_id: dealId,
+      property_notes: sellerLead.summary,
+      investor_summary: `Blackspire is underwriting ${sellerLead.propertyAddress} for a ${sellerLead.propertyType.toLowerCase()} disposition path in ${sellerLead.county} County.`,
+      buyer_email_blast: `Blackspire has a new ${sellerLead.county} County opportunity entering packet assembly.`,
+      buyer_sms_alert: `${sellerLead.county} deal lane entering packet prep. Reply for details.`,
+      contact_instructions: "Coordinate all buyer communication through Blackspire Deal Engine.",
+      deadline_to_submit_offer: "",
+      comps_placeholder: [],
+    }),
     supabase.from("deal_rooms").insert({
       lead_id: dealId,
       slug: roomSlug,
@@ -824,7 +1065,7 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
   const purchaseTarget = Math.round((input.offerLow + input.offerHigh) / 2);
   const offerMade = input.offerHigh > 0;
 
-  const [contractUpdate, analysisUpdate, conversationUpdate] = await Promise.all([
+  const [contractUpdate, analysisUpdate, conversationUpdate, logInsert] = await Promise.all([
     supabase
       .from("contracts")
       .update({
@@ -849,12 +1090,25 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
         updated_at: new Date().toISOString(),
       })
       .eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "contract_update",
+      payload: {
+        contractType: input.contractType,
+        offerLow: input.offerLow,
+        offerHigh: input.offerHigh,
+        earnestMoney: input.earnestMoney,
+        summary: `${input.contractType} / ${formatCurrency(input.offerLow)} to ${formatCurrency(input.offerHigh)} / earnest ${formatCurrency(input.earnestMoney)}`,
+        updatedAt: new Date().toISOString(),
+      },
+    }),
   ]);
 
   const error =
     contractUpdate.error?.message
     || analysisUpdate.error?.message
-    || conversationUpdate.error?.message;
+    || conversationUpdate.error?.message
+    || logInsert.error?.message;
   if (error) {
     return { ok: false as const, error };
   }
@@ -901,6 +1155,19 @@ export async function createDealBuyerOutreachDraft(input: CreateDealOutreachDraf
 
   try {
     const drafts = await persistOutreachDraftRecord(record);
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      await supabase.from("disposition_logs").insert({
+        lead_id: input.dealId,
+        action_type: "buyer_draft_created",
+        payload: {
+          buyerName: record.buyerName,
+          subject: record.subject,
+          searchJobId: record.searchJobId,
+          createdAt: record.createdAt,
+        },
+      });
+    }
     return { ok: true as const, draft: record, drafts };
   } catch (error) {
     return {
@@ -916,23 +1183,36 @@ export async function saveDealPacket(input: SaveDealPacketInput) {
     return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
   }
 
+  const payload = {
+    lead_id: input.dealId,
+    property_notes: input.propertyNotes,
+    investor_summary: input.investorSummary,
+    buyer_email_blast: input.buyerEmailBlast,
+    buyer_sms_alert: input.buyerSmsAlert,
+    contact_instructions: input.contactInstructions,
+    deadline_to_submit_offer: input.deadlineToSubmitOffer,
+    comps_placeholder: input.comps,
+    updated_at: new Date().toISOString(),
+  };
+
   const { error } = await supabase
     .from("deal_packets")
-    .update({
-      property_notes: input.propertyNotes,
-      investor_summary: input.investorSummary,
-      buyer_email_blast: input.buyerEmailBlast,
-      buyer_sms_alert: input.buyerSmsAlert,
-      contact_instructions: input.contactInstructions,
-      deadline_to_submit_offer: input.deadlineToSubmitOffer,
-      comps_placeholder: input.comps,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("lead_id", input.dealId);
+    .upsert(payload, { onConflict: "lead_id" });
 
   if (error) {
     return { ok: false as const, error: error.message };
   }
+
+  await supabase.from("disposition_logs").insert({
+    lead_id: input.dealId,
+    action_type: "packet_update",
+    payload: {
+      deadlineToSubmitOffer: input.deadlineToSubmitOffer,
+      compsCount: input.comps.length,
+      summary: `Packet saved with ${input.comps.length} comps and deadline ${input.deadlineToSubmitOffer || "TBD"}.`,
+      updatedAt: new Date().toISOString(),
+    },
+  });
 
   return { ok: true as const };
 }
@@ -962,6 +1242,9 @@ export async function saveInvestorInterest(input: SaveInvestorInterestInput) {
       investorEmail: input.investorEmail,
       interestType: input.interestType,
       notes: input.notes,
+      preferredWalkthroughAt: input.preferredWalkthroughAt,
+      attendeeCount: input.attendeeCount,
+      proofOfFundsStatus: input.proofOfFundsStatus,
       submittedAt: new Date().toISOString(),
     },
   });
@@ -1064,6 +1347,92 @@ export async function saveInvestorFollowUp(input: SaveInvestorFollowUpInput) {
   return { ok: true as const };
 }
 
+export async function saveOperatorTask(input: SaveOperatorTaskInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const taskId = input.taskId?.trim() || `task-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("disposition_logs").insert({
+    lead_id: input.dealId,
+    action_type: "operator_task",
+    payload: {
+      taskId,
+      title: input.title,
+      owner: input.owner,
+      dueDate: input.dueDate,
+      priority: input.priority,
+      status: input.status,
+      notes: input.notes,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+
+  return { ok: true as const, taskId };
+}
+
+export async function saveDealCoordination(input: SaveDealCoordinationInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const [contractUpdate, conversationUpdate, logInsert] = await Promise.all([
+    supabase
+      .from("contracts")
+      .update({
+        contract_sent: input.contractSent,
+        contract_signed: input.contractSigned,
+        inspection_period: input.inspectionEndsOn || null,
+        assignment_status: input.buyerAssignmentStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lead_id", input.dealId),
+    supabase
+      .from("seller_conversations")
+      .update({
+        next_action: `Closing coordination: ${input.titleCompany || "title not assigned"} / ${input.closingDate || "closing TBD"}.`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "coordination_update",
+      payload: {
+        titleCompany: input.titleCompany,
+        titleOfficer: input.titleOfficer,
+        walkthroughAt: input.walkthroughAt,
+        inspectionEndsOn: input.inspectionEndsOn,
+        closingDate: input.closingDate,
+        buyerAssignmentStatus: input.buyerAssignmentStatus,
+        earnestMoneyStatus: input.earnestMoneyStatus,
+        payoutStatus: input.payoutStatus,
+        contractSent: input.contractSent,
+        contractSigned: input.contractSigned,
+        coordinationNotes: input.coordinationNotes,
+        closingChecklist: input.closingChecklist,
+        closingDocuments: input.closingDocuments,
+        summary: `${input.titleCompany || "Title TBD"} / close ${input.closingDate || "TBD"} / ${input.payoutStatus || "payout pending"}`,
+        updatedAt: new Date().toISOString(),
+      },
+    }),
+  ]);
+
+  const error = contractUpdate.error?.message || conversationUpdate.error?.message || logInsert.error?.message;
+  if (error) {
+    return { ok: false as const, error };
+  }
+
+  return { ok: true as const };
+}
+
 export async function getDealEngineDealDetail(dealId: string): Promise<DealEngineDealDetail | null> {
   const [leads, sellerSignals, buyerSignals, drafts] = await Promise.all([
     listDealEngineLeads(100),
@@ -1097,6 +1466,9 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       createdAt: draft.createdAt,
     }));
   let investorResponses: DealEngineDealDetail["investorResponses"] = [];
+  let operatorTasks: DealEngineDealDetail["operatorTasks"] = [];
+  let activityFeed: DealEngineDealDetail["activityFeed"] = [];
+  let coordination = buildFallbackCoordination(lead, contractDraft);
   let packet = buildFallbackPacket(
     lead,
     contractDraft,
@@ -1125,6 +1497,26 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       room = buildFallbackRoom(lead, packet);
     }
 
+    const { data: contractData } = await supabase
+      .from("contracts")
+      .select("contract_sent,contract_signed,inspection_period,earnest_money_deposit,assignment_status")
+      .eq("lead_id", dealId)
+      .maybeSingle();
+    const liveContract = contractData as ContractRow | null;
+    if (liveContract) {
+      coordination = {
+        ...coordination,
+        inspectionEndsOn: liveContract.inspection_period ?? coordination.inspectionEndsOn,
+        buyerAssignmentStatus: liveContract.assignment_status ?? coordination.buyerAssignmentStatus,
+        earnestMoneyStatus:
+          liveContract.earnest_money_deposit != null
+            ? `${formatCurrency(liveContract.earnest_money_deposit)} expected`
+            : coordination.earnestMoneyStatus,
+        contractSent: Boolean(liveContract.contract_sent),
+        contractSigned: Boolean(liveContract.contract_signed),
+      };
+    }
+
     const { data: roomData } = await supabase
       .from("deal_rooms")
       .select("slug,property_summary,financial_breakdown,map_placeholder,comps_placeholder,downloadable_pdf_label,submit_interest_label,request_walkthrough_label")
@@ -1148,11 +1540,38 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       .from("disposition_logs")
       .select("id,action_type,payload,created_at")
       .eq("lead_id", dealId)
-      .in("action_type", ["investor_interest", "investor_follow_up"])
+      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "operator_task", "coordination_update"])
       .order("created_at", { ascending: false });
-    investorResponses = dispositionData?.length
-      ? parseDispositionLogs(dispositionData as DispositionLogRow[])
-      : [];
+    if (dispositionData?.length) {
+      const logs = dispositionData as DispositionLogRow[];
+      investorResponses = parseDispositionLogs(logs);
+      operatorTasks = parseOperatorTasks(logs);
+      activityFeed = buildActivityFeed(logs);
+      const latestCoordination = logs.find((log) => log.action_type === "coordination_update");
+      if (latestCoordination?.payload) {
+        const payload = latestCoordination.payload;
+        coordination = {
+          ...coordination,
+          titleCompany: String(payload.titleCompany ?? coordination.titleCompany),
+          titleOfficer: String(payload.titleOfficer ?? coordination.titleOfficer),
+          walkthroughAt: String(payload.walkthroughAt ?? coordination.walkthroughAt),
+          inspectionEndsOn: String(payload.inspectionEndsOn ?? coordination.inspectionEndsOn),
+          closingDate: String(payload.closingDate ?? coordination.closingDate),
+          buyerAssignmentStatus: String(payload.buyerAssignmentStatus ?? coordination.buyerAssignmentStatus),
+          earnestMoneyStatus: String(payload.earnestMoneyStatus ?? coordination.earnestMoneyStatus),
+          payoutStatus: String(payload.payoutStatus ?? coordination.payoutStatus),
+          contractSent: Boolean(payload.contractSent ?? coordination.contractSent),
+          contractSigned: Boolean(payload.contractSigned ?? coordination.contractSigned),
+          coordinationNotes: String(payload.coordinationNotes ?? coordination.coordinationNotes),
+          closingChecklist: Array.isArray(payload.closingChecklist)
+            ? payload.closingChecklist.map((item) => String(item)).filter(Boolean)
+            : coordination.closingChecklist,
+          closingDocuments: Array.isArray(payload.closingDocuments)
+            ? payload.closingDocuments.map((item) => String(item)).filter(Boolean)
+            : coordination.closingDocuments,
+        };
+      }
+    }
   }
 
   return {
@@ -1160,10 +1579,13 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     sellerSignal,
     buyerSignals: relatedBuyerSignals.length ? relatedBuyerSignals : buyerSignals.slice(0, 4),
     contractDraft,
+    coordination,
     room,
     packet,
     relatedDrafts,
     investorResponses,
+    operatorTasks,
+    activityFeed,
   };
 }
 

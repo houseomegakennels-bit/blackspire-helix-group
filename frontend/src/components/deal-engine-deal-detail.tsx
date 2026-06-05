@@ -15,6 +15,12 @@ function statusTone(status: string) {
   return "neutral";
 }
 
+function priorityTone(priority: string) {
+  if (/high|urgent/i.test(priority)) return "warn";
+  if (/complete|done/i.test(priority)) return "good";
+  return "neutral";
+}
+
 export function DealEngineDealDetailView({
   dealId,
   detail,
@@ -59,8 +65,26 @@ export function DealEngineDealDetailView({
     detail.investorResponses[0]?.nextStep ?? "Reach out and confirm walkthrough or packet follow-up.",
   );
   const [followUpNotes, setFollowUpNotes] = useState(detail.investorResponses[0]?.notes ?? "");
+  const [titleCompany, setTitleCompany] = useState(detail.coordination.titleCompany);
+  const [titleOfficer, setTitleOfficer] = useState(detail.coordination.titleOfficer);
+  const [walkthroughAt, setWalkthroughAt] = useState(detail.coordination.walkthroughAt);
+  const [inspectionEndsOn, setInspectionEndsOn] = useState(detail.coordination.inspectionEndsOn);
+  const [closingDate, setClosingDate] = useState(detail.coordination.closingDate);
+  const [buyerAssignmentStatus, setBuyerAssignmentStatus] = useState(detail.coordination.buyerAssignmentStatus);
+  const [earnestMoneyStatus, setEarnestMoneyStatus] = useState(detail.coordination.earnestMoneyStatus);
+  const [payoutStatus, setPayoutStatus] = useState(detail.coordination.payoutStatus);
+  const [contractSent, setContractSent] = useState(detail.coordination.contractSent);
+  const [contractSigned, setContractSigned] = useState(detail.coordination.contractSigned);
+  const [coordinationNotes, setCoordinationNotes] = useState(detail.coordination.coordinationNotes);
+  const [taskId, setTaskId] = useState(detail.operatorTasks[0]?.id ?? "");
+  const [taskTitle, setTaskTitle] = useState(detail.operatorTasks[0]?.title ?? "");
+  const [taskOwner, setTaskOwner] = useState(detail.operatorTasks[0]?.owner ?? "Blackspire operator");
+  const [taskDueDate, setTaskDueDate] = useState(detail.operatorTasks[0]?.dueDate ?? "");
+  const [taskPriority, setTaskPriority] = useState(detail.operatorTasks[0]?.priority ?? "Normal");
+  const [taskStatus, setTaskStatus] = useState(detail.operatorTasks[0]?.status ?? "Open");
+  const [taskNotes, setTaskNotes] = useState(detail.operatorTasks[0]?.notes ?? "");
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"buyer" | "contract" | "packet" | "response" | "stage" | null>(null);
+  const [working, setWorking] = useState<"buyer" | "contract" | "coordination" | "packet" | "response" | "stage" | "task" | null>(null);
 
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
@@ -70,6 +94,18 @@ export function DealEngineDealDetailView({
     setFollowUpOwner(investor.followUpOwner);
     setFollowUpNextStep(investor.nextStep);
     setFollowUpNotes(investor.notes);
+  }
+
+  function syncTask(selectedTaskId: string) {
+    const task = detail.operatorTasks.find((item) => item.id === selectedTaskId);
+    setTaskId(selectedTaskId);
+    if (!task) return;
+    setTaskTitle(task.title);
+    setTaskOwner(task.owner);
+    setTaskDueDate(task.dueDate);
+    setTaskPriority(task.priority);
+    setTaskStatus(task.status);
+    setTaskNotes(task.notes);
   }
 
   async function saveContract(event: FormEvent<HTMLFormElement>) {
@@ -208,6 +244,71 @@ export function DealEngineDealDetailView({
     }
   }
 
+  async function saveTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("task");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          taskId,
+          title: taskTitle,
+          owner: taskOwner,
+          dueDate: taskDueDate,
+          priority: taskPriority,
+          status: taskStatus,
+          notes: taskNotes,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean; taskId?: string };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Task save failed.");
+      setStatus(payload.message ?? "Operator task saved.");
+      setTaskId(payload.taskId ?? taskId);
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Task save failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function saveCoordination(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("coordination");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/coordination", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          titleCompany,
+          titleOfficer,
+          walkthroughAt,
+          inspectionEndsOn,
+          closingDate,
+          buyerAssignmentStatus,
+          earnestMoneyStatus,
+          payoutStatus,
+          contractSent,
+          contractSigned,
+          coordinationNotes,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Coordination save failed.");
+      setStatus(payload.message ?? "Closing coordination saved.");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Coordination save failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
   return (
     <DealEngineShell>
       <header className="brand-panel overflow-hidden px-6 py-7">
@@ -264,7 +365,7 @@ export function DealEngineDealDetailView({
       <section className="grid gap-4 md:grid-cols-4">
         <Metric label="Motivation Score" value={String(detail.lead.motivationScore)} detail="Seller urgency and context from upstream intelligence" />
         <Metric label="Buyer Matches" value={String(detail.buyerSignals.length).padStart(2, "0")} detail="Relevant Buyer Engine signals for this county lane" />
-        <Metric label="Saved Drafts" value={String(detail.relatedDrafts.length).padStart(2, "0")} detail="Existing outreach drafts already connected to this market" />
+        <Metric label="Open Tasks" value={String(detail.operatorTasks.length).padStart(2, "0")} detail="Internal execution items attached to this deal" />
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
 
@@ -332,6 +433,127 @@ export function DealEngineDealDetailView({
               {working === "stage" ? "Saving stage..." : "Save pipeline stage"}
             </button>
           </form>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
+          eyebrow="Task Queue"
+          title="Internal execution checklist"
+          description="Keep the next internal moves attached to the deal so underwriting, acquisitions, and disposition all work from one queue."
+        >
+          <div className="space-y-4">
+            {detail.operatorTasks.length ? (
+              detail.operatorTasks.map((task) => (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => syncTask(task.id)}
+                  className="brand-card block w-full p-4 text-left transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-base font-semibold text-white">{task.title}</div>
+                      <div className="mt-1 text-xs text-[var(--copy-muted)]">{task.owner} / due {task.dueDate || "TBD"}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <StatusPill tone={priorityTone(task.priority)} label={task.priority.toLowerCase()} />
+                      <StatusPill tone={statusTone(task.status)} label={task.status.toLowerCase()} />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{task.notes || "No task note added yet."}</div>
+                </button>
+              ))
+            ) : (
+              <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">
+                No internal tasks are attached to this deal yet.
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Task Console"
+          title="Create or update a deal task"
+          description="Use this to assign underwriting asks, seller follow-ups, title coordination, or buyer-packet work without leaving the workstation."
+        >
+          <form onSubmit={saveTask} className="grid gap-4">
+            <input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Task title" />
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Task owner" />
+              <input value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Priority" />
+              <input value={taskStatus} onChange={(event) => setTaskStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Status" />
+            </div>
+            <textarea value={taskNotes} onChange={(event) => setTaskNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Task notes" />
+            <button type="submit" disabled={!taskTitle.trim() || working === "task"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "task" ? "Saving task..." : "Save operator task"}
+            </button>
+          </form>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
+          eyebrow="Coordination"
+          title="Title and close-table coordination"
+          description="Run the post-contract lane here: title assignment, walkthrough timing, signatures, payout posture, and closing readiness."
+        >
+          <form onSubmit={saveCoordination} className="grid gap-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={titleCompany} onChange={(event) => setTitleCompany(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title company" />
+              <input value={titleOfficer} onChange={(event) => setTitleOfficer(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title officer / closer" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={walkthroughAt} onChange={(event) => setWalkthroughAt(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Walkthrough date/time" />
+              <input value={inspectionEndsOn} onChange={(event) => setInspectionEndsOn(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Inspection ends on" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={closingDate} onChange={(event) => setClosingDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Closing date" />
+              <input value={buyerAssignmentStatus} onChange={(event) => setBuyerAssignmentStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer assignment status" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={earnestMoneyStatus} onChange={(event) => setEarnestMoneyStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Earnest money status" />
+              <input value={payoutStatus} onChange={(event) => setPayoutStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout status" />
+            </div>
+            <div className="flex flex-wrap gap-6 text-sm text-[var(--copy-soft)]">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={contractSent} onChange={(event) => setContractSent(event.target.checked)} />
+                <span>Contract sent</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={contractSigned} onChange={(event) => setContractSigned(event.target.checked)} />
+                <span>Contract signed</span>
+              </label>
+            </div>
+            <textarea value={coordinationNotes} onChange={(event) => setCoordinationNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Coordination notes" />
+            <button type="submit" disabled={working === "coordination"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "coordination" ? "Saving coordination..." : "Save closing coordination"}
+            </button>
+          </form>
+        </Panel>
+
+        <Panel
+          eyebrow="Close Status"
+          title="Current coordination posture"
+          description="This is the live coordination snapshot for title, signatures, access, and payout readiness."
+        >
+          <div className="space-y-3 text-sm text-[var(--copy-soft)]">
+            <div>Title company: <span className="font-semibold text-white">{detail.coordination.titleCompany}</span></div>
+            <div>Title officer: <span className="font-semibold text-white">{detail.coordination.titleOfficer}</span></div>
+            <div>Walkthrough: <span className="font-semibold text-white">{detail.coordination.walkthroughAt || "Not scheduled"}</span></div>
+            <div>Inspection end: <span className="font-semibold text-white">{detail.coordination.inspectionEndsOn || "Not set"}</span></div>
+            <div>Closing date: <span className="font-semibold text-white">{detail.coordination.closingDate || "Not set"}</span></div>
+            <div>Assignment: <span className="font-semibold text-white">{detail.coordination.buyerAssignmentStatus}</span></div>
+            <div>Earnest money: <span className="font-semibold text-white">{detail.coordination.earnestMoneyStatus}</span></div>
+            <div>Payout: <span className="font-semibold text-white">{detail.coordination.payoutStatus}</span></div>
+            <div className="flex gap-2 pt-2">
+              <StatusPill tone={detail.coordination.contractSent ? "good" : "neutral"} label={detail.coordination.contractSent ? "contract sent" : "contract not sent"} />
+              <StatusPill tone={detail.coordination.contractSigned ? "good" : "warn"} label={detail.coordination.contractSigned ? "signed" : "unsigned"} />
+            </div>
+          </div>
         </Panel>
       </div>
 
@@ -514,7 +736,30 @@ export function DealEngineDealDetailView({
           </div>
         </Panel>
 
-        <div />
+        <Panel
+          eyebrow="Activity"
+          title="Live deal timeline"
+          description="Every meaningful update to this deal now lands in one activity stream so the next operator can catch up fast."
+        >
+          <div className="space-y-4">
+            {detail.activityFeed.length ? (
+              detail.activityFeed.map((activity) => (
+                <div key={activity.id} className="brand-card p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="text-base font-semibold text-white">{activity.title}</div>
+                    <StatusPill tone={activity.tone} label={new Date(activity.timestamp).toLocaleDateString()} />
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{activity.detail}</div>
+                  <div className="mt-2 text-xs text-[var(--copy-muted)]">{new Date(activity.timestamp).toLocaleString()}</div>
+                </div>
+              ))
+            ) : (
+              <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">
+                No activity has been logged for this deal yet.
+              </div>
+            )}
+          </div>
+        </Panel>
       </div>
 
       <Panel

@@ -12,6 +12,9 @@ export async function POST(request: NextRequest) {
       investorEmail?: string;
       interestType?: string;
       notes?: string;
+      preferredWalkthroughAt?: string;
+      attendeeCount?: string;
+      proofOfFundsStatus?: string;
     };
 
     if (!body.slug?.trim() || !body.investorName?.trim() || !body.investorEmail?.trim()) {
@@ -27,6 +30,9 @@ export async function POST(request: NextRequest) {
       investorEmail: body.investorEmail,
       interestType: body.interestType?.trim() || "Interested",
       notes: body.notes?.trim() || "",
+      preferredWalkthroughAt: body.preferredWalkthroughAt?.trim() || "",
+      attendeeCount: body.attendeeCount?.trim() || "",
+      proofOfFundsStatus: body.proofOfFundsStatus?.trim() || "",
     });
 
     if (!result.ok) {

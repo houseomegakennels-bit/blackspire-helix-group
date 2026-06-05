@@ -7,13 +7,9 @@ import { useEffect, useState } from "react";
 type NavItem = { href: string; label: string };
 
 export function MarketingNav({ items }: { items: NavItem[] }) {
-  const [open, setOpen] = useState(false);
+  const [openPathname, setOpenPathname] = useState<string | null>(null);
   const pathname = usePathname();
-
-  // Close the mobile menu on route change.
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  const open = openPathname === pathname;
 
   // Lock body scroll while the mobile sheet is open.
   useEffect(() => {
@@ -45,7 +41,7 @@ export function MarketingNav({ items }: { items: NavItem[] }) {
         type="button"
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpenPathname(open ? null : pathname)}
         className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] text-[var(--copy-soft)] transition hover:border-[var(--line-strong)] hover:text-white md:hidden"
       >
         <span className="relative block h-3.5 w-5" aria-hidden="true">
@@ -74,7 +70,7 @@ export function MarketingNav({ items }: { items: NavItem[] }) {
             type="button"
             aria-label="Close menu"
             tabIndex={-1}
-            onClick={() => setOpen(false)}
+            onClick={() => setOpenPathname(null)}
             className="absolute inset-0 bg-[hsl(0_0%_0%/.72)] backdrop-blur-sm"
           />
           <nav className="luxury-mobile-sheet absolute right-3 top-3 left-3 grid gap-2 rounded-[24px] border border-[var(--line-strong)] bg-[hsl(0_0%_4%/.97)] p-4 shadow-[0_30px_80px_hsl(0_0%_0%/.6)]">
@@ -82,6 +78,7 @@ export function MarketingNav({ items }: { items: NavItem[] }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setOpenPathname(null)}
                 className="flex min-h-[48px] items-center rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_6%/.9)] px-4 text-sm uppercase tracking-[0.2em] text-[var(--copy-soft)] transition hover:border-[var(--line-strong)] hover:text-white"
               >
                 {item.label}
