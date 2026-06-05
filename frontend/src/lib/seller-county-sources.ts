@@ -368,4 +368,36 @@ export const SELLER_COUNTY_STARTER_SOURCES: SellerCountyStarterSource[] = [
     integrationType: "county_portal",
     notes: "Official Moore County tax administration and parcel records portal.",
   },
+  // ── Western Mountains (wave 3) ──────────────────────────────────────────
+  { county: "Haywood", state: "NC", name: "Haywood County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.haywoodnc.net/tax/", integrationType: "county_portal", notes: "Official Haywood County tax and parcel records portal." },
+  { county: "Cherokee", state: "NC", name: "Cherokee County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.cherokeecountync.gov/tax/", integrationType: "county_portal", notes: "Official Cherokee County tax and parcel records portal." },
+  { county: "Polk", state: "NC", name: "Polk County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.polknc.org/tax/", integrationType: "county_portal", notes: "Official Polk County tax and parcel records portal." },
+  { county: "Rutherford", state: "NC", name: "Rutherford County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.rutherfordcountync.gov/tax/", integrationType: "county_portal", notes: "Official Rutherford County tax and parcel records portal." },
+  { county: "McDowell", state: "NC", name: "McDowell County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.mcdowellgov.com/tax/", integrationType: "county_portal", notes: "Official McDowell County tax and parcel records portal." },
+  { county: "Transylvania", state: "NC", name: "Transylvania County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.transylvaniacounty.org/departments/tax/", integrationType: "county_portal", notes: "Official Transylvania County tax and parcel records portal." },
+  { county: "Yancey", state: "NC", name: "Yancey County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.yanceycountync.gov/tax/", integrationType: "county_portal", notes: "Official Yancey County tax and parcel records portal." },
+  // ── Foothills / Piedmont (wave 3) ──────────────────────────────────────
+  { county: "Cleveland", state: "NC", name: "Cleveland County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.clevelandcounty.com/tax/", integrationType: "county_portal", notes: "Official Cleveland County tax and parcel records portal." },
+  { county: "Davie", state: "NC", name: "Davie County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.daviecountync.gov/tax/", integrationType: "county_portal", notes: "Official Davie County tax and parcel records portal." },
+  { county: "Yadkin", state: "NC", name: "Yadkin County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.yadkincountync.gov/tax/", integrationType: "county_portal", notes: "Official Yadkin County tax and parcel records portal." },
+  { county: "Montgomery", state: "NC", name: "Montgomery County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.montgomerycountync.com/tax/", integrationType: "county_portal", notes: "Official Montgomery County tax and parcel records portal." },
+  // ── Coastal / Albemarle Sound (wave 3) ──────────────────────────────────
+  { county: "Carteret", state: "NC", name: "Carteret County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.carteretcountygov.com/tax/", integrationType: "county_portal", notes: "Official Carteret County tax and parcel records portal." },
+  { county: "Pamlico", state: "NC", name: "Pamlico County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.pamlicocounty.org/tax/", integrationType: "county_portal", notes: "Official Pamlico County tax and parcel records portal." },
+  { county: "Chowan", state: "NC", name: "Chowan County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.chowancounty-nc.gov/tax/", integrationType: "county_portal", notes: "Official Chowan County tax and parcel records portal." },
+  { county: "Pasquotank", state: "NC", name: "Pasquotank County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.pasquotankcounty.us/tax/", integrationType: "county_portal", notes: "Official Pasquotank County tax and parcel records portal." },
+  { county: "Currituck", state: "NC", name: "Currituck County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.co.currituck.nc.us/tax-administration.cfm", integrationType: "county_portal", notes: "Official Currituck County tax and parcel records portal." },
+  { county: "Dare", state: "NC", name: "Dare County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.darenc.gov/departments/tax/", integrationType: "county_portal", notes: "Official Dare County tax and parcel records portal." },
+  // ── Southeast / Cape Fear inland (wave 3) ───────────────────────────────
+  { county: "Bladen", state: "NC", name: "Bladen County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.bladencounty.org/tax/", integrationType: "county_portal", notes: "Official Bladen County tax and parcel records portal." },
+  { county: "Columbus", state: "NC", name: "Columbus County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.columbuscounty.org/tax/", integrationType: "county_portal", notes: "Official Columbus County tax and parcel records portal." },
+  // ── Piedmont / Eastern fringe (wave 3) ──────────────────────────────────
+  { county: "Person", state: "NC", name: "Person County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.personcounty.net/tax/", integrationType: "county_portal", notes: "Official Person County tax and parcel records portal." },
+  { county: "Lenoir", state: "NC", name: "Lenoir County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.lenoircountync.gov/tax/", integrationType: "county_portal", notes: "Official Lenoir County tax and parcel records portal." },
+  { county: "Franklin", state: "NC", name: "Franklin County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.franklincountync.us/services/tax/", integrationType: "county_portal", notes: "Official Franklin County tax and parcel records portal." },
+  // ── Southern NC / Sandhills (wave 3) ────────────────────────────────────
+  { county: "Hoke", state: "NC", name: "Hoke County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.hokecounty.net/tax/", integrationType: "county_portal", notes: "Official Hoke County tax and parcel records portal." },
+  // ── Far Western NC (wave 3) ─────────────────────────────────────────────
+  { county: "Jackson", state: "NC", name: "Jackson County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.jacksonnc.org/tax/", integrationType: "county_portal", notes: "Official Jackson County tax and parcel records portal." },
+  { county: "Macon", state: "NC", name: "Macon County GIS Property Data", sourceType: "gis_property_data", sourceUrl: "https://www.maconnc.org/tax/", integrationType: "county_portal", notes: "Official Macon County tax and parcel records portal." },
 ];

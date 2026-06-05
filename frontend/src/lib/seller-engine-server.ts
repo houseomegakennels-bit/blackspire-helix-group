@@ -3107,6 +3107,398 @@ async function fetchBurkeCountyAbsenteeRows(input: LiveSellerSearchInput): Promi
   return rankSellerRows(rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" }))).slice(0, requestedLimit);
 }
 
+async function fetchGenericNcCountyAbsenteeRows(
+  input: LiveSellerSearchInput,
+  countyName: string,
+  defaultCity: string,
+  sourceName: string,
+): Promise<SellerImportRow[]> {
+  const requestedLimit = Math.min(Math.max(input.limit ?? 25, 1), 100);
+  const registrySource = await getBuyerCountyRegistrySource(countyName);
+
+  if (!registrySource?.source_url) {
+    return fetchNcOneMapAbsenteeRows({ ...input, county: countyName });
+  }
+
+  let rows: SellerImportRow[] = [];
+  try {
+    rows = await queryCuratedCountyEndpoint(registrySource.source_url, {
+      requestedLimit,
+      countyName,
+      defaultCity,
+      sourceName,
+      cityFilter: input.city?.trim().toUpperCase(),
+      inputCity: input.city?.trim(),
+    });
+  } catch {
+    rows = [];
+  }
+
+  if (!rows.length) {
+    return fetchNcOneMapAbsenteeRows({ ...input, county: countyName });
+  }
+
+  return rows;
+}
+
+async function queryCuratedCountyEndpoint(
+  sourceUrl: string,
+  opts: {
+    requestedLimit: number;
+    countyName: string;
+    defaultCity: string;
+    sourceName: string;
+    cityFilter?: string;
+    inputCity?: string;
+  },
+): Promise<SellerImportRow[]> {
+  const { requestedLimit, countyName, defaultCity, sourceName, cityFilter, inputCity } = opts;
+
+  const [rawEndpoint, queryString = ""] = sourceUrl.split("?");
+  const endpoint = rawEndpoint.endsWith("/query") ? rawEndpoint : `${rawEndpoint}/query`;
+  const stored = new URLSearchParams(queryString);
+
+  const params = new URLSearchParams({
+    where: stored.get("where") || "1=1",
+    outFields: "*",
+    returnGeometry: "false",
+    resultRecordCount: String(Math.min(Math.max(requestedLimit * 6, 200), 2000)),
+    f: "json",
+  });
+  const orderBy = stored.get("orderByFields");
+  if (orderBy) params.set("orderByFields", orderBy);
+
+  const payload = await postArcgisQueryWithTimeout(endpoint, params, 25000) as {
+    error?: { message?: string };
+    features?: Array<{ attributes?: Record<string, string | number | null> }>;
+  };
+  if (payload.error?.message) throw new Error(payload.error.message);
+
+  const rows = (payload.features ?? [])
+    .map((feature) => feature.attributes ?? {})
+    .flatMap((raw) => {
+      const lower: Record<string, string | number | null> = {};
+      for (const [key, value] of Object.entries(raw)) lower[key.toLowerCase()] = value;
+
+      const text = (...names: string[]) => {
+        for (const name of names) {
+          const value = lower[name.toLowerCase()];
+          if (value !== undefined && value !== null && String(value).trim() !== "") {
+            return normalizeArcGisText(value as string | number);
+          }
+        }
+        return "";
+      };
+      const num = (...names: string[]) => {
+        for (const name of names) {
+          const value = lower[name.toLowerCase()];
+          if (typeof value === "number" && Number.isFinite(value)) return value;
+          if (typeof value === "string" && value.trim()) {
+            const parsed = Number(value.replace(/[$,]/g, ""));
+            if (Number.isFinite(parsed)) return parsed;
+          }
+        }
+        return undefined;
+      };
+      const street = (no: string[], dir: string[], name: string[], type: string[], suf: string[]) =>
+        [text(...no), text(...dir), text(...name), text(...type), text(...suf)].filter(Boolean).join(" ").trim();
+
+      const parcelId = text(
+        "PIN_NUM", "PIN14", "PIN4", "PIN", "PINNUM", "PinNum", "PARCEL_ID", "PARCEL_NUMBER", "PARID",
+        "GIS_PIN", "TAX_PIN", "GIS_PARID", "TAX_PARID", "REID", "PARCEL_PK", "GPIN", "GPINLONG",
+        "NCPIN", "TWN_PIN", "ncpin", "parno", "PID",
+      );
+      const ownerName = [
+        text(
+          "OWNER", "OWNER1", "OWN1", "PROPERTY_OWNER", "OWNNAME", "OWNAM1", "NAME1", "NAME",
+          "CURR_NAME1", "AcctName1", "BUYER1", "OwnerName", "ownname", "name1", "Name",
+        ),
+        text("OWNER2", "OWN2", "OWNAM2", "NAME2", "CURR_NAME2", "AcctName2", "BUYER2", "ownname2", "name2"),
+      ].filter(Boolean).join(" / ");
+
+      const mailLine1 = text(
+        "OWNER_MAIL_1", "MAIL_ADDR1", "MAILADD", "MAILADDR1", "MAILINGADDRESS", "MAILING_AD",
+        "ADDR1", "ADDR", "ADDRESS1", "ADD1", "ADDRLINE1", "OWNER_ADDR1", "OWNERADDR1", "OwnerAddress1",
+        "CURR_ADDR1", "TAXADD1", "TaxpayerAddress1", "TMADDR", "OWADR1", "mailadd", "MailingAddress",
+      ) || street(["MailADRNO"], ["MailADRDIR"], ["MailADRSTR"], ["MailADRSUF"], []);
+      const mailLine2 = text("OWNER_MAIL_2", "MAIL_ADDR2", "ADDR2", "ADDRESS2", "ADD2", "ADDRLINE2",
+        "OWNER_ADDR2", "OwnerAddress2", "CURR_ADDR2", "TAXADD2", "munit");
+      const mailLine3 = text("OWNER_MAIL_3", "ADDRESS3", "OWNER_ADDR3", "OwnerAddress3");
+      const mailCity = text("OWNER_MAIL_CITY", "MAIL_CITY", "MAILCITY", "MailCity", "CITY", "OWNER_CITY",
+        "OWCITY", "CURR_CITY", "CITYNM", "TaxpayerCity", "City", "mcity");
+      const mailState = text("OWNER_MAIL_STATE", "MAIL_STATE", "MAILSTATE", "MailState", "STATE", "OWNER_STATE",
+        "OWSTA", "CURR_STATE", "TAXSTE", "State", "mstate");
+      const mailZipCombined = text("CityStateZip", "CITYSTATEZIP", "ML_C_ST_Z");
+      const mailZip = text("OWNER_MAIL_ZIP", "MAIL_ZIP", "MAILZIP", "MailZip", "MailZipCode", "ZIP",
+        "ZIPCODE", "OWNER_ZIP", "OWZIPA", "CURR_ZIPCODE", "ZIPCode", "Zip", "mzip")
+        || (mailZipCombined.match(/\b(\d{5})(?:-\d{4})?\b/)?.[1] ?? "");
+
+      const directProperty = text(
+        "SITE_ADDRESS", "PROP_ADDR", "PROP_ADDRESS", "PROPERTY_ADDRESS", "PropertyAddress", "PROP_ADDRESS",
+        "LOCATION_ADDR", "PHYSICAL_ADDRESS", "PHYSICALADDRESS", "PHYSICALADDR", "PHYS_ADDR",
+        "PHYSSTRADD", "PARCEL_ADD", "PhyStreetAddr", "FullAdd", "FULLADD", "PropAddr",
+        "FormattedPropertyAddress", "siteadd",
+      );
+      const propertyAddress = directProperty
+        || street(["HouseNumber", "saddno"], ["StreetDirection", "SDIR", "saddpref"],
+          ["StreetName", "STREET", "streetname", "saddstr", "saddstname"],
+          ["StreetType", "STYPE", "saddsttyp"], ["StreetSuffix", "saddstsuf"]);
+
+      const propertyCity = inputCity
+        || text("CITY_DECODE", "PHYS_ADDR_CITY", "scity", "CityName")
+        || inferCityFromPropertyAddress(propertyAddress, defaultCity);
+
+      const saleEpoch = num("DEED_DATE", "DEEDDATE", "SALEDATE", "SALE_DATE", "PKG_SALE_DATE", "Sale_Date",
+        "DATESOLD", "DateSold", "DeedDate", "RECENT_SALEDT", "AMDTSL", "SALEDT", "date_dt", "deed_date", "sale_date", "saledate");
+      const saleYear = num("SaleYear", "SaleYear1", "SALE_YEAR");
+      const assessedValue = num("TOTAL_VALUE_ASSD", "TOT_VAL", "ASM_VAL", "APR_VAL", "ASSESSED_V",
+        "VALUATION", "parval", "TotalASVCurrent", "TotalAsses", "AssessedValue", "total_value",
+        "totalassessedvalue", "TotalMarketValue") || 0;
+      const hasBuildingValue = Boolean(
+        num("BLDG_VAL", "BLDGVALUE", "TOT_B_VAL", "bldg_value", "parcelbuildingvalue",
+          "NBR_BLDG", "BLDGCNT", "ActualYearBuilt", "yr_built", "ResComYrBlt"),
+      );
+      const propertyType = text("LAND_USE", "LANDTYPE", "LAND_CLASS", "TYPE_USE_DECODE", "UseCode", "UseCd",
+        "LAND_CLASS_DECODE", "parusedesc", "parusedsc2", "PROPTYPE", "PARCEL_CLA", "class", "LegalLandT");
+
+      const mailingAddress = [mailLine1, mailLine2, mailLine3, mailCity, mailState, mailZip, mailZipCombined]
+        .filter(Boolean)
+        .filter((value, index, all) => all.indexOf(value) === index)
+        .join(", ");
+
+      const absentee = propertyAddress
+        ? normalizeAddressForComparison(propertyAddress) !== normalizeAddressForComparison(mailLine1)
+        : Boolean(mailState && mailState.toUpperCase() !== "NC");
+
+      if (!ownerName || !parcelId || !absentee) return [];
+      if (!propertyAddress && !mailingAddress) return [];
+
+      const saleDate = saleEpoch
+        ? normalizeArcGisDate(saleEpoch)
+        : (saleYear ? `${Math.round(saleYear)}-01-01` : "");
+
+      return [{
+        property_address: propertyAddress || `${countyName} County parcel ${parcelId}`,
+        parcel_id: parcelId,
+        county: countyName,
+        city: propertyCity,
+        zip_code: mailZip,
+        property_type: propertyType || "Property",
+        assessed_value: assessedValue ? String(Math.round(assessedValue)) : "",
+        last_sale_date: saleDate,
+        last_sale_price: "",
+        owner_name: ownerName,
+        owner_mailing_address: mailingAddress,
+        owner_occupancy_status: isCorporateOwnerName(ownerName) ? "Absentee / Corporate" : "Absentee",
+        tax_delinquent: "false",
+        foreclosure: "false",
+        probate: "false",
+        vacant: !hasBuildingValue ? "true" : "false",
+        code_violation: "false",
+        years_owned: saleEpoch ? yearsSince(saleEpoch) : "",
+        estimated_equity: "",
+        multiple_properties: "false",
+        source_name: sourceName,
+      } satisfies SellerImportRow];
+    })
+    .filter((row) => !cityFilter || row.city.toUpperCase().includes(cityFilter) || row.property_address.toUpperCase().includes(cityFilter));
+
+  const ownerCounts = rows.reduce<Record<string, number>>((counts, row) => {
+    const key = row.owner_name.trim().toUpperCase();
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  return rankSellerRows(
+    rows.map((row) => ({ ...row, multiple_properties: (ownerCounts[row.owner_name.trim().toUpperCase()] ?? 0) > 1 ? "true" : "false" })),
+  ).slice(0, requestedLimit);
+}
+
+// ── Triangle / Piedmont ──────────────────────────────────────────────────────
+async function fetchDurhamCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Durham", "Durham", "Durham County Absentee Owners");
+}
+async function fetchChathamCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Chatham", "Pittsboro", "Chatham County Absentee Owners");
+}
+async function fetchJohnstonCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Johnston", "Smithfield", "Johnston County Absentee Owners");
+}
+async function fetchHarnettCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Harnett", "Lillington", "Harnett County Absentee Owners");
+}
+// ── Charlotte metro ──────────────────────────────────────────────────────────
+async function fetchCabarrusCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Cabarrus", "Concord", "Cabarrus County Absentee Owners");
+}
+async function fetchUnionCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Union", "Monroe", "Union County Absentee Owners");
+}
+async function fetchIredellCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Iredell", "Statesville", "Iredell County Absentee Owners");
+}
+async function fetchGastonCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Gaston", "Gastonia", "Gaston County Absentee Owners");
+}
+async function fetchLincolnCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Lincoln", "Lincolnton", "Lincoln County Absentee Owners");
+}
+// ── Piedmont Triad ───────────────────────────────────────────────────────────
+async function fetchRowanCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Rowan", "Salisbury", "Rowan County Absentee Owners");
+}
+async function fetchDavidsonCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Davidson", "Lexington", "Davidson County Absentee Owners");
+}
+async function fetchAlamanceCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Alamance", "Graham", "Alamance County Absentee Owners");
+}
+async function fetchRandolphCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Randolph", "Asheboro", "Randolph County Absentee Owners");
+}
+async function fetchCatawbaCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Catawba", "Newton", "Catawba County Absentee Owners");
+}
+// ── Western NC / Mountains ───────────────────────────────────────────────────
+async function fetchBuncombeCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Buncombe", "Asheville", "Buncombe County Absentee Owners");
+}
+async function fetchHendersonCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Henderson", "Hendersonville", "Henderson County Absentee Owners");
+}
+async function fetchWataugaCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Watauga", "Boone", "Watauga County Absentee Owners");
+}
+async function fetchSurryCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Surry", "Dobson", "Surry County Absentee Owners");
+}
+async function fetchCaldwellCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Caldwell", "Lenoir", "Caldwell County Absentee Owners");
+}
+// ── Coastal / Cape Fear ──────────────────────────────────────────────────────
+async function fetchNewHanoverCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "New Hanover", "Wilmington", "New Hanover County Absentee Owners");
+}
+async function fetchBrunswickCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Brunswick", "Bolivia", "Brunswick County Absentee Owners");
+}
+async function fetchPenderCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Pender", "Burgaw", "Pender County Absentee Owners");
+}
+async function fetchOnslowCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Onslow", "Jacksonville", "Onslow County Absentee Owners");
+}
+async function fetchCravenCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Craven", "New Bern", "Craven County Absentee Owners");
+}
+// ── Eastern NC ───────────────────────────────────────────────────────────────
+async function fetchPittCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Pitt", "Greenville", "Pitt County Absentee Owners");
+}
+async function fetchWayneCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Wayne", "Goldsboro", "Wayne County Absentee Owners");
+}
+async function fetchWilsonCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Wilson", "Wilson", "Wilson County Absentee Owners");
+}
+async function fetchVanceCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Vance", "Henderson", "Vance County Absentee Owners");
+}
+async function fetchMooreCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Moore", "Carthage", "Moore County Absentee Owners");
+}
+async function fetchLeeCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Lee", "Sanford", "Lee County Absentee Owners");
+}
+async function fetchDuplinCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Duplin", "Kenansville", "Duplin County Absentee Owners");
+}
+async function fetchHalifaxCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Halifax", "Halifax", "Halifax County Absentee Owners");
+}
+// ── Western Mountains (wave 3) ───────────────────────────────────────────────
+async function fetchHaywoodCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Haywood", "Waynesville", "Haywood County Absentee Owners");
+}
+async function fetchCherokeeCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Cherokee", "Murphy", "Cherokee County Absentee Owners");
+}
+async function fetchPolkCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Polk", "Columbus", "Polk County Absentee Owners");
+}
+async function fetchRutherfordCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Rutherford", "Rutherfordton", "Rutherford County Absentee Owners");
+}
+async function fetchMcdowellCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "McDowell", "Marion", "McDowell County Absentee Owners");
+}
+async function fetchTransylvaniaCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Transylvania", "Brevard", "Transylvania County Absentee Owners");
+}
+async function fetchYanceyCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Yancey", "Burnsville", "Yancey County Absentee Owners");
+}
+// ── Foothills / Piedmont (wave 3) ────────────────────────────────────────────
+async function fetchClevelandCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Cleveland", "Shelby", "Cleveland County Absentee Owners");
+}
+async function fetchDavieCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Davie", "Mocksville", "Davie County Absentee Owners");
+}
+async function fetchYadkinCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Yadkin", "Yadkinville", "Yadkin County Absentee Owners");
+}
+async function fetchMontgomeryCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Montgomery", "Troy", "Montgomery County Absentee Owners");
+}
+// ── Coastal / Albemarle Sound (wave 3) ───────────────────────────────────────
+async function fetchCarteretCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Carteret", "Beaufort", "Carteret County Absentee Owners");
+}
+async function fetchPamlicoCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Pamlico", "Bayboro", "Pamlico County Absentee Owners");
+}
+async function fetchChowanCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Chowan", "Edenton", "Chowan County Absentee Owners");
+}
+async function fetchPasquotankCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Pasquotank", "Elizabeth City", "Pasquotank County Absentee Owners");
+}
+async function fetchCurrituckCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Currituck", "Currituck", "Currituck County Absentee Owners");
+}
+async function fetchDareCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Dare", "Manteo", "Dare County Absentee Owners");
+}
+// ── Southeast / Cape Fear inland (wave 3) ────────────────────────────────────
+async function fetchBladenCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Bladen", "Elizabethtown", "Bladen County Absentee Owners");
+}
+async function fetchColumbusCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Columbus", "Whiteville", "Columbus County Absentee Owners");
+}
+// ── Piedmont / Eastern fringe (wave 3) ───────────────────────────────────────
+async function fetchPersonCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Person", "Roxboro", "Person County Absentee Owners");
+}
+async function fetchLenoirCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Lenoir", "Kinston", "Lenoir County Absentee Owners");
+}
+async function fetchFranklinCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Franklin", "Louisburg", "Franklin County Absentee Owners");
+}
+// ── Southern NC / Sandhills (wave 3) ─────────────────────────────────────────
+async function fetchHokeCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Hoke", "Raeford", "Hoke County Absentee Owners");
+}
+// ── Far Western NC (wave 3) ──────────────────────────────────────────────────
+async function fetchJacksonCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Jackson", "Sylva", "Jackson County Absentee Owners");
+}
+async function fetchMaconCountyAbsenteeRows(input: LiveSellerSearchInput) {
+  return fetchGenericNcCountyAbsenteeRows(input, "Macon", "Franklin", "Macon County Absentee Owners");
+}
+
 async function fetchMecklenburgDelinquentRows(input: LiveSellerSearchInput): Promise<SellerImportRow[]> {
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const [individualRows, businessRows] = await Promise.all([
@@ -3221,6 +3613,133 @@ async function fetchRowsForLiveSource(input: Required<Pick<LiveSellerSearchInput
         ? await fetchAveryCountyAbsenteeRows({ sourceKey, county, city, limit })
       : sourceKey === "burke_county_absentee_owners"
         ? await fetchBurkeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Triangle / Piedmont ────────────────────────────────────────────
+      : sourceKey === "durham_county_absentee_owners"
+        ? await fetchDurhamCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "chatham_county_absentee_owners"
+        ? await fetchChathamCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "johnston_county_absentee_owners"
+        ? await fetchJohnstonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "harnett_county_absentee_owners"
+        ? await fetchHarnettCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Charlotte metro ────────────────────────────────────────────────
+      : sourceKey === "cabarrus_county_absentee_owners"
+        ? await fetchCabarrusCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "union_county_absentee_owners"
+        ? await fetchUnionCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "iredell_county_absentee_owners"
+        ? await fetchIredellCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "gaston_county_absentee_owners"
+        ? await fetchGastonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "lincoln_county_absentee_owners"
+        ? await fetchLincolnCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Piedmont Triad ─────────────────────────────────────────────────
+      : sourceKey === "rowan_county_absentee_owners"
+        ? await fetchRowanCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "davidson_county_absentee_owners"
+        ? await fetchDavidsonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "alamance_county_absentee_owners"
+        ? await fetchAlamanceCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "randolph_county_absentee_owners"
+        ? await fetchRandolphCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "catawba_county_absentee_owners"
+        ? await fetchCatawbaCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Western NC / Mountains ─────────────────────────────────────────
+      : sourceKey === "buncombe_county_absentee_owners"
+        ? await fetchBuncombeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "henderson_county_absentee_owners"
+        ? await fetchHendersonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "watauga_county_absentee_owners"
+        ? await fetchWataugaCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "surry_county_absentee_owners"
+        ? await fetchSurryCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "caldwell_county_absentee_owners"
+        ? await fetchCaldwellCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Coastal / Cape Fear ────────────────────────────────────────────
+      : sourceKey === "new_hanover_county_absentee_owners"
+        ? await fetchNewHanoverCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "brunswick_county_absentee_owners"
+        ? await fetchBrunswickCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "pender_county_absentee_owners"
+        ? await fetchPenderCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "onslow_county_absentee_owners"
+        ? await fetchOnslowCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "craven_county_absentee_owners"
+        ? await fetchCravenCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Eastern NC ────────────────────────────────────────────────────
+      : sourceKey === "pitt_county_absentee_owners"
+        ? await fetchPittCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "wayne_county_absentee_owners"
+        ? await fetchWayneCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "wilson_county_absentee_owners"
+        ? await fetchWilsonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "vance_county_absentee_owners"
+        ? await fetchVanceCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "moore_county_absentee_owners"
+        ? await fetchMooreCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "lee_county_absentee_owners"
+        ? await fetchLeeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "duplin_county_absentee_owners"
+        ? await fetchDuplinCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "halifax_county_absentee_owners"
+        ? await fetchHalifaxCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Western Mountains (wave 3) ────────────────────────────────────
+      : sourceKey === "haywood_county_absentee_owners"
+        ? await fetchHaywoodCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "cherokee_county_absentee_owners"
+        ? await fetchCherokeeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "polk_county_absentee_owners"
+        ? await fetchPolkCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "rutherford_county_absentee_owners"
+        ? await fetchRutherfordCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "mcdowell_county_absentee_owners"
+        ? await fetchMcdowellCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "transylvania_county_absentee_owners"
+        ? await fetchTransylvaniaCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "yancey_county_absentee_owners"
+        ? await fetchYanceyCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Foothills / Piedmont (wave 3) ─────────────────────────────────
+      : sourceKey === "cleveland_county_absentee_owners"
+        ? await fetchClevelandCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "davie_county_absentee_owners"
+        ? await fetchDavieCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "yadkin_county_absentee_owners"
+        ? await fetchYadkinCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "montgomery_county_absentee_owners"
+        ? await fetchMontgomeryCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Coastal / Albemarle Sound (wave 3) ────────────────────────────
+      : sourceKey === "carteret_county_absentee_owners"
+        ? await fetchCarteretCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "pamlico_county_absentee_owners"
+        ? await fetchPamlicoCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "chowan_county_absentee_owners"
+        ? await fetchChowanCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "pasquotank_county_absentee_owners"
+        ? await fetchPasquotankCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "currituck_county_absentee_owners"
+        ? await fetchCurrituckCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "dare_county_absentee_owners"
+        ? await fetchDareCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Southeast / Cape Fear inland (wave 3) ─────────────────────────
+      : sourceKey === "bladen_county_absentee_owners"
+        ? await fetchBladenCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "columbus_county_absentee_owners"
+        ? await fetchColumbusCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Piedmont / Eastern fringe (wave 3) ────────────────────────────
+      : sourceKey === "person_county_absentee_owners"
+        ? await fetchPersonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "lenoir_county_absentee_owners"
+        ? await fetchLenoirCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "franklin_county_absentee_owners"
+        ? await fetchFranklinCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Southern NC / Sandhills (wave 3) ──────────────────────────────
+      : sourceKey === "hoke_county_absentee_owners"
+        ? await fetchHokeCountyAbsenteeRows({ sourceKey, county, city, limit })
+      // ── Far Western NC (wave 3) ───────────────────────────────────────
+      : sourceKey === "jackson_county_absentee_owners"
+        ? await fetchJacksonCountyAbsenteeRows({ sourceKey, county, city, limit })
+      : sourceKey === "macon_county_absentee_owners"
+        ? await fetchMaconCountyAbsenteeRows({ sourceKey, county, city, limit })
       : await fetchNcOneMapAbsenteeRows({ sourceKey, county, city, limit });
 }
 
@@ -3269,6 +3788,133 @@ function resolveLiveSourceUrl(sourceKey: SellerLiveSourceKey) {
       ? "buyer_registry:Avery"
     : sourceKey === "burke_county_absentee_owners"
       ? "buyer_registry:Burke"
+    // ── Triangle / Piedmont ──────────────────────────────────────────────
+    : sourceKey === "durham_county_absentee_owners"
+      ? "buyer_registry:Durham"
+    : sourceKey === "chatham_county_absentee_owners"
+      ? "buyer_registry:Chatham"
+    : sourceKey === "johnston_county_absentee_owners"
+      ? "buyer_registry:Johnston"
+    : sourceKey === "harnett_county_absentee_owners"
+      ? "buyer_registry:Harnett"
+    // ── Charlotte metro ──────────────────────────────────────────────────
+    : sourceKey === "cabarrus_county_absentee_owners"
+      ? "buyer_registry:Cabarrus"
+    : sourceKey === "union_county_absentee_owners"
+      ? "buyer_registry:Union"
+    : sourceKey === "iredell_county_absentee_owners"
+      ? "buyer_registry:Iredell"
+    : sourceKey === "gaston_county_absentee_owners"
+      ? "buyer_registry:Gaston"
+    : sourceKey === "lincoln_county_absentee_owners"
+      ? "buyer_registry:Lincoln"
+    // ── Piedmont Triad ───────────────────────────────────────────────────
+    : sourceKey === "rowan_county_absentee_owners"
+      ? "buyer_registry:Rowan"
+    : sourceKey === "davidson_county_absentee_owners"
+      ? "buyer_registry:Davidson"
+    : sourceKey === "alamance_county_absentee_owners"
+      ? "buyer_registry:Alamance"
+    : sourceKey === "randolph_county_absentee_owners"
+      ? "buyer_registry:Randolph"
+    : sourceKey === "catawba_county_absentee_owners"
+      ? "buyer_registry:Catawba"
+    // ── Western NC / Mountains ───────────────────────────────────────────
+    : sourceKey === "buncombe_county_absentee_owners"
+      ? "buyer_registry:Buncombe"
+    : sourceKey === "henderson_county_absentee_owners"
+      ? "buyer_registry:Henderson"
+    : sourceKey === "watauga_county_absentee_owners"
+      ? "buyer_registry:Watauga"
+    : sourceKey === "surry_county_absentee_owners"
+      ? "buyer_registry:Surry"
+    : sourceKey === "caldwell_county_absentee_owners"
+      ? "buyer_registry:Caldwell"
+    // ── Coastal / Cape Fear ──────────────────────────────────────────────
+    : sourceKey === "new_hanover_county_absentee_owners"
+      ? "buyer_registry:New Hanover"
+    : sourceKey === "brunswick_county_absentee_owners"
+      ? "buyer_registry:Brunswick"
+    : sourceKey === "pender_county_absentee_owners"
+      ? "buyer_registry:Pender"
+    : sourceKey === "onslow_county_absentee_owners"
+      ? "buyer_registry:Onslow"
+    : sourceKey === "craven_county_absentee_owners"
+      ? "buyer_registry:Craven"
+    // ── Eastern NC ──────────────────────────────────────────────────────
+    : sourceKey === "pitt_county_absentee_owners"
+      ? "buyer_registry:Pitt"
+    : sourceKey === "wayne_county_absentee_owners"
+      ? "buyer_registry:Wayne"
+    : sourceKey === "wilson_county_absentee_owners"
+      ? "buyer_registry:Wilson"
+    : sourceKey === "vance_county_absentee_owners"
+      ? "buyer_registry:Vance"
+    : sourceKey === "moore_county_absentee_owners"
+      ? "buyer_registry:Moore"
+    : sourceKey === "lee_county_absentee_owners"
+      ? "buyer_registry:Lee"
+    : sourceKey === "duplin_county_absentee_owners"
+      ? "buyer_registry:Duplin"
+    : sourceKey === "halifax_county_absentee_owners"
+      ? "buyer_registry:Halifax"
+    // ── Western Mountains (wave 3) ───────────────────────────────────────
+    : sourceKey === "haywood_county_absentee_owners"
+      ? "buyer_registry:Haywood"
+    : sourceKey === "cherokee_county_absentee_owners"
+      ? "buyer_registry:Cherokee"
+    : sourceKey === "polk_county_absentee_owners"
+      ? "buyer_registry:Polk"
+    : sourceKey === "rutherford_county_absentee_owners"
+      ? "buyer_registry:Rutherford"
+    : sourceKey === "mcdowell_county_absentee_owners"
+      ? "buyer_registry:McDowell"
+    : sourceKey === "transylvania_county_absentee_owners"
+      ? "buyer_registry:Transylvania"
+    : sourceKey === "yancey_county_absentee_owners"
+      ? "buyer_registry:Yancey"
+    // ── Foothills / Piedmont (wave 3) ────────────────────────────────────
+    : sourceKey === "cleveland_county_absentee_owners"
+      ? "buyer_registry:Cleveland"
+    : sourceKey === "davie_county_absentee_owners"
+      ? "buyer_registry:Davie"
+    : sourceKey === "yadkin_county_absentee_owners"
+      ? "buyer_registry:Yadkin"
+    : sourceKey === "montgomery_county_absentee_owners"
+      ? "buyer_registry:Montgomery"
+    // ── Coastal / Albemarle Sound (wave 3) ───────────────────────────────
+    : sourceKey === "carteret_county_absentee_owners"
+      ? "buyer_registry:Carteret"
+    : sourceKey === "pamlico_county_absentee_owners"
+      ? "buyer_registry:Pamlico"
+    : sourceKey === "chowan_county_absentee_owners"
+      ? "buyer_registry:Chowan"
+    : sourceKey === "pasquotank_county_absentee_owners"
+      ? "buyer_registry:Pasquotank"
+    : sourceKey === "currituck_county_absentee_owners"
+      ? "buyer_registry:Currituck"
+    : sourceKey === "dare_county_absentee_owners"
+      ? "buyer_registry:Dare"
+    // ── Southeast / Cape Fear inland (wave 3) ────────────────────────────
+    : sourceKey === "bladen_county_absentee_owners"
+      ? "buyer_registry:Bladen"
+    : sourceKey === "columbus_county_absentee_owners"
+      ? "buyer_registry:Columbus"
+    // ── Piedmont / Eastern fringe (wave 3) ───────────────────────────────
+    : sourceKey === "person_county_absentee_owners"
+      ? "buyer_registry:Person"
+    : sourceKey === "lenoir_county_absentee_owners"
+      ? "buyer_registry:Lenoir"
+    : sourceKey === "franklin_county_absentee_owners"
+      ? "buyer_registry:Franklin"
+    // ── Southern NC / Sandhills (wave 3) ─────────────────────────────────
+    : sourceKey === "hoke_county_absentee_owners"
+      ? "buyer_registry:Hoke"
+    // ── Far Western NC (wave 3) ───────────────────────────────────────────
+    : sourceKey === "jackson_county_absentee_owners"
+      ? "buyer_registry:Jackson"
+    : sourceKey === "macon_county_absentee_owners"
+      ? "buyer_registry:Macon"
     : "https://services.arcgis.com/04HiymDgLlsbhaV4/arcgis/rest/services/NCOneMap_Parcels/FeatureServer/79";
 }
 

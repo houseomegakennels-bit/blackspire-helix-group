@@ -87,6 +87,38 @@ export const SELLER_LIVE_SOURCE_KEYS = [
   "lee_county_absentee_owners",
   "duplin_county_absentee_owners",
   "halifax_county_absentee_owners",
+  // ── Western Mountains (wave 3) ──────────────────────────────────────────
+  "haywood_county_absentee_owners",
+  "cherokee_county_absentee_owners",
+  "polk_county_absentee_owners",
+  "rutherford_county_absentee_owners",
+  "mcdowell_county_absentee_owners",
+  "transylvania_county_absentee_owners",
+  "yancey_county_absentee_owners",
+  // ── Foothills / Piedmont (wave 3) ──────────────────────────────────────
+  "cleveland_county_absentee_owners",
+  "davie_county_absentee_owners",
+  "yadkin_county_absentee_owners",
+  "montgomery_county_absentee_owners",
+  // ── Coastal / Albemarle Sound (wave 3) ──────────────────────────────────
+  "carteret_county_absentee_owners",
+  "pamlico_county_absentee_owners",
+  "chowan_county_absentee_owners",
+  "pasquotank_county_absentee_owners",
+  "currituck_county_absentee_owners",
+  "dare_county_absentee_owners",
+  // ── Southeast / Cape Fear inland (wave 3) ───────────────────────────────
+  "bladen_county_absentee_owners",
+  "columbus_county_absentee_owners",
+  // ── Piedmont / Eastern fringe (wave 3) ──────────────────────────────────
+  "person_county_absentee_owners",
+  "lenoir_county_absentee_owners",
+  "franklin_county_absentee_owners",
+  // ── Southern NC / Sandhills (wave 3) ────────────────────────────────────
+  "hoke_county_absentee_owners",
+  // ── Far Western NC (wave 3) ─────────────────────────────────────────────
+  "jackson_county_absentee_owners",
+  "macon_county_absentee_owners",
 ] as const;
 
 export type SellerLeadStatus = (typeof SELLER_LEAD_STATUSES)[number];
@@ -489,6 +521,38 @@ export const SELLER_LIVE_SOURCES: Array<{
     description: "Official Halifax County parcel records filtered into live absentee-owner seller leads from the county parcel service.",
     sourceType: "absentee_owner",
   },
+  // ── Western Mountains (wave 3) ──────────────────────────────────────────
+  { key: "haywood_county_absentee_owners", label: "Haywood County Absentee Owners", description: "Official Haywood County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "cherokee_county_absentee_owners", label: "Cherokee County Absentee Owners", description: "Official Cherokee County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "polk_county_absentee_owners", label: "Polk County Absentee Owners", description: "Official Polk County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "rutherford_county_absentee_owners", label: "Rutherford County Absentee Owners", description: "Official Rutherford County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "mcdowell_county_absentee_owners", label: "McDowell County Absentee Owners", description: "Official McDowell County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "transylvania_county_absentee_owners", label: "Transylvania County Absentee Owners", description: "Official Transylvania County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "yancey_county_absentee_owners", label: "Yancey County Absentee Owners", description: "Official Yancey County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  // ── Foothills / Piedmont (wave 3) ──────────────────────────────────────
+  { key: "cleveland_county_absentee_owners", label: "Cleveland County Absentee Owners", description: "Official Cleveland County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "davie_county_absentee_owners", label: "Davie County Absentee Owners", description: "Official Davie County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "yadkin_county_absentee_owners", label: "Yadkin County Absentee Owners", description: "Official Yadkin County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "montgomery_county_absentee_owners", label: "Montgomery County Absentee Owners", description: "Official Montgomery County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  // ── Coastal / Albemarle Sound (wave 3) ──────────────────────────────────
+  { key: "carteret_county_absentee_owners", label: "Carteret County Absentee Owners", description: "Official Carteret County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "pamlico_county_absentee_owners", label: "Pamlico County Absentee Owners", description: "Official Pamlico County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "chowan_county_absentee_owners", label: "Chowan County Absentee Owners", description: "Official Chowan County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "pasquotank_county_absentee_owners", label: "Pasquotank County Absentee Owners", description: "Official Pasquotank County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "currituck_county_absentee_owners", label: "Currituck County Absentee Owners", description: "Official Currituck County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "dare_county_absentee_owners", label: "Dare County Absentee Owners", description: "Official Dare County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  // ── Southeast / Cape Fear inland (wave 3) ───────────────────────────────
+  { key: "bladen_county_absentee_owners", label: "Bladen County Absentee Owners", description: "Official Bladen County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "columbus_county_absentee_owners", label: "Columbus County Absentee Owners", description: "Official Columbus County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  // ── Piedmont / Eastern fringe (wave 3) ──────────────────────────────────
+  { key: "person_county_absentee_owners", label: "Person County Absentee Owners", description: "Official Person County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "lenoir_county_absentee_owners", label: "Lenoir County Absentee Owners", description: "Official Lenoir County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "franklin_county_absentee_owners", label: "Franklin County Absentee Owners", description: "Official Franklin County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  // ── Southern NC / Sandhills (wave 3) ────────────────────────────────────
+  { key: "hoke_county_absentee_owners", label: "Hoke County Absentee Owners", description: "Official Hoke County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  // ── Far Western NC (wave 3) ─────────────────────────────────────────────
+  { key: "jackson_county_absentee_owners", label: "Jackson County Absentee Owners", description: "Official Jackson County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
+  { key: "macon_county_absentee_owners", label: "Macon County Absentee Owners", description: "Official Macon County parcel records filtered into live absentee-owner seller leads from the county parcel service.", sourceType: "absentee_owner" },
 ];
 
 export type SellerScoringWeights = {
