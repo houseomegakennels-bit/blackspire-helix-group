@@ -587,46 +587,6 @@ type BurkeParcelAttributes = {
 
 type XlsxSharedStrings = string[];
 
-type GenericNcParcelAttributes = {
-  // Parcel ID (various NC county naming conventions)
-  PIN?: string; PIN_NUM?: string; PARCEL_ID?: string; PARCEL_NUMBER?: string; PARCEL_PK?: string;
-  GIS_PARID?: string; TAX_PARID?: string; REID?: string; parno?: string; GPIN?: string; GPINLONG?: string;
-  // Owner name
-  OWNER?: string; OWNER1?: string; OWNER2?: string; PROPERTY_OWNER?: string; OWNNAME?: string;
-  NAME1?: string; NAME2?: string; ownname?: string; ownlast?: string;
-  // Mailing address lines
-  ADDR1?: string; ADDR2?: string; MAILADD?: string; MAIL_ADDR1?: string; MAIL_ADDR2?: string;
-  OWNER_MAIL_1?: string; OWNER_MAIL_2?: string; OWNER_MAIL_3?: string;
-  ADDRESS1?: string; ADDRESS2?: string; TaxPayerAddr1?: string; TaxPayerAddr2?: string; mailadd?: string;
-  // Mailing city
-  CITY?: string; MAIL_CITY?: string; OWNER_MAIL_CITY?: string; TaxPayerCity?: string; mcity?: string;
-  // Mailing state
-  STATE?: string; MAIL_STATE?: string; OWNER_MAIL_STATE?: string; mstate?: string;
-  // Mailing zip
-  ZIP?: string; ZIPCODE?: string; MAIL_ZIP?: string; OWNER_MAIL_ZIP?: string; mzip?: string; Zip?: string;
-  // Property address
-  SITE_ADDRESS?: string; PROP_ADDR?: string; LOCATION_ADDR?: string; PHYSICAL_ADDRESS?: string;
-  PHYS_ADDR?: string; PARCEL_ADD?: string; PhyStreetAddr?: string; FormattedPropertyAddress?: string;
-  siteadd?: string; saddno?: string; saddstr?: string; saddstname?: string; saddstsuf?: string; saddsttyp?: string;
-  // Property city
-  CITY_DECODE?: string; PHYS_ADDR_CITY?: string; scity?: string;
-  // Assessed / market value
-  TOTAL_VALUE_ASSD?: number; TOT_VAL?: number; ASM_VAL?: number; APR_VAL?: number; ASSESSED_V?: number;
-  VALUATION?: number; parval?: number; TotalASVCurrent?: number; TotalAsses?: number; AssessedValue?: number;
-  LAND_VAL?: number; BLDG_VAL?: number; LAND_VALUE?: number; BLDGVALUE?: number; LANDVALUE?: number;
-  TOTAL_LAND_VALUE_ASSESSED?: number; TOTAL_BLDG_VALUE_ASSESSED?: number;
-  // Sale date
-  DEED_DATE?: number; DEEDDATE?: number; SALEDATE?: number; SALE_DATE?: number; saledate?: number;
-  PKG_SALE_DATE?: number; DATESOLD?: number | string; DateSold?: number; DeedDate?: number; date_dt?: number;
-  // Sale price
-  SALEPRICE?: number; SALE_PRICE?: number; SalePrice?: number; TOTSALPRICE?: number; PKG_SALE_PRICE?: number;
-  // Property type
-  LAND_USE?: string; LANDTYPE?: string; LAND_CLASS?: string; TYPE_USE_DECODE?: string; LAND_CLASS_DECODE?: string;
-  parusedesc?: string; parusedsc2?: string; PROPTYPE?: string; PARCEL_CLA?: string; LegalLandT?: string;
-  // Building presence
-  NBR_BLDG?: number; BLDGCNT?: number; TOT_B_VAL?: number;
-};
-
 type BuyerCountyRegistryRow = {
   id: string;
   county: string;
@@ -3072,100 +3032,186 @@ async function fetchGenericNcCountyAbsenteeRows(
   const requestedLimit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const registrySource = await getBuyerCountyRegistrySource(countyName);
 
+  // No curated county endpoint — fall back to the statewide NC OneMap service.
   if (!registrySource?.source_url) {
     return fetchNcOneMapAbsenteeRows({ ...input, county: countyName });
   }
 
-  const endpoint = registrySource.source_url.split("?")[0];
+  let rows: SellerImportRow[] = [];
+  try {
+    rows = await queryCuratedCountyEndpoint(registrySource.source_url, {
+      requestedLimit,
+      countyName,
+      defaultCity,
+      sourceName,
+      cityFilter: input.city?.trim().toUpperCase(),
+      inputCity: input.city?.trim(),
+    });
+  } catch {
+    rows = [];
+  }
+
+  // If the curated endpoint is unreachable or yields nothing usable, fall back
+  // to the statewide service so the county is never a dead entry.
+  if (!rows.length) {
+    return fetchNcOneMapAbsenteeRows({ ...input, county: countyName });
+  }
+
+  return rows;
+}
+
+async function queryCuratedCountyEndpoint(
+  sourceUrl: string,
+  opts: {
+    requestedLimit: number;
+    countyName: string;
+    defaultCity: string;
+    sourceName: string;
+    cityFilter?: string;
+    inputCity?: string;
+  },
+): Promise<SellerImportRow[]> {
+  const { requestedLimit, countyName, defaultCity, sourceName, cityFilter, inputCity } = opts;
+
+  const [rawEndpoint, queryString = ""] = sourceUrl.split("?");
+  const endpoint = rawEndpoint.endsWith("/query") ? rawEndpoint : `${rawEndpoint}/query`;
+  const stored = new URLSearchParams(queryString);
+
+  // Preserve the county's curated WHERE filter (e.g. SalePrice > 0) but always
+  // request every field so the case-insensitive mapper can find what it needs.
   const params = new URLSearchParams({
-    where: "1=1",
+    where: stored.get("where") || "1=1",
     outFields: "*",
     returnGeometry: "false",
-    resultRecordCount: String(Math.min(Math.max(requestedLimit * 4, 100), 500)),
+    resultRecordCount: String(Math.min(Math.max(requestedLimit * 6, 200), 2000)),
     f: "json",
   });
+  const orderBy = stored.get("orderByFields");
+  if (orderBy) params.set("orderByFields", orderBy);
 
   const payload = await postArcgisQueryWithTimeout(endpoint, params, 25000) as {
     error?: { message?: string };
-    features?: Array<{ attributes?: GenericNcParcelAttributes }>;
+    features?: Array<{ attributes?: Record<string, string | number | null> }>;
   };
   if (payload.error?.message) throw new Error(payload.error.message);
 
-  const cityFilter = input.city?.trim().toUpperCase();
-
   const rows = (payload.features ?? [])
     .map((feature) => feature.attributes ?? {})
-    .flatMap((attributes) => {
-      const parcelId = normalizeArcGisText(
-        attributes.PIN_NUM || attributes.PIN || attributes.PARCEL_ID || attributes.PARCEL_NUMBER
-          || attributes.GIS_PARID || attributes.TAX_PARID || attributes.REID
-          || attributes.PARCEL_PK || attributes.GPIN || attributes.GPINLONG || attributes.parno,
+    .flatMap((raw) => {
+      // Case-insensitive attribute lookup — NC counties use wildly different
+      // field name casing (OWNER1 / Owner1 / ownname / CURR_NAME1, etc.).
+      const lower: Record<string, string | number | null> = {};
+      for (const [key, value] of Object.entries(raw)) lower[key.toLowerCase()] = value;
+
+      const text = (...names: string[]) => {
+        for (const name of names) {
+          const value = lower[name.toLowerCase()];
+          if (value !== undefined && value !== null && String(value).trim() !== "") {
+            return normalizeArcGisText(value as string | number);
+          }
+        }
+        return "";
+      };
+      const num = (...names: string[]) => {
+        for (const name of names) {
+          const value = lower[name.toLowerCase()];
+          if (typeof value === "number" && Number.isFinite(value)) return value;
+          if (typeof value === "string" && value.trim()) {
+            const parsed = Number(value.replace(/[$,]/g, ""));
+            if (Number.isFinite(parsed)) return parsed;
+          }
+        }
+        return undefined;
+      };
+      const street = (no: string[], dir: string[], name: string[], type: string[], suf: string[]) =>
+        [text(...no), text(...dir), text(...name), text(...type), text(...suf)].filter(Boolean).join(" ").trim();
+
+      const parcelId = text(
+        "PIN_NUM", "PIN14", "PIN4", "PIN", "PINNUM", "PinNum", "PARCEL_ID", "PARCEL_NUMBER", "PARID",
+        "GIS_PIN", "TAX_PIN", "GIS_PARID", "TAX_PARID", "REID", "PARCEL_PK", "GPIN", "GPINLONG",
+        "NCPIN", "TWN_PIN", "ncpin", "parno", "PID",
       );
       const ownerName = [
-        normalizeArcGisText(
-          attributes.OWNER || attributes.OWNER1 || attributes.PROPERTY_OWNER
-            || attributes.OWNNAME || attributes.NAME1 || attributes.ownname,
+        text(
+          "OWNER", "OWNER1", "OWN1", "PROPERTY_OWNER", "OWNNAME", "OWNAM1", "NAME1", "NAME",
+          "CURR_NAME1", "AcctName1", "BUYER1", "OwnerName", "ownname", "name1", "Name",
         ),
-        normalizeArcGisText(attributes.OWNER2 || attributes.NAME2 || attributes.ownlast),
+        text("OWNER2", "OWN2", "OWNAM2", "NAME2", "CURR_NAME2", "AcctName2", "BUYER2", "ownname2", "name2"),
       ].filter(Boolean).join(" / ");
-      const mailLine1 = normalizeArcGisText(
-        attributes.ADDR1 || attributes.MAIL_ADDR1 || attributes.OWNER_MAIL_1
-          || attributes.ADDRESS1 || attributes.TaxPayerAddr1 || attributes.MAILADD || attributes.mailadd,
-      );
-      const mailLine2 = normalizeArcGisText(
-        attributes.ADDR2 || attributes.MAIL_ADDR2 || attributes.OWNER_MAIL_2
-          || attributes.ADDRESS2 || attributes.TaxPayerAddr2,
-      );
-      const mailLine3 = normalizeArcGisText(attributes.OWNER_MAIL_3);
-      const mailCity = normalizeArcGisText(
-        attributes.CITY || attributes.MAIL_CITY || attributes.OWNER_MAIL_CITY || attributes.TaxPayerCity || attributes.mcity,
-      );
-      const mailState = normalizeArcGisText(
-        attributes.STATE || attributes.MAIL_STATE || attributes.OWNER_MAIL_STATE || attributes.mstate,
-      );
-      const mailZip = normalizeArcGisText(
-        attributes.ZIP || attributes.ZIPCODE || attributes.MAIL_ZIP || attributes.OWNER_MAIL_ZIP || attributes.Zip || attributes.mzip,
-      );
-      const propertyAddress = normalizeArcGisText(
-        attributes.SITE_ADDRESS || attributes.PROP_ADDR || attributes.LOCATION_ADDR
-          || attributes.PHYSICAL_ADDRESS || attributes.PHYS_ADDR || attributes.PARCEL_ADD
-          || attributes.PhyStreetAddr || attributes.FormattedPropertyAddress || attributes.siteadd,
-      );
-      const propertyCity = input.city?.trim()
-        || normalizeArcGisText(attributes.CITY_DECODE || attributes.PHYS_ADDR_CITY || attributes.scity)
-        || inferCityFromPropertyAddress(propertyAddress, defaultCity);
-      const saleDate = attributes.DEED_DATE || attributes.DEEDDATE || attributes.SALEDATE
-        || attributes.SALE_DATE || attributes.PKG_SALE_DATE || attributes.date_dt
-        || (typeof attributes.DATESOLD === "number" ? attributes.DATESOLD : undefined)
-        || attributes.DateSold || attributes.DeedDate || attributes.saledate;
-      const assessedValue = attributes.TOTAL_VALUE_ASSD || attributes.TOT_VAL || attributes.ASM_VAL
-        || attributes.APR_VAL || attributes.ASSESSED_V || attributes.VALUATION || attributes.parval
-        || attributes.TotalASVCurrent || attributes.TotalAsses || attributes.AssessedValue
-        || ((attributes.TOTAL_LAND_VALUE_ASSESSED || 0) + (attributes.TOTAL_BLDG_VALUE_ASSESSED || 0)) || 0;
-      const hasBuildingValue = Boolean(
-        attributes.BLDG_VAL || attributes.BLDGVALUE || attributes.TOT_B_VAL
-          || attributes.TOTAL_BLDG_VALUE_ASSESSED || attributes.NBR_BLDG || attributes.BLDGCNT,
-      );
-      const propertyType = normalizeArcGisText(
-        attributes.LAND_USE || attributes.LANDTYPE || attributes.LAND_CLASS || attributes.TYPE_USE_DECODE
-          || attributes.LAND_CLASS_DECODE || attributes.parusedesc || attributes.parusedsc2
-          || attributes.PROPTYPE || attributes.PARCEL_CLA || attributes.LegalLandT,
-      );
-      const mailingAddress = [mailLine1, mailLine2, mailLine3, mailCity, mailState, mailZip].filter(Boolean).join(", ");
-      const absentee = propertyAddress
-        && normalizeAddressForComparison(propertyAddress) !== normalizeAddressForComparison(mailLine1);
 
-      if (!propertyAddress || !ownerName || !parcelId || !absentee) return [];
+      const mailLine1 = text(
+        "OWNER_MAIL_1", "MAIL_ADDR1", "MAILADD", "MAILADDR1", "MAILINGADDRESS", "MAILING_AD",
+        "ADDR1", "ADDR", "ADDRESS1", "ADD1", "ADDRLINE1", "OWNER_ADDR1", "OWNERADDR1", "OwnerAddress1",
+        "CURR_ADDR1", "TAXADD1", "TaxpayerAddress1", "TMADDR", "OWADR1", "mailadd", "MailingAddress",
+      ) || street(["MailADRNO"], ["MailADRDIR"], ["MailADRSTR"], ["MailADRSUF"], []);
+      const mailLine2 = text("OWNER_MAIL_2", "MAIL_ADDR2", "ADDR2", "ADDRESS2", "ADD2", "ADDRLINE2",
+        "OWNER_ADDR2", "OwnerAddress2", "CURR_ADDR2", "TAXADD2", "munit");
+      const mailLine3 = text("OWNER_MAIL_3", "ADDRESS3", "OWNER_ADDR3", "OwnerAddress3");
+      const mailCity = text("OWNER_MAIL_CITY", "MAIL_CITY", "MAILCITY", "MailCity", "CITY", "OWNER_CITY",
+        "OWCITY", "CURR_CITY", "CITYNM", "TaxpayerCity", "City", "mcity");
+      const mailState = text("OWNER_MAIL_STATE", "MAIL_STATE", "MAILSTATE", "MailState", "STATE", "OWNER_STATE",
+        "OWSTA", "CURR_STATE", "TAXSTE", "State", "mstate");
+      const mailZipCombined = text("CityStateZip", "CITYSTATEZIP", "ML_C_ST_Z");
+      const mailZip = text("OWNER_MAIL_ZIP", "MAIL_ZIP", "MAILZIP", "MailZip", "MailZipCode", "ZIP",
+        "ZIPCODE", "OWNER_ZIP", "OWZIPA", "CURR_ZIPCODE", "ZIPCode", "Zip", "mzip")
+        || (mailZipCombined.match(/\b(\d{5})(?:-\d{4})?\b/)?.[1] ?? "");
+
+      const directProperty = text(
+        "SITE_ADDRESS", "PROP_ADDR", "PROP_ADDRESS", "PROPERTY_ADDRESS", "PropertyAddress", "PROP_ADDRESS",
+        "LOCATION_ADDR", "PHYSICAL_ADDRESS", "PHYSICALADDRESS", "PHYSICALADDR", "PHYS_ADDR",
+        "PHYSSTRADD", "PARCEL_ADD", "PhyStreetAddr", "FullAdd", "FULLADD", "PropAddr",
+        "FormattedPropertyAddress", "siteadd",
+      );
+      const propertyAddress = directProperty
+        || street(["HouseNumber", "saddno"], ["StreetDirection", "SDIR", "saddpref"],
+          ["StreetName", "STREET", "streetname", "saddstr", "saddstname"],
+          ["StreetType", "STYPE", "saddsttyp"], ["StreetSuffix", "saddstsuf"]);
+
+      const propertyCity = inputCity
+        || text("CITY_DECODE", "PHYS_ADDR_CITY", "scity", "CityName")
+        || inferCityFromPropertyAddress(propertyAddress, defaultCity);
+
+      // Sale date arrives as an epoch (ms) for date fields, or year/month parts.
+      const saleEpoch = num("DEED_DATE", "DEEDDATE", "SALEDATE", "SALE_DATE", "PKG_SALE_DATE", "Sale_Date",
+        "DATESOLD", "DateSold", "DeedDate", "RECENT_SALEDT", "AMDTSL", "SALEDT", "date_dt", "deed_date", "sale_date", "saledate");
+      const saleYear = num("SaleYear", "SaleYear1", "SALE_YEAR");
+      const assessedValue = num("TOTAL_VALUE_ASSD", "TOT_VAL", "ASM_VAL", "APR_VAL", "ASSESSED_V",
+        "VALUATION", "parval", "TotalASVCurrent", "TotalAsses", "AssessedValue", "total_value",
+        "totalassessedvalue", "TotalMarketValue") || 0;
+      const hasBuildingValue = Boolean(
+        num("BLDG_VAL", "BLDGVALUE", "TOT_B_VAL", "bldg_value", "parcelbuildingvalue",
+          "NBR_BLDG", "BLDGCNT", "ActualYearBuilt", "yr_built", "ResComYrBlt"),
+      );
+      const propertyType = text("LAND_USE", "LANDTYPE", "LAND_CLASS", "TYPE_USE_DECODE", "UseCode", "UseCd",
+        "LAND_CLASS_DECODE", "parusedesc", "parusedsc2", "PROPTYPE", "PARCEL_CLA", "class", "LegalLandT");
+
+      const mailingAddress = [mailLine1, mailLine2, mailLine3, mailCity, mailState, mailZip, mailZipCombined]
+        .filter(Boolean)
+        .filter((value, index, all) => all.indexOf(value) === index)
+        .join(", ");
+
+      // Absentee: owner's mailing street differs from the property street. When
+      // the layer exposes no property address, fall back to out-of-state owner.
+      const absentee = propertyAddress
+        ? normalizeAddressForComparison(propertyAddress) !== normalizeAddressForComparison(mailLine1)
+        : Boolean(mailState && mailState.toUpperCase() !== "NC");
+
+      if (!ownerName || !parcelId || !absentee) return [];
+      if (!propertyAddress && !mailingAddress) return [];
+
+      const saleDate = saleEpoch
+        ? normalizeArcGisDate(saleEpoch)
+        : (saleYear ? `${Math.round(saleYear)}-01-01` : "");
 
       return [{
-        property_address: propertyAddress,
+        property_address: propertyAddress || `${countyName} County parcel ${parcelId}`,
         parcel_id: parcelId,
         county: countyName,
         city: propertyCity,
         zip_code: mailZip,
         property_type: propertyType || "Property",
         assessed_value: assessedValue ? String(Math.round(assessedValue)) : "",
-        last_sale_date: normalizeArcGisDate(saleDate),
+        last_sale_date: saleDate,
         last_sale_price: "",
         owner_name: ownerName,
         owner_mailing_address: mailingAddress,
@@ -3175,7 +3221,7 @@ async function fetchGenericNcCountyAbsenteeRows(
         probate: "false",
         vacant: !hasBuildingValue ? "true" : "false",
         code_violation: "false",
-        years_owned: yearsSince(saleDate),
+        years_owned: saleEpoch ? yearsSince(saleEpoch) : "",
         estimated_equity: "",
         multiple_properties: "false",
         source_name: sourceName,
