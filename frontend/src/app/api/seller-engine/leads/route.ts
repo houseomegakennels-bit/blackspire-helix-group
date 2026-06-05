@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { listSellerLeads, updateSellerLead } from "@/lib/seller-engine-server";
+import { getSellerLeadDetail, listSellerLeads, updateSellerLead } from "@/lib/seller-engine-server";
 import type { SellerLeadStatus } from "@/lib/seller-engine";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const id = request.nextUrl.searchParams.get("id")?.trim();
+    if (id) {
+      return NextResponse.json({ ok: true, lead: await getSellerLeadDetail(id) });
+    }
     return NextResponse.json({ ok: true, leads: await listSellerLeads() });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Lead fetch failed." }, { status: 500 });

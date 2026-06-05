@@ -103,9 +103,61 @@ type SellerLeadJoin = {
     vacant: boolean;
     code_violation: boolean;
     owner_occupancy_status: string | null;
-    data_sources: { name: string } | null;
+    data_sources: { name: string; source_type: string | null; integration_type: string | null; source_url: string | null } | null;
   } | null;
 };
+
+type SellerLeadNoteRow = {
+  id: string;
+  note: string;
+  created_at: string;
+};
+
+type SellerLeadStatusHistoryRow = {
+  id: string;
+  from_status: string | null;
+  to_status: string;
+  created_at: string;
+};
+
+function mapSellerLead(lead: SellerLeadJoin): SellerLeadView {
+  return {
+    id: lead.id,
+    ownerName: lead.owners?.name ?? "Unknown owner",
+    ownerMailingAddress: lead.owners?.mailing_address ?? "Not available",
+    propertyAddress: lead.properties?.property_address ?? "Unknown property",
+    parcelId: lead.properties?.parcel_id ?? "Not available",
+    county: lead.properties?.county ?? "Unknown",
+    city: lead.properties?.city ?? "Unknown",
+    zipCode: lead.properties?.zip_code ?? "",
+    propertyType: lead.properties?.property_type ?? "Unknown",
+    assessedValue: lead.properties?.assessed_value ?? 0,
+    estimatedEquity: lead.properties?.estimated_equity ?? 0,
+    yearsOwned: lead.properties?.years_owned ?? 0,
+    ownerOccupancyStatus: lead.properties?.owner_occupancy_status ?? "Unknown",
+    status: lead.status,
+    score: lead.motivation_score,
+    category: lead.lead_category,
+    reasons: lead.motivation_reasons ?? [],
+    sourceName: lead.properties?.data_sources?.name ?? "Unknown source",
+    sourceType: lead.properties?.data_sources?.source_type ?? undefined,
+    sourceIntegrationType: lead.properties?.data_sources?.integration_type ?? undefined,
+    importedAt: lead.created_at,
+    recommendedAction: lead.recommended_action ?? recommendedSellerAction(lead.motivation_score, lead.motivation_reasons ?? []),
+    summary: lead.ai_summary ?? "AI seller intelligence summary has not been generated yet.",
+    notes: [],
+    statusHistory: [],
+    relatedDealId: null,
+    signals: {
+      absenteeOwner: /absentee/i.test(lead.properties?.owner_occupancy_status ?? ""),
+      taxDelinquent: Boolean(lead.properties?.tax_delinquent),
+      foreclosure: Boolean(lead.properties?.foreclosure),
+      probate: Boolean(lead.properties?.probate),
+      vacant: Boolean(lead.properties?.vacant),
+      codeViolation: Boolean(lead.properties?.code_violation),
+    },
+  };
+}
 
 type SellerImportRow = Record<string, string>;
 
@@ -556,43 +608,66 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
 
   const { data, error } = await supabase
     .from("seller_leads")
-    .select("id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(property_address,parcel_id,county,city,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name))")
+    .select("id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(property_address,parcel_id,county,city,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))")
     .order("motivation_score", { ascending: false })
     .limit(500);
 
   if (error) return DEMO_SELLER_LEADS;
   if (!data?.length) return [];
 
-  return (data as unknown as SellerLeadJoin[]).map((lead) => ({
-    id: lead.id,
-    ownerName: lead.owners?.name ?? "Unknown owner",
-    ownerMailingAddress: lead.owners?.mailing_address ?? "Not available",
-    propertyAddress: lead.properties?.property_address ?? "Unknown property",
-    parcelId: lead.properties?.parcel_id ?? "Not available",
-    county: lead.properties?.county ?? "Unknown",
-    city: lead.properties?.city ?? "Unknown",
-    zipCode: lead.properties?.zip_code ?? "",
-    propertyType: lead.properties?.property_type ?? "Unknown",
-    assessedValue: lead.properties?.assessed_value ?? 0,
-    estimatedEquity: lead.properties?.estimated_equity ?? 0,
-    yearsOwned: lead.properties?.years_owned ?? 0,
-    status: lead.status,
-    score: lead.motivation_score,
-    category: lead.lead_category,
-    reasons: lead.motivation_reasons ?? [],
-    sourceName: lead.properties?.data_sources?.name ?? "Unknown source",
-    importedAt: lead.created_at,
-    recommendedAction: lead.recommended_action ?? recommendedSellerAction(lead.motivation_score, lead.motivation_reasons ?? []),
-    summary: lead.ai_summary ?? "AI seller intelligence summary has not been generated yet.",
-    signals: {
-      absenteeOwner: /absentee/i.test(lead.properties?.owner_occupancy_status ?? ""),
-      taxDelinquent: Boolean(lead.properties?.tax_delinquent),
-      foreclosure: Boolean(lead.properties?.foreclosure),
-      probate: Boolean(lead.properties?.probate),
-      vacant: Boolean(lead.properties?.vacant),
-      codeViolation: Boolean(lead.properties?.code_violation),
-    },
+  return (data as unknown as SellerLeadJoin[]).map(mapSellerLead);
+}
+
+export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | null> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return DEMO_SELLER_LEADS.find((lead) => lead.id === id) ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("seller_leads")
+    .select("id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(property_address,parcel_id,county,city,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const lead = mapSellerLead(data as unknown as SellerLeadJoin);
+  const [notesResult, historyResult, dealResult] = await Promise.all([
+    supabase
+      .from("lead_notes")
+      .select("id,note,created_at")
+      .eq("seller_lead_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("lead_status_history")
+      .select("id,from_status,to_status,created_at")
+      .eq("seller_lead_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("deal_leads")
+      .select("id")
+      .eq("property_address", lead.propertyAddress)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  lead.notes = (notesResult.data ?? []).map((note) => ({
+    id: String((note as SellerLeadNoteRow).id),
+    note: (note as SellerLeadNoteRow).note,
+    createdAt: (note as SellerLeadNoteRow).created_at,
   }));
+  lead.statusHistory = (historyResult.data ?? []).map((event) => ({
+    id: String((event as SellerLeadStatusHistoryRow).id),
+    fromStatus: (event as SellerLeadStatusHistoryRow).from_status,
+    toStatus: (event as SellerLeadStatusHistoryRow).to_status,
+    createdAt: (event as SellerLeadStatusHistoryRow).created_at,
+  }));
+  lead.relatedDealId = dealResult.data?.id ? String(dealResult.data.id) : null;
+
+  return lead;
 }
 
 async function ensureSellerSource(

@@ -18,9 +18,15 @@ export type SellerLeadView = {
   category: string;
   reasons: string[];
   sourceName: string;
+  sourceType?: string;
+  sourceIntegrationType?: string;
+  ownerOccupancyStatus?: string;
   importedAt: string;
   recommendedAction: string;
   summary: string;
+  notes?: Array<{ id: string; note: string; createdAt: string }>;
+  statusHistory?: Array<{ id: string; fromStatus: string | null; toStatus: string; createdAt: string }>;
+  relatedDealId?: string | null;
   signals: {
     absenteeOwner: boolean;
     taxDelinquent: boolean;
@@ -47,6 +53,8 @@ const seeds = [
     yearsOwned: 22,
     status: "New" as const,
     sourceName: "Probate List",
+    sourceType: "probate",
+    ownerOccupancyStatus: "Absentee",
     signals: { absenteeOwner: true, taxDelinquent: false, foreclosure: false, probate: true, vacant: true, codeViolation: false },
   },
   {
@@ -64,6 +72,8 @@ const seeds = [
     yearsOwned: 13,
     status: "Reviewing" as const,
     sourceName: "Tax Delinquent List",
+    sourceType: "tax_delinquent",
+    ownerOccupancyStatus: "Absentee",
     signals: { absenteeOwner: true, taxDelinquent: true, foreclosure: false, probate: false, vacant: false, codeViolation: true },
   },
   {
@@ -81,6 +91,8 @@ const seeds = [
     yearsOwned: 17,
     status: "Contact Ready" as const,
     sourceName: "Code Violations",
+    sourceType: "code_violation",
+    ownerOccupancyStatus: "Absentee",
     signals: { absenteeOwner: true, taxDelinquent: false, foreclosure: false, probate: false, vacant: true, codeViolation: true },
   },
   {
@@ -98,6 +110,8 @@ const seeds = [
     yearsOwned: 11,
     status: "Watchlist" as const,
     sourceName: "Absentee Owner List",
+    sourceType: "absentee_owner",
+    ownerOccupancyStatus: "Absentee",
     signals: { absenteeOwner: true, taxDelinquent: false, foreclosure: false, probate: false, vacant: false, codeViolation: false },
   },
 ];
@@ -120,6 +134,9 @@ export const DEMO_SELLER_LEADS: SellerLeadView[] = seeds.map((lead, index) => {
     importedAt: new Date(Date.now() - index * 86400000 * 2).toISOString(),
     recommendedAction,
     summary: `${lead.ownerName} shows ${result.reasons.length} motivation signals tied to ${lead.propertyAddress}. The strongest indicators are ${result.reasons.slice(0, 3).join(", ").toLowerCase()}.`,
+    notes: [],
+    statusHistory: [],
+    relatedDealId: null,
   };
 });
 
