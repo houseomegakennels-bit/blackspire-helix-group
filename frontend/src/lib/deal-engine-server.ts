@@ -18,6 +18,7 @@ import {
   type BuyerReportRecord,
   type SearchJobRecord,
 } from "@/lib/buyer-engine-server";
+import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
 
 type EnvState = {
   enabled: boolean;
@@ -120,6 +121,23 @@ export type DealEngineWorkspaceSnapshot = {
 
 export type DealEngineDealDetail = {
   lead: DealEngineLead;
+  underwriting: {
+    estimatedArv: number;
+    sellerAskingPrice: number;
+    repairEstimate: number;
+    closingCosts: number;
+    holdingCosts: number;
+    buyerProfitTarget: number;
+    assignmentFeeTarget: number;
+    rentalEstimate: number;
+    flipEstimate: number;
+    purchasePriceTarget: number;
+    maximumAllowableOffer: number;
+    wholesaleSpread: number;
+    dealRating: string;
+    missingInputs: string[];
+    readyForContract: boolean;
+  };
   sellerSignal: DealEngineSellerSignal | null;
   sellerContact: {
     ownerName: string;
@@ -240,6 +258,12 @@ export type DealEngineDealDetail = {
     timestamp: string;
     tone: "neutral" | "good" | "warn" | "active";
   }>;
+  automationWorkflow: Array<{
+    id: string;
+    title: string;
+    detail: string;
+    status: "ready" | "active" | "blocked";
+  }>;
 };
 
 type BuyerReportView = {
@@ -291,6 +315,27 @@ type DispositionLogRow = {
   created_at: string | null;
 };
 
+type DealAnalysisRow = {
+  estimated_arv: number | null;
+  purchase_price_target: number | null;
+  seller_asking_price: number | null;
+  repair_estimate: number | null;
+  closing_costs: number | null;
+  holding_costs: number | null;
+  buyer_profit_target: number | null;
+  assignment_fee_target: number | null;
+  rental_estimate: number | null;
+  flip_estimate: number | null;
+  wholesale_spread: number | null;
+  maximum_allowable_offer: number | null;
+  deal_rating: string | null;
+};
+
+type RankedBuyerSignal = DealEngineBuyerSignal & {
+  matchScore: number;
+  matchReason: string;
+};
+
 function getEnvState(): EnvState {
   const required = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
   const missing = required.filter((key) => !process.env[key]?.trim());
@@ -333,6 +378,11 @@ function formatCurrency(value: number) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function clampMoney(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(Math.round(value), 0);
 }
 
 function toLead(row: DealLeadJoin): DealEngineLead {
@@ -512,6 +562,88 @@ function buildBuyerSignal(
   };
 }
 
+function normalizeBuyerSignalLane(value: string | null | undefined) {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (!normalized || normalized === "unknown" || normalized === "all") return "general";
+  if (/land|lot|acre/.test(normalized)) return "land";
+  if (/duplex|triplex|quad|multi|apartment/.test(normalized)) return "multifamily";
+  if (/commercial|retail|office|industrial/.test(normalized)) return "commercial";
+  return "residential";
+}
+
+function normalizeDealLane(lead: DealEngineLead) {
+  const normalized = `${lead.exitStrategy} ${lead.propertyAddress}`.toLowerCase();
+  if (/land|lot|acre/.test(normalized)) return "land";
+  if (/brrrr|duplex|triplex|quad|multi|rental/.test(normalized)) return "multifamily";
+  if (/commercial|retail|office|industrial/.test(normalized)) return "commercial";
+  return "residential";
+}
+
+function rankBuyerSignalsForLead(
+  lead: DealEngineLead,
+  buyerSignals: DealEngineBuyerSignal[],
+  limit = 4,
+): RankedBuyerSignal[] {
+  const dealLane = normalizeDealLane(lead);
+  const countyNeedle = lead.county.trim().toLowerCase();
+
+  return buyerSignals
+    .map((signal) => {
+      const market = signal.market.toLowerCase();
+      const countyMatch = countyNeedle.length > 0 && market.includes(countyNeedle);
+      const stateMatch = /\bnc\b/.test(market);
+      const buyerLane = normalizeBuyerSignalLane(signal.propertyType);
+      const laneMatch =
+        buyerLane === "general"
+        || (dealLane === "residential" && buyerLane !== "land" && buyerLane !== "commercial")
+        || buyerLane === dealLane;
+
+      const matchScore =
+        signal.score
+        + (countyMatch ? 45 : stateMatch ? 18 : 0)
+        + (laneMatch ? 12 : 0)
+        + Math.min(signal.purchaseCount * 4, 20)
+        + (/llc|holdings|capital|partners|properties|trust/i.test(signal.buyerName) ? 6 : 0);
+
+      const matchReason = countyMatch
+        ? `Active ${lead.county} lane with a ${signal.propertyType.toLowerCase()} search profile.`
+        : stateMatch
+          ? `Strong North Carolina buyer signal while ${lead.county}-specific buyer inventory is still building.`
+          : "Fallback buyer lane from the broader live Buyer Engine inventory.";
+
+      return {
+        ...signal,
+        matchScore,
+        matchReason,
+      };
+    })
+    .sort((left, right) => {
+      if (right.matchScore !== left.matchScore) return right.matchScore - left.matchScore;
+      if (right.score !== left.score) return right.score - left.score;
+      return right.purchaseCount - left.purchaseCount;
+    })
+    .filter((signal, index, collection) => (
+      collection.findIndex((candidate) => candidate.buyerName === signal.buyerName && candidate.market === signal.market) === index
+    ))
+    .slice(0, limit);
+}
+
+function buildInvestorTypeRecommendation(
+  lead: DealEngineLead,
+  buyerSignals: RankedBuyerSignal[],
+) {
+  const topBuyer = buyerSignals[0];
+  if (!topBuyer) {
+    return `No live buyer shortlist is attached yet. Run Buyer Engine for ${lead.county} County and attach the first active buyer cohort.`;
+  }
+
+  if (topBuyer.market.toLowerCase().includes(lead.county.toLowerCase())) {
+    return `${topBuyer.buyerName} leads the live buyer lane for this ${lead.county} County deal.`;
+  }
+
+  return `${topBuyer.buyerName} is the strongest live statewide fallback until a ${lead.county} County buyer search finishes.`;
+}
+
 function deriveOfferWindow(mao: string, assignmentFee: string) {
   const maoValue = Number(mao.replace(/[^0-9.-]/g, ""));
   const assignmentValue = Number(assignmentFee.replace(/[^0-9.-]/g, ""));
@@ -527,12 +659,9 @@ function buildContractDrafts(
 ) {
   if (!leads.length) return [];
 
-  return leads.slice(0, 3).map((lead) => {
+  return leads.map((lead) => {
     const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
-    const buyerSignal =
-      buyerSignals.find((item) => item.market.toLowerCase().includes(lead.county.toLowerCase()))
-      ?? buyerSignals[0]
-      ?? null;
+    const buyerSignal = rankBuyerSignalsForLead(lead, buyerSignals, 1)[0] ?? null;
 
     return {
       dealId: lead.id,
@@ -699,6 +828,19 @@ type SaveDealContractInput = {
   earnestMoney: number;
 };
 
+type SaveDealAnalysisInput = {
+  dealId: string;
+  estimatedArv: number;
+  sellerAskingPrice: number;
+  repairEstimate: number;
+  closingCosts: number;
+  holdingCosts: number;
+  buyerProfitTarget: number;
+  assignmentFeeTarget: number;
+  rentalEstimate: number;
+  flipEstimate: number;
+};
+
 type CreateDealOutreachDraftInput = {
   dealId: string;
   buyerSignalId: string;
@@ -811,22 +953,132 @@ function buildDraftBody(input: {
   ].join("\n");
 }
 
+function buildUnderwritingSnapshot(
+  lead: DealEngineLead,
+  analysis: DealAnalysisRow | null,
+) {
+  const estimatedArv = clampMoney(analysis?.estimated_arv ?? 0);
+  const repairEstimate = clampMoney(analysis?.repair_estimate ?? 0);
+  const closingCosts = clampMoney(analysis?.closing_costs ?? 0);
+  const holdingCosts = clampMoney(analysis?.holding_costs ?? 0);
+  const buyerProfitTarget = clampMoney(analysis?.buyer_profit_target ?? 0);
+  const assignmentFeeTarget = clampMoney(analysis?.assignment_fee_target ?? Number(lead.assignmentFee.replace(/[^0-9.-]/g, "")));
+  const sellerAskingPrice = clampMoney(analysis?.seller_asking_price ?? 0);
+  const rentalEstimate = clampMoney(analysis?.rental_estimate ?? 0);
+  const flipEstimate = clampMoney(analysis?.flip_estimate ?? 0);
+  const maximumAllowableOffer = clampMoney(
+    analysis?.maximum_allowable_offer
+    ?? (estimatedArv - repairEstimate - closingCosts - holdingCosts - buyerProfitTarget - assignmentFeeTarget),
+  );
+  const purchasePriceTarget = clampMoney(analysis?.purchase_price_target ?? maximumAllowableOffer);
+  const wholesaleSpread = clampMoney(analysis?.wholesale_spread ?? Math.max(estimatedArv - purchasePriceTarget - repairEstimate - closingCosts - holdingCosts, 0));
+
+  const missingInputs = [
+    estimatedArv <= 0 ? "Set ARV / resale value" : null,
+    repairEstimate <= 0 ? "Set repair estimate" : null,
+    sellerAskingPrice <= 0 ? "Capture seller asking price or expected anchor" : null,
+  ].filter((item): item is string => Boolean(item));
+
+  const dealRating =
+    analysis?.deal_rating
+    ?? (missingInputs.length
+      ? "Needs Underwriting"
+      : maximumAllowableOffer > 0 && wholesaleSpread >= assignmentFeeTarget
+        ? "Green Deal"
+        : "Yellow Deal");
+
+  const readyForContract = missingInputs.length === 0 && maximumAllowableOffer > 0;
+
+  return {
+    estimatedArv,
+    sellerAskingPrice,
+    repairEstimate,
+    closingCosts,
+    holdingCosts,
+    buyerProfitTarget,
+    assignmentFeeTarget,
+    rentalEstimate,
+    flipEstimate,
+    purchasePriceTarget,
+    maximumAllowableOffer,
+    wholesaleSpread,
+    dealRating,
+    missingInputs,
+    readyForContract,
+  };
+}
+
+function buildDealAutomationWorkflow(
+  detail: Pick<DealEngineDealDetail, "underwriting" | "sellerContact" | "buyerSignals" | "coordination" | "packet" | "lead">,
+): DealEngineDealDetail["automationWorkflow"] {
+  const hasSellerPhone = detail.sellerContact.ownerPhone !== "Not captured";
+  const underwritingReady = detail.underwriting.readyForContract;
+  const buyerReady = detail.buyerSignals.length > 0;
+  const packetReady = Boolean(detail.packet.investorSummary.trim() && detail.packet.buyerEmailBlast.trim());
+  const contractReady = detail.coordination.contractSent && detail.coordination.contractSigned;
+
+  return [
+    {
+      id: `${detail.lead.id}-workflow-contact`,
+      title: "Verify seller contact and compliance lane",
+      detail: hasSellerPhone
+        ? "Primary seller phone is present. Confirm compliance posture and first-touch channel."
+        : "No verified seller phone is attached yet. Run Nexus / skip trace before outreach.",
+      status: hasSellerPhone ? "ready" : "blocked",
+    },
+    {
+      id: `${detail.lead.id}-workflow-underwrite`,
+      title: "Complete underwriting inputs",
+      detail: underwritingReady
+        ? `Underwriting is live. MAO is ${formatCurrency(detail.underwriting.maximumAllowableOffer)} with rating ${detail.underwriting.dealRating}.`
+        : `Still missing: ${detail.underwriting.missingInputs.join("; ")}.`,
+      status: underwritingReady ? "ready" : "active",
+    },
+    {
+      id: `${detail.lead.id}-workflow-contract`,
+      title: "Save contract posture and send agreement",
+      detail: contractReady
+        ? "Contract has been sent and signed. Keep title and assignment moving."
+        : detail.coordination.contractSent
+          ? "Contract is marked sent. Next move is signature collection and title cadence."
+          : "Use the contract console after underwriting is complete to set pricing and earnest money.",
+      status: underwritingReady ? (contractReady ? "ready" : "active") : "blocked",
+    },
+    {
+      id: `${detail.lead.id}-workflow-buyers`,
+      title: "Refresh buyer shortlist and outreach drafts",
+      detail: buyerReady
+        ? `${detail.buyerSignals.length} live buyer matches are attached. Generate drafts and pressure-test fit.`
+        : "No buyer matches are attached yet. Run Buyer Engine search for this county and lane.",
+      status: buyerReady ? "ready" : "active",
+    },
+    {
+      id: `${detail.lead.id}-workflow-packet`,
+      title: "Finalize buyer packet and room",
+      detail: packetReady
+        ? "Packet copy is present. Save the packet and release the deal room when ready."
+        : "Investor summary and buyer-facing copy still need to be finalized.",
+      status: contractReady ? (packetReady ? "ready" : "active") : "blocked",
+    },
+  ];
+}
+
 function buildFallbackPacket(
   lead: DealEngineLead,
   contractDraft: DealEngineContractDraft | null,
   buyerSignals: DealEngineBuyerSignal[],
 ): DealEngineDealDetail["packet"] {
-  const buyerSignal = buyerSignals[0] ?? null;
+  const buyerSignal = rankBuyerSignalsForLead(lead, buyerSignals, 1)[0] ?? null;
   return {
     propertyNotes: `${lead.propertyAddress} is being staged inside Blackspire Deal Engine. Validate scope, condition, access, and clean-close positioning before broad buyer release.`,
     investorSummary: contractDraft?.buyerDispositionNote ?? "Investor summary still being assembled.",
     buyerEmailBlast: buyerSignal
-      ? `Blackspire has a ${lead.county} opportunity aligned to active buyers like ${buyerSignal.buyerName}. Packet available on request.`
+      ? `Blackspire has a ${lead.county} opportunity at ${lead.propertyAddress} aligned to buyers like ${buyerSignal.buyerName}. Packet available on request after operator review.`
       : `Blackspire has a ${lead.county} opportunity currently moving through underwriting.`,
-    buyerSmsAlert: `${lead.county} deal lane active. ${lead.propertyAddress}. Reach out for packet.`,
+    buyerSmsAlert: `${lead.county} deal lane active. ${lead.propertyAddress}. Reply for packet access through Blackspire Deal Engine.`,
     contactInstructions: "Coordinate all buyer questions and walkthrough requests through Blackspire Deal Engine.",
     deadlineToSubmitOffer: "TBD",
-    comps: ["Comp A", "Comp B", "Comp C"],
+    comps: [],
   };
 }
 
@@ -1171,6 +1423,131 @@ function enrichPacketWithSellerContactStatus(
     contactInstructions:
       "Seller contact has been verified internally through Nexus. Keep buyer questions, walkthrough requests, proof-of-funds review, and offer routing inside Blackspire Deal Engine; do not expose seller direct contact details in buyer-facing packets.",
   };
+}
+
+function isDuplicateInsertError(error: { code?: string | null; message?: string | null } | null | undefined) {
+  if (!error) return false;
+  return error.code === "23505" || /duplicate key|unique constraint/i.test(error.message ?? "");
+}
+
+async function ensureDealExecutionScaffold(
+  supabase: SupabaseClient,
+  lead: DealEngineLead,
+  contractDraft: DealEngineContractDraft | null,
+  packet: DealEngineDealDetail["packet"],
+  room: DealEngineDealDetail["room"],
+) {
+  const contractInsert = await supabase.from("contracts").insert({
+    lead_id: lead.id,
+    offer_made: false,
+    offer_accepted: false,
+    contract_sent: false,
+    contract_signed: false,
+    inspection_period: "14 days",
+    earnest_money_deposit: Number((contractDraft?.earnestMoney ?? "$3000").replace(/[^0-9.-]/g, "")) || 3000,
+    assignment_status: contractDraft?.contractType ?? "Drafting",
+  });
+  if (contractInsert.error && !isDuplicateInsertError(contractInsert.error)) {
+    throw new Error(contractInsert.error.message);
+  }
+
+  const packetInsert = await supabase.from("deal_packets").insert({
+    lead_id: lead.id,
+    property_notes: packet.propertyNotes,
+    investor_summary: packet.investorSummary,
+    buyer_email_blast: packet.buyerEmailBlast,
+    buyer_sms_alert: packet.buyerSmsAlert,
+    contact_instructions: packet.contactInstructions,
+    deadline_to_submit_offer: packet.deadlineToSubmitOffer,
+    comps_placeholder: packet.comps,
+  });
+  if (packetInsert.error && !isDuplicateInsertError(packetInsert.error)) {
+    throw new Error(packetInsert.error.message);
+  }
+
+  const roomInsert = await supabase.from("deal_rooms").insert({
+    lead_id: lead.id,
+    slug: room.slug,
+    property_summary: room.propertySummary,
+    financial_breakdown: room.financialBreakdown,
+    photos: [],
+    map_placeholder: room.mapPlaceholder,
+    comps_placeholder: room.compsPlaceholder,
+    downloadable_pdf_label: room.downloadablePdfLabel,
+    submit_interest_label: room.submitInterestLabel,
+    request_walkthrough_label: room.requestWalkthroughLabel,
+  });
+  if (roomInsert.error && !isDuplicateInsertError(roomInsert.error)) {
+    throw new Error(roomInsert.error.message);
+  }
+}
+
+async function syncDealBuyerMatches(
+  supabase: SupabaseClient,
+  lead: DealEngineLead,
+  buyerSignals: RankedBuyerSignal[],
+) {
+  if (!buyerSignals.length) return;
+
+  const topBuyer = buyerSignals[0];
+  const shortlist = buyerSignals.slice(0, 5).map((signal) => ({
+    buyerSignalId: signal.id,
+    buyerName: signal.buyerName,
+    market: signal.market,
+    propertyType: signal.propertyType,
+    searchJobId: signal.searchJobId,
+    score: signal.score,
+    purchaseCount: signal.purchaseCount,
+    totalSpend: signal.totalSpend,
+    outreachSubject: signal.outreachSubject,
+    outreachAngle: signal.outreachAngle,
+    matchScore: signal.matchScore,
+    matchReason: signal.matchReason,
+  }));
+
+  const { error } = await supabase.from("buyer_matches").upsert({
+    lead_id: lead.id,
+    county: lead.county,
+    state: "NC",
+    property_type: normalizeDealLane(lead),
+    exit_strategy: lead.exitStrategy,
+    buyer_score: topBuyer.matchScore,
+    investor_type_recommendation: buildInvestorTypeRecommendation(lead, buyerSignals),
+    export_ready_deal_data: `Top buyer shortlist synced from live Buyer Engine results for ${lead.propertyAddress}.`,
+    top_buyer_matches: shortlist,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "lead_id" });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+function isOutreachDraftAuthBlock(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /sign in required|no operator account exists yet|use \/auth before creating/i.test(message);
+}
+
+function parseBuyerDraftsFromLogs(logs: DispositionLogRow[]) {
+  return logs
+    .filter((log) => log.action_type === "buyer_draft_created" && log.payload)
+    .map((log) => {
+      const payload = log.payload ?? {};
+      const buyerName = String(payload.buyerName ?? "").trim();
+      const subject = String(payload.subject ?? "").trim();
+      const body = String(payload.body ?? "").trim();
+      if (!buyerName || !subject || !body) return null;
+
+      return {
+        id: String(log.id),
+        buyerName,
+        subject,
+        angle: String(payload.angle ?? ""),
+        body,
+        createdAt: String(payload.createdAt ?? log.created_at ?? new Date().toISOString()),
+      };
+    })
+    .filter((draft): draft is NonNullable<typeof draft> => Boolean(draft));
 }
 
 function buildSellerContactWorkflow(
@@ -1532,6 +1909,16 @@ function buildActivityFeed(logs: DispositionLogRow[]) {
       };
     }
 
+    if (log.action_type === "analysis_update") {
+      return {
+        id: String(log.id),
+        title: "Underwriting updated",
+        detail: String(payload.nextAction ?? "Deal analysis inputs were updated."),
+        timestamp,
+        tone: "warn" as const,
+      };
+    }
+
     if (log.action_type === "packet_update") {
       return {
         id: String(log.id),
@@ -1758,6 +2145,20 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
     return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
   }
 
+  const contractSeed = await supabase.from("contracts").insert({
+    lead_id: input.dealId,
+    offer_made: false,
+    offer_accepted: false,
+    contract_sent: false,
+    contract_signed: false,
+    inspection_period: "14 days",
+    earnest_money_deposit: input.earnestMoney,
+    assignment_status: input.contractType,
+  });
+  if (contractSeed.error && !isDuplicateInsertError(contractSeed.error)) {
+    return { ok: false as const, error: contractSeed.error.message };
+  }
+
   const purchaseTarget = Math.round((input.offerLow + input.offerHigh) / 2);
   const offerMade = input.offerHigh > 0;
 
@@ -1812,6 +2213,145 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
   return { ok: true as const };
 }
 
+export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const estimatedArv = clampMoney(input.estimatedArv);
+  const sellerAskingPrice = clampMoney(input.sellerAskingPrice);
+  const repairEstimate = clampMoney(input.repairEstimate);
+  const closingCosts = clampMoney(input.closingCosts);
+  const holdingCosts = clampMoney(input.holdingCosts);
+  const buyerProfitTarget = clampMoney(input.buyerProfitTarget);
+  const assignmentFeeTarget = clampMoney(input.assignmentFeeTarget);
+  const rentalEstimate = clampMoney(input.rentalEstimate);
+  const flipEstimate = clampMoney(input.flipEstimate);
+  const maximumAllowableOffer = clampMoney(
+    estimatedArv - repairEstimate - closingCosts - holdingCosts - buyerProfitTarget - assignmentFeeTarget,
+  );
+  const purchasePriceTarget = maximumAllowableOffer;
+  const wholesaleSpread = clampMoney(estimatedArv - purchasePriceTarget - repairEstimate - closingCosts - holdingCosts);
+  const missingInputs = [
+    estimatedArv <= 0 ? "ARV missing" : null,
+    repairEstimate <= 0 ? "repairs missing" : null,
+    sellerAskingPrice <= 0 ? "seller ask missing" : null,
+  ].filter(Boolean);
+  const dealRating = missingInputs.length
+    ? "Needs Underwriting"
+    : maximumAllowableOffer > 0 && wholesaleSpread >= assignmentFeeTarget
+      ? "Green Deal"
+      : "Yellow Deal";
+  const nextAction = missingInputs.length
+    ? "Finish underwriting inputs before setting final contract posture."
+    : `Underwriting complete. Review MAO ${formatCurrency(maximumAllowableOffer)}, confirm seller terms, and save the contract posture.`;
+
+  const underwritingTask = {
+    lead_id: input.dealId,
+    action_type: "operator_task",
+    payload: {
+      taskId: `underwriting-follow-up-${input.dealId}`,
+      title: missingInputs.length
+        ? "Collect missing underwriting inputs"
+        : "Review contract posture and send offer",
+      owner: "Acquisitions",
+      dueDate: "",
+      priority: "High",
+      status: missingInputs.length ? "Open" : "In Progress",
+      notes: missingInputs.length
+        ? `Still needed before contract drafting: ${missingInputs.join("; ")}.`
+        : `Underwriting is complete. Review MAO ${formatCurrency(maximumAllowableOffer)}, confirm seller response, and move into contract. `,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  };
+
+  const [analysisUpsert, leadUpdate, conversationUpdate, logInsert, taskInsert] = await Promise.all([
+    supabase.from("deal_analysis").upsert({
+      lead_id: input.dealId,
+      estimated_arv: estimatedArv,
+      purchase_price_target: purchasePriceTarget,
+      seller_asking_price: sellerAskingPrice || null,
+      repair_estimate: repairEstimate,
+      closing_costs: closingCosts,
+      holding_costs: holdingCosts,
+      buyer_profit_target: buyerProfitTarget,
+      assignment_fee_target: assignmentFeeTarget,
+      rental_estimate: rentalEstimate,
+      flip_estimate: flipEstimate,
+      wholesale_spread: wholesaleSpread,
+      maximum_allowable_offer: maximumAllowableOffer,
+      deal_rating: dealRating,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "lead_id" }),
+    supabase.from("deal_leads").update({
+      status: missingInputs.length ? "Underwriting" : "Offer Ready",
+      recommended_next_action: nextAction,
+      updated_at: new Date().toISOString(),
+    }).eq("id", input.dealId),
+    supabase.from("seller_conversations").update({
+      seller_asking_price: sellerAskingPrice || null,
+      next_action: nextAction,
+      updated_at: new Date().toISOString(),
+    }).eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "analysis_update",
+      payload: {
+        estimatedArv,
+        sellerAskingPrice,
+        repairEstimate,
+        closingCosts,
+        holdingCosts,
+        buyerProfitTarget,
+        assignmentFeeTarget,
+        rentalEstimate,
+        flipEstimate,
+        maximumAllowableOffer,
+        purchasePriceTarget,
+        wholesaleSpread,
+        dealRating,
+        missingInputs,
+        nextAction,
+        updatedAt: new Date().toISOString(),
+      },
+    }),
+    supabase.from("disposition_logs").insert(underwritingTask),
+  ]);
+
+  const error =
+    analysisUpsert.error?.message
+    || leadUpdate.error?.message
+    || conversationUpdate.error?.message
+    || logInsert.error?.message
+    || taskInsert.error?.message;
+  if (error) {
+    return { ok: false as const, error };
+  }
+
+  return {
+    ok: true as const,
+    underwriting: {
+      estimatedArv,
+      sellerAskingPrice,
+      repairEstimate,
+      closingCosts,
+      holdingCosts,
+      buyerProfitTarget,
+      assignmentFeeTarget,
+      rentalEstimate,
+      flipEstimate,
+      maximumAllowableOffer,
+      purchasePriceTarget,
+      wholesaleSpread,
+      dealRating,
+      missingInputs,
+      readyForContract: missingInputs.length === 0 && maximumAllowableOffer > 0,
+    },
+  };
+}
+
 export async function createDealBuyerOutreachDraft(input: CreateDealOutreachDraftInput) {
   const deal = (await listDealEngineLeads(50)).find((item) => item.id === input.dealId);
   const buyerSignals = await listDealEngineBuyerSignals(20);
@@ -1849,28 +2389,42 @@ export async function createDealBuyerOutreachDraft(input: CreateDealOutreachDraf
     createdAt: new Date().toISOString(),
   };
 
+  let drafts: OutreachDraftRecord[] = [];
+  let storageError: unknown = null;
   try {
-    const drafts = await persistOutreachDraftRecord(record);
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      await supabase.from("disposition_logs").insert({
-        lead_id: input.dealId,
-        action_type: "buyer_draft_created",
-        payload: {
-          buyerName: record.buyerName,
-          subject: record.subject,
-          searchJobId: record.searchJobId,
-          createdAt: record.createdAt,
-        },
-      });
-    }
-    return { ok: true as const, draft: record, drafts };
+    drafts = await persistOutreachDraftRecord(record);
   } catch (error) {
-    return {
-      ok: false as const,
-      error: error instanceof Error ? error.message : "Buyer outreach draft persistence failed.",
-    };
+    storageError = error;
+    if (!isOutreachDraftAuthBlock(error)) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Buyer outreach draft persistence failed.",
+      };
+    }
   }
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    const { error } = await supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "buyer_draft_created",
+      payload: {
+        buyerName: record.buyerName,
+        subject: record.subject,
+        angle: record.angle,
+        body: record.body,
+        searchJobId: record.searchJobId,
+        buyerSignalId: record.id,
+        createdAt: record.createdAt,
+        storage: storageError ? "deal-log-fallback" : "server",
+      },
+    });
+    if (error) {
+      return { ok: false as const, error: error.message };
+    }
+  }
+
+  return { ok: true as const, draft: record, drafts };
 }
 
 export async function saveDealPacket(input: SaveDealPacketInput) {
@@ -2165,17 +2719,16 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
   const lead = leads.find((item) => item.id === dealId) ?? null;
   if (!lead) return null;
 
-  const contractDraft = buildContractDrafts(leads, sellerSignals, buyerSignals).find(
+  const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
+  const relatedBuyerSignals = rankBuyerSignalsForLead(lead, buyerSignals, 6);
+  const contractDraft = buildContractDrafts([lead], sellerSignals, relatedBuyerSignals).find(
     (item) => item.dealId === dealId,
   ) ?? null;
-  const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
+  let underwriting = buildUnderwritingSnapshot(lead, null);
   let sellerContact = buildSellerContactProfile(lead, sellerSignal);
   let sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
   let sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
-  const relatedBuyerSignals = buyerSignals.filter(
-    (item) => item.market.toLowerCase().includes(lead.county.toLowerCase()),
-  );
-  const relatedDrafts = drafts
+  let relatedDrafts = drafts
     .filter((draft) => relatedBuyerSignals.some((item) => item.searchJobId === draft.searchJobId))
     .slice(0, 8)
     .map((draft) => ({
@@ -2205,6 +2758,8 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
     sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
     packet = enrichPacketWithSellerContactStatus(packet, sellerContact);
+    await syncDealBuyerMatches(supabase, lead, relatedBuyerSignals).catch(() => null);
+    await ensureDealExecutionScaffold(supabase, lead, contractDraft, packet, room).catch(() => null);
 
     const { data } = await supabase
       .from("deal_packets")
@@ -2225,6 +2780,13 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       packet = enrichPacketWithSellerContactStatus(packet, sellerContact);
       room = buildFallbackRoom(lead, packet);
     }
+
+    const { data: analysisData } = await supabase
+      .from("deal_analysis")
+      .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating")
+      .eq("lead_id", dealId)
+      .maybeSingle();
+    underwriting = buildUnderwritingSnapshot(lead, analysisData as DealAnalysisRow | null);
 
     const { data: contractData } = await supabase
       .from("contracts")
@@ -2269,7 +2831,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       .from("disposition_logs")
       .select("id,action_type,payload,created_at")
       .eq("lead_id", dealId)
-      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "seller_draft_saved", "operator_task", "coordination_update"])
+      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "seller_draft_saved", "operator_task", "coordination_update", "analysis_update"])
       .order("created_at", { ascending: false });
     if (dispositionData?.length) {
       const logs = dispositionData as DispositionLogRow[];
@@ -2277,6 +2839,13 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       investorResponses = parseDispositionLogs(logs);
       operatorTasks = parseOperatorTasks(logs);
       activityFeed = buildActivityFeed(logs);
+      const buyerDraftLogs = parseBuyerDraftsFromLogs(logs);
+      if (buyerDraftLogs.length) {
+        relatedDrafts = [
+          ...buyerDraftLogs,
+          ...relatedDrafts.filter((draft) => buyerDraftLogs.every((loggedDraft) => loggedDraft.subject !== draft.subject || loggedDraft.buyerName !== draft.buyerName)),
+        ].slice(0, 8);
+      }
       const latestCoordination = logs.find((log) => log.action_type === "coordination_update");
       if (latestCoordination?.payload) {
         const payload = latestCoordination.payload;
@@ -2306,6 +2875,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
 
   return {
     lead,
+    underwriting,
     sellerSignal,
     sellerContact,
     sellerContactWorkflow,
@@ -2320,6 +2890,14 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     investorResponses,
     operatorTasks,
     activityFeed,
+    automationWorkflow: buildDealAutomationWorkflow({
+      lead,
+      underwriting,
+      sellerContact,
+      buyerSignals: relatedBuyerSignals.length ? relatedBuyerSignals : buyerSignals.slice(0, 4),
+      coordination,
+      packet,
+    }),
   };
 }
 

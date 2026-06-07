@@ -35,6 +35,15 @@ export function DealEngineDealDetailView({
   const [contractType, setContractType] = useState(
     detail.contractDraft?.contractType ?? "Assignable purchase agreement",
   );
+  const [estimatedArv, setEstimatedArv] = useState(String(detail.underwriting.estimatedArv || ""));
+  const [sellerAskingPrice, setSellerAskingPrice] = useState(String(detail.underwriting.sellerAskingPrice || ""));
+  const [repairEstimate, setRepairEstimate] = useState(String(detail.underwriting.repairEstimate || ""));
+  const [closingCosts, setClosingCosts] = useState(String(detail.underwriting.closingCosts || ""));
+  const [holdingCosts, setHoldingCosts] = useState(String(detail.underwriting.holdingCosts || ""));
+  const [buyerProfitTarget, setBuyerProfitTarget] = useState(String(detail.underwriting.buyerProfitTarget || ""));
+  const [assignmentFeeTarget, setAssignmentFeeTarget] = useState(String(detail.underwriting.assignmentFeeTarget || ""));
+  const [rentalEstimate, setRentalEstimate] = useState(String(detail.underwriting.rentalEstimate || ""));
+  const [flipEstimate, setFlipEstimate] = useState(String(detail.underwriting.flipEstimate || ""));
   const [offerLow, setOfferLow] = useState(
     detail.contractDraft?.offerWindow.split(" - ")[0]?.replace(/[^0-9]/g, "") ?? "186000",
   );
@@ -96,7 +105,7 @@ export function DealEngineDealDetailView({
   const [sellerVoicemailScript, setSellerVoicemailScript] = useState(detail.sellerOutreach.voicemailScript);
   const [sellerCallOpener, setSellerCallOpener] = useState(detail.sellerOutreach.callOpener);
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "seller-draft" | "stage" | "task" | null>(null);
+  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "seller-draft" | "stage" | "task" | null>(null);
 
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
@@ -180,6 +189,42 @@ export function DealEngineDealDetailView({
       router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Contract save failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function saveAnalysis(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("analysis");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/save-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          estimatedArv: Number(estimatedArv),
+          sellerAskingPrice: Number(sellerAskingPrice),
+          repairEstimate: Number(repairEstimate),
+          closingCosts: Number(closingCosts),
+          holdingCosts: Number(holdingCosts),
+          buyerProfitTarget: Number(buyerProfitTarget),
+          assignmentFeeTarget: Number(assignmentFeeTarget),
+          rentalEstimate: Number(rentalEstimate),
+          flipEstimate: Number(flipEstimate),
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean; underwriting?: { maximumAllowableOffer?: number; assignmentFeeTarget?: number } };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Underwriting save failed.");
+      if (payload.underwriting?.maximumAllowableOffer != null) {
+        setOfferHigh(String(payload.underwriting.maximumAllowableOffer));
+        setOfferLow(String(Math.max(payload.underwriting.maximumAllowableOffer - Math.max((payload.underwriting.assignmentFeeTarget ?? 0) / 2, 5000), 0)));
+      }
+      setStatus(payload.message ?? "Underwriting saved.");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Underwriting save failed.");
     } finally {
       setWorking(null);
     }
@@ -576,6 +621,56 @@ export function DealEngineDealDetailView({
         <Metric label="Open Tasks" value={String(detail.operatorTasks.length).padStart(2, "0")} detail="Internal execution items attached to this deal" />
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
+
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
+          eyebrow="Automation Workflow"
+          title="Future-deal automation path"
+          description="This board shows the exact sequence we want every deal to follow so future automation can move records forward without guesswork."
+        >
+          <div className="space-y-3">
+            {detail.automationWorkflow.map((step) => (
+              <div key={step.id} className="brand-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-base font-semibold text-white">{step.title}</div>
+                  <StatusPill tone={step.status === "blocked" ? "warn" : step.status === "active" ? "active" : "good"} label={step.status} />
+                </div>
+                <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{step.detail}</div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Underwriting Status"
+          title="Current underwriting posture"
+          description="This is the live financial snapshot behind the contract lane. When key inputs are missing, the workflow should stop here instead of guessing."
+        >
+          <div className="space-y-3 text-sm text-[var(--copy-soft)]">
+            <div>ARV: <span className="font-semibold text-white">{detail.underwriting.estimatedArv ? `$${detail.underwriting.estimatedArv.toLocaleString()}` : "Not set"}</span></div>
+            <div>Seller ask: <span className="font-semibold text-white">{detail.underwriting.sellerAskingPrice ? `$${detail.underwriting.sellerAskingPrice.toLocaleString()}` : "Not set"}</span></div>
+            <div>Repairs: <span className="font-semibold text-white">{detail.underwriting.repairEstimate ? `$${detail.underwriting.repairEstimate.toLocaleString()}` : "Not set"}</span></div>
+            <div>MAO: <span className="font-semibold text-white">{detail.underwriting.maximumAllowableOffer ? `$${detail.underwriting.maximumAllowableOffer.toLocaleString()}` : "Not ready"}</span></div>
+            <div>Spread: <span className="font-semibold text-white">{detail.underwriting.wholesaleSpread ? `$${detail.underwriting.wholesaleSpread.toLocaleString()}` : "Not ready"}</span></div>
+            <div className="flex gap-2 pt-2">
+              <StatusPill tone={detail.underwriting.readyForContract ? "good" : "warn"} label={detail.underwriting.dealRating.toLowerCase()} />
+              <StatusPill tone={detail.underwriting.readyForContract ? "good" : "active"} label={detail.underwriting.readyForContract ? "contract-ready" : "needs-inputs"} />
+            </div>
+            {detail.underwriting.missingInputs.length ? (
+              <div className="pt-3">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Missing inputs</div>
+                <div className="mt-2 space-y-2">
+                  {detail.underwriting.missingInputs.map((item) => (
+                    <div key={item} className="rounded-[14px] border border-[var(--line)] px-3 py-3 text-sm text-[var(--copy-soft)]">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </Panel>
+      </div>
 
       <Panel
         eyebrow="Execute Deal"
@@ -1027,9 +1122,38 @@ export function DealEngineDealDetailView({
 
       <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
         <Panel
+          eyebrow="Underwriting Console"
+          title="Capture the real analysis inputs"
+          description="Enter live numbers here first. The contract lane should inherit from real underwriting instead of placeholder assumptions."
+        >
+          <form onSubmit={saveAnalysis} className="grid gap-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={estimatedArv} onChange={(event) => setEstimatedArv(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Estimated ARV" />
+              <input value={sellerAskingPrice} onChange={(event) => setSellerAskingPrice(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Seller asking price" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={repairEstimate} onChange={(event) => setRepairEstimate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Repair estimate" />
+              <input value={assignmentFeeTarget} onChange={(event) => setAssignmentFeeTarget(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assignment fee target" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <input value={closingCosts} onChange={(event) => setClosingCosts(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Closing costs" />
+              <input value={holdingCosts} onChange={(event) => setHoldingCosts(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Holding costs" />
+              <input value={buyerProfitTarget} onChange={(event) => setBuyerProfitTarget(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer profit target" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={rentalEstimate} onChange={(event) => setRentalEstimate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Rental estimate (optional)" />
+              <input value={flipEstimate} onChange={(event) => setFlipEstimate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Flip estimate (optional)" />
+            </div>
+            <button type="submit" disabled={working === "analysis"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "analysis" ? "Saving underwriting..." : "Save underwriting"}
+            </button>
+          </form>
+        </Panel>
+
+        <Panel
           eyebrow="Contract Console"
           title="Save underwriting and terms"
-          description="Adjust the contract lane directly from the deal workstation and push the updated posture back into Deal Engine tables."
+          description="After underwriting is complete, adjust the contract lane here and push the updated posture back into Deal Engine tables."
         >
           <form onSubmit={saveContract} className="grid gap-4">
             <input value={contractType} onChange={(event) => setContractType(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Contract type" />

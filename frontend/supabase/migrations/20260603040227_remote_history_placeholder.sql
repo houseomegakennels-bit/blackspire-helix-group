@@ -1,0 +1,1 @@
+-- Remote history placeholder for existing Supabase project migration 20260603040227.
