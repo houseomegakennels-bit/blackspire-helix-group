@@ -227,6 +227,17 @@ export type DealEngineDealDetail = {
     body: string;
     createdAt: string;
   }>;
+  outreachExecutions: Array<{
+    id: string;
+    audience: string;
+    channel: string;
+    recipient: string;
+    status: string;
+    outcome: string;
+    nextStep: string;
+    notes: string;
+    loggedAt: string;
+  }>;
   investorResponses: Array<{
     id: string;
     investorName: string;
@@ -260,6 +271,14 @@ export type DealEngineDealDetail = {
     timestamp: string;
     tone: "neutral" | "good" | "warn" | "active";
   }>;
+  closeout: {
+    outcome: string;
+    closedAt: string;
+    assignmentFeeCollected: number;
+    buyerName: string;
+    notes: string;
+    recordedAt: string;
+  } | null;
   automationWorkflow: Array<{
     id: string;
     title: string;
@@ -939,6 +958,26 @@ type SaveSellerOutreachDraftInput = {
   kind: string;
   title: string;
   body: string;
+};
+
+type SaveDealOutreachExecutionInput = {
+  dealId: string;
+  audience: string;
+  channel: string;
+  recipient: string;
+  status: string;
+  outcome: string;
+  nextStep: string;
+  notes: string;
+};
+
+type SaveDealCloseoutInput = {
+  dealId: string;
+  outcome: string;
+  closedAt: string;
+  assignmentFeeCollected: number;
+  buyerName: string;
+  notes: string;
 };
 
 function buildDraftBody(input: {
@@ -1954,6 +1993,44 @@ function parseSellerDrafts(logs: DispositionLogRow[]) {
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
 }
 
+function parseOutreachExecutions(logs: DispositionLogRow[]) {
+  return logs
+    .filter((log) => log.action_type === "outreach_execution_logged")
+    .map((log) => {
+      const payload = log.payload ?? {};
+      return {
+        id: String(log.id),
+        audience: String(payload.audience ?? "seller"),
+        channel: String(payload.channel ?? "sms"),
+        recipient: String(payload.recipient ?? "Unknown recipient"),
+        status: String(payload.status ?? "Logged"),
+        outcome: String(payload.outcome ?? "No outcome recorded."),
+        nextStep: String(payload.nextStep ?? ""),
+        notes: String(payload.notes ?? ""),
+        loggedAt: String(payload.loggedAt ?? log.created_at ?? new Date().toISOString()),
+      };
+    })
+    .sort((left, right) => Date.parse(right.loggedAt) - Date.parse(left.loggedAt));
+}
+
+function parseCloseout(logs: DispositionLogRow[]) {
+  const log = [...logs]
+    .filter((entry) => entry.action_type === "deal_closeout_recorded")
+    .sort((left, right) => Date.parse(String(right.created_at ?? 0)) - Date.parse(String(left.created_at ?? 0)))[0];
+
+  if (!log) return null;
+
+  const payload = log.payload ?? {};
+  return {
+    outcome: String(payload.outcome ?? "Closed"),
+    closedAt: String(payload.closedAt ?? ""),
+    assignmentFeeCollected: clampMoney(Number(payload.assignmentFeeCollected ?? 0)),
+    buyerName: String(payload.buyerName ?? ""),
+    notes: String(payload.notes ?? ""),
+    recordedAt: String(payload.recordedAt ?? log.created_at ?? new Date().toISOString()),
+  };
+}
+
 function buildActivityFeed(logs: DispositionLogRow[]) {
   return logs.map((log) => {
     const payload = log.payload ?? {};
@@ -2066,6 +2143,26 @@ function buildActivityFeed(logs: DispositionLogRow[]) {
         detail: String(payload.summary ?? "Title and closing coordination changed."),
         timestamp,
         tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "outreach_execution_logged") {
+      return {
+        id: String(log.id),
+        title: `${String(payload.audience ?? "Outreach")} outreach logged`,
+        detail: `${String(payload.channel ?? "channel")} / ${String(payload.status ?? "status")} / ${String(payload.recipient ?? "recipient")}`,
+        timestamp,
+        tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "deal_closeout_recorded") {
+      return {
+        id: String(log.id),
+        title: `Deal closeout: ${String(payload.outcome ?? "Closed")}`,
+        detail: String(payload.notes ?? payload.buyerName ?? "Closeout recorded."),
+        timestamp,
+        tone: "good" as const,
       };
     }
 
@@ -2912,6 +3009,107 @@ export async function saveSellerOutreachDraft(input: SaveSellerOutreachDraftInpu
   return { ok: true as const };
 }
 
+export async function saveDealOutreachExecution(input: SaveDealOutreachExecutionInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const nextAction =
+    input.nextStep.trim()
+    || `${input.audience} outreach logged for ${input.recipient}. Review response posture and continue follow-up.`;
+
+  const [conversationUpdate, logInsert] = await Promise.all([
+    supabase
+      .from("seller_conversations")
+      .update({
+        next_action: nextAction,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "outreach_execution_logged",
+      payload: {
+        audience: input.audience,
+        channel: input.channel,
+        recipient: input.recipient,
+        status: input.status,
+        outcome: input.outcome,
+        nextStep: nextAction,
+        notes: input.notes,
+        loggedAt: new Date().toISOString(),
+      },
+    }),
+  ]);
+
+  const error = conversationUpdate.error?.message || logInsert.error?.message;
+  if (error) {
+    return { ok: false as const, error };
+  }
+
+  return { ok: true as const };
+}
+
+export async function saveDealCloseout(input: SaveDealCloseoutInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const closeoutSummary =
+    `${input.outcome} / ${input.buyerName || "Buyer TBD"} / fee ${formatCurrency(clampMoney(input.assignmentFeeCollected))} / close ${input.closedAt || "TBD"}`;
+
+  const [leadUpdate, conversationUpdate, contractUpdate, logInsert] = await Promise.all([
+    supabase
+      .from("deal_leads")
+      .update({
+        status: "Closed",
+        recommended_next_action: closeoutSummary,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.dealId),
+    supabase
+      .from("seller_conversations")
+      .update({
+        next_action: `Closeout recorded: ${closeoutSummary}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lead_id", input.dealId),
+    supabase
+      .from("contracts")
+      .update({
+        assignment_status: input.outcome,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "deal_closeout_recorded",
+      payload: {
+        outcome: input.outcome,
+        closedAt: input.closedAt,
+        assignmentFeeCollected: clampMoney(input.assignmentFeeCollected),
+        buyerName: input.buyerName,
+        notes: input.notes,
+        recordedAt: new Date().toISOString(),
+      },
+    }),
+  ]);
+
+  const error =
+    leadUpdate.error?.message
+    || conversationUpdate.error?.message
+    || contractUpdate.error?.message
+    || logInsert.error?.message;
+
+  if (error) {
+    return { ok: false as const, error };
+  }
+
+  return { ok: true as const };
+}
+
 export async function getDealEngineDealDetail(dealId: string): Promise<DealEngineDealDetail | null> {
   const [leads, sellerSignals, buyerSignals, drafts] = await Promise.all([
     listDealEngineLeads(100),
@@ -2944,9 +3142,11 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       createdAt: draft.createdAt,
     }));
   let sellerDrafts: DealEngineDealDetail["sellerDrafts"] = [];
+  let outreachExecutions: DealEngineDealDetail["outreachExecutions"] = [];
   let investorResponses: DealEngineDealDetail["investorResponses"] = [];
   let operatorTasks: DealEngineDealDetail["operatorTasks"] = [];
   let activityFeed: DealEngineDealDetail["activityFeed"] = [];
+  let closeout: DealEngineDealDetail["closeout"] = null;
   let coordination = buildFallbackCoordination(lead, contractDraft);
   let packet = buildFallbackPacket(
     lead,
@@ -3040,9 +3240,11 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     if (dispositionData?.length) {
       const logs = dispositionData as DispositionLogRow[];
       sellerDrafts = parseSellerDrafts(logs);
+      outreachExecutions = parseOutreachExecutions(logs);
       investorResponses = parseDispositionLogs(logs);
       operatorTasks = parseOperatorTasks(logs);
       activityFeed = buildActivityFeed(logs);
+      closeout = parseCloseout(logs);
       const buyerDraftLogs = parseBuyerDraftsFromLogs(logs);
       if (buyerDraftLogs.length) {
         relatedDrafts = [
@@ -3091,9 +3293,11 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     packet,
     sellerDrafts,
     relatedDrafts,
+    outreachExecutions,
     investorResponses,
     operatorTasks,
     activityFeed,
+    closeout,
     automationWorkflow: buildDealAutomationWorkflow({
       lead,
       underwriting,

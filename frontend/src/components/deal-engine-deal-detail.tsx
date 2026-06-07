@@ -24,6 +24,13 @@ function priorityTone(priority: string) {
   return "neutral";
 }
 
+function executionTone(status: string) {
+  if (/answered|replied|interested|sent|delivered|scheduled|signed|won/i.test(status)) return "good";
+  if (/follow|open|pending|left voicemail|no answer/i.test(status)) return "active";
+  if (/failed|opt-out|dead|lost|blocked|dnc/i.test(status)) return "warn";
+  return "neutral";
+}
+
 export function DealEngineDealDetailView({
   dealId,
   detail,
@@ -104,8 +111,20 @@ export function DealEngineDealDetailView({
   const [sellerObjectionReply, setSellerObjectionReply] = useState(detail.sellerOutreach.objectionReply);
   const [sellerVoicemailScript, setSellerVoicemailScript] = useState(detail.sellerOutreach.voicemailScript);
   const [sellerCallOpener, setSellerCallOpener] = useState(detail.sellerOutreach.callOpener);
+  const [outreachAudience, setOutreachAudience] = useState<"seller" | "buyer">("seller");
+  const [outreachChannel, setOutreachChannel] = useState("SMS");
+  const [outreachRecipient, setOutreachRecipient] = useState(detail.sellerContact.ownerName);
+  const [outreachStatus, setOutreachStatus] = useState("Sent");
+  const [outreachOutcome, setOutreachOutcome] = useState("");
+  const [outreachNextStep, setOutreachNextStep] = useState("Await response and schedule the next follow-up if needed.");
+  const [outreachNotes, setOutreachNotes] = useState("");
+  const [closeoutOutcome, setCloseoutOutcome] = useState(detail.closeout?.outcome ?? "Closed Won");
+  const [closeoutDate, setCloseoutDate] = useState(detail.closeout?.closedAt ?? "");
+  const [closeoutFee, setCloseoutFee] = useState(String(detail.closeout?.assignmentFeeCollected ?? ""));
+  const [closeoutBuyerName, setCloseoutBuyerName] = useState(detail.closeout?.buyerName ?? "");
+  const [closeoutNotes, setCloseoutNotes] = useState(detail.closeout?.notes ?? "");
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | null>(null);
+  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | "outreach" | "closeout" | null>(null);
 
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
@@ -441,6 +460,67 @@ export function DealEngineDealDetailView({
       router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Seller draft save failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function logOutreachExecution(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("outreach");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/log-outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          audience: outreachAudience,
+          channel: outreachChannel,
+          recipient: outreachRecipient,
+          status: outreachStatus,
+          outcome: outreachOutcome,
+          nextStep: outreachNextStep,
+          notes: outreachNotes,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Outreach execution log failed.");
+      setStatus(payload.message ?? "Outreach execution logged.");
+      setOutreachOutcome("");
+      setOutreachNotes("");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Outreach execution log failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function saveCloseout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("closeout");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/closeout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          outcome: closeoutOutcome,
+          closedAt: closeoutDate,
+          assignmentFeeCollected: Number(closeoutFee),
+          buyerName: closeoutBuyerName,
+          notes: closeoutNotes,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Deal closeout failed.");
+      setStageStatus("Closed");
+      setStatus(payload.message ?? "Deal closeout recorded.");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Deal closeout failed.");
     } finally {
       setWorking(null);
     }
@@ -1413,6 +1493,78 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
+          eyebrow="Execution Log"
+          title="Record real outreach from inside the deal"
+          description="Use this after a call, text, email, voicemail, or buyer touch so the wholesale workflow does not stop at drafts."
+        >
+          <form onSubmit={logOutreachExecution} className="grid gap-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <select
+                value={outreachAudience}
+                onChange={(event) => {
+                  const audience = event.target.value as "seller" | "buyer";
+                  setOutreachAudience(audience);
+                  setOutreachRecipient(
+                    audience === "seller"
+                      ? detail.sellerContact.ownerName
+                      : detail.buyerSignals[0]?.buyerName ?? detail.relatedDrafts[0]?.buyerName ?? "",
+                  );
+                }}
+                className="brand-input px-3 py-3 text-sm outline-none"
+              >
+                <option value="seller">Seller outreach</option>
+                <option value="buyer">Buyer outreach</option>
+              </select>
+              <input value={outreachChannel} onChange={(event) => setOutreachChannel(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Channel" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={outreachRecipient} onChange={(event) => setOutreachRecipient(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Recipient" />
+              <input value={outreachStatus} onChange={(event) => setOutreachStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Status" />
+            </div>
+            <input value={outreachOutcome} onChange={(event) => setOutreachOutcome(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Outcome" />
+            <textarea value={outreachNextStep} onChange={(event) => setOutreachNextStep(event.target.value)} className="brand-input min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Next step" />
+            <textarea value={outreachNotes} onChange={(event) => setOutreachNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Internal notes" />
+            <button type="submit" disabled={!outreachRecipient.trim() || working === "outreach"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "outreach" ? "Logging outreach..." : "Log outreach execution"}
+            </button>
+          </form>
+        </Panel>
+
+        <Panel
+          eyebrow="Execution Ledger"
+          title="Saved outreach attempts"
+          description="A live record of what has actually been sent or attempted for this deal, across both seller and buyer lanes."
+        >
+          <div className="space-y-4">
+            {detail.outreachExecutions.length ? (
+              detail.outreachExecutions.map((entry) => (
+                <div key={entry.id} className="brand-card p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-base font-semibold text-white">{entry.recipient}</div>
+                      <div className="mt-1 text-xs text-[var(--copy-muted)]">{entry.audience} / {entry.channel}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <StatusPill tone={executionTone(entry.status)} label={entry.status.toLowerCase()} />
+                      <StatusPill tone={executionTone(entry.outcome)} label={(entry.outcome || "logged").toLowerCase()} />
+                    </div>
+                  </div>
+                  {entry.nextStep ? <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">Next: {entry.nextStep}</div> : null}
+                  {entry.notes ? <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{entry.notes}</div> : null}
+                  <div className="mt-2 text-xs text-[var(--copy-muted)]">{new Date(entry.loggedAt).toLocaleString()}</div>
+                </div>
+              ))
+            ) : (
+              <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">
+                No outreach attempts have been logged yet.
+              </div>
+            )}
+          </div>
+        </Panel>
+      </div>
+
       <Panel
         eyebrow="Disposition Packet"
         title="Edit buyer-facing packet sections"
@@ -1435,6 +1587,61 @@ export function DealEngineDealDetailView({
           </div>
         </form>
       </Panel>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
+          eyebrow="Closeout"
+          title="Record the final deal outcome"
+          description="Use this to finish the wholesale loop inside the site once the assignment, disposition, or fallout result is known."
+        >
+          <form onSubmit={saveCloseout} className="grid gap-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <select value={closeoutOutcome} onChange={(event) => setCloseoutOutcome(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+                <option>Closed Won</option>
+                <option>Closed Lost</option>
+                <option>Cancelled</option>
+              </select>
+              <input value={closeoutDate} onChange={(event) => setCloseoutDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Close date" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={closeoutBuyerName} onChange={(event) => setCloseoutBuyerName(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="End buyer / assignee" />
+              <input value={closeoutFee} onChange={(event) => setCloseoutFee(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assignment fee collected" />
+            </div>
+            <textarea value={closeoutNotes} onChange={(event) => setCloseoutNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Closeout notes" />
+            <button type="submit" disabled={!closeoutOutcome.trim() || working === "closeout"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "closeout" ? "Recording closeout..." : "Record deal closeout"}
+            </button>
+          </form>
+        </Panel>
+
+        <Panel
+          eyebrow="Closeout Ledger"
+          title="Latest recorded outcome"
+          description="This keeps the final wholesale disposition visible to the next operator without needing to inspect raw logs."
+        >
+          {detail.closeout ? (
+            <div className="brand-card p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-lg font-semibold text-white">{detail.closeout.outcome}</div>
+                  <div className="mt-1 text-xs text-[var(--copy-muted)]">Recorded {new Date(detail.closeout.recordedAt).toLocaleString()}</div>
+                </div>
+                <StatusPill tone={executionTone(detail.closeout.outcome)} label={detail.closeout.outcome.toLowerCase()} />
+              </div>
+              <div className="mt-4 space-y-2 text-sm leading-6 text-[var(--copy-soft)]">
+                <div>Closed at: {detail.closeout.closedAt || "Not entered"}</div>
+                <div>End buyer: {detail.closeout.buyerName || "Not entered"}</div>
+                <div>Assignment fee: {detail.closeout.assignmentFeeCollected ? `$${detail.closeout.assignmentFeeCollected.toLocaleString()}` : "Not entered"}</div>
+                <div>{detail.closeout.notes || "No closeout note entered."}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">
+              No closeout outcome has been recorded for this deal yet.
+            </div>
+          )}
+        </Panel>
+      </div>
 
       {status ? (
         <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.03)] px-4 py-3 text-sm text-[var(--copy-soft)]">
