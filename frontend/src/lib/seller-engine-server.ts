@@ -769,7 +769,13 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
   if (error) return [];
   if (!data?.length) return [];
 
-  return (data as unknown as SellerLeadJoin[]).map(mapSellerLead);
+  const leads = (data as unknown as SellerLeadJoin[]).map(mapSellerLead);
+  const latestNexusContacts = await listLatestNexusContactNotes(
+    supabase,
+    leads.map((lead) => lead.id),
+  );
+
+  return leads.map((lead) => applyNexusContactToLead(lead, latestNexusContacts.get(lead.id) ?? null));
 }
 
 export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | null> {
@@ -796,7 +802,7 @@ export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | 
 
   if (error || !data) return null;
 
-  const lead = mapSellerLead(data as unknown as SellerLeadJoin);
+  let lead = mapSellerLead(data as unknown as SellerLeadJoin);
   const [notesResult, historyResult, dealResult] = await Promise.all([
     supabase
       .from("lead_notes")
@@ -818,11 +824,18 @@ export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | 
       .maybeSingle(),
   ]);
 
-  lead.notes = (notesResult.data ?? []).map((note) => ({
-    id: String((note as SellerLeadNoteRow).id),
-    note: (note as SellerLeadNoteRow).note,
-    createdAt: (note as SellerLeadNoteRow).created_at,
-  }));
+  const latestNexusPayload = (notesResult.data ?? [])
+    .map((note) => parseNexusContactNote((note as SellerLeadNoteRow).note))
+    .find(Boolean) ?? null;
+  lead = applyNexusContactToLead(lead, latestNexusPayload);
+
+  lead.notes = (notesResult.data ?? [])
+    .filter((note) => !parseNexusContactNote((note as SellerLeadNoteRow).note))
+    .map((note) => ({
+      id: String((note as SellerLeadNoteRow).id),
+      note: (note as SellerLeadNoteRow).note,
+      createdAt: (note as SellerLeadNoteRow).created_at,
+    }));
   lead.statusHistory = (historyResult.data ?? []).map((event) => ({
     id: String((event as SellerLeadStatusHistoryRow).id),
     fromStatus: (event as SellerLeadStatusHistoryRow).from_status,

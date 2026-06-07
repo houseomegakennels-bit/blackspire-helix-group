@@ -159,7 +159,7 @@ function buildSellerContactWorkflow(lead: SellerLeadView) {
       status: "Ready",
     },
     {
-      title: "Launch first-touch outreach and log the outcome",
+      title: "Open Seller Outreach Draft Command and log the outcome",
       detail: "Once the number is verified, send the first-touch script and capture the response, voicemail, or no-answer result.",
       status: hasPhone ? "Ready" : "Blocked",
     },
@@ -863,7 +863,7 @@ export function SellerEngineDashboard({
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="seller-card p-5">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="seller-kicker">Contact enrichment workflow</p>
+                    <p className="seller-kicker">Seller Outreach Draft Command</p>
                     <span className="seller-signal">{selected.phoneStatus ?? "Skip Trace Needed"}</span>
                   </div>
                   <div className="mt-4 space-y-3">

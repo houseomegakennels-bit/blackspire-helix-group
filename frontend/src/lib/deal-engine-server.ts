@@ -78,6 +78,24 @@ type NexusContactRow = {
   updated_at: string;
 };
 
+type NexusContactNotePayload = {
+  owner_name?: string | null;
+  property_address?: string | null;
+  mailing_address?: string | null;
+  primary_phone?: string | null;
+  primary_email?: string | null;
+  contact_confidence_score?: number | null;
+  provider?: string | null;
+  status?: string | null;
+  completed_at?: string | null;
+};
+
+type SellerLeadContactLookupRow = {
+  id: string;
+  owners: { name: string | null; mailing_address: string | null } | null;
+  properties: { property_address: string | null; city: string | null; state: string | null; zip_code: string | null } | null;
+};
+
 export type DealEngineMetric = {
   label: string;
   value: string;
@@ -841,6 +859,108 @@ function normalizeContactMatch(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function normalizeAddressMatch(value: string) {
+  return normalizeContactMatch(value)
+    .replace(/[.,#]/g, "")
+    .replace(/\b(street|st)\b/g, "st")
+    .replace(/\b(avenue|ave)\b/g, "ave")
+    .replace(/\b(road|rd)\b/g, "rd")
+    .replace(/\b(drive|dr)\b/g, "dr")
+    .replace(/\b(lane|ln)\b/g, "ln")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function addressesLikelyMatch(left: string, right: string) {
+  const normalizedLeft = normalizeAddressMatch(left);
+  const normalizedRight = normalizeAddressMatch(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  return (
+    normalizedLeft === normalizedRight
+    || normalizedLeft.includes(normalizedRight)
+    || normalizedRight.includes(normalizedLeft)
+  );
+}
+
+function formatSellerPropertyAddress(property: SellerLeadContactLookupRow["properties"]) {
+  if (!property?.property_address) return "";
+  const cityStateZip = [property.city, property.state, property.zip_code].filter(Boolean).join(" ");
+  return [property.property_address, cityStateZip].filter(Boolean).join(", ");
+}
+
+function parseNexusContactNote(note: string): NexusContactNotePayload | null {
+  const prefix = "NEXUS_CONTACT_RESULT ";
+  if (!note.startsWith(prefix)) return null;
+  try {
+    const payload = JSON.parse(note.slice(prefix.length)) as NexusContactNotePayload;
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function nexusPayloadToContactRow(
+  payload: NexusContactNotePayload,
+  lead: DealEngineLead,
+  sellerLead: SellerLeadContactLookupRow,
+): NexusContactRow {
+  return {
+    owner_name: payload.owner_name?.trim() || sellerLead.owners?.name?.trim() || lead.ownerName,
+    property_address: payload.property_address?.trim() || formatSellerPropertyAddress(sellerLead.properties) || lead.propertyAddress,
+    mailing_address: payload.mailing_address?.trim() || sellerLead.owners?.mailing_address || null,
+    primary_phone: payload.primary_phone?.trim() || null,
+    primary_email: payload.primary_email?.trim() || null,
+    contact_confidence_score: payload.contact_confidence_score ?? null,
+    provider: payload.provider?.trim() || "Tracerfy",
+    status: payload.status?.trim() || "completed",
+    updated_at: payload.completed_at?.trim() || new Date().toISOString(),
+  };
+}
+
+async function findNexusContactNoteForDeal(
+  supabase: SupabaseClient,
+  lead: DealEngineLead,
+): Promise<NexusContactRow | null> {
+  const { data, error } = await supabase
+    .from("seller_leads")
+    .select("id,owners(name,mailing_address),properties(property_address,city,state,zip_code)")
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error || !data?.length) return null;
+
+  const sellerLead = (data as unknown as SellerLeadContactLookupRow[]).find((row) => {
+    const sellerOwnerName = normalizeContactMatch(row.owners?.name ?? "");
+    const dealOwnerName = normalizeContactMatch(lead.ownerName);
+    const ownerMatches =
+      Boolean(sellerOwnerName)
+      && (sellerOwnerName === dealOwnerName || dealOwnerName.includes(sellerOwnerName));
+    const addressMatches =
+      addressesLikelyMatch(row.properties?.property_address ?? "", lead.propertyAddress)
+      || addressesLikelyMatch(formatSellerPropertyAddress(row.properties), lead.propertyAddress);
+    return ownerMatches && addressMatches;
+  });
+
+  if (!sellerLead) return null;
+
+  const { data: notes, error: notesError } = await supabase
+    .from("lead_notes")
+    .select("note,created_at")
+    .eq("seller_lead_id", sellerLead.id)
+    .ilike("note", "NEXUS_CONTACT_RESULT %")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (notesError || !notes?.length) return null;
+
+  for (const note of notes as Array<{ note: string }>) {
+    const payload = parseNexusContactNote(note.note);
+    if (payload) return nexusPayloadToContactRow(payload, lead, sellerLead);
+  }
+
+  return null;
+}
+
 function mergeNexusContactProfile(
   sellerContact: DealEngineDealDetail["sellerContact"],
   contact: NexusContactRow | null,
@@ -888,11 +1008,30 @@ async function findNexusContactForDeal(
     .order("updated_at", { ascending: false })
     .limit(250);
 
-  if (recentError || !recentContacts?.length) return null;
-  return (recentContacts as NexusContactRow[]).find((contact) =>
+  if (!recentError && recentContacts?.length) {
+    const matchedContact = (recentContacts as NexusContactRow[]).find((contact) =>
     normalizeContactMatch(contact.owner_name) === normalizeContactMatch(lead.ownerName)
     && normalizeContactMatch(contact.property_address) === normalizeContactMatch(lead.propertyAddress)
-  ) ?? null;
+    ) ?? null;
+    if (matchedContact) return matchedContact;
+  }
+
+  return findNexusContactNoteForDeal(supabase, lead);
+}
+
+function enrichPacketWithSellerContactStatus(
+  packet: DealEngineDealDetail["packet"],
+  sellerContact: DealEngineDealDetail["sellerContact"],
+): DealEngineDealDetail["packet"] {
+  if (sellerContact.ownerPhone === "Not captured" && !/trace complete|contact ready/i.test(sellerContact.phoneStatus)) {
+    return packet;
+  }
+
+  return {
+    ...packet,
+    contactInstructions:
+      "Seller contact has been verified internally through Nexus. Keep buyer questions, walkthrough requests, proof-of-funds review, and offer routing inside Blackspire Deal Engine; do not expose seller direct contact details in buyer-facing packets.",
+  };
 }
 
 function buildSellerContactWorkflow(
@@ -1919,6 +2058,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     sellerContact = mergeNexusContactProfile(sellerContact, nexusContact);
     sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
     sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
+    packet = enrichPacketWithSellerContactStatus(packet, sellerContact);
 
     const { data } = await supabase
       .from("deal_packets")
@@ -1936,6 +2076,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
         deadlineToSubmitOffer: livePacket.deadline_to_submit_offer ?? packet.deadlineToSubmitOffer,
         comps: livePacket.comps_placeholder?.length ? livePacket.comps_placeholder : packet.comps,
       };
+      packet = enrichPacketWithSellerContactStatus(packet, sellerContact);
       room = buildFallbackRoom(lead, packet);
     }
 
