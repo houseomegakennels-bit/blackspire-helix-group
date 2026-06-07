@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Panel, StatusPill } from "@/components/buyer-shell";
+import type { BuyerGroupMatch } from "@/lib/buyer-groups";
 import {
   getCountyCapability,
   getCountyOperationalRisk,
@@ -80,6 +81,7 @@ type ApiBuyerReport = {
   total_spend: number | null;
   is_llc: boolean | null;
   is_cash_buyer: boolean | null;
+  buyer_group_match?: BuyerGroupMatch | null;
 };
 
 type BuyerReportView = {
@@ -91,6 +93,7 @@ type BuyerReportView = {
   totalSpend: number;
   isLlc: boolean;
   isCashBuyer: boolean;
+  buyerGroupMatch: BuyerGroupMatch | null;
   buyerIdentityNote: string | null;
 };
 
@@ -303,6 +306,7 @@ export function SearchJobsMonitor({
       total_spend: report.totalSpend,
       is_llc: report.isLlc ? "yes" : "no",
       is_cash_buyer: report.isCashBuyer ? "yes" : "no",
+      hedge_fund_group: report.buyerGroupMatch?.canonicalName ?? "",
       search_job_id: highlightedJob.id,
     }));
 
@@ -378,6 +382,7 @@ export function SearchJobsMonitor({
       `Visible spend: ${formatMoney(report.totalSpend)}`,
       `Entity type: ${report.isLlc ? "LLC / entity" : "individual"}`,
       `Cash signal: ${report.isCashBuyer ? "cash buyer" : "not flagged"}`,
+      report.buyerGroupMatch ? `Hedge fund group: ${report.buyerGroupMatch.canonicalName}` : null,
       `County risk: ${countyRisk.label} - ${countyRisk.message}`,
       `Search job: ${highlightedJob.id}`,
       "",
@@ -618,12 +623,19 @@ export function SearchJobsMonitor({
                           <StatusPill tone={report.score >= 60 ? "active" : report.score >= 40 ? "warn" : "neutral"} label={`score ${report.score}`} />
                           {report.isLlc ? <StatusPill tone="good" label="llc" /> : null}
                           {report.isCashBuyer ? <StatusPill tone="warn" label="cash" /> : null}
+                          {report.buyerGroupMatch ? <StatusPill tone="bad" label="hedge fund group" /> : null}
                           {report.buyerIdentityNote ? <StatusPill tone="warn" label="identity medium" /> : null}
                         </div>
                       </div>
                       {report.buyerIdentityNote ? (
                         <div className="mt-3 border-l border-[hsl(33_100%_50%/.42)] pl-3 text-xs leading-5 text-[hsl(38_100%_76%)]">
                           {report.buyerIdentityNote}
+                        </div>
+                      ) : null}
+                      {report.buyerGroupMatch ? (
+                        <div className="mt-3 border-l border-[hsl(190_100%_58%/.42)] pl-3 text-xs leading-5 text-[hsl(190_90%_76%)]">
+                          {report.buyerGroupMatch.canonicalName} matched at {report.buyerGroupMatch.confidence} confidence via alias{" "}
+                          {report.buyerGroupMatch.matchedAlias}.
                         </div>
                       ) : null}
                       <div className="brand-copy-soft mt-3 grid gap-2 text-sm sm:grid-cols-2">
@@ -850,6 +862,7 @@ function mapApiReportToView(report: ApiBuyerReport): BuyerReportView {
     totalSpend: Number(report.total_spend ?? 0),
     isLlc: Boolean(report.is_llc),
     isCashBuyer: Boolean(report.is_cash_buyer),
+    buyerGroupMatch: report.buyer_group_match ?? null,
     buyerIdentityNote: getBuyerIdentityNote(report.BuyerProfile),
   };
 }

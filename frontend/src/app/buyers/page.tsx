@@ -1,5 +1,6 @@
 import { BuyerShell } from "@/components/buyer-shell";
 import { BuyerReportsMonitor } from "@/components/buyer-reports-monitor";
+import { matchBuyerGroup } from "@/lib/buyer-groups";
 import {
   getLiveCountyCapabilities,
   getBuyerEngineEnvStatus,
@@ -69,6 +70,7 @@ export default async function BuyersPage({
     totalSpend: Number(report.total_spend ?? 0),
     isLlc: Boolean(report.is_llc),
     isCashBuyer: Boolean(report.is_cash_buyer),
+    buyerGroupMatch: matchBuyerGroup(report.buyer_name_snapshot),
     buyerIdentityNote: (Array.isArray(report.BuyerProfile) ? report.BuyerProfile[0] : report.BuyerProfile)
       ?.score_breakdown?.buyer_identity?.note ?? null,
     createdAt: report.created_at,

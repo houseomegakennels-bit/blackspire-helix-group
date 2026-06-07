@@ -1,5 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
+import { matchBuyerGroup } from "@/lib/buyer-groups";
 
 import {
   listBuyerReports,
@@ -21,7 +22,10 @@ export async function GET(request: Request) {
       ok: true,
       jobs,
       highlightedJobId: highlight,
-      highlightedReports,
+      highlightedReports: highlightedReports.map((report) => ({
+        ...report,
+        buyer_group_match: matchBuyerGroup(report.buyer_name_snapshot),
+      })),
       env: getBuyerEngineEnvStatus(),
     });
   } catch (error) {

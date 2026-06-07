@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { matchBuyerGroup } from "@/lib/buyer-groups";
 import {
   getBuyerEngineEnvStatus,
   listAllBuyerReports,
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
       reports: reportPage.reports.map((report) => ({
         ...report,
         search_job: report.search_job_id ? (jobMap[report.search_job_id] ?? null) : null,
+        buyer_group_match: matchBuyerGroup(report.buyer_name_snapshot),
       })),
       total: reportPage.total,
       limit: reportPage.limit,

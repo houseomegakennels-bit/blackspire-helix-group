@@ -1,5 +1,6 @@
 import { BuyerShell } from "@/components/buyer-shell";
 import { SearchJobsMonitor } from "@/components/search-jobs-monitor";
+import { matchBuyerGroup } from "@/lib/buyer-groups";
 import {
   getLiveCountyCapabilities,
   getBuyerEngineEnvStatus,
@@ -54,6 +55,7 @@ export default async function SearchJobsPage({
         totalSpend: Number(report.total_spend ?? 0),
         isLlc: Boolean(report.is_llc),
         isCashBuyer: Boolean(report.is_cash_buyer),
+        buyerGroupMatch: matchBuyerGroup(report.buyer_name_snapshot),
         buyerIdentityNote: (Array.isArray(report.BuyerProfile) ? report.BuyerProfile[0] : report.BuyerProfile)
           ?.score_breakdown?.buyer_identity?.note ?? null,
       }))

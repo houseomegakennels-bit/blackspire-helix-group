@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Panel, StatusPill } from "@/components/buyer-shell";
+import type { BuyerGroupMatch } from "@/lib/buyer-groups";
 import {
   getCountyCapability,
   getCountyOperationalRisk,
@@ -48,6 +49,7 @@ type BuyerReportView = {
   totalSpend: number;
   isLlc: boolean;
   isCashBuyer: boolean;
+  buyerGroupMatch: BuyerGroupMatch | null;
   buyerIdentityNote: string | null;
   createdAt: string;
 };
@@ -69,6 +71,7 @@ type ApiBuyerReport = {
   total_spend: number | null;
   is_llc: boolean | null;
   is_cash_buyer: boolean | null;
+  buyer_group_match?: BuyerGroupMatch | null;
   created_at: string;
 };
 
@@ -146,6 +149,7 @@ export function BuyerReportsMonitor({
   const [totalCount, setTotalCount] = useState(initialTotalCount);
   const [env, setEnv] = useState(initialEnv);
   const [query, setQuery] = useState("");
+  const [segmentFilter, setSegmentFilter] = useState<"all" | "hedge-fund" | "other">("all");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -336,24 +340,35 @@ export function BuyerReportsMonitor({
 
   const filteredReports = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return reports;
+    return reports.filter((report) => {
+      const matchesQuery =
+        !normalized ||
+        `${report.buyerName} ${report.mailingAddress} ${report.searchJobId} ${report.buyerGroupMatch?.canonicalName ?? ""}`
+          .toLowerCase()
+          .includes(normalized);
 
-    return reports.filter((report) =>
-      `${report.buyerName} ${report.mailingAddress} ${report.searchJobId}`
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }, [query, reports]);
+      const matchesSegment =
+        segmentFilter === "all"
+          ? true
+          : segmentFilter === "hedge-fund"
+            ? Boolean(report.buyerGroupMatch)
+            : !report.buyerGroupMatch;
+
+      return matchesQuery && matchesSegment;
+    });
+  }, [query, reports, segmentFilter]);
 
   const summary = useMemo(() => {
     const totalVisibleSpend = filteredReports.reduce((sum, report) => sum + report.totalSpend, 0);
     const highScoreCount = filteredReports.filter((report) => report.score >= 60).length;
     const llcCount = filteredReports.filter((report) => report.isLlc).length;
+    const hedgeFundCount = filteredReports.filter((report) => report.buyerGroupMatch).length;
 
     return {
       totalVisibleSpend,
       highScoreCount,
       llcCount,
+      hedgeFundCount,
     };
   }, [filteredReports]);
 
@@ -412,6 +427,8 @@ export function BuyerReportsMonitor({
       total_spend: report.totalSpend,
       is_llc: report.isLlc ? "yes" : "no",
       is_cash_buyer: report.isCashBuyer ? "yes" : "no",
+      hedge_fund_group: report.buyerGroupMatch?.canonicalName ?? "",
+      hedge_fund_match_confidence: report.buyerGroupMatch?.confidence ?? "",
       search_job_id: report.searchJobId,
       created_at: report.createdAt,
     }));
@@ -495,6 +512,7 @@ export function BuyerReportsMonitor({
       `Visible spend: ${formatMoney(report.totalSpend)}`,
       `Entity type: ${report.isLlc ? "LLC / entity" : "individual"}`,
       `Cash signal: ${report.isCashBuyer ? "cash buyer" : "not flagged"}`,
+      report.buyerGroupMatch ? `Hedge fund group: ${report.buyerGroupMatch.canonicalName}` : null,
       countyRisk ? `County risk: ${countyRisk.label} - ${countyRisk.message}` : null,
       `Search job: ${report.searchJobId}`,
       "",
@@ -643,7 +661,7 @@ export function BuyerReportsMonitor({
             : `The repo is still missing env values: ${env.missing.join(", ")}`
         }
       >
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-4">
           <div className="brand-card px-4 py-3">
             <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">High score buyers</div>
             <div className="mt-2 text-2xl font-semibold text-white tabular-nums">{summary.highScoreCount}</div>
@@ -658,6 +676,11 @@ export function BuyerReportsMonitor({
             <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">LLC buyers</div>
             <div className="mt-2 text-2xl font-semibold text-white tabular-nums">{summary.llcCount}</div>
             <div className="brand-copy-soft mt-1 text-xs">Investor entities in visible results</div>
+          </div>
+          <div className="brand-card px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Hedge fund groups</div>
+            <div className="mt-2 text-2xl font-semibold text-white tabular-nums">{summary.hedgeFundCount}</div>
+            <div className="brand-copy-soft mt-1 text-xs">Visible buyers matched to seeded institutional groups</div>
           </div>
         </div>
 
@@ -703,16 +726,27 @@ export function BuyerReportsMonitor({
         </div>
 
         <div className="mt-4">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={
-              searchJobId
-                ? "Filter this dossier by buyer or mailing address"
-                : "Filter by buyer, mailing address, or search job id"
-            }
-            className="brand-input w-full px-3 py-2 text-sm outline-none"
-          />
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={
+                searchJobId
+                  ? "Filter this dossier by buyer, group, or mailing address"
+                  : "Filter by buyer, group, mailing address, or search job id"
+              }
+              className="brand-input w-full px-3 py-2 text-sm outline-none"
+            />
+            <select
+              value={segmentFilter}
+              onChange={(event) => setSegmentFilter(event.target.value as "all" | "hedge-fund" | "other")}
+              className="brand-input w-full px-3 py-2 text-sm outline-none"
+            >
+              <option value="all">All buyer segments</option>
+              <option value="hedge-fund">Hedge fund groups only</option>
+              <option value="other">All other buyers</option>
+            </select>
+          </div>
         </div>
       </Panel>
 
@@ -867,6 +901,7 @@ export function BuyerReportsMonitor({
                       ) : null}
                       {report.isLlc ? <StatusPill tone="good" label="llc" /> : null}
                       {report.isCashBuyer ? <StatusPill tone="warn" label="cash" /> : null}
+                      {report.buyerGroupMatch ? <StatusPill tone="bad" label="hedge fund group" /> : null}
                       {report.buyerIdentityNote ? <StatusPill tone="warn" label="identity medium" /> : null}
                     </div>
                     {report.county && report.state && report.propertyType ? (
@@ -880,6 +915,12 @@ export function BuyerReportsMonitor({
                     {report.buyerIdentityNote ? (
                       <div className="mt-2 border-l border-[hsl(33_100%_50%/.42)] pl-3 text-xs leading-5 text-[hsl(38_100%_76%)]">
                         {report.buyerIdentityNote}
+                      </div>
+                    ) : null}
+                    {report.buyerGroupMatch ? (
+                      <div className="mt-2 border-l border-[hsl(190_100%_58%/.42)] pl-3 text-xs leading-5 text-[hsl(190_90%_76%)]">
+                        {report.buyerGroupMatch.canonicalName} matched at {report.buyerGroupMatch.confidence} confidence via alias{" "}
+                        {report.buyerGroupMatch.matchedAlias}.
                       </div>
                     ) : null}
                     {aiSummary?.text ? (
@@ -982,6 +1023,7 @@ function mapApiReportToView(report: ApiBuyerReport): BuyerReportView {
     totalSpend: Number(report.total_spend ?? 0),
     isLlc: Boolean(report.is_llc),
     isCashBuyer: Boolean(report.is_cash_buyer),
+    buyerGroupMatch: report.buyer_group_match ?? null,
     buyerIdentityNote: getBuyerIdentityNote(report.BuyerProfile),
     createdAt: report.created_at,
   };
