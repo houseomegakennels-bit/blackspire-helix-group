@@ -57,7 +57,16 @@ const BUYER_GROUP_SEEDS: BuyerGroupSeed[] = [
   {
     canonicalName: "American Homes 4 Rent",
     groupType: "hedge_fund_group",
-    aliases: ["american homes 4 rent", "american homes for rent", "amh", "amh borrowe"],
+    aliases: [
+      "american homes 4 rent",
+      "american homes for rent",
+      "american homes 4 rent trs",
+      "american homes 4 rent trs llc",
+      "amh",
+      "amh borrowe",
+      "amh nc properties",
+      "amh nc properties two lp",
+    ],
   },
   {
     canonicalName: "Progress Residential",

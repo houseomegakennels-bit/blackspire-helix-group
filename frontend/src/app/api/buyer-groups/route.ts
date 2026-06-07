@@ -4,6 +4,7 @@ import {
   getBuyerEngineEnvStatus,
   importBuyerGroupRegistryCsv,
   listBuyerGroupRegistry,
+  syncDefaultBuyerGroups,
   toggleBuyerGroupActive,
 } from "@/lib/buyer-engine-server";
 
@@ -30,11 +31,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as { csv?: string };
+    const body = (await request.json()) as { csv?: string; action?: string };
+    if (body.action === "sync_defaults") {
+      const result = await syncDefaultBuyerGroups();
+      return NextResponse.json({ ok: true, result });
+    }
+
     const csv = typeof body.csv === "string" ? body.csv : "";
     if (!csv.trim()) {
       return NextResponse.json(
-        { ok: false, error: "csv is required." },
+        { ok: false, error: "csv is required unless action=sync_defaults." },
         { status: 400 },
       );
     }

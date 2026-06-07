@@ -20,6 +20,7 @@ export function BuyerGroupsAdmin({
   const [csv, setCsv] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [syncingDefaults, setSyncingDefaults] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +104,30 @@ export function BuyerGroupsAdmin({
     }
   }, [csv, refresh]);
 
+  const syncDefaults = useCallback(async () => {
+    setSyncingDefaults(true);
+    setStatus(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/buyer-groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync_defaults" }),
+      });
+      const payload = (await response.json()) as { ok: boolean; result?: { synced: number }; error?: string };
+      if (!response.ok || !payload.ok || !payload.result) {
+        throw new Error(payload.error ?? "Default buyer group sync failed.");
+      }
+      await refresh();
+      setStatus(`Synced ${payload.result.synced} default buyer groups into the live registry.`);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "Default buyer group sync failed.");
+    } finally {
+      setSyncingDefaults(false);
+    }
+  }, [refresh]);
+
   return (
     <>
       <Panel
@@ -152,6 +177,14 @@ export function BuyerGroupsAdmin({
                 className="brand-button px-4 py-2 text-sm disabled:opacity-60"
               >
                 {importing ? "Importing..." : "Import CSV"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void syncDefaults()}
+                disabled={syncingDefaults}
+                className="brand-button px-4 py-2 text-sm disabled:opacity-60"
+              >
+                {syncingDefaults ? "Syncing defaults..." : "Sync default groups"}
               </button>
               {status ? <span className="text-sm text-[hsl(40_100%_72%)]">{status}</span> : null}
               {error ? <span className="text-sm text-[hsl(16_100%_66%)]">{error}</span> : null}

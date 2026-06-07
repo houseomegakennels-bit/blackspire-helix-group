@@ -968,6 +968,36 @@ export async function importBuyerGroupRegistryCsv(csv: string) {
   };
 }
 
+export async function syncDefaultBuyerGroups() {
+  const env = getEnvState();
+  if (!env.enabled) {
+    throw new Error(`Missing Supabase env: ${env.missing.join(", ")}`);
+  }
+
+  const scope = await getOperatorScope("write");
+  if (!scope.operatorId) {
+    throw new Error("Operator identity is required for buyer group sync.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const payload = buildBuyerGroupRegistryUpsertPayload(listSeedBuyerGroups());
+
+  const { error } = await supabase
+    .from("buyer_group_registry")
+    .upsert(payload, { onConflict: "canonical_name" });
+
+  if (error) {
+    if (isMissingRelationError(error.message)) {
+      throw new Error("buyer_group_registry table is missing. Apply migration 004_buyer_group_registry.sql first.");
+    }
+    throw new Error(error.message);
+  }
+
+  return {
+    synced: payload.length,
+  };
+}
+
 export async function toggleBuyerGroupActive(id: string, active: boolean): Promise<void> {
   const env = getEnvState();
   if (!env.enabled) throw new Error("Supabase env not configured.");
