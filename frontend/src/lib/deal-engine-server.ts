@@ -502,10 +502,7 @@ function buildContractDrafts(
   if (!leads.length) return [...fallbackContractDrafts];
 
   return leads.slice(0, 3).map((lead) => {
-    const sellerSignal =
-      sellerSignals.find((item) => item.county === lead.county)
-      ?? sellerSignals[0]
-      ?? null;
+    const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
     const buyerSignal =
       buyerSignals.find((item) => item.market.toLowerCase().includes(lead.county.toLowerCase()))
       ?? buyerSignals[0]
@@ -558,9 +555,17 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
         if (leftReady !== rightReady) return rightReady - leftReady;
         return right.score - left.score;
       })
-      .slice(0, limit)
       .map(toDealLeadFromSeller);
-    return handoffs.length ? handoffs : fallbackLeads.slice(0, limit);
+
+    const seenAddresses = new Set<string>();
+    const merged = [...handoffs, ...fallbackLeads].filter((lead) => {
+      const key = normalizeAddressMatch(lead.propertyAddress);
+      if (!key || seenAddresses.has(key)) return false;
+      seenAddresses.add(key);
+      return true;
+    });
+
+    return merged.length ? merged.slice(0, limit) : fallbackLeads.slice(0, limit);
   };
 
   const { data, error } = await supabase
@@ -2103,7 +2108,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     listOutreachDraftRecords().catch(() => []),
   ]);
 
-  const lead = leads.find((item) => item.id === dealId);
+  const lead = leads.find((item) => item.id === dealId) ?? fallbackLeads.find((item) => item.id === dealId) ?? null;
   if (!lead) return null;
 
   const contractDraft = buildContractDrafts(leads, sellerSignals, buyerSignals).find(
