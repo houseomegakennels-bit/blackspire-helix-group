@@ -119,6 +119,7 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
           sellerSignals={snapshot.sellerSignals}
           buyerSignals={snapshot.buyerSignals}
           contractDrafts={snapshot.contractDrafts}
+          persistence={snapshot.persistence}
         />
       </Panel>
 
