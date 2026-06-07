@@ -57,7 +57,7 @@ export function DealRoomPublicView({
                   <div>Offer deadline: <span className="font-semibold text-white">{detail.packet.deadlineToSubmitOffer}</span></div>
                 </div>
               </div>
-              <DealRoomInterestForm slug={detail.room.slug} submitLabel={detail.room.submitInterestLabel} />
+              <DealRoomInterestForm slug={detail.room.slug} dealId={detail.lead.id} submitLabel={detail.room.submitInterestLabel} />
             </div>
           </div>
         </header>

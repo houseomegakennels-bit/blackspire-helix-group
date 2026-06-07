@@ -21,6 +21,7 @@ import {
 } from "@/lib/buyer-engine-server";
 import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
 import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
+import { isResendConfigured, sendReconEmail } from "@/lib/recon-engine/email";
 
 type EnvState = {
   enabled: boolean;
@@ -247,6 +248,20 @@ export type DealEngineDealDetail = {
     nextStep: string;
     notes: string;
     loggedAt: string;
+  }>;
+  uploadedDocuments: Array<{
+    id: string;
+    category: string;
+    name: string;
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    owner: string;
+    status: string;
+    notes: string;
+    source: string;
+    uploadedAt: string;
+    storagePath: string;
   }>;
   investorResponses: Array<{
     id: string;
@@ -913,6 +928,26 @@ type SaveInvestorInterestInput = {
   proofOfFundsStatus: string;
 };
 
+type UploadDealDocumentInput = {
+  dealId: string;
+  category: string;
+  fileName: string;
+  contentType: string;
+  bytes: Uint8Array;
+  owner: string;
+  status: string;
+  notes: string;
+  source: string;
+};
+
+type SendDealEmailInput = {
+  dealId: string;
+  to: string;
+  subject: string;
+  body: string;
+  audience: string;
+};
+
 type SaveDealStageUpdateInput = {
   dealId: string;
   status: string;
@@ -1574,6 +1609,37 @@ async function ensureDealExecutionScaffold(
   }
 }
 
+const DEAL_DOCUMENT_BUCKET = "deal-engine-documents";
+
+async function ensureDealDocumentBucket(supabase: SupabaseClient) {
+  const { data: buckets, error } = await supabase.storage.listBuckets();
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const exists = (buckets ?? []).some((bucket) => bucket.name === DEAL_DOCUMENT_BUCKET);
+  if (exists) return;
+
+  const { error: createError } = await supabase.storage.createBucket(DEAL_DOCUMENT_BUCKET, {
+    public: false,
+    fileSizeLimit: 10 * 1024 * 1024,
+  });
+
+  if (createError && !/already exists/i.test(createError.message)) {
+    throw new Error(createError.message);
+  }
+}
+
+function safeDocumentPathSegment(value: string) {
+  return value.replace(/[^a-z0-9._-]+/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "file";
+}
+
+function getDealDocumentObjectPath(input: { dealId: string; category: string; fileName: string }) {
+  const safeCategory = safeDocumentPathSegment(input.category);
+  const safeName = safeDocumentPathSegment(input.fileName);
+  return `${input.dealId}/${Date.now()}-${safeCategory}-${safeName}`;
+}
+
 async function syncDealBuyerMatches(
   supabase: SupabaseClient,
   lead: DealEngineLead,
@@ -2056,6 +2122,26 @@ function parseOutreachExecutions(logs: DispositionLogRow[]) {
     .sort((left, right) => Date.parse(right.loggedAt) - Date.parse(left.loggedAt));
 }
 
+function parseUploadedDocuments(logs: DispositionLogRow[]) {
+  return logs
+    .filter((log) => log.action_type === "document_uploaded" && log.payload)
+    .map((log) => ({
+      id: String(log.payload?.documentId ?? log.id),
+      category: String(log.payload?.category ?? "Document"),
+      name: String(log.payload?.name ?? log.payload?.fileName ?? "Uploaded document"),
+      fileName: String(log.payload?.fileName ?? "document"),
+      contentType: String(log.payload?.contentType ?? "application/octet-stream"),
+      sizeBytes: Number(log.payload?.sizeBytes ?? 0),
+      owner: String(log.payload?.owner ?? "Blackspire operator"),
+      status: String(log.payload?.status ?? "Received"),
+      notes: String(log.payload?.notes ?? ""),
+      source: String(log.payload?.source ?? "internal"),
+      uploadedAt: String(log.payload?.uploadedAt ?? log.created_at ?? new Date().toISOString()),
+      storagePath: String(log.payload?.storagePath ?? ""),
+    }))
+    .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
+}
+
 function parseCloseout(logs: DispositionLogRow[]) {
   const log = [...logs]
     .filter((entry) => entry.action_type === "deal_closeout_recorded")
@@ -2196,6 +2282,26 @@ function buildActivityFeed(logs: DispositionLogRow[]) {
         detail: `${String(payload.channel ?? "channel")} / ${String(payload.status ?? "status")} / ${String(payload.recipient ?? "recipient")}`,
         timestamp,
         tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "document_uploaded") {
+      return {
+        id: String(log.id),
+        title: `Document uploaded: ${String(payload.category ?? "Document")}`,
+        detail: String(payload.fileName ?? payload.name ?? "File uploaded to the deal room."),
+        timestamp,
+        tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "email_sent") {
+      return {
+        id: String(log.id),
+        title: `Email sent: ${String(payload.audience ?? "deal lane")}`,
+        detail: `${String(payload.to ?? "recipient")} / ${String(payload.subject ?? "subject")}`,
+        timestamp,
+        tone: "good" as const,
       };
     }
 
@@ -3063,6 +3169,139 @@ export async function saveSellerOutreachDraft(input: SaveSellerOutreachDraftInpu
   return { ok: true as const };
 }
 
+export async function uploadDealDocument(input: UploadDealDocumentInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  await ensureDealDocumentBucket(supabase);
+  const objectPath = getDealDocumentObjectPath({
+    dealId: input.dealId,
+    category: input.category,
+    fileName: input.fileName,
+  });
+
+  const { error: uploadError } = await supabase.storage
+    .from(DEAL_DOCUMENT_BUCKET)
+    .upload(objectPath, input.bytes, {
+      contentType: input.contentType || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    return { ok: false as const, error: uploadError.message };
+  }
+
+  const documentId = `document-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const uploadedAt = new Date().toISOString();
+  const { error: logError } = await supabase.from("disposition_logs").insert({
+    lead_id: input.dealId,
+    action_type: "document_uploaded",
+    payload: {
+      documentId,
+      category: input.category,
+      name: `${input.category} / ${input.fileName}`,
+      fileName: input.fileName,
+      contentType: input.contentType || "application/octet-stream",
+      sizeBytes: input.bytes.byteLength,
+      owner: input.owner,
+      status: input.status,
+      notes: input.notes,
+      source: input.source,
+      storagePath: objectPath,
+      uploadedAt,
+    },
+  });
+
+  if (logError) {
+    return { ok: false as const, error: logError.message };
+  }
+
+  return { ok: true as const, documentId };
+}
+
+export async function downloadDealDocument(dealId: string, documentId: string) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const { data: logs, error } = await supabase
+    .from("disposition_logs")
+    .select("payload")
+    .eq("lead_id", dealId)
+    .eq("action_type", "document_uploaded")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+
+  const payload = (logs ?? [])
+    .map((entry) => (entry && typeof entry === "object" && "payload" in entry ? entry.payload as Record<string, unknown> : null))
+    .find((entry) => String(entry?.documentId ?? "") === documentId);
+
+  if (!payload) {
+    return { ok: false as const, error: "Document not found." };
+  }
+
+  const storagePath = String(payload.storagePath ?? "");
+  if (!storagePath) {
+    return { ok: false as const, error: "Document storage path is missing." };
+  }
+
+  const { data, error: downloadError } = await supabase.storage
+    .from(DEAL_DOCUMENT_BUCKET)
+    .download(storagePath);
+
+  if (downloadError || !data) {
+    return { ok: false as const, error: downloadError?.message ?? "Unable to download document." };
+  }
+
+  return {
+    ok: true as const,
+    data,
+    fileName: String(payload.fileName ?? "document"),
+    contentType: String(payload.contentType ?? "application/octet-stream"),
+  };
+}
+
+export async function sendDealEmail(input: SendDealEmailInput) {
+  if (!isResendConfigured()) {
+    return { ok: false as const, error: "RESEND_API_KEY is not configured for email sending yet." };
+  }
+
+  const sendResult = await sendReconEmail({
+    to: input.to,
+    subject: input.subject,
+    html: `<div style="font-family:Arial,sans-serif;white-space:pre-wrap">${input.body
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")}</div>`,
+  });
+
+  if (!sendResult.ok) {
+    return { ok: false as const, error: sendResult.error ?? "Email send failed." };
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    await supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "email_sent",
+      payload: {
+        audience: input.audience,
+        to: input.to,
+        subject: input.subject,
+        sentAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  return { ok: true as const };
+}
+
 export async function saveDealOutreachExecution(input: SaveDealOutreachExecutionInput) {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
@@ -3197,6 +3436,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     }));
   let sellerDrafts: DealEngineDealDetail["sellerDrafts"] = [];
   let outreachExecutions: DealEngineDealDetail["outreachExecutions"] = [];
+  let uploadedDocuments: DealEngineDealDetail["uploadedDocuments"] = [];
   let investorResponses: DealEngineDealDetail["investorResponses"] = [];
   let operatorTasks: DealEngineDealDetail["operatorTasks"] = [];
   let activityFeed: DealEngineDealDetail["activityFeed"] = [];
@@ -3311,12 +3551,13 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       .from("disposition_logs")
       .select("id,action_type,payload,created_at")
       .eq("lead_id", dealId)
-      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "buyer_search_launched", "seller_draft_saved", "operator_task", "coordination_update", "analysis_update"])
+      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "buyer_search_launched", "seller_draft_saved", "operator_task", "coordination_update", "analysis_update", "outreach_execution_logged", "deal_closeout_recorded", "document_uploaded", "email_sent"])
       .order("created_at", { ascending: false });
     if (dispositionData?.length) {
       const logs = dispositionData as DispositionLogRow[];
       sellerDrafts = parseSellerDrafts(logs);
       outreachExecutions = parseOutreachExecutions(logs);
+      uploadedDocuments = parseUploadedDocuments(logs);
       investorResponses = parseDispositionLogs(logs);
       operatorTasks = parseOperatorTasks(logs);
       activityFeed = buildActivityFeed(logs);
@@ -3370,6 +3611,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     sellerDrafts,
     relatedDrafts,
     outreachExecutions,
+    uploadedDocuments,
     investorResponses,
     operatorTasks,
     activityFeed,

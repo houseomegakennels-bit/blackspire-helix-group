@@ -123,8 +123,17 @@ export function DealEngineDealDetailView({
   const [closeoutFee, setCloseoutFee] = useState(String(detail.closeout?.assignmentFeeCollected ?? ""));
   const [closeoutBuyerName, setCloseoutBuyerName] = useState(detail.closeout?.buyerName ?? "");
   const [closeoutNotes, setCloseoutNotes] = useState(detail.closeout?.notes ?? "");
+  const [documentCategory, setDocumentCategory] = useState("Signed Contract");
+  const [documentStatus, setDocumentStatus] = useState("Received");
+  const [documentOwner, setDocumentOwner] = useState("Blackspire operator");
+  const [documentNotes, setDocumentNotes] = useState("");
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [emailAudience, setEmailAudience] = useState("seller");
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState(detail.sellerOutreach.emailSubject);
+  const [emailBody, setEmailBody] = useState(detail.sellerOutreach.emailBody);
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | "outreach" | "closeout" | null>(null);
+  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | "outreach" | "closeout" | "document" | "email" | null>(null);
 
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
@@ -521,6 +530,65 @@ export function DealEngineDealDetailView({
       router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Deal closeout failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function uploadDocument(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!documentFile) {
+      setStatus("Choose a file before uploading.");
+      return;
+    }
+
+    setWorking("document");
+    setStatus(null);
+    try {
+      const payload = new FormData();
+      payload.set("dealId", dealId);
+      payload.set("category", documentCategory);
+      payload.set("status", documentStatus);
+      payload.set("owner", documentOwner);
+      payload.set("notes", documentNotes);
+      payload.set("source", "internal");
+      payload.set("file", documentFile);
+      const response = await fetch("/api/deal-engine/upload-document", { method: "POST", body: payload });
+      const body = (await response.json()) as { ok?: boolean; error?: string; message?: string };
+      if (!response.ok || !body.ok) throw new Error(body.error ?? "Document upload failed.");
+      setStatus(body.message ?? "Document uploaded.");
+      setDocumentNotes("");
+      setDocumentFile(null);
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Document upload failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function sendEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorking("email");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId,
+          to: emailTo,
+          subject: emailSubject,
+          body: emailBody,
+          audience: emailAudience,
+        }),
+      });
+      const body = (await response.json()) as { ok?: boolean; error?: string; message?: string };
+      if (!response.ok || !body.ok) throw new Error(body.error ?? "Email send failed.");
+      setStatus(body.message ?? "Email sent.");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Email send failed.");
     } finally {
       setWorking(null);
     }
@@ -1248,6 +1316,113 @@ export function DealEngineDealDetailView({
               </div>
             </div>
           </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Documents"
+          title="Upload signed and closing files"
+          description="Store signed contracts, proof of funds, title documents, settlement statements, and other close-table files directly on the deal."
+        >
+          <form onSubmit={uploadDocument} className="grid gap-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <select value={documentCategory} onChange={(event) => setDocumentCategory(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+                <option>Signed Contract</option>
+                <option>Assignment Agreement</option>
+                <option>Proof Of Funds</option>
+                <option>Title Commitment</option>
+                <option>Settlement Statement</option>
+                <option>Closing Disclosure</option>
+                <option>Walkthrough Photos</option>
+                <option>Other</option>
+              </select>
+              <select value={documentStatus} onChange={(event) => setDocumentStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+                <option>Received</option>
+                <option>Reviewed</option>
+                <option>Final</option>
+                <option>Missing</option>
+              </select>
+            </div>
+            <input value={documentOwner} onChange={(event) => setDocumentOwner(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Document owner" />
+            <input type="file" onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)} className="brand-input px-3 py-3 text-sm outline-none" />
+            <textarea value={documentNotes} onChange={(event) => setDocumentNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Notes about the file, signature status, or missing items" />
+            <button type="submit" disabled={!documentFile || working === "document"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "document" ? "Uploading..." : "Upload deal document"}
+            </button>
+          </form>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
+          eyebrow="Document Ledger"
+          title="Saved deal files"
+          description="This is the live file trail for the deal, including public proof-of-funds uploads and internal signed documents."
+        >
+          <div className="space-y-4">
+            {detail.uploadedDocuments.length ? (
+              detail.uploadedDocuments.map((item) => (
+                <div key={item.id} className="brand-card p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-base font-semibold text-white">{item.category}</div>
+                      <div className="mt-1 text-xs text-[var(--copy-muted)]">{item.fileName}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <StatusPill tone="good" label={item.status.toLowerCase()} />
+                      <StatusPill tone="active" label={item.source.toLowerCase()} />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
+                    Owner: {item.owner} {item.sizeBytes ? ` / ${(item.sizeBytes / 1024).toFixed(1)} KB` : ""}
+                  </div>
+                  {item.notes ? <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{item.notes}</div> : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <a href={`/api/deal-engine/document?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(item.id)}`} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition">
+                      Open file
+                    </a>
+                    <div className="text-xs text-[var(--copy-muted)]">{new Date(item.uploadedAt).toLocaleString()}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">
+                No uploaded deal files are attached yet.
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Email Console"
+          title="Send deal emails from inside the workflow"
+          description="Use this for seller or buyer email sends when Resend is configured. This does not use Twilio."
+        >
+          <form onSubmit={sendEmail} className="grid gap-4">
+            <select
+              value={emailAudience}
+              onChange={(event) => {
+                const nextAudience = event.target.value;
+                setEmailAudience(nextAudience);
+                if (nextAudience === "seller") {
+                  setEmailSubject(detail.sellerOutreach.emailSubject);
+                  setEmailBody(detail.sellerOutreach.emailBody);
+                } else {
+                  setEmailSubject(detail.buyerSignals[0]?.outreachSubject ?? `Deal opportunity from ${detail.lead.county} County`);
+                  setEmailBody(detail.packet.buyerEmailBlast);
+                }
+              }}
+              className="brand-input px-3 py-3 text-sm outline-none"
+            >
+              <option value="seller">Seller email</option>
+              <option value="buyer">Buyer email</option>
+            </select>
+            <input value={emailTo} onChange={(event) => setEmailTo(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Recipient email" />
+            <input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Subject" />
+            <textarea value={emailBody} onChange={(event) => setEmailBody(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Email body" />
+            <button type="submit" disabled={!emailTo.trim() || !emailSubject.trim() || !emailBody.trim() || working === "email"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {working === "email" ? "Sending email..." : "Send email"}
+            </button>
+          </form>
         </Panel>
       </div>
 
