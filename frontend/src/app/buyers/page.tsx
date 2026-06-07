@@ -1,11 +1,12 @@
 import { BuyerShell } from "@/components/buyer-shell";
 import { BuyerReportsMonitor } from "@/components/buyer-reports-monitor";
-import { matchBuyerGroup } from "@/lib/buyer-groups";
+import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
 import {
   getLiveCountyCapabilities,
   getBuyerEngineEnvStatus,
   getBuyerEngineRealtimeClientEnv,
   getOperatorShellStatus,
+  listBuyerGroupRegistry,
   getSearchJobById,
   listAllBuyerReports,
   listSearchJobsByIds,
@@ -26,7 +27,7 @@ export default async function BuyersPage({
 
   const env = getBuyerEngineEnvStatus();
   const realtime = getBuyerEngineRealtimeClientEnv();
-  const [countyCapabilities, reportPage, operatorStatus] = env.enabled
+  const [countyCapabilities, reportPage, operatorStatus, buyerGroupRegistry] = env.enabled
     ? await Promise.all([
         getLiveCountyCapabilities(true),
         listAllBuyerReports({ searchJobId, limit: INITIAL_REPORT_LIMIT, offset: 0 }).catch(() => ({
@@ -36,8 +37,9 @@ export default async function BuyersPage({
           offset: 0,
         })),
         getOperatorShellStatus().catch(() => null),
+        listBuyerGroupRegistry(false).catch(() => []),
       ])
-    : [[], { reports: [], total: 0, limit: INITIAL_REPORT_LIMIT, offset: 0 }, null];
+    : [[], { reports: [], total: 0, limit: INITIAL_REPORT_LIMIT, offset: 0 }, null, []];
   const relatedJobs = env.enabled
     ? searchJobId
       ? await getSearchJobById(searchJobId).then((job) => (job ? [job] : [])).catch(() => [])
@@ -70,7 +72,7 @@ export default async function BuyersPage({
     totalSpend: Number(report.total_spend ?? 0),
     isLlc: Boolean(report.is_llc),
     isCashBuyer: Boolean(report.is_cash_buyer),
-    buyerGroupMatch: matchBuyerGroup(report.buyer_name_snapshot),
+    buyerGroupMatch: matchBuyerGroupWithRegistry(report.buyer_name_snapshot, buyerGroupRegistry),
     buyerIdentityNote: (Array.isArray(report.BuyerProfile) ? report.BuyerProfile[0] : report.BuyerProfile)
       ?.score_breakdown?.buyer_identity?.note ?? null,
     createdAt: report.created_at,

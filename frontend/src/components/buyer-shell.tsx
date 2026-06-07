@@ -19,6 +19,7 @@ const navItems = [
   { href: "/workflows", label: "Workflows" },
   { href: "/admin", label: "Admin" },
   { href: "/admin/county-sources", label: "County Sources" },
+  { href: "/admin/buyer-groups", label: "Buyer Groups" },
 ];
 
 export function BuyerShell({

@@ -18,6 +18,13 @@ import {
   type CountyCapability,
   type CountySourceRow,
 } from "@/lib/buyer-engine-data";
+import {
+  listSeedBuyerGroups,
+  matchBuyerGroupWithRegistry,
+  parseBuyerGroupCsv,
+  type BuyerGroupMatch,
+  type BuyerGroupRegistryEntry,
+} from "@/lib/buyer-groups";
 
 export type SearchJobRecord = {
   id: string;
@@ -75,6 +82,20 @@ export type BuyerReportPage = {
   total: number;
   limit: number;
   offset: number;
+};
+
+export type BuyerGroupRegistryRow = {
+  id: string;
+  canonicalName: string;
+  groupType: "hedge_fund_group";
+  aliases: string[];
+  states: string[];
+  counties: string[];
+  website: string | null;
+  notes: string | null;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 type CreateSearchJobInput = {
@@ -196,6 +217,11 @@ function getSupabaseAdmin(): SupabaseClient {
 
 function getDefaultUserId() {
   return process.env.BLACKSPIRE_DEFAULT_USER_ID?.trim() || null;
+}
+
+function isMissingRelationError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes("does not exist") || normalized.includes("could not find the table");
 }
 
 async function getOperatorScope(mode: "read" | "write") {
@@ -771,6 +797,167 @@ export async function toggleCountySourceActive(id: string, active: boolean): Pro
   if (error) {
     throw new Error(error.message);
   }
+}
+
+type BuyerGroupRegistryDbRow = {
+  id: string;
+  canonical_name: string;
+  group_type: string;
+  aliases: unknown;
+  states: unknown;
+  counties: unknown;
+  website: string | null;
+  notes: string | null;
+  active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function mapBuyerGroupRow(row: BuyerGroupRegistryDbRow): BuyerGroupRegistryRow {
+  return {
+    id: row.id,
+    canonicalName: row.canonical_name,
+    groupType: "hedge_fund_group",
+    aliases: asStringArray(row.aliases),
+    states: asStringArray(row.states),
+    counties: asStringArray(row.counties),
+    website: row.website,
+    notes: row.notes,
+    active: row.active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function seedBuyerGroupRows(): BuyerGroupRegistryRow[] {
+  return listSeedBuyerGroups().map((group, index) => ({
+    id: `seed-${index + 1}`,
+    canonicalName: group.canonicalName,
+    groupType: group.groupType,
+    aliases: group.aliases,
+    states: group.states ?? [],
+    counties: group.counties ?? [],
+    website: group.website ?? null,
+    notes: group.notes ?? "Seeded registry fallback entry.",
+    active: group.active ?? true,
+    createdAt: null,
+    updatedAt: null,
+  }));
+}
+
+export async function listBuyerGroupRegistry(includeInactive = true): Promise<BuyerGroupRegistryRow[]> {
+  const env = getEnvState();
+  if (!env.enabled) {
+    const seeds = seedBuyerGroupRows();
+    return includeInactive ? seeds : seeds.filter((row) => row.active);
+  }
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("buyer_group_registry")
+    .select("id,canonical_name,group_type,aliases,states,counties,website,notes,active,created_at,updated_at")
+    .order("canonical_name", { ascending: true });
+
+  if (!includeInactive) {
+    query = query.eq("active", true);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingRelationError(error.message)) {
+      const seeds = seedBuyerGroupRows();
+      return includeInactive ? seeds : seeds.filter((row) => row.active);
+    }
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as BuyerGroupRegistryDbRow[]).map(mapBuyerGroupRow);
+}
+
+export async function importBuyerGroupRegistryCsv(csv: string) {
+  const env = getEnvState();
+  if (!env.enabled) {
+    throw new Error(`Missing Supabase env: ${env.missing.join(", ")}`);
+  }
+
+  const scope = await getOperatorScope("write");
+  if (!scope.operatorId) {
+    throw new Error("Operator identity is required for buyer group imports.");
+  }
+
+  const parsed = parseBuyerGroupCsv(csv);
+  if (!parsed.length) {
+    throw new Error("The import did not contain any valid buyer group rows.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const payload = parsed.map((row) => ({
+    canonical_name: row.canonicalName,
+    group_type: row.groupType,
+    aliases: row.aliases,
+    states: row.states ?? [],
+    counties: row.counties ?? [],
+    website: row.website ?? null,
+    notes: row.notes ?? null,
+    active: row.active ?? true,
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { error } = await supabase
+    .from("buyer_group_registry")
+    .upsert(payload, { onConflict: "canonical_name" });
+
+  if (error) {
+    if (isMissingRelationError(error.message)) {
+      throw new Error("buyer_group_registry table is missing. Apply migration 004_buyer_group_registry.sql first.");
+    }
+    throw new Error(error.message);
+  }
+
+  return {
+    imported: payload.length,
+    total: parsed.length,
+  };
+}
+
+export async function toggleBuyerGroupActive(id: string, active: boolean): Promise<void> {
+  const env = getEnvState();
+  if (!env.enabled) throw new Error("Supabase env not configured.");
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("buyer_group_registry")
+    .update({ active, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) {
+    if (isMissingRelationError(error.message)) {
+      throw new Error("buyer_group_registry table is missing. Apply migration 004_buyer_group_registry.sql first.");
+    }
+    throw new Error(error.message);
+  }
+}
+
+export async function getBuyerGroupMatchForName(buyerName: string | null | undefined): Promise<BuyerGroupMatch | null> {
+  const registryRows = await listBuyerGroupRegistry(false);
+  const registry: BuyerGroupRegistryEntry[] = registryRows.map((row) => ({
+    canonicalName: row.canonicalName,
+    groupType: row.groupType,
+    aliases: row.aliases,
+    states: row.states,
+    counties: row.counties,
+    website: row.website,
+    notes: row.notes,
+    active: row.active,
+  }));
+
+  return matchBuyerGroupWithRegistry(buyerName, registry);
 }
 
 const getCachedCountyCapabilities = unstable_cache(

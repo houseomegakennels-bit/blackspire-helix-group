@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { matchBuyerGroup } from "@/lib/buyer-groups";
+import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
 import {
   getBuyerEngineEnvStatus,
+  listBuyerGroupRegistry,
   listAllBuyerReports,
   getSearchJobById,
   listSearchJobsByIds,
@@ -15,7 +16,10 @@ export async function GET(request: NextRequest) {
     const offsetParam = Number(request.nextUrl.searchParams.get("offset") ?? "0");
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.floor(limitParam), 1), 100) : 20;
     const offset = Number.isFinite(offsetParam) ? Math.max(Math.floor(offsetParam), 0) : 0;
-    const reportPage = await listAllBuyerReports({ searchJobId, limit, offset });
+    const [reportPage, buyerGroupRegistry] = await Promise.all([
+      listAllBuyerReports({ searchJobId, limit, offset }),
+      listBuyerGroupRegistry(false).catch(() => []),
+    ]);
     const jobs = searchJobId
       ? await getSearchJobById(searchJobId).then((job) => (job ? [job] : [])).catch(() => [])
       : await listSearchJobsByIds(
@@ -40,7 +44,7 @@ export async function GET(request: NextRequest) {
       reports: reportPage.reports.map((report) => ({
         ...report,
         search_job: report.search_job_id ? (jobMap[report.search_job_id] ?? null) : null,
-        buyer_group_match: matchBuyerGroup(report.buyer_name_snapshot),
+        buyer_group_match: matchBuyerGroupWithRegistry(report.buyer_name_snapshot, buyerGroupRegistry),
       })),
       total: reportPage.total,
       limit: reportPage.limit,

@@ -1,11 +1,12 @@
 import { after, NextResponse } from "next/server";
 import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
-import { matchBuyerGroup } from "@/lib/buyer-groups";
+import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
 
 import {
   listBuyerReports,
   createSearchJob,
   getBuyerEngineEnvStatus,
+  listBuyerGroupRegistry,
   listSearchJobs,
   triggerBuyerEngineWorkflow,
 } from "@/lib/buyer-engine-server";
@@ -14,9 +15,10 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const highlight = searchParams.get("highlight");
-    const [jobs, highlightedReports] = await Promise.all([
+    const [jobs, highlightedReports, buyerGroupRegistry] = await Promise.all([
       listSearchJobs(),
       highlight ? listBuyerReports(highlight).catch(() => []) : Promise.resolve([]),
+      listBuyerGroupRegistry(false).catch(() => []),
     ]);
     return NextResponse.json({
       ok: true,
@@ -24,7 +26,7 @@ export async function GET(request: Request) {
       highlightedJobId: highlight,
       highlightedReports: highlightedReports.map((report) => ({
         ...report,
-        buyer_group_match: matchBuyerGroup(report.buyer_name_snapshot),
+        buyer_group_match: matchBuyerGroupWithRegistry(report.buyer_name_snapshot, buyerGroupRegistry),
       })),
       env: getBuyerEngineEnvStatus(),
     });

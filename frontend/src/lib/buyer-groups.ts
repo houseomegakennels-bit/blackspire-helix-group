@@ -1,5 +1,16 @@
 export type BuyerGroupType = "hedge_fund_group";
 
+export type BuyerGroupRegistryEntry = {
+  canonicalName: string;
+  groupType: BuyerGroupType;
+  aliases: string[];
+  states?: string[];
+  counties?: string[];
+  website?: string | null;
+  notes?: string | null;
+  active?: boolean;
+};
+
 export type BuyerGroupMatch = {
   canonicalName: string;
   groupType: BuyerGroupType;
@@ -8,11 +19,7 @@ export type BuyerGroupMatch = {
   note: string;
 };
 
-type BuyerGroupSeed = {
-  canonicalName: string;
-  groupType: BuyerGroupType;
-  aliases: string[];
-};
+type BuyerGroupSeed = BuyerGroupRegistryEntry;
 
 const LEGAL_SUFFIXES = [
   "llc",
@@ -107,13 +114,16 @@ function buildComparableNames(name: string) {
   return [...new Set([normalized, simplified].filter(Boolean))];
 }
 
-export function matchBuyerGroup(buyerName: string | null | undefined): BuyerGroupMatch | null {
+export function matchBuyerGroupWithRegistry(
+  buyerName: string | null | undefined,
+  registry: BuyerGroupRegistryEntry[],
+): BuyerGroupMatch | null {
   if (!buyerName) return null;
 
   const comparableNames = buildComparableNames(buyerName);
   if (!comparableNames.length) return null;
 
-  for (const group of BUYER_GROUP_SEEDS) {
+  for (const group of registry.filter((entry) => entry.active !== false)) {
     for (const alias of group.aliases) {
       const comparableAliases = buildComparableNames(alias);
       for (const comparableAlias of comparableAliases) {
@@ -147,10 +157,108 @@ export function matchBuyerGroup(buyerName: string | null | undefined): BuyerGrou
   return null;
 }
 
+export function matchBuyerGroup(buyerName: string | null | undefined): BuyerGroupMatch | null {
+  return matchBuyerGroupWithRegistry(buyerName, BUYER_GROUP_SEEDS);
+}
+
 export function listSeedBuyerGroups() {
   return BUYER_GROUP_SEEDS.map((group) => ({
     canonicalName: group.canonicalName,
     groupType: group.groupType,
     aliases: [...group.aliases],
+    states: [...(group.states ?? [])],
+    counties: [...(group.counties ?? [])],
+    website: group.website ?? null,
+    notes: group.notes ?? null,
+    active: group.active ?? true,
   }));
+}
+
+function splitMultiValue(value: string) {
+  return value
+    .split(/[|;,]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function parseBuyerGroupCsv(csv: string): BuyerGroupRegistryEntry[] {
+  const rows: string[][] = [];
+  let currentField = "";
+  let currentRow: string[] = [];
+  let inQuotes = false;
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index];
+    const next = csv[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        currentField += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === ",") {
+      currentRow.push(currentField);
+      currentField = "";
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") index += 1;
+      currentRow.push(currentField);
+      if (currentRow.some((field) => field.trim().length)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = "";
+      continue;
+    }
+
+    currentField += char;
+  }
+
+  if (currentField.length || currentRow.length) {
+    currentRow.push(currentField);
+    if (currentRow.some((field) => field.trim().length)) {
+      rows.push(currentRow);
+    }
+  }
+
+  if (!rows.length) return [];
+
+  const headers = rows[0].map((header) => header.trim().toLowerCase());
+
+  return rows.slice(1).map((row) => {
+    const get = (...keys: string[]) => {
+      for (const key of keys) {
+        const index = headers.indexOf(key);
+        if (index >= 0) return String(row[index] ?? "").trim();
+      }
+      return "";
+    };
+
+    const canonicalName = get("canonical_name", "canonical name", "name");
+    const aliasField = get("aliases", "alias", "entity_aliases", "entity aliases");
+    const aliases = [...new Set([canonicalName, ...splitMultiValue(aliasField)])].filter(Boolean);
+    const groupTypeValue = get("group_type", "group type").toLowerCase();
+    const groupType: BuyerGroupType = groupTypeValue === "hedge_fund_group" || !groupTypeValue
+      ? "hedge_fund_group"
+      : "hedge_fund_group";
+    const activeValue = get("active", "status").toLowerCase();
+
+    return {
+      canonicalName,
+      groupType,
+      aliases,
+      states: splitMultiValue(get("states", "state")),
+      counties: splitMultiValue(get("counties", "county", "markets")),
+      website: get("website", "url") || null,
+      notes: get("notes", "note") || null,
+      active: activeValue ? !["false", "0", "inactive", "no"].includes(activeValue) : true,
+    };
+  }).filter((entry) => entry.canonicalName && entry.aliases.length);
 }

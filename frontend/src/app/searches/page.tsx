@@ -1,11 +1,12 @@
 import { BuyerShell } from "@/components/buyer-shell";
 import { SearchJobsMonitor } from "@/components/search-jobs-monitor";
-import { matchBuyerGroup } from "@/lib/buyer-groups";
+import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
 import {
   getLiveCountyCapabilities,
   getBuyerEngineEnvStatus,
   getBuyerEngineRealtimeClientEnv,
   getOperatorShellStatus,
+  listBuyerGroupRegistry,
   listBuyerReports,
   listSearchJobs,
 } from "@/lib/buyer-engine-server";
@@ -23,14 +24,15 @@ export default async function SearchJobsPage({
 
   const env = getBuyerEngineEnvStatus();
   const realtime = getBuyerEngineRealtimeClientEnv();
-  const [countyCapabilities, liveJobs, highlightedReportRows, operatorStatus] = env.enabled
+  const [countyCapabilities, liveJobs, highlightedReportRows, operatorStatus, buyerGroupRegistry] = env.enabled
     ? await Promise.all([
         getLiveCountyCapabilities(true),
         listSearchJobs().catch(() => []),
         highlightedJobId ? listBuyerReports(highlightedJobId).catch(() => []) : Promise.resolve([]),
         getOperatorShellStatus().catch(() => null),
+        listBuyerGroupRegistry(false).catch(() => []),
       ])
-    : [[], [], [], null];
+    : [[], [], [], null, []];
   // Real operator-scoped jobs only — no sample/reference fallback. An empty
   // array renders the monitor's genuine empty state instead of fake data.
   const jobs = liveJobs.map((job) => ({
@@ -55,7 +57,7 @@ export default async function SearchJobsPage({
         totalSpend: Number(report.total_spend ?? 0),
         isLlc: Boolean(report.is_llc),
         isCashBuyer: Boolean(report.is_cash_buyer),
-        buyerGroupMatch: matchBuyerGroup(report.buyer_name_snapshot),
+        buyerGroupMatch: matchBuyerGroupWithRegistry(report.buyer_name_snapshot, buyerGroupRegistry),
         buyerIdentityNote: (Array.isArray(report.BuyerProfile) ? report.BuyerProfile[0] : report.BuyerProfile)
           ?.score_breakdown?.buyer_identity?.note ?? null,
       }))
