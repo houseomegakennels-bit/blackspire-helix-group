@@ -76,50 +76,56 @@ export function NexusHome({ snapshot }: { snapshot: NexusSnapshot }) {
       </section>
 
       <Panel eyebrow="Lead Queue" title="Hot leads awaiting enrichment" description="These are the highest-priority seller records waiting on Nexus before they should become acquisition-ready.">
-        <div className="space-y-4">
-          {homeLeads.map((lead) => (
-            <div key={lead.id} className="brand-card p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-lg font-semibold text-white">{lead.property}</div>
-                  <div className="mt-1 text-sm text-[var(--copy-soft)]">{lead.owner} / {lead.county} County</div>
+        {homeLeads.length ? (
+          <div className="space-y-4">
+            {homeLeads.map((lead) => (
+              <div key={lead.id} className="brand-card p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-semibold text-white">{lead.property}</div>
+                    <div className="mt-1 text-sm text-[var(--copy-soft)]">{lead.owner} / {lead.county} County</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill tone={lead.eligibleForAutoTrace ? "good" : "warn"} label={lead.eligibleForAutoTrace ? "auto-eligible" : "manual review"} />
+                    <StatusPill tone={/queued|needed/i.test(lead.skipTraceStatus) ? "warn" : "good"} label={lead.skipTraceStatus.toLowerCase()} />
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <StatusPill tone={lead.eligibleForAutoTrace ? "good" : "warn"} label={lead.eligibleForAutoTrace ? "auto-eligible" : "manual review"} />
-                  <StatusPill tone={/queued|needed/i.test(lead.skipTraceStatus) ? "warn" : "good"} label={lead.skipTraceStatus.toLowerCase()} />
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Seller score</div>
+                    <div className="mt-2 text-lg font-semibold text-white">{lead.sellerScore}</div>
+                  </div>
+                  <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Primary phone</div>
+                    <div className="mt-2 text-sm text-[var(--copy-soft)]">{lead.primaryPhone}</div>
+                  </div>
+                  <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Primary email</div>
+                    <div className="mt-2 text-sm text-[var(--copy-soft)]">{lead.primaryEmail}</div>
+                  </div>
+                  <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Confidence</div>
+                    <div className="mt-2 text-lg font-semibold text-white">{lead.confidence}</div>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <NexusTraceAction
+                    leadId={lead.id}
+                    currentPhone={lead.primaryPhone}
+                    currentEmail={lead.primaryEmail}
+                    currentStatus={lead.skipTraceStatus}
+                    contactProfileHref={`/workspaces/nexus/contacts?lead=${encodeURIComponent(lead.id)}`}
+                    compact
+                  />
                 </div>
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
-                  <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Seller score</div>
-                  <div className="mt-2 text-lg font-semibold text-white">{lead.sellerScore}</div>
-                </div>
-                <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
-                  <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Primary phone</div>
-                  <div className="mt-2 text-sm text-[var(--copy-soft)]">{lead.primaryPhone}</div>
-                </div>
-                <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
-                  <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Primary email</div>
-                  <div className="mt-2 text-sm text-[var(--copy-soft)]">{lead.primaryEmail}</div>
-                </div>
-                <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
-                  <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Confidence</div>
-                  <div className="mt-2 text-lg font-semibold text-white">{lead.confidence}</div>
-                </div>
-              </div>
-              <div className="mt-4">
-                <NexusTraceAction
-                  leadId={lead.id}
-                  currentPhone={lead.primaryPhone}
-                  currentEmail={lead.primaryEmail}
-                  currentStatus={lead.skipTraceStatus}
-                  contactProfileHref={`/workspaces/nexus/contacts?lead=${encodeURIComponent(lead.id)}`}
-                  compact
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
+            No live seller leads are queued in Nexus right now.
+          </div>
+        )}
       </Panel>
 
       {dealHandoffs.length ? (

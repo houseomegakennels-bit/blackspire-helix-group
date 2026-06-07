@@ -842,7 +842,12 @@ export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | 
     toStatus: (event as SellerLeadStatusHistoryRow).to_status,
     createdAt: (event as SellerLeadStatusHistoryRow).created_at,
   }));
-  lead.relatedDealId = dealResult.data?.id ? String(dealResult.data.id) : null;
+  const missingDealTable = Boolean(dealResult.error && /deal_leads/i.test(dealResult.error.message));
+  lead.relatedDealId = dealResult.data?.id
+    ? String(dealResult.data.id)
+    : missingDealTable && lead.status === "Sent to Deal Engine"
+      ? lead.id
+      : null;
 
   return lead;
 }
