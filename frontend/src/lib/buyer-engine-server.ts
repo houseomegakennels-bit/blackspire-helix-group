@@ -851,6 +851,52 @@ function seedBuyerGroupRows(): BuyerGroupRegistryRow[] {
   }));
 }
 
+function buildBuyerGroupRegistryUpsertPayload(entries: BuyerGroupRegistryEntry[]) {
+  return entries.map((row) => ({
+    canonical_name: row.canonicalName,
+    group_type: row.groupType,
+    aliases: row.aliases,
+    states: row.states ?? [],
+    counties: row.counties ?? [],
+    website: row.website ?? null,
+    notes: row.notes ?? null,
+    active: row.active ?? true,
+    updated_at: new Date().toISOString(),
+  }));
+}
+
+async function ensureBuyerGroupRegistrySeeded(
+  supabase: SupabaseClient,
+  existingRows: BuyerGroupRegistryDbRow[],
+): Promise<BuyerGroupRegistryDbRow[]> {
+  if (existingRows.length) {
+    return existingRows;
+  }
+
+  const payload = buildBuyerGroupRegistryUpsertPayload(listSeedBuyerGroups());
+  const { error: upsertError } = await supabase
+    .from("buyer_group_registry")
+    .upsert(payload, { onConflict: "canonical_name" });
+
+  if (upsertError) {
+    if (isMissingRelationError(upsertError.message)) {
+      throw new Error("buyer_group_registry table is missing. Apply migration 004_buyer_group_registry.sql first.");
+    }
+    throw new Error(upsertError.message);
+  }
+
+  const { data: seededData, error: seededError } = await supabase
+    .from("buyer_group_registry")
+    .select("id,canonical_name,group_type,aliases,states,counties,website,notes,active,created_at,updated_at")
+    .order("canonical_name", { ascending: true });
+
+  if (seededError) {
+    throw new Error(seededError.message);
+  }
+
+  return (seededData ?? []) as BuyerGroupRegistryDbRow[];
+}
+
 export async function listBuyerGroupRegistry(includeInactive = true): Promise<BuyerGroupRegistryRow[]> {
   const env = getEnvState();
   if (!env.enabled) {
@@ -877,7 +923,13 @@ export async function listBuyerGroupRegistry(includeInactive = true): Promise<Bu
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as BuyerGroupRegistryDbRow[]).map(mapBuyerGroupRow);
+  const resolvedRows = await ensureBuyerGroupRegistrySeeded(
+    supabase,
+    (data ?? []) as BuyerGroupRegistryDbRow[],
+  );
+
+  const mappedRows = resolvedRows.map(mapBuyerGroupRow);
+  return includeInactive ? mappedRows : mappedRows.filter((row) => row.active);
 }
 
 export async function importBuyerGroupRegistryCsv(csv: string) {
@@ -897,17 +949,7 @@ export async function importBuyerGroupRegistryCsv(csv: string) {
   }
 
   const supabase = getSupabaseAdmin();
-  const payload = parsed.map((row) => ({
-    canonical_name: row.canonicalName,
-    group_type: row.groupType,
-    aliases: row.aliases,
-    states: row.states ?? [],
-    counties: row.counties ?? [],
-    website: row.website ?? null,
-    notes: row.notes ?? null,
-    active: row.active ?? true,
-    updated_at: new Date().toISOString(),
-  }));
+  const payload = buildBuyerGroupRegistryUpsertPayload(parsed);
 
   const { error } = await supabase
     .from("buyer_group_registry")

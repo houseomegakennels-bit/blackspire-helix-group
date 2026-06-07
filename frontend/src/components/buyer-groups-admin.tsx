@@ -108,7 +108,7 @@ export function BuyerGroupsAdmin({
       <Panel
         eyebrow="Buyer Groups"
         title="Institutional buyer registry"
-        description="Manage hedge fund group aliases separately from county sale parsing. Buyer search still discovers activity from county data; this registry adds identity enrichment and filtering."
+        description="Manage hedge fund group aliases separately from county sale parsing. Buyer search still discovers activity from county data; this registry adds identity enrichment and filtering. If the live registry table exists but is empty, Buyer Engine now auto-seeds the default institutional groups on first read."
       >
         <div className="grid gap-3 md:grid-cols-3">
           <div className="brand-card px-4 py-3">
