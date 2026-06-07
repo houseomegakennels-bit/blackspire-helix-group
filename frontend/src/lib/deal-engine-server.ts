@@ -139,6 +139,16 @@ export type DealEngineDealDetail = {
     dealRating: string;
     missingInputs: string[];
     readyForContract: boolean;
+    compliance: {
+      strategy: string;
+      disclosureHeadline: string;
+      licenseNote: string;
+      marketingRule: string;
+      earnestMoneyRule: string;
+      cancellationRule: string;
+      contractWarnings: string[];
+      checklist: string[];
+    };
   };
   sellerSignal: DealEngineSellerSignal | null;
   sellerContact: {
@@ -1037,6 +1047,7 @@ function buildUnderwritingSnapshot(
         : "Yellow Deal");
 
   const readyForContract = missingInputs.length === 0 && maximumAllowableOffer > 0;
+  const compliance = buildWholesalingComplianceSnapshot(lead.exitStrategy);
 
   return {
     estimatedArv,
@@ -1054,6 +1065,32 @@ function buildUnderwritingSnapshot(
     dealRating,
     missingInputs,
     readyForContract,
+    compliance,
+  };
+}
+
+function buildWholesalingComplianceSnapshot(exitStrategy: string) {
+  return {
+    strategy: /assign/i.test(exitStrategy)
+      ? "Assignment-first wholesale posture"
+      : "Wholesale deal requiring assignment/direct-close review",
+    disclosureHeadline: "Use a written equitable-interest disclosure in the seller-facing contract lane.",
+    licenseNote: "Check current state wholesaling license or registration rules before repeated assignment activity.",
+    marketingRule: "Do not advertise the property as if Blackspire owns it; market the contract or equitable interest only.",
+    earnestMoneyRule: "Keep earnest money with title or escrow and define how deposit credit/replacement works after assignment.",
+    cancellationRule: "Confirm whether the state requires a seller rescission or cancellation notice before sending the agreement.",
+    contractWarnings: [
+      "Disclose that Blackspire is selling or assigning equitable interest, not marketing as the property owner.",
+      "Verify the purchase agreement expressly permits assignment or use a compliant direct-close structure before outreach.",
+      "Confirm state-specific seller disclosure and cancellation language before sending any agreement for signature.",
+    ],
+    checklist: [
+      "Give a clear written wholesaler disclosure to the seller before contract execution.",
+      "Market only the contract or equitable interest, not the property as if Blackspire owns it.",
+      "Keep earnest money instructions tied to title or escrow and document how deposits move after assignment.",
+      "Verify whether the state requires licensing, registration, or rescission language for this wholesale structure.",
+      "Have the final purchase agreement reviewed against current state law before signature.",
+    ],
   };
 }
 
@@ -1079,7 +1116,7 @@ function buildDealAutomationWorkflow(
       id: `${detail.lead.id}-workflow-underwrite`,
       title: "Complete underwriting inputs",
       detail: underwritingReady
-        ? `Underwriting is live. MAO is ${formatCurrency(detail.underwriting.maximumAllowableOffer)} with rating ${detail.underwriting.dealRating}.`
+        ? `Underwriting is live. MAO is ${formatCurrency(detail.underwriting.maximumAllowableOffer)} with rating ${detail.underwriting.dealRating}. Compliance lane: ${detail.underwriting.compliance.disclosureHeadline}`
         : `Still missing: ${detail.underwriting.missingInputs.join("; ")}.`,
       status: underwritingReady ? "ready" : "active",
     },
@@ -1090,7 +1127,7 @@ function buildDealAutomationWorkflow(
         ? "Contract has been sent and signed. Keep title and assignment moving."
         : detail.coordination.contractSent
           ? "Contract is marked sent. Next move is signature collection and title cadence."
-          : "Use the contract console after underwriting is complete to set pricing and earnest money.",
+          : `Use the contract console after underwriting is complete to set pricing, earnest money, and seller disclosure language.`,
       status: underwritingReady ? (contractReady ? "ready" : "active") : "blocked",
     },
     {
@@ -2358,6 +2395,7 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
 
   const purchaseTarget = Math.round((input.offerLow + input.offerHigh) / 2);
   const offerMade = input.offerHigh > 0;
+  const complianceSummary = buildWholesalingComplianceSnapshot(input.contractType);
 
   const [contractUpdate, analysisUpdate, conversationUpdate, logInsert] = await Promise.all([
     supabase
@@ -2392,6 +2430,7 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
         offerLow: input.offerLow,
         offerHigh: input.offerHigh,
         earnestMoney: input.earnestMoney,
+        complianceSummary,
         summary: `${input.contractType} / ${formatCurrency(input.offerLow)} to ${formatCurrency(input.offerHigh)} / earnest ${formatCurrency(input.earnestMoney)}`,
         updatedAt: new Date().toISOString(),
       },
@@ -2440,6 +2479,13 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
     : maximumAllowableOffer > 0 && wholesaleSpread >= assignmentFeeTarget
       ? "Green Deal"
       : "Yellow Deal";
+  const complianceChecklist = [
+    "Use written equitable-interest disclosure with the seller.",
+    "Verify assignment is expressly allowed before marketing the deal.",
+    "Keep earnest money routed through title or escrow.",
+    "Check state-specific cancellation and licensing rules before contract send.",
+  ];
+  const compliance = buildWholesalingComplianceSnapshot("Assignable purchase agreement");
   const nextAction = missingInputs.length
     ? "Finish underwriting inputs before setting final contract posture."
     : `Underwriting complete. Review MAO ${formatCurrency(maximumAllowableOffer)}, confirm seller terms, and save the contract posture.`;
@@ -2510,6 +2556,7 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
         wholesaleSpread,
         dealRating,
         missingInputs,
+        complianceChecklist,
         nextAction,
         updatedAt: new Date().toISOString(),
       },
@@ -2545,6 +2592,7 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
       dealRating,
       missingInputs,
       readyForContract: missingInputs.length === 0 && maximumAllowableOffer > 0,
+      compliance,
     },
   };
 }

@@ -683,6 +683,9 @@ export function DealEngineDealDetailView({
               <Link href={`/workspace/deal-engine/${encodeURIComponent(dealId)}/packet`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                 Open packet view
               </Link>
+              <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/contract`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
+                Open contract draft
+              </a>
               <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/packet`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                 Download PDF packet
               </a>
@@ -768,6 +771,31 @@ export function DealEngineDealDetailView({
                 </div>
               </div>
             ) : null}
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Compliance Lane"
+          title="Wholesale guardrails attached to underwriting"
+          description="These rules now travel with the deal so underwriting and contract drafting stay inside the wholesale structure instead of drifting into risky language."
+        >
+          <div className="space-y-3 text-sm text-[var(--copy-soft)]">
+            <div>Strategy: <span className="font-semibold text-white">{detail.underwriting.compliance.strategy}</span></div>
+            <div>Disclosure: <span className="font-semibold text-white">{detail.underwriting.compliance.disclosureHeadline}</span></div>
+            <div>Marketing rule: <span className="font-semibold text-white">{detail.underwriting.compliance.marketingRule}</span></div>
+            <div>Earnest money: <span className="font-semibold text-white">{detail.underwriting.compliance.earnestMoneyRule}</span></div>
+            <div>Cancellation review: <span className="font-semibold text-white">{detail.underwriting.compliance.cancellationRule}</span></div>
+            <div>Licensing review: <span className="font-semibold text-white">{detail.underwriting.compliance.licenseNote}</span></div>
+            <div className="pt-3">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Contract warnings</div>
+              <div className="mt-2 space-y-2">
+                {detail.underwriting.compliance.contractWarnings.map((item) => (
+                  <div key={item} className="rounded-[14px] border border-[var(--line)] px-3 py-3 text-sm text-[var(--copy-soft)]">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </Panel>
       </div>
@@ -1227,7 +1255,7 @@ export function DealEngineDealDetailView({
         <Panel
           eyebrow="Underwriting Console"
           title="Capture the real analysis inputs"
-          description="Enter live numbers here first. The contract lane should inherit from real underwriting instead of placeholder assumptions."
+          description="Enter live numbers here first. The contract lane should inherit from real underwriting instead of placeholder assumptions, and the wholesale compliance lane should be reviewed before paper goes out."
         >
           <form onSubmit={saveAnalysis} className="grid gap-4">
             <div className="grid gap-3 md:grid-cols-2">
@@ -1256,8 +1284,26 @@ export function DealEngineDealDetailView({
         <Panel
           eyebrow="Contract Console"
           title="Save underwriting and terms"
-          description="After underwriting is complete, adjust the contract lane here and push the updated posture back into Deal Engine tables."
+          description="After underwriting is complete, adjust the contract lane here and push the updated posture back into Deal Engine tables with the wholesale disclosure guardrails intact."
         >
+          <div className="brand-card mb-4 p-4 text-sm leading-6 text-[var(--copy-soft)]">
+            Build the live contract draft from this deal record after you save the latest terms.
+            <div className="mt-3">
+              <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/contract`} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition">
+                Open contract PDF
+              </a>
+            </div>
+          </div>
+          <div className="brand-card mb-4 p-4 text-sm leading-6 text-[var(--copy-soft)]">
+            Before sending:
+            <div className="mt-3 space-y-2">
+              {detail.underwriting.compliance.checklist.map((item) => (
+                <div key={item} className="rounded-[14px] border border-[var(--line)] px-3 py-3">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
           <form onSubmit={saveContract} className="grid gap-4">
             <input value={contractType} onChange={(event) => setContractType(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Contract type" />
             <div className="grid gap-3 md:grid-cols-3">
