@@ -3,18 +3,12 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import {
-  dealEngineBuyerSignals as fallbackBuyerSignals,
-  dealEngineContractDrafts as fallbackContractDrafts,
-  dealEngineLeads as fallbackLeads,
-  dealEngineMetrics as fallbackMetrics,
-  dealEngineSellerSignals as fallbackSellerSignals,
   type DealEngineBuyerSignal,
   type DealEngineContractDraft,
   type DealEngineLead,
   type DealEngineSellerSignal,
 } from "@/lib/deal-engine";
 import type { SellerLeadView } from "@/lib/seller-engine-demo";
-import { DEMO_SELLER_LEADS } from "@/lib/seller-engine-demo";
 import { listSellerLeads, updateSellerLead } from "@/lib/seller-engine-server";
 import {
   listAllBuyerReports,
@@ -105,7 +99,11 @@ export type DealEngineMetric = {
 
 export type DealEngineWorkspaceSnapshot = {
   env: EnvState;
-  usingFallback: boolean;
+  persistence: {
+    ready: boolean;
+    mode: "live" | "schema-missing" | "env-missing";
+    detail: string;
+  };
   leads: DealEngineLead[];
   metrics: DealEngineMetric[];
   heroSignals: string[];
@@ -365,7 +363,30 @@ function toLead(row: DealLeadJoin): DealEngineLead {
 }
 
 function buildMetrics(leads: DealEngineLead[]) {
-  if (!leads.length) return [...fallbackMetrics];
+  if (!leads.length) {
+    return [
+      {
+        label: "Qualified Leads In Command",
+        value: "00",
+        detail: "No live Deal Engine records are stored yet.",
+      },
+      {
+        label: "Offers Ready",
+        value: "00",
+        detail: "No live deals are currently in offer-ready status.",
+      },
+      {
+        label: "Negotiating",
+        value: "00",
+        detail: "No live acquisition conversations are active right now.",
+      },
+      {
+        label: "Projected Assignment Fees",
+        value: formatCurrency(0),
+        detail: "Projected fee volume will populate from live deal records only.",
+      },
+    ] satisfies DealEngineMetric[];
+  }
 
   const offerReadyCount = leads.filter((lead) => lead.status === "Offer Ready").length;
   const negotiatingCount = leads.filter((lead) => lead.status === "Negotiating").length;
@@ -417,7 +438,7 @@ function toSellerSignal(lead: SellerLeadView): DealEngineSellerSignal {
   };
 }
 
-function toDealLeadFromSeller(lead: SellerLeadView): DealEngineLead {
+function toDealLeadFromSellerHandoff(lead: SellerLeadView): DealEngineLead {
   const maoBase = lead.estimatedEquity || lead.assessedValue || 0;
   const mao = maoBase ? Math.round(maoBase * 0.72) : 0;
   const assignmentFee = lead.score >= 80 ? 18000 : lead.score >= 65 ? 12000 : 7500;
@@ -432,7 +453,7 @@ function toDealLeadFromSeller(lead: SellerLeadView): DealEngineLead {
     contactEnrichmentNotes: lead.contactEnrichmentNotes,
     propertyAddress: [lead.propertyAddress, [lead.city, lead.state, lead.zipCode].filter(Boolean).join(" ")].filter(Boolean).join(", "),
     county: lead.county,
-    status: lead.ownerPhone || lead.ownerEmail ? "Contact Ready" : lead.status,
+    status: lead.status,
     motivationScore: lead.score,
     mao: mao ? formatCurrency(mao) : "TBD",
     assignmentFee: formatCurrency(assignmentFee),
@@ -441,6 +462,11 @@ function toDealLeadFromSeller(lead: SellerLeadView): DealEngineLead {
       : "Wholesale to local investor buyer pool",
     nextAction: lead.recommendedAction,
   };
+}
+
+function isMissingDealTableError(error: { code?: string | null; message?: string | null } | null | undefined) {
+  if (!error) return false;
+  return error.code === "PGRST205" || /deal_leads|seller_conversations|buyer_matches|deal_analysis|contracts|deal_packets|deal_rooms|disposition_logs/i.test(error.message ?? "");
 }
 
 function toBuyerReportView(report: BuyerReportRecord, jobs: SearchJobRecord[]): BuyerReportView {
@@ -499,7 +525,7 @@ function buildContractDrafts(
   sellerSignals: DealEngineSellerSignal[],
   buyerSignals: DealEngineBuyerSignal[],
 ) {
-  if (!leads.length) return [...fallbackContractDrafts];
+  if (!leads.length) return [];
 
   return leads.slice(0, 3).map((lead) => {
     const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
@@ -541,32 +567,56 @@ export function getDealEngineEnvStatus() {
   return getEnvState();
 }
 
+async function getDealEnginePersistenceStatus() {
+  const env = getEnvState();
+  if (!env.enabled) {
+    return {
+      ready: false,
+      mode: "env-missing" as const,
+      detail: `Missing env: ${env.missing.join(", ")}`,
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return {
+      ready: false,
+      mode: "env-missing" as const,
+      detail: `Missing env: ${env.missing.join(", ")}`,
+    };
+  }
+
+  const { error } = await supabase
+    .from("deal_leads")
+    .select("id")
+    .limit(1);
+
+  if (isMissingDealTableError(error)) {
+    return {
+      ready: false,
+      mode: "schema-missing" as const,
+      detail: "Deal Engine migration is not applied yet. Live persistence tables are missing.",
+    };
+  }
+
+  return {
+    ready: true,
+    mode: "live" as const,
+    detail: "Deal Engine persistence tables are available for live reads and writes.",
+  };
+}
+
 export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> {
   const supabase = getSupabaseAdmin();
-  if (!supabase) return fallbackLeads.slice(0, limit);
-
-  const sellerFallback = async () => {
+  const sellerHandoffFallback = async () => {
     const sellerLeads = await listSellerLeads().catch(() => []);
-    const handoffs = sellerLeads
-      .filter((lead) => lead.status !== "Dead Lead")
-      .sort((left, right) => {
-        const leftReady = left.ownerPhone || left.ownerEmail ? 1 : 0;
-        const rightReady = right.ownerPhone || right.ownerEmail ? 1 : 0;
-        if (leftReady !== rightReady) return rightReady - leftReady;
-        return right.score - left.score;
-      })
-      .map(toDealLeadFromSeller);
-
-    const seenAddresses = new Set<string>();
-    const merged = [...handoffs, ...fallbackLeads].filter((lead) => {
-      const key = normalizeAddressMatch(lead.propertyAddress);
-      if (!key || seenAddresses.has(key)) return false;
-      seenAddresses.add(key);
-      return true;
-    });
-
-    return merged.length ? merged.slice(0, limit) : fallbackLeads.slice(0, limit);
+    return sellerLeads
+      .filter((lead) => lead.status === "Sent to Deal Engine")
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map(toDealLeadFromSellerHandoff);
   };
+  if (!supabase) return sellerHandoffFallback();
 
   const { data, error } = await supabase
     .from("deal_leads")
@@ -576,7 +626,8 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
     .order("motivation_score", { ascending: false })
     .limit(limit);
 
-  if (error || !data?.length) return sellerFallback();
+  if (isMissingDealTableError(error)) return sellerHandoffFallback();
+  if (error || !data?.length) return [];
   return (data as unknown as DealLeadJoin[]).map(toLead);
 }
 
@@ -588,26 +639,19 @@ export async function listDealEngineSellerSignals(limit = 4): Promise<DealEngine
       .sort((left, right) => right.score - left.score)
       .slice(0, limit)
       .map(toSellerSignal);
-    return prioritized.length ? prioritized : fallbackSellerSignals.slice(0, limit);
+    return prioritized;
   } catch {
-    return (DEMO_SELLER_LEADS.length ? DEMO_SELLER_LEADS : fallbackSellerSignals)
-      .slice(0, limit)
-      .map((lead) =>
-        "summary" in lead
-          ? toSellerSignal(lead as SellerLeadView)
-          : fallbackSellerSignals[0],
-      )
-      .filter((lead): lead is DealEngineSellerSignal => Boolean(lead));
+    return [];
   }
 }
 
 export async function listDealEngineBuyerSignals(limit = 4): Promise<DealEngineBuyerSignal[]> {
   const env = getEnvState();
-  if (!env.enabled) return fallbackBuyerSignals.slice(0, limit);
+  if (!env.enabled) return [];
 
   try {
     const reportPage = await listAllBuyerReports({ limit: Math.max(limit * 3, 12), offset: 0 });
-    if (!reportPage.reports.length) return fallbackBuyerSignals.slice(0, limit);
+    if (!reportPage.reports.length) return [];
 
     const jobs = await listSearchJobsByIds(
       reportPage.reports
@@ -625,9 +669,9 @@ export async function listDealEngineBuyerSignals(limit = 4): Promise<DealEngineB
       .sort((left, right) => right.score - left.score)
       .slice(0, limit);
 
-    return signals.length ? signals : fallbackBuyerSignals.slice(0, limit);
+    return signals;
   } catch {
-    return fallbackBuyerSignals.slice(0, limit);
+    return [];
   }
 }
 
@@ -1566,6 +1610,16 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
     .limit(1)
     .maybeSingle();
 
+  if (isMissingDealTableError(existing.error)) {
+    const alreadySent = sellerLead.status === "Sent to Deal Engine";
+    await updateSellerLead(sellerLead.id, { status: "Sent to Deal Engine" });
+    return {
+      ok: true as const,
+      dealId: sellerLead.id,
+      created: !alreadySent,
+    };
+  }
+
   if (existing.data?.id) {
     await updateSellerLead(sellerLead.id, { status: "Sent to Deal Engine" });
     return { ok: true as const, dealId: String(existing.data.id), created: false as const };
@@ -2108,7 +2162,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     listOutreachDraftRecords().catch(() => []),
   ]);
 
-  const lead = leads.find((item) => item.id === dealId) ?? fallbackLeads.find((item) => item.id === dealId) ?? null;
+  const lead = leads.find((item) => item.id === dealId) ?? null;
   if (!lead) return null;
 
   const contractDraft = buildContractDrafts(leads, sellerSignals, buyerSignals).find(
@@ -2295,27 +2349,31 @@ export async function getDealEngineDealRoomBySlug(slug: string) {
 
 export async function getDealEngineWorkspaceSnapshot(): Promise<DealEngineWorkspaceSnapshot> {
   const env = getEnvState();
-  const [leads, sellerSignals, buyerSignals] = await Promise.all([
+  const [leads, sellerSignals, buyerSignals, persistence] = await Promise.all([
     listDealEngineLeads(6),
     listDealEngineSellerSignals(4),
     listDealEngineBuyerSignals(4),
+    getDealEnginePersistenceStatus(),
   ]);
-  const usingFallback = !env.enabled || leads.every((lead) => fallbackLeads.some((item) => item.id === lead.id));
   const liveCount = leads.length;
   const offerReadyCount = leads.filter((lead) => lead.status === "Offer Ready").length;
   const negotiatingCount = leads.filter((lead) => lead.status === "Negotiating").length;
 
   return {
     env,
-    usingFallback,
+    persistence,
     leads,
     metrics: buildMetrics(leads),
     heroSignals: [
-      env.enabled ? "Deal Engine live data path online" : `Awaiting ${env.missing.join(" + ")}`,
-      usingFallback ? "workspace showing Helix fallback flagship deals" : `${liveCount} live deals in command`,
+      persistence.ready
+        ? "Deal Engine live data path online"
+        : persistence.mode === "schema-missing"
+          ? "Deal Engine schema still needs to be applied"
+          : `Awaiting ${env.missing.join(" + ")}`,
+      liveCount ? `${liveCount} live deals in command` : "No live Deal Engine records found",
       offerReadyCount || negotiatingCount
         ? `${offerReadyCount} offer-ready / ${negotiatingCount} negotiating`
-        : "analysis lane ready for first live handoff",
+        : "No live deals are active in analysis, offer, or negotiation yet",
     ],
     stageBoard: buildStageBoard(leads),
     sellerSignals,
