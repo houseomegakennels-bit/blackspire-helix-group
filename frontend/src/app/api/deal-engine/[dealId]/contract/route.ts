@@ -6,6 +6,8 @@ type RouteContext = {
   params: Promise<{ dealId: string }>;
 };
 
+type ContractHeadline = ReturnType<typeof contractHeadline>;
+
 function drawWrappedText(
   page: PDFPage,
   font: PDFFont,
@@ -69,9 +71,114 @@ function drawField(
   return drawWrappedText(page, bodyFont, value, x, y - 18, width, 11, 14);
 }
 
+function drawSection(
+  page: PDFPage,
+  titleFont: PDFFont,
+  bodyFont: PDFFont,
+  title: string,
+  body: string,
+  y: number,
+) {
+  page.drawText(title, {
+    x: 52,
+    y,
+    size: 12,
+    font: titleFont,
+    color: rgb(0.92, 0.86, 0.69),
+  });
+
+  return drawWrappedText(page, bodyFont, body, 52, y - 18, 508, 11, 14) - 12;
+}
+
+function drawBulletList(
+  page: PDFPage,
+  titleFont: PDFFont,
+  bodyFont: PDFFont,
+  title: string,
+  items: string[],
+  y: number,
+) {
+  page.drawText(title, {
+    x: 52,
+    y,
+    size: 12,
+    font: titleFont,
+    color: rgb(0.92, 0.86, 0.69),
+  });
+  y -= 18;
+
+  items.forEach((item) => {
+    page.drawText("-", {
+      x: 56,
+      y,
+      size: 12,
+      font: titleFont,
+      color: rgb(0.22, 0.83, 0.92),
+    });
+    y = drawWrappedText(page, bodyFont, item, 70, y, 490, 10.5, 13) - 6;
+  });
+
+  return y - 6;
+}
+
+function drawPageFrame(page: PDFPage) {
+  page.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0.03, 0.05, 0.08) });
+  page.drawRectangle({ x: 42, y: 42, width: 528, height: 708, borderColor: rgb(0.24, 0.27, 0.3), borderWidth: 1 });
+}
+
+function drawPageHeader(
+  page: PDFPage,
+  titleFont: PDFFont,
+  bodyFont: PDFFont,
+  title: string,
+  subtitle: string,
+  meta: string,
+) {
+  const { height } = page.getSize();
+  page.drawText(title, {
+    x: 52,
+    y: height - 68,
+    size: 22,
+    font: titleFont,
+    color: rgb(0.22, 0.83, 0.92),
+  });
+  page.drawText(subtitle, {
+    x: 52,
+    y: height - 95,
+    size: 15,
+    font: titleFont,
+    color: rgb(0.92, 0.86, 0.69),
+  });
+  page.drawText(meta, {
+    x: 52,
+    y: height - 118,
+    size: 10,
+    font: bodyFont,
+    color: rgb(0.8, 0.83, 0.88),
+  });
+}
+
+function deriveOfferWindow(detail: DealEngineDealDetail) {
+  const explicit = detail.contractDraft?.offerWindow?.trim();
+  if (explicit && !/\$0\s*-\s*\$0/.test(explicit)) return explicit;
+
+  const high = detail.underwriting.maximumAllowableOffer;
+  if (high > 0) {
+    const low = Math.max(
+      high - Math.max(detail.underwriting.assignmentFeeTarget / 2, 5000),
+      0,
+    );
+    return `$${low.toLocaleString()} - $${high.toLocaleString()}`;
+  }
+
+  return detail.lead.mao !== "$0" ? `${detail.lead.mao} target` : "Set underwriting before sending";
+}
+
 function contractHeadline(detail: DealEngineDealDetail, dealId: string) {
-  const offerWindow = detail.contractDraft?.offerWindow ?? `${detail.lead.mao} target`;
-  const earnestMoney = detail.contractDraft?.earnestMoney ?? "To be confirmed";
+  const earnestMoney =
+    detail.contractDraft?.earnestMoney && detail.contractDraft.earnestMoney !== "$0"
+      ? detail.contractDraft.earnestMoney
+      : detail.coordination.earnestMoneyStatus || "To be confirmed";
   const closingDate = detail.coordination.closingDate || "To be set by operator";
   const inspectionPeriod = detail.coordination.inspectionEndsOn || "14 days or per agreed terms";
   const contractType =
@@ -81,7 +188,7 @@ function contractHeadline(detail: DealEngineDealDetail, dealId: string) {
 
   return {
     contractType,
-    offerWindow,
+    offerWindow: deriveOfferWindow(detail),
     earnestMoney,
     closingDate,
     inspectionPeriod,
@@ -112,43 +219,17 @@ function contractHeadline(detail: DealEngineDealDetail, dealId: string) {
   };
 }
 
-export async function GET(_: Request, { params }: RouteContext) {
-  const { dealId } = await params;
-  const detail = await getDealEngineDealDetail(dealId);
-  if (!detail) return new Response("Deal not found", { status: 404 });
-
-  const model = contractHeadline(detail, dealId);
-
-  const pdf = await PDFDocument.create();
-  const page = pdf.addPage([612, 792]);
+function renderSummaryPage(page: PDFPage, titleFont: PDFFont, bodyFont: PDFFont, model: ContractHeadline) {
   const { height } = page.getSize();
-  const titleFont = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const bodyFont = await pdf.embedFont(StandardFonts.Helvetica);
-
-  page.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0.03, 0.05, 0.08) });
-  page.drawRectangle({ x: 42, y: 42, width: 528, height: 708, borderColor: rgb(0.24, 0.27, 0.3), borderWidth: 1 });
-
-  page.drawText("BLACKSPIRE DEAL ENGINE", {
-    x: 52,
-    y: height - 68,
-    size: 22,
-    font: titleFont,
-    color: rgb(0.22, 0.83, 0.92),
-  });
-  page.drawText("Wholesale Purchase Agreement Draft", {
-    x: 52,
-    y: height - 95,
-    size: 15,
-    font: titleFont,
-    color: rgb(0.92, 0.86, 0.69),
-  });
-  page.drawText(`Deal ${model.dealId} | Generated ${model.effectiveDate}`, {
-    x: 52,
-    y: height - 118,
-    size: 10,
-    font: bodyFont,
-    color: rgb(0.8, 0.83, 0.88),
-  });
+  drawPageFrame(page);
+  drawPageHeader(
+    page,
+    titleFont,
+    bodyFont,
+    "BLACKSPIRE DEAL ENGINE",
+    "Wholesale Purchase Agreement Draft",
+    `Deal ${model.dealId} | Generated ${model.effectiveDate}`,
+  );
 
   let leftY = height - 156;
   let rightY = height - 156;
@@ -172,114 +253,36 @@ export async function GET(_: Request, { params }: RouteContext) {
     color: rgb(0.24, 0.27, 0.3),
   });
 
-  y -= 28;
-  page.drawText("Draft Notice", {
-    x: 52,
-    y,
-    size: 12,
-    font: titleFont,
-    color: rgb(0.92, 0.86, 0.69),
-  });
-  y = drawWrappedText(page, bodyFont, model.draftNotice, 52, y - 18, 508, 10, 13) - 14;
-
-  page.drawText("Core Terms", {
-    x: 52,
-    y,
-    size: 12,
-    font: titleFont,
-    color: rgb(0.92, 0.86, 0.69),
-  });
-  y = drawWrappedText(
+  y = drawSection(page, titleFont, bodyFont, "Draft Notice", model.draftNotice, y - 28);
+  y = drawSection(
     page,
+    titleFont,
     bodyFont,
+    "Core Terms",
     "Buyer agrees to purchase the property identified above on an as-is basis, subject to final approved contract terms, title review, access, and the inspection period noted in this draft. Replace this language with the approved Blackspire purchase agreement language before execution.",
-    52,
-    y - 18,
-    508,
-    11,
-    14,
-  ) - 12;
-
-  page.drawText("Wholesale Compliance", {
-    x: 52,
     y,
-    size: 12,
-    font: titleFont,
-    color: rgb(0.92, 0.86, 0.69),
-  });
-  y -= 18;
-  model.contractWarnings.slice(0, 3).forEach((warning) => {
-    page.drawText("-", {
-      x: 56,
-      y,
-      size: 12,
-      font: titleFont,
-      color: rgb(0.22, 0.83, 0.92),
-    });
-    y = drawWrappedText(page, bodyFont, warning, 70, y, 490, 10.5, 13) - 6;
-  });
-  y -= 6;
+  );
+  drawBulletList(page, titleFont, bodyFont, "Wholesale Compliance", model.contractWarnings.slice(0, 3), y);
+}
 
-  page.drawText("Acquisition Notes", {
-    x: 52,
-    y,
-    size: 12,
-    font: titleFont,
-    color: rgb(0.92, 0.86, 0.69),
-  });
-  y = drawWrappedText(page, bodyFont, model.acquisitionSummary, 52, y - 18, 508, 11, 14) - 12;
+function renderNotesPage(page: PDFPage, titleFont: PDFFont, bodyFont: PDFFont, model: ContractHeadline) {
+  drawPageFrame(page);
+  drawPageHeader(
+    page,
+    titleFont,
+    bodyFont,
+    "BLACKSPIRE DEAL ENGINE",
+    "Contract Notes and Execution",
+    `Deal ${model.dealId}`,
+  );
 
-  page.drawText("Disposition Notes", {
-    x: 52,
-    y,
-    size: 12,
-    font: titleFont,
-    color: rgb(0.92, 0.86, 0.69),
-  });
-  y = drawWrappedText(page, bodyFont, model.dispositionSummary, 52, y - 18, 508, 11, 14) - 12;
+  let y = 620;
+  y = drawSection(page, titleFont, bodyFont, "Acquisition Notes", model.acquisitionSummary, y);
+  y = drawSection(page, titleFont, bodyFont, "Disposition Notes", model.dispositionSummary, y);
+  y = drawBulletList(page, titleFont, bodyFont, "Operator Next Steps", model.nextSteps.slice(0, 4), y);
+  y = drawBulletList(page, titleFont, bodyFont, "Pre-Send Checklist", model.complianceChecklist.slice(0, 4), y);
 
-  page.drawText("Operator Next Steps", {
-    x: 52,
-    y,
-    size: 12,
-    font: titleFont,
-    color: rgb(0.92, 0.86, 0.69),
-  });
-  y -= 18;
-  model.nextSteps.slice(0, 4).forEach((step) => {
-    page.drawText("-", {
-      x: 56,
-      y,
-      size: 12,
-      font: titleFont,
-      color: rgb(0.22, 0.83, 0.92),
-    });
-    y = drawWrappedText(page, bodyFont, step, 70, y, 490, 10.5, 13) - 6;
-  });
-
-  if (y > 170) {
-    y -= 2;
-    page.drawText("Pre-Send Checklist", {
-      x: 52,
-      y,
-      size: 12,
-      font: titleFont,
-      color: rgb(0.92, 0.86, 0.69),
-    });
-    y -= 18;
-    model.complianceChecklist.slice(0, 4).forEach((item) => {
-      page.drawText("-", {
-        x: 56,
-        y,
-        size: 12,
-        font: titleFont,
-        color: rgb(0.22, 0.83, 0.92),
-      });
-      y = drawWrappedText(page, bodyFont, item, 70, y, 490, 10.5, 13) - 6;
-    });
-  }
-
-  const signatureY = Math.max(y - 32, 122);
+  const signatureY = Math.max(y - 24, 122);
   page.drawLine({
     start: { x: 62, y: signatureY },
     end: { x: 252, y: signatureY },
@@ -306,6 +309,24 @@ export async function GET(_: Request, { params }: RouteContext) {
     font: bodyFont,
     color: rgb(0.8, 0.83, 0.88),
   });
+}
+
+export async function GET(_: Request, { params }: RouteContext) {
+  const { dealId } = await params;
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return new Response("Deal not found", { status: 404 });
+
+  const model = contractHeadline(detail, dealId);
+
+  const pdf = await PDFDocument.create();
+  const titleFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const bodyFont = await pdf.embedFont(StandardFonts.Helvetica);
+
+  const summaryPage = pdf.addPage([612, 792]);
+  renderSummaryPage(summaryPage, titleFont, bodyFont, model);
+
+  const notesPage = pdf.addPage([612, 792]);
+  renderNotesPage(notesPage, titleFont, bodyFont, model);
 
   const bytes = await pdf.save();
   return new Response(Buffer.from(bytes), {

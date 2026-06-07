@@ -687,6 +687,12 @@ function deriveOfferWindow(mao: string, assignmentFee: string) {
   return `${formatCurrency(low)} - ${formatCurrency(high)}`;
 }
 
+function deriveOfferWindowFromNumbers(maximumAllowableOffer: number, assignmentFeeTarget: number) {
+  const high = clampMoney(maximumAllowableOffer);
+  const low = high > 0 ? Math.max(high - Math.max(clampMoney(assignmentFeeTarget) / 2, 5000), 0) : 0;
+  return `${formatCurrency(low)} - ${formatCurrency(high)}`;
+}
+
 function buildContractDrafts(
   leads: DealEngineLead[],
   sellerSignals: DealEngineSellerSignal[],
@@ -3171,7 +3177,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
 
   const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
   const relatedBuyerSignals = rankBuyerSignalsForLead(lead, buyerSignals, 6);
-  const contractDraft = buildContractDrafts([lead], sellerSignals, relatedBuyerSignals).find(
+  let contractDraft = buildContractDrafts([lead], sellerSignals, relatedBuyerSignals).find(
     (item) => item.dealId === dealId,
   ) ?? null;
   let underwriting = buildUnderwritingSnapshot(lead, null);
@@ -3239,6 +3245,18 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       .eq("lead_id", dealId)
       .maybeSingle();
     underwriting = buildUnderwritingSnapshot(lead, analysisData as DealAnalysisRow | null);
+    if (contractDraft) {
+      contractDraft = {
+        ...contractDraft,
+        offerWindow:
+          underwriting.maximumAllowableOffer > 0
+            ? deriveOfferWindowFromNumbers(
+                underwriting.maximumAllowableOffer,
+                underwriting.assignmentFeeTarget,
+              )
+            : contractDraft.offerWindow,
+      };
+    }
 
     const { data: contractData } = await supabase
       .from("contracts")
@@ -3258,6 +3276,16 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
         contractSent: Boolean(liveContract.contract_sent),
         contractSigned: Boolean(liveContract.contract_signed),
       };
+      if (contractDraft) {
+        contractDraft = {
+          ...contractDraft,
+          contractType: liveContract.assignment_status?.trim() || contractDraft.contractType,
+          earnestMoney:
+            liveContract.earnest_money_deposit != null
+              ? formatCurrency(liveContract.earnest_money_deposit)
+              : contractDraft.earnestMoney,
+        };
+      }
     }
 
     const { data: roomData } = await supabase
