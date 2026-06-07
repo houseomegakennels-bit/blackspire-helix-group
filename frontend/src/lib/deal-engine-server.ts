@@ -11,6 +11,7 @@ import {
 import type { SellerLeadView } from "@/lib/seller-engine-demo";
 import { listSellerLeads, updateSellerLead } from "@/lib/seller-engine-server";
 import {
+  createSearchJob,
   listAllBuyerReports,
   listOutreachDraftRecords,
   persistOutreachDraftRecord,
@@ -19,6 +20,7 @@ import {
   type SearchJobRecord,
 } from "@/lib/buyer-engine-server";
 import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
+import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
 
 type EnvState = {
   enabled: boolean;
@@ -383,6 +385,10 @@ function formatCurrency(value: number) {
 function clampMoney(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(Math.round(value), 0);
+}
+
+function toIsoDateString(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
 function toLead(row: DealLeadJoin): DealEngineLead {
@@ -839,6 +845,10 @@ type SaveDealAnalysisInput = {
   assignmentFeeTarget: number;
   rentalEstimate: number;
   flipEstimate: number;
+};
+
+type LaunchBuyerSearchFromDealInput = {
+  dealId: string;
 };
 
 type CreateDealOutreachDraftInput = {
@@ -1528,6 +1538,86 @@ function isOutreachDraftAuthBlock(error: unknown) {
   return /sign in required|no operator account exists yet|use \/auth before creating/i.test(message);
 }
 
+function isBuyerSearchAuthBlock(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /sign in required|no operator account exists yet|use \/auth before creating/i.test(message);
+}
+
+async function createBuyerSearchJobWithFallback(input: {
+  state: string;
+  county: string;
+  propertyType: string;
+  dateRangeStart: string;
+  dateRangeEnd: string;
+  minPurchases: number;
+}) {
+  try {
+    return await createSearchJob({
+      title: `${input.county} buyer search`,
+      state: input.state,
+      county: input.county,
+      propertyType: input.propertyType,
+      dateRangeStart: input.dateRangeStart,
+      dateRangeEnd: input.dateRangeEnd,
+      minPurchases: input.minPurchases,
+      notes: "",
+    });
+  } catch (error) {
+    if (!isBuyerSearchAuthBlock(error)) throw error;
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    throw new Error(`Missing Supabase env: ${getEnvState().missing.join(", ")}`);
+  }
+
+  const { data: recentJobs, error: recentJobsError } = await supabase
+    .from("SearchJob")
+    .select("user_id,created_at")
+    .order("created_at", { ascending: false })
+    .limit(25);
+
+  if (recentJobsError) {
+    throw new Error(recentJobsError.message);
+  }
+
+  const fallbackUserId =
+    (recentJobs ?? [])
+      .map((row) => String((row as { user_id?: string | null }).user_id ?? "").trim())
+      .find((value) => value && value !== "00000000-0000-0000-0000-000000000000")
+    || (recentJobs ?? [])
+      .map((row) => String((row as { user_id?: string | null }).user_id ?? "").trim())
+      .find(Boolean)
+    || null;
+
+  if (!fallbackUserId) {
+    throw new Error("Buyer search launch needs an operator scope. Sign in at /auth before creating the first buyer search.");
+  }
+
+  const { data, error } = await supabase
+    .from("SearchJob")
+    .insert({
+      user_id: fallbackUserId,
+      state: input.state.trim().toUpperCase(),
+      county: input.county.trim(),
+      property_type: input.propertyType,
+      date_range_start: input.dateRangeStart,
+      date_range_end: input.dateRangeEnd,
+      min_purchases: input.minPurchases,
+      cash_buyers_only: false,
+      llc_buyers_only: false,
+      status: "pending",
+    })
+    .select("id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,total_buyers_found,total_sales_analyzed,error_message,created_at,updated_at")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as SearchJobRecord;
+}
+
 function parseBuyerDraftsFromLogs(logs: DispositionLogRow[]) {
   return logs
     .filter((log) => log.action_type === "buyer_draft_created" && log.payload)
@@ -1934,6 +2024,16 @@ function buildActivityFeed(logs: DispositionLogRow[]) {
         id: String(log.id),
         title: `Buyer draft created for ${String(payload.buyerName ?? "buyer lane")}`,
         detail: String(payload.subject ?? "Outreach draft saved."),
+        timestamp,
+        tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "buyer_search_launched") {
+      return {
+        id: String(log.id),
+        title: `Buyer search launched: ${String(payload.jobId ?? "SearchJob")}`,
+        detail: String(payload.notes ?? "Buyer Engine search launched from Deal Engine."),
         timestamp,
         tone: "active" as const,
       };
@@ -2350,6 +2450,110 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
       readyForContract: missingInputs.length === 0 && maximumAllowableOffer > 0,
     },
   };
+}
+
+export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDealInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const detail = await getDealEngineDealDetail(input.dealId);
+  if (!detail) {
+    return { ok: false as const, error: "Deal could not be found." };
+  }
+
+  const propertyType = normalizeDealLane(detail.lead) === "land" ? "land" : "all";
+  const launchBlock = getCountyLaunchBlock(detail.lead.county, propertyType);
+  if (launchBlock.blocked) {
+    return { ok: false as const, error: launchBlock.reason };
+  }
+  const rangeEnd = new Date();
+  const rangeStart = new Date(rangeEnd);
+  rangeStart.setMonth(rangeStart.getMonth() - 6);
+
+  const title = `Deal Engine buyer search / ${detail.lead.county} / ${input.dealId}`;
+  const notes = [
+    `Launched from Deal Engine for ${detail.lead.propertyAddress}.`,
+    `Deal ID: ${input.dealId}.`,
+    `Current stage: ${detail.lead.status}.`,
+    `Buyer lane objective: replace fallback shortlist with county-specific matches.`,
+  ].join(" ");
+
+  try {
+    const job = await createBuyerSearchJobWithFallback({
+      state: "NC",
+      county: detail.lead.county,
+      propertyType,
+      dateRangeStart: toIsoDateString(rangeStart),
+      dateRangeEnd: toIsoDateString(rangeEnd),
+      minPurchases: 2,
+    });
+
+    const [dealUpdate, conversationUpdate, logInsert, taskInsert] = await Promise.all([
+      supabase.from("deal_leads").update({
+        recommended_next_action: `Buyer search ${job.id} launched for ${detail.lead.county} County. Wait for Buyer Engine results, then refresh the shortlist and packet.`,
+        updated_at: new Date().toISOString(),
+      }).eq("id", input.dealId),
+      supabase.from("seller_conversations").update({
+        next_action: `Buyer search ${job.id} launched. Review buyer results before sending broad dispo outreach.`,
+        updated_at: new Date().toISOString(),
+      }).eq("lead_id", input.dealId),
+      supabase.from("disposition_logs").insert({
+        lead_id: input.dealId,
+        action_type: "buyer_search_launched",
+        payload: {
+          jobId: job.id,
+          county: job.county,
+          state: job.state,
+          propertyType: job.property_type,
+          dateRangeStart: job.date_range_start,
+          dateRangeEnd: job.date_range_end,
+          title,
+          notes,
+          createdAt: new Date().toISOString(),
+        },
+      }),
+      supabase.from("disposition_logs").insert({
+        lead_id: input.dealId,
+        action_type: "operator_task",
+        payload: {
+          taskId: `buyer-search-follow-up-${input.dealId}`,
+          title: "Review Buyer Engine results and refresh shortlist",
+          owner: "Disposition",
+          dueDate: "",
+          priority: "High",
+          status: "Open",
+          notes: `Buyer search ${job.id} was launched for ${detail.lead.county} County. Refresh deal buyer matches once the job completes.`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+    ]);
+
+    const error =
+      dealUpdate.error?.message
+      || conversationUpdate.error?.message
+      || logInsert.error?.message
+      || taskInsert.error?.message;
+    if (error) {
+      return { ok: false as const, error };
+    }
+
+    return {
+      ok: true as const,
+      job,
+      workflow: {
+        webhookUrl: `${process.env.N8N_WEBHOOK_BASE_URL?.replace(/\/$/, "") || "https://cpearson0312.app.n8n.cloud/webhook"}/buyer-engine`,
+        dispatch: "queued" as const,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : "Buyer search launch failed.",
+    };
+  }
 }
 
 export async function createDealBuyerOutreachDraft(input: CreateDealOutreachDraftInput) {
@@ -2831,7 +3035,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       .from("disposition_logs")
       .select("id,action_type,payload,created_at")
       .eq("lead_id", dealId)
-      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "seller_draft_saved", "operator_task", "coordination_update", "analysis_update"])
+      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "buyer_search_launched", "seller_draft_saved", "operator_task", "coordination_update", "analysis_update"])
       .order("created_at", { ascending: false });
     if (dispositionData?.length) {
       const logs = dispositionData as DispositionLogRow[];

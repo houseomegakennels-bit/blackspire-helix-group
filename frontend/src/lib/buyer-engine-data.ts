@@ -355,7 +355,8 @@ const countyVerificationOverrides: Record<
   mecklenburg: {
     supportsPast90Days: true,
     verificationStatus: "approved",
-    verificationReason: "Current live source is approved for operator-facing past-90-day buyer sweeps.",
+    verificationReason:
+      "Mecklenburg now runs through the live raw-sales prefetch path and the downstream Buyer Engine workflow accepts NC/Mecklenburg payloads again as of 2026-06-07.",
   },
   moore: {
     supportsPast90Days: true,

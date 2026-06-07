@@ -1279,6 +1279,10 @@ function isForsythJob(job: SearchJobRecord) {
   return job.county.trim().toLowerCase() === "forsyth";
 }
 
+function isMecklenburgJob(job: SearchJobRecord) {
+  return job.county.trim().toLowerCase() === "mecklenburg";
+}
+
 function isBrunswickJob(job: SearchJobRecord) {
   return job.county.trim().toLowerCase() === "brunswick";
 }
@@ -1376,6 +1380,24 @@ function getForsythDateRangeFilter(job: SearchJobRecord) {
 
   if (job.date_range_end) {
     filters.push(`XFER_XFERDATE <= DATE '${job.date_range_end} 23:59:59'`);
+  }
+
+  return filters.join(" AND ");
+}
+
+function getMecklenburgDateRangeFilter(job: SearchJobRecord) {
+  const filters = ["Price > 0"];
+
+  if (job.date_range_start) {
+    filters.push(`Sales_Date >= DATE '${job.date_range_start} 00:00:00'`);
+  }
+
+  if (job.date_range_end) {
+    filters.push(`Sales_Date <= DATE '${job.date_range_end} 23:59:59'`);
+  }
+
+  if (job.property_type.trim().toLowerCase().includes("land")) {
+    filters.push("(Building_Value IS NULL OR Building_Value = 0 OR Year_Built IS NULL OR Year_Built = 0)");
   }
 
   return filters.join(" AND ");
@@ -2769,6 +2791,75 @@ async function fetchForsythCountyRawSales(job: SearchJobRecord) {
   return rawSales;
 }
 
+async function fetchMecklenburgCountyRawSales(job: SearchJobRecord) {
+  const fallbackUrl = "https://gis.charlottenc.gov/arcgis/rest/services/CLT_Ex/CLTEx_MoreInfo/MapServer/4";
+  const source = await getActiveCountySource(job.county, job.state).catch(() => null);
+  const baseUrl = (source?.source_url || fallbackUrl).split("?")[0];
+  const pageSize = 5000;
+  const maxPages = 10;
+  const rawSales: Array<Record<string, unknown>> = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const params = new URLSearchParams({
+      where: getMecklenburgDateRangeFilter(job),
+      outFields:
+        "Tax_ID,Common_PID,PID,Account_Type,Property_Use,Total_Acreage,Property_URL,Municipality,Building_Value,Land_Value,Total_Value,Owner_FirstName,Owner_LastName,Mailing_Address,City,State,Zip_Code,Sales_Date,Price,TypeOfDeed,Legal_Reference,Legal_Reference_URL,Grantor,Building_Type,Building_Code,Year_Built,Heated_Sqft,Units,Location,OBJECTID",
+      returnGeometry: "false",
+      orderByFields: "Sales_Date DESC",
+      resultRecordCount: String(pageSize),
+      resultOffset: String(page * pageSize),
+      f: "json",
+    });
+
+    const payload = await postArcgisQueryWithTimeout(`${baseUrl}/query`, params, 30000);
+
+    if (payload.error?.message) {
+      throw new Error(payload.error.message);
+    }
+
+    const pageRows = (payload.features ?? []).map(
+      (feature) => feature.attributes ?? feature.properties ?? {},
+    );
+
+    if (pageRows.length === 0) {
+      break;
+    }
+
+    rawSales.push(
+      ...pageRows.map((row) => ({
+        ...row,
+        CURRENTOWNERNAME1: [String(row.Owner_FirstName ?? "").trim(), String(row.Owner_LastName ?? "").trim()].filter(Boolean).join(" "),
+        CURRENTOWNERNAME2: "",
+        CURRENTOWNERADDRESS: String(row.Mailing_Address ?? "").trim(),
+        CURRENTOWNERCITYSTZIP: [String(row.City ?? "").trim(), String(row.State ?? "").trim(), String(row.Zip_Code ?? "").trim()].filter(Boolean).join(" "),
+        PROPERTYADDRESS: String(row.Location ?? "").trim(),
+        LASTQUALIFIEDSALEPRICE: row.Price,
+        CURRENTDEEDDATE: row.Sales_Date,
+        CURRENTDEEDBKPG: String(row.Legal_Reference ?? "").trim(),
+        TAXPIN: String(row.Tax_ID ?? row.Common_PID ?? row.PID ?? "").trim(),
+        DEED_URL: String(row.Legal_Reference_URL ?? "").trim(),
+        BUILDINGVALUE: row.Building_Value,
+        LANDVALUE: row.Land_Value,
+        MARKETVALUE: row.Total_Value,
+        ACREAGE: row.Total_Acreage,
+        PROPCLASS: String(row.Property_Use ?? row.Building_Type ?? "").trim(),
+        BUYER_IDENTITY_METHOD: "sales_owner_joined",
+        BUYER_IDENTITY_CONFIDENCE: "high",
+        BUYER_IDENTITY_REASON: "Mecklenburg sales table already carries the post-sale owner and mailing profile.",
+        BUYER_IDENTITY_VERIFIED_AT: new Date().toISOString(),
+        _source_type: "arcgis_mecklenburg",
+        _no_cash_data: true,
+      })),
+    );
+
+    if (pageRows.length < pageSize) {
+      break;
+    }
+  }
+
+  return rawSales.filter((row) => String(row.CURRENTOWNERNAME1 ?? "").trim());
+}
+
 export async function triggerBuyerEngineWorkflow(job: SearchJobRecord) {
   const webhookUrl = `${getWebhookBaseUrl().replace(/\/$/, "")}/buyer-engine`;
   const payload: Record<string, unknown> = {
@@ -2798,6 +2889,12 @@ export async function triggerBuyerEngineWorkflow(job: SearchJobRecord) {
 
   if (isForsythJob(job)) {
     const rawSales = await fetchForsythCountyRawSales(job);
+    payload.raw_sales = rawSales;
+    payload.raw_count = rawSales.length;
+  }
+
+  if (isMecklenburgJob(job)) {
+    const rawSales = await fetchMecklenburgCountyRawSales(job);
     payload.raw_sales = rawSales;
     payload.raw_count = rawSales.length;
   }
@@ -2903,23 +3000,26 @@ export async function triggerBuyerEngineWorkflow(job: SearchJobRecord) {
     });
 
     let parsed: unknown = null;
+    let rawText = "";
     try {
-      parsed = await response.json();
+      rawText = await response.text();
+      parsed = rawText ? JSON.parse(rawText) : null;
     } catch {
       parsed = null;
     }
 
     if (!response.ok) {
       const supabase = getSupabaseAdmin();
+      const detail = rawText.trim() ? ` Response: ${rawText.trim().slice(0, 400)}.` : "";
       await supabase
         .from("SearchJob")
         .update({
           status: "failed",
-          error_message: `Workflow trigger failed with status ${response.status}.`,
+          error_message: `Workflow trigger failed with status ${response.status}.${detail}`,
         })
         .eq("id", job.id);
 
-      throw new Error(`Workflow trigger failed with status ${response.status}.`);
+      throw new Error(`Workflow trigger failed with status ${response.status}.${detail}`);
     }
 
     return {

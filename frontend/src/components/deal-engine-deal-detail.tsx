@@ -105,7 +105,7 @@ export function DealEngineDealDetailView({
   const [sellerVoicemailScript, setSellerVoicemailScript] = useState(detail.sellerOutreach.voicemailScript);
   const [sellerCallOpener, setSellerCallOpener] = useState(detail.sellerOutreach.callOpener);
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "seller-draft" | "stage" | "task" | null>(null);
+  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | null>(null);
 
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
@@ -249,6 +249,26 @@ export function DealEngineDealDetailView({
       router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Buyer draft failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function launchBuyerSearch() {
+    setWorking("search");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/launch-buyer-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean; job?: { id?: string } };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Buyer search launch failed.");
+      setStatus(payload.message ?? `Buyer search ${payload.job?.id ?? ""} launched.`.trim());
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Buyer search launch failed.");
     } finally {
       setWorking(null);
     }
@@ -704,6 +724,9 @@ export function DealEngineDealDetailView({
               </button>
               <button type="button" onClick={() => void executeDealCommand("save-packet")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
                 Save buyer packet
+              </button>
+              <button type="button" onClick={() => void launchBuyerSearch()} disabled={working === "search"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+                {working === "search" ? "Launching buyer search..." : "Launch buyer search"}
               </button>
               <button type="button" onClick={() => void executeDealCommand("buyer-draft")} disabled={working === "execute" || !selectedBuyerSignalId} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
                 Generate buyer draft
@@ -1214,8 +1237,21 @@ export function DealEngineDealDetailView({
         <Panel
           eyebrow="Buyer Activation"
           title="Create and review investor drafts"
-          description="Select a buyer signal from Buyer Engine, generate a disposition draft, and keep the artifact trail attached to this deal."
+          description="Launch a county-specific Buyer Engine search from this deal, then select a buyer signal and generate a disposition draft without leaving Deal Engine."
         >
+          <div className="brand-card mb-4 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold text-white">Dedicated buyer-search action</div>
+                <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
+                  Launch a fresh Buyer Engine search for {detail.lead.county} County directly from this deal when the shortlist needs to be rebuilt around the current lane.
+                </div>
+              </div>
+              <button type="button" onClick={() => void launchBuyerSearch()} disabled={working === "search"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                {working === "search" ? "Launching..." : "Launch search"}
+              </button>
+            </div>
+          </div>
           <form onSubmit={createBuyerDraft} className="grid gap-4">
             <select
               value={selectedBuyerSignalId}
