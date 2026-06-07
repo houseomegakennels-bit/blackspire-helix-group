@@ -1,8 +1,15 @@
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { serviceLines, useCases } from "@/lib/ecosystem";
+
+export const metadata: Metadata = {
+  title: "Services | Blackspire Helix Group",
+  description:
+    "Review Blackspire Helix Group services across strategy, build engagements, operator upgrades, automation systems, and premium client-facing surfaces.",
+};
 
 const useCaseIcons = ["🎯", "📨", "🤝", "🎬", "💎", "📊"];
 
@@ -43,6 +50,39 @@ const engagementModes = [
 ] as const;
 
 const serviceIcons = ["⚙️", "🛰️", "🎯", "📡", "🔬", "🏗️", "🔐", "📊"];
+
+const decisionSignals = [
+  {
+    label: "Start with strategy",
+    detail: "Best when the bottleneck is real but the right system shape is still unclear.",
+  },
+  {
+    label: "Go straight to build",
+    detail: "Best when the business problem is already obvious and you need the workflow shipped cleanly.",
+  },
+  {
+    label: "Upgrade the current stack",
+    detail: "Best when tools exist already but the operator experience still feels fragmented or underpowered.",
+  },
+] as const;
+
+const deliverySequence = [
+  {
+    id: "01",
+    title: "Clarify the bottleneck",
+    copy: "We identify the revenue leak, workflow drag, or customer-facing gap that matters most right now.",
+  },
+  {
+    id: "02",
+    title: "Choose the build lane",
+    copy: "Strategy, delivery, or upgrade so the scope matches the business stage instead of inflating into fluff.",
+  },
+  {
+    id: "03",
+    title: "Ship the operator layer",
+    copy: "Interfaces, automations, and system logic come together as a working command surface, not a vague concept.",
+  },
+] as const;
 
 export default function ServicesPage() {
   return (
@@ -96,6 +136,30 @@ export default function ServicesPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="brand-panel px-6 py-8 lg:px-10">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Decision support</p>
+              <h2 className="brand-display mt-3 text-4xl text-white">Choose the right engagement lane faster</h2>
+            </div>
+            <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+              Start project brief
+            </Link>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            {decisionSignals.map((signal, index) => (
+              <div key={signal.label} className={`brand-card p-5 reveal-up stagger-${index + 1}`}>
+                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">
+                  Signal {String(index + 1).padStart(2, "0")}
+                </div>
+                <div className="mt-4 text-xl font-semibold text-white">{signal.label}</div>
+                <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{signal.detail}</p>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -178,7 +242,7 @@ export default function ServicesPage() {
               return (
                 <div
                   key={useCase}
-                  className={`use-case-card shine-card reveal-up stagger-${(index % 3) + 1}`}
+                  className="use-case-card shine-card"
                   style={{ "--uc-accent": accent.color } as CSSProperties}
                 >
                   <div className="absolute inset-x-0 top-0 h-[2px]" style={{ background: `linear-gradient(90deg, ${accent.color}, transparent)` }} />
@@ -191,6 +255,26 @@ export default function ServicesPage() {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        <section className="brand-panel px-6 py-10 lg:px-10">
+          <div className="mb-6">
+            <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Delivery sequence</p>
+            <h2 className="brand-display mt-3 text-4xl text-white">How a Blackspire engagement actually moves</h2>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            {deliverySequence.map((step) => (
+              <article key={step.id} className="brand-card p-5">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--gold)]">{step.id}</span>
+                  <div className="signal-bar h-px flex-1" />
+                </div>
+                <h3 className="mt-4 text-xl font-semibold text-white">{step.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{step.copy}</p>
+              </article>
+            ))}
           </div>
         </section>
 

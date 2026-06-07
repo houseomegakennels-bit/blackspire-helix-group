@@ -129,6 +129,18 @@
   --project-edge: rgba(198, 205, 214, 0.38);
 }
 
+.theme-nexus {
+  --line: hsl(260 42% 74% / 0.22);
+  --line-strong: hsl(267 90% 70% / 0.46);
+  --gold: hsl(269 88% 64%);
+  --gold-strong: hsl(272 92% 56%);
+  --gold-soft: hsl(0 0% 88%);
+  --project-accent: #8B5CF6;
+  --project-glow: rgba(139, 92, 246, 0.34);
+  --project-surface: rgba(139, 92, 246, 0.12);
+  --project-edge: rgba(198, 205, 214, 0.38);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -1872,13 +1884,24 @@ body::after {
   position: relative;
   border: 1px solid var(--seller-line);
   background:
-    linear-gradient(135deg, hsl(4 72% 42% / .16), transparent 52%),
-    radial-gradient(circle at 100% 0%, hsl(210 8% 62% / .09), transparent 54%),
-    linear-gradient(155deg, hsl(0 0% 7% / .98), hsl(4 30% 5% / .97));
+    linear-gradient(135deg, hsl(4 78% 46% / .18), transparent 52%),
+    radial-gradient(circle at 100% 0%, hsl(4 92% 62% / .10), transparent 54%),
+    linear-gradient(155deg, hsl(0 0% 7% / .98), hsl(2 34% 7% / .97));
   box-shadow: inset 0 1px 0 hsl(0 0% 92% / .05), 0 22px 50px hsl(0 0% 0% / .4);
 }
 .seller-panel { border-radius: 26px; }
 .seller-card { border-radius: 18px; }
+.seller-card::before,
+.seller-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, transparent 0 14%, hsl(4 84% 60% / .03) 50%, transparent 86%),
+    radial-gradient(circle at 18% 0%, hsl(4 85% 58% / .08), transparent 28%);
+  pointer-events: none;
+}
 .seller-hero::after {
   content: ""; position: absolute; width: 420px; height: 420px; right: -120px; top: -160px; border-radius: 999px;
   background: radial-gradient(circle, hsl(4 85% 58% / .16), transparent 64%); pointer-events: none;
@@ -1901,7 +1924,9 @@ body::after {
 }
 .seller-button:hover { transform: translateY(-1px); box-shadow: 0 10px 28px hsl(4 80% 48% / .16); }
 .seller-input {
-  width: 100%; border: 1px solid var(--seller-line); border-radius: 13px; background: hsl(0 0% 6% / .94);
+  width: 100%; border: 1px solid var(--seller-line); border-radius: 13px; background:
+    linear-gradient(180deg, hsl(0 0% 6% / .96), hsl(2 34% 8% / .96)),
+    radial-gradient(circle at 100% 0%, hsl(4 88% 58% / .08), transparent 42%);
   color: white; padding: .78rem .9rem; outline: none; color-scheme: dark;
 }
 .seller-input:focus { border-color: var(--seller-line-strong); box-shadow: 0 0 0 3px hsl(4 85% 55% / .10); }
@@ -1918,6 +1943,28 @@ body::after {
 .seller-signal {
   display: inline-flex; border-radius: 999px; border: 1px solid var(--seller-line); background: hsl(4 72% 46% / .1);
   padding: .28rem .52rem; color: var(--seller-gold-soft); font-size: .58rem; letter-spacing: .13em; text-transform: uppercase;
+}
+.seller-table-wrap {
+  background:
+    linear-gradient(180deg, hsl(0 0% 4% / .94), hsl(2 38% 7% / .96)),
+    radial-gradient(circle at 100% 0%, hsl(4 88% 58% / .08), transparent 38%);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / .04), 0 18px 44px hsl(0 0% 0% / .34);
+}
+.seller-table-head {
+  background:
+    linear-gradient(180deg, hsl(0 0% 7% / .98), hsl(2 42% 10% / .98)),
+    radial-gradient(circle at 50% 0%, hsl(4 84% 60% / .10), transparent 48%);
+}
+.seller-table-row {
+  background:
+    linear-gradient(180deg, hsl(0 0% 5% / .88), hsl(2 24% 7% / .9)),
+    radial-gradient(circle at 0% 50%, hsl(4 84% 58% / .04), transparent 32%);
+  transition: background 0.18s ease;
+}
+.seller-table-row:hover {
+  background:
+    linear-gradient(180deg, hsl(2 46% 10% / .94), hsl(2 28% 8% / .96)),
+    radial-gradient(circle at 0% 50%, hsl(4 84% 58% / .08), transparent 34%);
 }
 
 /* Stagger delays */
@@ -2953,4 +3000,69 @@ body::after {
   5%   {              opacity: 1; }
   92%  {              opacity: 1; }
   100% { top: 100%;   opacity: 0; }
+}
+
+/* Nexus -- purple/silver identity lattice */
+.theme-nexus .motif-center-glow {
+  top: 50%;
+  left: 50%;
+  width: 480px;
+  height: 480px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, hsl(269 88% 64% / 0.24), hsl(0 0% 88% / 0.08) 46%, transparent 70%);
+  filter: blur(18px);
+}
+.theme-nexus .motif-ring {
+  top: 50%;
+  left: 50%;
+  border-color: hsl(267 90% 70% / 0.46);
+  opacity: 0.3;
+}
+.theme-nexus .motif-ring-1 {
+  width: 500px;
+  height: 500px;
+  transform: translate(-50%, -50%);
+  animation: nexusRingPulse 4.8s ease-in-out infinite;
+}
+.theme-nexus .motif-ring-2 {
+  width: 336px;
+  height: 336px;
+  transform: translate(-50%, -50%);
+  animation: nexusRingPulse 4.8s ease-in-out infinite 0.9s;
+}
+.theme-nexus .motif-ring-3 {
+  width: 180px;
+  height: 180px;
+  transform: translate(-50%, -50%);
+  animation: nexusRingPulse 4.8s ease-in-out infinite 1.8s;
+}
+.theme-nexus .motif-sweep {
+  top: 50%;
+  left: 50%;
+  width: 540px;
+  height: 540px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    hsl(267 90% 70% / 0.32) 18deg,
+    hsl(0 0% 88% / 0.12) 34deg,
+    transparent 54deg
+  );
+  animation: nexusSweep 7s linear infinite;
+}
+.theme-nexus .motif-grid {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 48px, hsl(267 90% 70% / 0.08) 48px 49px),
+    repeating-linear-gradient(0deg, transparent 0 48px, hsl(0 0% 88% / 0.06) 48px 49px);
+  mask-image: radial-gradient(circle at 50% 50%, black, transparent 72%);
+}
+@keyframes nexusRingPulse {
+  0%, 100% { opacity: 0.16; transform: translate(-50%, -50%) scale(0.96); }
+  50%       { opacity: 0.54; transform: translate(-50%, -50%) scale(1.04); }
+}
+@keyframes nexusSweep {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
 }

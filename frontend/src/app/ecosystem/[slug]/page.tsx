@@ -12,6 +12,7 @@ const THEME_CLASSES: Record<string, string> = {
   "buyer-engine": "theme-buyer-engine",
   "deal-engine": "theme-deal-engine",
   "seller-engine": "theme-seller-engine",
+  nexus: "theme-nexus",
   "helix-lawn-command": "theme-lawn-command",
   "social-os": "theme-social-os",
   "ember-halo": "theme-ember-halo",

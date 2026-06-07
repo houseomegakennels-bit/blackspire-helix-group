@@ -3,11 +3,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DivisionWatermark } from "@/components/division-watermark";
+import { RealEstateWorkflowRail } from "@/components/real-estate-workflow-rail";
 import { brandAssets } from "@/lib/brand-assets";
 
 const navItems = [
   { href: "/workspace/deal-engine", label: "Command Deck" },
   { href: "/seller-engine", label: "Seller Engine" },
+  { href: "/workspace/nexus", label: "Nexus" },
   { href: "/workspace/buyer-engine", label: "Buyer Engine" },
   { href: "/ecosystem/deal-engine", label: "Public Division Page" },
   { href: "/ecosystem", label: "Ecosystem" },
@@ -47,7 +49,7 @@ export function DealEngineShell({ children }: { children: ReactNode }) {
             <p className="text-[10px] uppercase tracking-[0.48em] text-[var(--gold-soft)]">Blackspire Helix Group</p>
             <h1 className="brand-display mt-3 text-3xl text-white">{brandAssets.dealEngine.name}</h1>
             <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
-              Acquisition, underwriting, contracts, buyer handoff, and disposition packaging between Seller Engine and Buyer Engine.
+              Acquisition, underwriting, contracts, buyer handoff, and disposition packaging, with Nexus handling contact-resolution gaps upstream.
             </p>
             <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-cyan-300">
               <span className="live-dot" /> Wholesale command surface online
@@ -72,6 +74,7 @@ export function DealEngineShell({ children }: { children: ReactNode }) {
               Deal Engine starts after seller qualification and ends with a buyer-ready packet, contract posture, and disposition path.
             </p>
           </div>
+          <RealEstateWorkflowRail active="deal" compact />
         </aside>
 
         <section className="min-w-0 space-y-5">{children}</section>

@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { ecosystemProjects } from "@/lib/ecosystem";
+
+export const metadata: Metadata = {
+  title: "Demos | Blackspire Helix Group",
+  description:
+    "Watch Blackspire Helix Group demo workflows, including Buyer Engine and Helix Lawn Command operator experiences.",
+};
 
 const proofLanes = [
   "Launch reels and cinematic walkthrough clips",

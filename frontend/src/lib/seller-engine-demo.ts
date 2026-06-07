@@ -4,10 +4,20 @@ export type SellerLeadView = {
   id: string;
   ownerName: string;
   ownerMailingAddress: string;
+  ownerPhone?: string;
+  ownerEmail?: string;
+  phoneStatus?: string;
+  skipTraceStatus?: string;
+  phoneSource?: string;
+  contactEnrichmentNotes?: string;
+  contactConfidenceScore?: number;
+  dncFlag?: boolean | null;
+  rawSkiptraceResponse?: Record<string, unknown>;
   propertyAddress: string;
   parcelId: string;
   county: string;
   city: string;
+  state?: string;
   zipCode: string;
   propertyType: string;
   assessedValue: number;
@@ -42,6 +52,10 @@ const seeds = [
     id: "demo-1",
     ownerName: "Marion Ellis Estate",
     ownerMailingAddress: "PO Box 814, Richmond, VA 23218",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Public record import",
+    contactEnrichmentNotes: "No phone captured from probate import. Pull skip-trace before first outreach.",
     propertyAddress: "1809 Alder Street, Winston-Salem, NC 27105",
     parcelId: "6836-42-2190",
     county: "Forsyth",
@@ -61,6 +75,10 @@ const seeds = [
     id: "demo-2",
     ownerName: "Darnell Price",
     ownerMailingAddress: "54 Pelham Drive, Columbia, SC 29209",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Public record import",
+    contactEnrichmentNotes: "Tax-delinquent import did not include a verified phone. Queue contact enrichment.",
     propertyAddress: "712 Bragg Boulevard, Fayetteville, NC 28301",
     parcelId: "0437-88-1021",
     county: "Cumberland",
@@ -80,6 +98,10 @@ const seeds = [
     id: "demo-3",
     ownerName: "Lydia Foster",
     ownerMailingAddress: "914 Pinecroft Road, Greensboro, NC 27407",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Public record import",
+    contactEnrichmentNotes: "No direct number is attached yet. Verify best mobile before first-touch outreach.",
     propertyAddress: "2631 Eastway Drive, Charlotte, NC 28205",
     parcelId: "101-334-18",
     county: "Mecklenburg",
@@ -99,6 +121,10 @@ const seeds = [
     id: "demo-4",
     ownerName: "Cedar Ridge Holdings LLC",
     ownerMailingAddress: "208 Harbor Way, Wilmington, DE 19801",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Public record import",
+    contactEnrichmentNotes: "Entity owner requires skip trace or LLC contact research before outreach.",
     propertyAddress: "4400 New Bern Avenue, Raleigh, NC 27610",
     parcelId: "1723-91-6554",
     county: "Wake",

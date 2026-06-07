@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
+
+export const metadata: Metadata = {
+  title: "Contact | Blackspire Helix Group",
+  description:
+    "Start a strategy call, build engagement, or operator upgrade with Blackspire Helix Group through the project brief intake.",
+};
 
 const engagementLanes = [
   {
@@ -30,6 +37,24 @@ const intakePrompts = [
   "What outcome would make this project feel like a real win in 30–60 days?",
 ] as const;
 
+const responseSequence = [
+  {
+    id: "01",
+    title: "We review the brief",
+    copy: "We look for the operational bottleneck, the business leverage behind it, and the cleanest scope to start with.",
+  },
+  {
+    id: "02",
+    title: "We define the lane",
+    copy: "Strategy call, build engagement, or operator upgrade so the next step feels concrete instead of vague.",
+  },
+  {
+    id: "03",
+    title: "We map the build path",
+    copy: "You get a clearer sequence for the workflow, interface, and automations that should exist next.",
+  },
+] as const;
+
 export default function ContactPage() {
   return (
     <MarketingShell>
@@ -57,11 +82,11 @@ export default function ContactPage() {
                 and branded product surfaces — all built under one flagship command identity.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                  Explore Recon Engine
+                <Link href="#project-brief" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  Start project brief
                 </Link>
                 <Link href="/services" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                  Review services
+                  Review engagement modes
                 </Link>
                 <Link href="/demos" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
                   Review proof gallery
@@ -94,7 +119,7 @@ export default function ContactPage() {
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
 
           {/* ── CONTACT FORM ─────────────────────────────────────────── */}
-          <section className="brand-panel px-6 py-8 lg:px-8">
+          <section id="project-brief" className="brand-panel px-6 py-8 lg:px-8">
             <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Start the conversation</p>
             <h2 className="brand-display mt-3 text-3xl text-white">Send a project brief</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
@@ -245,6 +270,26 @@ export default function ContactPage() {
                 <Link href="/about" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
                   Meet the founder
                 </Link>
+              </div>
+            </section>
+
+            <section className="brand-panel px-6 py-8">
+              <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">What happens next</p>
+              <h2 className="brand-display mt-3 text-2xl text-white">A clearer response path after you reach out</h2>
+              <div className="mt-5 space-y-3">
+                {responseSequence.map((step) => (
+                  <article key={step.id} className="brand-card p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--gold)]">
+                        {step.id}
+                      </span>
+                      <div>
+                        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-white">{step.title}</h3>
+                        <p className="mt-2 text-sm leading-7 text-[var(--copy-soft)]">{step.copy}</p>
+                      </div>
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
           </div>

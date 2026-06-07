@@ -36,10 +36,10 @@ export function DealEngineDealDetailView({
     detail.contractDraft?.contractType ?? "Assignable purchase agreement",
   );
   const [offerLow, setOfferLow] = useState(
-    detail.contractDraft?.offerWindow.split(" - ")[0]?.replace(/[^0-9]/g, "") ?? "205000",
+    detail.contractDraft?.offerWindow.split(" - ")[0]?.replace(/[^0-9]/g, "") ?? "186000",
   );
   const [offerHigh, setOfferHigh] = useState(
-    detail.contractDraft?.offerWindow.split(" - ")[1]?.replace(/[^0-9]/g, "") ?? "214000",
+    detail.contractDraft?.offerWindow.split(" - ")[1]?.replace(/[^0-9]/g, "") ?? "195000",
   );
   const [earnestMoney, setEarnestMoney] = useState(
     detail.contractDraft?.earnestMoney.replace(/[^0-9]/g, "") ?? "5000",
@@ -88,8 +88,15 @@ export function DealEngineDealDetailView({
   const [taskPriority, setTaskPriority] = useState(detail.operatorTasks[0]?.priority ?? "Normal");
   const [taskStatus, setTaskStatus] = useState(detail.operatorTasks[0]?.status ?? "Open");
   const [taskNotes, setTaskNotes] = useState(detail.operatorTasks[0]?.notes ?? "");
+  const [sellerFirstTouchSms, setSellerFirstTouchSms] = useState(detail.sellerOutreach.firstTouchSms);
+  const [sellerFollowUpSms, setSellerFollowUpSms] = useState(detail.sellerOutreach.followUpSms);
+  const [sellerEmailSubject, setSellerEmailSubject] = useState(detail.sellerOutreach.emailSubject);
+  const [sellerEmailBody, setSellerEmailBody] = useState(detail.sellerOutreach.emailBody);
+  const [sellerObjectionReply, setSellerObjectionReply] = useState(detail.sellerOutreach.objectionReply);
+  const [sellerVoicemailScript, setSellerVoicemailScript] = useState(detail.sellerOutreach.voicemailScript);
+  const [sellerCallOpener, setSellerCallOpener] = useState(detail.sellerOutreach.callOpener);
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"buyer" | "contract" | "coordination" | "packet" | "response" | "stage" | "task" | null>(null);
+  const [working, setWorking] = useState<"buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "seller-draft" | "stage" | "task" | null>(null);
 
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
@@ -354,6 +361,162 @@ export function DealEngineDealDetailView({
     }
   }
 
+  async function saveSellerDraft(kind: string, title: string, body: string) {
+    setWorking("seller-draft");
+    setStatus(null);
+    try {
+      const response = await fetch("/api/deal-engine/save-seller-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId, kind, title, body }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Seller draft save failed.");
+      setStatus(payload.message ?? "Seller draft saved.");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Seller draft save failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  function packetPayload() {
+    return {
+      dealId,
+      propertyNotes,
+      investorSummary,
+      buyerEmailBlast,
+      buyerSmsAlert,
+      contactInstructions,
+      deadlineToSubmitOffer,
+      comps: comps.split("\n").map((item) => item.trim()).filter(Boolean),
+    };
+  }
+
+  function coordinationPayload(overrides: Partial<DealEngineDealDetail["coordination"]> = {}) {
+    return {
+      dealId,
+      titleCompany,
+      titleOfficer,
+      walkthroughAt,
+      inspectionEndsOn,
+      closingDate,
+      buyerAssignmentStatus,
+      earnestMoneyStatus,
+      payoutStatus,
+      contractSent,
+      contractSigned,
+      coordinationNotes,
+      closingChecklist,
+      closingDocuments,
+      ...overrides,
+    };
+  }
+
+  async function postJson(url: string, body: Record<string, unknown>, fallbackMessage: string) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+    if (!response.ok || !payload.ok) throw new Error(payload.error ?? fallbackMessage);
+    return payload.message ?? fallbackMessage;
+  }
+
+  async function executeDealCommand(command: "send-contract" | "mark-signed" | "save-packet" | "buyer-draft" | "move-closing") {
+    setWorking("execute");
+    setStatus(null);
+    try {
+      if (command === "send-contract") {
+        await postJson(
+          "/api/deal-engine/coordination",
+          coordinationPayload({ contractSent: true }),
+          "Contract marked as sent.",
+        );
+        setContractSent(true);
+        setStatus("Contract marked as sent. Next: collect seller signature and confirm title cadence.");
+      }
+
+      if (command === "mark-signed") {
+        await postJson(
+          "/api/deal-engine/coordination",
+          coordinationPayload({ contractSent: true, contractSigned: true }),
+          "Contract marked as signed.",
+        );
+        await postJson(
+          "/api/deal-engine/update-stage",
+          {
+            dealId,
+            status: "Under Contract",
+            nextAction: "Build buyer packet, launch buyer outreach, and coordinate walkthrough access.",
+            note: "Operator marked contract signed from the execution command band.",
+          },
+          "Deal moved under contract.",
+        );
+        setContractSent(true);
+        setContractSigned(true);
+        setStageStatus("Under Contract");
+        setStageNextAction("Build buyer packet, launch buyer outreach, and coordinate walkthrough access.");
+        setStatus("Deal is now marked under contract. Next: save packet and activate buyer outreach.");
+      }
+
+      if (command === "save-packet") {
+        await postJson("/api/deal-engine/save-packet", packetPayload(), "Deal packet saved.");
+        setStatus("Disposition packet saved. Next: open the investor room or download the PDF packet.");
+      }
+
+      if (command === "buyer-draft") {
+        await postJson(
+          "/api/deal-engine/create-buyer-draft",
+          { dealId, buyerSignalId: selectedBuyerSignalId },
+          "Buyer outreach draft created.",
+        );
+        setStatus("Buyer outreach draft created. Next: review the draft ledger and send through your approved outreach lane.");
+      }
+
+      if (command === "move-closing") {
+        await postJson(
+          "/api/deal-engine/update-stage",
+          {
+            dealId,
+            status: "Closing",
+            nextAction: "Complete title, EMD, assignment, final docs, and payout coordination.",
+            note: "Operator moved the deal into closing from the execution command band.",
+          },
+          "Deal moved into closing.",
+        );
+        setStageStatus("Closing");
+        setStageNextAction("Complete title, EMD, assignment, final docs, and payout coordination.");
+        setStatus("Deal moved into closing. Next: finish checklist, documents, EMD, assignment, and payout posture.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Deal execution action failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  const contactReady = detail.sellerContact.ownerPhone !== "Not captured" || detail.sellerContact.phoneStatus !== "Skip Trace Needed";
+  const contractReady = contractSent && contractSigned;
+  const packetReady = Boolean(investorSummary.trim() && buyerEmailBlast.trim() && comps.trim());
+  const buyerReady = detail.buyerSignals.length > 0;
+  const coordinationReady =
+    closingChecklist.length > 0 &&
+    closingChecklist.every((item) => item.status === "Done") &&
+    closingDocuments.length > 0 &&
+    closingDocuments.every((item) => item.status === "Final" || item.status === "Reviewed");
+  const executionSteps = [
+    { label: "Contact", ready: contactReady, detail: contactReady ? "seller lane ready" : "run Nexus / verify phone" },
+    { label: "Contract", ready: contractReady, detail: contractReady ? "signed posture saved" : contractSent ? "sent, awaiting signature" : "send contract" },
+    { label: "Packet", ready: packetReady, detail: packetReady ? "buyer packet ready" : "complete buyer-facing copy" },
+    { label: "Buyer", ready: buyerReady, detail: buyerReady ? `${detail.buyerSignals.length} buyer signal(s)` : "run Buyer Engine" },
+    { label: "Close", ready: coordinationReady, detail: coordinationReady ? "closing board complete" : "finish title/docs/checklist" },
+  ];
+
   return (
     <DealEngineShell>
       <header className="brand-panel overflow-hidden px-6 py-7">
@@ -414,6 +577,56 @@ export function DealEngineDealDetailView({
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
 
+      <Panel
+        eyebrow="Execute Deal"
+        title="One command band for the next deal move"
+        description="Use these controls to move the deal forward from inside the workstation. Detailed editing panels stay below when the operator needs to fine-tune the packet, contract, coordination, or buyer follow-up."
+      >
+        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="brand-card p-5">
+            <div className="text-sm font-semibold text-white">Readiness path</div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {executionSteps.map((step) => (
+                <div key={step.label} className="rounded-[14px] border border-[var(--line)] px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-white">{step.label}</div>
+                    <StatusPill tone={step.ready ? "good" : "warn"} label={step.ready ? "ready" : "needs work"} />
+                  </div>
+                  <div className="mt-2 text-xs leading-5 text-[var(--copy-soft)]">{step.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="brand-card p-5">
+            <div className="text-sm font-semibold text-white">Fast actions</div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => void executeDealCommand("send-contract")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+                Mark contract sent
+              </button>
+              <button type="button" onClick={() => void executeDealCommand("mark-signed")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+                Mark signed / under contract
+              </button>
+              <button type="button" onClick={() => void executeDealCommand("save-packet")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+                Save buyer packet
+              </button>
+              <button type="button" onClick={() => void executeDealCommand("buyer-draft")} disabled={working === "execute" || !selectedBuyerSignalId} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+                Generate buyer draft
+              </button>
+              <button type="button" onClick={() => void executeDealCommand("move-closing")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+                Move into closing
+              </button>
+              <Link href={`/deal-room/${encodeURIComponent(detail.room.slug)}`} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition">
+                Open investor room
+              </Link>
+            </div>
+            <div className="mt-4 text-xs leading-5 text-[var(--copy-muted)]">
+              {working === "execute" ? "Executing deal action..." : "Fast actions write to the same APIs as the full forms below."}
+            </div>
+          </div>
+        </div>
+      </Panel>
+
       <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
         <Panel
           eyebrow="Seller Context"
@@ -432,6 +645,92 @@ export function DealEngineDealDetailView({
               <div className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
                 {detail.sellerSignal?.recommendedAction ?? detail.lead.nextAction}
               </div>
+            </div>
+            <div className="brand-card p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Seller contact posture</div>
+                <StatusPill
+                  tone={detail.sellerContact.ownerPhone === "Not captured" ? "warn" : "good"}
+                  label={detail.sellerContact.phoneStatus.toLowerCase()}
+                />
+              </div>
+              <div className="mt-4 space-y-2 text-sm text-[var(--copy-soft)]">
+                <div>Seller: <span className="font-semibold text-white">{detail.sellerContact.ownerName}</span></div>
+                <div>Phone: <span className="font-semibold text-white">{detail.sellerContact.ownerPhone}</span></div>
+                <div>Skip trace: <span className="font-semibold text-white">{detail.sellerContact.skipTraceStatus}</span></div>
+                <div>Source: <span className="font-semibold text-white">{detail.sellerContact.phoneSource}</span></div>
+              </div>
+              <div className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
+                {detail.sellerContact.contactEnrichmentNotes}
+              </div>
+            </div>
+            <div className="brand-card p-5">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Skip trace workflow</div>
+              <div className="mt-4 space-y-3">
+                {detail.sellerContactWorkflow.map((step) => (
+                  <div key={step.id} className="rounded-[14px] border border-[var(--line)] px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-white">{step.title}</div>
+                      <StatusPill tone={step.status === "blocked" ? "warn" : step.status === "active" ? "active" : "good"} label={step.status} />
+                    </div>
+                    <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{step.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel
+          eyebrow="Seller Outreach"
+          title="Draft seller-side messages"
+          description="These scripts are shaped from the live seller summary, contact posture, and negotiation lane for this exact deal."
+        >
+          <div className="space-y-4">
+            <div className="brand-card p-5">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">First-touch SMS</div>
+              <textarea value={sellerFirstTouchSms} onChange={(event) => setSellerFirstTouchSms(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
+              <button type="button" onClick={() => void saveSellerDraft("First-touch SMS", `${detail.sellerContact.ownerName} first-touch SMS`, sellerFirstTouchSms)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                Save seller draft
+              </button>
+            </div>
+            <div className="brand-card p-5">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Follow-up SMS</div>
+              <textarea value={sellerFollowUpSms} onChange={(event) => setSellerFollowUpSms(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
+              <button type="button" onClick={() => void saveSellerDraft("Follow-up SMS", `${detail.sellerContact.ownerName} follow-up SMS`, sellerFollowUpSms)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                Save seller draft
+              </button>
+            </div>
+            <div className="brand-card p-5">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Email draft</div>
+              <input value={sellerEmailSubject} onChange={(event) => setSellerEmailSubject(event.target.value)} className="brand-input mt-3 w-full px-3 py-3 text-sm outline-none" />
+              <textarea value={sellerEmailBody} onChange={(event) => setSellerEmailBody(event.target.value)} className="brand-input mt-3 min-h-32 w-full px-3 py-3 text-sm outline-none" />
+              <button type="button" onClick={() => void saveSellerDraft("Seller Email", sellerEmailSubject, sellerEmailBody)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                Save seller draft
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="brand-card p-5">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Call opener</div>
+                <textarea value={sellerCallOpener} onChange={(event) => setSellerCallOpener(event.target.value)} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" />
+                <button type="button" onClick={() => void saveSellerDraft("Call Opener", `${detail.sellerContact.ownerName} call opener`, sellerCallOpener)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                  Save seller draft
+                </button>
+              </div>
+              <div className="brand-card p-5">
+                <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Voicemail script</div>
+                <textarea value={sellerVoicemailScript} onChange={(event) => setSellerVoicemailScript(event.target.value)} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" />
+                <button type="button" onClick={() => void saveSellerDraft("Voicemail Script", `${detail.sellerContact.ownerName} voicemail`, sellerVoicemailScript)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                  Save seller draft
+                </button>
+              </div>
+            </div>
+            <div className="brand-card p-5">
+              <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Objection-handling reply</div>
+              <textarea value={sellerObjectionReply} onChange={(event) => setSellerObjectionReply(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
+              <button type="button" onClick={() => void saveSellerDraft("Objection Reply", `${detail.sellerContact.ownerName} objection reply`, sellerObjectionReply)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                Save seller draft
+              </button>
             </div>
           </div>
         </Panel>
@@ -881,6 +1180,29 @@ export function DealEngineDealDetailView({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Panel
+          eyebrow="Seller Draft Ledger"
+          title="Saved seller outreach artifacts"
+          description="These are the seller-facing scripts that have been saved back into the deal record for reuse and reference."
+        >
+          <div className="space-y-4">
+            {detail.sellerDrafts.length ? (
+              detail.sellerDrafts.map((draft) => (
+                <div key={draft.id} className="brand-card p-4">
+                  <div className="text-base font-semibold text-white">{draft.title}</div>
+                  <div className="mt-1 text-xs text-[var(--copy-muted)]">{draft.kind}</div>
+                  <div className="mt-1 text-xs text-[var(--copy-muted)]">{new Date(draft.createdAt).toLocaleString()}</div>
+                  <pre className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--copy-soft)]">{draft.body}</pre>
+                </div>
+              ))
+            ) : (
+              <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">
+                No saved seller drafts are attached to this deal yet.
+              </div>
+            )}
+          </div>
+        </Panel>
+
         <Panel
           eyebrow="Draft Ledger"
           title="Saved outreach artifacts"

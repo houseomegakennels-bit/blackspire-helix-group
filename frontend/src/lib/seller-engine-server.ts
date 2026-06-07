@@ -86,12 +86,24 @@ type SellerLeadJoin = {
   recommended_action: string | null;
   ai_summary: string | null;
   created_at: string;
-  owners: { name: string; mailing_address: string | null; mailing_state: string | null } | null;
+  owners: {
+    name: string;
+    mailing_address: string | null;
+    mailing_state: string | null;
+    primary_phone?: string | null;
+    primary_email?: string | null;
+    contact_confidence_score?: number | null;
+    dnc_flag?: boolean | null;
+    skip_trace_status?: string | null;
+    skip_trace_provider?: string | null;
+    raw_skiptrace_response?: Record<string, unknown> | null;
+  } | null;
   properties: {
     property_address: string;
     parcel_id: string | null;
     county: string | null;
     city: string | null;
+    state: string | null;
     zip_code: string | null;
     property_type: string | null;
     assessed_value: number | null;
@@ -107,10 +119,26 @@ type SellerLeadJoin = {
   } | null;
 };
 
+const SELLER_LEAD_BASE_SELECT =
+  "id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(property_address,parcel_id,county,city,state,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))";
+
+const SELLER_LEAD_CONTACT_SELECT =
+  "id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state,primary_phone,primary_email,contact_confidence_score,dnc_flag,skip_trace_status,skip_trace_provider,raw_skiptrace_response),properties(property_address,parcel_id,county,city,state,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))";
+
 type SellerLeadNoteRow = {
   id: string;
   note: string;
   created_at: string;
+};
+
+type NexusContactNotePayload = {
+  primary_phone?: string | null;
+  primary_email?: string | null;
+  contact_confidence_score?: number | null;
+  dnc_flag?: boolean | null;
+  provider?: string | null;
+  status?: string | null;
+  completed_at?: string | null;
 };
 
 type SellerLeadStatusHistoryRow = {
@@ -121,14 +149,31 @@ type SellerLeadStatusHistoryRow = {
 };
 
 function mapSellerLead(lead: SellerLeadJoin): SellerLeadView {
+  const ownerPhone = lead.owners?.primary_phone ?? undefined;
+  const ownerEmail = lead.owners?.primary_email ?? undefined;
+  const skipTraceStatus = lead.owners?.skip_trace_status ?? "Queued";
+  const contactReady = Boolean(ownerPhone || ownerEmail);
+
   return {
     id: lead.id,
     ownerName: lead.owners?.name ?? "Unknown owner",
     ownerMailingAddress: lead.owners?.mailing_address ?? "Not available",
+    ownerPhone,
+    ownerEmail,
+    phoneStatus: contactReady ? "Contact Ready" : "Skip Trace Needed",
+    skipTraceStatus,
+    phoneSource: lead.owners?.skip_trace_provider ? `${lead.owners.skip_trace_provider} API` : "Public record import",
+    contactEnrichmentNotes: contactReady
+      ? `Contact profile is available${lead.owners?.dnc_flag ? ", but the primary phone shows a DNC flag" : ""}. Verify the best compliant lane before first outreach.`
+      : "No verified owner phone is stored yet. Run skip trace, verify the best number, and log the first outreach attempt.",
+    contactConfidenceScore: lead.owners?.contact_confidence_score ?? undefined,
+    dncFlag: lead.owners?.dnc_flag ?? null,
+    rawSkiptraceResponse: lead.owners?.raw_skiptrace_response ?? undefined,
     propertyAddress: lead.properties?.property_address ?? "Unknown property",
     parcelId: lead.properties?.parcel_id ?? "Not available",
     county: lead.properties?.county ?? "Unknown",
     city: lead.properties?.city ?? "Unknown",
+    state: lead.properties?.state ?? "NC",
     zipCode: lead.properties?.zip_code ?? "",
     propertyType: lead.properties?.property_type ?? "Unknown",
     assessedValue: lead.properties?.assessed_value ?? 0,
@@ -157,6 +202,62 @@ function mapSellerLead(lead: SellerLeadJoin): SellerLeadView {
       codeViolation: Boolean(lead.properties?.code_violation),
     },
   };
+}
+
+function parseNexusContactNote(note: string): NexusContactNotePayload | null {
+  const prefix = "NEXUS_CONTACT_RESULT ";
+  if (!note.startsWith(prefix)) return null;
+  try {
+    const payload = JSON.parse(note.slice(prefix.length)) as NexusContactNotePayload;
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyNexusContactToLead(lead: SellerLeadView, payload: NexusContactNotePayload | null): SellerLeadView {
+  if (!payload) return lead;
+
+  const ownerPhone = payload.primary_phone?.trim() || lead.ownerPhone;
+  const ownerEmail = payload.primary_email?.trim() || lead.ownerEmail;
+  const provider = payload.provider?.trim() || "Tracerfy";
+  const contactReady = Boolean(ownerPhone || ownerEmail);
+
+  if (!contactReady) return lead;
+
+  return {
+    ...lead,
+    ownerPhone,
+    ownerEmail,
+    phoneStatus: ownerPhone ? "Contact Ready" : lead.phoneStatus ?? "Email Found",
+    skipTraceStatus: payload.status?.trim() || lead.skipTraceStatus || "completed",
+    phoneSource: `${provider} API via Nexus`,
+    contactConfidenceScore: payload.contact_confidence_score ?? lead.contactConfidenceScore,
+    dncFlag: payload.dnc_flag ?? lead.dncFlag,
+    contactEnrichmentNotes:
+      `Nexus skip trace saved contact enrichment.${ownerPhone ? ` Primary phone ${ownerPhone}.` : ""}${ownerEmail ? ` Primary email ${ownerEmail}.` : ""}${payload.contact_confidence_score != null ? ` Confidence ${payload.contact_confidence_score}.` : ""} Verify compliance posture before outreach.`,
+  };
+}
+
+async function listLatestNexusContactNotes(supabase: SupabaseClient, sellerLeadIds: string[]) {
+  if (!sellerLeadIds.length) return new Map<string, NexusContactNotePayload>();
+
+  const { data, error } = await supabase
+    .from("lead_notes")
+    .select("seller_lead_id,note,created_at")
+    .in("seller_lead_id", sellerLeadIds)
+    .ilike("note", "NEXUS_CONTACT_RESULT %")
+    .order("created_at", { ascending: false });
+
+  if (error || !data?.length) return new Map<string, NexusContactNotePayload>();
+
+  const latest = new Map<string, NexusContactNotePayload>();
+  for (const row of data as Array<{ seller_lead_id: string; note: string }>) {
+    if (latest.has(row.seller_lead_id)) continue;
+    const payload = parseNexusContactNote(row.note);
+    if (payload) latest.set(row.seller_lead_id, payload);
+  }
+  return latest;
 }
 
 type SellerImportRow = Record<string, string>;
@@ -647,11 +748,23 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
+  const contactResult = await supabase
     .from("seller_leads")
-    .select("id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(property_address,parcel_id,county,city,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))")
+    .select(SELLER_LEAD_CONTACT_SELECT)
     .order("motivation_score", { ascending: false })
     .limit(500);
+  let data: unknown[] | null = contactResult.data as unknown[] | null;
+  let error = contactResult.error;
+
+  if (error && /primary_phone|primary_email|contact_confidence|skip_trace|raw_skiptrace|dnc_flag/i.test(error.message)) {
+    const fallback = await supabase
+      .from("seller_leads")
+      .select(SELLER_LEAD_BASE_SELECT)
+      .order("motivation_score", { ascending: false })
+      .limit(500);
+    data = fallback.data as unknown[] | null;
+    error = fallback.error;
+  }
 
   if (error) return [];
   if (!data?.length) return [];
@@ -663,11 +776,23 @@ export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | 
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;
 
-  const { data, error } = await supabase
+  const contactResult = await supabase
     .from("seller_leads")
-    .select("id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(property_address,parcel_id,county,city,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))")
+    .select(SELLER_LEAD_CONTACT_SELECT)
     .eq("id", id)
     .maybeSingle();
+  let data: unknown = contactResult.data;
+  let error = contactResult.error;
+
+  if (error && /primary_phone|primary_email|contact_confidence|skip_trace|raw_skiptrace|dnc_flag/i.test(error.message)) {
+    const fallback = await supabase
+      .from("seller_leads")
+      .select(SELLER_LEAD_BASE_SELECT)
+      .eq("id", id)
+      .maybeSingle();
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !data) return null;
 

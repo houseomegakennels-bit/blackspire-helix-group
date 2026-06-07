@@ -38,6 +38,9 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
               <Link href="/seller-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Review seller pipeline
               </Link>
+              <Link href="/workspace/nexus" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
+                Open Nexus
+              </Link>
               <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Open buyer workspace
               </Link>

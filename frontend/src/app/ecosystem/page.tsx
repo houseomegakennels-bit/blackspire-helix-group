@@ -1,178 +1,146 @@
-import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { EcosystemCard } from "@/components/ecosystem-card";
 import { MarketingShell } from "@/components/marketing-shell";
 import { ecosystemProjects } from "@/lib/ecosystem";
 
-const commandStatsBase = [
-  { value: "24/7", label: "Automation uptime" },
-  { value: "56+", label: "Counties indexed" },
-  { value: "Elite", label: "Operator posture" },
-];
+export const metadata: Metadata = {
+  title: "Ecosystem | Blackspire Helix Group",
+  description:
+    "Explore the Blackspire Helix Group ecosystem, including live operator divisions and expanding product concepts under the parent brand.",
+};
+
+const liveProjects = ecosystemProjects.filter((project) => project.status === "live");
+const buildingProjects = ecosystemProjects.filter((project) => project.status === "building");
+const ecosystemLanes = [
+  {
+    id: "01",
+    title: "Live operator divisions",
+    copy: "Revenue-facing systems with working routes, branded identities, and clear audience fit.",
+  },
+  {
+    id: "02",
+    title: "Expanding concepts",
+    copy: "Ideas that already belong to the Blackspire world but still need product shaping or go-to-market definition.",
+  },
+  {
+    id: "03",
+    title: "Parent-brand coherence",
+    copy: "Each division can feel distinct without losing the shared command language of the flagship brand.",
+  },
+] as const;
 
 export default function EcosystemPage() {
-  const systemCount = String(ecosystemProjects.length).padStart(2, "0");
-  const commandStats = [
-    { value: systemCount, label: "Active divisions" },
-    ...commandStatsBase,
-  ];
-
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] px-4 py-16 lg:px-6">
-
-        {/* ── HERO ───────────────────────────────────────────────────── */}
-        <section className="brand-panel relative overflow-hidden px-6 py-12 lg:px-10 lg:py-16">
-          {/* background orbs */}
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[radial-gradient(circle,hsl(38_92%_55%/.14),transparent_68%)] blur-3xl" />
-            <div className="absolute -bottom-16 -left-16 h-72 w-72 rounded-full bg-[radial-gradient(circle,hsl(210_90%_60%/.08),transparent_68%)] blur-3xl" />
-          </div>
-
-          <div className="relative z-10 grid gap-10 xl:grid-cols-[1fr_auto] xl:items-end">
+      <div className="mx-auto max-w-[1450px] px-4 py-10 lg:px-6">
+        <section className="brand-panel px-6 py-8 lg:px-8">
+          <div className="grid gap-8 xl:grid-cols-[1fr_360px] xl:items-end">
             <div>
-              <div className="flex items-center gap-3">
-                <span className="live-dot" />
-                <p className="cmd-text">BLACKSPIRE HELIX GROUP / Ecosystem Command</p>
-              </div>
-              <h1 className="brand-accent-text mt-4 text-4xl font-black leading-[1.05] tracking-tight sm:text-5xl sm:leading-none lg:text-7xl">
-                ONE PARENT.<br />
-                <span className="text-white">{systemCount} SYSTEMS.</span>
+              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Ecosystem Command</p>
+              <h1 className="brand-display brand-accent-text mt-3 text-4xl leading-tight text-white lg:text-6xl">
+                Blackspire Helix Group portfolio map.
               </h1>
-              <p className="mt-5 max-w-3xl text-base leading-8 text-[var(--copy-soft)]">
-                BLACKSPIRE HELIX GROUP operates as a command-center holding company. Each division
-                proves how the same automation philosophy translates into a different market without
-                losing precision, polish, or brand coherence.
+              <p className="mt-5 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
+                Every division belongs to one of two states: live operator surface or expanding concept.
+                The ecosystem page keeps those lanes clear so the brand reads as organized instead of crowded.
               </p>
-
-              {/* division color spectrum */}
-              <div className="mt-8 space-y-2">
-                <p className="text-[10px] uppercase tracking-[0.36em] text-[var(--copy-muted)]">Division spectrum</p>
-                <div className="division-strip h-2">
-                  {ecosystemProjects.map((project, i) => (
-                    <div
-                      key={project.slug}
-                      className="division-strip-seg"
-                      style={{ background: project.accent, animationDelay: `${i * 0.3}s` }}
-                    />
-                  ))}
-                </div>
-                <div className="flex gap-0">
-                  {ecosystemProjects.map((project) => (
-                    <div
-                      key={project.slug}
-                      className="flex-1 text-center text-[9px] uppercase tracking-[0.16em] leading-4 px-1"
-                      style={{ color: `color-mix(in srgb, ${project.accent} 55%, var(--copy-muted))` }}
-                    >
-                      {project.name.split(" ").slice(-1)}
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
 
-            {/* stat badges */}
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-1">
-              {commandStats.map((s, i) => (
-                <div key={s.label} className={`stat-badge reveal-up stagger-${i + 1}`}>
-                  <span className="stat-badge-value brand-accent-text">{s.value}</span>
-                  <span className="stat-badge-label">{s.label}</span>
-                </div>
-              ))}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="brand-card p-4">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Total</div>
+                <div className="brand-display mt-2 text-3xl text-white">{String(ecosystemProjects.length).padStart(2, "0")}</div>
+              </div>
+              <div className="brand-card p-4">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Live</div>
+                <div className="brand-display mt-2 text-3xl text-white">{String(liveProjects.length).padStart(2, "0")}</div>
+              </div>
+              <div className="brand-card p-4">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Building</div>
+                <div className="brand-display mt-2 text-3xl text-white">{String(buildingProjects.length).padStart(2, "0")}</div>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ── DIVISION QUICK-NAV ─────────────────────────────────────── */}
-        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {ecosystemProjects.map((project, i) => (
-            <div
-              key={project.slug}
-              className={`brand-card shine-card cursor-default overflow-hidden p-4 reveal-up stagger-${i + 1}`}
-              style={{ "--project-accent": project.accent } as CSSProperties}
-            >
-              <div
-                className="mb-2 h-1 w-full rounded-full opacity-80"
-                style={{ background: `linear-gradient(90deg, ${project.accent}, transparent)` }}
-              />
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">{project.role}</p>
-              <p className="mt-1 text-sm font-semibold text-white leading-tight">{project.name}</p>
-              <p className="mt-1.5 text-[11px] leading-5 text-[var(--copy-soft)] line-clamp-2">{project.tagline}</p>
-              <div className="mt-3 flex items-center gap-1.5">
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: project.accent }}
-                />
-                <span className="text-[10px] uppercase tracking-[0.22em]"
-                  style={{ color: project.accent }}>
-                  {project.status === "live" ? "Live" : "Expanding"}
-                </span>
-              </div>
-            </div>
-          ))}
-        </section>
-
-        {/* glow divider */}
-        <div className="glow-line my-8" />
-
-        {/* ── FULL DIVISION CARDS ────────────────────────────────────── */}
-        <section>
+        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Division Dossiers</p>
-              <h2 className="brand-display mt-2 text-4xl text-white">Full command profiles</h2>
+              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Portfolio logic</p>
+              <h2 className="brand-display mt-3 text-3xl text-white">How to read the ecosystem</h2>
             </div>
-            <Link href="/services" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-              View services map
+            <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+              Ask about a build lane
             </Link>
           </div>
-          <div className="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-            {ecosystemProjects.map((project, i) => (
-              <div key={project.slug} className={`reveal-up stagger-${(i % 3) + 1}`}>
-                <EcosystemCard project={project} />
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            {ecosystemLanes.map((lane) => (
+              <div key={lane.id} className="brand-card p-5">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">{lane.id}</div>
+                <div className="mt-4 text-xl font-semibold text-white">{lane.title}</div>
+                <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{lane.copy}</p>
               </div>
             ))}
           </div>
         </section>
 
-        {/* ── COMMAND ARCHITECTURE ───────────────────────────────────── */}
-        <section className="mt-8 brand-panel relative overflow-hidden px-6 py-10 lg:px-10">
-          <div className="pointer-events-none absolute right-0 top-0 h-full w-1/2 bg-[radial-gradient(circle_at_80%_20%,hsl(38_92%_55%/.06),transparent_60%)]" />
-          <div className="relative z-10 grid gap-8 lg:grid-cols-[1fr_1fr]">
+        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Command architecture</p>
-              <h2 className="brand-display mt-3 text-4xl text-white leading-tight">
-                One operating philosophy.<br />Infinite vertical translations.
-              </h2>
-              <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
-                BLACKSPIRE HELIX GROUP is not positioned like a template-heavy AI agency.
-                The parent experience telegraphs discretion, engineering depth, and founder taste.
-                Every division below is proof that the same operating philosophy can be translated
-                into a different market with its own visual language and revenue logic.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link href="/about" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                  Meet the founder
-                </Link>
-                <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                  Start a project
-                </Link>
-              </div>
+              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Live systems</p>
+              <h2 className="brand-display mt-3 text-3xl text-white">Active division surfaces</h2>
             </div>
-            <div className="grid gap-3">
-              {["Luxury brand language across every surface", "Operator-first interfaces with command-grade UX", "Verticalized AI systems per industry", "Automation that runs without hand-holding"].map((item, i) => (
-                <div key={item} className={`service-timeline-card reveal-left stagger-${i + 1}`}>
-                  <span className="ghost-number absolute right-3 -top-2 text-4xl opacity-[0.07]">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <p className="text-sm font-medium text-white tracking-[0.04em]">{item}</p>
-                </div>
-              ))}
-            </div>
+            <Link href="/workspaces" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+              Open workspace directory
+            </Link>
+          </div>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+            {liveProjects.map((project) => (
+              <EcosystemCard key={project.slug} project={project} />
+            ))}
           </div>
         </section>
 
+        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
+          <div>
+            <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Expanding systems</p>
+            <h2 className="brand-display mt-3 text-3xl text-white">Concepts still forming under the parent brand</h2>
+          </div>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+            {buildingProjects.map((project) => (
+              <EcosystemCard key={project.slug} project={project} />
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Next move</p>
+              <h2 className="brand-display mt-3 text-3xl text-white">Need the public story or the operator layer?</h2>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <Link href="/workspaces" className="brand-card block p-5 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]">
+              <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">Operator access</div>
+              <div className="mt-4 text-xl font-semibold text-white">Open workspace directory</div>
+              <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                Move from portfolio browsing into the live systems that already run the business logic.
+              </p>
+            </Link>
+            <Link href="/contact" className="brand-card block p-5 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]">
+              <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">Project intake</div>
+              <div className="mt-4 text-xl font-semibold text-white">Start a branded system build</div>
+              <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                Use the intake brief if you want a division, command surface, or automation flow built with this same level of structure.
+              </p>
+            </Link>
+          </div>
+        </section>
       </div>
     </MarketingShell>
   );

@@ -1,6 +1,11 @@
 export type DealEngineLead = {
   id: string;
   ownerName: string;
+  ownerPhone?: string;
+  phoneStatus?: string;
+  skipTraceStatus?: string;
+  phoneSource?: string;
+  contactEnrichmentNotes?: string;
   propertyAddress: string;
   county: string;
   status: string;
@@ -14,6 +19,11 @@ export type DealEngineLead = {
 export type DealEngineSellerSignal = {
   id: string;
   ownerName: string;
+  ownerPhone?: string;
+  phoneStatus?: string;
+  skipTraceStatus?: string;
+  phoneSource?: string;
+  contactEnrichmentNotes?: string;
   propertyAddress: string;
   county: string;
   status: string;
@@ -76,18 +86,26 @@ export const dealEngineLeads: DealEngineLead[] = [
   {
     id: "DE-2417",
     ownerName: "Eleanor Shaw",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Deal Engine workflow",
+    contactEnrichmentNotes: "No seller phone is stored for this opportunity. Skip trace and verify the best number before first-touch outreach.",
     propertyAddress: "1438 Winding Creek Dr, Charlotte, NC 28214",
     county: "Mecklenburg",
-    status: "Negotiating",
+    status: "Offer Ready",
     motivationScore: 91,
     mao: "$195,000",
     assignmentFee: "$18,000",
     exitStrategy: "Wholesale to a mid-volume Charlotte flipper",
-    nextAction: "Counter with a clean-close convenience package and sibling reassurance notes.",
+    nextAction: "Open the seller conversation with a clean-close convenience angle and confirm all decision-makers.",
   },
   {
     id: "DE-2421",
     ownerName: "Marcus Bell",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Deal Engine workflow",
+    contactEnrichmentNotes: "No verified seller phone has been carried into the deal yet.",
     propertyAddress: "509 Gordon Ave, Durham, NC 27701",
     county: "Durham",
     status: "Needs Analysis",
@@ -100,6 +118,10 @@ export const dealEngineLeads: DealEngineLead[] = [
   {
     id: "DE-2430",
     ownerName: "Terry Cole",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Deal Engine workflow",
+    contactEnrichmentNotes: "Phone capture is still open. Treat seller contact enrichment as a required intake step.",
     propertyAddress: "3111 Brookrun Ct, Greensboro, NC 27406",
     county: "Guilford",
     status: "Offer Ready",
@@ -145,6 +167,11 @@ export const dealEngineFlow = [
     href: "/seller-engine",
   },
   {
+    label: "Nexus",
+    detail: "Resolves missing owner contact data and verifies the best outreach path before acquisition begins.",
+    href: "/workspace/nexus",
+  },
+  {
     label: "Deal Engine",
     detail: "Underwrites the opportunity, drives acquisition, and shapes the deal for disposition.",
     href: "/workspace/deal-engine",
@@ -160,6 +187,10 @@ export const dealEngineSellerSignals: DealEngineSellerSignal[] = [
   {
     id: "demo-3",
     ownerName: "Lydia Foster",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Seller Engine",
+    contactEnrichmentNotes: "Seller contact data is incomplete. Verify the best number before moving this lead deeper into acquisition.",
     propertyAddress: "2631 Eastway Drive, Charlotte, NC 28205",
     county: "Mecklenburg",
     status: "Contact Ready",
@@ -173,6 +204,10 @@ export const dealEngineSellerSignals: DealEngineSellerSignal[] = [
   {
     id: "demo-2",
     ownerName: "Darnell Price",
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Seller Engine",
+    contactEnrichmentNotes: "No seller phone is attached yet. Queue skip trace before outreach.",
     propertyAddress: "712 Bragg Boulevard, Fayetteville, NC 28301",
     county: "Cumberland",
     status: "Reviewing",
@@ -222,15 +257,16 @@ export const dealEngineContractDrafts: DealEngineContractDraft[] = [
     propertyAddress: "1438 Winding Creek Dr, Charlotte, NC 28214",
     sellerName: "Eleanor Shaw",
     contractType: "Assignable purchase agreement",
-    offerWindow: "$205,000 - $214,000",
+    offerWindow: "$186,000 - $195,000",
     earnestMoney: "$5,000",
     outreachLead:
-      "Certainty, as-is close, and probate simplicity should anchor the seller-side contract conversation.",
+      "Lead with certainty, as-is close, and a simple family-safe process before anchoring on final pricing.",
     buyerDispositionNote:
       "Pair this with Charlotte flippers already active in Mecklenburg and prep a concise buyer packet immediately after signature.",
     nextSteps: [
-      "Confirm sibling decision-maker alignment.",
-      "Lock inspection and title cadence.",
+      "Make first seller contact and confirm who needs to approve the decision.",
+      "Confirm sibling or family decision-maker alignment before papering terms.",
+      "Lock inspection and title cadence once the seller is engaged.",
       "Push investor-ready packet once accepted.",
     ],
   },

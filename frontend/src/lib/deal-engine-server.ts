@@ -66,6 +66,18 @@ type DealLeadJoin = {
     | null;
 };
 
+type NexusContactRow = {
+  owner_name: string;
+  property_address: string;
+  mailing_address: string | null;
+  primary_phone: string | null;
+  primary_email: string | null;
+  contact_confidence_score: number | null;
+  provider: string | null;
+  status: string | null;
+  updated_at: string;
+};
+
 export type DealEngineMetric = {
   label: string;
   value: string;
@@ -92,6 +104,29 @@ export type DealEngineWorkspaceSnapshot = {
 export type DealEngineDealDetail = {
   lead: DealEngineLead;
   sellerSignal: DealEngineSellerSignal | null;
+  sellerContact: {
+    ownerName: string;
+    ownerPhone: string;
+    phoneStatus: string;
+    skipTraceStatus: string;
+    phoneSource: string;
+    contactEnrichmentNotes: string;
+  };
+  sellerContactWorkflow: Array<{
+    id: string;
+    title: string;
+    detail: string;
+    status: "ready" | "active" | "blocked";
+  }>;
+  sellerOutreach: {
+    firstTouchSms: string;
+    followUpSms: string;
+    emailSubject: string;
+    emailBody: string;
+    objectionReply: string;
+    voicemailScript: string;
+    callOpener: string;
+  };
   buyerSignals: DealEngineBuyerSignal[];
   contractDraft: DealEngineContractDraft | null;
   coordination: {
@@ -140,6 +175,13 @@ export type DealEngineDealDetail = {
     deadlineToSubmitOffer: string;
     comps: string[];
   };
+  sellerDrafts: Array<{
+    id: string;
+    kind: string;
+    title: string;
+    body: string;
+    createdAt: string;
+  }>;
   relatedDrafts: Array<{
     id: string;
     buyerName: string;
@@ -284,6 +326,11 @@ function toLead(row: DealLeadJoin): DealEngineLead {
   return {
     id: row.id,
     ownerName: row.owner_name ?? "Unknown owner",
+    ownerPhone: undefined,
+    phoneStatus: "Skip Trace Needed",
+    skipTraceStatus: "Queued",
+    phoneSource: "Deal Engine workflow",
+    contactEnrichmentNotes: "No verified seller phone is stored on this deal yet. Run skip trace and confirm the best number before outreach.",
     propertyAddress: row.property_address ?? "Unknown property",
     county: row.county ?? "Unknown",
     status: row.status ?? "Imported",
@@ -336,6 +383,11 @@ function toSellerSignal(lead: SellerLeadView): DealEngineSellerSignal {
   return {
     id: lead.id,
     ownerName: lead.ownerName,
+    ownerPhone: lead.ownerPhone,
+    phoneStatus: lead.phoneStatus,
+    skipTraceStatus: lead.skipTraceStatus,
+    phoneSource: lead.phoneSource,
+    contactEnrichmentNotes: lead.contactEnrichmentNotes,
     propertyAddress: lead.propertyAddress,
     county: lead.county,
     status: lead.status,
@@ -621,6 +673,13 @@ type SaveDealCoordinationInput = {
   }>;
 };
 
+type SaveSellerOutreachDraftInput = {
+  dealId: string;
+  kind: string;
+  title: string;
+  body: string;
+};
+
 function buildDraftBody(input: {
   buyerName: string;
   market: string;
@@ -755,6 +814,196 @@ function buildFallbackCoordination(
         notes: "",
       },
     ],
+  };
+}
+
+function buildSellerContactProfile(
+  lead: DealEngineLead,
+  sellerSignal: DealEngineSellerSignal | null,
+): DealEngineDealDetail["sellerContact"] {
+  return {
+    ownerName: sellerSignal?.ownerName ?? lead.ownerName,
+    ownerPhone: sellerSignal?.ownerPhone?.trim() || lead.ownerPhone?.trim() || "Not captured",
+    phoneStatus: sellerSignal?.phoneStatus?.trim() || lead.phoneStatus?.trim() || "Skip Trace Needed",
+    skipTraceStatus:
+      sellerSignal?.skipTraceStatus?.trim()
+      || lead.skipTraceStatus?.trim()
+      || (sellerSignal?.ownerPhone?.trim() || lead.ownerPhone?.trim() ? "Verify Number" : "Queued"),
+    phoneSource: sellerSignal?.phoneSource?.trim() || lead.phoneSource?.trim() || "Deal Engine workflow",
+    contactEnrichmentNotes:
+      sellerSignal?.contactEnrichmentNotes?.trim()
+      || lead.contactEnrichmentNotes?.trim()
+      || "Seller contact enrichment is still open. Capture and verify the best number before outreach.",
+  };
+}
+
+function normalizeContactMatch(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function mergeNexusContactProfile(
+  sellerContact: DealEngineDealDetail["sellerContact"],
+  contact: NexusContactRow | null,
+): DealEngineDealDetail["sellerContact"] {
+  if (!contact) return sellerContact;
+
+  const primaryPhone = contact.primary_phone?.trim();
+  const primaryEmail = contact.primary_email?.trim();
+  const provider = contact.provider?.trim() || "Nexus";
+  const status = contact.status?.trim() || sellerContact.skipTraceStatus;
+  const confidence = contact.contact_confidence_score != null ? ` Confidence ${contact.contact_confidence_score}.` : "";
+
+  return {
+    ...sellerContact,
+    ownerName: contact.owner_name?.trim() || sellerContact.ownerName,
+    ownerPhone: primaryPhone || sellerContact.ownerPhone,
+    phoneStatus: primaryPhone ? "Trace Complete" : sellerContact.phoneStatus,
+    skipTraceStatus: status,
+    phoneSource: primaryPhone ? `${provider} API` : sellerContact.phoneSource,
+    contactEnrichmentNotes:
+      primaryPhone || primaryEmail
+        ? `Nexus saved a ${provider} contact profile for this deal.${primaryPhone ? ` Primary phone ${primaryPhone}.` : ""}${primaryEmail ? ` Primary email ${primaryEmail}.` : ""}${confidence} Verify compliance posture before outreach.`
+        : sellerContact.contactEnrichmentNotes,
+  };
+}
+
+async function findNexusContactForDeal(
+  supabase: SupabaseClient,
+  lead: DealEngineLead,
+): Promise<NexusContactRow | null> {
+  const { data, error } = await supabase
+    .from("nexus_contacts")
+    .select("owner_name,property_address,mailing_address,primary_phone,primary_email,contact_confidence_score,provider,status,updated_at")
+    .eq("owner_name", lead.ownerName)
+    .eq("property_address", lead.propertyAddress)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!error && data) return data as NexusContactRow;
+
+  const { data: recentContacts, error: recentError } = await supabase
+    .from("nexus_contacts")
+    .select("owner_name,property_address,mailing_address,primary_phone,primary_email,contact_confidence_score,provider,status,updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(250);
+
+  if (recentError || !recentContacts?.length) return null;
+  return (recentContacts as NexusContactRow[]).find((contact) =>
+    normalizeContactMatch(contact.owner_name) === normalizeContactMatch(lead.ownerName)
+    && normalizeContactMatch(contact.property_address) === normalizeContactMatch(lead.propertyAddress)
+  ) ?? null;
+}
+
+function buildSellerContactWorkflow(
+  lead: DealEngineLead,
+  sellerContact: DealEngineDealDetail["sellerContact"],
+): DealEngineDealDetail["sellerContactWorkflow"] {
+  const hasPhone = sellerContact.ownerPhone !== "Not captured";
+  return [
+    {
+      id: `${lead.id}-contact-source`,
+      title: "Check intake source for direct contact data",
+      detail: `Confirm whether Seller Engine, manual intake, or source docs already have a usable phone for ${sellerContact.ownerName}.`,
+      status: hasPhone ? "ready" : "active",
+    },
+    {
+      id: `${lead.id}-skip-trace`,
+      title: hasPhone ? "Verify best seller number" : "Run skip trace and verify best seller number",
+      detail: hasPhone
+        ? "A number is present. Verify it is current, mobile-capable, and approved for first-touch outreach."
+        : "No number is stored. Pull contact enrichment, rank the likely numbers, and verify the best path for Carlos Pearson and Blackspire Helix Group outreach.",
+      status: "active",
+    },
+    {
+      id: `${lead.id}-compliance`,
+      title: "Confirm compliance posture before outreach",
+      detail: "Check DNC / opt-out posture, note the approved contact channel, and document any family or title-sensitive handling.",
+      status: "ready",
+    },
+    {
+      id: `${lead.id}-first-touch`,
+      title: "Launch first-touch seller outreach and log the result",
+      detail: "Once the number is verified, send the first-touch Carlos Pearson / Blackspire Helix Group script and log the response or no-answer outcome back into the deal.",
+      status: hasPhone ? "ready" : "blocked",
+    },
+  ];
+}
+
+function buildSellerOutreach(
+  lead: DealEngineLead,
+  sellerSignal: DealEngineSellerSignal | null,
+  sellerContact: DealEngineDealDetail["sellerContact"],
+  contractDraft: DealEngineContractDraft | null,
+): DealEngineDealDetail["sellerOutreach"] {
+  const ownerName = sellerContact.ownerName || lead.ownerName;
+  const address = lead.propertyAddress;
+  const county = lead.county;
+  const summary =
+    sellerSignal?.summary
+    || "We help sellers who want a simpler direct-sale path without repair prep or listing friction.";
+  const action =
+    sellerSignal?.recommendedAction
+    || lead.nextAction
+    || "Lead with certainty, as-is terms, and a simple close path.";
+  const pricing = contractDraft?.offerWindow || `around ${lead.mao}`;
+  const closeAngle = contractDraft?.outreachLead || "clean close, as-is terms, and clear next steps";
+
+  return {
+    firstTouchSms: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group. I'm reaching out about ${address}. We work with owners in ${county} who want a direct as-is sale without repairs or listing prep. If you'd consider an offer, I can keep it simple and low-pressure.`,
+    followUpSms: `Hi ${ownerName}, Carlos from Blackspire here following up on ${address}. We may be able to structure a straightforward close ${pricing ? `in the ${pricing} range` : ""} depending on condition and timing. If convenience matters more than listing it, I can walk you through a clean option.`,
+    emailSubject: `Direct sale option for ${address}`,
+    emailBody: `Hi ${ownerName},\n\nThis is Carlos Pearson with Blackspire Helix Group. I'm reaching out about ${address} because we help sellers who want a direct, as-is option instead of preparing a home for the market.\n\nFrom our side, the goal would be ${closeAngle}. ${summary}\n\nIf selling is something you're open to, I can outline what a simple next step looks like and answer any questions without pressure.\n\nBest,\nCarlos Pearson\nBlackspire Helix Group`,
+    objectionReply: `I completely understand. Many owners we speak with are weighing whether a direct sale is worth it versus listing. The main value on our side is speed, simplicity, and fewer moving parts. ${action} If now is not the right time, I’m happy to stay respectful and circle back only if you want me to.`,
+    voicemailScript: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group calling about ${address}. We work with owners looking for a simple as-is sale and I wanted to see whether you might be open to a direct offer. You can call or text me back whenever it’s convenient.`,
+    callOpener: `Hi ${ownerName}, this is Carlos Pearson with Blackspire Helix Group. I’m calling about ${address}. Did I catch you at an okay time for a quick question about the property?`,
+  };
+}
+
+function buildInitialContactTask(leadId: string, ownerName: string, ownerPhone?: string) {
+  const now = new Date().toISOString();
+  return {
+    lead_id: leadId,
+    action_type: "operator_task",
+    payload: {
+      taskId: `contact-enrichment-${leadId}`,
+      title: ownerPhone?.trim()
+        ? `Verify seller phone and launch first-touch for ${ownerName}`
+        : `Skip trace and verify seller phone for ${ownerName}`,
+      owner: "Acquisitions",
+      dueDate: "",
+      priority: "High",
+      status: "Open",
+      notes: ownerPhone?.trim()
+        ? "A phone is attached. Verify it is the best number, confirm compliance posture, and launch the first-touch sequence."
+        : "No seller phone is stored. Run skip trace, verify the best number, record the source, and prep the first-touch sequence before acquisition outreach.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
+
+function buildDefaultContactOperatorTask(
+  lead: DealEngineLead,
+  sellerContact: DealEngineDealDetail["sellerContact"],
+): DealEngineDealDetail["operatorTasks"][number] {
+  const now = new Date().toISOString();
+  return {
+    id: `contact-enrichment-${lead.id}`,
+    title:
+      sellerContact.ownerPhone === "Not captured"
+        ? `Skip trace and verify seller phone for ${sellerContact.ownerName}`
+        : `Verify seller phone and launch first-touch for ${sellerContact.ownerName}`,
+    owner: "Acquisitions",
+    dueDate: "",
+    priority: "High",
+    status: "Open",
+    notes:
+      sellerContact.ownerPhone === "Not captured"
+        ? "No seller phone is stored. Run skip trace, verify the best number, and prep first-touch outreach."
+        : "A phone is attached. Verify it is current, confirm compliance posture, and launch outreach.",
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -944,6 +1193,22 @@ function parseOperatorTasks(logs: DispositionLogRow[]) {
   });
 }
 
+function parseSellerDrafts(logs: DispositionLogRow[]) {
+  return logs
+    .filter((log) => log.action_type === "seller_draft_saved")
+    .map((log) => {
+      const payload = log.payload ?? {};
+      return {
+        id: String(log.id),
+        kind: String(payload.kind ?? "Seller draft"),
+        title: String(payload.title ?? "Untitled seller draft"),
+        body: String(payload.body ?? ""),
+        createdAt: String(payload.createdAt ?? log.created_at ?? new Date().toISOString()),
+      };
+    })
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+}
+
 function buildActivityFeed(logs: DispositionLogRow[]) {
   return logs.map((log) => {
     const payload = log.payload ?? {};
@@ -1004,6 +1269,16 @@ function buildActivityFeed(logs: DispositionLogRow[]) {
         id: String(log.id),
         title: `Buyer draft created for ${String(payload.buyerName ?? "buyer lane")}`,
         detail: String(payload.subject ?? "Outreach draft saved."),
+        timestamp,
+        tone: "active" as const,
+      };
+    }
+
+    if (log.action_type === "seller_draft_saved") {
+      return {
+        id: String(log.id),
+        title: `Seller draft saved: ${String(payload.kind ?? "seller outreach")}`,
+        detail: String(payload.title ?? "Seller outreach draft saved."),
         timestamp,
         tone: "active" as const,
       };
@@ -1122,6 +1397,7 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
         conversationSummary: sellerLead.summary,
       },
     }),
+    supabase.from("disposition_logs").insert(buildInitialContactTask(dealId, sellerLead.ownerName, sellerLead.ownerPhone)),
     supabase.from("buyer_matches").insert({
       lead_id: dealId,
       county: sellerLead.county,
@@ -1565,6 +1841,31 @@ export async function saveDealCoordination(input: SaveDealCoordinationInput) {
   return { ok: true as const };
 }
 
+export async function saveSellerOutreachDraft(input: SaveSellerOutreachDraftInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const createdAt = new Date().toISOString();
+  const { error } = await supabase.from("disposition_logs").insert({
+    lead_id: input.dealId,
+    action_type: "seller_draft_saved",
+    payload: {
+      kind: input.kind,
+      title: input.title,
+      body: input.body,
+      createdAt,
+    },
+  });
+
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+
+  return { ok: true as const };
+}
+
 export async function getDealEngineDealDetail(dealId: string): Promise<DealEngineDealDetail | null> {
   const [leads, sellerSignals, buyerSignals, drafts] = await Promise.all([
     listDealEngineLeads(100),
@@ -1583,6 +1884,9 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     sellerSignals.find((item) => item.propertyAddress === lead.propertyAddress)
     ?? sellerSignals.find((item) => item.county === lead.county)
     ?? null;
+  let sellerContact = buildSellerContactProfile(lead, sellerSignal);
+  let sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
+  let sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
   const relatedBuyerSignals = buyerSignals.filter(
     (item) => item.market.toLowerCase().includes(lead.county.toLowerCase()),
   );
@@ -1597,6 +1901,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       body: draft.body,
       createdAt: draft.createdAt,
     }));
+  let sellerDrafts: DealEngineDealDetail["sellerDrafts"] = [];
   let investorResponses: DealEngineDealDetail["investorResponses"] = [];
   let operatorTasks: DealEngineDealDetail["operatorTasks"] = [];
   let activityFeed: DealEngineDealDetail["activityFeed"] = [];
@@ -1610,6 +1915,11 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
 
   const supabase = getSupabaseAdmin();
   if (supabase) {
+    const nexusContact = await findNexusContactForDeal(supabase, lead);
+    sellerContact = mergeNexusContactProfile(sellerContact, nexusContact);
+    sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
+    sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
+
     const { data } = await supabase
       .from("deal_packets")
       .select("property_notes,investor_summary,buyer_email_blast,buyer_sms_alert,contact_instructions,deadline_to_submit_offer,comps_placeholder")
@@ -1672,10 +1982,11 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       .from("disposition_logs")
       .select("id,action_type,payload,created_at")
       .eq("lead_id", dealId)
-      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "operator_task", "coordination_update"])
+      .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "seller_draft_saved", "operator_task", "coordination_update"])
       .order("created_at", { ascending: false });
     if (dispositionData?.length) {
       const logs = dispositionData as DispositionLogRow[];
+      sellerDrafts = parseSellerDrafts(logs);
       investorResponses = parseDispositionLogs(logs);
       operatorTasks = parseOperatorTasks(logs);
       activityFeed = buildActivityFeed(logs);
@@ -1702,14 +2013,22 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     }
   }
 
+  if (!operatorTasks.some((task) => /seller phone|skip trace|first-touch/i.test(task.title))) {
+    operatorTasks = [buildDefaultContactOperatorTask(lead, sellerContact), ...operatorTasks];
+  }
+
   return {
     lead,
     sellerSignal,
+    sellerContact,
+    sellerContactWorkflow,
+    sellerOutreach,
     buyerSignals: relatedBuyerSignals.length ? relatedBuyerSignals : buyerSignals.slice(0, 4),
     contractDraft,
     coordination,
     room,
     packet,
+    sellerDrafts,
     relatedDrafts,
     investorResponses,
     operatorTasks,
@@ -1719,17 +2038,26 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
 
 export async function getDealEngineDealRoomBySlug(slug: string) {
   const supabase = getSupabaseAdmin();
-  if (!supabase) return null;
+  if (supabase) {
+    const { data } = await supabase
+      .from("deal_rooms")
+      .select("lead_id")
+      .eq("slug", slug)
+      .maybeSingle();
+    const leadId = data && typeof data === "object" && "lead_id" in data ? String(data.lead_id) : null;
+    if (leadId) {
+      return getDealEngineDealDetail(leadId);
+    }
+  }
 
-  const { data } = await supabase
-    .from("deal_rooms")
-    .select("lead_id")
-    .eq("slug", slug)
-    .maybeSingle();
-  const leadId = data && typeof data === "object" && "lead_id" in data ? String(data.lead_id) : null;
-  if (!leadId) return null;
+  // Workspace detail pages can expose a fallback room slug derived from the
+  // property address even before a dedicated `deal_rooms` row exists. Resolve
+  // those slugs here too so external room links never 404 during packet prep.
+  const leads = await listDealEngineLeads(100);
+  const matchedLead = leads.find((lead) => slugify(lead.propertyAddress) === slug);
+  if (!matchedLead) return null;
 
-  return getDealEngineDealDetail(leadId);
+  return getDealEngineDealDetail(matchedLead.id);
 }
 
 export async function getDealEngineWorkspaceSnapshot(): Promise<DealEngineWorkspaceSnapshot> {

@@ -138,6 +138,34 @@ function formatTimestamp(value: string | undefined) {
   return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : value;
 }
 
+function buildSellerContactWorkflow(lead: SellerLeadView) {
+  const hasPhone = Boolean(lead.ownerPhone?.trim());
+  return [
+    {
+      title: "Check the source for direct contact data",
+      detail: `Review ${lead.sourceName} and any imported notes to see whether a usable seller number already exists.`,
+      status: hasPhone ? "Ready" : "Active",
+    },
+    {
+      title: hasPhone ? "Verify the best number" : "Run skip trace and verify the best number",
+      detail: hasPhone
+        ? "A phone is attached. Confirm it is current, mobile-capable, and approved for outreach."
+        : "No phone is stored. Pull contact enrichment, verify the best number, and document the source.",
+      status: "Active",
+    },
+    {
+      title: "Confirm compliance and decision-maker posture",
+      detail: "Check DNC / opt-out posture and note any family, probate, or title-sensitive handling before contact.",
+      status: "Ready",
+    },
+    {
+      title: "Launch first-touch outreach and log the outcome",
+      detail: "Once the number is verified, send the first-touch script and capture the response, voicemail, or no-answer result.",
+      status: hasPhone ? "Ready" : "Blocked",
+    },
+  ];
+}
+
 function buildCoverageRows(sourceList: SourceRow[]): CoverageRow[] {
   const grouped = new Map<string, CoverageRow>();
   for (const source of sourceList) {
@@ -261,6 +289,7 @@ export function SellerEngineDashboard({
   const leadTypes = [...new Set(leads.map((lead) => lead.sourceType).filter(Boolean) as string[])].sort();
   const occupancies = [...new Set(leads.map((lead) => lead.ownerOccupancyStatus ?? "Unknown"))].sort();
   const coverageRows = buildCoverageRows(sourceList);
+  const selectedContactWorkflow = selected ? buildSellerContactWorkflow(selected) : [];
 
   const sourceMetrics = {
     total: sourceList.length,
@@ -537,6 +566,13 @@ export function SellerEngineDashboard({
     await hydrateLeadDetail(lead.id, false);
   }
 
+  async function openLeadAndJump(lead: SellerLeadView) {
+    await openLead(lead);
+    window.setTimeout(() => {
+      document.getElementById("seller-dossier")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }
+
   return (
     <>
       <header className="seller-panel seller-hero overflow-hidden p-6 lg:p-8">
@@ -554,6 +590,7 @@ export function SellerEngineDashboard({
             <div className="mt-6 flex flex-wrap gap-3">
               <a href="#harvester" className="seller-button">Import county data</a>
               <a href="#leads" className="seller-button">Review ranked leads</a>
+              <a href="#seller-dossier" className="seller-button">Jump to dossier</a>
               <a href="#coverage" className="seller-button">Coverage board</a>
               <a href="/api/seller-engine/export" className="seller-button">Export qualified leads</a>
             </div>
@@ -650,14 +687,49 @@ export function SellerEngineDashboard({
           </select>
         </div>
 
-        <div className="mt-5 overflow-x-auto rounded-[20px] border border-[var(--seller-line)]">
+        <div className="seller-card mt-5 grid gap-4 border-[var(--seller-line-strong)] p-4 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--seller-gold-soft)]">Dossier shortcut</div>
+            <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
+              Choose from the currently filtered leads and jump straight to the seller dossier without scrolling through the full table.
+            </div>
+            <select
+              className="seller-input mt-3 w-full"
+              value={selected?.id ?? ""}
+              onChange={(event) => {
+                const lead = leads.find((item) => item.id === event.target.value);
+                if (lead) void openLeadAndJump(lead);
+              }}
+            >
+              <option value="">Select a seller dossier...</option>
+              {filtered.slice(0, 250).map((lead) => (
+                <option key={lead.id} value={lead.id}>
+                  {lead.ownerName} / {lead.propertyAddress} / score {lead.score}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="seller-button"
+              disabled={!selected}
+              onClick={() => selected ? void openLeadAndJump(selected) : undefined}
+            >
+              Jump to selected dossier
+            </button>
+            <a href="#seller-dossier" className="seller-button">Dossier section</a>
+          </div>
+        </div>
+
+        <div className="seller-table-wrap mt-5 overflow-x-auto rounded-[20px] border border-[var(--seller-line)]">
           <table className="w-full min-w-[1180px] text-left text-sm">
-            <thead className="bg-[hsl(214_22%_7%/.96)] text-[10px] uppercase tracking-[0.22em] text-[var(--copy-muted)]">
+            <thead className="seller-table-head text-[10px] uppercase tracking-[0.22em] text-[var(--copy-muted)]">
               <tr>{["Score", "Owner / Property", "Location", "Lead Type", "Signals", "Equity", "Status", "Action"].map((item) => <th key={item} className="px-4 py-3">{item}</th>)}</tr>
             </thead>
             <tbody>
               {filtered.map((lead) => (
-                <tr key={lead.id} className="border-t border-[var(--seller-line)] bg-[hsl(215_20%_5%/.82)] hover:bg-[hsl(42_70%_12%/.28)]">
+                <tr key={lead.id} className="seller-table-row border-t border-[var(--seller-line)]">
                   <td className="px-4 py-4">
                     <button onClick={() => void openLead(lead)} className={`seller-score ${scoreTone(lead.score)}`}>{lead.score}</button>
                     <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">{lead.category}</div>
@@ -697,7 +769,7 @@ export function SellerEngineDashboard({
                     </select>
                   </td>
                   <td className="px-4 py-4">
-                    <button className="seller-button py-2" onClick={() => void openLead(lead)}>Open dossier</button>
+                    <button className="seller-button py-2" onClick={() => void openLeadAndJump(lead)}>Open dossier</button>
                   </td>
                 </tr>
               ))}
@@ -712,7 +784,7 @@ export function SellerEngineDashboard({
       </section>
 
       {selected ? (
-        <section className="seller-panel p-5 lg:p-6">
+        <section id="seller-dossier" className="seller-panel scroll-mt-6 p-5 lg:p-6">
           <div className="grid gap-6 xl:grid-cols-[0.78fr_1.22fr]">
             <div className="seller-card p-5">
               <div className="flex items-start justify-between gap-4">
@@ -726,6 +798,9 @@ export function SellerEngineDashboard({
                 {[
                   ["Property", selected.propertyAddress],
                   ["Mailing address", selected.ownerMailingAddress],
+                  ["Seller phone", selected.ownerPhone ?? "Not captured"],
+                  ["Phone status", selected.phoneStatus ?? "Skip Trace Needed"],
+                  ["Phone source", selected.phoneSource ?? "Public record import"],
                   ["Parcel", selected.parcelId],
                   ["Lead type", formatSourceType(selected.sourceType)],
                   ["Owner occupancy", selected.ownerOccupancyStatus ?? "Unknown"],
@@ -766,10 +841,16 @@ export function SellerEngineDashboard({
               <div className="seller-card p-5">
                 <p className="seller-kicker">Recommended contact strategy</p>
                 <p className="mt-3 text-sm leading-7 text-white">{selected.recommendedAction}</p>
+                <div className="mt-4 rounded-[18px] border border-[var(--seller-line)] px-4 py-4 text-sm leading-7 text-[var(--copy-soft)]">
+                  {selected.contactEnrichmentNotes ?? "No verified owner phone is stored yet. Treat contact enrichment and skip trace as part of the workflow before outreach."}
+                </div>
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button className="seller-button" onClick={() => void updateLead(selected, { status: "Contact Ready" })}>Mark Contact Ready</button>
+                  <Link className="seller-button" href="/workspace/nexus">
+                    Open Nexus
+                  </Link>
                   <button className="seller-button" disabled={dealLoading} onClick={() => void createDealFromSelectedLead()}>
-                    {dealLoading ? "Building deal..." : "Create in Deal Engine"}
+                    {dealLoading ? "Bypassing..." : "Admin Bypass to Deal Engine"}
                   </button>
                   <Link className="seller-button" href={selected.relatedDealId ? `/workspace/deal-engine/${selected.relatedDealId}` : "/workspace/deal-engine"}>
                     {selected.relatedDealId ? "Open linked deal" : "Open Deal Engine"}
@@ -780,6 +861,24 @@ export function SellerEngineDashboard({
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
+                <div className="seller-card p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="seller-kicker">Contact enrichment workflow</p>
+                    <span className="seller-signal">{selected.phoneStatus ?? "Skip Trace Needed"}</span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {selectedContactWorkflow.map((step) => (
+                      <div key={step.title} className="rounded-[14px] border border-[var(--seller-line)] px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-white">{step.title}</div>
+                          <span className="seller-signal">{step.status}</span>
+                        </div>
+                        <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{step.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="seller-card p-5">
                   <div className="flex items-center justify-between gap-3">
                     <p className="seller-kicker">Operator notes</p>

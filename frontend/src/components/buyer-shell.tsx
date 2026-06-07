@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ReactNode } from "react";
 
 import { DivisionWatermark } from "@/components/division-watermark";
+import { RealEstateWorkflowRail } from "@/components/real-estate-workflow-rail";
 import { brandAssets } from "@/lib/brand-assets";
 import type { OperatorShellStatus } from "@/lib/buyer-engine-server";
 
@@ -88,6 +89,7 @@ export function BuyerShell({
               Wake land runs are moving through app-server prefetch before n8n scoring. The next level is a fully theatrical operator view with airtight audit trails and sharper decision framing.
             </p>
           </div>
+          <RealEstateWorkflowRail active="buyer" compact />
 
           {operatorStatus ? (
             <div className="brand-card mt-4 p-4">

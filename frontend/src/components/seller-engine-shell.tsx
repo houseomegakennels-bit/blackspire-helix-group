@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DivisionWatermark } from "@/components/division-watermark";
+import { RealEstateWorkflowRail } from "@/components/real-estate-workflow-rail";
 import { brandAssets } from "@/lib/brand-assets";
 
 const navItems = [
@@ -11,6 +12,7 @@ const navItems = [
   { href: "/seller-engine#harvester", label: "Data Harvester" },
   { href: "/seller-engine#alerts", label: "Alerts" },
   { href: "/seller-engine#settings", label: "Scoring Settings" },
+  { href: "/workspace/nexus", label: "Nexus" },
   { href: "/workspace/deal-engine", label: "Deal Engine" },
   { href: "/workspace/buyer-engine", label: "Buyer Engine" },
   { href: "/", label: "Blackspire Helix" },
@@ -39,7 +41,7 @@ export function SellerEngineShell({ children }: { children: ReactNode }) {
             <p className="text-[10px] uppercase tracking-[0.48em] text-[var(--seller-silver)]">Blackspire Helix Group</p>
             <h1 className="brand-display mt-3 text-3xl text-white">{brandAssets.sellerEngine.name}</h1>
             <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
-              Motivated seller discovery, distress intelligence, and qualified lead handoff.
+              Motivated seller discovery, distress intelligence, and qualified lead handoff into Nexus or Deal Engine.
             </p>
             <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-[var(--seller-silver)]">
               <span className="live-dot" /> Intelligence surface online
@@ -57,9 +59,10 @@ export function SellerEngineShell({ children }: { children: ReactNode }) {
           <div className="seller-card relative mt-6 p-4">
             <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--seller-gold)]">Mission Boundary</div>
             <p className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
-              Discovery and intelligence only. Qualified seller leads move forward; deal analysis stays downstream.
+              Discovery and intelligence only. Qualified seller leads move into Nexus first by default; deal analysis stays downstream.
             </p>
           </div>
+          <RealEstateWorkflowRail active="seller" compact />
         </aside>
         <section className="min-w-0 space-y-5">{children}</section>
       </div>

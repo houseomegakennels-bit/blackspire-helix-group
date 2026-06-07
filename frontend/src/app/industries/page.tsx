@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { industries } from "@/lib/ecosystem";
+
+export const metadata: Metadata = {
+  title: "Industries | Blackspire Helix Group",
+  description:
+    "See how Blackspire Helix Group adapts AI employees, workflow logic, and operator systems for different industries.",
+};
 
 const industryAccents = [
   { top: "from-[hsl(38_92%_55%)] to-transparent", icon: "🏚️" },

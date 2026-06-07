@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
+
+export const metadata: Metadata = {
+  title: "About | Blackspire Helix Group",
+  description:
+    "Meet the founder behind Blackspire Helix Group and the principles guiding its AI employees, operator systems, and long-term brand vision.",
+};
 
 const brandPrinciples = [
   "We build AI employees that do real work — not demos that only impress in a meeting.",
@@ -22,6 +29,37 @@ const founderPlan = [
   "Consistency",
   "Time & Focus",
   "Financial Freedom",
+] as const;
+
+const companyOutcomes = [
+  {
+    label: "What clients get",
+    value: "More leverage",
+    detail: "Cleaner operations, faster response time, stronger follow-up, and systems that keep working after the call ends.",
+  },
+  {
+    label: "What the brand protects",
+    value: "Clarity over noise",
+    detail: "Each division can feel distinct and premium without collapsing into generic agency language or AI hype.",
+  },
+] as const;
+
+const founderTimeline = [
+  {
+    id: "01",
+    title: "See the bottleneck clearly",
+    copy: "The work starts by noticing where time, attention, and money leak out of a business every day.",
+  },
+  {
+    id: "02",
+    title: "Build the operator advantage",
+    copy: "That bottleneck becomes a system: lead routing, automation, dashboards, or a branded division surface that changes how the business runs.",
+  },
+  {
+    id: "03",
+    title: "Create freedom through structure",
+    copy: "The end goal is not software for its own sake. It is more control, more time, and more room to build a lasting life.",
+  },
 ] as const;
 
 export default function AboutPage() {
@@ -161,6 +199,16 @@ export default function AboutPage() {
           </div>
         </section>
 
+        <section className="grid gap-4 md:grid-cols-2">
+          {companyOutcomes.map((outcome) => (
+            <article key={outcome.label} className="brand-panel px-6 py-8">
+              <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">{outcome.label}</p>
+              <h2 className="brand-display mt-3 text-3xl text-white">{outcome.value}</h2>
+              <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">{outcome.detail}</p>
+            </article>
+          ))}
+        </section>
+
         {/* glow divider */}
         <div className="glow-line" />
 
@@ -212,6 +260,31 @@ export default function AboutPage() {
               </Link>
             </div>
           </article>
+        </section>
+
+        <section className="brand-panel px-6 py-8 lg:px-10">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Why this company exists</p>
+              <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">The founder story becomes the operating standard</h2>
+            </div>
+            <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+              Start a conversation
+            </Link>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            {founderTimeline.map((step) => (
+              <article key={step.id} className="brand-card p-5">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] uppercase tracking-[0.24em] text-[var(--gold)]">{step.id}</span>
+                  <div className="signal-bar h-px flex-1" />
+                </div>
+                <h3 className="mt-4 text-xl font-semibold text-white">{step.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{step.copy}</p>
+              </article>
+            ))}
+          </div>
         </section>
 
       </div>

@@ -31,6 +31,8 @@ export function EcosystemMark({
         ? "h-[176px]"
         : "h-[148px]";
 
+  const shouldEagerLoad = variant === "bare";
+
   if (logoSrc) {
     return (
       <div className={frameClass}>
@@ -43,6 +45,7 @@ export function EcosystemMark({
             fill
             className="object-contain"
             sizes="(max-width: 640px) 180px, 300px"
+            loading={shouldEagerLoad ? "eager" : undefined}
           />
         </div>
       </div>
