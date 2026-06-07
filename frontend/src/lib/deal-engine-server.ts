@@ -79,6 +79,7 @@ type NexusContactRow = {
 };
 
 type NexusContactNotePayload = {
+  source_lead_id?: string | null;
   owner_name?: string | null;
   property_address?: string | null;
   mailing_address?: string | null;
@@ -416,6 +417,32 @@ function toSellerSignal(lead: SellerLeadView): DealEngineSellerSignal {
   };
 }
 
+function toDealLeadFromSeller(lead: SellerLeadView): DealEngineLead {
+  const maoBase = lead.estimatedEquity || lead.assessedValue || 0;
+  const mao = maoBase ? Math.round(maoBase * 0.72) : 0;
+  const assignmentFee = lead.score >= 80 ? 18000 : lead.score >= 65 ? 12000 : 7500;
+
+  return {
+    id: lead.id,
+    ownerName: lead.ownerName,
+    ownerPhone: lead.ownerPhone,
+    phoneStatus: lead.phoneStatus,
+    skipTraceStatus: lead.skipTraceStatus,
+    phoneSource: lead.phoneSource,
+    contactEnrichmentNotes: lead.contactEnrichmentNotes,
+    propertyAddress: [lead.propertyAddress, [lead.city, lead.state, lead.zipCode].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+    county: lead.county,
+    status: lead.ownerPhone || lead.ownerEmail ? "Contact Ready" : lead.status,
+    motivationScore: lead.score,
+    mao: mao ? formatCurrency(mao) : "TBD",
+    assignmentFee: formatCurrency(assignmentFee),
+    exitStrategy: lead.propertyType && /duplex|multi/i.test(lead.propertyType)
+      ? "Rental buyer or BRRRR disposition lane"
+      : "Wholesale to local investor buyer pool",
+    nextAction: lead.recommendedAction,
+  };
+}
+
 function toBuyerReportView(report: BuyerReportRecord, jobs: SearchJobRecord[]): BuyerReportView {
   const job = report.search_job_id
     ? jobs.find((item) => item.id === report.search_job_id) ?? null
@@ -521,6 +548,21 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
   const supabase = getSupabaseAdmin();
   if (!supabase) return fallbackLeads.slice(0, limit);
 
+  const sellerFallback = async () => {
+    const sellerLeads = await listSellerLeads().catch(() => []);
+    const handoffs = sellerLeads
+      .filter((lead) => lead.status !== "Dead Lead")
+      .sort((left, right) => {
+        const leftReady = left.ownerPhone || left.ownerEmail ? 1 : 0;
+        const rightReady = right.ownerPhone || right.ownerEmail ? 1 : 0;
+        if (leftReady !== rightReady) return rightReady - leftReady;
+        return right.score - left.score;
+      })
+      .slice(0, limit)
+      .map(toDealLeadFromSeller);
+    return handoffs.length ? handoffs : fallbackLeads.slice(0, limit);
+  };
+
   const { data, error } = await supabase
     .from("deal_leads")
     .select(
@@ -529,7 +571,7 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
     .order("motivation_score", { ascending: false })
     .limit(limit);
 
-  if (error || !data?.length) return fallbackLeads.slice(0, limit);
+  if (error || !data?.length) return sellerFallback();
   return (data as unknown as DealLeadJoin[]).map(toLead);
 }
 
@@ -882,6 +924,13 @@ function addressesLikelyMatch(left: string, right: string) {
   );
 }
 
+function findSellerSignalForLead(
+  lead: DealEngineLead,
+  sellerSignals: DealEngineSellerSignal[],
+): DealEngineSellerSignal | null {
+  return sellerSignals.find((item) => addressesLikelyMatch(item.propertyAddress, lead.propertyAddress)) ?? null;
+}
+
 function formatSellerPropertyAddress(property: SellerLeadContactLookupRow["properties"]) {
   if (!property?.property_address) return "";
   const cityStateZip = [property.city, property.state, property.zip_code].filter(Boolean).join(" ");
@@ -902,12 +951,12 @@ function parseNexusContactNote(note: string): NexusContactNotePayload | null {
 function nexusPayloadToContactRow(
   payload: NexusContactNotePayload,
   lead: DealEngineLead,
-  sellerLead: SellerLeadContactLookupRow,
+  sellerLead?: SellerLeadContactLookupRow | null,
 ): NexusContactRow {
   return {
-    owner_name: payload.owner_name?.trim() || sellerLead.owners?.name?.trim() || lead.ownerName,
-    property_address: payload.property_address?.trim() || formatSellerPropertyAddress(sellerLead.properties) || lead.propertyAddress,
-    mailing_address: payload.mailing_address?.trim() || sellerLead.owners?.mailing_address || null,
+    owner_name: payload.owner_name?.trim() || sellerLead?.owners?.name?.trim() || lead.ownerName,
+    property_address: payload.property_address?.trim() || formatSellerPropertyAddress(sellerLead?.properties ?? null) || lead.propertyAddress,
+    mailing_address: payload.mailing_address?.trim() || sellerLead?.owners?.mailing_address || null,
     primary_phone: payload.primary_phone?.trim() || null,
     primary_email: payload.primary_email?.trim() || null,
     contact_confidence_score: payload.contact_confidence_score ?? null,
@@ -915,6 +964,47 @@ function nexusPayloadToContactRow(
     status: payload.status?.trim() || "completed",
     updated_at: payload.completed_at?.trim() || new Date().toISOString(),
   };
+}
+
+function nexusPayloadMatchesDeal(payload: NexusContactNotePayload, lead: DealEngineLead) {
+  if (payload.source_lead_id?.trim() === lead.id) return true;
+
+  const payloadAddress = payload.property_address?.trim() ?? "";
+  const payloadOwner = payload.owner_name?.trim() ?? "";
+  const addressMatches = payloadAddress ? addressesLikelyMatch(payloadAddress, lead.propertyAddress) : false;
+  if (!addressMatches) return false;
+
+  if (!payloadOwner) return true;
+  const normalizedPayloadOwner = normalizeContactMatch(payloadOwner);
+  const normalizedLeadOwner = normalizeContactMatch(lead.ownerName);
+  return (
+    normalizedPayloadOwner === normalizedLeadOwner
+    || normalizedPayloadOwner.includes(normalizedLeadOwner)
+    || normalizedLeadOwner.includes(normalizedPayloadOwner)
+    || /heirs|estate|trust/i.test(payloadOwner)
+    || /heirs|estate|trust/i.test(lead.ownerName)
+  );
+}
+
+async function findGenericNexusContactNoteForDeal(
+  supabase: SupabaseClient,
+  lead: DealEngineLead,
+): Promise<NexusContactRow | null> {
+  const { data, error } = await supabase
+    .from("lead_notes")
+    .select("note,created_at")
+    .ilike("note", "NEXUS_CONTACT_RESULT %")
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error || !data?.length) return null;
+
+  for (const note of data as Array<{ note: string }>) {
+    const payload = parseNexusContactNote(note.note);
+    if (payload && nexusPayloadMatchesDeal(payload, lead)) return nexusPayloadToContactRow(payload, lead);
+  }
+
+  return null;
 }
 
 async function findNexusContactNoteForDeal(
@@ -927,7 +1017,7 @@ async function findNexusContactNoteForDeal(
     .order("created_at", { ascending: false })
     .limit(500);
 
-  if (error || !data?.length) return null;
+  if (error || !data?.length) return findGenericNexusContactNoteForDeal(supabase, lead);
 
   const sellerLead = (data as unknown as SellerLeadContactLookupRow[]).find((row) => {
     const sellerOwnerName = normalizeContactMatch(row.owners?.name ?? "");
@@ -941,7 +1031,7 @@ async function findNexusContactNoteForDeal(
     return ownerMatches && addressMatches;
   });
 
-  if (!sellerLead) return null;
+  if (!sellerLead) return findGenericNexusContactNoteForDeal(supabase, lead);
 
   const { data: notes, error: notesError } = await supabase
     .from("lead_notes")
@@ -951,14 +1041,14 @@ async function findNexusContactNoteForDeal(
     .order("created_at", { ascending: false })
     .limit(10);
 
-  if (notesError || !notes?.length) return null;
+  if (notesError || !notes?.length) return findGenericNexusContactNoteForDeal(supabase, lead);
 
   for (const note of notes as Array<{ note: string }>) {
     const payload = parseNexusContactNote(note.note);
     if (payload) return nexusPayloadToContactRow(payload, lead, sellerLead);
   }
 
-  return null;
+  return findGenericNexusContactNoteForDeal(supabase, lead);
 }
 
 function mergeNexusContactProfile(
@@ -2019,10 +2109,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
   const contractDraft = buildContractDrafts(leads, sellerSignals, buyerSignals).find(
     (item) => item.dealId === dealId,
   ) ?? null;
-  const sellerSignal =
-    sellerSignals.find((item) => item.propertyAddress === lead.propertyAddress)
-    ?? sellerSignals.find((item) => item.county === lead.county)
-    ?? null;
+  const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
   let sellerContact = buildSellerContactProfile(lead, sellerSignal);
   let sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
   let sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);

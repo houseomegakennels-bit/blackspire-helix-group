@@ -134,8 +134,16 @@ function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function buildNexusContactNote(result: SkipTraceResult) {
+function buildNexusContactNote(input: SkipTraceLeadInput, result: SkipTraceResult) {
   return `NEXUS_CONTACT_RESULT ${JSON.stringify({
+    source_lead_id: input.seller_lead_id ?? null,
+    owner_name: input.owner_name,
+    property_address: input.property_address,
+    mailing_address: input.mailing_address ?? result.matched_mailing_address ?? null,
+    city: input.city ?? null,
+    state: input.state ?? null,
+    zip: input.zip ?? null,
+    county: input.county ?? null,
     primary_phone: result.primary_phone,
     secondary_phone: result.secondary_phone,
     additional_phones: result.additional_phones,
@@ -367,7 +375,11 @@ export async function storeSkipTraceResult(input: SkipTraceLeadInput, result: Sk
   if (sellerLeadId) {
     await supabase.from("lead_notes").insert({
       seller_lead_id: sellerLeadId,
-      note: buildNexusContactNote(result),
+      note: buildNexusContactNote(input, result),
+    }).then(() => undefined, () => undefined);
+  } else {
+    await supabase.from("lead_notes").insert({
+      note: buildNexusContactNote(input, result),
     }).then(() => undefined, () => undefined);
   }
 

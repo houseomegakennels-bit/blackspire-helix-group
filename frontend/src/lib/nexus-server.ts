@@ -97,9 +97,9 @@ function parseNexusContactNote(row: NexusContactNoteRow): NexusContactRow | null
     const payload = JSON.parse(row.note.slice(prefix.length)) as Record<string, unknown>;
     return {
       seller_lead_id: row.seller_lead_id,
-      owner_name: "",
-      property_address: "",
-      mailing_address: null,
+      owner_name: typeof payload.owner_name === "string" ? payload.owner_name : "",
+      property_address: typeof payload.property_address === "string" ? payload.property_address : "",
+      mailing_address: typeof payload.mailing_address === "string" ? payload.mailing_address : null,
       primary_phone: typeof payload.primary_phone === "string" ? payload.primary_phone : null,
       primary_email: typeof payload.primary_email === "string" ? payload.primary_email : null,
       contact_confidence_score: typeof payload.contact_confidence_score === "number" ? payload.contact_confidence_score : null,
