@@ -359,6 +359,23 @@ body::after {
   color-scheme: dark;
 }
 
+@media (max-width: 640px) {
+  .brand-panel {
+    border-radius: 22px;
+  }
+
+  .brand-card {
+    border-radius: 18px;
+  }
+
+  .brand-button {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    letter-spacing: 0.12em !important;
+  }
+}
+
 .brand-date-input::-webkit-calendar-picker-indicator {
   cursor: pointer;
   filter: invert(74%) sepia(94%) saturate(1261%) hue-rotate(344deg) brightness(104%) contrast(101%);
