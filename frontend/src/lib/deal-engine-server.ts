@@ -1136,13 +1136,17 @@ function buildWholesalingComplianceSnapshot(exitStrategy: string) {
 }
 
 function buildDealAutomationWorkflow(
-  detail: Pick<DealEngineDealDetail, "underwriting" | "sellerContact" | "buyerSignals" | "coordination" | "packet" | "lead">,
+  detail: Pick<DealEngineDealDetail, "underwriting" | "sellerContact" | "buyerSignals" | "coordination" | "packet" | "lead" | "uploadedDocuments">,
 ): DealEngineDealDetail["automationWorkflow"] {
   const hasSellerPhone = detail.sellerContact.ownerPhone !== "Not captured";
   const underwritingReady = detail.underwriting.readyForContract;
   const buyerReady = detail.buyerSignals.length > 0;
   const packetReady = Boolean(detail.packet.investorSummary.trim() && detail.packet.buyerEmailBlast.trim());
   const contractReady = detail.coordination.contractSent && detail.coordination.contractSigned;
+  const documentReady = detail.uploadedDocuments.some((item) =>
+    /signed contract|assignment agreement|proof of funds|settlement statement|closing disclosure/i.test(item.category),
+  );
+  const emailReady = isResendConfigured();
 
   return [
     {
@@ -1187,7 +1191,47 @@ function buildDealAutomationWorkflow(
         : "Investor summary and buyer-facing copy still need to be finalized.",
       status: contractReady ? (packetReady ? "ready" : "active") : "blocked",
     },
+    {
+      id: `${detail.lead.id}-workflow-documents`,
+      title: "Collect signed files and close-table docs",
+      detail: documentReady
+        ? `${detail.uploadedDocuments.length} uploaded deal file(s) are attached to this close lane.`
+        : "Upload signed contracts, proof of funds, and title/settlement files onto the deal.",
+      status: documentReady ? "ready" : contractReady ? "active" : "blocked",
+    },
+    {
+      id: `${detail.lead.id}-workflow-email`,
+      title: "Use in-app email delivery where available",
+      detail: emailReady
+        ? "Resend-backed email sending is configured for seller or buyer email from the workstation."
+        : "Email console is built, but live sending still needs RESEND_API_KEY configured.",
+      status: emailReady ? "ready" : "blocked",
+    },
   ];
+}
+
+function mergeUploadedDocumentsIntoCoordination(
+  coordination: DealEngineDealDetail["coordination"],
+  uploadedDocuments: DealEngineDealDetail["uploadedDocuments"],
+) {
+  if (!uploadedDocuments.length) return coordination;
+
+  const merged = [...coordination.closingDocuments];
+  uploadedDocuments.forEach((document) => {
+    if (merged.some((item) => item.name === document.fileName || item.name === document.category)) return;
+    merged.unshift({
+      id: document.id,
+      name: document.category,
+      status: document.status,
+      owner: document.owner,
+      notes: document.notes || document.fileName,
+    });
+  });
+
+  return {
+    ...coordination,
+    closingDocuments: merged.slice(0, 20),
+  };
 }
 
 function buildFallbackPacket(
@@ -3589,6 +3633,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
           closingDocuments: normalizeClosingDocuments(payload.closingDocuments, coordination.closingDocuments),
         };
       }
+      coordination = mergeUploadedDocumentsIntoCoordination(coordination, uploadedDocuments);
     }
   }
 
@@ -3623,6 +3668,7 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       buyerSignals: relatedBuyerSignals.length ? relatedBuyerSignals : buyerSignals.slice(0, 4),
       coordination,
       packet,
+      uploadedDocuments,
     }),
   };
 }

@@ -1397,6 +1397,9 @@ export function DealEngineDealDetailView({
           title="Send deal emails from inside the workflow"
           description="Use this for seller or buyer email sends when Resend is configured. This does not use Twilio."
         >
+          <div className="brand-card mb-4 p-4 text-sm leading-6 text-[var(--copy-soft)]">
+            If sending returns a provider error, the workflow surface is ready but the live email credential still needs to be configured in the environment.
+          </div>
           <form onSubmit={sendEmail} className="grid gap-4">
             <select
               value={emailAudience}
