@@ -132,8 +132,9 @@ export function DealEngineDealDetailView({
   const [emailTo, setEmailTo] = useState("");
   const [emailSubject, setEmailSubject] = useState(detail.sellerOutreach.emailSubject);
   const [emailBody, setEmailBody] = useState(detail.sellerOutreach.emailBody);
+  const [arvEstimateHint, setArvEstimateHint] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | "outreach" | "closeout" | "document" | "email" | null>(null);
+  const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | "outreach" | "closeout" | "document" | "email" | "arv" | null>(null);
 
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
@@ -253,6 +254,48 @@ export function DealEngineDealDetailView({
       router.refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Underwriting save failed.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function estimateArv() {
+    setWorking("arv");
+    setStatus(null);
+    setArvEstimateHint(null);
+    try {
+      const response = await fetch("/api/deal-engine/estimate-arv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        estimatedArv?: number;
+        arvRange?: string;
+        confidence?: string;
+        basis?: string;
+        underwriting?: { maximumAllowableOffer?: number; assignmentFeeTarget?: number };
+      };
+      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "ARV estimate failed.");
+      if (payload.estimatedArv != null) {
+        setEstimatedArv(String(payload.estimatedArv));
+      }
+      if (payload.underwriting?.maximumAllowableOffer != null) {
+        setOfferHigh(String(payload.underwriting.maximumAllowableOffer));
+        setOfferLow(String(Math.max(payload.underwriting.maximumAllowableOffer - Math.max((payload.underwriting.assignmentFeeTarget ?? 0) / 2, 5000), 0)));
+      }
+      setArvEstimateHint(
+        [payload.arvRange ? `Range ${payload.arvRange}` : "", payload.confidence ? `confidence ${payload.confidence}` : "", payload.basis ?? ""]
+          .filter(Boolean)
+          .join(" / "),
+      );
+      setStatus(payload.message ?? "ARV estimated.");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "ARV estimate failed.");
     } finally {
       setWorking(null);
     }
@@ -1435,6 +1478,15 @@ export function DealEngineDealDetailView({
           title="Capture the real analysis inputs"
           description="Enter live numbers here first. The contract lane should inherit from real underwriting instead of placeholder assumptions, and the wholesale compliance lane should be reviewed before paper goes out."
         >
+          <div className="brand-card mb-4 p-4 text-sm leading-6 text-[var(--copy-soft)]">
+            Need help with ARV? Use the live estimate action to calculate it from the deal county, property type, assessed value, and Seller Engine distress signals. If the exact assessed value is missing, Deal Engine will fall back to a same-market property baseline and label the confidence for you before saving it into underwriting.
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => void estimateArv()} disabled={working === "arv"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+                {working === "arv" ? "Estimating ARV..." : "Estimate and save ARV"}
+              </button>
+              {arvEstimateHint ? <div className="text-xs text-[var(--copy-muted)]">{arvEstimateHint}</div> : null}
+            </div>
+          </div>
           <form onSubmit={saveAnalysis} className="grid gap-4">
             <div className="grid gap-3 md:grid-cols-2">
               <input value={estimatedArv} onChange={(event) => setEstimatedArv(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Estimated ARV" />

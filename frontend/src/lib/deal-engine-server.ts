@@ -708,6 +708,139 @@ function deriveOfferWindowFromNumbers(maximumAllowableOffer: number, assignmentF
   return `${formatCurrency(low)} - ${formatCurrency(high)}`;
 }
 
+function estimateArvFromSignals(input: {
+  assessedValue: number;
+  county: string;
+  propertyType: string;
+  hasVacancy: boolean;
+  hasCodeViolation: boolean;
+  hasTaxPressure: boolean;
+  hasForeclosure: boolean;
+  hasProbate: boolean;
+  valueSource?: "deal" | "linked-property" | "seller-lead" | "market-median";
+}) {
+  const countyKey = input.county.trim().toLowerCase();
+  const propertyType = input.propertyType.trim().toLowerCase();
+
+  const countyMultiplierMap: Record<string, number> = {
+    mecklenburg: 1.18,
+    wake: 1.17,
+    durham: 1.16,
+    guilford: 1.14,
+    forsyth: 1.14,
+    cumberland: 1.13,
+  };
+
+  let multiplier = countyMultiplierMap[countyKey] ?? 1.15;
+
+  if (/duplex|triplex|quad|small multifamily|multi/i.test(propertyType)) multiplier += 0.04;
+  else if (/townhome|condo/i.test(propertyType)) multiplier += 0.02;
+  else if (/land|lot|acre/i.test(propertyType)) multiplier -= 0.08;
+
+  if (input.hasVacancy) multiplier += 0.02;
+  if (input.hasCodeViolation) multiplier += 0.02;
+  if (input.hasTaxPressure || input.hasForeclosure || input.hasProbate) multiplier += 0.01;
+
+  multiplier = Math.min(Math.max(multiplier, 1.05), 1.28);
+
+  const estimatedArv = clampMoney(input.assessedValue * multiplier);
+  const rangeWidth = countyMultiplierMap[countyKey] ? 0.04 : 0.06;
+  const rangeLow = clampMoney(estimatedArv * (1 - rangeWidth));
+  const rangeHigh = clampMoney(estimatedArv * (1 + rangeWidth));
+  const confidence =
+    input.assessedValue > 0
+      ? input.valueSource === "market-median"
+        ? countyMultiplierMap[countyKey]
+          ? "low-medium"
+          : "low"
+        : countyMultiplierMap[countyKey]
+          ? "medium"
+          : "medium-low"
+      : "low";
+
+  const sourceLabelMap: Record<NonNullable<typeof input.valueSource>, string> = {
+    deal: "deal record assessed value",
+    "linked-property": "linked property assessed value",
+    "seller-lead": "seller lead assessed value",
+    "market-median": "same-market median assessed value",
+  };
+  const sourceLabel = input.valueSource ? sourceLabelMap[input.valueSource] : "assessed value";
+
+  return {
+    estimatedArv,
+    rangeLow,
+    rangeHigh,
+    confidence,
+    basis: `${sourceLabel} ${formatCurrency(input.assessedValue)} x multiplier ${multiplier.toFixed(2)} using ${input.county} County, ${input.propertyType}, and distress signals.`,
+  };
+}
+
+function normalizeValuationPropertyType(propertyType: string) {
+  const normalized = propertyType.trim().toLowerCase();
+  if (!normalized || /foreclosure|probate|distress|unknown/.test(normalized)) return "single-family";
+  if (/townhome|condo/.test(normalized)) return "condo-townhome";
+  if (/duplex|triplex|quad|multi/.test(normalized)) return "multifamily";
+  if (/commercial|retail|office|industrial/.test(normalized)) return "commercial";
+  if (/land|lot|acre/.test(normalized)) return "land";
+  return "single-family";
+}
+
+function propertyMatchesValuationBucket(propertyType: string | null, valuationBucket: string) {
+  const normalized = normalizeValuationPropertyType(propertyType ?? "");
+  return normalized === valuationBucket;
+}
+
+async function findMarketMedianAssessedValue(input: {
+  supabase: SupabaseClient;
+  county: string;
+  city: string;
+  propertyType: string;
+}) {
+  const city = input.city.trim();
+  const county = input.county.trim();
+  const valuationBucket = normalizeValuationPropertyType(input.propertyType);
+
+  const loadCandidates = async (matchCity: boolean) => {
+    let query = input.supabase
+      .from("properties")
+      .select("property_type,assessed_value,city,county")
+      .eq("county", county)
+      .not("assessed_value", "is", null)
+      .limit(matchCity ? 400 : 800);
+
+    if (matchCity) {
+      query = query.eq("city", city);
+    }
+
+    const { data, error } = await query;
+    if (error) return [];
+    return (data ?? []).filter((row) =>
+      Number(row.assessed_value) > 0 && propertyMatchesValuationBucket(row.property_type, valuationBucket),
+    );
+  };
+
+  const cityCandidates = city ? await loadCandidates(true) : [];
+  const countyCandidates = cityCandidates.length >= 8 ? cityCandidates : await loadCandidates(false);
+  const values = countyCandidates
+    .map((row) => clampMoney(Number(row.assessed_value ?? 0)))
+    .filter((value) => value > 0)
+    .sort((left, right) => left - right);
+
+  if (!values.length) return null;
+
+  const middle = Math.floor(values.length / 2);
+  const median = values.length % 2 === 0
+    ? clampMoney((values[middle - 1] + values[middle]) / 2)
+    : values[middle];
+
+  return {
+    assessedValue: median,
+    sampleCount: values.length,
+    scope: cityCandidates.length >= 8 ? "city" as const : "county" as const,
+    valuationBucket,
+  };
+}
+
 function buildContractDrafts(
   leads: DealEngineLead[],
   sellerSignals: DealEngineSellerSignal[],
@@ -895,6 +1028,10 @@ type SaveDealAnalysisInput = {
   assignmentFeeTarget: number;
   rentalEstimate: number;
   flipEstimate: number;
+};
+
+type EstimateDealArvInput = {
+  dealId: string;
 };
 
 type LaunchBuyerSearchFromDealInput = {
@@ -2750,6 +2887,140 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
       readyForContract: missingInputs.length === 0 && maximumAllowableOffer > 0,
       compliance,
     },
+  };
+}
+
+export async function estimateDealArv(input: EstimateDealArvInput) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const { data: dealRow, error: dealError } = await supabase
+    .from("deal_leads")
+    .select("id,seller_lead_id,property_address,county,city,property_type,assessed_value,estimated_equity")
+    .eq("id", input.dealId)
+    .maybeSingle();
+
+  if (dealError) {
+    return { ok: false as const, error: dealError.message };
+  }
+  if (!dealRow) {
+    return { ok: false as const, error: "Deal not found." };
+  }
+
+  const { data: analysisRow, error: analysisError } = await supabase
+    .from("deal_analysis")
+    .select("estimated_arv,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate")
+    .eq("lead_id", input.dealId)
+    .maybeSingle();
+
+  if (analysisError) {
+    return { ok: false as const, error: analysisError.message };
+  }
+
+  const sellerLead = (await listSellerLeads().catch(() => [])).find((lead) =>
+    lead.id === String(dealRow.seller_lead_id ?? "")
+    || addressesLikelyMatch(lead.propertyAddress, String(dealRow.property_address ?? "")),
+  );
+
+  const { data: linkedSellerLead } = dealRow.seller_lead_id
+    ? await supabase
+      .from("seller_leads")
+      .select("id,property_id")
+      .eq("id", String(dealRow.seller_lead_id))
+      .maybeSingle()
+    : { data: null };
+
+  const { data: linkedProperty } = linkedSellerLead?.property_id
+    ? await supabase
+      .from("properties")
+      .select("assessed_value")
+      .eq("id", String(linkedSellerLead.property_id))
+      .maybeSingle()
+    : { data: null };
+
+  const marketMedian = await findMarketMedianAssessedValue({
+    supabase,
+    county: String(dealRow.county ?? sellerLead?.county ?? "Unknown"),
+    city: String(dealRow.city ?? sellerLead?.city ?? ""),
+    propertyType: String(dealRow.property_type ?? sellerLead?.propertyType ?? "Single Family"),
+  });
+
+  let assessedValue = clampMoney(Number(dealRow.assessed_value ?? 0));
+  let valueSource: "deal" | "linked-property" | "seller-lead" | "market-median" = "deal";
+
+  if (assessedValue <= 0) {
+    assessedValue = clampMoney(Number(linkedProperty?.assessed_value ?? 0));
+    valueSource = "linked-property";
+  }
+
+  if (assessedValue <= 0) {
+    assessedValue = clampMoney(sellerLead?.assessedValue ?? 0);
+    valueSource = "seller-lead";
+  }
+
+  if (assessedValue <= 0 && marketMedian) {
+    assessedValue = marketMedian.assessedValue;
+    valueSource = "market-median";
+  }
+
+  if (assessedValue <= 0) {
+    return { ok: false as const, error: "No assessed value or same-market property baseline is available yet for this deal, so ARV cannot be estimated." };
+  }
+
+  const estimate = estimateArvFromSignals({
+    assessedValue,
+    county: String(dealRow.county ?? sellerLead?.county ?? "Unknown"),
+    propertyType: String(dealRow.property_type ?? sellerLead?.propertyType ?? "Single Family"),
+    hasVacancy: Boolean(sellerLead?.signals.vacant),
+    hasCodeViolation: Boolean(sellerLead?.signals.codeViolation),
+    hasTaxPressure: Boolean(sellerLead?.signals.taxDelinquent),
+    hasForeclosure: Boolean(sellerLead?.signals.foreclosure),
+    hasProbate: Boolean(sellerLead?.signals.probate),
+    valueSource,
+  });
+
+  const saveResult = await saveDealAnalysis({
+    dealId: input.dealId,
+    estimatedArv: estimate.estimatedArv,
+    sellerAskingPrice: clampMoney(Number(analysisRow?.seller_asking_price ?? 0)),
+    repairEstimate: clampMoney(Number(analysisRow?.repair_estimate ?? 0)),
+    closingCosts: clampMoney(Number(analysisRow?.closing_costs ?? 0)),
+    holdingCosts: clampMoney(Number(analysisRow?.holding_costs ?? 0)),
+    buyerProfitTarget: clampMoney(Number(analysisRow?.buyer_profit_target ?? 0)),
+    assignmentFeeTarget: clampMoney(Number(analysisRow?.assignment_fee_target ?? 0)),
+    rentalEstimate: clampMoney(Number(analysisRow?.rental_estimate ?? 0)),
+    flipEstimate: clampMoney(Number(analysisRow?.flip_estimate ?? 0)),
+  });
+
+  if (!saveResult.ok) {
+    return saveResult;
+  }
+
+  await supabase.from("disposition_logs").insert({
+    lead_id: input.dealId,
+    action_type: "analysis_update",
+    payload: {
+      estimateOnly: true,
+      estimatedArv: estimate.estimatedArv,
+      arvRange: `${formatCurrency(estimate.rangeLow)} - ${formatCurrency(estimate.rangeHigh)}`,
+      confidence: estimate.confidence,
+      basis: estimate.basis,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
+  return {
+    ok: true as const,
+    message: `ARV estimated at ${formatCurrency(estimate.estimatedArv)} and saved into underwriting.`,
+    estimatedArv: estimate.estimatedArv,
+    arvRange: `${formatCurrency(estimate.rangeLow)} - ${formatCurrency(estimate.rangeHigh)}`,
+    confidence: estimate.confidence,
+    basis: marketMedian && valueSource === "market-median"
+      ? `${estimate.basis} Median pulled from ${marketMedian.sampleCount} ${marketMedian.scope}-level ${marketMedian.valuationBucket} property records.`
+      : estimate.basis,
+    underwriting: saveResult.underwriting,
   };
 }
 
