@@ -1177,16 +1177,23 @@ function buildDraftBody(input: {
   purchaseCount: number;
   totalSpend: string;
 }) {
+  const propertyLabel = input.propertyType.replace(/_/g, " ").toLowerCase();
+  const activityLine =
+    input.purchaseCount > 1
+      ? `I noticed you've been active in ${input.market}, with around ${input.purchaseCount} recent purchases showing up on our side.`
+      : `I noticed you've been active in ${input.market}, so I wanted to reach out directly.`;
+
   return [
     `Hi ${input.buyerName},`,
     "",
-    `Blackspire is packaging a ${input.propertyType.toLowerCase()} opportunity at ${input.propertyAddress}.`,
-    `Your acquisition activity in ${input.market} and current score of ${input.score} suggest this may fit your lane.`,
-    `We saw ${input.purchaseCount} recent purchases and roughly ${input.totalSpend} in visible deployment across this market.`,
+    `I wanted to reach out because we have a ${propertyLabel} opportunity at ${input.propertyAddress}.`,
+    activityLine,
+    `From what we can tell, you've deployed about ${input.totalSpend} in this lane, so this felt worth putting in front of you.`,
     "",
-    "Are you still actively buying this profile right now? If so, I can send the packet and next-step details immediately.",
+    "If you're still buying in this part of the market, I can send the packet and the basic numbers over.",
     "",
-    "Blackspire Deal Engine",
+    "Carlos",
+    "Blackspire Helix Group",
   ].join("\n");
 }
 
@@ -2024,13 +2031,13 @@ function buildSellerOutreach(
   const closeAngle = contractDraft?.outreachLead || "clean close, as-is terms, and clear next steps";
 
   return {
-    firstTouchSms: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group. I'm reaching out about ${address}. We work with owners in ${county} who want a direct as-is sale without repairs or listing prep. If you'd consider an offer, I can keep it simple and low-pressure.`,
-    followUpSms: `Hi ${ownerName}, Carlos from Blackspire here following up on ${address}. We may be able to structure a straightforward close ${pricing ? `in the ${pricing} range` : ""} depending on condition and timing. If convenience matters more than listing it, I can walk you through a clean option.`,
-    emailSubject: `Direct sale option for ${address}`,
-    emailBody: `Hi ${ownerName},\n\nThis is Carlos Pearson with Blackspire Helix Group. I'm reaching out about ${address} because we help sellers who want a direct, as-is option instead of preparing a home for the market.\n\nFrom our side, the goal would be ${closeAngle}. ${summary}\n\nIf selling is something you're open to, I can outline what a simple next step looks like and answer any questions without pressure.\n\nBest,\nCarlos Pearson\nBlackspire Helix Group`,
-    objectionReply: `I completely understand. Many owners we speak with are weighing whether a direct sale is worth it versus listing. The main value on our side is speed, simplicity, and fewer moving parts. ${action} If now is not the right time, I’m happy to stay respectful and circle back only if you want me to.`,
-    voicemailScript: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group calling about ${address}. We work with owners looking for a simple as-is sale and I wanted to see whether you might be open to a direct offer. You can call or text me back whenever it’s convenient.`,
-    callOpener: `Hi ${ownerName}, this is Carlos Pearson with Blackspire Helix Group. I’m calling about ${address}. Did I catch you at an okay time for a quick question about the property?`,
+    firstTouchSms: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group. I’m reaching out about ${address}. If you’d ever consider selling it as-is instead of fixing it up or listing it, I’d be happy to share what a simple direct offer could look like.`,
+    followUpSms: `Hi ${ownerName}, just following up on ${address}. Depending on condition and timing, we may be able to make a straightforward offer ${pricing ? `somewhere ${pricing}` : ""}. If it helps, I can keep it simple and just give you a quick idea of how we work.`,
+    emailSubject: `Quick question about ${address}`,
+    emailBody: `Hi ${ownerName},\n\nThis is Carlos Pearson with Blackspire Helix Group. I wanted to reach out about ${address}.\n\nWe work with owners who would rather sell a property as-is than spend time on repairs, showings, or listing prep. ${summary}\n\nIf selling is something you would consider, I can walk you through a simple next step and let you decide whether it makes sense. From our side, the goal is usually ${closeAngle}.\n\nNo pressure either way. If now is not the right time, I completely understand.\n\nBest,\nCarlos Pearson\nBlackspire Helix Group`,
+    objectionReply: `That makes sense, and I appreciate you saying that. A lot of owners are comparing a direct sale with fixing the property up or listing it. The only thing I’d want to offer is a simpler option with fewer moving parts. ${action} If it’s not a fit right now, no problem at all.`,
+    voicemailScript: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group calling about ${address}. I just wanted to see if you’d ever consider selling the property as-is. If you want, you can call or text me back whenever it’s convenient.`,
+    callOpener: `Hi ${ownerName}, this is Carlos Pearson with Blackspire Helix Group. I’m calling about ${address}. Do you have a quick minute for one question about the property?`,
   };
 }
 
@@ -3151,7 +3158,7 @@ export async function createDealBuyerOutreachDraft(input: CreateDealOutreachDraf
     totalSpend: Number(buyerSignal.totalSpend.replace(/[^0-9.-]/g, "")),
     isLlc: /llc|capital|holdings|partners/i.test(buyerSignal.buyerName),
     isCashBuyer: buyerSignal.score >= 80,
-    subject: `${deal.county} deal match for ${buyerSignal.buyerName}`,
+    subject: `Quick deal in ${deal.county} County`,
     angle: buyerSignal.outreachAngle,
     body: buildDraftBody({
       buyerName: buyerSignal.buyerName,

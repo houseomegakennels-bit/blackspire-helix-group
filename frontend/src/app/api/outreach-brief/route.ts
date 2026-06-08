@@ -32,7 +32,7 @@ async function callOpenAiOutreach(payload: OutreachRequest): Promise<EdgeFnDraft
     payload.county && payload.state ? `${payload.county}, ${payload.state}` : "their market";
   const propType = payload.propertyType?.replace("_", " ") ?? "land";
 
-  const prompt = `You are a real-estate wholesaler's outreach copywriter. Write a short, professional, personalized outreach letter to a buyer who has been acquiring ${propType} in ${market}. Reference their activity naturally, keep it concise and action-oriented, and end with a clear call to action asking whether they are still buying in the area.
+  const prompt = `You are writing a real estate buyer outreach message for a real person, not a marketing bot. Write a short, natural, conversational note to a buyer who has been acquiring ${propType} in ${market}. Make it sound like one operator reaching out directly to another person. Avoid hype, corporate phrasing, and obvious template language. Reference their activity naturally, keep it concise, and end by simply asking whether they are still buying in the area.
 
 Buyer data:
 - Name: ${payload.buyerName}
@@ -44,7 +44,7 @@ Buyer data:
 
 Respond with a JSON object using exactly these keys:
 - "subject": a short subject line
-- "angle": one sentence describing the outreach strategy
+- "angle": one sentence describing the outreach strategy in plain language
 - "body": the full letter text, using \\n for line breaks`;
 
   try {
@@ -101,31 +101,35 @@ function buildTemplateDraft(
 ): EdgeFnDraft {
   const countyRisk =
     county && propertyType ? getCountyOperationalRisk(county, propertyType) : null;
-  const subject = county && state ? `${county} land acquisitions` : "recent land acquisitions";
+  const propertyLabel = propertyType?.replace("_", " ") ?? "property";
+  const subject = county && state ? `Still buying in ${county}?` : "Still buying this type of property?";
   const angle = isLlc
-    ? "Reference repeat acquisition activity and ask whether the team is still buying in this market."
-    : "Reference recent acquisition activity and ask whether they are still actively buying in this market.";
+    ? "Keep it direct, mention the team's recent activity, and ask whether they are still buying in this lane."
+    : "Keep it personal, mention the buyer's recent activity, and ask whether they are still buying in this lane.";
 
   const lines = [
     `Hi ${buyerName},`,
     "",
     county && state
-      ? `I came across your recent ${propertyType?.replace("_", " ") ?? "land"} purchase activity in ${county}, ${state}.`
-      : "I came across your recent land purchase activity.",
+      ? `I came across your recent ${propertyLabel} activity in ${county}, ${state} and wanted to reach out directly.`
+      : `I came across your recent ${propertyLabel} activity and wanted to reach out directly.`,
     purchaseCount > 1
-      ? `It looks like you've been consistently active, with ${purchaseCount} recorded purchases in this sweep.`
+      ? `It looks like you've been fairly active, with about ${purchaseCount} purchases showing up in this sweep.`
       : "It looks like you've been active in this market recently.",
     isCashBuyer
-      ? "You also appear to move quickly without lender friction, which usually means you can evaluate opportunities fast."
-      : "I'm reaching out because your recent activity suggests you may still be evaluating new deals.",
+      ? "You also look like the kind of buyer who can move quickly when something fits."
+      : "Your recent activity made me think this might be worth putting in front of you.",
     isLlc
-      ? "I work with owners who prefer clean, direct land opportunities and figured your acquisitions team may still be buying."
-      : "I work with owners who prefer clean, direct land opportunities and thought this might be relevant to you.",
+      ? `I work with owners who want a clean, direct sale, and I thought your team might still be looking for ${propertyLabel} deals like that.`
+      : `I work with owners who want a clean, direct sale, and I thought this might be relevant if you're still looking for ${propertyLabel} deals.`,
     countyRisk ? `Operational note on our side: ${countyRisk.message}` : null,
     "",
     "Are you still buying this type of property in the area right now?",
     "",
-    `Context: score ${score}, visible spend ${formatMoney(totalSpend)}, search job ${searchJobId}.`,
+    "If so, I can send over the details.",
+    "",
+    "Thanks,",
+    "Carlos",
   ].filter(Boolean);
 
   return { subject, angle, body: lines.join("\n") };
