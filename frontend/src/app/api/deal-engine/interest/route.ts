@@ -18,15 +18,16 @@ export async function POST(request: NextRequest) {
     const dealId = String(form.get("dealId") ?? "").trim();
     const proofFile = form.get("proofFile");
 
-    if (!slug || !investorName || !investorEmail) {
+    if ((!slug && !dealId) || !investorName || !investorEmail) {
       return NextResponse.json(
-        { ok: false, error: "slug, investorName, and investorEmail are required." },
+        { ok: false, error: "Either slug or dealId is required, along with investorName and investorEmail." },
         { status: 400 },
       );
     }
 
     const result = await saveInvestorInterest({
       slug,
+      dealId,
       investorName,
       investorEmail,
       interestType,

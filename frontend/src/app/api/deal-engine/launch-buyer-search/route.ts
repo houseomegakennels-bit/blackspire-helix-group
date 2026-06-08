@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { launchBuyerSearchFromDeal } from "@/lib/deal-engine-server";
+import { launchBuyerSearchFromDeal, recordBuyerSearchDispatchFailure } from "@/lib/deal-engine-server";
 import { triggerBuyerEngineWorkflow } from "@/lib/buyer-engine-server";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status });
     }
 
-    await triggerBuyerEngineWorkflow(result.job);
+    try {
+      await triggerBuyerEngineWorkflow(result.job);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Buyer Engine workflow dispatch failed.";
+      await recordBuyerSearchDispatchFailure({
+        dealId: body.dealId.trim(),
+        jobId: result.job.id,
+        error: message,
+      }).catch(() => null);
+
+      return NextResponse.json({
+        ok: true,
+        job: result.job,
+        workflow: {
+          ...result.workflow,
+          dispatch: "failed",
+        },
+        warning: message,
+        message: `Buyer search ${result.job.id} was created, but the external Buyer Engine workflow did not start cleanly. The deal was updated with a retry task instead of failing silently.`,
+      }, { status: 202 });
+    }
 
     return NextResponse.json({
       ok: true,

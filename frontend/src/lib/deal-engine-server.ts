@@ -1055,7 +1055,8 @@ type SaveDealPacketInput = {
 };
 
 type SaveInvestorInterestInput = {
-  slug: string;
+  slug?: string;
+  dealId?: string;
   investorName: string;
   investorEmail: string;
   interestType: string;
@@ -3135,6 +3136,67 @@ export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDeal
   }
 }
 
+export async function recordBuyerSearchDispatchFailure(input: {
+  dealId: string;
+  jobId: string;
+  error: string;
+}) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const nextAction = `Buyer search ${input.jobId} was created, but the external Buyer Engine workflow did not start cleanly. Retry the dispatch from Buyer Engine or check the workflow service before relying on fresh shortlist results.`;
+  const now = new Date().toISOString();
+
+  const [dealUpdate, conversationUpdate, logInsert, taskInsert] = await Promise.all([
+    supabase.from("deal_leads").update({
+      recommended_next_action: nextAction,
+      updated_at: now,
+    }).eq("id", input.dealId),
+    supabase.from("seller_conversations").update({
+      next_action: nextAction,
+      updated_at: now,
+    }).eq("lead_id", input.dealId),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "buyer_search_dispatch_failed",
+      payload: {
+        jobId: input.jobId,
+        error: input.error,
+        loggedAt: now,
+      },
+    }),
+    supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "operator_task",
+      payload: {
+        taskId: `buyer-search-dispatch-retry-${input.jobId}`,
+        title: "Retry Buyer Engine workflow dispatch",
+        owner: "Disposition",
+        dueDate: "",
+        priority: "High",
+        status: "Open",
+        notes: `Buyer search ${input.jobId} was created, but the downstream workflow returned an error: ${input.error}`,
+        createdAt: now,
+        updatedAt: now,
+      },
+    }),
+  ]);
+
+  const error =
+    dealUpdate.error?.message
+    || conversationUpdate.error?.message
+    || logInsert.error?.message
+    || taskInsert.error?.message;
+
+  if (error) {
+    return { ok: false as const, error };
+  }
+
+  return { ok: true as const, nextAction };
+}
+
 export async function createDealBuyerOutreachDraft(input: CreateDealOutreachDraftInput) {
   const deal = (await listDealEngineLeads(50)).find((item) => item.id === input.dealId);
   const buyerSignals = await listDealEngineBuyerSignals(20);
@@ -3256,13 +3318,16 @@ export async function saveInvestorInterest(input: SaveInvestorInterestInput) {
     return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
   }
 
-  const { data: room } = await supabase
-    .from("deal_rooms")
-    .select("lead_id")
-    .eq("slug", input.slug)
-    .maybeSingle();
+  let leadId = input.dealId?.trim() || null;
+  if (!leadId && input.slug?.trim()) {
+    const { data: room } = await supabase
+      .from("deal_rooms")
+      .select("lead_id")
+      .eq("slug", input.slug.trim())
+      .maybeSingle();
 
-  const leadId = room && typeof room === "object" && "lead_id" in room ? String(room.lead_id) : null;
+    leadId = room && typeof room === "object" && "lead_id" in room ? String(room.lead_id) : null;
+  }
   if (!leadId) {
     return { ok: false as const, error: "Deal room not found." };
   }

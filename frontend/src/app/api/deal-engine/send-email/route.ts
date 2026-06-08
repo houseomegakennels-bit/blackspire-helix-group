@@ -30,7 +30,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (!result.ok) {
-      return NextResponse.json(result, { status: 500 });
+      const status = /RESEND_API_KEY is not configured/i.test(result.error) ? 422 : 500;
+      return NextResponse.json(result, { status });
     }
 
     return NextResponse.json({ ok: true, message: "Email sent." });
