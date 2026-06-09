@@ -25,6 +25,8 @@ import {
   type BuyerGroupMatch,
   type BuyerGroupRegistryEntry,
 } from "@/lib/buyer-groups";
+import { listSellerLeads } from "@/lib/seller-engine-server";
+import type { SellerLeadView } from "@/lib/seller-engine-demo";
 
 export type SearchJobRecord = {
   id: string;
@@ -98,6 +100,45 @@ export type BuyerGroupRegistryRow = {
   updatedAt: string | null;
 };
 
+export type BuyerReverseSearchCriteria = {
+  buyerName?: string;
+  buyerGroup?: string;
+  targetCounty?: string;
+  targetCity?: string;
+  targetZipCodes?: string[];
+  propertyType?: string;
+  minBeds?: number | null;
+  maxPrice?: number | null;
+  minimumArvSpread?: number | null;
+  buyBoxNotes?: string;
+  buyerProfileType?: "cash_buyer" | "landlord" | "flipper" | "hedge_fund" | "unknown";
+  preferredRadius?: number | null;
+  activeOnly?: boolean;
+};
+
+export type BuyerReverseSearchMatch = {
+  id: string;
+  sourceType: "seller_lead" | "deal";
+  sourceId: string;
+  propertyAddress: string;
+  city: string;
+  county: string;
+  zip: string;
+  estimatedArv: number;
+  estimatedMao: number;
+  motivationScore: number;
+  matchScore: number;
+  matchReasons: string[];
+  recommendedAction: string;
+  link: string;
+};
+
+export type BuyerReverseSearchResult = {
+  criteria: BuyerReverseSearchCriteria;
+  matches: BuyerReverseSearchMatch[];
+  generatedAt: string;
+};
+
 type CreateSearchJobInput = {
   title: string;
   state: string;
@@ -128,6 +169,47 @@ type CountyDataSourceRecord = {
 type EnvState = {
   enabled: boolean;
   missing: string[];
+};
+
+type ReverseDealJoinRow = {
+  id: string;
+  seller_lead_id: string | null;
+  property_address: string | null;
+  county: string | null;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
+  status: string | null;
+  motivation_score: number | null;
+  property_type: string | null;
+  estimated_equity: number | string | null;
+  recommended_next_action: string | null;
+  deal_analysis:
+    | {
+        estimated_arv: number | string | null;
+        maximum_allowable_offer: number | string | null;
+        purchase_price_target: number | string | null;
+        wholesale_spread: number | string | null;
+      }
+    | Array<{
+        estimated_arv: number | string | null;
+        maximum_allowable_offer: number | string | null;
+        purchase_price_target: number | string | null;
+        wholesale_spread: number | string | null;
+      }>
+    | null;
+  buyer_matches:
+    | {
+        buyer_score: number | null;
+        exit_strategy: string | null;
+        investor_type_recommendation: string | null;
+      }
+    | Array<{
+        buyer_score: number | null;
+        exit_strategy: string | null;
+        investor_type_recommendation: string | null;
+      }>
+    | null;
 };
 
 export type BuyerEngineRealtimeClientEnv = {
@@ -277,6 +359,20 @@ function toIsoDate(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString().slice(0, 10);
+}
+
+function asNumber(value: number | string | null | undefined) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function asSingle<T>(value: T | T[] | null | undefined) {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
 }
 
 export function getBuyerEngineEnvStatus() {
@@ -3039,4 +3135,347 @@ export async function triggerBuyerEngineWorkflow(job: SearchJobRecord) {
 
     throw error;
   }
+}
+
+function normalizeBuyerReverseSearchCriteria(criteria: BuyerReverseSearchCriteria): BuyerReverseSearchCriteria {
+  const targetZipCodes = (criteria.targetZipCodes ?? [])
+    .flatMap((value) => String(value).split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return {
+    buyerName: criteria.buyerName?.trim() || "",
+    buyerGroup: criteria.buyerGroup?.trim() || "",
+    targetCounty: criteria.targetCounty?.trim() || "",
+    targetCity: criteria.targetCity?.trim() || "",
+    targetZipCodes,
+    propertyType: criteria.propertyType?.trim() || "",
+    minBeds:
+      criteria.minBeds == null || Number.isNaN(Number(criteria.minBeds))
+        ? null
+        : Number(criteria.minBeds),
+    maxPrice:
+      criteria.maxPrice == null || Number.isNaN(Number(criteria.maxPrice))
+        ? null
+        : Number(criteria.maxPrice),
+    minimumArvSpread:
+      criteria.minimumArvSpread == null || Number.isNaN(Number(criteria.minimumArvSpread))
+        ? null
+        : Number(criteria.minimumArvSpread),
+    buyBoxNotes: criteria.buyBoxNotes?.trim() || "",
+    buyerProfileType: criteria.buyerProfileType ?? "unknown",
+    preferredRadius:
+      criteria.preferredRadius == null || Number.isNaN(Number(criteria.preferredRadius))
+        ? null
+        : Number(criteria.preferredRadius),
+    activeOnly: Boolean(criteria.activeOnly),
+  };
+}
+
+async function listReverseSearchDealCandidates() {
+  const env = getEnvState();
+  if (!env.enabled) return [] as ReverseDealJoinRow[];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("deal_leads")
+    .select(
+      "id,seller_lead_id,property_address,county,city,state,zip_code,status,motivation_score,property_type,estimated_equity,recommended_next_action,deal_analysis(estimated_arv,maximum_allowable_offer,purchase_price_target,wholesale_spread),buyer_matches(buyer_score,exit_strategy,investor_type_recommendation)",
+    )
+    .order("updated_at", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    if (isMissingRelationError(error.message)) return [] as ReverseDealJoinRow[];
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as ReverseDealJoinRow[];
+}
+
+function isSellerLeadActive(status: string) {
+  return !/dead lead/i.test(status);
+}
+
+function isDealActive(status: string) {
+  return !/dead|lost|archived|closed/i.test(status);
+}
+
+function estimateSellerLeadArv(lead: SellerLeadView) {
+  return Math.max(
+    Math.round(lead.assessedValue * 1.12),
+    Math.round(lead.assessedValue + lead.estimatedEquity * 0.18),
+    lead.assessedValue,
+  );
+}
+
+function estimateSellerLeadMao(lead: SellerLeadView, estimatedArv: number) {
+  const base = estimatedArv * 0.7;
+  const equityAdjustment = Math.min(lead.estimatedEquity * 0.18, estimatedArv * 0.14);
+  return Math.max(0, Math.round(base - equityAdjustment - 12000));
+}
+
+function buildBuyerProfileReason(criteria: BuyerReverseSearchCriteria, propertyType: string, spread: number) {
+  switch (criteria.buyerProfileType) {
+    case "flipper":
+      if (spread >= 30000) return "Spread profile lines up with a flipper-style buy box.";
+      return "";
+    case "landlord":
+      if (/duplex|triplex|quad|multifamily|townhome/i.test(propertyType)) {
+        return "Property type leans rental-friendly for a landlord profile.";
+      }
+      return "";
+    case "hedge_fund":
+      if (/single family|single-family|sfr/i.test(propertyType)) {
+        return "Single-family posture fits the cleaner institutional buy-box pattern.";
+      }
+      return "";
+    case "cash_buyer":
+      if (spread >= 20000) return "Margin profile gives a cash buyer room to move quickly.";
+      return "";
+    default:
+      return "";
+  }
+}
+
+function scoreReverseSearchMatch(input: {
+  criteria: BuyerReverseSearchCriteria;
+  county: string;
+  city: string;
+  zip: string;
+  propertyType: string;
+  estimatedArv: number;
+  estimatedMao: number;
+  motivationScore: number;
+  contactConfidence: number | null;
+  status: string;
+  buyerDemandScore: number;
+}) {
+  const reasons: string[] = [];
+  let score = 0;
+  const county = input.county.trim().toLowerCase();
+  const city = input.city.trim().toLowerCase();
+  const zip = input.zip.trim().toLowerCase();
+  const propertyType = input.propertyType.trim().toLowerCase();
+  const spread = Math.max(0, input.estimatedArv - input.estimatedMao);
+
+  if (input.criteria.targetCounty && county === input.criteria.targetCounty.trim().toLowerCase()) {
+    score += 24;
+    reasons.push("County matches buyer target.");
+  }
+
+  if (input.criteria.targetCity && city === input.criteria.targetCity.trim().toLowerCase()) {
+    score += 16;
+    reasons.push("City matches buyer target.");
+  }
+
+  if (
+    input.criteria.targetZipCodes?.length
+    && input.criteria.targetZipCodes.some((item) => item.trim().toLowerCase() === zip)
+  ) {
+    score += 18;
+    reasons.push("Zip matches buyer target.");
+  }
+
+  if (
+    input.criteria.propertyType
+    && propertyType.includes(input.criteria.propertyType.trim().toLowerCase())
+  ) {
+    score += 16;
+    reasons.push("Property type matches the stated buy box.");
+  }
+
+  if (input.criteria.maxPrice != null) {
+    if (input.estimatedMao > 0 && input.estimatedMao <= input.criteria.maxPrice) {
+      score += 14;
+      reasons.push("Estimated MAO fits under the buyer's max price.");
+    } else if (input.estimatedMao > input.criteria.maxPrice * 1.1) {
+      score -= 8;
+    }
+  }
+
+  if (input.criteria.minimumArvSpread != null) {
+    if (spread >= input.criteria.minimumArvSpread) {
+      score += 16;
+      reasons.push("ARV spread clears the buyer's minimum threshold.");
+    } else {
+      score -= 10;
+    }
+  } else if (spread >= 30000) {
+    score += 12;
+    reasons.push("High equity spread supports a strong wholesale lane.");
+  } else if (spread >= 15000) {
+    score += 7;
+  }
+
+  if (input.motivationScore >= 80) {
+    score += 14;
+    reasons.push("Strong seller motivation supports faster movement.");
+  } else if (input.motivationScore >= 60) {
+    score += 8;
+  }
+
+  if (input.contactConfidence != null) {
+    if (input.contactConfidence >= 70) {
+      score += 10;
+      reasons.push("Contact confidence is strong enough for quick operator follow-through.");
+    } else if (input.contactConfidence < 45) {
+      score -= 6;
+    }
+  }
+
+  if (/offer ready|under contract|negotiating|contact ready|reviewing/i.test(input.status)) {
+    score += 8;
+    reasons.push("Current stage is active enough to act on now.");
+  }
+
+  if (input.buyerDemandScore >= 70) {
+    score += 12;
+    reasons.push("Existing buyer demand signals are already strong.");
+  } else if (input.buyerDemandScore >= 45) {
+    score += 6;
+  }
+
+  const buyerProfileReason = buildBuyerProfileReason(
+    input.criteria,
+    input.propertyType,
+    spread,
+  );
+  if (buyerProfileReason) {
+    score += 8;
+    reasons.push(buyerProfileReason);
+  }
+
+  return {
+    matchScore: Math.max(1, Math.min(99, Math.round(score))),
+    matchReasons: reasons.slice(0, 5),
+  };
+}
+
+export async function runBuyerReverseSearch(
+  rawCriteria: BuyerReverseSearchCriteria,
+): Promise<BuyerReverseSearchResult> {
+  const criteria = normalizeBuyerReverseSearchCriteria(rawCriteria);
+  const [sellerLeads, dealCandidates] = await Promise.all([
+    listSellerLeads().catch(() => []),
+    listReverseSearchDealCandidates().catch(() => []),
+  ]);
+
+  const filteredSellerLeads = criteria.activeOnly
+    ? sellerLeads.filter((lead) => isSellerLeadActive(lead.status))
+    : sellerLeads;
+
+  const filteredDeals = criteria.activeOnly
+    ? dealCandidates.filter((deal) => isDealActive(deal.status ?? ""))
+    : dealCandidates;
+
+  const sellerMatches: BuyerReverseSearchMatch[] = filteredSellerLeads.map((lead) => {
+    const estimatedArv = estimateSellerLeadArv(lead);
+    const estimatedMao = estimateSellerLeadMao(lead, estimatedArv);
+    const scored = scoreReverseSearchMatch({
+      criteria,
+      county: lead.county,
+      city: lead.city,
+      zip: lead.zipCode,
+      propertyType: lead.propertyType,
+      estimatedArv,
+      estimatedMao,
+      motivationScore: lead.score,
+      contactConfidence: lead.contactConfidenceScore ?? null,
+      status: lead.status,
+      buyerDemandScore: lead.relatedDealId ? 55 : 0,
+    });
+
+    return {
+      id: `seller-${lead.id}`,
+      sourceType: "seller_lead",
+      sourceId: lead.id,
+      propertyAddress: lead.propertyAddress,
+      city: lead.city,
+      county: lead.county,
+      zip: lead.zipCode,
+      estimatedArv,
+      estimatedMao,
+      motivationScore: lead.score,
+      matchScore: scored.matchScore,
+      matchReasons:
+        scored.matchReasons.length > 0
+          ? scored.matchReasons
+          : ["Seller-side opportunity is live, but it needs tighter buyer-box alignment."],
+      recommendedAction:
+        lead.relatedDealId || /sent to deal engine/i.test(lead.status)
+          ? "Open the linked deal lane, tighten the packet, and align it to this buyer box."
+          : "Review the seller record, verify contact posture, and send it into Deal Engine if the box still fits.",
+      link: lead.relatedDealId ? `/workspace/deal-engine/${encodeURIComponent(lead.relatedDealId)}` : "/seller-engine",
+    };
+  });
+
+  const dealMatches: BuyerReverseSearchMatch[] = filteredDeals.map((deal) => {
+    const analysis = asSingle(deal.deal_analysis);
+    const buyerMatch = asSingle(deal.buyer_matches);
+    const estimatedArv = Math.max(0, Math.round(asNumber(analysis?.estimated_arv)));
+    const estimatedMao = Math.max(
+      0,
+      Math.round(
+        asNumber(analysis?.maximum_allowable_offer) || asNumber(analysis?.purchase_price_target),
+      ),
+    );
+    const scored = scoreReverseSearchMatch({
+      criteria,
+      county: deal.county ?? "",
+      city: deal.city ?? "",
+      zip: deal.zip_code ?? "",
+      propertyType: deal.property_type ?? "",
+      estimatedArv,
+      estimatedMao,
+      motivationScore: asNumber(deal.motivation_score),
+      contactConfidence: deal.seller_lead_id ? 68 : null,
+      status: deal.status ?? "",
+      buyerDemandScore: asNumber(buyerMatch?.buyer_score),
+    });
+
+    return {
+      id: `deal-${deal.id}`,
+      sourceType: "deal",
+      sourceId: deal.id,
+      propertyAddress: deal.property_address ?? "Unknown property",
+      city: deal.city ?? "",
+      county: deal.county ?? "",
+      zip: deal.zip_code ?? "",
+      estimatedArv,
+      estimatedMao,
+      motivationScore: asNumber(deal.motivation_score),
+      matchScore: Math.min(99, scored.matchScore + 6),
+      matchReasons:
+        scored.matchReasons.length > 0
+          ? scored.matchReasons
+          : ["Existing Deal Engine record is available, but the buyer-box overlap is still soft."],
+      recommendedAction:
+        deal.recommended_next_action?.trim()
+        || "Open the deal in Deal Engine, tune the packet to the buyer box, and prepare the next release.",
+      link: `/workspace/deal-engine/${encodeURIComponent(deal.id)}`,
+    };
+  });
+
+  const dedupedByAddress = new Map<string, BuyerReverseSearchMatch>();
+  for (const match of [...dealMatches, ...sellerMatches]) {
+    if (match.matchScore < 18) continue;
+    const key = `${match.propertyAddress.trim().toLowerCase()}|${match.zip}`;
+    const current = dedupedByAddress.get(key);
+    if (!current || match.matchScore > current.matchScore) {
+      dedupedByAddress.set(key, match);
+    }
+  }
+
+  const matches = [...dedupedByAddress.values()].sort((left, right) => {
+    if (right.matchScore !== left.matchScore) return right.matchScore - left.matchScore;
+    if (right.motivationScore !== left.motivationScore) return right.motivationScore - left.motivationScore;
+    return right.estimatedArv - left.estimatedArv;
+  });
+
+  return {
+    criteria,
+    matches,
+    generatedAt: new Date().toISOString(),
+  };
 }

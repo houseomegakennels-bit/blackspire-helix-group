@@ -1,6 +1,10 @@
 import "server-only";
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import {
   type DealEngineBuyerSignal,
@@ -8,6 +12,14 @@ import {
   type DealEngineLead,
   type DealEngineSellerSignal,
 } from "@/lib/deal-engine";
+import {
+  CONTRACT_TEMPLATE_REGISTRY,
+  isTemplateAllowedForGeneration,
+  type ContractTemplateApprovalStatus,
+  type ContractTemplateLicenseStatus,
+  type ContractTemplateRecord,
+  type ContractTemplateType,
+} from "@/lib/contract-template-registry";
 import type { SellerLeadView } from "@/lib/seller-engine-demo";
 import { listSellerLeads, updateSellerLead } from "@/lib/seller-engine-server";
 import {
@@ -312,6 +324,23 @@ export type DealEngineDealDetail = {
   }>;
 };
 
+export type DealCommanderInsight = {
+  priority: "High" | "Medium" | "Low";
+  confidenceScore: number;
+  suggestedNextAction: string;
+  estimatedMao: number;
+  offerRangeLow: number;
+  offerRangeHigh: number;
+  negotiationAngle: string;
+  sellerPainPointHypothesis: string;
+  buyerFitSummary: string;
+  riskWarnings: string[];
+  dispositionStrategy: string;
+  followUpRecommendation: string;
+  generationMode: "rules" | "ai";
+  generatedAt: string;
+};
+
 type BuyerReportView = {
   id: string;
   searchJobId: string;
@@ -375,6 +404,258 @@ type DealAnalysisRow = {
   wholesale_spread: number | null;
   maximum_allowable_offer: number | null;
   deal_rating: string | null;
+};
+
+type DealContractDraftRow = {
+  id: string;
+  draft_type: string;
+  title: string;
+  body: string;
+  special_terms: string | null;
+  template_id?: string | null;
+  template_type?: string | null;
+  status?: string | null;
+  generated_body?: string | null;
+  generated_pdf_url?: string | null;
+  editable_payload?: Record<string, unknown> | null;
+  legal_disclaimer_acknowledged?: boolean | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ContractTemplateRow = {
+  id: string;
+  template_key: string;
+  template_type: string;
+  name: string;
+  intended_purpose: string;
+  source_name: string;
+  source_url: string;
+  license_status: string;
+  approval_status: string;
+  state: string | null;
+  version: string;
+  required_fields: string[] | null;
+  optional_fields: string[] | null;
+  variable_map: Record<string, string> | null;
+  storage_path: string | null;
+  notes: string | null;
+};
+
+type DealSignaturePacketRow = {
+  id: string;
+  signature_status: string | null;
+  sent_for_signature_at: string | null;
+  signed_by_seller_at: string | null;
+  signed_by_buyer_at: string | null;
+  signature_provider: string | null;
+  signature_packet_url: string | null;
+  signer_email: string | null;
+  signer_role: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+type DealTitleChecklistItemRow = {
+  id: string;
+  item_key: string;
+  label: string;
+  status: string | null;
+  notes: string | null;
+  due_date: string | null;
+  assigned_owner: string | null;
+  updated_at: string;
+};
+
+type DealEmdTrackerRow = {
+  id: string;
+  emd_amount: number | null;
+  emd_due_date: string | null;
+  emd_holder: string | null;
+  emd_holder_type: string | null;
+  emd_status: string | null;
+  emd_payment_method: string | null;
+  emd_receipt_url: string | null;
+  emd_notes: string | null;
+  metadata: Record<string, unknown> | null;
+  updated_at: string;
+};
+
+type DealAssignmentFeeTrackerRow = {
+  id: string;
+  seller_contract_price: number | null;
+  buyer_assignment_price: number | null;
+  assignment_fee: number | null;
+  expected_net_fee: number | null;
+  title_company_fee: number | null;
+  other_closing_costs: number | null;
+  payout_status: string | null;
+  payout_due_date: string | null;
+  payout_received_at: string | null;
+  payout_notes: string | null;
+  updated_at: string;
+};
+
+type DealClosingTimelineEventRow = {
+  id: string;
+  event_type: string;
+  label: string;
+  status: string | null;
+  due_date: string | null;
+  completed_at: string | null;
+  notes: string | null;
+  updated_at: string;
+};
+
+type DealDocumentVaultRow = {
+  id: string;
+  document_id: string;
+  file_name: string;
+  file_type: string | null;
+  category: string;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  document_url: string | null;
+  storage_path: string | null;
+  notes: string | null;
+  linked_item_type: string | null;
+  linked_item_id: string | null;
+  updated_at: string;
+};
+
+export type DealContractDraftRecord = {
+  id: string;
+  draftType: string;
+  templateId: string | null;
+  templateType: string;
+  status: string;
+  title: string;
+  body: string;
+  specialTerms: string;
+  generatedPdfUrl: string;
+  editablePayload: Record<string, unknown>;
+  legalDisclaimerAcknowledged: boolean;
+  updatedAt: string;
+};
+
+export type DealContractTemplateRecord = {
+  id: string;
+  templateKey: string;
+  type: string;
+  name: string;
+  intendedPurpose: string;
+  sourceName: string;
+  sourceUrl: string;
+  licenseStatus: ContractTemplateLicenseStatus;
+  approvalStatus: ContractTemplateApprovalStatus;
+  state: string | null;
+  version: string;
+  requiredFields: string[];
+  optionalFields: string[];
+  variableMap: Record<string, string>;
+  storagePath: string | null;
+  notes: string;
+  requestedUse: string;
+};
+
+export type DealContractTemplateValidation = {
+  template: DealContractTemplateRecord;
+  requestedUse: string;
+  purposeValid: boolean;
+  blockingError: string | null;
+  missingFields: string[];
+  availableFields: Record<string, string>;
+  disclaimerRequired: boolean;
+  canGenerate: boolean;
+};
+
+export type DealSignaturePacketRecord = {
+  id: string | null;
+  signatureStatus: string;
+  sentForSignatureAt: string | null;
+  signedBySellerAt: string | null;
+  signedByBuyerAt: string | null;
+  signatureProvider: string;
+  signaturePacketUrl: string;
+  signerEmail: string;
+  signerRole: string;
+  availableProviders: string[];
+};
+
+export type DealTitleChecklistItemRecord = {
+  id: string;
+  itemKey: string;
+  label: string;
+  status: "pending" | "complete" | "blocked";
+  notes: string;
+  dueDate: string;
+  assignedOwner: string;
+  updatedAt: string;
+};
+
+export type DealEmdTrackerRecord = {
+  id: string | null;
+  emdAmount: number;
+  emdDueDate: string;
+  emdHolder: string;
+  emdHolderType: "title_company" | "attorney" | "broker" | "other";
+  emdStatus: "not_required" | "pending" | "submitted" | "received" | "overdue" | "released" | "forfeited";
+  emdPaymentMethod: string;
+  emdReceiptUrl: string;
+  emdNotes: string;
+  alertFlags: string[];
+  statusTone: "good" | "warn" | "bad" | "neutral";
+};
+
+export type DealAssignmentFeeTrackerRecord = {
+  id: string | null;
+  sellerContractPrice: number;
+  buyerAssignmentPrice: number;
+  assignmentFee: number;
+  expectedNetFee: number;
+  titleCompanyFee: number;
+  otherClosingCosts: number;
+  payoutStatus: "projected" | "pending_closing" | "confirmed" | "paid" | "delayed";
+  payoutDueDate: string;
+  payoutReceivedAt: string;
+  payoutNotes: string;
+  closingWarning: string | null;
+};
+
+export type DealClosingTimelineEventRecord = {
+  id: string;
+  eventType: string;
+  label: string;
+  status: "upcoming" | "complete" | "delayed" | "blocked";
+  dueDate: string;
+  completedAt: string;
+  notes: string;
+  updatedAt: string;
+};
+
+export type DealDocumentVaultRecord = {
+  id: string;
+  documentId: string;
+  fileName: string;
+  fileType: string;
+  category: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  documentUrl: string;
+  notes: string;
+  linkedItemType: string;
+  linkedItemId: string;
+};
+
+export type DealTransactionCenterSnapshot = {
+  contractTemplates: DealContractTemplateRecord[];
+  contracts: DealContractDraftRecord[];
+  signaturePacket: DealSignaturePacketRecord;
+  titleChecklist: DealTitleChecklistItemRecord[];
+  emdTracker: DealEmdTrackerRecord;
+  assignmentTracker: DealAssignmentFeeTrackerRecord;
+  timeline: DealClosingTimelineEventRecord[];
+  documents: DealDocumentVaultRecord[];
 };
 
 type RankedBuyerSignal = DealEngineBuyerSignal & {
@@ -3605,6 +3886,22 @@ export async function uploadDealDocument(input: UploadDealDocumentInput) {
     return { ok: false as const, error: logError.message };
   }
 
+  await supabase.from("deal_documents").upsert({
+    deal_id: input.dealId,
+    document_id: documentId,
+    file_name: input.fileName,
+    file_type: input.contentType || "application/octet-stream",
+    category: input.category,
+    uploaded_by: input.owner,
+    uploaded_at: uploadedAt,
+    document_url: `/api/deal-engine/document?dealId=${encodeURIComponent(input.dealId)}&documentId=${encodeURIComponent(documentId)}`,
+    storage_path: objectPath,
+    notes: input.notes,
+    linked_item_type: "",
+    linked_item_id: "",
+    updated_at: uploadedAt,
+  }, { onConflict: "document_id" }).then(() => undefined, () => undefined);
+
   return { ok: true as const, documentId };
 }
 
@@ -4072,5 +4369,1576 @@ export async function getDealEngineWorkspaceSnapshot(): Promise<DealEngineWorksp
     sellerSignals,
     buyerSignals,
     contractDrafts: buildContractDrafts(leads, sellerSignals, buyerSignals),
+  };
+}
+
+function inferContactConfidence(detail: DealEngineDealDetail, sellerLead: SellerLeadView | null) {
+  if (typeof sellerLead?.contactConfidenceScore === "number") {
+    return Math.max(0, Math.min(100, sellerLead.contactConfidenceScore));
+  }
+
+  if (/verified|connected|ready/i.test(detail.sellerContact.phoneStatus)) return 82;
+  if (/skip trace needed|queued|missing/i.test(detail.sellerContact.phoneStatus)) return 42;
+  if (/dnc|blocked/i.test(detail.sellerContact.phoneStatus)) return 18;
+  return 58;
+}
+
+function deriveSellerPainPoint(detail: DealEngineDealDetail, sellerLead: SellerLeadView | null) {
+  const reasons = sellerLead?.reasons ?? [];
+  const sourceType = (sellerLead?.sourceType ?? "").replaceAll("_", " ");
+
+  if (reasons.some((reason) => /probate/i.test(reason)) || /probate/i.test(sourceType)) {
+    return "The property may feel more like a burden than an asset, and the seller likely values speed, simplicity, and low coordination.";
+  }
+  if (reasons.some((reason) => /tax delinquent/i.test(reason)) || /tax/i.test(sourceType)) {
+    return "Tax pressure may be forcing the seller to prioritize a quick resolution over squeezing for full retail pricing.";
+  }
+  if (reasons.some((reason) => /vacant|code violation|foreclosure/i.test(reason))) {
+    return "The property condition or compliance drag is likely creating emotional and financial fatigue, which supports a certainty-first offer angle.";
+  }
+  if (detail.lead.motivationScore >= 80) {
+    return "The seller profile shows enough urgency that convenience, timeline certainty, and no-repair relief should outperform a price-only conversation.";
+  }
+  return "The seller may still need conviction, so the best angle is reducing friction, clarifying timing, and proving the deal can close cleanly.";
+}
+
+function deriveNegotiationAngle(detail: DealEngineDealDetail, spread: number, contactConfidence: number) {
+  if (detail.underwriting.missingInputs.length) {
+    return "Lead with discovery, not price. Tighten underwriting inputs first so the offer anchor is grounded and defensible.";
+  }
+  if (contactConfidence < 60) {
+    return "Do not over-negotiate before contact posture is verified. Confirm the real decision maker and then frame the offer around certainty and ease.";
+  }
+  if (spread >= 40000) {
+    return "Anchor on a clean-close convenience story first, then hold firm on a disciplined investor number backed by repair load and timeline relief.";
+  }
+  if (spread >= 20000) {
+    return "Use a narrow, evidence-backed range. The conversation should emphasize speed and reduced prep work more than aggressive discounting.";
+  }
+  return "Stay cautious. Position the offer as a low-friction off-market option and avoid overcommitting before spread improves.";
+}
+
+function deriveBuyerFitSummary(detail: DealEngineDealDetail, spread: number) {
+  if (!detail.buyerSignals.length) {
+    return `No live buyer shortlist is attached yet. This lane still needs a fresh Buyer Engine run for ${detail.lead.county} County before broad disposition.`;
+  }
+
+  const top = detail.buyerSignals
+    .slice(0, 3)
+    .map((signal) => `${signal.buyerName} (${signal.propertyType}, score ${signal.score})`);
+  const strength =
+    spread >= 40000
+      ? "The spread supports an aggressive flipper-oriented release."
+      : spread >= 20000
+        ? "The spread supports a focused shortlist rather than a wide blast."
+        : "Buyer fit exists, but the spread suggests a narrow release to the most aligned operators only.";
+
+  return `${strength} Current best-fit buyers: ${top.join("; ")}.`;
+}
+
+function deriveDispositionStrategy(detail: DealEngineDealDetail, spread: number) {
+  if (!detail.buyerSignals.length) {
+    return "Keep this inside internal command until Buyer Engine refreshes the shortlist, then build a controlled packet release.";
+  }
+  if (spread >= 40000) {
+    return "Prepare a premium investor packet, release to the top buyer cohort first, and escalate to a broader county lane only if early interest is soft.";
+  }
+  if (spread >= 20000) {
+    return "Run a selective disposition push to the top local buyers, keeping the packet tight and the walkthrough cadence controlled.";
+  }
+  return "Use a quiet, relationship-driven disposition path and avoid a broad blast until the margin improves or a niche buyer fit is confirmed.";
+}
+
+function deriveFollowUpRecommendation(detail: DealEngineDealDetail, contactConfidence: number) {
+  if (contactConfidence < 60) {
+    return "Refresh Nexus contact verification first, then schedule the first seller touch within the same operating block.";
+  }
+  if (detail.lead.status === "Needs Analysis" || detail.underwriting.missingInputs.length) {
+    return "Complete underwriting and re-open the seller within 24 hours with a clear range, not a vague teaser.";
+  }
+  if (!detail.buyerSignals.length) {
+    return "Launch Buyer Engine after the seller posture is stable, then refresh the packet and line up top-fit buyers.";
+  }
+  return "Follow up with the seller inside 24 hours, keep the negotiation lane warm, and prepare the first buyer packet release immediately after terms stabilize.";
+}
+
+function buildRuleBasedCommanderInsight(
+  detail: DealEngineDealDetail,
+  sellerLead: SellerLeadView | null,
+): DealCommanderInsight {
+  const contactConfidence = inferContactConfidence(detail, sellerLead);
+  const missingCount = detail.underwriting.missingInputs.length;
+  const estimatedMao = Math.max(0, Math.round(detail.underwriting.maximumAllowableOffer || detail.underwriting.purchasePriceTarget || 0));
+  const offerRangeHigh = estimatedMao;
+  const offerRangeLow = Math.max(
+    0,
+    Math.round(
+      offerRangeHigh
+        ? offerRangeHigh - Math.max(detail.underwriting.assignmentFeeTarget * 0.5, 5000)
+        : detail.underwriting.purchasePriceTarget * 0.92,
+    ),
+  );
+  const estimatedArv = Math.max(0, Math.round(detail.underwriting.estimatedArv || 0));
+  const spread =
+    detail.underwriting.wholesaleSpread > 0
+      ? Math.round(detail.underwriting.wholesaleSpread)
+      : Math.max(
+          0,
+          estimatedArv
+            - detail.underwriting.repairEstimate
+            - detail.underwriting.closingCosts
+            - detail.underwriting.holdingCosts
+            - Math.max(detail.underwriting.sellerAskingPrice || detail.underwriting.purchasePriceTarget, offerRangeHigh)
+            - detail.underwriting.assignmentFeeTarget,
+        );
+  const spreadRatio = estimatedArv > 0 ? spread / estimatedArv : 0;
+  const buyerFitCount = detail.buyerSignals.length;
+
+  let priorityScore = 0;
+  priorityScore += detail.lead.motivationScore >= 80 ? 28 : detail.lead.motivationScore >= 60 ? 18 : 8;
+  priorityScore += spreadRatio >= 0.18 ? 26 : spreadRatio >= 0.1 ? 16 : spreadRatio >= 0.05 ? 8 : 0;
+  priorityScore += contactConfidence >= 70 ? 18 : contactConfidence >= 55 ? 10 : 2;
+  priorityScore += buyerFitCount >= 3 ? 16 : buyerFitCount >= 1 ? 9 : 0;
+  priorityScore += missingCount === 0 ? 12 : missingCount <= 2 ? 4 : -6;
+
+  const priority: DealCommanderInsight["priority"] =
+    priorityScore >= 70 ? "High" : priorityScore >= 42 ? "Medium" : "Low";
+
+  const completenessScore = Math.max(0, 100 - missingCount * 12);
+  const confidenceScore = Math.max(
+    18,
+    Math.min(
+      98,
+      Math.round(
+        completenessScore * 0.35
+          + Math.min(detail.lead.motivationScore, 100) * 0.2
+          + Math.min(contactConfidence, 100) * 0.2
+          + Math.min(buyerFitCount * 18, 100) * 0.15
+          + Math.min(spreadRatio * 240, 100) * 0.1,
+      ),
+    ),
+  );
+
+  const riskWarnings: string[] = [];
+  if (!estimatedArv) riskWarnings.push("ARV is still missing, so the pricing lane is not fully anchored.");
+  if (detail.underwriting.repairEstimate <= 0) riskWarnings.push("Repair estimate is missing or too soft, which can distort the true spread.");
+  if (contactConfidence < 60) riskWarnings.push("Seller contact confidence is weak, so negotiation timing may be premature.");
+  if (!buyerFitCount) riskWarnings.push("No live buyer fit is attached yet, so disposition confidence is limited.");
+  if (spreadRatio < 0.08) riskWarnings.push("The current spread looks thin for a clean wholesale release.");
+  if (/dead|blocked/i.test(detail.lead.status)) riskWarnings.push("The current deal stage suggests the lane may already be cooling.");
+
+  const suggestedNextAction =
+    missingCount > 0
+      ? `Finish underwriting inputs first: ${detail.underwriting.missingInputs.slice(0, 2).join(", ")}. Once the numbers are tight, reopen the seller lane with a disciplined range.`
+      : contactConfidence < 60
+        ? "Refresh Nexus contact posture and verify the best decision-maker line before pushing into a pricing conversation."
+        : !buyerFitCount
+          ? `Launch Buyer Engine for ${detail.lead.county} County after the seller lane is stabilized so the packet has a real shortlist behind it.`
+          : spreadRatio >= 0.12
+            ? "Move into live negotiation with a certainty-first range, then line up the first buyer packet release as soon as the seller soft-commits."
+            : "Keep the deal warm, tighten the terms, and avoid forcing a contract until either spread or buyer fit strengthens.";
+
+  return {
+    priority,
+    confidenceScore,
+    suggestedNextAction,
+    estimatedMao,
+    offerRangeLow,
+    offerRangeHigh,
+    negotiationAngle: deriveNegotiationAngle(detail, spread, contactConfidence),
+    sellerPainPointHypothesis: deriveSellerPainPoint(detail, sellerLead),
+    buyerFitSummary: deriveBuyerFitSummary(detail, spread),
+    riskWarnings,
+    dispositionStrategy: deriveDispositionStrategy(detail, spread),
+    followUpRecommendation: deriveFollowUpRecommendation(detail, contactConfidence),
+    generationMode: "rules",
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+async function maybeEnhanceCommanderInsightWithAi(
+  detail: DealEngineDealDetail,
+  fallbackInsight: DealCommanderInsight,
+  sellerLead: SellerLeadView | null,
+): Promise<DealCommanderInsight> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return fallbackInsight;
+
+  const model = process.env.OPENAI_TEXT_MODEL?.trim() || "gpt-4.1-mini";
+  const prompt = `You are Blackspire's AI Deal Commander. Refine the fallback commander insight for this wholesale real-estate deal and return valid JSON only.
+
+Return exactly this shape:
+{
+  "priority": "High" | "Medium" | "Low",
+  "confidenceScore": number,
+  "suggestedNextAction": string,
+  "estimatedMao": number,
+  "offerRangeLow": number,
+  "offerRangeHigh": number,
+  "negotiationAngle": string,
+  "sellerPainPointHypothesis": string,
+  "buyerFitSummary": string,
+  "riskWarnings": string[],
+  "dispositionStrategy": string,
+  "followUpRecommendation": string
+}
+
+Rules:
+- Stay grounded in the provided deal data.
+- Keep the tone tactical, operator-facing, and concise.
+- Do not invent buyers, valuations, or contact data that are not supported.
+
+Deal data:
+- Deal id: ${detail.lead.id}
+- Property: ${detail.lead.propertyAddress}
+- County: ${detail.lead.county}
+- Stage: ${detail.lead.status}
+- Motivation score: ${detail.lead.motivationScore}
+- Next action currently stored: ${detail.lead.nextAction}
+- Seller contact posture: ${detail.sellerContact.phoneStatus}
+- Seller contact notes: ${detail.sellerContact.contactEnrichmentNotes}
+- Underwriting ARV: ${detail.underwriting.estimatedArv}
+- Seller asking price: ${detail.underwriting.sellerAskingPrice}
+- Repair estimate: ${detail.underwriting.repairEstimate}
+- Closing costs: ${detail.underwriting.closingCosts}
+- Holding costs: ${detail.underwriting.holdingCosts}
+- Buyer profit target: ${detail.underwriting.buyerProfitTarget}
+- Assignment fee target: ${detail.underwriting.assignmentFeeTarget}
+- Purchase price target: ${detail.underwriting.purchasePriceTarget}
+- Maximum allowable offer: ${detail.underwriting.maximumAllowableOffer}
+- Wholesale spread: ${detail.underwriting.wholesaleSpread}
+- Missing inputs: ${detail.underwriting.missingInputs.join(", ") || "none"}
+- Buyer signals: ${detail.buyerSignals.map((signal) => `${signal.buyerName} / ${signal.propertyType} / ${signal.score}`).join("; ") || "none"}
+- Seller lead reasons: ${sellerLead?.reasons.join("; ") || "none"}
+
+Fallback insight:
+${JSON.stringify(fallbackInsight)}`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.35,
+        max_tokens: 700,
+        messages: [{ role: "user", content: prompt }],
+      }),
+      signal: AbortSignal.timeout(18_000),
+    });
+
+    if (!response.ok) return fallbackInsight;
+
+    const json = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = json.choices?.[0]?.message?.content?.trim();
+    if (!content) return fallbackInsight;
+
+    const objectMatch = content.match(/\{[\s\S]*\}/);
+    if (!objectMatch) return fallbackInsight;
+
+    const parsed = JSON.parse(objectMatch[0]) as Partial<DealCommanderInsight> & {
+      riskWarnings?: unknown;
+    };
+
+    return {
+      priority:
+        parsed.priority === "High" || parsed.priority === "Medium" || parsed.priority === "Low"
+          ? parsed.priority
+          : fallbackInsight.priority,
+      confidenceScore: Math.max(1, Math.min(100, Math.round(Number(parsed.confidenceScore ?? fallbackInsight.confidenceScore)))),
+      suggestedNextAction: String(parsed.suggestedNextAction ?? fallbackInsight.suggestedNextAction),
+      estimatedMao: Math.max(0, Math.round(Number(parsed.estimatedMao ?? fallbackInsight.estimatedMao))),
+      offerRangeLow: Math.max(0, Math.round(Number(parsed.offerRangeLow ?? fallbackInsight.offerRangeLow))),
+      offerRangeHigh: Math.max(0, Math.round(Number(parsed.offerRangeHigh ?? fallbackInsight.offerRangeHigh))),
+      negotiationAngle: String(parsed.negotiationAngle ?? fallbackInsight.negotiationAngle),
+      sellerPainPointHypothesis: String(parsed.sellerPainPointHypothesis ?? fallbackInsight.sellerPainPointHypothesis),
+      buyerFitSummary: String(parsed.buyerFitSummary ?? fallbackInsight.buyerFitSummary),
+      riskWarnings: Array.isArray(parsed.riskWarnings)
+        ? parsed.riskWarnings.map((item) => String(item)).filter(Boolean).slice(0, 6)
+        : fallbackInsight.riskWarnings,
+      dispositionStrategy: String(parsed.dispositionStrategy ?? fallbackInsight.dispositionStrategy),
+      followUpRecommendation: String(parsed.followUpRecommendation ?? fallbackInsight.followUpRecommendation),
+      generationMode: "ai",
+      generatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return fallbackInsight;
+  }
+}
+
+export async function generateDealCommanderInsight(dealId: string): Promise<DealCommanderInsight | null> {
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+
+  const sellerLeads = await listSellerLeads().catch(() => []);
+  const sellerLead =
+    sellerLeads.find((lead) => lead.relatedDealId === dealId)
+    ?? sellerLeads.find(
+      (lead) =>
+        lead.propertyAddress.trim().toLowerCase() === detail.lead.propertyAddress.trim().toLowerCase()
+        || lead.ownerName.trim().toLowerCase() === detail.lead.ownerName.trim().toLowerCase(),
+    )
+    ?? null;
+
+  const fallbackInsight = buildRuleBasedCommanderInsight(detail, sellerLead);
+  return maybeEnhanceCommanderInsightWithAi(detail, fallbackInsight, sellerLead);
+}
+
+function isMissingDealTransactionTableError(error: { message?: string | null } | null | undefined) {
+  if (!error?.message) return false;
+  return /deal_contract_drafts|deal_signature_packets|deal_title_checklist_items|deal_emd_trackers|deal_assignment_fee_trackers|deal_closing_timeline_events|deal_documents/i.test(error.message);
+}
+
+const DEFAULT_TITLE_CHECKLIST = [
+  ["title_company_selected", "Title company selected"],
+  ["escrow_officer_added", "Escrow officer/contact added"],
+  ["purchase_agreement_sent", "Purchase agreement sent"],
+  ["emd_received_by_title", "EMD received by title"],
+  ["title_search_started", "Title search started"],
+  ["title_issues_found", "Title issues found"],
+  ["title_issues_cleared", "Title issues cleared"],
+  ["assignment_agreement_sent", "Assignment agreement sent"],
+  ["buyer_funds_verified", "Buyer funds verified"],
+  ["closing_statement_received", "Closing statement received"],
+  ["closing_scheduled", "Closing scheduled"],
+  ["seller_signed", "Seller signed"],
+  ["buyer_signed", "Buyer signed"],
+  ["assignment_fee_confirmed", "Assignment fee confirmed"],
+  ["deal_closed", "Deal closed"],
+] as const;
+
+const DEFAULT_TIMELINE = [
+  ["seller_lead_created", "Seller lead created"],
+  ["seller_contacted", "Seller contacted"],
+  ["contract_signed", "Contract signed"],
+  ["emd_due", "EMD due"],
+  ["emd_received", "EMD received"],
+  ["buyer_packet_created", "Buyer packet created"],
+  ["buyer_assigned", "Buyer assigned"],
+  ["assignment_signed", "Assignment signed"],
+  ["title_search_started", "Title search started"],
+  ["title_cleared", "Title cleared"],
+  ["closing_scheduled", "Closing scheduled"],
+  ["closing_completed", "Closing completed"],
+  ["assignment_fee_paid", "Assignment fee paid"],
+] as const;
+
+function buildContractDisclaimer() {
+  return "Blackspire-generated draft for operational prep only. Review with a licensed attorney or title company before use.";
+}
+
+function sanitizeDraftType(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function toContractTemplateRecord(template: ContractTemplateRecord | ContractTemplateRow): DealContractTemplateRecord {
+  if ("templateKey" in template) {
+    return {
+      id: template.id,
+      templateKey: template.templateKey,
+      type: template.type,
+      name: template.name,
+      intendedPurpose: template.intendedPurpose,
+      sourceName: template.sourceName,
+      sourceUrl: template.sourceUrl,
+      licenseStatus: template.licenseStatus,
+      approvalStatus: template.approvalStatus,
+      state: template.state,
+      version: template.version,
+      requiredFields: template.requiredFields,
+      optionalFields: template.optionalFields,
+      variableMap: template.variableMap,
+      storagePath: template.storagePath,
+      notes: template.notes,
+      requestedUse: template.requestedUse,
+    };
+  }
+
+  return {
+    id: template.id,
+    templateKey: template.template_key,
+    type: template.template_type,
+    name: template.name,
+    intendedPurpose: template.intended_purpose,
+    sourceName: template.source_name,
+    sourceUrl: template.source_url,
+    licenseStatus: (template.license_status as ContractTemplateLicenseStatus) || "unknown",
+    approvalStatus: (template.approval_status as ContractTemplateApprovalStatus) || "reference_only",
+    state: template.state,
+    version: template.version,
+    requiredFields: template.required_fields ?? [],
+    optionalFields: template.optional_fields ?? [],
+    variableMap: template.variable_map ?? {},
+    storagePath: template.storage_path,
+    notes: template.notes ?? "",
+    requestedUse: template.template_type,
+  };
+}
+
+function formatContractFieldValue(field: string, value: unknown) {
+  if (Array.isArray(value)) {
+    return value.length ? value.map((entry) => String(entry)).join(", ") : "";
+  }
+  if (typeof value === "number") {
+    const currencyFields = /(price|fee|deposit|amount|cost)/i;
+    return currencyFields.test(field) ? formatCurrency(value) : String(value);
+  }
+  return String(value ?? "").trim();
+}
+
+function dealFieldPayload(detail: DealEngineDealDetail, emd: DealEmdTrackerRecord | null, assignment: DealAssignmentFeeTrackerRecord | null, documents: DealDocumentVaultRecord[]) {
+  const terms = deriveContractTerms(detail);
+  const fallbackClosingDate = inferClosingDate(detail);
+  const inspectionDeadline = detail.coordination.inspectionEndsOn || inferInspectionPeriod(detail);
+  const originalPurchasePrice = assignment?.sellerContractPrice || terms.purchasePrice || 0;
+  const assignmentPrice = assignment?.buyerAssignmentPrice || (originalPurchasePrice + (assignment?.assignmentFee || terms.assignmentFee || 0));
+  const assignmentFee = assignment?.assignmentFee || terms.assignmentFee || 0;
+  const emdAmount = emd?.emdAmount || terms.earnestMoney || 0;
+
+  return {
+    deal_id: detail.lead.id,
+    seller_name: detail.sellerContact.ownerName || detail.lead.ownerName || "",
+    buyer_or_acquisition_entity_name: "Blackspire Helix Group or assigns",
+    assignor_name: "Blackspire Helix Group",
+    assignee_name: inferBuyerOrAssigneeName(detail),
+    original_seller_name: detail.sellerContact.ownerName || detail.lead.ownerName || "",
+    property_address: detail.lead.propertyAddress || "",
+    purchase_price: terms.purchasePrice,
+    original_purchase_price: originalPurchasePrice,
+    assignment_price: assignmentPrice,
+    assignment_fee: assignmentFee,
+    earnest_money_deposit: emdAmount,
+    emd_amount: emdAmount,
+    emd_holder: emd?.emdHolder || detail.coordination.titleCompany || "",
+    emd_holder_type: emd?.emdHolderType || "title_company",
+    emd_payment_method: emd?.emdPaymentMethod || "",
+    emd_received_date: emd?.emdDueDate || "",
+    receipt_reference: emd?.emdReceiptUrl || "",
+    closing_date: fallbackClosingDate,
+    original_closing_date: fallbackClosingDate,
+    new_closing_date: fallbackClosingDate,
+    reason_for_extension: detail.coordination.coordinationNotes || "",
+    inspection_period: inferInspectionPeriod(detail),
+    inspection_deadline: inspectionDeadline,
+    original_contract_date: detail.activityFeed.at(-1)?.timestamp?.slice(0, 10) || "",
+    assignment_allowed_language: "Assignment rights must match the underlying purchase agreement and any seller acknowledgment requirements.",
+    title_company: detail.coordination.titleCompany || "",
+    special_terms: detail.coordination.coordinationNotes || detail.packet.contactInstructions || "",
+    acknowledgment_language: "Buyer acknowledges the assignment fee and confirms receipt of this disclosure before funding or closing.",
+    end_buyer_name: inferBuyerOrAssigneeName(detail),
+    escrow_officer_name: detail.coordination.titleOfficer || "",
+    escrow_officer_email: "",
+    attached_documents: documents.length ? documents.map((document) => `${document.category}: ${document.fileName}`) : [],
+  } satisfies Record<string, unknown>;
+}
+
+async function readTemplateStorage(template: DealContractTemplateRecord) {
+  if (!template.storagePath) return "";
+  const templatePath = path.join(process.cwd(), "src", "templates", "contracts", template.storagePath);
+  return readFile(templatePath, "utf8");
+}
+
+function fillTemplateVariables(body: string, values: Record<string, unknown>) {
+  return body.replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, key: string) => formatContractFieldValue(key, values[key]));
+}
+
+async function writeContractAuditLog(input: {
+  dealId: string;
+  templateId: string | null;
+  action: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return;
+  const { error } = await supabase.from("contract_generation_audit_logs").insert({
+    deal_id: input.dealId,
+    template_id: input.templateId,
+    action: input.action,
+    metadata: input.metadata ?? {},
+  });
+  if (error && !isMissingDealTransactionTableError(error)) {
+    throw new Error(error.message);
+  }
+}
+
+async function syncContractTemplateRegistry(supabase: SupabaseClient) {
+  const payload = CONTRACT_TEMPLATE_REGISTRY.map((template) => ({
+    template_key: template.templateKey,
+    template_type: template.type,
+    name: template.name,
+    intended_purpose: template.intendedPurpose,
+    source_name: template.sourceName,
+    source_url: template.sourceUrl,
+    license_status: template.licenseStatus,
+    approval_status: template.approvalStatus,
+    state: template.state,
+    version: template.version,
+    required_fields: template.requiredFields,
+    optional_fields: template.optionalFields,
+    variable_map: template.variableMap,
+    storage_path: template.storagePath,
+    notes: template.notes,
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { error } = await supabase.from("contract_templates").upsert(payload, { onConflict: "template_key" });
+  if (error && !isMissingDealTransactionTableError(error)) {
+    throw new Error(error.message);
+  }
+}
+
+function mapTemplateCategory(templateType: string) {
+  if (templateType === "purchase_agreement") return "purchase_agreement";
+  if (templateType === "assignment_agreement") return "assignment_agreement";
+  if (templateType === "assignment_addendum") return "addendum";
+  if (templateType === "inspection_addendum") return "addendum";
+  if (templateType === "closing_extension_addendum") return "addendum";
+  if (templateType === "emd_receipt") return "emd_receipt";
+  if (templateType === "buyer_assignment_fee_disclosure") return "assignment_disclosure";
+  if (templateType === "title_company_submission_package") return "title_package";
+  return "other";
+}
+
+function canPrepareTemplateForSignature(validation: DealContractTemplateValidation, draft: DealContractDraftRecord | null) {
+  return validation.purposeValid
+    && validation.missingFields.length === 0
+    && draft?.legalDisclaimerAcknowledged
+    && validation.template.approvalStatus !== "reference_only";
+}
+
+function inferBuyerOrAssigneeName(detail: DealEngineDealDetail) {
+  return detail.closeout?.buyerName?.trim()
+    || detail.investorResponses[0]?.investorName?.trim()
+    || detail.buyerSignals[0]?.buyerName?.trim()
+    || "Assignee / Buyer TBD";
+}
+
+function inferClosingDate(detail: DealEngineDealDetail) {
+  return detail.coordination.closingDate || detail.closeout?.closedAt || "TBD";
+}
+
+function inferInspectionPeriod(detail: DealEngineDealDetail) {
+  return detail.coordination.inspectionEndsOn || detail.contractDraft?.earnestMoney || "14 days";
+}
+
+function deriveContractTerms(detail: DealEngineDealDetail) {
+  const purchasePrice =
+    detail.underwriting.purchasePriceTarget
+    || detail.underwriting.maximumAllowableOffer
+    || Number(detail.lead.mao.replace(/[^0-9.-]/g, "")) || 0;
+  const assignmentFee =
+    detail.underwriting.assignmentFeeTarget
+    || Number(detail.lead.assignmentFee.replace(/[^0-9.-]/g, "")) || 0;
+  const earnestMoney =
+    Number(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")) || 0;
+
+  return {
+    sellerName: detail.sellerContact.ownerName || detail.lead.ownerName,
+    buyerName: inferBuyerOrAssigneeName(detail),
+    propertyAddress: detail.lead.propertyAddress,
+    purchasePrice,
+    assignmentFee,
+    earnestMoney,
+    closingDate: inferClosingDate(detail),
+    titleCompany: detail.coordination.titleCompany || "Title Company TBD",
+    inspectionPeriod: detail.coordination.inspectionEndsOn || "14 days",
+    specialTerms: detail.coordination.coordinationNotes || detail.packet.contactInstructions || "No additional special terms entered yet.",
+  };
+}
+
+function buildPurchaseAgreementText(detail: DealEngineDealDetail) {
+  const terms = deriveContractTerms(detail);
+  return [
+    "PURCHASE AGREEMENT DRAFT",
+    buildContractDisclaimer(),
+    "",
+    `Seller: ${terms.sellerName}`,
+    `Buyer: Blackspire Helix Group or assigns`,
+    `Property: ${terms.propertyAddress}`,
+    `Purchase Price: ${formatCurrency(terms.purchasePrice)}`,
+    `Earnest Money Deposit: ${formatCurrency(terms.earnestMoney)}`,
+    `Inspection Period: ${terms.inspectionPeriod}`,
+    `Closing Date: ${terms.closingDate}`,
+    `Title Company: ${terms.titleCompany}`,
+    "",
+    "Special Terms:",
+    terms.specialTerms,
+    "",
+    "Operational Notes:",
+    `- Recommended seller angle: ${detail.lead.nextAction}`,
+    `- Underwriting posture: ${detail.underwriting.dealRating}`,
+    `- Contract status should not be treated as legal advice.`,
+  ].join("\n");
+}
+
+function buildAssignmentAgreementText(detail: DealEngineDealDetail) {
+  const terms = deriveContractTerms(detail);
+  return [
+    "ASSIGNMENT AGREEMENT DRAFT",
+    buildContractDisclaimer(),
+    "",
+    `Assignor: Blackspire Helix Group`,
+    `Assignee / Buyer: ${terms.buyerName}`,
+    `Underlying Property: ${terms.propertyAddress}`,
+    `Seller Contract Price: ${formatCurrency(terms.purchasePrice)}`,
+    `Assignment Fee: ${formatCurrency(terms.assignmentFee)}`,
+    `Closing Date: ${terms.closingDate}`,
+    `Title Company: ${terms.titleCompany}`,
+    "",
+    "Notes:",
+    `- Buyer fit summary: ${detail.buyerSignals[0]?.outreachAngle ?? "Buyer lane still being refined."}`,
+    `- Contact instructions: ${detail.packet.contactInstructions}`,
+  ].join("\n");
+}
+
+function buildAddendumText(detail: DealEngineDealDetail, addendumType: string) {
+  const terms = deriveContractTerms(detail);
+  const readableType = addendumType.replaceAll("_", " ");
+  return [
+    `${readableType.toUpperCase()} DRAFT`,
+    buildContractDisclaimer(),
+    "",
+    `Property: ${terms.propertyAddress}`,
+    `Seller: ${terms.sellerName}`,
+    `Buyer / Assignee: ${terms.buyerName}`,
+    `Closing Date: ${terms.closingDate}`,
+    "",
+    "Addendum Purpose:",
+    `This addendum documents the ${readableType} for the live deal lane inside Blackspire Deal Engine.`,
+    "",
+    "Working Terms:",
+    terms.specialTerms,
+  ].join("\n");
+}
+
+function toContractDraftRecord(row: DealContractDraftRow): DealContractDraftRecord {
+  return {
+    id: row.id,
+    draftType: row.draft_type,
+    templateId: row.template_id ?? null,
+    templateType: row.template_type ?? row.draft_type,
+    status: row.status ?? "draft",
+    title: row.title,
+    body: row.generated_body ?? row.body,
+    specialTerms: row.special_terms ?? "",
+    generatedPdfUrl: row.generated_pdf_url ?? "",
+    editablePayload: row.editable_payload ?? {},
+    legalDisclaimerAcknowledged: Boolean(row.legal_disclaimer_acknowledged),
+    updatedAt: row.updated_at,
+  };
+}
+
+function toSignaturePacketRecord(row: DealSignaturePacketRow | null): DealSignaturePacketRecord {
+  return {
+    id: row?.id ?? null,
+    signatureStatus: row?.signature_status ?? "draft",
+    sentForSignatureAt: row?.sent_for_signature_at ?? null,
+    signedBySellerAt: row?.signed_by_seller_at ?? null,
+    signedByBuyerAt: row?.signed_by_buyer_at ?? null,
+    signatureProvider: row?.signature_provider ?? "",
+    signaturePacketUrl: row?.signature_packet_url ?? "",
+    signerEmail: row?.signer_email ?? "",
+    signerRole: row?.signer_role ?? "",
+    availableProviders: ["DocuSign", "PandaDoc", "Dropbox Sign"],
+  };
+}
+
+function toTitleChecklistItemRecord(row: DealTitleChecklistItemRow): DealTitleChecklistItemRecord {
+  const status = row.status === "complete" || row.status === "blocked" ? row.status : "pending";
+  return {
+    id: row.id,
+    itemKey: row.item_key,
+    label: row.label,
+    status,
+    notes: row.notes ?? "",
+    dueDate: row.due_date ?? "",
+    assignedOwner: row.assigned_owner ?? "",
+    updatedAt: row.updated_at,
+  };
+}
+
+function computeEmdStatusTone(status: DealEmdTrackerRecord["emdStatus"]) {
+  if (status === "received") return "good" as const;
+  if (status === "overdue") return "bad" as const;
+  if (status === "pending" || status === "submitted") return "warn" as const;
+  return "neutral" as const;
+}
+
+function toEmdTrackerRecord(row: DealEmdTrackerRow | null, detail: DealEngineDealDetail): DealEmdTrackerRecord {
+  const emdDueDate = row?.emd_due_date ?? detail.coordination.inspectionEndsOn ?? "";
+  const amount = asNumber(row?.emd_amount) || Number(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")) || 0;
+  let emdStatus = (row?.emd_status as DealEmdTrackerRecord["emdStatus"] | null) ?? "pending";
+  const alertFlags: string[] = [];
+  if (!row?.emd_holder?.trim()) alertFlags.push("No EMD holder assigned.");
+  if (emdDueDate) {
+    const due = new Date(emdDueDate);
+    if (!Number.isNaN(due.getTime())) {
+      const diff = due.getTime() - Date.now();
+      if (diff < 0 && !["received", "released", "forfeited", "not_required"].includes(emdStatus)) {
+        emdStatus = "overdue";
+        alertFlags.push("EMD is overdue.");
+      } else if (diff <= 24 * 60 * 60 * 1000 && diff >= 0 && ["pending", "submitted"].includes(emdStatus)) {
+        alertFlags.push("EMD is due within 24 hours.");
+      }
+    }
+  }
+  return {
+    id: row?.id ?? null,
+    emdAmount: amount,
+    emdDueDate,
+    emdHolder: row?.emd_holder ?? detail.coordination.titleCompany ?? "",
+    emdHolderType: (row?.emd_holder_type as DealEmdTrackerRecord["emdHolderType"] | null) ?? "title_company",
+    emdStatus,
+    emdPaymentMethod: row?.emd_payment_method ?? "",
+    emdReceiptUrl: row?.emd_receipt_url ?? "",
+    emdNotes: row?.emd_notes ?? "",
+    alertFlags,
+    statusTone: computeEmdStatusTone(emdStatus),
+  };
+}
+
+function toAssignmentTrackerRecord(row: DealAssignmentFeeTrackerRow | null, detail: DealEngineDealDetail): DealAssignmentFeeTrackerRecord {
+  const sellerContractPrice =
+    asNumber(row?.seller_contract_price)
+    || detail.underwriting.purchasePriceTarget
+    || detail.underwriting.maximumAllowableOffer
+    || 0;
+  const assignmentFeeSeed =
+    asNumber(row?.assignment_fee)
+    || detail.underwriting.assignmentFeeTarget
+    || Number(detail.lead.assignmentFee.replace(/[^0-9.-]/g, "")) || 0;
+  const buyerAssignmentPrice =
+    asNumber(row?.buyer_assignment_price)
+    || (sellerContractPrice && assignmentFeeSeed ? sellerContractPrice + assignmentFeeSeed : 0);
+  const assignmentFee = clampMoney(buyerAssignmentPrice - sellerContractPrice);
+  const titleCompanyFee = asNumber(row?.title_company_fee);
+  const otherClosingCosts = asNumber(row?.other_closing_costs);
+  const expectedNetFee = clampMoney(assignmentFee - titleCompanyFee - otherClosingCosts);
+  const payoutStatus = (row?.payout_status as DealAssignmentFeeTrackerRecord["payoutStatus"] | null) ?? "projected";
+  const closingWarning =
+    ["projected", "pending_closing", "delayed"].includes(payoutStatus)
+      ? "Closing-day payout is not fully confirmed yet."
+      : null;
+
+  return {
+    id: row?.id ?? null,
+    sellerContractPrice,
+    buyerAssignmentPrice,
+    assignmentFee,
+    expectedNetFee,
+    titleCompanyFee,
+    otherClosingCosts,
+    payoutStatus,
+    payoutDueDate: row?.payout_due_date ?? detail.coordination.closingDate ?? "",
+    payoutReceivedAt: row?.payout_received_at ?? detail.closeout?.recordedAt ?? "",
+    payoutNotes: row?.payout_notes ?? "",
+    closingWarning,
+  };
+}
+
+function toTimelineEventRecord(row: DealClosingTimelineEventRow): DealClosingTimelineEventRecord {
+  const status = row.status === "complete" || row.status === "delayed" || row.status === "blocked" ? row.status : "upcoming";
+  return {
+    id: row.id,
+    eventType: row.event_type,
+    label: row.label,
+    status,
+    dueDate: row.due_date ?? "",
+    completedAt: row.completed_at ?? "",
+    notes: row.notes ?? "",
+    updatedAt: row.updated_at,
+  };
+}
+
+function toDocumentVaultRecord(row: DealDocumentVaultRow): DealDocumentVaultRecord {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    fileName: row.file_name,
+    fileType: row.file_type ?? "application/octet-stream",
+    category: row.category,
+    uploadedBy: row.uploaded_by ?? "Blackspire operator",
+    uploadedAt: row.uploaded_at,
+    documentUrl: row.document_url ?? "",
+    notes: row.notes ?? "",
+    linkedItemType: row.linked_item_type ?? "",
+    linkedItemId: row.linked_item_id ?? "",
+  };
+}
+
+async function bootstrapMissingTitleChecklist(supabase: SupabaseClient, dealId: string) {
+  const payload = DEFAULT_TITLE_CHECKLIST.map(([itemKey, label], index) => ({
+    deal_id: dealId,
+    item_key: itemKey,
+    label,
+    status: "pending",
+    assigned_owner: index < 3 ? "Acquisitions" : "Transaction coordination",
+    due_date: "",
+  }));
+  const { error } = await supabase.from("deal_title_checklist_items").insert(payload);
+  if (error && !isDuplicateInsertError(error)) throw new Error(error.message);
+}
+
+async function bootstrapMissingTimeline(supabase: SupabaseClient, dealId: string, detail: DealEngineDealDetail) {
+  const payload = DEFAULT_TIMELINE.map(([eventType, label], index) => ({
+    deal_id: dealId,
+    event_type: eventType,
+    label,
+    status: index === 0 ? "complete" : "upcoming",
+    completed_at: index === 0 ? detail.activityFeed.at(-1)?.timestamp ?? detail.lead.id : "",
+    due_date: eventType === "emd_due" ? detail.coordination.inspectionEndsOn : eventType === "closing_scheduled" ? detail.coordination.closingDate : "",
+    notes: "",
+  }));
+  const { error } = await supabase.from("deal_closing_timeline_events").insert(payload);
+  if (error && !isDuplicateInsertError(error)) throw new Error(error.message);
+}
+
+export async function generatePurchaseAgreementDraft(dealId: string) {
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+  return {
+    draftType: "purchase_agreement",
+    title: "Purchase Agreement draft",
+    body: buildPurchaseAgreementText(detail),
+    specialTerms: deriveContractTerms(detail).specialTerms,
+    disclaimer: buildContractDisclaimer(),
+  };
+}
+
+export async function generateAssignmentAgreementDraft(dealId: string) {
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+  return {
+    draftType: "assignment_agreement",
+    title: "Assignment Agreement draft",
+    body: buildAssignmentAgreementText(detail),
+    specialTerms: deriveContractTerms(detail).specialTerms,
+    disclaimer: buildContractDisclaimer(),
+  };
+}
+
+export async function generateDealAddendumDraft(dealId: string, addendumType: string) {
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+  const type = sanitizeDraftType(addendumType || "general_addendum");
+  return {
+    draftType: type,
+    title: `${type.replaceAll("_", " ")} draft`,
+    body: buildAddendumText(detail, type),
+    specialTerms: deriveContractTerms(detail).specialTerms,
+    disclaimer: buildContractDisclaimer(),
+  };
+}
+
+export async function listContractTemplates(filters?: Partial<{
+  type: string;
+  state: string;
+  approvalStatus: string;
+}>): Promise<DealContractTemplateRecord[]> {
+  const staticTemplates = CONTRACT_TEMPLATE_REGISTRY.map(toContractTemplateRecord);
+  const supabase = getSupabaseAdmin();
+
+  let storedTemplates: DealContractTemplateRecord[] = [];
+  if (supabase) {
+    await syncContractTemplateRegistry(supabase).catch(() => null);
+    const { data, error } = await supabase
+      .from("contract_templates")
+      .select("id,template_key,template_type,name,intended_purpose,source_name,source_url,license_status,approval_status,state,version,required_fields,optional_fields,variable_map,storage_path,notes")
+      .order("created_at", { ascending: false });
+    if (error && !isMissingDealTransactionTableError(error)) {
+      throw new Error(error.message);
+    }
+    storedTemplates = ((data as ContractTemplateRow[] | null) ?? []).map(toContractTemplateRecord);
+  }
+
+  const merged = [...storedTemplates, ...staticTemplates.filter((staticTemplate) => !storedTemplates.some((stored) => stored.templateKey === staticTemplate.templateKey))];
+  const approvalRank: Record<string, number> = {
+    attorney_approved: 0,
+    attorney_review_required: 1,
+    reference_only: 2,
+  };
+
+  return merged.filter((template) => {
+    if (filters?.type?.trim() && template.type !== filters.type.trim()) return false;
+    if (filters?.state?.trim() && template.state && template.state !== filters.state.trim()) return false;
+    if (filters?.approvalStatus?.trim() && template.approvalStatus !== filters.approvalStatus.trim()) return false;
+    return true;
+  }).sort((left, right) => {
+    const leftWeight = approvalRank[left.approvalStatus] ?? 9;
+    const rightWeight = approvalRank[right.approvalStatus] ?? 9;
+    if (leftWeight !== rightWeight) return leftWeight - rightWeight;
+    if ((left.state ?? "") !== (right.state ?? "")) return String(left.state ?? "").localeCompare(String(right.state ?? ""));
+    return left.name.localeCompare(right.name);
+  });
+}
+
+export async function getContractTemplateByType(templateType: string, state?: string, templateKey?: string) {
+  const templates = await listContractTemplates({ type: sanitizeDraftType(templateType), state: state?.trim() || undefined });
+  if (templateKey?.trim()) {
+    return templates.find((template) => template.templateKey === templateKey.trim()) ?? null;
+  }
+  const approvalRank: Record<string, number> = {
+    attorney_approved: 0,
+    attorney_review_required: 1,
+    reference_only: 2,
+  };
+  const rankedTemplates = [...templates].sort((left, right) => {
+    const stateWeightLeft = left.state === state ? 0 : 1;
+    const stateWeightRight = right.state === state ? 0 : 1;
+    if (stateWeightLeft !== stateWeightRight) return stateWeightLeft - stateWeightRight;
+    const approvalWeightLeft = approvalRank[left.approvalStatus] ?? 9;
+    const approvalWeightRight = approvalRank[right.approvalStatus] ?? 9;
+    if (approvalWeightLeft !== approvalWeightRight) return approvalWeightLeft - approvalWeightRight;
+    return left.name.localeCompare(right.name);
+  });
+  return rankedTemplates.find((template) => isTemplateAllowedForGeneration(template as ContractTemplateRecord))
+    ?? rankedTemplates[0]
+    ?? null;
+}
+
+export function validateTemplatePurpose(templateType: string, requestedUse: string) {
+  const normalizedType = sanitizeDraftType(templateType);
+  const normalizedUse = sanitizeDraftType(requestedUse);
+  if (normalizedType !== normalizedUse) {
+    return {
+      ok: false as const,
+      error: `Template misuse blocked. ${normalizedType} cannot be used as ${normalizedUse}.`,
+    };
+  }
+  return { ok: true as const };
+}
+
+export async function validateDealFieldsForTemplate(
+  dealId: string,
+  templateType: string,
+  options?: { state?: string; templateKey?: string; requestedUse?: string },
+): Promise<DealContractTemplateValidation | null> {
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+
+  const requestedUse = sanitizeDraftType(options?.requestedUse || templateType);
+  const template = await getContractTemplateByType(templateType, options?.state, options?.templateKey);
+  if (!template) {
+    throw new Error(`No template is registered for ${templateType}.`);
+  }
+
+  const purposeCheck = validateTemplatePurpose(template.type, requestedUse);
+  const emd = await getDealEmdStatus(dealId);
+  const assignment = await calculateDealAssignmentFee(dealId);
+  const documents = await listDealDocuments(dealId);
+  const values: Record<string, unknown> = dealFieldPayload(detail, emd, assignment, documents);
+  const missingFields = template.requiredFields.filter((field) => !formatContractFieldValue(field, values[field]));
+  const blockedByApproval = template.approvalStatus === "reference_only";
+  const blockedByStorage = !template.storagePath;
+
+  return {
+    template,
+    requestedUse,
+    purposeValid: purposeCheck.ok,
+    blockingError: purposeCheck.ok
+      ? blockedByApproval
+        ? "Reference template only. Attorney-approved or attorney-reviewed language is required before signature prep."
+        : blockedByStorage
+          ? "This template has no reusable file attached yet."
+          : null
+      : purposeCheck.error,
+    missingFields,
+    availableFields: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, formatContractFieldValue(key, value)])),
+    disclaimerRequired: true,
+    canGenerate: purposeCheck.ok && !blockedByApproval && !blockedByStorage,
+  };
+}
+
+export async function generateContractDraftFromTemplate(
+  dealId: string,
+  templateType: string,
+  options?: { state?: string; templateKey?: string; requestedUse?: string },
+) {
+  const validation = await validateDealFieldsForTemplate(dealId, templateType, options);
+  if (!validation) return null;
+
+  if (!validation.purposeValid) {
+    return { ok: false as const, error: validation.blockingError ?? "Template misuse blocked.", validation };
+  }
+
+  if (!validation.canGenerate) {
+    return { ok: false as const, error: validation.blockingError ?? "Template is not available for generation.", validation };
+  }
+
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+  const templateBody = await readTemplateStorage(validation.template);
+  const renderedBody = fillTemplateVariables(templateBody, validation.availableFields);
+  const specialTerms = validation.availableFields.special_terms || "";
+  const title = `${validation.template.name} draft`;
+  const warningLines = [
+    "Reference template only.",
+    "Attorney review required.",
+    "Do not send for signature until approved.",
+    "Generated documents are not legal advice.",
+  ];
+  const generatedBody = [renderedBody.trim(), "", "Blackspire Legal Safety Notice", ...warningLines.map((line) => `- ${line}`)].join("\n");
+
+  await writeContractAuditLog({
+    dealId,
+    templateId: validation.template.id,
+    action: "draft_generated",
+    metadata: {
+      templateKey: validation.template.templateKey,
+      templateType: validation.template.type,
+      missingFields: validation.missingFields,
+    },
+  });
+
+  return {
+    ok: true as const,
+    draft: {
+      id: `${dealId}-${validation.template.templateKey}`,
+      draftType: validation.template.type,
+      templateId: validation.template.id,
+      templateType: validation.template.type,
+      status: validation.missingFields.length ? "incomplete" : "draft",
+      title,
+      body: generatedBody,
+      specialTerms,
+      generatedPdfUrl: "",
+      editablePayload: validation.availableFields,
+      legalDisclaimerAcknowledged: false,
+      updatedAt: new Date().toISOString(),
+    } satisfies DealContractDraftRecord,
+    validation,
+  };
+}
+
+export async function saveGeneratedContractDraft(input: {
+  dealId: string;
+  templateId?: string | null;
+  templateKey?: string | null;
+  templateType: string;
+  title: string;
+  body: string;
+  specialTerms?: string;
+  status?: string;
+  editablePayload?: Record<string, unknown>;
+  legalDisclaimerAcknowledged?: boolean;
+  generatedPdfUrl?: string;
+}) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+
+  const template = input.templateKey?.trim()
+    ? (await listContractTemplates()).find((entry) => entry.templateKey === input.templateKey?.trim()) ?? null
+    : null;
+
+  const payload = {
+    deal_id: input.dealId,
+    draft_type: sanitizeDraftType(input.templateType),
+    template_type: sanitizeDraftType(input.templateType),
+    template_id: input.templateId ?? template?.id ?? null,
+    title: input.title,
+    body: input.body,
+    generated_body: input.body,
+    special_terms: input.specialTerms ?? "",
+    status: input.status?.trim() || "draft",
+    generated_pdf_url: input.generatedPdfUrl ?? "",
+    editable_payload: input.editablePayload ?? {},
+    legal_disclaimer_acknowledged: Boolean(input.legalDisclaimerAcknowledged),
+    metadata: {
+      templateKey: input.templateKey ?? template?.templateKey ?? null,
+    },
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from("deal_contract_drafts").upsert(payload, { onConflict: "deal_id,draft_type" });
+  if (error) return { ok: false as const, error: error.message };
+
+  await writeContractAuditLog({
+    dealId: input.dealId,
+    templateId: payload.template_id,
+    action: "draft_saved",
+    metadata: {
+      templateType: payload.template_type,
+      title: payload.title,
+      legalDisclaimerAcknowledged: payload.legal_disclaimer_acknowledged,
+    },
+  });
+
+  return { ok: true as const };
+}
+
+function wrapPdfText(text: string, maxChars = 92) {
+  const lines: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trimEnd();
+    if (!line) {
+      lines.push("");
+      continue;
+    }
+    let remaining = line;
+    while (remaining.length > maxChars) {
+      lines.push(remaining.slice(0, maxChars));
+      remaining = remaining.slice(maxChars);
+    }
+    lines.push(remaining);
+  }
+  return lines;
+}
+
+export async function exportContractDraftToPdf(draftId: string) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { data, error } = await supabase
+    .from("deal_contract_drafts")
+    .select("id,deal_id,draft_type,template_type,title,body,special_terms,generated_body,generated_pdf_url,editable_payload,legal_disclaimer_acknowledged,metadata,created_at,updated_at")
+    .eq("id", draftId)
+    .maybeSingle();
+  if (error) return { ok: false as const, error: error.message };
+  if (!data) return { ok: false as const, error: "Draft not found." };
+
+  const row = data as DealContractDraftRow & { deal_id: string };
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const { height } = page.getSize();
+  const titleFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const bodyFont = await pdf.embedFont(StandardFonts.Helvetica);
+
+  page.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0.03, 0.05, 0.08) });
+  page.drawText("BLACKSPIRE DEAL ENGINE", {
+    x: 48,
+    y: height - 70,
+    size: 22,
+    font: titleFont,
+    color: rgb(0.22, 0.83, 0.92),
+  });
+  page.drawText(row.title, {
+    x: 48,
+    y: height - 98,
+    size: 14,
+    font: titleFont,
+    color: rgb(0.9, 0.86, 0.7),
+  });
+  page.drawText("Generated documents are not legal advice. Review with a licensed attorney before use.", {
+    x: 48,
+    y: height - 122,
+    size: 10,
+    font: bodyFont,
+    color: rgb(0.88, 0.62, 0.4),
+  });
+
+  let y = height - 154;
+  for (const line of wrapPdfText(row.generated_body || row.body || "")) {
+    page.drawText(line || " ", {
+      x: 48,
+      y,
+      size: 10.5,
+      font: bodyFont,
+      color: rgb(0.93, 0.95, 0.98),
+    });
+    y -= 14;
+    if (y < 54) break;
+  }
+
+  const bytes = await pdf.save();
+  return {
+    ok: true as const,
+    bytes: Buffer.from(bytes),
+    fileName: `${sanitizeDraftType(row.template_type || row.draft_type || "contract")}-${row.id}.pdf`,
+    contentType: "application/pdf",
+    dealId: row.deal_id,
+    draftType: row.template_type || row.draft_type || "contract",
+  };
+}
+
+export async function attachContractDraftToDocumentVault(dealId: string, draftId: string) {
+  const pdf = await exportContractDraftToPdf(draftId);
+  if (!pdf.ok) return pdf;
+  const upload = await uploadDealDocument({
+    dealId,
+    category: mapTemplateCategory(pdf.draftType),
+    fileName: pdf.fileName,
+    contentType: pdf.contentType,
+    bytes: new Uint8Array(pdf.bytes),
+    owner: "Blackspire contract generator",
+    status: "Generated",
+    notes: "Generated from the Contract Generator library.",
+    source: "contract_generator",
+  });
+  if (!upload.ok) return upload;
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    await supabase.from("deal_contract_drafts").update({
+      generated_pdf_url: `/api/deal-engine/document?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(upload.documentId)}`,
+      updated_at: new Date().toISOString(),
+    }).eq("id", draftId);
+  }
+
+  await writeContractAuditLog({
+    dealId,
+    templateId: null,
+    action: "draft_attached_to_vault",
+    metadata: {
+      draftId,
+      documentId: upload.documentId,
+      category: mapTemplateCategory(pdf.draftType),
+    },
+  });
+
+  return {
+    ok: true as const,
+    documentId: upload.documentId,
+    documentUrl: `/api/deal-engine/document?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(upload.documentId)}`,
+  };
+}
+
+export async function saveDealContractDraft(input: {
+  dealId: string;
+  draftType: string;
+  title: string;
+  body: string;
+  specialTerms?: string;
+  templateId?: string | null;
+  templateKey?: string | null;
+  status?: string;
+  editablePayload?: Record<string, unknown>;
+  legalDisclaimerAcknowledged?: boolean;
+  generatedPdfUrl?: string;
+}) {
+  const result = await saveGeneratedContractDraft({
+    dealId: input.dealId,
+    templateId: input.templateId,
+    templateKey: input.templateKey,
+    templateType: input.draftType,
+    title: input.title,
+    body: input.body,
+    specialTerms: input.specialTerms,
+    status: input.status,
+    editablePayload: input.editablePayload,
+    legalDisclaimerAcknowledged: input.legalDisclaimerAcknowledged,
+    generatedPdfUrl: input.generatedPdfUrl,
+  });
+  if (!result.ok) return result;
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    await supabase.from("disposition_logs").insert({
+      lead_id: input.dealId,
+      action_type: "contract_draft_saved",
+      payload: { draftType: input.draftType, title: input.title, updatedAt: new Date().toISOString() },
+    });
+  }
+  return { ok: true as const };
+}
+
+export async function prepareDealSignaturePacket(input: {
+  dealId: string;
+  signatureProvider?: string;
+  signerEmail?: string;
+  signerRole?: string;
+}) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const provider = input.signatureProvider?.trim() || "DocuSign";
+  const packetUrl = `provider-placeholder://${sanitizeDraftType(provider)}/${encodeURIComponent(input.dealId)}`;
+  const { error } = await supabase.from("deal_signature_packets").upsert({
+    deal_id: input.dealId,
+    signature_status: "prepared",
+    signature_provider: provider,
+    signature_packet_url: packetUrl,
+    signer_email: input.signerEmail?.trim() || null,
+    signer_role: input.signerRole?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "deal_id" });
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, packetUrl };
+}
+
+export async function updateDealSignatureStatus(input: {
+  dealId: string;
+  signatureStatus?: string;
+  sentForSignatureAt?: string | null;
+  signedBySellerAt?: string | null;
+  signedByBuyerAt?: string | null;
+  signatureProvider?: string;
+  signaturePacketUrl?: string;
+  signerEmail?: string;
+  signerRole?: string;
+}) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { error } = await supabase.from("deal_signature_packets").upsert({
+    deal_id: input.dealId,
+    signature_status: input.signatureStatus?.trim() || "draft",
+    sent_for_signature_at: input.sentForSignatureAt ?? null,
+    signed_by_seller_at: input.signedBySellerAt ?? null,
+    signed_by_buyer_at: input.signedByBuyerAt ?? null,
+    signature_provider: input.signatureProvider?.trim() || null,
+    signature_packet_url: input.signaturePacketUrl?.trim() || null,
+    signer_email: input.signerEmail?.trim() || null,
+    signer_role: input.signerRole?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "deal_id" });
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+export async function bootstrapDealTitleChecklist(dealId: string) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return [];
+  await bootstrapMissingTitleChecklist(supabase, dealId).catch(() => null);
+  return listDealTitleChecklist(dealId);
+}
+
+export async function listDealTitleChecklist(dealId: string): Promise<DealTitleChecklistItemRecord[]> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("deal_title_checklist_items")
+    .select("id,item_key,label,status,notes,due_date,assigned_owner,updated_at")
+    .eq("deal_id", dealId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    if (isMissingDealTransactionTableError(error)) return [];
+    throw new Error(error.message);
+  }
+  if (!(data?.length)) {
+    await bootstrapMissingTitleChecklist(supabase, dealId).catch(() => null);
+    return listDealTitleChecklist(dealId);
+  }
+  return (data as DealTitleChecklistItemRow[]).map(toTitleChecklistItemRecord);
+}
+
+export async function updateDealTitleChecklistItem(itemId: string, update: Partial<{
+  status: string;
+  notes: string;
+  dueDate: string;
+  assignedOwner: string;
+}>) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { error } = await supabase.from("deal_title_checklist_items").update({
+    status: update.status?.trim() || "pending",
+    notes: update.notes?.trim() || "",
+    due_date: update.dueDate?.trim() || "",
+    assigned_owner: update.assignedOwner?.trim() || "",
+    updated_at: new Date().toISOString(),
+  }).eq("id", itemId);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+export async function getDealEmdStatus(dealId: string): Promise<DealEmdTrackerRecord | null> {
+  const supabase = getSupabaseAdmin();
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+  if (!supabase) return toEmdTrackerRecord(null, detail);
+  const { data, error } = await supabase.from("deal_emd_trackers").select("id,emd_amount,emd_due_date,emd_holder,emd_holder_type,emd_status,emd_payment_method,emd_receipt_url,emd_notes,metadata,updated_at").eq("deal_id", dealId).maybeSingle();
+  if (error && !isMissingDealTransactionTableError(error)) throw new Error(error.message);
+  return toEmdTrackerRecord((data as DealEmdTrackerRow | null) ?? null, detail);
+}
+
+export async function updateDealEmdTracker(dealId: string, payload: Partial<DealEmdTrackerRecord>) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { error } = await supabase.from("deal_emd_trackers").upsert({
+    deal_id: dealId,
+    emd_amount: payload.emdAmount ?? 0,
+    emd_due_date: payload.emdDueDate ?? "",
+    emd_holder: payload.emdHolder ?? "",
+    emd_holder_type: payload.emdHolderType ?? "title_company",
+    emd_status: payload.emdStatus ?? "pending",
+    emd_payment_method: payload.emdPaymentMethod ?? "",
+    emd_receipt_url: payload.emdReceiptUrl ?? "",
+    emd_notes: payload.emdNotes ?? "",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "deal_id" });
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+export async function calculateDealAssignmentFee(dealId: string): Promise<DealAssignmentFeeTrackerRecord | null> {
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return toAssignmentTrackerRecord(null, detail);
+  const { data, error } = await supabase.from("deal_assignment_fee_trackers").select("id,seller_contract_price,buyer_assignment_price,assignment_fee,expected_net_fee,title_company_fee,other_closing_costs,payout_status,payout_due_date,payout_received_at,payout_notes,updated_at").eq("deal_id", dealId).maybeSingle();
+  if (error && !isMissingDealTransactionTableError(error)) throw new Error(error.message);
+  return toAssignmentTrackerRecord((data as DealAssignmentFeeTrackerRow | null) ?? null, detail);
+}
+
+export async function updateDealAssignmentTracker(dealId: string, payload: Partial<DealAssignmentFeeTrackerRecord>) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const sellerContractPrice = asNumber(payload.sellerContractPrice);
+  const buyerAssignmentPrice = asNumber(payload.buyerAssignmentPrice);
+  const assignmentFee = clampMoney(buyerAssignmentPrice - sellerContractPrice);
+  const titleCompanyFee = asNumber(payload.titleCompanyFee);
+  const otherClosingCosts = asNumber(payload.otherClosingCosts);
+  const expectedNetFee = clampMoney(assignmentFee - titleCompanyFee - otherClosingCosts);
+  const { error } = await supabase.from("deal_assignment_fee_trackers").upsert({
+    deal_id: dealId,
+    seller_contract_price: sellerContractPrice,
+    buyer_assignment_price: buyerAssignmentPrice,
+    assignment_fee: assignmentFee,
+    expected_net_fee: expectedNetFee,
+    title_company_fee: titleCompanyFee,
+    other_closing_costs: otherClosingCosts,
+    payout_status: payload.payoutStatus ?? "projected",
+    payout_due_date: payload.payoutDueDate ?? "",
+    payout_received_at: payload.payoutReceivedAt ?? "",
+    payout_notes: payload.payoutNotes ?? "",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "deal_id" });
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, assignmentFee, expectedNetFee };
+}
+
+export async function bootstrapDealClosingTimeline(dealId: string) {
+  const supabase = getSupabaseAdmin();
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!supabase || !detail) return [];
+  await bootstrapMissingTimeline(supabase, dealId, detail).catch(() => null);
+  return listDealClosingTimeline(dealId);
+}
+
+export async function listDealClosingTimeline(dealId: string): Promise<DealClosingTimelineEventRecord[]> {
+  const supabase = getSupabaseAdmin();
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!supabase || !detail) return [];
+  const { data, error } = await supabase.from("deal_closing_timeline_events").select("id,event_type,label,status,due_date,completed_at,notes,updated_at").eq("deal_id", dealId).order("created_at", { ascending: true });
+  if (error) {
+    if (isMissingDealTransactionTableError(error)) return [];
+    throw new Error(error.message);
+  }
+  if (!(data?.length)) {
+    await bootstrapMissingTimeline(supabase, dealId, detail).catch(() => null);
+    return listDealClosingTimeline(dealId);
+  }
+  return (data as DealClosingTimelineEventRow[]).map(toTimelineEventRecord);
+}
+
+export async function createDealTimelineEvent(dealId: string, payload: Partial<DealClosingTimelineEventRecord>) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { data, error } = await supabase.from("deal_closing_timeline_events").insert({
+    deal_id: dealId,
+    event_type: payload.eventType?.trim() || `custom_event_${Date.now()}`,
+    label: payload.label?.trim() || "Custom event",
+    status: payload.status ?? "upcoming",
+    due_date: payload.dueDate ?? "",
+    completed_at: payload.completedAt ?? "",
+    notes: payload.notes ?? "",
+    updated_at: new Date().toISOString(),
+  }).select("id").single();
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, eventId: String(data.id) };
+}
+
+export async function updateDealTimelineEvent(eventId: string, payload: Partial<DealClosingTimelineEventRecord>) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { error } = await supabase.from("deal_closing_timeline_events").update({
+    label: payload.label?.trim() || undefined,
+    status: payload.status ?? undefined,
+    due_date: payload.dueDate ?? undefined,
+    completed_at: payload.completedAt ?? undefined,
+    notes: payload.notes ?? undefined,
+    updated_at: new Date().toISOString(),
+  }).eq("id", eventId);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+export async function listDealDocuments(dealId: string, category?: string): Promise<DealDocumentVaultRecord[]> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return [];
+  let query = supabase.from("deal_documents").select("id,document_id,file_name,file_type,category,uploaded_by,uploaded_at,document_url,storage_path,notes,linked_item_type,linked_item_id,updated_at").eq("deal_id", dealId).order("uploaded_at", { ascending: false });
+  if (category?.trim()) query = query.eq("category", category.trim());
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingDealTransactionTableError(error)) return [];
+    throw new Error(error.message);
+  }
+  return (data as DealDocumentVaultRow[] ?? []).map(toDocumentVaultRecord);
+}
+
+export async function getDealTransactionCenter(dealId: string): Promise<DealTransactionCenterSnapshot | null> {
+  const detail = await getDealEngineDealDetail(dealId);
+  if (!detail) return null;
+  const supabase = getSupabaseAdmin();
+  const contractTemplates = await listContractTemplates().catch(() => CONTRACT_TEMPLATE_REGISTRY.map(toContractTemplateRecord));
+  if (!supabase) {
+    return {
+      contractTemplates,
+      contracts: [],
+      signaturePacket: toSignaturePacketRecord(null),
+      titleChecklist: [],
+      emdTracker: toEmdTrackerRecord(null, detail),
+      assignmentTracker: toAssignmentTrackerRecord(null, detail),
+      timeline: [],
+      documents: [],
+    };
+  }
+
+  const [
+    contractDraftRows,
+    signaturePacketRow,
+    titleChecklist,
+    emdTracker,
+    assignmentTracker,
+    timeline,
+    documents,
+  ] = await Promise.all([
+    supabase.from("deal_contract_drafts").select("id,draft_type,title,body,special_terms,template_id,template_type,status,generated_body,generated_pdf_url,editable_payload,legal_disclaimer_acknowledged,metadata,created_at,updated_at").eq("deal_id", dealId).order("updated_at", { ascending: false }),
+    supabase.from("deal_signature_packets").select("id,signature_status,sent_for_signature_at,signed_by_seller_at,signed_by_buyer_at,signature_provider,signature_packet_url,signer_email,signer_role,metadata").eq("deal_id", dealId).maybeSingle(),
+    listDealTitleChecklist(dealId),
+    getDealEmdStatus(dealId),
+    calculateDealAssignmentFee(dealId),
+    listDealClosingTimeline(dealId),
+    listDealDocuments(dealId),
+  ]);
+
+  const contractRows = contractDraftRows.error && !isMissingDealTransactionTableError(contractDraftRows.error)
+    ? (() => { throw new Error(contractDraftRows.error.message); })()
+    : (contractDraftRows.data as DealContractDraftRow[] | null) ?? [];
+
+  let contracts = contractRows.map(toContractDraftRecord);
+  if (!contracts.length) {
+    const purchase = await generatePurchaseAgreementDraft(dealId);
+    const assignment = await generateAssignmentAgreementDraft(dealId);
+    const inspectionAddendum = await generateDealAddendumDraft(dealId, "inspection_period_addendum");
+    const closingExtension = await generateDealAddendumDraft(dealId, "closing_extension_addendum");
+    contracts = [purchase, assignment, inspectionAddendum, closingExtension]
+      .filter(Boolean)
+      .map((draft) => ({
+        id: `${dealId}-${draft!.draftType}`,
+        draftType: draft!.draftType,
+        templateId: null,
+        templateType: draft!.draftType,
+        status: "draft",
+        title: draft!.title,
+        body: draft!.body,
+        specialTerms: draft!.specialTerms,
+        generatedPdfUrl: "",
+        editablePayload: {},
+        legalDisclaimerAcknowledged: false,
+        updatedAt: new Date().toISOString(),
+      }));
+  }
+
+  return {
+    contractTemplates,
+    contracts,
+    signaturePacket: toSignaturePacketRecord((signaturePacketRow.data as DealSignaturePacketRow | null) ?? null),
+    titleChecklist,
+    emdTracker: emdTracker ?? toEmdTrackerRecord(null, detail),
+    assignmentTracker: assignmentTracker ?? toAssignmentTrackerRecord(null, detail),
+    timeline,
+    documents,
   };
 }

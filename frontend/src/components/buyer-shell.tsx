@@ -14,6 +14,7 @@ const navItems = [
   { href: "/seller-engine", label: "Seller Engine" },
   { href: "/auth", label: "Auth" },
   { href: "/searches/new", label: "New Search" },
+  { href: "/workspace/buyer-engine/reverse-search", label: "Reverse Search" },
   { href: "/searches", label: "Search Jobs" },
   { href: "/buyers", label: "Buyer Reports" },
   { href: "/workflows", label: "Workflows" },

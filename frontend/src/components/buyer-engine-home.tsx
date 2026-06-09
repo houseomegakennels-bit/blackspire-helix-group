@@ -156,6 +156,11 @@ export async function BuyerEngineHome() {
       href: "/buyers",
     },
     {
+      label: "Reverse Search",
+      description: "Start from buyer criteria and rank seller-side or deal-side opportunities already in the pipeline.",
+      href: "/workspace/buyer-engine/reverse-search",
+    },
+    {
       label: "Queue Monitor",
       description: "Live search-job visibility, retries, and operational pulse across the workflow layer.",
       href: "/searches",
@@ -200,14 +205,14 @@ export async function BuyerEngineHome() {
               <Link href="/searches/new" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Launch buyer sweep
               </Link>
+              <Link href="/workspace/buyer-engine/reverse-search" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
+                Run reverse search
+              </Link>
               <Link href="/buyers" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Open dossiers
               </Link>
               <Link href="/workspace/deal-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Open Deal Engine
-              </Link>
-              <Link href="/searches" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
-                Watch queue
               </Link>
             </div>
 

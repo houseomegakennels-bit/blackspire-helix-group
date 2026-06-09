@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { Metric, Panel, StatusPill } from "@/components/buyer-shell";
+import { DealCommanderPanel } from "@/components/deal-commander-panel";
+import { DealTransactionCommand } from "@/components/deal-transaction-command";
 import { DealEngineShell } from "@/components/deal-engine-shell";
-import type { DealEngineDealDetail } from "@/lib/deal-engine-server";
+import type { DealCommanderInsight, DealEngineDealDetail, DealTransactionCenterSnapshot } from "@/lib/deal-engine-server";
 
 type ChecklistItem = DealEngineDealDetail["coordination"]["closingChecklist"][number];
 type ClosingDocument = DealEngineDealDetail["coordination"]["closingDocuments"][number];
@@ -34,9 +36,13 @@ function executionTone(status: string) {
 export function DealEngineDealDetailView({
   dealId,
   detail,
+  commanderInsight,
+  transactionCenter,
 }: {
   dealId: string;
   detail: DealEngineDealDetail;
+  commanderInsight: DealCommanderInsight | null;
+  transactionCenter: DealTransactionCenterSnapshot | null;
 }) {
   const router = useRouter();
   const [contractType, setContractType] = useState(
@@ -835,6 +841,9 @@ export function DealEngineDealDetailView({
         <Metric label="Open Tasks" value={String(detail.operatorTasks.length).padStart(2, "0")} detail="Internal execution items attached to this deal" />
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
+
+      <DealCommanderPanel dealId={dealId} initialInsight={commanderInsight} />
+      <DealTransactionCommand dealId={dealId} initialSnapshot={transactionCenter} />
 
       <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
         <Panel

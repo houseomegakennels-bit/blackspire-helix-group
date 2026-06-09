@@ -38,6 +38,7 @@ export const siteNavSections: SiteNavSection[] = [
       { label: "Nexus", href: "/workspace/nexus", description: "Skip trace and contact resolution." },
       { label: "Deal Engine", href: "/workspace/deal-engine", description: "Acquisition, contracts, packets, and close coordination." },
       { label: "Buyer Engine", href: "/workspace/buyer-engine", description: "Buyer matching and outreach." },
+      { label: "Buyer Reverse Search", href: "/workspace/buyer-engine/reverse-search", description: "Reverse-match buyer criteria into seller and deal opportunities." },
     ],
   },
   {
@@ -91,7 +92,7 @@ export const workspaceEntries: WorkspaceEntry[] = [
     href: "/workspace/buyer-engine",
     division: "Real Estate Intelligence",
     status: "Live",
-    description: "Search buyer records, build investor reports, export targets, and generate outreach drafts.",
+    description: "Search buyer records, reverse-match buy boxes into live opportunities, build investor reports, export targets, and generate outreach drafts.",
     primaryAction: "Open buyer command",
   },
   {

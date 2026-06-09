@@ -8,9 +8,12 @@ import { brandAssets } from "@/lib/brand-assets";
 import type { NexusSnapshot } from "@/lib/nexus-server";
 
 export function NexusHome({ snapshot }: { snapshot: NexusSnapshot }) {
-  const homeLeads = snapshot.leads.slice(0, 6);
+  const homeLeads = snapshot.leads.filter((lead) => lead.targetType !== "buyer_report").slice(0, 6);
   const dealHandoffs = snapshot.leads
     .filter((lead) => lead.sourceWorkspace.includes("/workspace/deal-engine"))
+    .slice(0, 4);
+  const buyerHandoffs = snapshot.leads
+    .filter((lead) => lead.targetType === "buyer_report")
     .slice(0, 4);
 
   return (
@@ -24,7 +27,7 @@ export function NexusHome({ snapshot }: { snapshot: NexusSnapshot }) {
               The contact intelligence layer between seller discovery and deal creation.
             </h2>
             <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-              Nexus receives qualified seller leads, runs Tracerfy-ready skip trace, scores contact confidence, and prepares contact-ready handoff into Deal Engine. It does not auto-call or auto-text in MVP.
+              Nexus receives qualified seller leads, deal-side contact gaps, and buyer records that need identity resolution. It runs Tracerfy-ready skip trace, scores contact confidence, and prepares contact-ready handoff into the rest of the Blackspire pipeline. It does not auto-call or auto-text in MVP.
             </p>
             <div className="mt-5 inline-flex items-center gap-3 rounded-full border border-[var(--line)] bg-[hsl(0_0%_100%/.03)] px-4 py-2 text-[11px] uppercase tracking-[0.28em] text-[var(--gold-soft)]">
               <span className="h-2 w-2 rounded-full bg-[var(--project-accent)] shadow-[0_0_14px_hsl(267_90%_70%/.42)]" />
@@ -155,6 +158,51 @@ export function NexusHome({ snapshot }: { snapshot: NexusSnapshot }) {
                   </div>
                   <Link href={lead.sourceWorkspace} className="brand-button justify-center px-4 py-3 text-xs uppercase tracking-[0.16em]">
                     Open deal
+                  </Link>
+                </div>
+                <div className="mt-4">
+                  <NexusTraceAction
+                    leadId={lead.id}
+                    currentPhone={lead.primaryPhone}
+                    currentEmail={lead.primaryEmail}
+                    currentStatus={lead.skipTraceStatus}
+                    contactProfileHref={`/workspaces/nexus/contacts?lead=${encodeURIComponent(lead.id)}`}
+                    compact
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+
+      {buyerHandoffs.length ? (
+        <Panel
+          eyebrow="Buyer Engine Handoffs"
+          title="Buyer records waiting on identity resolution"
+          description="These buyer dossiers can be pushed through Nexus using the buyer mailing address so the team can verify phone and email before relationship outreach."
+        >
+          <div className="grid gap-4 xl:grid-cols-2">
+            {buyerHandoffs.map((lead) => (
+              <div key={lead.id} className="brand-card p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-semibold text-white">{lead.owner}</div>
+                    <div className="mt-1 text-sm text-[var(--copy-soft)]">{lead.property}</div>
+                  </div>
+                  <StatusPill tone={/queued|needed/i.test(lead.skipTraceStatus) ? "warn" : "good"} label={lead.skipTraceStatus.toLowerCase()} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Buyer score</div>
+                    <div className="mt-2 text-sm text-white">{lead.sellerScore}</div>
+                  </div>
+                  <div className="rounded-[16px] border border-[var(--line)] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Confidence</div>
+                    <div className="mt-2 text-sm text-white">{lead.confidence}</div>
+                  </div>
+                  <Link href={lead.sourceWorkspace} className="brand-button justify-center px-4 py-3 text-xs uppercase tracking-[0.16em]">
+                    Open buyer reports
                   </Link>
                 </div>
                 <div className="mt-4">

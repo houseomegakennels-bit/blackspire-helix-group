@@ -2,6 +2,7 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { listAllBuyerReports, listSearchJobsByIds } from "@/lib/buyer-engine-server";
 import { listDealEngineLeads } from "@/lib/deal-engine-server";
 import { listSellerLeads } from "@/lib/seller-engine-server";
 import { checkSkipTraceEligibility, runSkipTrace, type SkipTraceLeadInput, type SkipTraceResult } from "@/lib/tracerfy";
@@ -10,6 +11,7 @@ export type NexusLeadRecord = {
   id: string;
   owner: string;
   property: string;
+  targetType: "seller_lead" | "deal" | "buyer_report";
   sellerScore: number;
   skipTraceStatus: string;
   primaryPhone: string;
@@ -59,7 +61,7 @@ type NexusContactRow = {
 };
 
 type NexusContactNoteRow = {
-  seller_lead_id: string;
+  seller_lead_id: string | null;
   note: string;
   created_at: string;
 };
@@ -95,8 +97,12 @@ function parseNexusContactNote(row: NexusContactNoteRow): NexusContactRow | null
 
   try {
     const payload = JSON.parse(row.note.slice(prefix.length)) as Record<string, unknown>;
+    const sourceLeadId =
+      typeof payload.source_lead_id === "string" && payload.source_lead_id.trim()
+        ? payload.source_lead_id.trim()
+        : row.seller_lead_id;
     return {
-      seller_lead_id: row.seller_lead_id,
+      seller_lead_id: sourceLeadId,
       owner_name: typeof payload.owner_name === "string" ? payload.owner_name : "",
       property_address: typeof payload.property_address === "string" ? payload.property_address : "",
       mailing_address: typeof payload.mailing_address === "string" ? payload.mailing_address : null,
@@ -130,8 +136,10 @@ async function listStoredNexusContactNotes() {
 
   const seen = new Set<string>();
   return contacts.filter((contact) => {
-    const key = contact.seller_lead_id ?? "";
-    if (!key || seen.has(key)) return false;
+    const key =
+      contact.seller_lead_id?.trim()
+      || `${normalizeMatch(contact.owner_name)}|${normalizeMatch(contact.property_address)}`;
+    if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
@@ -186,18 +194,42 @@ function applyStoredContact(lead: NexusLeadRecord, contacts: NexusContactRow[]):
 }
 
 export async function getNexusSnapshot(): Promise<NexusSnapshot> {
-  const [sellerLeads, dealLeads, storedContacts, storedContactNotes] = await Promise.all([
+  const [sellerLeads, dealLeads, buyerReportPage, storedContacts, storedContactNotes] = await Promise.all([
     listSellerLeads().catch(() => []),
     listDealEngineLeads(100).catch(() => []),
+    listAllBuyerReports({ limit: 120, offset: 0 }).catch(() => ({
+      reports: [],
+      total: 0,
+      limit: 120,
+      offset: 0,
+    })),
     listStoredNexusContacts().catch(() => []),
     listStoredNexusContactNotes().catch(() => []),
   ]);
   const contactProfiles = [...storedContactNotes, ...storedContacts];
+  const buyerJobs = buyerReportPage.reports.length
+    ? await listSearchJobsByIds(
+        buyerReportPage.reports
+          .map((report) => report.search_job_id)
+          .filter((id): id is string => Boolean(id)),
+      ).catch(() => [])
+    : [];
+  const buyerJobMap = new Map(
+    buyerJobs.map((job) => [
+      job.id,
+      {
+        county: job.county,
+        state: job.state,
+        propertyType: job.property_type,
+      },
+    ]),
+  );
 
   const sellerRecords = sellerLeads.map<NexusLeadRecord>((lead) => ({
     id: lead.id,
     owner: lead.ownerName,
     property: formatFullPropertyAddress(lead.propertyAddress, lead.city, lead.state, lead.zipCode),
+    targetType: "seller_lead",
     sellerScore: lead.score,
     skipTraceStatus: lead.skipTraceStatus ?? "Queued",
     primaryPhone: lead.ownerPhone ?? "Not captured",
@@ -222,6 +254,7 @@ export async function getNexusSnapshot(): Promise<NexusSnapshot> {
       id: lead.id,
       owner: lead.ownerName,
       property: lead.propertyAddress,
+      targetType: "deal",
       sellerScore: lead.motivationScore,
       skipTraceStatus: lead.skipTraceStatus ?? "Queued",
       primaryPhone: lead.ownerPhone ?? "Not captured",
@@ -240,7 +273,42 @@ export async function getNexusSnapshot(): Promise<NexusSnapshot> {
       eligibleForAutoTrace: checkSkipTraceEligibility({ seller_score: lead.motivationScore, owner_name: lead.ownerName, property_address: lead.propertyAddress }),
     }));
 
-  const leads = [...sellerRecords, ...dealRecords].map((lead) => applyStoredContact(lead, contactProfiles));
+  const buyerRecords = buyerReportPage.reports.map<NexusLeadRecord>((report) => {
+    const job = report.search_job_id ? buyerJobMap.get(report.search_job_id) ?? null : null;
+    const buyerName = report.buyer_name_snapshot?.trim() || "Unknown buyer";
+    const mailingAddress = report.mailing_address_snapshot?.trim() || "Not captured";
+    const county = job?.county?.trim() || "";
+    const state = job?.state?.trim() || "NC";
+    const propertyType = job?.propertyType?.replaceAll("_", " ") || "buyer record";
+    const score = Number(report.score ?? 0);
+
+    return {
+      id: `buyer-report:${report.id}`,
+      owner: buyerName,
+      property: mailingAddress,
+      targetType: "buyer_report",
+      sellerScore: score,
+      skipTraceStatus: "Queued",
+      primaryPhone: "Not captured",
+      primaryEmail: "Not captured",
+      confidence: 0,
+      provider: "Tracerfy",
+      lastUpdated: report.created_at,
+      sourceWorkspace: report.search_job_id
+        ? `/buyers?searchJobId=${encodeURIComponent(report.search_job_id)}`
+        : "/buyers",
+      actions: ["Run Skip Trace", "View Contact Profile", "Retry", "Mark Bad Contact"],
+      mailingAddress,
+      county,
+      city: "",
+      state,
+      zip: "",
+      dossier: `${buyerName} is a ${report.is_cash_buyer ? "cash" : "tracked"} buyer profile with ${(report.purchase_count ?? 0).toString()} recorded purchases and ${propertyType} focus${county ? ` in ${county} County` : ""}.`,
+      eligibleForAutoTrace: mailingAddress !== "Not captured",
+    };
+  });
+
+  const leads = [...sellerRecords, ...dealRecords, ...buyerRecords].map((lead) => applyStoredContact(lead, contactProfiles));
   const contacts = leads.filter((lead) => lead.primaryPhone !== "Not captured" || lead.primaryEmail !== "Not captured");
   const successfulMatches = leads.filter((lead) => lead.confidence >= 70).length;
   const failedSearches = leads.filter((lead) => /failed|no match/i.test(lead.skipTraceStatus)).length;

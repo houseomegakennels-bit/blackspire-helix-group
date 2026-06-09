@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { NexusTraceAction } from "@/components/nexus-trace-action";
 import { Panel, StatusPill } from "@/components/buyer-shell";
 import type { BuyerGroupMatch } from "@/lib/buyer-groups";
 import {
@@ -966,6 +967,14 @@ export function BuyerReportsMonitor({
                       >
                         {copiedReportId === report.id ? "Copied" : "Copy outreach"}
                       </button>
+                      <NexusTraceAction
+                        leadId={`buyer-report:${report.id}`}
+                        currentPhone="Not captured"
+                        currentEmail="Not captured"
+                        currentStatus="Queued"
+                        contactProfileHref={`/workspaces/nexus/contacts?lead=${encodeURIComponent(`buyer-report:${report.id}`)}`}
+                        compact
+                      />
                       <button
                         type="button"
                         onClick={() => void saveOutreachDraft(report)}

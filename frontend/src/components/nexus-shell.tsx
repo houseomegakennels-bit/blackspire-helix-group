@@ -13,6 +13,7 @@ const navItems = [
   { href: "/workspaces/nexus/settings", label: "Settings" },
   { href: "/workspaces/nexus/logs", label: "Logs" },
   { href: "/seller-engine", label: "Seller Engine" },
+  { href: "/buyers", label: "Buyer Reports" },
   { href: "/workspace/deal-engine", label: "Deal Engine" },
 ];
 
