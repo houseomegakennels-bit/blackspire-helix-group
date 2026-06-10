@@ -4911,6 +4911,31 @@ function canPrepareTemplateForSignature(validation: DealContractTemplateValidati
     && validation.template.approvalStatus !== "reference_only";
 }
 
+function buildTemplateSafetyLines(template: DealContractTemplateRecord) {
+  if (template.approvalStatus === "attorney_approved") {
+    return [
+      "Attorney-approved source template integrated.",
+      "Confirm all deal-specific names, dates, numbers, and title details before signature.",
+      "Generated documents still require operator review before release.",
+    ];
+  }
+
+  if (template.approvalStatus === "attorney_review_required") {
+    return [
+      "Attorney review required.",
+      "Do not send for signature until approved.",
+      "Generated documents are not legal advice.",
+    ];
+  }
+
+  return [
+    "Reference template only.",
+    "Attorney review required.",
+    "Do not send for signature until approved.",
+    "Generated documents are not legal advice.",
+  ];
+}
+
 function inferBuyerOrAssigneeName(detail: DealEngineDealDetail) {
   return detail.closeout?.buyerName?.trim()
     || detail.investorResponses[0]?.investorName?.trim()
@@ -5376,12 +5401,7 @@ export async function generateContractDraftFromTemplate(
   const renderedBody = fillTemplateVariables(templateBody, validation.availableFields);
   const specialTerms = validation.availableFields.special_terms || "";
   const title = `${validation.template.name} draft`;
-  const warningLines = [
-    "Reference template only.",
-    "Attorney review required.",
-    "Do not send for signature until approved.",
-    "Generated documents are not legal advice.",
-  ];
+  const warningLines = buildTemplateSafetyLines(validation.template);
   const generatedBody = [renderedBody.trim(), "", "Blackspire Legal Safety Notice", ...warningLines.map((line) => `- ${line}`)].join("\n");
 
   await writeContractAuditLog({

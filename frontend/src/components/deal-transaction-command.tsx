@@ -38,6 +38,30 @@ function canPrepareForSignature(
   return true;
 }
 
+function templateWarningLines(template: DealContractTemplateRecord | null) {
+  if (!template) return [];
+  if (template.approvalStatus === "attorney_approved") {
+    return [
+      "Attorney-approved source template integrated.",
+      "Confirm all deal-specific fields before signature.",
+      "Operator review is still required before release.",
+    ];
+  }
+  if (template.approvalStatus === "attorney_review_required") {
+    return [
+      "Attorney review required.",
+      "Do not send for signature until approved.",
+      "Generated documents are not legal advice.",
+    ];
+  }
+  return [
+    "Reference template only.",
+    "Attorney review required.",
+    "Do not send for signature until approved.",
+    "Generated documents are not legal advice.",
+  ];
+}
+
 export function DealTransactionCommand({
   dealId,
   initialSnapshot,
@@ -491,10 +515,9 @@ export function DealTransactionCommand({
         <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">
           <div className="space-y-4">
             <div className="brand-card p-4 text-sm leading-6 text-[var(--copy-soft)]">
-              <div>Reference template only.</div>
-              <div>Attorney review required.</div>
-              <div>Do not send for signature until approved.</div>
-              <div>Generated documents are not legal advice.</div>
+              {templateWarningLines(selectedTemplate).map((line) => (
+                <div key={line}>{line}</div>
+              ))}
             </div>
 
             <div className="brand-card p-4">
