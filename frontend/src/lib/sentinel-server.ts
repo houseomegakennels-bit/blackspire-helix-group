@@ -35,6 +35,7 @@ type SellerLead = Awaited<ReturnType<typeof listSellerLeads>>[number];
 
 export type SentinelDeal = {
   dealId: string;
+  propertyId: string | null;
   ownerName: string;
   propertyAddress: string;
   county: string;
@@ -74,7 +75,7 @@ function daysUntil(date: string | null | undefined): number | null {
 async function buildDealBoard(supabase: SupabaseClient): Promise<SentinelDeal[]> {
   const { data: dealRows } = await supabase
     .from("deal_leads")
-    .select("id, owner_name, property_address, county, status, motivation_score, estimated_equity, recommended_next_action, updated_at")
+    .select("id, property_id, owner_name, property_address, county, status, motivation_score, estimated_equity, recommended_next_action, updated_at")
     .order("updated_at", { ascending: false })
     .limit(200);
 
@@ -162,6 +163,7 @@ async function buildDealBoard(supabase: SupabaseClient): Promise<SentinelDeal[]>
 
     return {
       dealId: id,
+      propertyId: (deal.property_id as string) ?? null,
       ownerName: (deal.owner_name as string) ?? "Unknown owner",
       propertyAddress: (deal.property_address as string) ?? "Unresolved address",
       county: (deal.county as string) ?? "",
@@ -182,6 +184,13 @@ async function buildDealBoard(supabase: SupabaseClient): Promise<SentinelDeal[]>
       updatedAt: (deal.updated_at as string) ?? null,
     };
   });
+}
+
+/** All deals with computed readiness — the single source for deal-readiness data. */
+export async function getSentinelDeals(): Promise<SentinelDeal[]> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return [];
+  return buildDealBoard(supabase).catch(() => []);
 }
 
 // ---------------------------------------------------------------------------

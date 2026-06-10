@@ -1272,16 +1272,23 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput): Prom
     return { matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low", county: input.county ?? null };
   }
 
-  // Real buyers from the BuyerProfile universe (the source of truth).
-  const { data: profileRows } = await supabase
-    .from("BuyerProfile")
-    .select("id, buyer_name, county, state, is_llc, is_cash_buyer, purchase_count, total_spend, last_purchase_date, property_types, score")
-    .ilike("county", `%${countyCore}%`)
-    .order("purchase_count", { ascending: false, nullsFirst: false })
-    .limit(200);
+  // Real buyers from the BuyerProfile universe (the source of truth). Fetch the
+  // top-200 by volume for scoring, and a true county-wide count for validation.
+  const [{ data: profileRows }, { count: countyBuyerCount }] = await Promise.all([
+    supabase
+      .from("BuyerProfile")
+      .select("id, buyer_name, county, state, is_llc, is_cash_buyer, purchase_count, total_spend, last_purchase_date, property_types, score")
+      .ilike("county", `%${countyCore}%`)
+      .order("purchase_count", { ascending: false, nullsFirst: false })
+      .limit(200),
+    supabase
+      .from("BuyerProfile")
+      .select("id", { count: "exact", head: true })
+      .ilike("county", `%${countyCore}%`),
+  ]);
 
   const rows = (profileRows ?? []) as BuyerProfileRow[];
-  const buyerCount = rows.length;
+  const buyerCount = countyBuyerCount ?? rows.length;
 
   const profileMatches: BuyerForPropertyMatch[] = rows.map((row) => {
     const { score, reasons } = scoreBuyerProfile(row, bucket);

@@ -35,6 +35,7 @@ export const siteNavSections: SiteNavSection[] = [
     items: [
       { label: "Real Estate Intelligence", href: "/real-estate-intelligence", description: "Seller to buyer pipeline." },
       { label: "Sentinel", href: "/workspace/sentinel", description: "Command intelligence layer across the entire pipeline." },
+      { label: "Properties", href: "/workspace/property", description: "Unified property command — every record in one view." },
       { label: "Harvester", href: "/workspace/harvester", description: "Opportunity intake and marketplace intelligence." },
       { label: "Seller Engine", href: "/seller-engine", description: "Motivated seller discovery." },
       { label: "Nexus", href: "/workspace/nexus", description: "Skip trace and contact resolution." },
@@ -72,6 +73,14 @@ export const workspaceEntries: WorkspaceEntry[] = [
     status: "Live",
     description: "The executive command layer: morning brief, deal readiness scores, follow-up queue, opportunity feed, and a unified inbox across every engine.",
     primaryAction: "Open command center",
+  },
+  {
+    title: "Property Command",
+    href: "/workspace/property",
+    division: "Real Estate Intelligence",
+    status: "Live",
+    description: "The single source-of-truth property view: seller, deal, buyers, contract, transaction, scores, timeline, and next best action in one place.",
+    primaryAction: "Open property command",
   },
   {
     title: "Harvester",

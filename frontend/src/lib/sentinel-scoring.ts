@@ -205,6 +205,88 @@ export function calculateOpportunityScore(input: OpportunityScoreInput): Opportu
   };
 }
 
+// ---------------------------------------------------------------------------
+// Property Health Score — a DISTINCT axis from Deal Readiness.
+// Deal Readiness = how close a deal is to closing (only once a deal exists).
+// Property Health = whole-lifecycle DATA completeness across every system, so it
+// is meaningful even before a deal exists. They never measure the same gap.
+// ---------------------------------------------------------------------------
+
+export type PropertyHealthCategory = "Healthy" | "Stable" | "Developing" | "Sparse";
+
+export type PropertyHealthInput = {
+  /** 0..1 — core property facts present (address, owner, beds/baths/price, etc). */
+  dataCompleteness?: number;
+  /** 0..1 — seller identified, contacted, skip-traced. */
+  sellerEngagement?: number;
+  /** 0..1 — contract drafted/sent/signed. */
+  contractReadiness?: number;
+  /** 0..1 — buyer demand validated / matches found. */
+  buyerReadiness?: number;
+  /** 0..1 — title company + checklist progress. */
+  titleReadiness?: number;
+  /** 0..1 — closing date, EMD, signatures. */
+  closingReadiness?: number;
+};
+
+export type PropertyHealthResult = {
+  score: number;
+  category: PropertyHealthCategory;
+  factors: ReadinessFactor[];
+};
+
+const PROPERTY_HEALTH_WEIGHTS = {
+  dataCompleteness: 20,
+  sellerEngagement: 20,
+  contractReadiness: 15,
+  buyerReadiness: 15,
+  titleReadiness: 15,
+  closingReadiness: 15,
+} as const;
+
+export function getPropertyHealthCategory(score: number): PropertyHealthCategory {
+  if (score >= 80) return "Healthy";
+  if (score >= 60) return "Stable";
+  if (score >= 40) return "Developing";
+  return "Sparse";
+}
+
+export function calculatePropertyHealthScore(input: PropertyHealthInput): PropertyHealthResult {
+  const factors: ReadinessFactor[] = [];
+  const add = (key: keyof typeof PROPERTY_HEALTH_WEIGHTS, label: string, fraction: number | undefined) => {
+    const max = PROPERTY_HEALTH_WEIGHTS[key];
+    const ratio = clamp01(fraction);
+    const earned = Math.round(max * ratio);
+    factors.push({ key, label, earned, max, met: ratio >= 0.999, detail: `${Math.round(ratio * 100)}%` });
+    return earned;
+  };
+
+  let total = 0;
+  total += add("dataCompleteness", "Data completeness", input.dataCompleteness);
+  total += add("sellerEngagement", "Seller engagement", input.sellerEngagement);
+  total += add("contractReadiness", "Contract readiness", input.contractReadiness);
+  total += add("buyerReadiness", "Buyer readiness", input.buyerReadiness);
+  total += add("titleReadiness", "Title readiness", input.titleReadiness);
+  total += add("closingReadiness", "Closing readiness", input.closingReadiness);
+
+  const score = Math.max(0, Math.min(100, Math.round(total)));
+  return { score, category: getPropertyHealthCategory(score), factors };
+}
+
+/**
+ * Expected Revenue = Potential Assignment Value × Probability of Closing.
+ * Probability is derived from a 0..100 readiness score. Returns null when the
+ * potential value is unknown.
+ */
+export function calculateExpectedRevenue(
+  potentialAssignmentValue: number | null | undefined,
+  readinessScore: number | null | undefined,
+): number | null {
+  if (!potentialAssignmentValue || potentialAssignmentValue <= 0) return null;
+  const probability = clamp01((readinessScore ?? 0) / 100);
+  return Math.round(potentialAssignmentValue * probability);
+}
+
 /** Map a free-text repair / condition descriptor to a 0..1 burden. */
 export function repairBurdenFromText(text?: string | null): number {
   if (!text) return 0.4;

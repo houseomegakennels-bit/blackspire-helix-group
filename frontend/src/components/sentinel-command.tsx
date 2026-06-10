@@ -226,6 +226,11 @@ export function SentinelCommand({ snapshot }: { snapshot: SentinelWorkspaceSnaps
                       <span className="rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wider" style={{ color: readinessColor(deal.readiness.category), background: `${readinessColor(deal.readiness.category)}1f` }}>
                         {deal.readiness.category}
                       </span>
+                      {deal.propertyId ? (
+                        <Link href={`/workspace/property/${deal.propertyId}`} className="text-[10px] uppercase tracking-wider text-[#5eead4] hover:underline">
+                          Property →
+                        </Link>
+                      ) : null}
                     </div>
                     <div className="mt-1 text-xs text-[var(--copy-soft)]">{deal.ownerName} · {deal.county} · {deal.status}{deal.potentialValue ? ` · ~$${deal.potentialValue.toLocaleString()} potential` : ""}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
