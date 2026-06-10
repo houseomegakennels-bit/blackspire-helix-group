@@ -14,6 +14,7 @@ import {
   type SellerScoringWeights,
 } from "@/lib/seller-engine";
 import type { SellerLeadView } from "@/lib/seller-engine-demo";
+import { scoreSellerLead, opportunityTierColor } from "@/lib/sentinel-display";
 
 type AlertRow = {
   id: string;
@@ -792,7 +793,22 @@ export function SellerEngineDashboard({
                   <p className="seller-kicker">Seller dossier</p>
                   <h3 className="mt-2 text-2xl font-semibold text-white">{selected.ownerName}</h3>
                 </div>
-                <div className={`seller-score ${scoreTone(selected.score)}`}>{selected.score}</div>
+                <div className="flex flex-col items-end gap-2">
+                  <div className={`seller-score ${scoreTone(selected.score)}`}>{selected.score}</div>
+                  {(() => {
+                    const opp = scoreSellerLead(selected);
+                    const color = opportunityTierColor(opp.tier);
+                    return (
+                      <span
+                        className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]"
+                        style={{ color, background: `${color}1f`, border: `1px solid ${color}55` }}
+                        title={`Opportunity Score™ ${opp.score}/100${opp.potentialAssignmentValue ? ` · ~$${opp.potentialAssignmentValue.toLocaleString()} potential` : ""}`}
+                      >
+                        Opp {opp.score} · {opp.tier}
+                      </span>
+                    );
+                  })()}
+                </div>
               </div>
               <dl className="mt-5 space-y-4 text-sm">
                 {[
