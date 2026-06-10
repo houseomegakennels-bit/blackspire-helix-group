@@ -971,15 +971,30 @@ export async function extractHarvesterOpportunity(input: {
 
   const heuristic = parseExtraction(text, metadata);
   const aiExtraction = await extractWithAi(text, metadata).catch(() => null);
+  // Let the AI win for every field it actually extracted, but never let an AI
+  // null/empty clobber a value the heuristic already found — backfill instead.
+  const aiClean = aiExtraction
+    ? (Object.fromEntries(
+        Object.entries(aiExtraction).filter(([, value]) => value !== null && value !== undefined && value !== ""),
+      ) as Partial<typeof aiExtraction>)
+    : {};
   const payload = aiExtraction
     ? {
         ...heuristic,
-        ...aiExtraction,
+        ...aiClean,
         confidenceScore: Math.min(99, heuristic.confidenceScore + 6),
         missingFields: heuristic.missingFields.filter((field) => !aiExtraction[field as keyof typeof aiExtraction]),
         rawText: text,
       }
     : heuristic;
+
+  // Deterministic ZIP backfill: a 5-digit code that follows a 2-letter state
+  // (e.g. "Fayetteville, NC, 28301"). Anchored to the state so it won't grab an
+  // unrelated 5-digit number like a lot size or square footage.
+  if (!payload.zip) {
+    const zipMatch = text.match(/\b[A-Z]{2}\s*,?\s*(\d{5})(?:-\d{4})?\b/);
+    if (zipMatch) payload.zip = zipMatch[1];
+  }
 
   if (!supabase || !input.intakeId) {
     return {
