@@ -985,25 +985,45 @@ async function persistSellerLeadFromHarvester(
     .single();
   if (ownerError) throw new Error(ownerError.message);
 
-  const { data: source, error: sourceError } = await supabase
-    .from("data_sources")
-    .upsert({
-      name: intake.sourceName || "Harvester Intake",
-      source_type: "blended_search",
-      county: opportunity.county,
-      state: propertyState,
-      source_url: intake.sourceUrl,
-      integration_type: "harvester_intake",
-      active: true,
-      configuration: {
-        harvesterIntakeId: intake.id,
-        sourceType: intake.sourceType,
-        extractionConfidence: intake.extractionConfidence,
-      },
-    }, { onConflict: "name,county,state" })
-    .select("id")
-    .single();
-  if (sourceError) throw new Error(sourceError.message);
+  // Find-or-create the data source. (data_sources has no unique(name,county,state)
+  // constraint in production and contains legacy duplicates, so we can't upsert.)
+  const harvesterSourceName = intake.sourceName || "Harvester Intake";
+  let dataSourceId: string;
+  {
+    let findSource = supabase
+      .from("data_sources")
+      .select("id")
+      .eq("name", harvesterSourceName)
+      .eq("state", propertyState)
+      .eq("integration_type", "harvester_intake");
+    if (opportunity.county) findSource = findSource.eq("county", opportunity.county);
+    const { data: existingSource } = await findSource.limit(1).maybeSingle();
+
+    if (existingSource) {
+      dataSourceId = existingSource.id as string;
+    } else {
+      const { data: newSource, error: sourceError } = await supabase
+        .from("data_sources")
+        .insert({
+          name: harvesterSourceName,
+          source_type: "blended_search",
+          county: opportunity.county,
+          state: propertyState,
+          source_url: intake.sourceUrl,
+          integration_type: "harvester_intake",
+          active: true,
+          configuration: {
+            harvesterIntakeId: intake.id,
+            sourceType: intake.sourceType,
+            extractionConfidence: intake.extractionConfidence,
+          },
+        })
+        .select("id")
+        .single();
+      if (sourceError) throw new Error(sourceError.message);
+      dataSourceId = newSource.id as string;
+    }
+  }
 
   const signals = buildMotivationSignals(opportunity, intake);
   const score = calculateSellerLeadScore(signals, DEFAULT_SELLER_SCORING_WEIGHTS);
@@ -1011,9 +1031,9 @@ async function persistSellerLeadFromHarvester(
 
   const { data: property, error: propertyError } = await supabase
     .from("properties")
-    .upsert({
+    .insert({
       owner_id: owner.id,
-      data_source_id: source.id,
+      data_source_id: dataSourceId,
       property_address: opportunity.address || "Unknown property",
       county: opportunity.county,
       city: opportunity.city,
@@ -1034,7 +1054,7 @@ async function persistSellerLeadFromHarvester(
         opportunityId: opportunity.id,
         sourceType: intake.sourceType,
       },
-    }, { onConflict: "county,property_address" })
+    })
     .select("id")
     .single();
   if (propertyError) throw new Error(propertyError.message);
