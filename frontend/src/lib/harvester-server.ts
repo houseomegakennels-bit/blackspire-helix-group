@@ -439,6 +439,17 @@ async function extractWithAi(text: string, metadata: Record<string, unknown>) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
 
+  const instructions =
+    "You extract structured wholesale real-estate opportunity fields from a post, listing, SMS, email, flyer, or OCR transcript. " +
+    "Return ONLY a valid JSON object (no markdown fences, no commentary) with EXACTLY these keys: " +
+    "address, city, state, zip, county, askingPrice, beds, baths, sqft, lotSize, yearBuilt, occupancyStatus, condition, sellerName, phone, email, postDate, notes, classification. " +
+    "Rules: 'address' is the street address ONLY (e.g. '1418 Maple Grove Rd'), never a bed/bath count or city. " +
+    "'askingPrice' is the seller's asking price as a plain number with no commas or currency symbol — it is NEVER a ZIP code, ARV, or square footage. " +
+    "'sqft' is living area as a plain number (strip commas, so '1,540' becomes 1540). 'zip' is the 5-digit postal code. " +
+    "'city' and 'county' are place names. Use null for anything not present. Numbers must be JSON numbers, not strings. " +
+    "'classification' is one of: wholesaler_inventory, fsbo, agent_listing, lead, unclear. " +
+    "'notes' is a one or two sentence summary of the opportunity.";
+
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -447,79 +458,52 @@ async function extractWithAi(text: string, metadata: Record<string, unknown>) {
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-      text: {
-        format: {
-          type: "json_schema",
-          name: "harvester_extraction",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              address: { type: ["string", "null"] },
-              city: { type: ["string", "null"] },
-              state: { type: ["string", "null"] },
-              zip: { type: ["string", "null"] },
-              county: { type: ["string", "null"] },
-              askingPrice: { type: ["number", "null"] },
-              beds: { type: ["number", "null"] },
-              baths: { type: ["number", "null"] },
-              sqft: { type: ["number", "null"] },
-              lotSize: { type: ["number", "null"] },
-              yearBuilt: { type: ["number", "null"] },
-              occupancyStatus: { type: ["string", "null"] },
-              condition: { type: ["string", "null"] },
-              sellerName: { type: ["string", "null"] },
-              phone: { type: ["string", "null"] },
-              email: { type: ["string", "null"] },
-              postDate: { type: ["string", "null"] },
-              notes: { type: ["string", "null"] },
-              classification: { type: "string" },
-            },
-            required: [
-              "address",
-              "city",
-              "state",
-              "zip",
-              "county",
-              "askingPrice",
-              "beds",
-              "baths",
-              "sqft",
-              "lotSize",
-              "yearBuilt",
-              "occupancyStatus",
-              "condition",
-              "sellerName",
-              "phone",
-              "email",
-              "postDate",
-              "notes",
-              "classification",
-            ],
-          },
-        },
-      },
       input: [
-        {
-          role: "system",
-          content:
-            "Extract structured wholesale real-estate opportunity fields. Use only the provided content and metadata. Return null for unknown values.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({ text, metadata }),
-        },
+        { role: "system", content: instructions },
+        { role: "user", content: JSON.stringify({ text, metadata }) },
       ],
-      max_output_tokens: 500,
+      max_output_tokens: 700,
     }),
   });
 
   if (!response.ok) return null;
-  const payload = await response.json() as { output_text?: string };
-  if (!payload.output_text) return null;
+  const payload = (await response.json()) as { output_text?: string; output?: unknown };
+  const raw = getResponseOutputText(payload).trim();
+  if (!raw) return null;
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  const toNum = (value: unknown): number | null => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "string") {
+      const n = Number(value.replace(/[^0-9.]/g, ""));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    return null;
+  };
+  const toStr = (value: unknown): string | null =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
   try {
-    return JSON.parse(payload.output_text) as Omit<ExtractionPayload, "confidenceScore" | "missingFields" | "rawText">;
+    const parsed = JSON.parse(jsonMatch?.[0] ?? raw) as Record<string, unknown>;
+    return {
+      address: toStr(parsed.address),
+      city: toStr(parsed.city),
+      state: toStr(parsed.state),
+      zip: toStr(parsed.zip),
+      county: toStr(parsed.county),
+      askingPrice: toNum(parsed.askingPrice),
+      beds: toNum(parsed.beds),
+      baths: toNum(parsed.baths),
+      sqft: toNum(parsed.sqft),
+      lotSize: toNum(parsed.lotSize),
+      yearBuilt: toNum(parsed.yearBuilt),
+      occupancyStatus: toStr(parsed.occupancyStatus),
+      condition: toStr(parsed.condition),
+      sellerName: toStr(parsed.sellerName),
+      phone: toStr(parsed.phone),
+      email: toStr(parsed.email),
+      postDate: toStr(parsed.postDate),
+      notes: toStr(parsed.notes),
+      classification: toStr(parsed.classification) ?? "unclear",
+    } as Omit<ExtractionPayload, "confidenceScore" | "missingFields" | "rawText">;
   } catch {
     return null;
   }
@@ -917,7 +901,7 @@ export async function extractHarvesterOpportunity(input: {
 }) {
   const supabase = getSupabaseAdmin();
   const intake = input.intakeId ? await getHarvesterIntakeDetail(input.intakeId) : null;
-  let text = cleanText(input.originalText) ?? intake?.originalText ?? "";
+  let text = cleanText(input.originalText) ?? intake?.originalText ?? intake?.extractedText ?? "";
   const metadata = {
     ...(intake?.metadata ?? {}),
     ...(input.metadata ?? {}),
