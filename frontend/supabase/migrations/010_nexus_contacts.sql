@@ -26,8 +26,14 @@ create table if not exists public.nexus_contacts (
   updated_at timestamptz default now()
 );
 
+-- Normalized digits-only phone so "9105550123" matches a stored "910-555-0123".
+alter table public.nexus_contacts
+  add column if not exists phone_digits text
+  generated always as (regexp_replace(coalesce(primary_phone,'') || coalesce(secondary_phone,''), '\D', '', 'g')) stored;
+
 create index if not exists nexus_contacts_seller_lead_idx on public.nexus_contacts (seller_lead_id);
 create index if not exists nexus_contacts_phone_idx on public.nexus_contacts (primary_phone);
+create index if not exists nexus_contacts_phone_digits_idx on public.nexus_contacts (phone_digits);
 create index if not exists nexus_contacts_email_idx on public.nexus_contacts (primary_email);
 
 alter table public.nexus_contacts enable row level security;

@@ -25,10 +25,10 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ ok: true, results: [] });
 
   const like = `%${q}%`;
-  // For phone queries, also match on a digits-only variant so "9105550123" finds
-  // "910-555-0123".
+  // For phone queries, match against the normalized digits-only column so
+  // "9105550123" finds "910-555-0123".
   const digits = q.replace(/\D/g, "");
-  const phoneLike = digits.length >= 4 ? `%${digits}%` : like;
+  const phoneDigitsLike = digits.length >= 4 ? `%${digits}%` : `%${q}%`;
   const [properties, deals, buyers, owners, contacts] = await Promise.all([
     supabase.from("properties").select("id, property_address, city, county, parcel_id").or(`property_address.ilike.${like},parcel_id.ilike.${like}`).limit(6),
     supabase.from("deal_leads").select("id, property_address, owner_name, county").or(`property_address.ilike.${like},owner_name.ilike.${like}`).limit(6),
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     supabase
       .from("nexus_contacts")
       .select("id, seller_lead_id, owner_name, property_address, primary_phone, primary_email")
-      .or(`primary_phone.ilike.${like},primary_phone.ilike.${phoneLike},primary_email.ilike.${like},owner_name.ilike.${like}`)
+      .or(`phone_digits.ilike.${phoneDigitsLike},primary_email.ilike.${like},owner_name.ilike.${like}`)
       .limit(6),
   ]);
 
