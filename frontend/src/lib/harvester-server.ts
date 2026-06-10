@@ -978,8 +978,9 @@ async function persistSellerLeadFromHarvester(
     .insert({
       name: ownerName,
       mailing_address: ownerMailingAddress,
-      primary_phone: opportunity.phone,
-      primary_email: opportunity.email,
+      mailing_city: opportunity.city,
+      mailing_state: propertyState,
+      mailing_zip: opportunity.zip,
     })
     .select("id")
     .single();
