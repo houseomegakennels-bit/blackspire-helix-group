@@ -33,12 +33,46 @@ async function postJson<T>(url: string, body: Record<string, unknown>) {
   return payload;
 }
 
+// Read an uploaded image and downscale/re-encode it to a compact JPEG data URL.
+// Keeps the request body well under Vercel's 4.5MB limit and speeds up OCR.
+// Returns null for non-image files (e.g. PDFs, which vision OCR can't read).
+async function fileToOptimizedImageDataUrl(file: File): Promise<string | null> {
+  if (!file.type.startsWith("image/")) return null;
+  const original = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  try {
+    const img = document.createElement("img");
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Image decode failed."));
+      img.src = original;
+    });
+    const maxDim = 1568;
+    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return original;
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL("image/jpeg", 0.82);
+  } catch {
+    return original; // fall back to the raw data URL if canvas processing fails
+  }
+}
+
 export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSnapshot }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("intake");
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("Ready for intake.");
-  const [selectedFile, setSelectedFile] = useState<{ name: string; type: string } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{ name: string; type: string; dataUrl: string | null } | null>(null);
   const [form, setForm] = useState({
     sourceType: "facebook_group" as HarvesterSourceType,
     sourceName: "",
@@ -74,6 +108,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
 
       await postJson("/api/harvester/extract", {
         intakeId: intake.intake.id,
+        imageDataUrl: selectedFile?.dataUrl ?? undefined,
         metadata: {
           propertyAddress: form.propertyAddress,
           county: form.county,
@@ -278,9 +313,16 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                 <input
                   type="file"
                   accept="image/*,.pdf"
-                  onChange={(event) => {
+                  onChange={async (event) => {
                     const file = event.target.files?.[0];
-                    setSelectedFile(file ? { name: file.name, type: file.type || "application/octet-stream" } : null);
+                    if (!file) {
+                      setSelectedFile(null);
+                      return;
+                    }
+                    const type = file.type || "application/octet-stream";
+                    setSelectedFile({ name: file.name, type, dataUrl: null });
+                    const dataUrl = await fileToOptimizedImageDataUrl(file).catch(() => null);
+                    setSelectedFile({ name: file.name, type, dataUrl });
                   }}
                   className="hidden"
                   id="harvester-file-input"
@@ -288,7 +330,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                 <label htmlFor="harvester-file-input" className="cursor-pointer">
                   <span className="block text-sm font-semibold text-white">Drop a file or tap to select</span>
                   <span className="mt-2 block text-xs leading-6 text-[var(--copy-soft)]">
-                    OCR provider hook is staged. The current workflow stores file metadata so the provider can be attached later without reworking the intake surface.
+                    AI vision OCR is live for images (JPG, PNG, WEBP). Drop a screenshot of a post, listing, or flyer and Harvester reads the price, address, beds/baths, and contact details automatically. PDFs store metadata only for now.
                   </span>
                   {selectedFile ? (
                     <span className="mt-3 inline-flex rounded-full border border-[var(--line-strong)] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)]">

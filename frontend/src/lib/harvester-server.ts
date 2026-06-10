@@ -525,6 +525,65 @@ async function extractWithAi(text: string, metadata: Record<string, unknown>) {
   }
 }
 
+// Pull plain text out of a /v1/responses payload regardless of whether the model
+// returned the convenience `output_text` field or the structured `output` array.
+function getResponseOutputText(response: { output_text?: string; output?: unknown }): string {
+  if (typeof response.output_text === "string") return response.output_text;
+  const output = Array.isArray(response.output) ? response.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const content = Array.isArray((item as { content?: unknown }).content)
+      ? (item as { content: unknown[] }).content
+      : [];
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const t = (part as { text?: unknown }).text;
+      if (typeof t === "string") return t;
+    }
+  }
+  return "";
+}
+
+// Vision OCR: transcribe a screenshot / flyer image into raw post text so the
+// existing text-extraction pipeline (parseExtraction + extractWithAi) can run.
+// Accepts a base64 data URL or an http(s) image URL.
+async function ocrImageWithAi(imageUrl: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return null;
+  if (!/^(data:image\/|https?:\/\/)/i.test(imageUrl)) return null;
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text:
+                "This image is a screenshot of a real-estate post, listing, marketplace ad, flyer, text message, or email about a property. Transcribe ALL readable text verbatim: price, address, city, county, beds/baths, square footage, lot size, year built, condition, occupancy, the seller's or poster's name, phone number, email, and the full description. Preserve every number exactly as shown. Output only the transcribed text with no commentary. If the image contains no readable property information, output the single word NONE.",
+            },
+            { type: "input_image", image_url: imageUrl, detail: "high" },
+          ],
+        },
+      ],
+      max_output_tokens: 900,
+    }),
+  });
+
+  if (!response.ok) return null;
+  const payload = (await response.json()) as { output_text?: string; output?: unknown };
+  const text = getResponseOutputText(payload).trim();
+  if (!text || text.toUpperCase() === "NONE") return null;
+  return text;
+}
+
 function mapOpportunity(row: HarvesterOpportunityRow): HarvesterOpportunityRecord {
   return {
     id: row.id,
@@ -731,9 +790,9 @@ function getDemoSnapshot(): HarvesterWorkspaceSnapshot {
     alerts: [
       {
         id: "demo-alert-1",
-        title: "OCR provider not configured",
-        detail: "Image and PDF uploads currently store metadata and wait for a future OCR provider hook. Text-based extraction is live now.",
-        severity: "warning",
+        title: "AI vision OCR is live",
+        detail: "Upload a screenshot or flyer image and Harvester reads it automatically with AI vision OCR, then extracts structured deal fields. PDFs store metadata only for now.",
+        severity: "info",
       },
     ],
     tabs: [
@@ -853,18 +912,35 @@ export async function createHarvesterIntake(input: HarvesterIntakeInsertInput) {
 export async function extractHarvesterOpportunity(input: {
   intakeId?: string;
   originalText?: string;
+  imageDataUrl?: string;
   metadata?: Record<string, unknown>;
 }) {
   const supabase = getSupabaseAdmin();
   const intake = input.intakeId ? await getHarvesterIntakeDetail(input.intakeId) : null;
-  const text = cleanText(input.originalText) ?? intake?.originalText ?? "";
+  let text = cleanText(input.originalText) ?? intake?.originalText ?? "";
   const metadata = {
     ...(intake?.metadata ?? {}),
     ...(input.metadata ?? {}),
     sourceType: intake?.sourceType ?? input.metadata?.sourceType ?? "other",
   };
 
-  if (!text) throw new Error("Harvester needs pasted text or intake text before extraction can run.");
+  // No pasted text? Try vision OCR on an uploaded image (screenshot / flyer).
+  if (!text) {
+    const storedFile = intake?.originalFileUrl;
+    const imageSource =
+      input.imageDataUrl?.trim() ||
+      (storedFile && /^(data:image\/|https?:\/\/)/i.test(storedFile) ? storedFile : null);
+    if (imageSource) {
+      const ocrText = await ocrImageWithAi(imageSource).catch(() => null);
+      if (ocrText) text = ocrText;
+    }
+  }
+
+  if (!text) {
+    throw new Error(
+      "Harvester could not read this intake. Paste the post text, or upload a clearer screenshot/flyer image (image OCR requires OPENAI_API_KEY to be configured).",
+    );
+  }
 
   const heuristic = parseExtraction(text, metadata);
   const aiExtraction = await extractWithAi(text, metadata).catch(() => null);
@@ -889,7 +965,7 @@ export async function extractHarvesterOpportunity(input: {
   await supabase
     .from("harvester_intakes")
     .update({
-      extracted_text: payload.rawText,
+      extracted_text: payload.rawText ?? text,
       extraction_status: "extracted",
       extraction_confidence: payload.confidenceScore,
       classification: payload.classification,
@@ -1643,8 +1719,10 @@ export async function getHarvesterWorkspaceSnapshot(): Promise<HarvesterWorkspac
       },
       {
         id: "harvester-ocr",
-        title: "OCR hook is staged",
-        detail: "Image and PDF intake are structurally wired, but production OCR provider configuration is still a placeholder until you attach one.",
+        title: process.env.OPENAI_API_KEY?.trim() ? "AI vision OCR is live" : "OCR key not configured",
+        detail: process.env.OPENAI_API_KEY?.trim()
+          ? "Screenshot and flyer images are read automatically with AI vision OCR, then run through structured extraction. PDFs store metadata only for now."
+          : "Image OCR needs OPENAI_API_KEY. Add the key in the deployment environment to enable automatic screenshot and flyer reading. Text intake works without it.",
         severity: process.env.OPENAI_API_KEY?.trim() ? "success" : "warning",
       },
     ],

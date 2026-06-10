@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       intakeId?: string;
       originalText?: string;
+      imageDataUrl?: string;
       metadata?: Record<string, unknown>;
     };
 
