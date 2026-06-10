@@ -21,6 +21,19 @@ const sourceTypeOptions: Array<{ value: HarvesterSourceType; label: string }> = 
 
 type TabId = "intake" | "deals" | "intelligence" | "profiles" | "buyers" | "watchlists" | "settings";
 
+type BuyerMatchResult = {
+  buyerId: string;
+  buyerName: string;
+  buyerGroup: string;
+  matchScore: number;
+  reasons: string[];
+  recommendedAction: string;
+};
+type FindBuyersResult = {
+  matches: BuyerMatchResult[];
+  validation?: { buyerCount: number; demandScore: number; assignmentPotential: string; county: string | null };
+};
+
 async function postJson<T>(url: string, body: Record<string, unknown>) {
   const response = await fetch(url, {
     method: "POST",
@@ -74,6 +87,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("Ready for intake.");
   const [selectedFile, setSelectedFile] = useState<{ name: string; type: string; dataUrl: string | null } | null>(null);
+  const [buyerResults, setBuyerResults] = useState<Record<string, FindBuyersResult>>({});
   const [form, setForm] = useState({
     sourceType: "facebook_group" as HarvesterSourceType,
     sourceName: "",
@@ -149,17 +163,15 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
   async function findBuyers(intakeId: string) {
     setBusyLabel("Finding buyers...");
     try {
-      const result = await postJson<{
-        matches?: unknown[];
-        validation?: { buyerCount: number; demandScore: number; assignmentPotential: string; county: string | null };
-      }>("/api/harvester/buyer-match", { intakeId });
+      const result = await postJson<FindBuyersResult>("/api/harvester/buyer-match", { intakeId });
       const v = result.validation;
+      // Show the matches inline on the card immediately (don't wait on a refresh).
+      setBuyerResults((prev) => ({ ...prev, [intakeId]: { matches: result.matches ?? [], validation: v } }));
       setStatus(
         v
           ? `${v.buyerCount.toLocaleString()} buyers in ${v.county ?? "county"} · ${v.assignmentPotential} assignment potential · demand ${v.demandScore}/100 · ${result.matches?.length ?? 0} matched.`
-          : "Buyer match refreshed.",
+          : `${result.matches?.length ?? 0} buyer matches found.`,
       );
-      setActiveTab("buyers");
       startTransition(() => router.refresh());
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Buyer match failed.");
@@ -590,6 +602,40 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                   Delete
                 </button>
               </div>
+
+              {buyerResults[intake.id] ? (
+                <div className="mt-5 rounded-[18px] border border-[var(--line-strong)] bg-black/25 p-4">
+                  {buyerResults[intake.id].validation ? (
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="rounded-full bg-[rgba(45,212,191,0.12)] px-3 py-1 uppercase tracking-[0.16em] text-[#5eead4]">
+                        {buyerResults[intake.id].validation!.buyerCount.toLocaleString()} buyers in {buyerResults[intake.id].validation!.county ?? "county"}
+                      </span>
+                      <span className="rounded-full border border-[var(--line)] px-3 py-1 uppercase tracking-[0.16em] text-[var(--copy-soft)]">
+                        {buyerResults[intake.id].validation!.assignmentPotential} assignment potential
+                      </span>
+                      <span className="rounded-full border border-[var(--line)] px-3 py-1 uppercase tracking-[0.16em] text-[var(--copy-soft)]">
+                        demand {buyerResults[intake.id].validation!.demandScore}/100
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="mt-3 space-y-2">
+                    {buyerResults[intake.id].matches.length ? (
+                      buyerResults[intake.id].matches.slice(0, 6).map((match) => (
+                        <div key={match.buyerId} className="rounded-[12px] border border-[var(--line)] p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-semibold text-white">{match.buyerName}</span>
+                            <span className="shrink-0 text-sm font-bold text-[var(--gold-soft)]">{match.matchScore}</span>
+                          </div>
+                          <div className="mt-1 text-[10px] uppercase tracking-wider text-[var(--copy-muted)]">{match.buyerGroup?.replaceAll("_", " ")}</div>
+                          {match.reasons?.length ? <div className="mt-1 text-xs text-[var(--copy-soft)]">{match.reasons.slice(0, 2).join(" · ")}</div> : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-[var(--copy-soft)]">No buyers indexed for this county yet. Launch a Buyer Engine search to ingest them.</div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </article>
           )) : (
             <div className="brand-panel harvester-panel p-6 text-sm leading-7 text-[var(--copy-soft)]">
