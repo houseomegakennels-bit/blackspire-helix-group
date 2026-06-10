@@ -2828,6 +2828,14 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
     return { ok: true as const, dealId: String(existing.data.id), created: false as const };
   }
 
+  // Pull the master property linkage so the deal joins the unified property record.
+  const { data: sellerRow } = await supabase
+    .from("seller_leads")
+    .select("property_id")
+    .eq("id", sellerLead.id)
+    .maybeSingle();
+  const linkedPropertyId = (sellerRow?.property_id as string) ?? null;
+
   const dealId = createDealId();
   const arv = Math.max(sellerLead.assessedValue * 1.18, sellerLead.assessedValue);
   const repairEstimate = sellerLead.signals.vacant || sellerLead.signals.codeViolation ? 35000 : 22000;
@@ -2839,6 +2847,8 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
   const operations = [
     supabase.from("deal_leads").insert({
       id: dealId,
+      seller_lead_id: sellerLead.id,
+      property_id: linkedPropertyId,
       owner_name: sellerLead.ownerName,
       property_address: sellerLead.propertyAddress,
       mailing_address: sellerLead.ownerMailingAddress,
