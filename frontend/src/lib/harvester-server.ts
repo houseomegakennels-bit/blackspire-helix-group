@@ -1,8 +1,5 @@
 import "server-only";
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { listBuyerGroupRegistry } from "@/lib/buyer-engine-server";
@@ -643,14 +640,15 @@ function mapWatchlist(row: WatchlistRow): HarvesterWatchlistRecord {
 }
 
 function getHarvesterBranding() {
-  const publicRoot = join(process.cwd(), "public", "logos");
-  const logoPath = "/logos/harvester-logo.png";
-  const markPath = "/logos/harvester-mark.png";
+  // The official Harvester logo is committed under public/logos and is always
+  // served from the CDN. We intentionally do NOT use existsSync here: public/ is
+  // uploaded to Vercel's CDN rather than bundled into the serverless function, so
+  // existsSync can read false at runtime and wrongly hide the real asset.
   return {
-    logoPath,
-    markPath,
-    logoAvailable: existsSync(join(publicRoot, "harvester-logo.png")),
-    markAvailable: existsSync(join(publicRoot, "harvester-mark.png")),
+    logoPath: "/logos/harvester-logo.png",
+    markPath: "/logos/harvester-mark.png",
+    logoAvailable: true,
+    markAvailable: true,
   };
 }
 
