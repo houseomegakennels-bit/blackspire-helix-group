@@ -445,7 +445,8 @@ async function extractWithAi(text: string, metadata: Record<string, unknown>) {
     "address, city, state, zip, county, askingPrice, beds, baths, sqft, lotSize, yearBuilt, occupancyStatus, condition, sellerName, phone, email, postDate, notes, classification. " +
     "Rules: 'address' is the street address ONLY (e.g. '1418 Maple Grove Rd'), never a bed/bath count or city. " +
     "'askingPrice' is the seller's asking price as a plain number with no commas or currency symbol — it is NEVER a ZIP code, ARV, or square footage. " +
-    "'sqft' is living area as a plain number (strip commas, so '1,540' becomes 1540). 'zip' is the 5-digit postal code. " +
+    "'sqft' is living area as a plain number (strip commas, so '1,540' becomes 1540). " +
+    "'zip' is the 5-digit US postal code — always extract it even when it appears at the end of an address line such as 'Fayetteville, NC, 28301'. " +
     "'city' and 'county' are place names. Use null for anything not present. Numbers must be JSON numbers, not strings. " +
     "'sellerName' is the person to contact: use the explicit seller/contact name if given, otherwise use the post's author / 'Posted by' name. " +
     "'phone' and 'email' must be pulled from ANYWHERE in the content — the body, a 'call/text' line, a signature, or contact instructions. Normalize phone to digits and dashes. Return null only if truly absent. " +
