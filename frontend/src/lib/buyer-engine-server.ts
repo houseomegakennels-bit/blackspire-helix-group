@@ -1128,6 +1128,210 @@ export async function getBuyerGroupMatchForName(buyerName: string | null | undef
   return matchBuyerGroupWithRegistry(buyerName, registry);
 }
 
+// ---------------------------------------------------------------------------
+// Canonical property -> buyers matcher (the single source of truth)
+// ---------------------------------------------------------------------------
+// Queries the real BuyerProfile universe (13k+ buyers with purchase history) plus
+// the institutional buyer_group_registry, scores fit for a given property, and
+// explains every match. Harvester, Deal Engine, and Sentinel all call this — no
+// engine re-implements buyer logic.
+
+export type BuyerForPropertyInput = {
+  county?: string | null;
+  state?: string | null;
+  city?: string | null;
+  zip?: string | null;
+  propertyType?: string | null;
+  askingPrice?: number | null;
+  beds?: number | null;
+  baths?: number | null;
+  limit?: number;
+};
+
+export type BuyerForPropertyMatch = {
+  buyerId: string;
+  buyerName: string;
+  buyerType: "cash_buyer" | "landlord" | "flipper" | "institutional" | "investor";
+  source: "buyer_profile" | "institutional_registry";
+  matchScore: number;
+  confidence: number;
+  reasons: string[];
+  purchaseCount: number | null;
+  lastPurchase: string | null;
+  recommendedAction: string;
+};
+
+export type BuyerForPropertyResult = {
+  matches: BuyerForPropertyMatch[];
+  buyerCount: number;
+  demandScore: number;
+  assignmentPotential: "high" | "medium" | "low";
+  county: string | null;
+};
+
+function normalizeCountyName(county?: string | null): string {
+  return (county ?? "")
+    .replace(/county/gi, "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolvePropertyTypeBucket(input: BuyerForPropertyInput): "land" | "residential" {
+  const text = `${input.propertyType ?? ""}`.toLowerCase();
+  if (/land|lot|acre|vacant/.test(text)) return "land";
+  if (input.beds || input.baths) return "residential";
+  return "residential";
+}
+
+function monthsSince(date: string | null | undefined): number | null {
+  if (!date) return null;
+  const t = Date.parse(date);
+  if (Number.isNaN(t)) return null;
+  return (Date.now() - t) / (1000 * 60 * 60 * 24 * 30.4);
+}
+
+type BuyerProfileRow = {
+  id: string;
+  buyer_name: string | null;
+  county: string | null;
+  state: string | null;
+  is_llc: boolean | null;
+  is_cash_buyer: boolean | null;
+  purchase_count: number | null;
+  total_spend: number | null;
+  last_purchase_date: string | null;
+  property_types: string[] | null;
+  score: number | null;
+};
+
+function classifyBuyerType(row: BuyerProfileRow): BuyerForPropertyMatch["buyerType"] {
+  const count = row.purchase_count ?? 0;
+  if (row.is_llc && count >= 20) return "institutional";
+  if (row.is_llc) return "landlord";
+  if (count >= 8) return "flipper";
+  if (row.is_cash_buyer) return "cash_buyer";
+  return "investor";
+}
+
+function scoreBuyerProfile(row: BuyerProfileRow, bucket: "land" | "residential") {
+  const reasons: string[] = [];
+  let score = 24;
+  const countyLabel = row.county ?? "this county";
+
+  reasons.push(`Active buyer in ${countyLabel}.`);
+  score += 30; // county-scoped query guarantees a geographic match
+
+  const months = monthsSince(row.last_purchase_date);
+  if (months !== null && months <= 6) {
+    score += 20;
+    reasons.push(`Bought within the last ${Math.max(1, Math.round(months))} month(s).`);
+  } else if (months !== null && months <= 12) {
+    score += 12;
+    reasons.push("Purchased in the past year.");
+  } else if (months !== null && months <= 24) {
+    score += 5;
+    reasons.push("Purchased in the past two years.");
+  }
+
+  const count = row.purchase_count ?? 0;
+  if (count >= 20) {
+    score += 15;
+    reasons.push(`${count} recorded purchases — high-volume buyer.`);
+  } else if (count >= 8) {
+    score += 10;
+    reasons.push(`${count} recorded purchases.`);
+  } else if (count >= 3) {
+    score += 6;
+    reasons.push(`${count} recorded purchases.`);
+  }
+
+  const types = (row.property_types ?? []).map((value) => value.toLowerCase());
+  if (types.includes(bucket)) {
+    score += 10;
+    reasons.push(`Buys ${bucket} inventory.`);
+  }
+  if (row.is_llc) {
+    score += 5;
+    reasons.push("Portfolio / LLC buyer.");
+  }
+  if (row.is_cash_buyer) {
+    score += 5;
+    reasons.push("Verified cash buyer.");
+  }
+
+  return { score: Math.min(99, score), reasons };
+}
+
+export async function matchBuyersForProperty(input: BuyerForPropertyInput): Promise<BuyerForPropertyResult> {
+  const supabase = getSupabaseAdmin();
+  const countyCore = normalizeCountyName(input.county);
+  const bucket = resolvePropertyTypeBucket(input);
+  const limit = input.limit ?? 10;
+
+  if (!countyCore) {
+    return { matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low", county: input.county ?? null };
+  }
+
+  // Real buyers from the BuyerProfile universe (the source of truth).
+  const { data: profileRows } = await supabase
+    .from("BuyerProfile")
+    .select("id, buyer_name, county, state, is_llc, is_cash_buyer, purchase_count, total_spend, last_purchase_date, property_types, score")
+    .ilike("county", `%${countyCore}%`)
+    .order("purchase_count", { ascending: false, nullsFirst: false })
+    .limit(200);
+
+  const rows = (profileRows ?? []) as BuyerProfileRow[];
+  const buyerCount = rows.length;
+
+  const profileMatches: BuyerForPropertyMatch[] = rows.map((row) => {
+    const { score, reasons } = scoreBuyerProfile(row, bucket);
+    const buyerType = classifyBuyerType(row);
+    return {
+      buyerId: row.id,
+      buyerName: row.buyer_name ?? "Unnamed buyer",
+      buyerType,
+      source: "buyer_profile",
+      matchScore: score,
+      confidence: Math.min(99, Math.round((row.score ?? score) * 0.6 + score * 0.4)),
+      reasons,
+      purchaseCount: row.purchase_count ?? null,
+      lastPurchase: row.last_purchase_date ?? null,
+      recommendedAction:
+        score >= 70
+          ? "Send this opportunity to the buyer and request proof of funds."
+          : "Hold as a secondary buyer lane until the box tightens.",
+    };
+  });
+
+  // Institutional groups remain a secondary lane (no longer the only source).
+  const registry = await listBuyerGroupRegistry(false).catch(() => []);
+  const institutionalMatches: BuyerForPropertyMatch[] = registry
+    .filter((group) => (group.counties ?? []).some((c) => normalizeCountyName(c) === countyCore))
+    .map((group) => ({
+      buyerId: group.id,
+      buyerName: group.canonicalName,
+      buyerType: "institutional" as const,
+      source: "institutional_registry" as const,
+      matchScore: 62,
+      confidence: 60,
+      reasons: [`Institutional buyer group active in ${input.county}.`, group.groupType ? `Profile: ${group.groupType}.` : ""].filter(Boolean),
+      purchaseCount: null,
+      lastPurchase: null,
+      recommendedAction: "Route through the institutional disposition lane.",
+    }));
+
+  const matches = [...profileMatches, ...institutionalMatches]
+    .sort((a, b) => b.matchScore - a.matchScore)
+    .slice(0, limit);
+
+  const qualified = profileMatches.filter((m) => m.matchScore >= 55).length;
+  const topScore = matches[0]?.matchScore ?? 0;
+  const demandScore = Math.min(100, Math.round(qualified * 7 + topScore * 0.3));
+  const assignmentPotential = demandScore >= 70 ? "high" : demandScore >= 40 ? "medium" : "low";
+
+  return { matches, buyerCount, demandScore, assignmentPotential, county: input.county ?? null };
+}
+
 const getCachedCountyCapabilities = unstable_cache(
   async () => {
     const rows = await listCountySourceRows(true).catch(() => []);

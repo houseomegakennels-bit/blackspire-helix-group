@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { listBuyerGroupRegistry } from "@/lib/buyer-engine-server";
+import { matchBuyersForProperty } from "@/lib/buyer-engine-server";
 import { launchBuyerSearchFromDeal, createDealFromSellerLead } from "@/lib/deal-engine-server";
 import { runNexusSkipTrace, type NexusLeadRecord } from "@/lib/nexus-server";
 import {
@@ -1388,79 +1388,42 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
   if (!intake?.opportunity) throw new Error("Run extraction before buyer matching.");
   const opportunity = intake.opportunity;
 
-  const groups = await listBuyerGroupRegistry(false).catch(() => []);
-  const county = (opportunity.county ?? "").trim().toLowerCase();
-  const city = (opportunity.city ?? "").trim().toLowerCase();
-  const state = (opportunity.state ?? "NC").trim().toLowerCase();
-  const propertyType = opportunity.beds && opportunity.baths ? "single family" : "all";
-  const askingPrice = opportunity.askingPrice ?? 0;
+  // Source of truth: the Buyer Engine's real BuyerProfile universe (+ institutional
+  // groups). Harvester DISPLAYS the result; it no longer re-implements buyer logic.
+  const buyerResult = await matchBuyersForProperty({
+    county: opportunity.county,
+    state: opportunity.state ?? "NC",
+    city: opportunity.city,
+    zip: opportunity.zip,
+    propertyType: opportunity.beds && opportunity.baths ? "residential" : opportunity.condition ?? null,
+    askingPrice: opportunity.askingPrice,
+    beds: opportunity.beds,
+    baths: opportunity.baths,
+    limit: 10,
+  });
 
-  const ranked = groups
-    .map((group) => {
-      let score = 28;
-      const reasons: string[] = [];
-      const counties = (group.counties ?? []).map((value) => value.toLowerCase());
-      const states = (group.states ?? []).map((value) => value.toLowerCase());
-      const aliases = (group.aliases ?? []).map((value) => value.toLowerCase());
-
-      if (counties.includes(county)) {
-        score += 34;
-        reasons.push(`Active in ${opportunity.county} County.`);
-      }
-      if (states.includes(state)) {
-        score += 12;
-        reasons.push(`Registry scope includes ${opportunity.state}.`);
-      }
-      if (aliases.some((value) => value.includes("wholesale") || value.includes("investor"))) {
-        score += 10;
-        reasons.push("Group metadata indicates active investor participation.");
-      }
-      if (group.groupType?.toLowerCase().includes("hedge")) {
-        score += 14;
-        reasons.push("Profile is tagged as a fund-style buyer group.");
-      }
-      if (propertyType === "single family") {
-        score += 6;
-        reasons.push("Residential inventory fit.");
-      }
-      if (askingPrice > 0 && askingPrice <= 250000) {
-        score += 8;
-        reasons.push("Price band fits common wholesale inventory range.");
-      }
-      if (city && group.notes?.toLowerCase().includes(city)) {
-        score += 8;
-        reasons.push(`Notes reference ${opportunity.city}.`);
-      }
-
-      return {
-        buyerId: group.id,
-        buyerName: group.canonicalName,
-        buyerGroup: group.groupType,
-        matchScore: Math.min(99, score),
-        reasons,
-        recommendedAction:
-          score >= 70
-            ? "Move into Buyer Engine outreach drafting after operator review."
-            : "Keep as secondary buyer lane until a tighter county or price fit is confirmed.",
-      };
-    })
-    .filter((group) => group.matchScore >= 45)
-    .sort((left, right) => right.matchScore - left.matchScore)
-    .slice(0, 8);
+  const ranked = buyerResult.matches.map((match) => ({
+    buyerId: match.buyerId,
+    buyerName: match.buyerName,
+    buyerGroup: match.buyerType,
+    matchScore: match.matchScore,
+    reasons: match.reasons,
+    recommendedAction: match.recommendedAction,
+  }));
 
   if (supabase) {
     await supabase.from("harvester_buyer_matches").delete().eq("intake_id", input.intakeId);
     if (ranked.length) {
       await supabase.from("harvester_buyer_matches").insert(
-        ranked.map((group) => ({
+        ranked.map((match) => ({
           intake_id: input.intakeId,
           opportunity_id: opportunity.id,
-          buyer_id: group.buyerId,
-          buyer_name: group.buyerName,
-          buyer_group: group.buyerGroup,
-          match_score: group.matchScore,
-          reasons: group.reasons,
-          recommended_action: group.recommendedAction,
+          buyer_id: match.buyerId,
+          buyer_name: match.buyerName,
+          buyer_group: match.buyerGroup,
+          match_score: match.matchScore,
+          reasons: match.reasons,
+          recommended_action: match.recommendedAction,
         })),
       );
     }
@@ -1478,6 +1441,13 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
     ok: true as const,
     matches: ranked,
     buyerEngineLaunch,
+    // Early buyer validation — demand signal before significant acquisition effort.
+    validation: {
+      buyerCount: buyerResult.buyerCount,
+      demandScore: buyerResult.demandScore,
+      assignmentPotential: buyerResult.assignmentPotential,
+      county: buyerResult.county,
+    },
   };
 }
 
