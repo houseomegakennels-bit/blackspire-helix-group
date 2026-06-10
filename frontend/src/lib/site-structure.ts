@@ -34,6 +34,7 @@ export const siteNavSections: SiteNavSection[] = [
     href: "/real-estate-intelligence",
     items: [
       { label: "Real Estate Intelligence", href: "/real-estate-intelligence", description: "Seller to buyer pipeline." },
+      { label: "Sentinel", href: "/workspace/sentinel", description: "Command intelligence layer across the entire pipeline." },
       { label: "Harvester", href: "/workspace/harvester", description: "Opportunity intake and marketplace intelligence." },
       { label: "Seller Engine", href: "/seller-engine", description: "Motivated seller discovery." },
       { label: "Nexus", href: "/workspace/nexus", description: "Skip trace and contact resolution." },
@@ -64,6 +65,14 @@ export const siteNavSections: SiteNavSection[] = [
 ];
 
 export const workspaceEntries: WorkspaceEntry[] = [
+  {
+    title: "Sentinel",
+    href: "/workspace/sentinel",
+    division: "Real Estate Intelligence",
+    status: "Live",
+    description: "The executive command layer: morning brief, deal readiness scores, follow-up queue, opportunity feed, and a unified inbox across every engine.",
+    primaryAction: "Open command center",
+  },
   {
     title: "Harvester",
     href: "/workspace/harvester",

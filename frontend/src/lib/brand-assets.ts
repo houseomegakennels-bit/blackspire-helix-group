@@ -29,6 +29,11 @@ export const brandAssets = {
     mark: "/logos/harvester-mark.png",
     tagline: "Opportunity Acquisition Intelligence",
   },
+  sentinel: {
+    name: "Blackspire Sentinel",
+    logo: "/brand/blackspire-sentinel-logo.png",
+    tagline: "Command Intelligence Across the Entire Pipeline",
+  },
   nexus: {
     name: "Blackspire Nexus",
     // Placeholder path. Replace this file with the official Nexus logo when uploaded.
