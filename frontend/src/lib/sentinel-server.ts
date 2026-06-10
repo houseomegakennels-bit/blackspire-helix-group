@@ -4,12 +4,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import {
   calculateDealReadinessScore,
-  calculateOpportunityScore,
-  estimatePotentialAssignmentValue,
-  repairBurdenFromText,
   type DealReadinessResult,
   type OpportunityScoreResult,
 } from "@/lib/sentinel-scoring";
+import { scoreHarvesterOpportunity, scoreSellerLead } from "@/lib/sentinel-display";
 import { getHarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
 import { listSellerLeads, listSellerAlerts } from "@/lib/seller-engine-server";
 
@@ -205,33 +203,16 @@ export type SentinelOpportunity = {
 };
 
 function harvesterOpportunityScore(intake: HarvesterSnapshot["intakes"][number]): OpportunityScoreResult {
-  const opp = intake.opportunity;
-  const buyerDemand = Math.min(100, (intake.buyerMatches?.length ?? 0) * 25);
-  return calculateOpportunityScore({
-    sellerMotivation: opp?.confidenceScore ?? 40,
-    contactConfidence: opp?.phone || opp?.email ? 70 : 20,
-    estimatedArv: null,
-    askingPrice: opp?.askingPrice ?? null,
-    repairBurden: repairBurdenFromText(opp?.condition ?? opp?.notes),
-    buyerDemand,
-    marketStrength: 55,
-    readinessIndicator: /vacant/i.test(opp?.occupancyStatus ?? "") ? 0.8 : 0.4,
-  });
+  // Always returns a result for an intake with an opportunity; fall back to an
+  // empty score otherwise so callers don't have to null-check.
+  return (
+    scoreHarvesterOpportunity(intake.opportunity, intake.buyerMatches?.length ?? 0) ??
+    scoreHarvesterOpportunity({}, 0)!
+  );
 }
 
 function sellerOpportunityScore(lead: SellerLead): OpportunityScoreResult {
-  const arv = lead.assessedValue && lead.estimatedEquity ? lead.assessedValue : null;
-  const asking = arv && lead.estimatedEquity ? Math.max(0, lead.assessedValue - lead.estimatedEquity) : null;
-  return calculateOpportunityScore({
-    sellerMotivation: lead.score ?? 0,
-    contactConfidence: lead.contactConfidenceScore ?? (lead.ownerPhone ? 60 : 15),
-    estimatedArv: arv,
-    askingPrice: asking,
-    repairBurden: lead.signals?.codeViolation ? 0.7 : 0.4,
-    buyerDemand: 50,
-    marketStrength: 55,
-    readinessIndicator: lead.signals?.vacant ? 0.8 : 0.4,
-  });
+  return scoreSellerLead(lead);
 }
 
 // ---------------------------------------------------------------------------

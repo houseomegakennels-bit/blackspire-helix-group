@@ -4,6 +4,7 @@ import { startTransition, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { HarvesterSourceType, HarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
+import { scoreHarvesterOpportunity, opportunityTierColor } from "@/lib/sentinel-display";
 
 const sourceTypeOptions: Array<{ value: HarvesterSourceType; label: string }> = [
   { value: "facebook_group", label: "Facebook Group" },
@@ -453,8 +454,24 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                     {intake.opportunity?.address ?? "Unresolved address"}
                   </h3>
                 </div>
-                <div className="rounded-full border border-[var(--line-strong)] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-[var(--gold-soft)]">
-                  {intake.extractionStatus} / {Math.round(intake.extractionConfidence)}%
+                <div className="flex flex-col items-end gap-2">
+                  <div className="rounded-full border border-[var(--line-strong)] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-[var(--gold-soft)]">
+                    {intake.extractionStatus} / {Math.round(intake.extractionConfidence)}%
+                  </div>
+                  {(() => {
+                    const opp = scoreHarvesterOpportunity(intake.opportunity, intake.buyerMatches?.length ?? 0);
+                    if (!opp) return null;
+                    const color = opportunityTierColor(opp.tier);
+                    return (
+                      <div
+                        className="rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.18em]"
+                        style={{ color, background: `${color}1f`, border: `1px solid ${color}55` }}
+                        title={`Opportunity Score™ ${opp.score}/100${opp.potentialAssignmentValue ? ` · ~$${opp.potentialAssignmentValue.toLocaleString()} potential` : ""}`}
+                      >
+                        Opp {opp.score} · {opp.tier}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

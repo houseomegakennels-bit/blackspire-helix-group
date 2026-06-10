@@ -9,6 +9,7 @@ import { DealCommanderPanel } from "@/components/deal-commander-panel";
 import { DealTransactionCommand } from "@/components/deal-transaction-command";
 import { DealEngineShell } from "@/components/deal-engine-shell";
 import type { DealCommanderInsight, DealEngineDealDetail, DealTransactionCenterSnapshot } from "@/lib/deal-engine-server";
+import { dealReadinessFromCoordination, readinessColor } from "@/lib/sentinel-display";
 
 type ChecklistItem = DealEngineDealDetail["coordination"]["closingChecklist"][number];
 type ClosingDocument = DealEngineDealDetail["coordination"]["closingDocuments"][number];
@@ -779,6 +780,10 @@ export function DealEngineDealDetailView({
     { label: "Close", ready: coordinationReady, detail: coordinationReady ? "closing board complete" : "finish title/docs/checklist" },
   ];
 
+  const dealReadiness = dealReadinessFromCoordination(detail.coordination, {
+    hasDocuments: detail.uploadedDocuments.length > 0,
+  });
+
   return (
     <DealEngineShell>
       <header className="brand-panel overflow-hidden px-6 py-7">
@@ -789,6 +794,22 @@ export function DealEngineDealDetailView({
               <h2 className="brand-display mt-3 text-4xl leading-tight text-white lg:text-5xl">
                 {detail.lead.propertyAddress}
               </h2>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em]"
+                  style={{
+                    color: readinessColor(dealReadiness.category),
+                    background: `${readinessColor(dealReadiness.category)}1f`,
+                    border: `1px solid ${readinessColor(dealReadiness.category)}55`,
+                  }}
+                  title={dealReadiness.factors.map((f) => `${f.met ? "✓" : "○"} ${f.label}`).join("  ·  ")}
+                >
+                  Deal Readiness {dealReadiness.score} · {dealReadiness.category}
+                </span>
+                <Link href="/workspace/sentinel" className="text-xs uppercase tracking-[0.18em] text-[#5eead4] hover:underline">
+                  View in Sentinel →
+                </Link>
+              </div>
               <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
                 {detail.lead.ownerName} / {detail.lead.county} County. This is the live workbench for underwriting posture, contract movement, buyer activation, and investor follow-up around deal {dealId}.
               </p>
