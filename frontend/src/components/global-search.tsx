@@ -10,6 +10,7 @@ const TYPE_COLOR: Record<GlobalSearchResult["type"], string> = {
   deal: "#d6a84f",
   buyer: "#34d399",
   owner: "#a78bfa",
+  contact: "#f472b6",
 };
 
 export function GlobalSearch() {
@@ -75,11 +76,12 @@ export function GlobalSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed right-5 top-5 z-40 flex items-center gap-2 rounded-full border border-[var(--line)] bg-black/50 px-4 py-2 text-xs uppercase tracking-[0.18em] text-[var(--copy-soft)] backdrop-blur transition hover:border-[#2dd4bf] hover:text-[#5eead4]"
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full border border-[#2dd4bf55] bg-black/70 px-4 py-3 text-xs uppercase tracking-[0.18em] text-[var(--copy-soft)] backdrop-blur transition hover:border-[#2dd4bf] hover:text-[#5eead4] sm:bottom-auto sm:top-5 sm:py-2"
         aria-label="Open global search"
       >
-        <span>Search</span>
-        <kbd className="rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px]">⌘K</kbd>
+        <span aria-hidden>🔍</span>
+        <span className="hidden sm:inline">Search</span>
+        <kbd className="hidden rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px] sm:inline">⌘K</kbd>
       </button>
 
       {open ? (

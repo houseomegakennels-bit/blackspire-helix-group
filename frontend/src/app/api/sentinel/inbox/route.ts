@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   archiveInboxItem,
+  bulkSetInboxStatus,
   listSentinelInboxItems,
   markInboxItemRead,
   resolveInboxItem,
   type SentinelInboxItem,
 } from "@/lib/sentinel-server";
+
+const ACTION_TO_STATUS = { read: "read", resolve: "resolved", archive: "archived" } as const;
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +32,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as { id?: string; action?: "read" | "resolve" | "archive" };
-    if (!body.id || !body.action) {
-      return NextResponse.json({ ok: false, error: "id and action are required." }, { status: 400 });
+    const body = (await request.json()) as { id?: string; ids?: string[]; action?: "read" | "resolve" | "archive" };
+    if (!body.action || !(body.action in ACTION_TO_STATUS)) {
+      return NextResponse.json({ ok: false, error: "A valid action is required." }, { status: 400 });
+    }
+
+    // Bulk path.
+    if (Array.isArray(body.ids) && body.ids.length) {
+      const bulk = await bulkSetInboxStatus(body.ids, ACTION_TO_STATUS[body.action]);
+      return NextResponse.json(bulk, { status: bulk.ok ? 200 : 400 });
+    }
+
+    if (!body.id) {
+      return NextResponse.json({ ok: false, error: "id or ids is required." }, { status: 400 });
     }
     const result =
       body.action === "read"

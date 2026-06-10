@@ -902,6 +902,19 @@ export const markInboxItemRead = (id: string) => setInboxStatus(id, "read");
 export const resolveInboxItem = (id: string) => setInboxStatus(id, "resolved");
 export const archiveInboxItem = (id: string) => setInboxStatus(id, "archived");
 
+/** Bulk-update many inbox items at once. */
+export async function bulkSetInboxStatus(ids: string[], status: SentinelInboxItem["status"]) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false as const, error: "Sentinel storage is not configured." };
+  const cleanIds = ids.filter(Boolean);
+  if (!cleanIds.length) return { ok: true as const, count: 0, status };
+  const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+  if (status === "resolved" || status === "archived") patch.resolved_at = new Date().toISOString();
+  const { error } = await supabase.from("sentinel_inbox_items").update(patch).in("id", cleanIds);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, count: cleanIds.length, status };
+}
+
 // ---------------------------------------------------------------------------
 // Workspace snapshot (one call powers the whole Sentinel page)
 // ---------------------------------------------------------------------------

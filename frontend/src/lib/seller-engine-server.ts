@@ -1058,6 +1058,25 @@ export async function updateSellerLead(id: string, input: { status?: SellerLeadS
   }
 }
 
+/** Apply the same update to many seller leads (bulk status / watchlist / note). */
+export async function bulkUpdateSellerLeads(
+  ids: string[],
+  input: { status?: SellerLeadStatus; note?: string; markDuplicate?: boolean },
+) {
+  const cleanIds = ids.filter(Boolean);
+  let updated = 0;
+  const errors: string[] = [];
+  for (const id of cleanIds) {
+    try {
+      await updateSellerLead(id, input);
+      updated += 1;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "update failed");
+    }
+  }
+  return { ok: errors.length === 0, updated, failed: cleanIds.length - updated, errors: errors.slice(0, 3) };
+}
+
 export async function updateSellerWeights(weights: SellerScoringWeights) {
   const supabase = getSupabaseAdmin();
   if (!supabase) throw new Error("Supabase server credentials are required to update scoring weights.");

@@ -52,6 +52,36 @@ export function SentinelCommand({ snapshot }: { snapshot: SentinelWorkspaceSnaps
   const [activeTab, setActiveTab] = useState<TabId>("brief");
   const [inbox, setInbox] = useState<SentinelInboxItem[]>(snapshot.inbox);
   const [busy, setBusy] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkInboxAction(action: "resolve" | "archive") {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setBusy("bulk");
+    try {
+      const response = await fetch("/api/sentinel/inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, action }),
+      });
+      const payload = (await response.json()) as { ok?: boolean };
+      if (!response.ok || payload.ok === false) return;
+      setInbox((prev) => prev.filter((item) => !selected.has(item.id)));
+      setSelected(new Set());
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const brief = snapshot.brief;
 
@@ -322,13 +352,37 @@ export function SentinelCommand({ snapshot }: { snapshot: SentinelWorkspaceSnaps
       {activeTab === "inbox" ? (
         <div className="space-y-3">
           {inbox.length ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[var(--line)] bg-black/20 px-4 py-2">
+              <button
+                type="button"
+                onClick={() => setSelected((prev) => (prev.size === inbox.length ? new Set() : new Set(inbox.map((i) => i.id))))}
+                className="text-xs uppercase tracking-[0.18em] text-[var(--copy-soft)] hover:text-white"
+              >
+                {selected.size === inbox.length && inbox.length ? "Clear all" : "Select all"}
+              </button>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[var(--copy-muted)]">{selected.size} selected</span>
+                <button type="button" disabled={!selected.size || busy === "bulk"} onClick={() => bulkInboxAction("resolve")} className="harvester-mini-link disabled:opacity-40">Resolve selected</button>
+                <button type="button" disabled={!selected.size || busy === "bulk"} onClick={() => bulkInboxAction("archive")} className="harvester-action-button--danger rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-wider disabled:opacity-40">Archive selected</button>
+              </div>
+            </div>
+          ) : null}
+          {inbox.length ? (
             inbox.map((item) => (
               <div
                 key={item.id}
                 className="brand-panel flex flex-wrap items-start justify-between gap-4 p-5"
                 style={{ opacity: item.status === "read" ? 0.7 : 1 }}
               >
-                <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(item.id)}
+                    onChange={() => toggleSelected(item.id)}
+                    className="mt-1 h-4 w-4 shrink-0 accent-[#2dd4bf]"
+                    aria-label="Select inbox item"
+                  />
+                  <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span
                       className="rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wider"
@@ -344,6 +398,7 @@ export function SentinelCommand({ snapshot }: { snapshot: SentinelWorkspaceSnaps
                   </div>
                   {item.body ? <div className="mt-1 text-xs text-[var(--copy-soft)]">{item.body}</div> : null}
                   {item.recommendedAction ? <div className="mt-2 text-xs text-[#5eead4]">→ {item.recommendedAction}</div> : null}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {item.linkHref ? <Link href={item.linkHref} className="harvester-mini-link">Open</Link> : null}

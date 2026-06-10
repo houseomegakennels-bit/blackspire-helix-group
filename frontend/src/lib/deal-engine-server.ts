@@ -3635,10 +3635,45 @@ export async function saveInvestorInterest(input: SaveInvestorInterestInput) {
   return { ok: true as const };
 }
 
+// Hard required-field gate: block advancing a deal to a gated stage when the
+// prerequisites are missing, and say exactly what is blocking.
+export async function validateDealStageAdvancement(dealId: string, targetStatus: string): Promise<string[]> {
+  const detail = await getDealEngineDealDetail(dealId).catch(() => null);
+  if (!detail) return [];
+  const c = detail.coordination;
+  const t = (targetStatus ?? "").toLowerCase();
+  const reasons: string[] = [];
+
+  if (/(under contract|executed|signed)/.test(t) && !c.contractSigned && !c.contractSent) {
+    reasons.push("contract has not been sent or signed");
+  }
+  if (/(assigned|buyer locked|disposition|assignment)/.test(t) && !/assigned|matched|locked|under contract/i.test(c.buyerAssignmentStatus ?? "")) {
+    reasons.push("no buyer is assigned");
+  }
+  if (/(clear to close|closing|ready to close)/.test(t)) {
+    if (!/received|collected|deposited|funded/i.test(c.earnestMoneyStatus ?? "")) reasons.push("EMD has not been received");
+    if (!(c.titleCompany ?? "").trim()) reasons.push("no title company assigned");
+  }
+  if (/(closed|complete|funded|settled|disbursed)/.test(t)) {
+    if (!c.contractSigned) reasons.push("contract is not signed");
+    if (!(c.closingDate ?? "").trim()) reasons.push("no closing date set");
+  }
+  return reasons;
+}
+
 export async function saveDealStageUpdate(input: SaveDealStageUpdateInput) {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  }
+
+  const blocking = await validateDealStageAdvancement(input.dealId, input.status);
+  if (blocking.length) {
+    return {
+      ok: false as const,
+      error: `Cannot advance to "${input.status}" — blocked by: ${blocking.join("; ")}.`,
+      blocking,
+    };
   }
 
   const [leadUpdate, conversationUpdate, logInsert] = await Promise.all([

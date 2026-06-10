@@ -11,7 +11,7 @@ function admin() {
 }
 
 export type GlobalSearchResult = {
-  type: "property" | "deal" | "buyer" | "owner";
+  type: "property" | "deal" | "buyer" | "owner" | "contact";
   label: string;
   sublabel: string;
   href: string;
@@ -25,11 +25,20 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ ok: true, results: [] });
 
   const like = `%${q}%`;
-  const [properties, deals, buyers, owners] = await Promise.all([
+  // For phone queries, also match on a digits-only variant so "9105550123" finds
+  // "910-555-0123".
+  const digits = q.replace(/\D/g, "");
+  const phoneLike = digits.length >= 4 ? `%${digits}%` : like;
+  const [properties, deals, buyers, owners, contacts] = await Promise.all([
     supabase.from("properties").select("id, property_address, city, county, parcel_id").or(`property_address.ilike.${like},parcel_id.ilike.${like}`).limit(6),
     supabase.from("deal_leads").select("id, property_address, owner_name, county").or(`property_address.ilike.${like},owner_name.ilike.${like}`).limit(6),
     supabase.from("BuyerProfile").select("id, buyer_name, county, purchase_count").ilike("buyer_name", like).order("purchase_count", { ascending: false, nullsFirst: false }).limit(6),
     supabase.from("owners").select("id, name, mailing_city, mailing_state").ilike("name", like).limit(5),
+    supabase
+      .from("nexus_contacts")
+      .select("id, seller_lead_id, owner_name, property_address, primary_phone, primary_email")
+      .or(`primary_phone.ilike.${like},primary_phone.ilike.${phoneLike},primary_email.ilike.${like},owner_name.ilike.${like}`)
+      .limit(6),
   ]);
 
   const results: GlobalSearchResult[] = [
@@ -56,6 +65,12 @@ export async function GET(request: NextRequest) {
       label: (row.name as string) ?? "Owner",
       sublabel: [row.mailing_city, row.mailing_state].filter(Boolean).join(", ") || "Seller / owner",
       href: `/seller-engine`,
+    }))),
+    ...((contacts.data ?? []).map((row) => ({
+      type: "contact" as const,
+      label: (row.owner_name as string) || (row.primary_phone as string) || "Contact",
+      sublabel: [row.primary_phone, row.primary_email, row.property_address].filter(Boolean).join(" · ") || "Skip-trace contact",
+      href: row.seller_lead_id ? `/workspace/nexus` : `/seller-engine`,
     }))),
   ];
 
