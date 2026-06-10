@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import {
   calculateDealReadinessScore,
+  calculateExpectedRevenue,
   type DealReadinessResult,
   type OpportunityScoreResult,
 } from "@/lib/sentinel-scoring";
@@ -44,6 +45,7 @@ export type SentinelDeal = {
   estimatedEquity: number;
   assignmentFee: number | null;
   potentialValue: number | null;
+  expectedRevenue: number | null;
   readiness: DealReadinessResult;
   emdDueDate: string | null;
   emdReceived: boolean;
@@ -172,6 +174,7 @@ async function buildDealBoard(supabase: SupabaseClient): Promise<SentinelDeal[]>
       estimatedEquity,
       assignmentFee,
       potentialValue,
+      expectedRevenue: calculateExpectedRevenue(potentialValue, readiness.score),
       readiness,
       emdDueDate: (emdRow?.emd_due_date as string) ?? null,
       emdReceived,
@@ -191,6 +194,130 @@ export async function getSentinelDeals(): Promise<SentinelDeal[]> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return [];
   return buildDealBoard(supabase).catch(() => []);
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline leak detection + System health (revenue-first command intelligence)
+// ---------------------------------------------------------------------------
+
+export type PipelineStage = {
+  stage: string;
+  count: number;
+  conversionFromPrev: number | null;
+};
+
+export type PipelineLeak = {
+  stages: PipelineStage[];
+  biggestLeak: { from: string; to: string; dropPct: number } | null;
+};
+
+export function getSentinelPipelineLeak(snapshot: SentinelEcosystemSnapshot): PipelineLeak {
+  const intakes = snapshot.harvester?.intakes ?? [];
+  const leadCount = intakes.length + snapshot.sellerLeads.length;
+  const contacted = snapshot.sellerLeads.filter(
+    (lead) => lead.status !== "New" && lead.status !== "Watchlist",
+  ).length;
+  const deals = snapshot.deals.length;
+  const underContract = snapshot.deals.filter((d) => d.contractSigned).length;
+  const closing = snapshot.deals.filter((d) => d.readiness.category === "Ready To Close" || d.closingDateSet).length;
+
+  const raw = [
+    { stage: "Leads", count: leadCount },
+    { stage: "Contacted", count: contacted },
+    { stage: "Deal Opened", count: deals },
+    { stage: "Under Contract", count: underContract },
+    { stage: "Closing", count: closing },
+  ];
+
+  const stages: PipelineStage[] = raw.map((s, i) => ({
+    stage: s.stage,
+    count: s.count,
+    conversionFromPrev: i === 0 || raw[i - 1].count === 0 ? null : Math.round((s.count / raw[i - 1].count) * 100),
+  }));
+
+  let biggestLeak: PipelineLeak["biggestLeak"] = null;
+  for (let i = 1; i < raw.length; i += 1) {
+    if (raw[i - 1].count === 0) continue;
+    const dropPct = Math.round((1 - raw[i].count / raw[i - 1].count) * 100);
+    if (dropPct > 0 && (!biggestLeak || dropPct > biggestLeak.dropPct)) {
+      biggestLeak = { from: raw[i - 1].stage, to: raw[i].stage, dropPct };
+    }
+  }
+
+  return { stages, biggestLeak };
+}
+
+export type SystemHealth = {
+  dealsMissingBuyers: number;
+  dealsMissingEmd: number;
+  dealsMissingSignatures: number;
+  dealsMissingTitle: number;
+  staleOpportunities: number;
+  revenueAtRisk: number;
+};
+
+export type DuplicateWarnings = {
+  duplicateProperties: number;
+  duplicateOwners: number;
+  examples: string[];
+};
+
+/** Smart duplicate warnings — flag normalized-duplicate properties and owners. */
+export async function getSentinelDuplicateWarnings(): Promise<DuplicateWarnings> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { duplicateProperties: 0, duplicateOwners: 0, examples: [] };
+
+  const [{ data: props }, { data: owners }] = await Promise.all([
+    supabase.from("properties").select("property_address").limit(3000),
+    supabase.from("owners").select("name").limit(3000),
+  ]);
+
+  const norm = (value: unknown) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const groupDups = (rows: Array<Record<string, unknown>> | null | undefined, key: string) => {
+    const map = new Map<string, number>();
+    for (const row of rows ?? []) {
+      const v = norm(row[key]);
+      if (!v) continue;
+      map.set(v, (map.get(v) ?? 0) + 1);
+    }
+    let groups = 0;
+    for (const count of map.values()) if (count > 1) groups += 1;
+    return groups;
+  };
+
+  const dupPropAddresses: string[] = [];
+  const seen = new Map<string, string>();
+  for (const row of (props ?? []) as Array<Record<string, unknown>>) {
+    const v = norm(row.property_address);
+    if (!v) continue;
+    if (seen.has(v) && dupPropAddresses.length < 4) dupPropAddresses.push(String(row.property_address));
+    else seen.set(v, String(row.property_address));
+  }
+
+  return {
+    duplicateProperties: groupDups(props, "property_address"),
+    duplicateOwners: groupDups(owners, "name"),
+    examples: dupPropAddresses,
+  };
+}
+
+export function getSentinelSystemHealth(snapshot: SentinelEcosystemSnapshot): SystemHealth {
+  const deals = snapshot.deals;
+  const staleOpportunities = (snapshot.harvester?.intakes ?? []).filter(
+    (i) => i.extractionStatus === "extracted" && !i.createdSellerLeadId,
+  ).length;
+  const revenueAtRisk = deals
+    .filter((d) => d.readiness.category === "At Risk" || d.readiness.category === "Needs Attention")
+    .reduce((sum, d) => sum + (d.potentialValue ?? 0), 0);
+
+  return {
+    dealsMissingBuyers: deals.filter((d) => !d.buyerAssigned).length,
+    dealsMissingEmd: deals.filter((d) => !d.emdReceived).length,
+    dealsMissingSignatures: deals.filter((d) => !d.contractSigned).length,
+    dealsMissingTitle: deals.filter((d) => !d.titleCompanyAssigned).length,
+    staleOpportunities,
+    revenueAtRisk,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +481,8 @@ export async function getSentinelMorningBrief(snapshot?: SentinelEcosystemSnapsh
   const criticalItems = deriveCriticalItems(snap.deals);
 
   const topPriorityDeals = [...snap.deals]
-    .sort((a, b) => b.readiness.score - a.readiness.score || (b.potentialValue ?? 0) - (a.potentialValue ?? 0))
+    // Revenue-first: Expected Revenue (potential × close probability) leads, then readiness.
+    .sort((a, b) => (b.expectedRevenue ?? 0) - (a.expectedRevenue ?? 0) || b.readiness.score - a.readiness.score)
     .slice(0, 5)
     .map((deal, index) => ({
       rank: index + 1,
@@ -784,6 +912,9 @@ export type SentinelWorkspaceSnapshot = {
   feed: SentinelOpportunity[];
   inbox: SentinelInboxItem[];
   deals: SentinelDeal[];
+  pipelineLeak: PipelineLeak;
+  systemHealth: SystemHealth;
+  duplicateWarnings: DuplicateWarnings;
   metrics: Array<{ label: string; value: string; detail: string }>;
   generatedAt: string;
   storageMode: "supabase" | "demo";
@@ -792,11 +923,12 @@ export type SentinelWorkspaceSnapshot = {
 export async function getSentinelWorkspaceSnapshot(): Promise<SentinelWorkspaceSnapshot> {
   const snap = await getSentinelEcosystemSnapshot();
   await syncSentinelInbox(snap).catch(() => 0);
-  const [brief, followUps, feed, inbox] = await Promise.all([
+  const [brief, followUps, feed, inbox, duplicateWarnings] = await Promise.all([
     getSentinelMorningBrief(snap),
     getSentinelFollowUpQueue(snap),
     getSentinelOpportunityFeed(snap),
     listSentinelInboxItems({ sync: false }),
+    getSentinelDuplicateWarnings().catch(() => ({ duplicateProperties: 0, duplicateOwners: 0, examples: [] })),
   ]);
 
   const readyToClose = snap.deals.filter((d) => d.readiness.category === "Ready To Close").length;
@@ -819,6 +951,9 @@ export async function getSentinelWorkspaceSnapshot(): Promise<SentinelWorkspaceS
     feed,
     inbox,
     deals: snap.deals,
+    pipelineLeak: getSentinelPipelineLeak(snap),
+    systemHealth: getSentinelSystemHealth(snap),
+    duplicateWarnings,
     metrics,
     generatedAt: snap.generatedAt,
     storageMode: snap.storageMode,

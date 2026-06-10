@@ -62,6 +62,8 @@ export type PropertyCommandView = {
   expectedRevenue: number | null;
   potentialAssignmentValue: number | null;
   nextBestAction: { label: string; href: string; reason: string };
+  lastTouch: string | null;
+  blocking: string[];
   timeline: PropertyTimelineEvent[];
   related: {
     sellerLeadId: string | null;
@@ -258,6 +260,17 @@ export async function getPropertyCommandView(propertyId: string): Promise<Proper
       buyerDemand: buyers.demandScore ?? 0,
       propertyId,
     }),
+    lastTouch: timeline[0]?.at ?? null,
+    // What is blocking progression — unmet deal-readiness factors, or the lifecycle
+    // gaps when no deal exists yet.
+    blocking: deal
+      ? deal.readiness.factors.filter((f) => !f.met).map((f) => f.label)
+      : [
+          !sellerLead && "No seller lead",
+          sellerLead && !sellerEngaged && "Seller not contacted",
+          (buyers.demandScore ?? 0) < 40 && "Buyer demand unvalidated",
+          "No deal opened",
+        ].filter(Boolean) as string[],
     timeline: timeline.slice(0, 30),
     related: {
       sellerLeadId: sellerLead?.id ?? null,

@@ -109,6 +109,37 @@ export function readinessColor(category: DealReadinessCategory): string {
   return "#f87171";
 }
 
+export type CanonicalStatus = "New" | "Active" | "Waiting" | "Attention Needed" | "Completed" | "Archived";
+
+/** Map any engine's status vocabulary onto one standard set (no competing systems). */
+export function canonicalStatus(raw?: string | null): CanonicalStatus {
+  const s = (raw ?? "").toLowerCase().trim();
+  if (!s) return "New";
+  if (/dead|lost|inactive|archiv|dnc|do not/.test(s)) return "Archived";
+  if (/complete|closed|sold|won|funded|settled|disbursed/.test(s)) return "Completed";
+  if (/attention|at risk|\brisk\b|blocked|stuck|overdue|missing|stalled/.test(s)) return "Attention Needed";
+  if (/wait|pending|review|skip trace|watchlist|\bhold\b|sent to deal/.test(s)) return "Waiting";
+  if (/\bnew\b|imported|fresh|unreviewed/.test(s)) return "New";
+  return "Active";
+}
+
+export function canonicalStatusColor(status: CanonicalStatus): string {
+  switch (status) {
+    case "Completed":
+      return "#34d399";
+    case "Active":
+      return "#2dd4bf";
+    case "Waiting":
+      return "#60a5fa";
+    case "Attention Needed":
+      return "#f87171";
+    case "Archived":
+      return "#94a3b8";
+    default:
+      return "#d6a84f";
+  }
+}
+
 export function opportunityTierColor(tier: OpportunityScoreResult["tier"]): string {
   if (tier === "Prime") return "#34d399";
   if (tier === "Strong") return "#2dd4bf";

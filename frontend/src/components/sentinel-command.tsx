@@ -9,7 +9,7 @@ import type {
   SentinelWorkspaceSnapshot,
 } from "@/lib/sentinel-server";
 
-type TabId = "brief" | "deals" | "followups" | "feed" | "inbox";
+type TabId = "brief" | "deals" | "followups" | "feed" | "inbox" | "health";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "brief", label: "Morning Brief" },
@@ -17,6 +17,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "followups", label: "Follow-Up Queue" },
   { id: "feed", label: "Opportunity Feed" },
   { id: "inbox", label: "Inbox" },
+  { id: "health", label: "System Health" },
 ];
 
 function readinessColor(category: string) {
@@ -232,7 +233,7 @@ export function SentinelCommand({ snapshot }: { snapshot: SentinelWorkspaceSnaps
                         </Link>
                       ) : null}
                     </div>
-                    <div className="mt-1 text-xs text-[var(--copy-soft)]">{deal.ownerName} · {deal.county} · {deal.status}{deal.potentialValue ? ` · ~$${deal.potentialValue.toLocaleString()} potential` : ""}</div>
+                    <div className="mt-1 text-xs text-[var(--copy-soft)]">{deal.ownerName} · {deal.county} · {deal.status}{deal.expectedRevenue ? ` · $${deal.expectedRevenue.toLocaleString()} expected` : deal.potentialValue ? ` · ~$${deal.potentialValue.toLocaleString()} potential` : ""}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {deal.readiness.factors.map((factor) => (
                         <span
@@ -357,6 +358,54 @@ export function SentinelCommand({ snapshot }: { snapshot: SentinelWorkspaceSnaps
           ) : (
             <div className="brand-panel p-6 text-sm leading-7 text-[var(--copy-soft)]">Inbox zero — nothing needs your attention.</div>
           )}
+        </div>
+      ) : null}
+
+      {/* SYSTEM HEALTH (pipeline leak + missing-X) */}
+      {activeTab === "health" ? (
+        <div className="space-y-6">
+          <div className="brand-panel p-6">
+            <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Pipeline</div>
+            {snapshot.pipelineLeak.biggestLeak ? (
+              <div className="mt-2 text-xs text-[#fcd34d]">
+                Biggest leak: {snapshot.pipelineLeak.biggestLeak.dropPct}% drop from {snapshot.pipelineLeak.biggestLeak.from} → {snapshot.pipelineLeak.biggestLeak.to}
+              </div>
+            ) : null}
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              {snapshot.pipelineLeak.stages.map((stage) => (
+                <div key={stage.stage} className="rounded-[14px] border border-[var(--line)] p-3 text-center">
+                  <div className="text-2xl font-black text-white">{stage.count}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wider text-[var(--copy-muted)]">{stage.stage}</div>
+                  {stage.conversionFromPrev != null ? (
+                    <div className="mt-1 text-[10px]" style={{ color: stage.conversionFromPrev >= 50 ? "#34d399" : stage.conversionFromPrev >= 25 ? "#fbbf24" : "#f87171" }}>
+                      {stage.conversionFromPrev}% ↓
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {[
+              { label: "Deals missing buyers", value: snapshot.systemHealth.dealsMissingBuyers },
+              { label: "Deals missing EMD", value: snapshot.systemHealth.dealsMissingEmd },
+              { label: "Deals missing signatures", value: snapshot.systemHealth.dealsMissingSignatures },
+              { label: "Deals missing title", value: snapshot.systemHealth.dealsMissingTitle },
+              { label: "Stale opportunities", value: snapshot.systemHealth.staleOpportunities },
+              { label: "Duplicate properties", value: snapshot.duplicateWarnings.duplicateProperties },
+              { label: "Duplicate owners", value: snapshot.duplicateWarnings.duplicateOwners },
+            ].map((item) => (
+              <div key={item.label} className="brand-panel p-5">
+                <div className="text-3xl font-black" style={{ color: item.value > 0 ? "#f87171" : "#34d399" }}>{item.value}</div>
+                <div className="mt-1 text-sm text-[var(--copy-soft)]">{item.label}</div>
+              </div>
+            ))}
+            <div className="brand-panel p-5" style={{ borderColor: "#f8717155" }}>
+              <div className="text-3xl font-black text-[#fca5a5]">${Math.round(snapshot.systemHealth.revenueAtRisk / 1000)}k</div>
+              <div className="mt-1 text-sm text-[var(--copy-soft)]">Revenue at risk</div>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

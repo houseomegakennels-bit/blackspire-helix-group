@@ -5,6 +5,8 @@ import { getPropertyCommandView } from "@/lib/property-server";
 import {
   readinessColor,
   opportunityTierColor,
+  canonicalStatus,
+  canonicalStatusColor,
 } from "@/lib/sentinel-display";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +62,27 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
               <p className="mt-2 text-sm text-[var(--copy-soft)]">
                 {[view.property.city, view.property.county && `${view.property.county} County`, view.property.state, view.property.zip].filter(Boolean).join(" · ")}
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {(() => {
+                  const status = canonicalStatus(view.deal?.status ?? view.seller?.status);
+                  const color = canonicalStatusColor(status);
+                  return (
+                    <span className="rounded-full px-3 py-1 text-[10px] uppercase tracking-wider" style={{ color, background: `${color}1f`, border: `1px solid ${color}55` }}>
+                      {status}
+                    </span>
+                  );
+                })()}
+                {view.lastTouch ? (
+                  <span className="text-[10px] uppercase tracking-wider text-[var(--copy-muted)]">
+                    Last touch {new Date(view.lastTouch).toLocaleDateString()}
+                  </span>
+                ) : null}
+              </div>
+              {view.blocking.length ? (
+                <div className="mt-3 rounded-[14px] border border-amber-400/25 bg-amber-500/8 p-3 text-xs leading-6 text-amber-100">
+                  <span className="uppercase tracking-wider text-amber-300">Blocking:</span> {view.blocking.slice(0, 4).join(" · ")}
+                </div>
+              ) : null}
               {flags.length ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {flags.map((flag) => (
