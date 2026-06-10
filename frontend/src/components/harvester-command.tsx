@@ -88,6 +88,23 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
   const [status, setStatus] = useState<string>("Ready for intake.");
   const [selectedFile, setSelectedFile] = useState<{ name: string; type: string; dataUrl: string | null } | null>(null);
   const [buyerResults, setBuyerResults] = useState<Record<string, FindBuyersResult>>({});
+  const [outreach, setOutreach] = useState<Record<string, { subject: string; body: string }>>({});
+
+  async function sendToBuyer(buyerMatchId: string) {
+    setBusyLabel("Preparing outreach...");
+    try {
+      const result = await postJson<{ subject: string; body: string; buyerName: string }>(
+        "/api/harvester/buyer-outreach",
+        { buyerMatchId },
+      );
+      setOutreach((prev) => ({ ...prev, [buyerMatchId]: { subject: result.subject, body: result.body } }));
+      setStatus(`Outreach prepared for ${result.buyerName}. Copy it below and send through your channel.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not prepare outreach.");
+    } finally {
+      setBusyLabel(null);
+    }
+  }
   const [form, setForm] = useState({
     sourceType: "facebook_group" as HarvesterSourceType,
     sourceName: "",
@@ -704,6 +721,36 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
               <div className="mt-4 rounded-[18px] border border-[var(--line)] bg-black/20 p-4 text-sm leading-6 text-white">
                 {match.recommendedAction ?? "Review this buyer signal in Buyer Engine."}
               </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  className="harvester-action-button"
+                  disabled={pending}
+                  onClick={() => sendToBuyer(match.id)}
+                >
+                  {outreach[match.id] ? "Regenerate Outreach" : "Send to Buyer"}
+                </button>
+                {outreach[match.id] ? (
+                  <button
+                    type="button"
+                    className="harvester-mini-link"
+                    onClick={() => {
+                      const o = outreach[match.id];
+                      navigator.clipboard?.writeText(`Subject: ${o.subject}\n\n${o.body}`);
+                      setStatus("Outreach copied to clipboard.");
+                    }}
+                  >
+                    Copy message
+                  </button>
+                ) : null}
+              </div>
+              {outreach[match.id] ? (
+                <div className="mt-3 rounded-[16px] border border-[#2dd4bf55] bg-black/30 p-4">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-[#5eead4]">Ready to send</div>
+                  <div className="mt-2 text-sm font-semibold text-white">{outreach[match.id].subject}</div>
+                  <pre className="mt-2 whitespace-pre-wrap font-sans text-xs leading-6 text-[var(--copy-soft)]">{outreach[match.id].body}</pre>
+                </div>
+              ) : null}
             </article>
           )) : (
             <div className="brand-panel harvester-panel p-6 text-sm leading-7 text-[var(--copy-soft)]">

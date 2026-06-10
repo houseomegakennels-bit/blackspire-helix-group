@@ -1459,6 +1459,76 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
   };
 }
 
+// Generate + persist a ready-to-send outreach message for a buyer match. We
+// only have the buyer's mailing address (BuyerProfile has no email), so this
+// produces the message for the operator to send through their channel and
+// records it on the match.
+export async function prepareHarvesterBuyerOutreach(input: { buyerMatchId: string }) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) throw new Error("Storage is not configured.");
+
+  const { data: match } = await supabase
+    .from("harvester_buyer_matches")
+    .select("id, intake_id, opportunity_id, buyer_name, match_score")
+    .eq("id", input.buyerMatchId)
+    .maybeSingle();
+  if (!match) throw new Error("Buyer match not found.");
+
+  const { data: opp } = await supabase
+    .from("harvester_extracted_opportunities")
+    .select("address, city, state, county, asking_price, beds, baths, sqft, condition, occupancy_status, notes")
+    .eq("id", match.opportunity_id)
+    .maybeSingle();
+
+  const buyerName = (match.buyer_name as string) || "there";
+  const address = (opp?.address as string) || "an off-market property";
+  const location = [opp?.city, opp?.county && `${opp.county} County`, opp?.state].filter(Boolean).join(", ");
+  const price = opp?.asking_price ? `$${Number(opp.asking_price).toLocaleString()}` : "available on request";
+  const beds = opp?.beds ?? null;
+  const baths = opp?.baths ?? null;
+  const sqft = opp?.sqft ?? null;
+  const specs = [
+    beds || baths ? `${beds ?? "?"} bed / ${baths ?? "?"} bath` : null,
+    sqft ? `${Number(sqft).toLocaleString()} sqft` : null,
+    opp?.occupancy_status ? String(opp.occupancy_status) : null,
+    opp?.condition ? String(opp.condition) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const subject = `Off-market deal: ${address}${location ? ` (${location})` : ""}`;
+  const body = [
+    `Hi ${buyerName},`,
+    "",
+    `I have an off-market opportunity that fits your buy box:`,
+    "",
+    `Property: ${address}${location ? `, ${location}` : ""}`,
+    `Asking: ${price}`,
+    specs ? `Details: ${specs}` : "",
+    "",
+    `You're a strong fit based on your recent buying activity in this area. This is first-look before it goes wider.`,
+    "",
+    `If you're interested, reply with proof of funds and I'll send the full packet and access details.`,
+    "",
+    `Best,`,
+    `Blackspire Helix`,
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
+  await supabase
+    .from("harvester_buyer_matches")
+    .update({
+      outreach_status: "prepared",
+      outreach_subject: subject,
+      outreach_body: body,
+      outreach_prepared_at: new Date().toISOString(),
+    })
+    .eq("id", input.buyerMatchId);
+
+  return { ok: true as const, buyerMatchId: input.buyerMatchId, buyerName, subject, body };
+}
+
 export async function detectDuplicateHarvesterDeal(input: { intakeId: string; persist?: boolean }) {
   const supabase = getSupabaseAdmin();
   const intake = await getHarvesterIntakeDetail(input.intakeId);
