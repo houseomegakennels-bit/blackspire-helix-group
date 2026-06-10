@@ -146,6 +146,28 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
     }
   }
 
+  async function findBuyers(intakeId: string) {
+    setBusyLabel("Finding buyers...");
+    try {
+      const result = await postJson<{
+        matches?: unknown[];
+        validation?: { buyerCount: number; demandScore: number; assignmentPotential: string; county: string | null };
+      }>("/api/harvester/buyer-match", { intakeId });
+      const v = result.validation;
+      setStatus(
+        v
+          ? `${v.buyerCount.toLocaleString()} buyers in ${v.county ?? "county"} · ${v.assignmentPotential} assignment potential · demand ${v.demandScore}/100 · ${result.matches?.length ?? 0} matched.`
+          : "Buyer match refreshed.",
+      );
+      setActiveTab("buyers");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Buyer match failed.");
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
   async function runAction(label: string, action: () => Promise<unknown>, onSuccess: string, nextTab?: TabId) {
     setBusyLabel(label);
     try {
@@ -542,7 +564,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                 <button
                   type="button"
                   className="harvester-action-button"
-                  onClick={() => runAction("Finding buyers...", () => postJson("/api/harvester/buyer-match", { intakeId: intake.id }), "Buyer match ranking refreshed for the selected intake.", "buyers")}
+                  onClick={() => findBuyers(intake.id)}
                 >
                   Find Buyers
                 </button>
