@@ -447,8 +447,10 @@ async function extractWithAi(text: string, metadata: Record<string, unknown>) {
     "'askingPrice' is the seller's asking price as a plain number with no commas or currency symbol — it is NEVER a ZIP code, ARV, or square footage. " +
     "'sqft' is living area as a plain number (strip commas, so '1,540' becomes 1540). 'zip' is the 5-digit postal code. " +
     "'city' and 'county' are place names. Use null for anything not present. Numbers must be JSON numbers, not strings. " +
+    "'sellerName' is the person to contact: use the explicit seller/contact name if given, otherwise use the post's author / 'Posted by' name. " +
+    "'phone' and 'email' must be pulled from ANYWHERE in the content — the body, a 'call/text' line, a signature, or contact instructions. Normalize phone to digits and dashes. Return null only if truly absent. " +
     "'classification' is one of: wholesaler_inventory, fsbo, agent_listing, lead, unclear. " +
-    "'notes' is a one or two sentence summary of the opportunity.";
+    "'notes' is a one or two sentence summary of the opportunity that also mentions ARV, rehab estimate, and any condition flags (roof, HVAC, etc.) when present.";
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -551,13 +553,19 @@ async function ocrImageWithAi(imageUrl: string): Promise<string | null> {
             {
               type: "input_text",
               text:
-                "This image is a screenshot of a real-estate post, listing, marketplace ad, flyer, text message, or email about a property. Transcribe ALL readable text verbatim: price, address, city, county, beds/baths, square footage, lot size, year built, condition, occupancy, the seller's or poster's name, phone number, email, and the full description. Preserve every number exactly as shown. Output only the transcribed text with no commentary. If the image contains no readable property information, output the single word NONE.",
+                "This image is a screenshot of a real-estate post, listing, marketplace ad, flyer, text message, or email about a property. Read the ENTIRE image top to bottom and transcribe ALL readable text verbatim. Be exhaustive — do not skip anything. Specifically capture: " +
+                "(1) the POSTER'S NAME or profile/display name at the very top of the post or message (this is the seller/wholesaler contact — always include it, on its own line, prefixed with 'Posted by: '); " +
+                "(2) the Facebook group name, page name, or source heading if shown; " +
+                "(3) the post date/time if shown; " +
+                "(4) every property detail: price/asking price, ARV, rehab estimate, address, city, county, state, ZIP, beds/baths, square footage, lot size, year built, condition, occupancy, access; " +
+                "(5) ANY phone number, email address, website, or contact instruction anywhere in the image — including inside the post body, captions, image overlays, watermarks, or comments. Look carefully for phone numbers in formats like 910-555-0123, (910) 555-0123, or 9105550123, and for emails. " +
+                "Preserve every number, name, and contact string exactly as shown. Output only the transcribed text with no commentary. If the image contains no readable property information, output the single word NONE.",
             },
             { type: "input_image", image_url: imageUrl, detail: "high" },
           ],
         },
       ],
-      max_output_tokens: 900,
+      max_output_tokens: 1200,
     }),
   });
 
