@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 type WorkflowStage = {
-  id: "seller" | "nexus" | "deal" | "buyer";
+  id: "harvester" | "seller" | "nexus" | "deal" | "buyer";
   label: string;
   href: string;
   action: string;
@@ -9,6 +9,13 @@ type WorkflowStage = {
 };
 
 const stages: WorkflowStage[] = [
+  {
+    id: "harvester",
+    label: "Harvester",
+    href: "/workspace/harvester",
+    action: "Capture opportunity",
+    detail: "Ingest marketplace posts, screenshots, flyers, PDFs, and pasted deal chatter.",
+  },
   {
     id: "seller",
     label: "Seller",

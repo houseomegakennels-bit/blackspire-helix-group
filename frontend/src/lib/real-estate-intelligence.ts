@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getHarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
 import { listAllBuyerReports } from "@/lib/buyer-engine-server";
 import { getDealEngineWorkspaceSnapshot } from "@/lib/deal-engine-server";
 import { ecosystemProjects } from "@/lib/ecosystem";
@@ -20,6 +21,18 @@ export type RealEstateEngineConfig = {
 };
 
 export const realEstateEngines: RealEstateEngineConfig[] = [
+  {
+    id: "harvester",
+    name: "Blackspire Harvester",
+    slug: "harvester",
+    tagline: "Opportunity Acquisition Intelligence.",
+    description: "Captures screenshots, pasted posts, SMS, email, flyers, and PDFs, then extracts structured opportunities into the real-estate pipeline.",
+    colorScheme: "gold/silver/black",
+    status: "live",
+    ecosystemPath: "/real-estate-intelligence/harvester",
+    workspacePath: "/workspace/harvester",
+    logoPath: "/logos/harvester-logo.png",
+  },
   {
     id: "seller-engine",
     name: "Blackspire Seller Engine",
@@ -81,13 +94,15 @@ export type RealEstateDashboardMetric = {
 };
 
 export async function getRealEstateDivisionSnapshot() {
-  const [sellerLeads, nexusSnapshot, dealSnapshot, buyerReports] = await Promise.all([
+  const [harvesterSnapshot, sellerLeads, nexusSnapshot, dealSnapshot, buyerReports] = await Promise.all([
+    getHarvesterWorkspaceSnapshot().catch(() => null),
     listSellerLeads().catch(() => []),
     getNexusSnapshot().catch(() => null),
     getDealEngineWorkspaceSnapshot().catch(() => null),
     listAllBuyerReports({ limit: 200, offset: 0 }).then((result) => result.reports).catch(() => []),
   ]);
 
+  const harvesterIntakes = harvesterSnapshot?.intakes.length ?? 0;
   const sellerLeadCount = sellerLeads.length;
   const contactsEnriched = nexusSnapshot?.contacts.length ?? 0;
   const dealsAnalyzed = dealSnapshot?.leads.length ?? 0;
@@ -96,6 +111,11 @@ export async function getRealEstateDivisionSnapshot() {
   const closedTransactions = dealSnapshot?.stageBoard.find((item) => item.label === "Buyer Follow-Up")?.count ?? 0;
 
   const metrics: RealEstateDashboardMetric[] = [
+    {
+      label: "Intakes Captured",
+      value: String(harvesterIntakes).padStart(2, "0"),
+      detail: "Unstructured opportunities captured upstream in Harvester.",
+    },
     {
       label: "Seller Leads Found",
       value: String(sellerLeadCount).padStart(2, "0"),
@@ -132,6 +152,7 @@ export async function getRealEstateDivisionSnapshot() {
     engines: realEstateEngines,
     metrics,
     flow: [
+      "Harvester",
       "Seller Engine",
       "Nexus",
       "Deal Engine",
@@ -139,7 +160,7 @@ export async function getRealEstateDivisionSnapshot() {
       "Closed Transaction",
     ],
     ecosystemProjects: ecosystemProjects.filter((project) =>
-      ["seller-engine", "nexus", "deal-engine", "buyer-engine"].includes(project.slug),
+      ["harvester", "seller-engine", "nexus", "deal-engine", "buyer-engine"].includes(project.slug),
     ),
   };
 }

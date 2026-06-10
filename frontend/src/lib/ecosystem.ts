@@ -58,6 +58,37 @@ export const ecosystemProjects: EcosystemProject[] = [
     ],
   },
   {
+    slug: "harvester",
+    name: "Blackspire Harvester",
+    role: "Opportunity Acquisition Intelligence",
+    tagline: "Extract. Analyze. Acquire.",
+    description:
+      "Harvester is the intake and market-intelligence layer for Blackspire real estate operations, turning screenshots, pasted posts, flyers, PDFs, emails, SMS, and marketplace chatter into structured opportunities that feed the rest of the ecosystem.",
+    accent: "#D6A84F",
+    glow: "rgba(214, 168, 79, 0.34)",
+    cta: "Open Harvester",
+    href: "/ecosystem/harvester",
+    productHref: "/workspace/harvester",
+    status: "live",
+    targetUser: "Acquisitions operators and marketplace researchers",
+    primaryOutcome: "Convert unstructured opportunity chatter into structured, pipeline-ready deal records.",
+    logoSrc: brandAssets.harvester.logo,
+    monogram: "BHV",
+    motif: "Helix-wrapped stalks, extraction scan fields, and marketplace signal sweeps.",
+    vibe: "Cinematic, forensic, and acquisition-first.",
+    surfaceTint: "rgba(214, 168, 79, 0.12)",
+    edgeTint: "rgba(191, 196, 201, 0.32)",
+    iconCue: "Opportunity harvest",
+    logoMaxWidthClass: "max-w-[248px]",
+    logoMaxHeightClass: "max-h-[182px]",
+    logoStageClass: "h-[174px]",
+    featureBullets: [
+      "Capture opportunity data from text, screenshots, flyers, and PDFs",
+      "Extract structured property and poster intelligence with confidence tracking",
+      "Hand approved records into Seller, Nexus, Deal, and Buyer workflows",
+    ],
+  },
+  {
     slug: "buyer-engine",
     name: "Blackspire Buyer Engine",
     role: "Real Estate Intelligence",
@@ -320,6 +351,7 @@ export const serviceLines = [
 ] as const;
 
 export const useCases = [
+  "Opportunity intake from marketplace posts, screenshots, and unstructured deal chatter",
   "Lead capture and instant qualification",
   "SMS and email follow-up sequences",
   "Buyer matching and investor outreach prep",

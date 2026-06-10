@@ -9,6 +9,7 @@ import { ecosystemProjects, getProjectBySlug } from "@/lib/ecosystem";
 
 const THEME_CLASSES: Record<string, string> = {
   "recon-engine": "theme-recon-engine",
+  harvester: "theme-harvester",
   "buyer-engine": "theme-buyer-engine",
   "deal-engine": "theme-deal-engine",
   "seller-engine": "theme-seller-engine",

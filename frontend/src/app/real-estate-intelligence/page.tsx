@@ -20,16 +20,16 @@ export default async function RealEstateIntelligencePage() {
     <RealEstateSuiteLayout>
       <EngineHero
         title="Blackspire Real Estate Intelligence"
-        subtitle="An AI-powered deal flow operating system built to find motivated sellers, connect with decision makers, analyze wholesale opportunities, and match deals to the right buyers."
-        primaryHref="/workspace/nexus"
-        primaryLabel="Enter Real Estate Workspace"
+        subtitle="An AI-powered deal flow operating system built to capture raw opportunities, find motivated sellers, connect with decision makers, analyze wholesale opportunities, and match deals to the right buyers."
+        primaryHref="/workspace/harvester"
+        primaryLabel="Enter Harvester Workspace"
         secondaryHref="/ecosystem"
         secondaryLabel="View The Ecosystem"
       />
 
       <section className="brand-panel px-6 py-8 lg:px-8">
         <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Ecosystem Pipeline</p>
-        <h2 className="brand-display mt-3 text-3xl text-white">Seller Engine to closed transaction</h2>
+        <h2 className="brand-display mt-3 text-3xl text-white">Harvester to closed transaction</h2>
         <div className="mt-6">
           <PipelineFlow engines={snapshot.engines} />
         </div>
@@ -45,7 +45,7 @@ export default async function RealEstateIntelligencePage() {
         <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Division Explanation</p>
         <h2 className="brand-display mt-3 text-3xl text-white">One real-estate division inside Blackspire Helix Group</h2>
         <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-          Blackspire Real Estate Intelligence is the wholesale real estate automation division of Blackspire Helix Group. It groups seller discovery, skip trace, acquisition, and buyer activation into one premium operating system while keeping each engine&apos;s own page and workspace intact.
+          Blackspire Real Estate Intelligence is the wholesale real estate automation division of Blackspire Helix Group. It groups opportunity intake, seller discovery, skip trace, acquisition, and buyer activation into one premium operating system while keeping each engine&apos;s own page and workspace intact.
         </p>
       </section>
 

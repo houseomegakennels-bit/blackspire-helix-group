@@ -64,6 +64,19 @@
   --project-edge: rgba(139, 92, 246, 0.40);
 }
 
+/* Blackspire Harvester -- metallic gold + steel */
+.theme-harvester {
+  --line: hsl(40 55% 52% / 0.22);
+  --line-strong: hsl(39 80% 72% / 0.46);
+  --gold: hsl(40 58% 57%);
+  --gold-strong: hsl(41 82% 68%);
+  --gold-soft: hsl(210 10% 82%);
+  --project-accent: #D6A84F;
+  --project-glow: rgba(214, 168, 79, 0.34);
+  --project-surface: rgba(214, 168, 79, 0.12);
+  --project-edge: rgba(191, 196, 201, 0.32);
+}
+
 /* Blackspire Social OS — Velocity Purple */
 .theme-social-os {
   --line: hsl(266 80% 66% / 0.22);
@@ -2627,6 +2640,315 @@ body::after {
 @keyframes radarSpin {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Harvester -- helix signal field with gold scan sweep */
+.theme-harvester .motif-center-glow {
+  top: 50%;
+  left: 50%;
+  width: 540px;
+  height: 540px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, hsl(40 58% 57% / 0.22), hsl(210 10% 82% / 0.08) 42%, transparent 70%);
+  filter: blur(20px);
+}
+.theme-harvester .motif-ring {
+  top: 50%;
+  left: 50%;
+  border-color: hsl(40 62% 64% / 0.42);
+  opacity: 0.28;
+}
+.theme-harvester .motif-ring-1 {
+  width: 520px;
+  height: 520px;
+  transform: translate(-50%, -50%);
+  animation: harvesterHelixPulse 5.4s ease-in-out infinite;
+}
+.theme-harvester .motif-ring-2 {
+  width: 360px;
+  height: 360px;
+  transform: translate(-50%, -50%);
+  animation: harvesterHelixPulse 5.4s ease-in-out infinite 0.9s;
+}
+.theme-harvester .motif-ring-3 {
+  width: 190px;
+  height: 190px;
+  transform: translate(-50%, -50%);
+  animation: harvesterHelixPulse 5.4s ease-in-out infinite 1.8s;
+}
+.theme-harvester .motif-sweep {
+  top: 50%;
+  left: 50%;
+  width: 580px;
+  height: 580px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    hsl(40 66% 60% / 0.28) 20deg,
+    hsl(210 10% 82% / 0.12) 36deg,
+    transparent 58deg
+  );
+  animation: harvesterSweep 8s linear infinite;
+}
+.theme-harvester .motif-grid {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 54px, hsl(40 60% 58% / 0.08) 54px 55px),
+    repeating-linear-gradient(0deg, transparent 0 54px, hsl(210 10% 82% / 0.05) 54px 55px);
+  mask-image: radial-gradient(circle at 50% 50%, black, transparent 72%);
+}
+@keyframes harvesterHelixPulse {
+  0%, 100% { opacity: 0.14; transform: translate(-50%, -50%) scale(0.96); }
+  50% { opacity: 0.48; transform: translate(-50%, -50%) scale(1.04); }
+}
+@keyframes harvesterSweep {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.harvester-panel {
+  backdrop-filter: blur(18px);
+}
+
+.harvester-logo-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top, rgba(214, 168, 79, 0.16), transparent 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.12)),
+    rgba(0, 0, 0, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 60px rgba(0, 0, 0, 0.34);
+}
+
+.harvester-logo-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 18%, rgba(255, 255, 255, 0.07) 50%, transparent 82%);
+  transform: translateX(-120%);
+  animation: harvesterShimmer 9s linear infinite;
+  pointer-events: none;
+}
+
+.harvester-emblem {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  flex: 0 0 auto;
+}
+
+.harvester-emblem-ring,
+.harvester-emblem-stalk,
+.harvester-emblem-helix {
+  position: absolute;
+  inset: 0;
+}
+
+.harvester-emblem-ring {
+  border-radius: 999px;
+  border: 1px solid hsl(40 62% 64% / 0.48);
+  box-shadow: 0 0 26px hsl(40 62% 64% / 0.24);
+}
+
+.harvester-emblem-stalk {
+  left: 50%;
+  width: 8px;
+  height: 100%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, hsl(210 10% 82%), hsl(40 58% 57%) 68%, hsl(40 82% 68%));
+  clip-path: polygon(50% 0%, 78% 22%, 66% 100%, 34% 100%, 22% 22%);
+}
+
+.harvester-emblem-helix::before,
+.harvester-emblem-helix::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 18px;
+  right: 18px;
+  border: 2px solid hsl(4 74% 54% / 0.9);
+  border-radius: 999px;
+  border-left-color: transparent;
+  border-right-color: transparent;
+}
+
+.harvester-emblem-helix::before {
+  transform: rotate(28deg);
+}
+
+.harvester-emblem-helix::after {
+  transform: rotate(-28deg);
+}
+
+.harvester-status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(214, 168, 79, 0.12), rgba(0, 0, 0, 0.3));
+  padding: 1rem 1.25rem;
+}
+
+.harvester-upload-zone {
+  position: relative;
+}
+
+.harvester-upload-zone::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, transparent, rgba(214, 168, 79, 0.34), transparent);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.harvester-input,
+.harvester-textarea {
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  color: white;
+  padding: 0.9rem 1rem;
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.harvester-input:focus,
+.harvester-textarea:focus {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(214, 168, 79, 0.22), 0 0 24px rgba(214, 168, 79, 0.08);
+}
+
+.harvester-textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.harvester-file-field {
+  border: 1px dashed hsl(40 62% 64% / 0.42);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top, rgba(214, 168, 79, 0.12), transparent 44%),
+    rgba(0, 0, 0, 0.22);
+  padding: 1.2rem;
+}
+
+.harvester-pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 0.9rem 1rem;
+}
+
+.harvester-pipeline-index {
+  display: inline-flex;
+  min-width: 2.3rem;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  padding: 0.35rem 0.55rem;
+  color: var(--gold-soft);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+}
+
+.harvester-action-button,
+.harvester-secondary-button,
+.harvester-mini-link,
+.harvester-source-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.24);
+  color: white;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.harvester-action-button,
+.harvester-mini-link,
+.harvester-secondary-button {
+  padding: 0.7rem 1rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.harvester-source-pill {
+  padding: 0.85rem 1rem;
+  font-size: 0.8rem;
+  justify-content: flex-start;
+}
+
+.harvester-action-button:hover,
+.harvester-secondary-button:hover,
+.harvester-mini-link:hover,
+.harvester-source-pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+  background: rgba(214, 168, 79, 0.1);
+}
+
+.harvester-header-grid {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0 49%, rgba(214, 168, 79, 0.08) 50%, transparent 51%),
+    repeating-linear-gradient(90deg, transparent 0 64px, rgba(214, 168, 79, 0.06) 64px 65px),
+    repeating-linear-gradient(0deg, transparent 0 64px, rgba(191, 196, 201, 0.04) 64px 65px);
+  mask-image: radial-gradient(circle at center, black, transparent 88%);
+  opacity: 0.75;
+}
+
+.harvester-confidence-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 70px;
+  height: 70px;
+  border-radius: 999px;
+  border: 1px solid hsl(40 62% 64% / 0.42);
+  background:
+    radial-gradient(circle at center, rgba(214, 168, 79, 0.18), rgba(0, 0, 0, 0.24));
+  color: white;
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 34px rgba(214, 168, 79, 0.12);
+}
+
+.harvester-feature-card {
+  min-height: 220px;
+}
+
+@keyframes harvesterShimmer {
+  0% { transform: translateX(-120%); }
+  22% { transform: translateX(120%); }
+  100% { transform: translateX(120%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harvester-logo-frame::after,
+  .theme-harvester .motif-ring-1,
+  .theme-harvester .motif-ring-2,
+  .theme-harvester .motif-ring-3,
+  .theme-harvester .motif-sweep {
+    animation: none !important;
+  }
 }
 
 /* ── BUYER ENGINE — Amber sonar expand ─────────────────── */

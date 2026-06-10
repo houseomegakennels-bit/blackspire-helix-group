@@ -34,6 +34,7 @@ export const siteNavSections: SiteNavSection[] = [
     href: "/real-estate-intelligence",
     items: [
       { label: "Real Estate Intelligence", href: "/real-estate-intelligence", description: "Seller to buyer pipeline." },
+      { label: "Harvester", href: "/workspace/harvester", description: "Opportunity intake and marketplace intelligence." },
       { label: "Seller Engine", href: "/seller-engine", description: "Motivated seller discovery." },
       { label: "Nexus", href: "/workspace/nexus", description: "Skip trace and contact resolution." },
       { label: "Deal Engine", href: "/workspace/deal-engine", description: "Acquisition, contracts, packets, and close coordination." },
@@ -63,6 +64,14 @@ export const siteNavSections: SiteNavSection[] = [
 ];
 
 export const workspaceEntries: WorkspaceEntry[] = [
+  {
+    title: "Harvester",
+    href: "/workspace/harvester",
+    division: "Real Estate Intelligence",
+    status: "Live",
+    description: "Capture screenshots, pasted posts, flyers, PDFs, and raw marketplace chatter, then extract structured opportunities and push them into the pipeline.",
+    primaryAction: "Open intake command",
+  },
   {
     title: "Seller Engine",
     href: "/seller-engine",
@@ -122,6 +131,7 @@ export const workspaceEntries: WorkspaceEntry[] = [
 ];
 
 export const realEstatePipeline = [
+  "Harvester",
   "Seller Engine",
   "Nexus",
   "Deal Engine",

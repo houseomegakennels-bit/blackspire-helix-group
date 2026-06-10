@@ -23,6 +23,12 @@ export const brandAssets = {
     logo: "/brand/blackspire-seller-engine-logo.png",
     tagline: "Find Motivated Sellers. Fuel Great Deals.",
   },
+  harvester: {
+    name: "Blackspire Harvester",
+    logo: "/logos/harvester-logo.png",
+    mark: "/logos/harvester-mark.png",
+    tagline: "Opportunity Acquisition Intelligence",
+  },
   nexus: {
     name: "Blackspire Nexus",
     // Placeholder path. Replace this file with the official Nexus logo when uploaded.
