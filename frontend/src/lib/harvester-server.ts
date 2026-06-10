@@ -893,6 +893,40 @@ export async function createHarvesterIntake(input: HarvesterIntakeInsertInput) {
   };
 }
 
+// Delete a Harvester intake and everything that hangs off it (extracted
+// opportunity, duplicate/watchlist matches, buyer matches). Downstream Seller
+// Engine / Deal Engine records are intentionally left in place — removing an
+// intake should never silently delete a lead or deal already in the pipeline.
+export async function deleteHarvesterIntake(intakeId: string) {
+  const cleanId = intakeId?.trim();
+  if (!cleanId) throw new Error("An intake id is required to delete a Harvester intake.");
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return { ok: true as const, intakeId: cleanId, storageMode: "demo" as const };
+  }
+
+  const { data: opportunity } = await supabase
+    .from("harvester_extracted_opportunities")
+    .select("id")
+    .eq("intake_id", cleanId)
+    .maybeSingle();
+
+  await supabase.from("harvester_buyer_matches").delete().eq("intake_id", cleanId);
+  await supabase.from("harvester_duplicates").delete().eq("intake_id", cleanId);
+  await supabase.from("harvester_duplicates").delete().eq("matched_intake_id", cleanId);
+  await supabase.from("harvester_watchlist_matches").delete().eq("intake_id", cleanId);
+  if (opportunity?.id) {
+    await supabase.from("harvester_watchlist_matches").delete().eq("opportunity_id", opportunity.id);
+  }
+  await supabase.from("harvester_extracted_opportunities").delete().eq("intake_id", cleanId);
+
+  const { error } = await supabase.from("harvester_intakes").delete().eq("id", cleanId);
+  if (error) throw new Error(error.message);
+
+  return { ok: true as const, intakeId: cleanId, storageMode: "supabase" as const };
+}
+
 export async function extractHarvesterOpportunity(input: {
   intakeId?: string;
   originalText?: string;

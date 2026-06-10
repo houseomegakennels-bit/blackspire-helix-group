@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createHarvesterIntake, listHarvesterIntakes, type HarvesterSourceType } from "@/lib/harvester-server";
+import {
+  createHarvesterIntake,
+  deleteHarvesterIntake,
+  listHarvesterIntakes,
+  type HarvesterSourceType,
+} from "@/lib/harvester-server";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +63,29 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Unable to create Harvester intake." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    let intakeId = searchParams.get("id") ?? undefined;
+    if (!intakeId) {
+      const body = (await request.json().catch(() => ({}))) as { intakeId?: string };
+      intakeId = body.intakeId;
+    }
+
+    if (!intakeId) {
+      return NextResponse.json({ ok: false, error: "intakeId is required." }, { status: 400 });
+    }
+
+    const result = await deleteHarvesterIntake(intakeId);
+    return NextResponse.json(result);
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Unable to delete Harvester intake." },
       { status: 500 },
     );
   }

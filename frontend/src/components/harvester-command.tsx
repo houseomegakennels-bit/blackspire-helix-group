@@ -159,6 +159,26 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
     }
   }
 
+  async function deleteIntake(intakeId: string, label?: string) {
+    if (!window.confirm(`Delete this intake${label ? ` (${label})` : ""} and its extracted opportunity? This cannot be undone.`)) {
+      return;
+    }
+    setBusyLabel("Deleting intake...");
+    try {
+      const response = await fetch(`/api/harvester/intake?id=${encodeURIComponent(intakeId)}`, { method: "DELETE" });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Delete failed.");
+      }
+      setStatus("Intake deleted.");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to delete intake.");
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -522,6 +542,13 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                   onClick={() => runAction("Updating poster profile...", () => postJson("/api/harvester/entities", { intakeId: intake.id }), "Marketplace entity profile updated from this intake.", "profiles")}
                 >
                   Update Profile
+                </button>
+                <button
+                  type="button"
+                  className="harvester-action-button harvester-action-button--danger"
+                  onClick={() => deleteIntake(intake.id, intake.opportunity?.address ?? intake.sourceName ?? undefined)}
+                >
+                  Delete
                 </button>
               </div>
             </article>
