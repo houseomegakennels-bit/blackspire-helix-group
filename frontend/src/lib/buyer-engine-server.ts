@@ -1176,6 +1176,51 @@ function normalizeCountyName(county?: string | null): string {
     .toLowerCase();
 }
 
+// NC city -> county for the common cities (so a property with a city but no
+// county — e.g. "Durham" or "Greensboro" — still matches buyers).
+const NC_CITY_TO_COUNTY: Record<string, string> = {
+  charlotte: "mecklenburg", greensboro: "guilford", winstonsalem: "forsyth",
+  raleigh: "wake", durham: "durham", fayetteville: "cumberland", cary: "wake",
+  wilmington: "newhanover", highpoint: "guilford", concord: "cabarrus",
+  gastonia: "gaston", asheville: "buncombe", greenville: "pitt",
+  jacksonville: "onslow", chapelhill: "orange", burlington: "alamance",
+  huntersville: "mecklenburg", rockymount: "nash", kannapolis: "cabarrus",
+  statesville: "iredell", monroe: "union", apex: "wake", wakeforest: "wake",
+  hickory: "catawba", goldsboro: "wayne", mooresville: "iredell",
+  newbern: "craven", salisbury: "rowan", sanford: "lee", garner: "wake",
+  thomasville: "davidson", lexington: "davidson", kernersville: "forsyth",
+};
+
+const UNKNOWN_COUNTY = new Set(["", "unknown", "unresolved", "n/a", "na", "none"]);
+
+/** Infer an NC county from a city name (Title Case), or null if unknown. */
+export function inferNcCountyFromCity(city?: string | null): string | null {
+  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!cityKey) return null;
+  const mapped = NC_CITY_TO_COUNTY[cityKey];
+  if (mapped) return mapped.replace(/\b\w/g, (m) => m.toUpperCase());
+  return null;
+}
+
+/** Resolve a usable county for buyer matching, inferring from city when needed. */
+function resolveBuyerCounty(county?: string | null, city?: string | null): { core: string; display: string | null } {
+  const core = normalizeCountyName(county);
+  if (core && !UNKNOWN_COUNTY.has(core)) {
+    return { core, display: county ?? null };
+  }
+  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  if (NC_CITY_TO_COUNTY[cityKey]) {
+    const mapped = NC_CITY_TO_COUNTY[cityKey];
+    return { core: mapped, display: mapped.replace(/\b\w/g, (m) => m.toUpperCase()) };
+  }
+  // Last resort: many NC cities share their county's name (Durham, Orange, etc).
+  const cityCore = normalizeCountyName(city);
+  if (cityCore && !UNKNOWN_COUNTY.has(cityCore)) {
+    return { core: cityCore, display: city ?? null };
+  }
+  return { core: "", display: null };
+}
+
 function resolvePropertyTypeBucket(input: BuyerForPropertyInput): "land" | "residential" {
   const text = `${input.propertyType ?? ""}`.toLowerCase();
   if (/land|lot|acre|vacant/.test(text)) return "land";
@@ -1264,7 +1309,7 @@ function scoreBuyerProfile(row: BuyerProfileRow, bucket: "land" | "residential")
 
 export async function matchBuyersForProperty(input: BuyerForPropertyInput): Promise<BuyerForPropertyResult> {
   const supabase = getSupabaseAdmin();
-  const countyCore = normalizeCountyName(input.county);
+  const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(input.county, input.city);
   const bucket = resolvePropertyTypeBucket(input);
   const limit = input.limit ?? 10;
 
@@ -1336,7 +1381,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput): Prom
   const demandScore = Math.min(100, Math.round(qualified * 7 + topScore * 0.3));
   const assignmentPotential = demandScore >= 70 ? "high" : demandScore >= 40 ? "medium" : "low";
 
-  return { matches, buyerCount, demandScore, assignmentPotential, county: input.county ?? null };
+  return { matches, buyerCount, demandScore, assignmentPotential, county: countyDisplay ?? input.county ?? null };
 }
 
 const getCachedCountyCapabilities = unstable_cache(

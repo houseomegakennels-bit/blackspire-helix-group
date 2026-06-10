@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { matchBuyersForProperty } from "@/lib/buyer-engine-server";
+import { matchBuyersForProperty, inferNcCountyFromCity } from "@/lib/buyer-engine-server";
 import { launchBuyerSearchFromDeal, createDealFromSellerLead } from "@/lib/deal-engine-server";
 import { runNexusSkipTrace, type NexusLeadRecord } from "@/lib/nexus-server";
 import {
@@ -994,6 +994,14 @@ export async function extractHarvesterOpportunity(input: {
   if (!payload.zip) {
     const zipMatch = text.match(/\b[A-Z]{2}\s*,?\s*(\d{5})(?:-\d{4})?\b/);
     if (zipMatch) payload.zip = zipMatch[1];
+  }
+
+  // County backfill: infer the NC county from the city when extraction left it
+  // blank/Unknown, so the property record and buyer matching have a real county.
+  const countyBlank = !payload.county || /^(unknown|unresolved|n\/a)$/i.test(payload.county.trim());
+  if (countyBlank && payload.city) {
+    const inferredCounty = inferNcCountyFromCity(payload.city);
+    if (inferredCounty) payload.county = inferredCounty;
   }
 
   if (!supabase || !input.intakeId) {
