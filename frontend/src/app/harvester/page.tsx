@@ -22,7 +22,7 @@ export default async function HarvesterPage() {
 
         <section className="relative overflow-hidden px-4 py-20 lg:px-6 lg:py-28">
           <div className="mx-auto grid max-w-[1460px] gap-12 xl:grid-cols-[1.08fr_0.92fr] xl:items-center">
-            <div>
+            <div className="min-w-0">
               <div className="text-[11px] uppercase tracking-[0.44em] text-[var(--gold-soft)]">BLACKSPIRE HELIX GROUP / REAL ESTATE INTELLIGENCE</div>
               <h1 className="mt-5 text-5xl font-black leading-[0.94] tracking-tight text-white sm:text-6xl xl:text-7xl">
                 HARVESTER
@@ -44,7 +44,7 @@ export default async function HarvesterPage() {
               </div>
             </div>
 
-            <div className="space-y-5">
+            <div className="min-w-0 space-y-5">
               <HarvesterIdentity branding={snapshot.branding} size="hero" />
               <div className="brand-panel harvester-panel p-6">
                 <div className="text-[10px] uppercase tracking-[0.34em] text-[var(--gold-soft)]">Supported sources</div>

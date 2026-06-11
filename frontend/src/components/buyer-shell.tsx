@@ -42,7 +42,7 @@ export function BuyerShell({
     >
       <DivisionWatermark logoSrc={brandAssets.buyerEngine.logo} />
       <div className="relative z-10 mx-auto grid min-h-screen max-w-[1700px] gap-6 px-4 py-4 lg:grid-cols-[290px_minmax(0,1fr)] lg:px-6">
-        <aside className="brand-panel h-fit overflow-hidden p-5 lg:sticky lg:top-4">
+        <aside className="brand-panel min-w-0 h-fit overflow-hidden p-5 lg:sticky lg:top-4">
           <div className="pointer-events-none absolute inset-x-6 top-0 h-32 rounded-b-[40px] bg-[radial-gradient(circle_at_top,hsl(34_100%_62%/.12),transparent_74%)]" />
           <div className="space-y-4 border-b border-[var(--line)] pb-5">
             <div className="brand-card overflow-hidden p-3">
@@ -126,7 +126,7 @@ export function BuyerShell({
           ) : null}
         </aside>
 
-        <section className="space-y-6">
+        <section className="min-w-0 space-y-6">
           <header className="brand-panel overflow-hidden px-6 py-6">
             <div className="pointer-events-none absolute inset-y-0 right-0 w-[34%] bg-[radial-gradient(circle_at_center,hsl(35_100%_66%/.08),transparent_72%)]" />
             <div className="flex items-center gap-3">

@@ -723,7 +723,61 @@ export function SellerEngineDashboard({
           </div>
         </div>
 
-        <div className="seller-table-wrap mt-5 overflow-x-auto rounded-[20px] border border-[var(--seller-line)]">
+        <div className="mt-5 grid gap-3 md:hidden">
+          {filtered.map((lead) => (
+            <div key={lead.id} className="seller-card rounded-[20px] border border-[var(--seller-line)] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <button onClick={() => void openLead(lead)} className="text-left">
+                    <div className="font-semibold text-white">{lead.ownerName}</div>
+                    <div className="mt-1 text-sm text-[var(--copy-soft)]">{lead.propertyAddress}</div>
+                  </button>
+                  <div className="mt-2 text-xs text-[var(--copy-muted)]">
+                    {lead.city}, {lead.county} {lead.zipCode}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <button onClick={() => void openLead(lead)} className={`seller-score ${scoreTone(lead.score)}`}>{lead.score}</button>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">{lead.category}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Lead Type</div>
+                  <div className="mt-1 text-sm text-white">{formatSourceType(lead.sourceType)}</div>
+                  <div className="mt-1 text-xs text-[var(--copy-muted)]">{lead.ownerOccupancyStatus ?? "Unknown occupancy"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Estimated Equity</div>
+                  <div className="mt-1 font-mono text-sm text-[var(--seller-gold-soft)]">{money.format(lead.estimatedEquity)}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-1">
+                {boolPill(lead.signals.foreclosure, "Foreclosure")}
+                {boolPill(lead.signals.probate, "Probate")}
+                {boolPill(lead.signals.taxDelinquent, "Tax")}
+                {boolPill(lead.signals.absenteeOwner, "Absentee")}
+                {boolPill(lead.signals.vacant, "Vacant")}
+                {boolPill(lead.signals.codeViolation, "Code")}
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <select
+                  className="seller-input py-2"
+                  value={lead.status}
+                  onChange={(event) => void updateLead(lead, { status: event.target.value as SellerLeadStatus })}
+                >
+                  {SELLER_LEAD_STATUSES.map((item) => <option key={item}>{item}</option>)}
+                </select>
+                <button className="seller-button justify-center py-2" onClick={() => void openLeadAndJump(lead)}>Open dossier</button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="seller-table-wrap mt-5 hidden overflow-x-auto rounded-[20px] border border-[var(--seller-line)] md:block">
           <table className="w-full min-w-[1180px] text-left text-sm">
             <thead className="seller-table-head text-[10px] uppercase tracking-[0.22em] text-[var(--copy-muted)]">
               <tr>{["Score", "Owner / Property", "Location", "Lead Type", "Signals", "Equity", "Status", "Action"].map((item) => <th key={item} className="px-4 py-3">{item}</th>)}</tr>

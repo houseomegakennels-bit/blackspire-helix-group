@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   Cormorant_Garamond,
   Geist_Mono,
@@ -30,6 +30,13 @@ export const metadata: Metadata = {
     icon: "/brand/blackspire-helix-group-logo.png",
     apple: "/brand/blackspire-helix-group-logo.png",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#030303",
 };
 
 export default function RootLayout({

@@ -183,10 +183,10 @@ export async function BuyerEngineHome() {
       description="The premium operating layer for land-buyer intelligence, county readiness, and operator execution across the Blackspire stack."
       operatorStatus={operatorStatus}
     >
-      <section className="brand-panel overflow-hidden px-6 py-7">
+      <section className="brand-panel min-w-0 overflow-hidden px-6 py-7">
         <div className="pointer-events-none absolute inset-y-0 right-0 w-[38%] bg-[radial-gradient(circle_at_center,hsl(35_100%_62%/.12),transparent_72%)]" />
         <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-          <div className="relative space-y-6">
+          <div className="relative min-w-0 space-y-6">
             <div>
               <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">
                 Intel Chamber
@@ -229,7 +229,7 @@ export async function BuyerEngineHome() {
             </div>
           </div>
 
-          <div className="relative grid gap-4 content-start">
+          <div className="relative min-w-0 grid gap-4 content-start">
             <div className="brand-card overflow-hidden p-5">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -425,7 +425,7 @@ export async function BuyerEngineHome() {
           title="Live source network snapshot"
           description="The dashboard now shows the real county surface area already earned in the workflow layer."
         >
-          <div className="brand-table-shell">
+          <div className="brand-table-shell overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm">
               <thead className="brand-table-head">
                 <tr>

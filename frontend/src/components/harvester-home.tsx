@@ -12,7 +12,7 @@ export function HarvesterHome({ snapshot }: { snapshot: HarvesterWorkspaceSnapsh
       <DivisionWatermark logoSrc={snapshot.branding.markAvailable ? snapshot.branding.markPath : snapshot.branding.logoPath} />
       <div className="relative z-10 mx-auto max-w-[1480px] px-4 py-8 lg:px-6 lg:py-10">
         <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
-          <aside className="space-y-5">
+          <aside className="min-w-0 space-y-5">
             <div className="brand-card p-5">
               <HarvesterIdentity branding={snapshot.branding} size="compact" />
               <div className="mt-4 text-xs uppercase tracking-[0.28em] text-[var(--gold-soft)]">Opportunity Acquisition Intelligence</div>
@@ -32,13 +32,13 @@ export function HarvesterHome({ snapshot }: { snapshot: HarvesterWorkspaceSnapsh
             <RealEstateWorkflowRail active="harvester" />
           </aside>
 
-          <section className="space-y-6">
+          <section className="min-w-0 space-y-6">
             <div className="brand-panel harvester-panel relative overflow-hidden p-6 lg:p-7">
               <div className="harvester-header-grid" aria-hidden="true" />
               <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                <div>
+                <div className="min-w-0">
                   <div className="text-[10px] uppercase tracking-[0.4em] text-[var(--gold-soft)]">Harvester Workspace</div>
-                  <h1 className="mt-3 text-3xl font-black tracking-[0.05em] text-white sm:text-4xl">
+                  <h1 className="mt-3 text-2xl font-black tracking-[0.05em] text-white sm:text-4xl">
                     Extract. Analyze. Acquire.
                   </h1>
                   <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
@@ -46,7 +46,7 @@ export function HarvesterHome({ snapshot }: { snapshot: HarvesterWorkspaceSnapsh
                   </p>
                 </div>
 
-                <div className="max-w-[280px]">
+                <div className="min-w-0 max-w-[280px]">
                   <HarvesterIdentity branding={snapshot.branding} />
                 </div>
               </div>

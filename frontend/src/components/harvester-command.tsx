@@ -244,16 +244,16 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
       </div>
 
       <div className="harvester-status-bar">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">Command Status</div>
           <div className="mt-2 text-sm text-white">{pending ? busyLabel : status}</div>
         </div>
-        <div className="text-right text-xs leading-6 text-[var(--copy-soft)]">
+        <div className="w-full text-left text-xs leading-6 text-[var(--copy-soft)] sm:w-auto sm:text-right">
           Supported source lanes: {supportedSources}
         </div>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-1">
+      <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] snap-x snap-mandatory [&::-webkit-scrollbar]:hidden">
         {snapshot.tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
@@ -261,7 +261,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id as TabId)}
-              className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.22em] transition ${
+              className={`snap-start shrink-0 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.18em] transition sm:tracking-[0.22em] ${
                 isActive
                   ? "border-[var(--line-strong)] bg-[var(--project-surface)] text-white"
                   : "border-[var(--line)] bg-black/20 text-[var(--copy-soft)] hover:border-[var(--line-strong)] hover:text-white"
