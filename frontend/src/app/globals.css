@@ -1167,7 +1167,7 @@ body::after {
 
 .luxury-header {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   border-bottom-color: hsl(210 42% 52% / 0.12);
   background: hsl(228 30% 4% / 0.8);
   box-shadow: 0 20px 44px hsl(222 40% 2% / 0.4);

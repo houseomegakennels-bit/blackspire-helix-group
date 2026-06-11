@@ -24,7 +24,13 @@ export function MarketingNav({ sections }: { sections: SiteNavSection[] }) {
   return (
     <>
       {/* Desktop / tablet inline nav */}
-      <nav className="hidden items-center justify-end gap-2 lg:flex">
+      <nav className="relative z-20 hidden items-center justify-end gap-2 lg:flex">
+        <Link
+          href="/beta"
+          className="inline-flex min-h-10 items-center rounded-full border border-[var(--line-strong)] bg-[hsl(188_86%_58%/.14)] px-4 text-xs uppercase tracking-[0.18em] text-white shadow-[0_0_28px_hsl(188_86%_58%/.16)] transition hover:-translate-y-px hover:border-[hsl(188_86%_68%/.7)] hover:bg-[hsl(188_86%_58%/.2)]"
+        >
+          Beta Start Here
+        </Link>
         {sections.map((section) => (
           <div key={section.label} className="group relative">
             <Link
@@ -91,6 +97,14 @@ export function MarketingNav({ sections }: { sections: SiteNavSection[] }) {
             className="absolute inset-0 bg-[hsl(0_0%_0%/.72)] backdrop-blur-sm"
           />
           <nav className="luxury-mobile-sheet absolute right-3 top-3 left-3 max-h-[calc(100vh-24px)] overflow-y-auto rounded-[24px] border border-[var(--line-strong)] bg-[hsl(0_0%_4%/.97)] p-4 shadow-[0_30px_80px_hsl(0_0%_0%/.6)]">
+            <Link
+              href="/beta"
+              onClick={() => setOpenPathname(null)}
+              className="mb-3 flex min-h-[52px] items-center justify-between rounded-[18px] border border-[var(--line-strong)] bg-[hsl(188_86%_58%/.12)] px-4 py-3 text-sm text-white transition hover:bg-[hsl(188_86%_58%/.18)]"
+            >
+              <span className="font-semibold uppercase tracking-[0.16em]">Beta Start Here</span>
+              <span className="text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)]">Open</span>
+            </Link>
             {sections.map((section) => (
               <div key={section.label} className="border-b border-[var(--line)] py-3 last:border-b-0">
                 <div className="px-2 text-[10px] uppercase tracking-[0.32em] text-[var(--copy-muted)]">
