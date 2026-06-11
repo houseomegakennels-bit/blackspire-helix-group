@@ -71,7 +71,7 @@ export function BuyerShell({
             </div>
           </div>
 
-          <nav className="mt-5 space-y-2">
+          <nav className="mt-5 hidden space-y-2 lg:block">
             {navItems.map((item) => (
               <Link
                 key={item.href}
@@ -83,7 +83,7 @@ export function BuyerShell({
             ))}
           </nav>
 
-          <div className="brand-card mt-6 p-4">
+          <div className="brand-card mt-6 hidden p-4 lg:block">
             <p className="text-xs uppercase tracking-[0.3em] text-[var(--gold)]">
               System Focus
             </p>
@@ -91,7 +91,9 @@ export function BuyerShell({
               Wake land runs are moving through app-server prefetch before n8n scoring. The next level is a fully theatrical operator view with airtight audit trails and sharper decision framing.
             </p>
           </div>
-          <RealEstateWorkflowRail active="buyer" compact />
+          <div className="hidden lg:block">
+            <RealEstateWorkflowRail active="buyer" compact />
+          </div>
 
           {operatorStatus ? (
             <div className="brand-card mt-4 p-4">
@@ -135,7 +137,7 @@ export function BuyerShell({
               </p>
               <div className="brand-target h-[14px] w-[14px]" />
             </div>
-            <h2 className="brand-accent-text mt-3 text-4xl font-semibold lg:text-5xl">{title}</h2>
+            <h2 className="brand-accent-text mt-3 text-2xl font-semibold sm:text-3xl lg:text-4xl xl:text-5xl">{title}</h2>
             <div className="mt-4 brand-hairline" />
             <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">{description}</p>
           </header>

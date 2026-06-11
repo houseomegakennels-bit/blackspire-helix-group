@@ -2338,6 +2338,14 @@ body::after {
   .division-logo-stage {
     min-height: 190px;
   }
+
+  .brand-table-shell {
+    overflow-x: auto;
+  }
+
+  .division-hero {
+    min-height: auto;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2376,6 +2384,25 @@ body::after {
 
   .division-logo-stage::before {
     inset: 12px;
+  }
+
+  .brand-panel { border-radius: 20px; }
+  .brand-card { border-radius: 16px; }
+  .seller-panel { border-radius: 20px; }
+  .seller-card { border-radius: 14px; }
+}
+
+@media (max-width: 480px) {
+  .luxury-stage-node {
+    display: none;
+  }
+
+  .luxury-stage {
+    min-height: 360px;
+  }
+
+  .luxury-stage-plate {
+    min-width: 180px;
   }
 }
 

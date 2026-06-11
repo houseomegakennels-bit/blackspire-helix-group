@@ -60,16 +60,16 @@ const proofSignals = [
 export default function Home() {
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1500px] px-4 py-8 lg:px-6 lg:py-10">
-        <div className="space-y-8">
-          <section className="brand-panel px-6 py-8 lg:px-8 lg:py-10">
+      <div className="mx-auto max-w-[1500px] px-3 py-6 sm:px-4 sm:py-8 lg:px-6 lg:py-10">
+        <div className="space-y-6 sm:space-y-8">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
             <div className="grid gap-8 xl:grid-cols-[0.92fr_1.08fr] xl:items-center">
               <div className="space-y-7">
                 <div className="space-y-4">
                   <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold-soft)]">
                     BLACKSPIRE HELIX GROUP
                   </p>
-                  <h1 className="brand-display brand-accent-text text-4xl leading-tight text-white sm:text-5xl lg:text-6xl">
+                  <h1 className="brand-display brand-accent-text text-3xl leading-tight text-white sm:text-4xl md:text-5xl lg:text-6xl">
                     Organized AI systems for serious operators.
                   </h1>
                   <p className="max-w-3xl text-base leading-8 text-[var(--copy-soft)]">
@@ -114,7 +114,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Operating thesis</p>
@@ -145,7 +145,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Real estate operating chain</p>
@@ -191,7 +191,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Operator workspaces</p>
@@ -220,7 +220,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Division portfolio</p>
@@ -240,7 +240,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Build lanes</p>
             <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">
               What Blackspire Helix Group builds.

@@ -745,7 +745,7 @@ export function SearchJobsMonitor({
         description="The monitor keeps the ledger fresh while jobs move from pending into workflow execution, including Wake land runs that now prefetch county data before n8n scoring."
       >
         <div className="brand-table-shell">
-          <table className="w-full border-collapse text-left text-sm">
+          <table className="w-full min-w-[680px] border-collapse text-left text-sm">
             <thead className="brand-table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">Search Job</th>
