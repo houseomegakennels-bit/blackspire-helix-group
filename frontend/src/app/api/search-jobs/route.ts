@@ -10,6 +10,7 @@ import {
   listSearchJobs,
   triggerBuyerEngineWorkflow,
 } from "@/lib/buyer-engine-server";
+import { guardBetaAction } from "@/lib/beta-server";
 
 export async function GET(request: Request) {
   try {
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const gate = await guardBetaAction("sweep");
+    if ("response" in gate) return gate.response;
     const body = await request.json();
 
     const title = typeof body.title === "string" ? body.title.trim() : "";

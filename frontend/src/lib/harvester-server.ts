@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { matchBuyersForProperty, inferNcCountyFromCity } from "@/lib/buyer-engine-server";
+import { inferNcCountyFromCity, matchBuyersForProperty, persistOutreachDraftRecord } from "@/lib/buyer-engine-server";
 import { launchBuyerSearchFromDeal, createDealFromSellerLead } from "@/lib/deal-engine-server";
 import { runNexusSkipTrace, type NexusLeadRecord } from "@/lib/nexus-server";
 import {
@@ -12,6 +12,7 @@ import {
   type SellerLiveSourceKey,
 } from "@/lib/seller-engine";
 import { listSellerLeads } from "@/lib/seller-engine-server";
+import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
 
 export const HARVESTER_SOURCE_TYPES = [
   "facebook_group",
@@ -97,11 +98,30 @@ export type HarvesterBuyerMatchRecord = {
   intakeId: string | null;
   opportunityId: string | null;
   buyerId: string | null;
+  buyerReportId: string | null;
+  buyerSearchJobId: string | null;
   buyerName: string;
   buyerGroup: string | null;
   matchScore: number;
   reasons: string[];
   recommendedAction: string | null;
+  mailingAddress: string | null;
+  purchaseCount: number | null;
+  totalSpend: number | null;
+  isLlc: boolean;
+  isCashBuyer: boolean;
+  outreachStatus: string | null;
+  outreachSubject: string | null;
+  outreachBody: string | null;
+  outreachPreparedAt: string | null;
+  skipTraceStatus: string | null;
+  primaryPhone: string | null;
+  primaryEmail: string | null;
+  contactConfidenceScore: number | null;
+  contactProvider: string | null;
+  lastContactRefreshAt: string | null;
+  buyerWorkspaceHref: string | null;
+  nexusContactHref: string | null;
   createdAt: string;
 };
 
@@ -257,12 +277,57 @@ type HarvesterBuyerMatchRow = {
   intake_id: string | null;
   opportunity_id: string | null;
   buyer_id: string | null;
+  buyer_report_id?: string | null;
+  buyer_search_job_id?: string | null;
   buyer_name: string;
   buyer_group: string | null;
   match_score: number | string | null;
   reasons: string[] | null;
   recommended_action: string | null;
+  mailing_address?: string | null;
+  purchase_count?: number | null;
+  total_spend?: number | string | null;
+  is_llc?: boolean | null;
+  is_cash_buyer?: boolean | null;
+  outreach_status?: string | null;
+  outreach_subject?: string | null;
+  outreach_body?: string | null;
+  outreach_prepared_at?: string | null;
+  skip_trace_status?: string | null;
+  primary_phone?: string | null;
+  primary_email?: string | null;
+  contact_confidence_score?: number | string | null;
+  contact_provider?: string | null;
+  last_contact_refresh_at?: string | null;
+  buyer_workspace_href?: string | null;
+  nexus_contact_href?: string | null;
   created_at: string;
+};
+
+type BuyerReportLookupRow = {
+  id: string;
+  search_job_id: string | null;
+  buyer_profile_id: string | null;
+  buyer_name_snapshot: string | null;
+  mailing_address_snapshot: string | null;
+  score: number | string | null;
+  purchase_count: number | null;
+  total_spend: number | string | null;
+  is_llc: boolean | null;
+  is_cash_buyer: boolean | null;
+  created_at: string;
+};
+
+type NexusBuyerContactRow = {
+  owner_name: string | null;
+  property_address: string | null;
+  mailing_address: string | null;
+  primary_phone: string | null;
+  primary_email: string | null;
+  contact_confidence_score: number | string | null;
+  provider: string | null;
+  status: string | null;
+  updated_at: string | null;
 };
 
 type MarketplaceEntityRow = {
@@ -644,17 +709,131 @@ function mapDuplicate(row: HarvesterDuplicateRow): HarvesterDuplicateRecord {
   };
 }
 
+function cleanBuyerName(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function buildBuyerContactKey(buyerName: string | null | undefined, mailingAddress: string | null | undefined) {
+  return `${cleanBuyerName(buyerName)}::${normalizeAddress(mailingAddress)}`;
+}
+
+function buildBuyerWorkspaceHref(searchJobId: string | null | undefined) {
+  const cleanId = searchJobId?.trim();
+  return cleanId ? `/buyers?searchJobId=${encodeURIComponent(cleanId)}` : "/buyers";
+}
+
+function buildNexusContactHref(buyerReportId: string | null | undefined) {
+  const cleanId = buyerReportId?.trim();
+  return cleanId ? `/workspaces/nexus/contacts?lead=${encodeURIComponent(`buyer-report:${cleanId}`)}` : "/workspace/nexus";
+}
+
+async function loadLatestBuyerReportsForMatches(
+  supabase: SupabaseClient,
+  matches: Array<{ buyerId: string | null; buyerName: string }>,
+) {
+  const buyerIds = [...new Set(matches.map((match) => match.buyerId?.trim()).filter((value): value is string => Boolean(value)))];
+  const buyerNames = [...new Set(matches.map((match) => match.buyerName.trim()).filter(Boolean))];
+  const rows: BuyerReportLookupRow[] = [];
+
+  if (buyerIds.length) {
+    const { data } = await supabase
+      .from("BuyerReport")
+      .select("id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at")
+      .in("buyer_profile_id", buyerIds)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(200, buyerIds.length * 6));
+    rows.push(...((data ?? []) as BuyerReportLookupRow[]));
+  }
+
+  if (buyerNames.length) {
+    const { data } = await supabase
+      .from("BuyerReport")
+      .select("id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at")
+      .in("buyer_name_snapshot", buyerNames)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(200, buyerNames.length * 4));
+    rows.push(...((data ?? []) as BuyerReportLookupRow[]));
+  }
+
+  const byBuyerId = new Map<string, BuyerReportLookupRow>();
+  const byBuyerName = new Map<string, BuyerReportLookupRow>();
+  for (const row of rows) {
+    const buyerId = row.buyer_profile_id?.trim();
+    const buyerName = cleanBuyerName(row.buyer_name_snapshot);
+    if (buyerId && !byBuyerId.has(buyerId)) byBuyerId.set(buyerId, row);
+    if (buyerName && !byBuyerName.has(buyerName)) byBuyerName.set(buyerName, row);
+  }
+
+  return { byBuyerId, byBuyerName };
+}
+
+async function loadBuyerNexusContacts(
+  supabase: SupabaseClient,
+  buyerMatches: Array<{ buyerName: string; mailingAddress: string | null }>,
+) {
+  const buyerNames = [...new Set(buyerMatches.map((match) => match.buyerName.trim()).filter(Boolean))];
+  if (!buyerNames.length) return new Map<string, NexusBuyerContactRow>();
+
+  const { data } = await supabase
+    .from("nexus_contacts")
+    .select("owner_name,property_address,mailing_address,primary_phone,primary_email,contact_confidence_score,provider,status,updated_at")
+    .is("seller_lead_id", null)
+    .in("owner_name", buyerNames)
+    .order("updated_at", { ascending: false });
+
+  const byContactKey = new Map<string, NexusBuyerContactRow>();
+  for (const row of (data ?? []) as NexusBuyerContactRow[]) {
+    const key = buildBuyerContactKey(row.owner_name, row.property_address ?? row.mailing_address);
+    if (!normalizeAddress(row.property_address ?? row.mailing_address)) continue;
+    if (!byContactKey.has(key)) byContactKey.set(key, row);
+  }
+  return byContactKey;
+}
+
+function mergeBuyerMatchContact(row: HarvesterBuyerMatchRow, contact: NexusBuyerContactRow | null | undefined): HarvesterBuyerMatchRow {
+  if (!contact) return row;
+  return {
+    ...row,
+    mailing_address: cleanText(contact.mailing_address) ?? row.mailing_address ?? cleanText(contact.property_address) ?? null,
+    primary_phone: cleanText(contact.primary_phone) ?? row.primary_phone ?? null,
+    primary_email: cleanText(contact.primary_email) ?? row.primary_email ?? null,
+    contact_confidence_score: toNumber(contact.contact_confidence_score) ?? row.contact_confidence_score ?? null,
+    contact_provider: cleanText(contact.provider) ?? row.contact_provider ?? null,
+    skip_trace_status: cleanText(contact.status) ?? row.skip_trace_status ?? null,
+    last_contact_refresh_at: cleanText(contact.updated_at) ?? row.last_contact_refresh_at ?? null,
+  };
+}
+
 function mapBuyerMatch(row: HarvesterBuyerMatchRow): HarvesterBuyerMatchRecord {
   return {
     id: row.id,
     intakeId: row.intake_id,
     opportunityId: row.opportunity_id,
     buyerId: row.buyer_id,
+    buyerReportId: row.buyer_report_id ?? null,
+    buyerSearchJobId: row.buyer_search_job_id ?? null,
     buyerName: row.buyer_name,
     buyerGroup: row.buyer_group,
     matchScore: toNumber(row.match_score) ?? 0,
     reasons: row.reasons ?? [],
     recommendedAction: row.recommended_action,
+    mailingAddress: row.mailing_address ?? null,
+    purchaseCount: row.purchase_count ?? null,
+    totalSpend: toNumber(row.total_spend),
+    isLlc: Boolean(row.is_llc),
+    isCashBuyer: Boolean(row.is_cash_buyer),
+    outreachStatus: row.outreach_status ?? null,
+    outreachSubject: row.outreach_subject ?? null,
+    outreachBody: row.outreach_body ?? null,
+    outreachPreparedAt: row.outreach_prepared_at ?? null,
+    skipTraceStatus: row.skip_trace_status ?? null,
+    primaryPhone: row.primary_phone ?? null,
+    primaryEmail: row.primary_email ?? null,
+    contactConfidenceScore: toNumber(row.contact_confidence_score),
+    contactProvider: row.contact_provider ?? null,
+    lastContactRefreshAt: row.last_contact_refresh_at ?? null,
+    buyerWorkspaceHref: row.buyer_workspace_href ?? buildBuyerWorkspaceHref(row.buyer_search_job_id),
+    nexusContactHref: row.nexus_contact_href ?? buildNexusContactHref(row.buyer_report_id),
     createdAt: row.created_at,
   };
 }
@@ -837,9 +1016,18 @@ export async function listHarvesterIntakes(limit = 50): Promise<HarvesterIntakeR
     const mapped = mapDuplicate(row);
     duplicatesByIntake.set(mapped.intakeId, [...(duplicatesByIntake.get(mapped.intakeId) ?? []), mapped]);
   }
+  const buyerMatchRowsTyped = (buyerMatchRows ?? []) as HarvesterBuyerMatchRow[];
+  const nexusContacts = await loadBuyerNexusContacts(
+    supabase,
+    buyerMatchRowsTyped.map((row) => ({
+      buyerName: row.buyer_name,
+      mailingAddress: row.mailing_address ?? null,
+    })),
+  );
   const matchesByIntake = new Map<string, HarvesterBuyerMatchRecord[]>();
-  for (const row of (buyerMatchRows ?? []) as HarvesterBuyerMatchRow[]) {
-    const mapped = mapBuyerMatch(row);
+  for (const row of buyerMatchRowsTyped) {
+    const contact = nexusContacts.get(buildBuyerContactKey(row.buyer_name, row.mailing_address));
+    const mapped = mapBuyerMatch(mergeBuyerMatchContact(row, contact));
     if (!mapped.intakeId) continue;
     matchesByIntake.set(mapped.intakeId, [...(matchesByIntake.get(mapped.intakeId) ?? []), mapped]);
   }
@@ -1418,21 +1606,68 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
     reasons: match.reasons,
     recommendedAction: match.recommendedAction,
   }));
+  const buyerReports = supabase ? await loadLatestBuyerReportsForMatches(supabase, ranked) : { byBuyerId: new Map(), byBuyerName: new Map() };
+  const enrichedMatches = ranked.map((match) => {
+    const report =
+      (match.buyerId ? buyerReports.byBuyerId.get(match.buyerId) : null)
+      ?? buyerReports.byBuyerName.get(cleanBuyerName(match.buyerName))
+      ?? null;
+    const mailingAddress = report?.mailing_address_snapshot?.trim() || null;
+    const buyerSearchJobId = report?.search_job_id?.trim() || null;
+
+    return {
+      ...match,
+      buyerReportId: report?.id ?? null,
+      buyerSearchJobId,
+      mailingAddress,
+      purchaseCount: report?.purchase_count ?? null,
+      totalSpend: toNumber(report?.total_spend),
+      isLlc: Boolean(report?.is_llc),
+      isCashBuyer: Boolean(report?.is_cash_buyer),
+      buyerWorkspaceHref: buildBuyerWorkspaceHref(buyerSearchJobId),
+      nexusContactHref: buildNexusContactHref(report?.id ?? null),
+    };
+  });
+
+  const buyerNexusContacts = supabase
+    ? await loadBuyerNexusContacts(
+        supabase,
+        enrichedMatches.map((match) => ({ buyerName: match.buyerName, mailingAddress: match.mailingAddress })),
+      )
+    : new Map<string, NexusBuyerContactRow>();
 
   if (supabase) {
     await supabase.from("harvester_buyer_matches").delete().eq("intake_id", input.intakeId);
-    if (ranked.length) {
+    if (enrichedMatches.length) {
       await supabase.from("harvester_buyer_matches").insert(
-        ranked.map((match) => ({
-          intake_id: input.intakeId,
-          opportunity_id: opportunity.id,
-          buyer_id: match.buyerId,
-          buyer_name: match.buyerName,
-          buyer_group: match.buyerGroup,
-          match_score: match.matchScore,
-          reasons: match.reasons,
-          recommended_action: match.recommendedAction,
-        })),
+        enrichedMatches.map((match) => {
+          const nexusContact = buyerNexusContacts.get(buildBuyerContactKey(match.buyerName, match.mailingAddress));
+          return {
+            intake_id: input.intakeId,
+            opportunity_id: opportunity.id,
+            buyer_id: match.buyerId,
+            buyer_report_id: match.buyerReportId,
+            buyer_search_job_id: match.buyerSearchJobId,
+            buyer_name: match.buyerName,
+            buyer_group: match.buyerGroup,
+            match_score: match.matchScore,
+            reasons: match.reasons,
+            recommended_action: match.recommendedAction,
+            mailing_address: match.mailingAddress,
+            purchase_count: match.purchaseCount,
+            total_spend: match.totalSpend,
+            is_llc: match.isLlc,
+            is_cash_buyer: match.isCashBuyer,
+            skip_trace_status: cleanText(nexusContact?.status) ?? null,
+            primary_phone: cleanText(nexusContact?.primary_phone) ?? null,
+            primary_email: cleanText(nexusContact?.primary_email) ?? null,
+            contact_confidence_score: toNumber(nexusContact?.contact_confidence_score),
+            contact_provider: cleanText(nexusContact?.provider) ?? null,
+            last_contact_refresh_at: cleanText(nexusContact?.updated_at) ?? null,
+            buyer_workspace_href: match.buyerWorkspaceHref,
+            nexus_contact_href: match.nexusContactHref,
+          };
+        }),
       );
     }
   }
@@ -1447,7 +1682,7 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
 
   return {
     ok: true as const,
-    matches: ranked,
+    matches: enrichedMatches,
     buyerEngineLaunch,
     // Early buyer validation — demand signal before significant acquisition effort.
     validation: {
@@ -1469,7 +1704,7 @@ export async function prepareHarvesterBuyerOutreach(input: { buyerMatchId: strin
 
   const { data: match } = await supabase
     .from("harvester_buyer_matches")
-    .select("id, intake_id, opportunity_id, buyer_name, match_score")
+    .select("*")
     .eq("id", input.buyerMatchId)
     .maybeSingle();
   if (!match) throw new Error("Buyer match not found.");
@@ -1487,6 +1722,7 @@ export async function prepareHarvesterBuyerOutreach(input: { buyerMatchId: strin
   const beds = opp?.beds ?? null;
   const baths = opp?.baths ?? null;
   const sqft = opp?.sqft ?? null;
+  const reasons = Array.isArray((match as HarvesterBuyerMatchRow).reasons) ? ((match as HarvesterBuyerMatchRow).reasons ?? []) : [];
   const specs = [
     beds || baths ? `${beds ?? "?"} bed / ${baths ?? "?"} bath` : null,
     sqft ? `${Number(sqft).toLocaleString()} sqft` : null,
@@ -1496,24 +1732,27 @@ export async function prepareHarvesterBuyerOutreach(input: { buyerMatchId: strin
     .filter(Boolean)
     .join(" · ");
 
-  const subject = `Off-market deal: ${address}${location ? ` (${location})` : ""}`;
+  const matchReason = reasons[0] ?? "you've been active in this area";
+  const subject = location ? `Quick off-market fit in ${location}` : `Quick off-market fit: ${address}`;
   const body = [
     `Hi ${buyerName},`,
     "",
-    `I have an off-market opportunity that fits your buy box:`,
+    `Wanted to send you a quick one that could fit your box.`,
     "",
     `Property: ${address}${location ? `, ${location}` : ""}`,
-    `Asking: ${price}`,
-    specs ? `Details: ${specs}` : "",
+    `Ask: ${price}`,
+    specs ? `Snapshot: ${specs}` : "",
     "",
-    `You're a strong fit based on your recent buying activity in this area. This is first-look before it goes wider.`,
+    `You came to mind because ${matchReason.charAt(0).toLowerCase()}${matchReason.slice(1)}`,
     "",
-    `If you're interested, reply with proof of funds and I'll send the full packet and access details.`,
+    opp?.notes ? `Notes: ${String(opp.notes).trim()}` : "",
     "",
-    `Best,`,
+    `If you want the fuller breakdown, I can send over the numbers and next steps.`,
+    "",
+    `Thanks,`,
     `Blackspire Helix`,
   ]
-    .filter((line) => line !== null)
+    .filter((line) => typeof line === "string" && line.trim().length > 0)
     .join("\n");
 
   await supabase
@@ -1526,7 +1765,103 @@ export async function prepareHarvesterBuyerOutreach(input: { buyerMatchId: strin
     })
     .eq("id", input.buyerMatchId);
 
+  const outreachDraft: OutreachDraftRecord = {
+    id: `harvester-${input.buyerMatchId}`,
+    source: "buyers",
+    searchJobId:
+      cleanText((match as HarvesterBuyerMatchRow).buyer_search_job_id)
+      ?? `harvester-${cleanText((match as HarvesterBuyerMatchRow).intake_id) ?? input.buyerMatchId}`,
+    buyerName,
+    mailingAddress: cleanText((match as HarvesterBuyerMatchRow).mailing_address) ?? "No mailing address",
+    county: cleanText(opp?.county),
+    state: cleanText(opp?.state),
+    propertyType: beds && baths ? "single family" : cleanText(opp?.condition),
+    score: Math.round(toNumber(match.match_score) ?? 0),
+    purchaseCount: (match as HarvesterBuyerMatchRow).purchase_count ?? 0,
+    totalSpend: toNumber((match as HarvesterBuyerMatchRow).total_spend) ?? 0,
+    isLlc: Boolean((match as HarvesterBuyerMatchRow).is_llc),
+    isCashBuyer: Boolean((match as HarvesterBuyerMatchRow).is_cash_buyer),
+    subject,
+    angle: matchReason,
+    body,
+    createdAt: new Date().toISOString(),
+  };
+
+  await persistOutreachDraftRecord(outreachDraft).catch(() => undefined);
+
   return { ok: true as const, buyerMatchId: input.buyerMatchId, buyerName, subject, body };
+}
+
+export async function runHarvesterBuyerTrace(input: { buyerMatchId: string }) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) throw new Error("Storage is not configured.");
+
+  const { data: match } = await supabase
+    .from("harvester_buyer_matches")
+    .select("*")
+    .eq("id", input.buyerMatchId)
+    .maybeSingle();
+  if (!match) throw new Error("Buyer match not found.");
+
+  const buyerName = cleanText((match as HarvesterBuyerMatchRow).buyer_name);
+  const mailingAddress = cleanText((match as HarvesterBuyerMatchRow).mailing_address);
+  if (!buyerName || !mailingAddress) {
+    throw new Error("This buyer signal needs a buyer name and mailing address before skip trace can run.");
+  }
+
+  const opportunity = (match as HarvesterBuyerMatchRow).opportunity_id
+    ? await supabase
+        .from("harvester_extracted_opportunities")
+        .select("county,city,state,zip")
+        .eq("id", (match as HarvesterBuyerMatchRow).opportunity_id)
+        .maybeSingle()
+    : { data: null };
+
+  const leadId = cleanText((match as HarvesterBuyerMatchRow).buyer_report_id)
+    ? `buyer-report:${(match as HarvesterBuyerMatchRow).buyer_report_id}`
+    : `harvester-buyer:${input.buyerMatchId}`;
+  const nexusLead: NexusLeadRecord = {
+    id: leadId,
+    owner: buyerName,
+    property: mailingAddress,
+    targetType: "buyer_report",
+    sellerScore: Math.round(toNumber((match as HarvesterBuyerMatchRow).match_score) ?? 0),
+    skipTraceStatus: cleanText((match as HarvesterBuyerMatchRow).skip_trace_status) ?? "Queued",
+    primaryPhone: cleanText((match as HarvesterBuyerMatchRow).primary_phone) ?? "Not captured",
+    primaryEmail: cleanText((match as HarvesterBuyerMatchRow).primary_email) ?? "Not captured",
+    confidence: toNumber((match as HarvesterBuyerMatchRow).contact_confidence_score) ?? 0,
+    provider: cleanText((match as HarvesterBuyerMatchRow).contact_provider) ?? "Tracerfy",
+    lastUpdated: cleanText((match as HarvesterBuyerMatchRow).last_contact_refresh_at) ?? (match as HarvesterBuyerMatchRow).created_at,
+    sourceWorkspace: cleanText((match as HarvesterBuyerMatchRow).buyer_workspace_href) ?? buildBuyerWorkspaceHref((match as HarvesterBuyerMatchRow).buyer_search_job_id),
+    actions: ["Run Skip Trace", "View Contact Profile", "Retry", "Mark Bad Contact"],
+    mailingAddress,
+    county: cleanText(opportunity.data?.county) ?? "",
+    city: cleanText(opportunity.data?.city) ?? "",
+    state: cleanText(opportunity.data?.state) ?? "NC",
+    zip: cleanText(opportunity.data?.zip) ?? "",
+    dossier: ((match as HarvesterBuyerMatchRow).reasons ?? []).join(" "),
+    eligibleForAutoTrace: true,
+  };
+
+  const result = await runNexusSkipTrace(nexusLead);
+
+  await supabase
+    .from("harvester_buyer_matches")
+    .update({
+      mailing_address: mailingAddress,
+      skip_trace_status: result.skip_trace_status,
+      primary_phone: result.primary_phone,
+      primary_email: result.primary_email,
+      contact_confidence_score: result.contact_confidence_score,
+      contact_provider: result.skip_trace_provider,
+      last_contact_refresh_at: result.skip_trace_completed_at ?? new Date().toISOString(),
+      buyer_workspace_href: cleanText((match as HarvesterBuyerMatchRow).buyer_workspace_href)
+        ?? buildBuyerWorkspaceHref((match as HarvesterBuyerMatchRow).buyer_search_job_id),
+      nexus_contact_href: buildNexusContactHref((match as HarvesterBuyerMatchRow).buyer_report_id),
+    })
+    .eq("id", input.buyerMatchId);
+
+  return { ok: true as const, buyerMatchId: input.buyerMatchId, result };
 }
 
 export async function detectDuplicateHarvesterDeal(input: { intakeId: string; persist?: boolean }) {

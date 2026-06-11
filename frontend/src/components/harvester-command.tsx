@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -28,6 +29,13 @@ type BuyerMatchResult = {
   matchScore: number;
   reasons: string[];
   recommendedAction: string;
+  mailingAddress?: string | null;
+  primaryPhone?: string | null;
+  primaryEmail?: string | null;
+  contactConfidenceScore?: number | null;
+  skipTraceStatus?: string | null;
+  buyerWorkspaceHref?: string | null;
+  nexusContactHref?: string | null;
 };
 type FindBuyersResult = {
   matches: BuyerMatchResult[];
@@ -45,6 +53,10 @@ async function postJson<T>(url: string, body: Record<string, unknown>) {
     throw new Error(payload.error || "Request failed.");
   }
   return payload;
+}
+
+function hasValue(value: string | null | undefined) {
+  return Boolean(value && value.trim() && value !== "Not captured");
 }
 
 // Read an uploaded image and downscale/re-encode it to a compact JPEG data URL.
@@ -88,7 +100,14 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
   const [status, setStatus] = useState<string>("Ready for intake.");
   const [selectedFile, setSelectedFile] = useState<{ name: string; type: string; dataUrl: string | null } | null>(null);
   const [buyerResults, setBuyerResults] = useState<Record<string, FindBuyersResult>>({});
-  const [outreach, setOutreach] = useState<Record<string, { subject: string; body: string }>>({});
+  const [outreach, setOutreach] = useState<Record<string, { subject: string; body: string }>>(() =>
+    Object.fromEntries(
+      snapshot.buyerMatches
+        .filter((match) => match.outreachSubject && match.outreachBody)
+        .map((match) => [match.id, { subject: match.outreachSubject!, body: match.outreachBody! }]),
+    ),
+  );
+  const [openContacts, setOpenContacts] = useState<Record<string, boolean>>({});
 
   async function sendToBuyer(buyerMatchId: string) {
     setBusyLabel("Preparing outreach...");
@@ -98,9 +117,31 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
         { buyerMatchId },
       );
       setOutreach((prev) => ({ ...prev, [buyerMatchId]: { subject: result.subject, body: result.body } }));
-      setStatus(`Outreach prepared for ${result.buyerName}. Copy it below and send through your channel.`);
+      setStatus(`Outreach drafted for ${result.buyerName}. Review it below, then send through the best channel.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not prepare outreach.");
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
+  async function traceBuyer(buyerMatchId: string) {
+    setBusyLabel("Running buyer trace...");
+    try {
+      const result = await postJson<{
+        result?: { primary_phone?: string | null; primary_email?: string | null; contact_confidence_score?: number | null };
+      }>("/api/harvester/buyer-trace", { buyerMatchId });
+      const phone = result.result?.primary_phone?.trim();
+      const email = result.result?.primary_email?.trim();
+      const confidence = result.result?.contact_confidence_score ?? 0;
+      setStatus(
+        phone || email
+          ? `Buyer trace finished. ${phone ? `Phone ${phone}. ` : ""}${email ? `Email ${email}. ` : ""}Confidence ${confidence}.`
+          : "Buyer trace finished. No verified phone or email was returned yet.",
+      );
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Buyer trace failed.");
     } finally {
       setBusyLabel(null);
     }
@@ -705,7 +746,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
       {activeTab === "buyers" ? (
         <div className="grid gap-5 lg:grid-cols-2">
           {snapshot.buyerMatches.length ? snapshot.buyerMatches.map((match) => (
-            <article key={match.id} className="brand-panel harvester-panel p-6">
+            <article key={match.id} className="brand-panel harvester-panel overflow-hidden p-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">{match.buyerGroup ?? "Buyer Group"}</div>
@@ -725,10 +766,17 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                 <button
                   type="button"
                   className="harvester-action-button"
+                  onClick={() => setOpenContacts((prev) => ({ ...prev, [match.id]: !prev[match.id] }))}
+                >
+                  {openContacts[match.id] ? "Hide Contact" : "View Contact"}
+                </button>
+                <button
+                  type="button"
+                  className="harvester-action-button"
                   disabled={pending}
                   onClick={() => sendToBuyer(match.id)}
                 >
-                  {outreach[match.id] ? "Regenerate Outreach" : "Send to Buyer"}
+                  {outreach[match.id] ? "Refresh Draft" : "Draft Outreach"}
                 </button>
                 {outreach[match.id] ? (
                   <button
@@ -743,10 +791,111 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                     Copy message
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  className="harvester-mini-link"
+                  disabled={pending}
+                  onClick={() => traceBuyer(match.id)}
+                >
+                  {hasValue(match.primaryPhone) || hasValue(match.primaryEmail) ? "Refresh Trace" : "Skip Trace"}
+                </button>
+                {hasValue(match.primaryPhone) ? (
+                  <a className="harvester-mini-link" href={`tel:${match.primaryPhone!.replace(/[^0-9+]/g, "")}`}>
+                    Call
+                  </a>
+                ) : null}
+                {hasValue(match.primaryEmail) ? (
+                  <a className="harvester-mini-link" href={`mailto:${match.primaryEmail!.trim()}`}>
+                    Email
+                  </a>
+                ) : null}
+                <Link className="harvester-mini-link" href={match.nexusContactHref ?? "/workspace/nexus"}>
+                  Open in Nexus
+                </Link>
+                {match.buyerWorkspaceHref ? (
+                  <Link className="harvester-mini-link" href={match.buyerWorkspaceHref}>
+                    Buyer Lane
+                  </Link>
+                ) : null}
               </div>
+              {openContacts[match.id] ? (
+                <div className="mt-3 rounded-[18px] border border-[var(--line)] bg-black/25 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--copy-muted)]">Buyer Contact</div>
+                    {match.skipTraceStatus ? (
+                      <div className="rounded-full border border-[var(--line)] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-[var(--gold-soft)]">
+                        {match.skipTraceStatus}
+                      </div>
+                    ) : null}
+                    {match.contactConfidenceScore != null ? (
+                      <div className="rounded-full border border-[#2dd4bf55] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-[#67e8f9]">
+                        confidence {Math.round(match.contactConfidenceScore)}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm leading-6 text-[var(--copy-soft)] sm:grid-cols-2">
+                    <div className="rounded-[14px] border border-[var(--line)] bg-black/20 p-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Mailing</div>
+                      <div className="mt-2 text-white">{match.mailingAddress ?? "No mailing address saved yet."}</div>
+                    </div>
+                    <div className="rounded-[14px] border border-[var(--line)] bg-black/20 p-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Phone</div>
+                      <div className="mt-2 text-white">{match.primaryPhone ?? "Not captured"}</div>
+                    </div>
+                    <div className="rounded-[14px] border border-[var(--line)] bg-black/20 p-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Email</div>
+                      <div className="mt-2 break-all text-white">{match.primaryEmail ?? "Not captured"}</div>
+                    </div>
+                    <div className="rounded-[14px] border border-[var(--line)] bg-black/20 p-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Contact Posture</div>
+                      <div className="mt-2 text-white">
+                        {match.contactConfidenceScore != null
+                          ? `Confidence ${Math.round(match.contactConfidenceScore)}${match.contactProvider ? ` via ${match.contactProvider}` : ""}`
+                          : "Run skip trace to verify the best lane."}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="harvester-mini-link"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(match.mailingAddress ?? "");
+                        setStatus("Mailing address copied.");
+                      }}
+                    >
+                      Copy address
+                    </button>
+                    {hasValue(match.primaryPhone) ? (
+                      <button
+                        type="button"
+                        className="harvester-mini-link"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(match.primaryPhone ?? "");
+                          setStatus("Phone copied.");
+                        }}
+                      >
+                        Copy phone
+                      </button>
+                    ) : null}
+                    {hasValue(match.primaryEmail) ? (
+                      <button
+                        type="button"
+                        className="harvester-mini-link"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(match.primaryEmail ?? "");
+                          setStatus("Email copied.");
+                        }}
+                      >
+                        Copy email
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               {outreach[match.id] ? (
                 <div className="mt-3 rounded-[16px] border border-[#2dd4bf55] bg-black/30 p-4">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-[#5eead4]">Ready to send</div>
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-[#5eead4]">Draft Outreach</div>
                   <div className="mt-2 text-sm font-semibold text-white">{outreach[match.id].subject}</div>
                   <pre className="mt-2 whitespace-pre-wrap font-sans text-xs leading-6 text-[var(--copy-soft)]">{outreach[match.id].body}</pre>
                 </div>

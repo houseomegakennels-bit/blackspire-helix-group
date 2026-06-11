@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { runSellerLiveSearch } from "@/lib/seller-engine-server";
 import { SELLER_LIVE_SOURCES, type SellerLiveSourceKey } from "@/lib/seller-engine";
+import { guardBetaAction } from "@/lib/beta-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
+    const gate = await guardBetaAction("sweep");
+    if ("response" in gate) return gate.response;
     const body = await request.json() as { sourceKey?: string; county?: string; city?: string; limit?: number };
     if (!body.county?.trim()) {
       return NextResponse.json({ ok: false, error: "County is required." }, { status: 400 });

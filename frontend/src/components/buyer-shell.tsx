@@ -19,6 +19,7 @@ const navItems = [
   { href: "/buyers", label: "Buyer Reports" },
   { href: "/workflows", label: "Workflows" },
   { href: "/admin", label: "Admin", adminOnly: true },
+  { href: "/admin/beta", label: "Beta Testers", adminOnly: true },
   { href: "/admin/county-sources", label: "County Sources", adminOnly: true },
   { href: "/admin/buyer-groups", label: "Buyer Groups", adminOnly: true },
 ] as Array<{ href: string; label: string; adminOnly?: boolean }>;

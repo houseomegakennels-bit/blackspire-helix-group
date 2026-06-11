@@ -1003,7 +1003,7 @@ export function SellerEngineDashboard({
 
       <section id="harvester" className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <form onSubmit={runLiveSearch} className="seller-panel p-5 lg:p-6">
-          <p className="seller-kicker">Live county search</p>
+          <p className="seller-kicker">Launch Seller Sweep</p>
           <h3 className="mt-2 text-2xl font-semibold text-white">Pull live seller data on demand</h3>
           <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
             This search hits the selected live county or statewide source when an operator initiates a run, then scores and imports the records into Seller Engine.
@@ -1034,7 +1034,7 @@ export function SellerEngineDashboard({
             {liveSourceKey === "county_distress_blend" ? <span className="seller-signal">Blends active distress feeds for this county</span> : null}
             {liveSourceKey === "county_operational_blend" ? <span className="seller-signal">Blends distress + absentee feeds for this county</span> : null}
           </div>
-          <button className="seller-button mt-5 w-full justify-center" type="submit">Run live seller search</button>
+          <button className="seller-button mt-5 w-full justify-center" type="submit">Launch Seller Sweep</button>
         </form>
 
         <form onSubmit={uploadCsv} className="seller-panel p-5 lg:p-6">

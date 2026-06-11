@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 // Consistent cross-workspace nav so Sentinel and every engine are reachable from
 // any workspace — navigation stays familiar regardless of where you are.
 const LINKS: Array<{ label: string; href: string; match: string; accent?: boolean }> = [
+  { label: "Start Here", href: "/beta", match: "/beta", accent: true },
   { label: "Sentinel", href: "/workspace/sentinel", match: "/workspace/sentinel", accent: true },
   { label: "Properties", href: "/workspace/property", match: "/workspace/property" },
   { label: "Harvester", href: "/workspace/harvester", match: "/workspace/harvester" },

@@ -87,6 +87,16 @@ export function AuthPanel() {
     };
   }, []);
 
+  async function routeByRole() {
+    try {
+      const response = await fetch("/api/auth/role", { cache: "no-store" });
+      const payload = (await response.json()) as { role?: string };
+      router.push(payload.role === "admin" ? "/workspaces" : "/beta");
+    } catch {
+      router.push("/beta");
+    }
+  }
+
   async function submit(path: "/api/auth/bootstrap" | "/api/auth/sign-in") {
     setSubmitting(true);
     setMessage(null);
@@ -109,7 +119,7 @@ export function AuthPanel() {
 
       setMessage(path === "/api/auth/bootstrap" ? "Operator account created and signed in." : "Signed in.");
       await refreshStatus();
-      router.refresh();
+      await routeByRole();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Operator auth request failed.");
     } finally {
@@ -148,7 +158,7 @@ export function AuthPanel() {
         website: "",
       });
       await refreshStatus();
-      router.refresh();
+      router.push("/beta");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Beta access request failed.");
     } finally {

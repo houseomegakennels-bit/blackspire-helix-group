@@ -59,3 +59,10 @@ export async function requireAdminPage(): Promise<void> {
   if (role === "anonymous") redirect("/auth");
   if (role !== "admin") redirect("/workspaces");
 }
+
+/** For server pages — require any signed-in operator; returns the role. */
+export async function requireSignedInPage(): Promise<{ role: OperatorRole }> {
+  const { role } = await resolveRole();
+  if (role === "anonymous") redirect("/auth");
+  return { role };
+}
