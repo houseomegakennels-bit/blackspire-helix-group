@@ -18,10 +18,10 @@ const navItems = [
   { href: "/searches", label: "Search Jobs" },
   { href: "/buyers", label: "Buyer Reports" },
   { href: "/workflows", label: "Workflows" },
-  { href: "/admin", label: "Admin" },
-  { href: "/admin/county-sources", label: "County Sources" },
-  { href: "/admin/buyer-groups", label: "Buyer Groups" },
-];
+  { href: "/admin", label: "Admin", adminOnly: true },
+  { href: "/admin/county-sources", label: "County Sources", adminOnly: true },
+  { href: "/admin/buyer-groups", label: "Buyer Groups", adminOnly: true },
+] as Array<{ href: string; label: string; adminOnly?: boolean }>;
 
 export function BuyerShell({
   eyebrow,
@@ -72,7 +72,7 @@ export function BuyerShell({
           </div>
 
           <nav className="mt-5 space-y-2">
-            {navItems.map((item) => (
+            {navItems.filter((item) => !item.adminOnly || operatorStatus?.isAdmin).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

@@ -4,6 +4,7 @@ import { MarketingShell } from "@/components/marketing-shell";
 import { brandAssets } from "@/lib/brand-assets";
 import { divisionThemeStyle } from "@/lib/division-theme";
 import { getReconAdminMetrics, type ReconAdminMetrics } from "@/lib/recon-engine-server";
+import { requireAdminPage } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ReconAdminPage() {
+  await requireAdminPage();
   let metrics: ReconAdminMetrics | null = null;
   let denied = false;
   try {

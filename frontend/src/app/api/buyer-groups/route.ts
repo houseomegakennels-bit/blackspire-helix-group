@@ -7,10 +7,15 @@ import {
   syncDefaultBuyerGroups,
   toggleBuyerGroupActive,
 } from "@/lib/buyer-engine-server";
+import { guardAdminApi } from "@/lib/operator-access";
 
 export async function GET(request: NextRequest) {
   try {
     const admin = request.nextUrl.searchParams.get("admin") === "1";
+    if (admin) {
+      const denied = await guardAdminApi();
+      if (denied) return denied;
+    }
     const rows = await listBuyerGroupRegistry(admin);
     return NextResponse.json({
       ok: true,
@@ -31,6 +36,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await guardAdminApi();
+    if (denied) return denied;
     const body = (await request.json()) as { csv?: string; action?: string };
     if (body.action === "sync_defaults") {
       const result = await syncDefaultBuyerGroups();
@@ -60,6 +67,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const denied = await guardAdminApi();
+    if (denied) return denied;
     const body = (await request.json()) as { id?: string; active?: boolean };
     if (!body.id || typeof body.active !== "boolean") {
       return NextResponse.json(

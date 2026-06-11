@@ -3,6 +3,9 @@ import {
   getBetaTesterSnapshot,
   getOperatorShellStatus,
 } from "@/lib/buyer-engine-server";
+import { requireAdminPage } from "@/lib/operator-access";
+
+export const dynamic = "force-dynamic";
 
 function formatDateTime(value: string | null) {
   if (!value) return "Never";
@@ -12,6 +15,7 @@ function formatDateTime(value: string | null) {
 }
 
 export default async function AdminPage() {
+  await requireAdminPage();
   const operatorStatus = await getOperatorShellStatus().catch(() => null);
 
   let snapshot:

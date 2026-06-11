@@ -9,6 +9,7 @@ import {
   syncSellerSourcesFromBuyerRegistry,
   toggleSellerSourceActive,
 } from "@/lib/seller-engine-server";
+import { guardAdminApi } from "@/lib/operator-access";
 
 export async function GET() {
   return NextResponse.json({ ok: true, sources: await listSellerSources() });
@@ -16,6 +17,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await guardAdminApi();
+    if (denied) return denied;
     const body = await request.json() as {
       action?: string;
       name?: string;
@@ -46,6 +49,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const denied = await guardAdminApi();
+    if (denied) return denied;
     const body = await request.json() as { id?: string; active?: boolean };
     if (!body.id || typeof body.active !== "boolean") {
       return NextResponse.json({ ok: false, error: "id and active are required." }, { status: 400 });

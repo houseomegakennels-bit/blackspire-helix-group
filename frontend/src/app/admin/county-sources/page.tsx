@@ -1,8 +1,12 @@
 import { BuyerShell } from "@/components/buyer-shell";
 import { CountySourcesAdmin } from "@/components/county-sources-admin";
 import { getOperatorShellStatus, listAdminCountySourceRows } from "@/lib/buyer-engine-server";
+import { requireAdminPage } from "@/lib/operator-access";
+
+export const dynamic = "force-dynamic";
 
 export default async function CountySourcesPage() {
+  await requireAdminPage();
   const [operatorStatus, rows] = await Promise.all([
     getOperatorShellStatus().catch(() => null),
     listAdminCountySourceRows().catch(() => []),
