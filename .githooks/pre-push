@@ -3,12 +3,11 @@ set -e
 
 cd "$(git rev-parse --show-toplevel)"
 
-echo "🧪 Running pre-push frontend build..."
+echo "Running pre-push frontend build..."
 
 if [ -d frontend ]; then
   cd frontend
   npm run build
 else
-  echo "⚠️ frontend/ directory not found; skipping frontend build."
+  echo "frontend/ directory not found; skipping frontend build."
 fi
-
