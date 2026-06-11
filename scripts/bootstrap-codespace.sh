@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 BASHRC="${HOME}/.bashrc"
+REPO_NAME="$(basename "$REPO_ROOT")"
 
 append_line_once() {
   local line="$1"
@@ -23,13 +24,13 @@ npm install || true
 if [ -d frontend ]; then
   (
     cd frontend
-    npm install
+    npm install || echo "WARNING: frontend npm install failed during bootstrap."
   )
 fi
 
 echo ""
 echo "Installing Codex CLI..."
-npm install -g @openai/codex
+npm install -g @openai/codex || echo "WARNING: Codex CLI install failed during bootstrap."
 
 echo ""
 echo "Preparing workspace scripts..."
@@ -52,12 +53,13 @@ bash scripts/install-git-hooks.sh
 
 echo ""
 echo "Configuring shell helpers..."
-append_line_once 'export PATH="/workspaces/blackspire-helix-group/scripts:$PATH"' "$BASHRC"
-append_line_once 'alias agent-start="bash /workspaces/blackspire-helix-group/scripts/agent-start.sh"' "$BASHRC"
-append_line_once 'alias agent-save="bash /workspaces/blackspire-helix-group/scripts/agent-save.sh"' "$BASHRC"
-append_line_once 'alias bh="cd /workspaces/blackspire-helix-group"' "$BASHRC"
-append_line_once 'alias env-check="bash /workspaces/blackspire-helix-group/scripts/check-required-env.sh"' "$BASHRC"
-append_line_once 'alias env-sync="bash /workspaces/blackspire-helix-group/scripts/materialize-env-from-secrets.sh"' "$BASHRC"
+append_line_once "export PATH=\"$REPO_ROOT/scripts:\$PATH\"" "$BASHRC"
+append_line_once "alias agent-start=\"bash $REPO_ROOT/scripts/agent-start.sh\"" "$BASHRC"
+append_line_once "alias agent-save=\"bash $REPO_ROOT/scripts/agent-save.sh\"" "$BASHRC"
+append_line_once "alias bh=\"cd $REPO_ROOT\"" "$BASHRC"
+append_line_once "alias env-check=\"bash $REPO_ROOT/scripts/check-required-env.sh\"" "$BASHRC"
+append_line_once "alias env-sync=\"bash $REPO_ROOT/scripts/materialize-env-from-secrets.sh\"" "$BASHRC"
+append_line_once "alias repo-root=\"cd $REPO_ROOT\"" "$BASHRC"
 
 echo ""
 echo "Checking Codex auth..."
@@ -70,4 +72,4 @@ if ! bash scripts/check-required-env.sh; then
 fi
 
 echo ""
-echo "Codespace bootstrap complete."
+echo "Codespace bootstrap complete for $REPO_NAME."

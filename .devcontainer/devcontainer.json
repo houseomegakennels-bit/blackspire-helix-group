@@ -1,11 +1,12 @@
 {
   "name": "Blackspire Environment",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "bash /workspaces/blackspire-helix-group/scripts/bootstrap-codespace.sh",
-  "postAttachCommand": "bash /workspaces/blackspire-helix-group/scripts/agent-start.sh",
+  "postCreateCommand": "bash ${containerWorkspaceFolder}/scripts/bootstrap-codespace.sh",
+  "postAttachCommand": "bash ${containerWorkspaceFolder}/scripts/agent-start.sh",
   "customizations": {
     "vscode": {
       "extensions": [
