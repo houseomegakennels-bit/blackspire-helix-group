@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ReactNode } from "react";
 
+import { BetaFeedback } from "@/components/beta-feedback";
 import { DivisionWatermark } from "@/components/division-watermark";
 import { RealEstateWorkflowRail } from "@/components/real-estate-workflow-rail";
 import { brandAssets } from "@/lib/brand-assets";
@@ -144,6 +145,7 @@ export function BuyerShell({
           {children}
         </section>
       </div>
+      <BetaFeedback />
     </main>
   );
 }

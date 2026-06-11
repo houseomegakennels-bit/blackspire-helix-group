@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { listSellerLeads } from "@/lib/seller-engine-server";
+import { guardBetaAction } from "@/lib/beta-server";
 
 function csvCell(value: unknown) {
   const text = Array.isArray(value) ? value.join("; ") : String(value ?? "");
@@ -8,6 +9,9 @@ function csvCell(value: unknown) {
 }
 
 export async function GET() {
+  const gate = await guardBetaAction("export");
+  if ("response" in gate) return gate.response;
+
   const leads = await listSellerLeads();
   const headers = ["owner_name", "owner_mailing_address", "property_address", "parcel_id", "county", "city", "zip_code", "property_type", "motivation_score", "motivation_reasons", "seller_dossier", "status", "source_data", "recommended_next_action"];
   const rows = leads.map((lead) => [lead.ownerName, lead.ownerMailingAddress, lead.propertyAddress, lead.parcelId, lead.county, lead.city, lead.zipCode, lead.propertyType, lead.score, lead.reasons, lead.summary, lead.status, lead.sourceName, lead.recommendedAction]);

@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { BetaFeedback } from "@/components/beta-feedback";
 import { DivisionWatermark } from "@/components/division-watermark";
 import { RealEstateWorkflowRail } from "@/components/real-estate-workflow-rail";
 import { brandAssets } from "@/lib/brand-assets";
@@ -66,6 +67,7 @@ export function SellerEngineShell({ children }: { children: ReactNode }) {
         </aside>
         <section className="min-w-0 space-y-5">{children}</section>
       </div>
+      <BetaFeedback />
     </main>
   );
 }

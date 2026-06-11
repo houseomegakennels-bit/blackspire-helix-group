@@ -38,7 +38,7 @@ export function BetaFeedback() {
         setStatus(payload.error || "Could not submit.");
         return;
       }
-      setStatus("Thanks — feedback sent.");
+      setStatus("Thanks - feedback sent.");
       setMessage("");
       setTimeout(() => setOpen(false), 1200);
     } finally {
@@ -58,13 +58,23 @@ export function BetaFeedback() {
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-[460px] rounded-[18px] border border-[#d6a84f55] bg-[#0a0805] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="w-full max-w-[460px] rounded-[18px] border border-[#d6a84f55] bg-[#0a0805] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between">
               <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Beta feedback</div>
-              <button type="button" onClick={() => setOpen(false)} className="text-[var(--copy-muted)] hover:text-white">✕</button>
+              <button type="button" onClick={() => setOpen(false)} className="text-[var(--copy-muted)] hover:text-white">
+                X
+              </button>
             </div>
-            <p className="mt-1 text-xs text-[var(--copy-muted)]">Tell us what's confusing, broken, or missing — right where it happened.</p>
+            <p className="mt-1 text-xs text-[var(--copy-muted)]">
+              Tell us what&apos;s confusing, broken, or missing right where it happened.
+            </p>
 
             <label className="mt-4 block text-xs uppercase tracking-wider text-[var(--copy-muted)]">Category</label>
             <select
@@ -73,7 +83,9 @@ export function BetaFeedback() {
               className="mt-1 w-full rounded-[12px] border border-[var(--line)] bg-black/40 px-3 py-2 text-sm text-white outline-none"
             >
               {CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
               ))}
             </select>
 
@@ -82,7 +94,7 @@ export function BetaFeedback() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={4}
-              placeholder="Describe the issue or idea…"
+              placeholder="Describe the issue or idea..."
               className="mt-1 w-full rounded-[12px] border border-[var(--line)] bg-black/40 px-3 py-2 text-sm text-white outline-none placeholder:text-[var(--copy-muted)]"
             />
 
@@ -94,7 +106,7 @@ export function BetaFeedback() {
                 onClick={submit}
                 className="rounded-full border border-[#d6a84f] bg-[rgba(214,168,79,0.14)] px-5 py-2 text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)] transition hover:bg-[rgba(214,168,79,0.24)] disabled:opacity-50"
               >
-                {busy ? "Sending…" : "Send feedback"}
+                {busy ? "Sending..." : "Send feedback"}
               </button>
             </div>
           </div>

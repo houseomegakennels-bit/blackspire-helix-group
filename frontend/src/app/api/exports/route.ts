@@ -5,6 +5,7 @@ import {
   getBuyerEngineEnvStatus,
   listExports,
 } from "@/lib/buyer-engine-server";
+import { guardBetaAction } from "@/lib/beta-server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,6 +31,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const gate = await guardBetaAction("export");
+    if ("response" in gate) return gate.response;
+
     const body = (await request.json()) as {
       searchJobId?: string;
       fileName?: string;
