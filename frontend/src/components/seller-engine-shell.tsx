@@ -8,7 +8,8 @@ import { RealEstateWorkflowRail } from "@/components/real-estate-workflow-rail";
 import { brandAssets } from "@/lib/brand-assets";
 
 const navItems = [
-  { href: "/seller-engine", label: "Command Deck" },
+  { href: "/workspace/seller-engine", label: "Command Deck" },
+  { href: "/workspace/seller-engine/new", label: "Launch Sweep" },
   { href: "/seller-engine#leads", label: "Seller Leads" },
   { href: "/seller-engine#harvester", label: "Data Harvester" },
   { href: "/seller-engine#alerts", label: "Alerts" },

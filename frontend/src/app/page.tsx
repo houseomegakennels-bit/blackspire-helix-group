@@ -164,7 +164,7 @@ export default function Home() {
                   key={stage}
                   href={
                     stage === "Seller Engine"
-                      ? "/seller-engine"
+                      ? "/workspace/seller-engine"
                       : stage === "Nexus"
                         ? "/workspace/nexus"
                         : stage === "Deal Engine"

@@ -11,7 +11,7 @@ const LINKS: Array<{ label: string; href: string; match: string; accent?: boolea
   { label: "Sentinel", href: "/workspace/sentinel", match: "/workspace/sentinel", accent: true },
   { label: "Properties", href: "/workspace/property", match: "/workspace/property" },
   { label: "Harvester", href: "/workspace/harvester", match: "/workspace/harvester" },
-  { label: "Seller", href: "/seller-engine", match: "/seller-engine" },
+  { label: "Seller", href: "/workspace/seller-engine", match: "/seller-engine" },
   { label: "Nexus", href: "/workspace/nexus", match: "/workspace/nexus" },
   { label: "Deal", href: "/workspace/deal-engine", match: "/workspace/deal-engine" },
   { label: "Buyer", href: "/workspace/buyer-engine", match: "/workspace/buyer-engine" },

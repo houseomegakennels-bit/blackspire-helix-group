@@ -589,6 +589,7 @@ export function SellerEngineDashboard({
               Aggregate public records, score motivation signals, and move qualified seller leads into a real operating pipeline ready for acquisition.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
+              <Link href="/workspace/seller-engine/new" className="seller-button">Launch seller sweep</Link>
               <a href="#harvester" className="seller-button">Import county data</a>
               <a href="#leads" className="seller-button">Review ranked leads</a>
               <a href="#seller-dossier" className="seller-button">Jump to dossier</a>
@@ -1033,6 +1034,11 @@ export function SellerEngineDashboard({
             <span className="seller-signal">{selectedLiveSource?.description}</span>
             {liveSourceKey === "county_distress_blend" ? <span className="seller-signal">Blends active distress feeds for this county</span> : null}
             {liveSourceKey === "county_operational_blend" ? <span className="seller-signal">Blends distress + absentee feeds for this county</span> : null}
+          </div>
+          <div className="mt-4">
+            <Link href="/workspace/seller-engine/new" className="seller-button">
+              Open dedicated launch surface
+            </Link>
           </div>
           <button className="seller-button mt-5 w-full justify-center" type="submit">Launch Seller Sweep</button>
         </form>
