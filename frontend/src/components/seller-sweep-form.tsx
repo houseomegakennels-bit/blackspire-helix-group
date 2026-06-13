@@ -16,13 +16,15 @@ export function SellerSweepForm({ sources }: { sources: SourceOption[] }) {
   const [county, setCounty] = useState("");
   const [city, setCity] = useState("");
   const [limit, setLimit] = useState("25");
+  const [allCounties, setAllCounties] = useState(false);
+  const [allSources, setAllSources] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [result, setResult] = useState<SweepResult | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!county.trim()) {
+    if (!allCounties && !county.trim()) {
       setStatus("County is required.");
       return;
     }
@@ -33,7 +35,14 @@ export function SellerSweepForm({ sources }: { sources: SourceOption[] }) {
       const response = await fetch("/api/seller-engine/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceKey, county: county.trim(), city: city.trim() || undefined, limit: Number(limit) || 25 }),
+        body: JSON.stringify({
+          sourceKey,
+          county: allCounties ? undefined : county.trim(),
+          city: allCounties ? undefined : city.trim() || undefined,
+          limit: Number(limit) || 25,
+          allCounties,
+          allSources,
+        }),
       });
       const payload = (await response.json()) as SweepResult & { ok?: boolean; error?: string };
       if (!response.ok || payload.ok === false) {
@@ -50,14 +59,45 @@ export function SellerSweepForm({ sources }: { sources: SourceOption[] }) {
   }
 
   const selected = sources.find((s) => s.key === sourceKey);
+  const selectedDescription = allSources
+    ? "Run every available live seller source in one aggregate sweep."
+    : selected?.description;
 
   return (
     <form onSubmit={submit} className="space-y-5">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="flex items-start gap-3 rounded-[12px] border border-[var(--line)] bg-black/20 px-3 py-3 text-sm text-white">
+          <input
+            type="checkbox"
+            checked={allSources}
+            onChange={(event) => setAllSources(event.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-[#34d399]"
+          />
+          <span>
+            <span className="block font-medium">All sources</span>
+            <span className="mt-1 block text-xs text-[var(--copy-soft)]">Aggregate every live seller source in one run.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 rounded-[12px] border border-[var(--line)] bg-black/20 px-3 py-3 text-sm text-white">
+          <input
+            type="checkbox"
+            checked={allCounties}
+            onChange={(event) => setAllCounties(event.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-[#34d399]"
+          />
+          <span>
+            <span className="block font-medium">All counties</span>
+            <span className="mt-1 block text-xs text-[var(--copy-soft)]">Expand the search statewide instead of one county lane.</span>
+          </span>
+        </label>
+      </div>
+
       <div>
         <label className="block text-xs uppercase tracking-wider text-[var(--copy-muted)]">Source</label>
         <select
           value={sourceKey}
           onChange={(e) => setSourceKey(e.target.value)}
+          disabled={allSources}
           className="mt-1 w-full rounded-[12px] border border-[var(--line)] bg-black/40 px-3 py-2.5 text-sm text-white outline-none"
         >
           {sources.map((s) => (
@@ -66,16 +106,17 @@ export function SellerSweepForm({ sources }: { sources: SourceOption[] }) {
             </option>
           ))}
         </select>
-        {selected ? <p className="mt-1 text-xs text-[var(--copy-soft)]">{selected.description}</p> : null}
+        {selectedDescription ? <p className="mt-1 text-xs text-[var(--copy-soft)]">{selectedDescription}</p> : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-xs uppercase tracking-wider text-[var(--copy-muted)]">County *</label>
+          <label className="block text-xs uppercase tracking-wider text-[var(--copy-muted)]">County {allCounties ? "(all)" : "*"}</label>
           <input
             value={county}
             onChange={(e) => setCounty(e.target.value)}
-            placeholder="e.g. Guilford"
+            placeholder={allCounties ? "Searching all counties" : "e.g. Guilford"}
+            disabled={allCounties}
             className="mt-1 w-full rounded-[12px] border border-[var(--line)] bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-[var(--copy-muted)]"
           />
         </div>
@@ -84,7 +125,8 @@ export function SellerSweepForm({ sources }: { sources: SourceOption[] }) {
           <input
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            placeholder="e.g. Greensboro"
+            placeholder={allCounties ? "Disabled for all-counties searches" : "e.g. Greensboro"}
+            disabled={allCounties}
             className="mt-1 w-full rounded-[12px] border border-[var(--line)] bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-[var(--copy-muted)]"
           />
         </div>

@@ -264,9 +264,11 @@ type SellerImportRow = Record<string, string>;
 
 type LiveSellerSearchInput = {
   sourceKey?: SellerLiveSourceKey;
-  county: string;
+  county?: string;
   city?: string;
   limit?: number;
+  allCounties?: boolean;
+  allSources?: boolean;
 };
 
 type NcOneMapAttributes = {
@@ -704,6 +706,7 @@ const NC_ONEMAP_HIGH_VALUE_MIN_ASSESSED = 300000;
 const NC_ONEMAP_CORPORATE_OWNER_PATTERN = /\b(LLC|LP|LLP|INC|CORP|CO\b|COMPANY|HOLDINGS?|PROPERTIES|INVESTMENTS?|TRUST|TR)\b/i;
 const DISTRESS_SOURCE_TYPES = new Set<SellerSourceType>(["foreclosure", "tax_delinquent", "probate", "code_violation", "vacancy", "public_auction"]);
 const COUNTY_BLEND_SOURCE_KEYS = new Set<SellerLiveSourceKey>(["county_distress_blend", "county_operational_blend"]);
+const AGGREGATE_ONLY_SOURCE_KEYS = new Set<SellerLiveSourceKey>(["nc_onemap_full_recon_sweep", "county_distress_blend", "county_operational_blend"]);
 
 type SellerSourceRecord = {
   id: string;
@@ -721,6 +724,57 @@ type SellerSourceRecord = {
 
 function countySlug(value: string) {
   return value.trim().toLowerCase().replace(/county$/i, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function isCountySpecificLiveSourceKey(sourceKey: SellerLiveSourceKey) {
+  return sourceKey.includes("_county_");
+}
+
+function listNonAggregateLiveSourceKeys() {
+  return SELLER_LIVE_SOURCES
+    .filter((source) => !AGGREGATE_ONLY_SOURCE_KEYS.has(source.key))
+    .map((source) => source.key);
+}
+
+function listStatewideLiveSourceKeys() {
+  return listNonAggregateLiveSourceKeys().filter((key) => !isCountySpecificLiveSourceKey(key));
+}
+
+function listCountySpecificKeysByType(sourceType: SellerSourceType) {
+  return SELLER_LIVE_SOURCES
+    .filter((source) => !AGGREGATE_ONLY_SOURCE_KEYS.has(source.key))
+    .filter((source) => isCountySpecificLiveSourceKey(source.key) && source.sourceType === sourceType)
+    .map((source) => source.key);
+}
+
+function dedupeLiveSourceKeys(keys: SellerLiveSourceKey[]) {
+  return [...new Set(keys)];
+}
+
+function getAggregatePerSourceLimit(limit: number, keyCount: number) {
+  if (keyCount <= 1) return limit;
+  return Math.min(10, Math.max(3, Math.ceil(limit / Math.min(keyCount, limit))));
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+) {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex]);
+      }
+    }),
+  );
+
+  return results;
 }
 
 function inferLiveSourceKeyFromCountySource(county: string, sourceType: string): SellerLiveSourceKey | null {
@@ -1175,6 +1229,61 @@ async function getCountyLiveSourceKeys(
   return [...keys];
 }
 
+async function resolveSellerLiveSourceKeys(input: {
+  sourceKey: SellerLiveSourceKey;
+  county?: string;
+  allCounties: boolean;
+  allSources: boolean;
+}) {
+  const county = input.county?.trim() || "";
+
+  if (input.allSources) {
+    if (input.allCounties) {
+      return listNonAggregateLiveSourceKeys();
+    }
+
+    if (!county) {
+      throw new Error("Choose a county or enable all counties before running all sources.");
+    }
+
+    return dedupeLiveSourceKeys([
+      ...listStatewideLiveSourceKeys(),
+      ...(await getCountyLiveSourceKeys(county, "operational")),
+    ]);
+  }
+
+  if (!input.allCounties) {
+    return [input.sourceKey];
+  }
+
+  if (input.sourceKey === "county_distress_blend") {
+    return SELLER_LIVE_SOURCES
+      .filter((source) => isCountySpecificLiveSourceKey(source.key) && DISTRESS_SOURCE_TYPES.has(source.sourceType))
+      .map((source) => source.key);
+  }
+
+  if (input.sourceKey === "county_operational_blend") {
+    return SELLER_LIVE_SOURCES
+      .filter((source) => isCountySpecificLiveSourceKey(source.key) && (source.sourceType === "absentee_owner" || DISTRESS_SOURCE_TYPES.has(source.sourceType)))
+      .map((source) => source.key);
+  }
+
+  if (input.sourceKey === "nc_onemap_full_recon_sweep") {
+    return [input.sourceKey];
+  }
+
+  const selectedSource = SELLER_LIVE_SOURCES.find((source) => source.key === input.sourceKey);
+  if (!selectedSource) {
+    throw new Error("Unsupported live seller source.");
+  }
+
+  if (!isCountySpecificLiveSourceKey(input.sourceKey)) {
+    return [input.sourceKey];
+  }
+
+  return listCountySpecificKeysByType(selectedSource.sourceType);
+}
+
 export async function syncSellerSourcesFromBuyerRegistry() {
   const registryRows = await listBuyerCountyRegistrySources(true);
   const synced: Array<{ county: string; sourceUrl: string | null; active: boolean }> = [];
@@ -1608,11 +1717,13 @@ async function fetchNcOneMapAbsenteeRows(input: LiveSellerSearchInput): Promise<
     || input.sourceKey === "nc_onemap_motivated_seller_sweep";
   const queryLimit = needsPostFilterExpansion ? Math.min(Math.max(requestedLimit * 4, 40), 100) : requestedLimit;
   const where = [
-    `cntyname='${input.county.replace(/'/g, "''")}'`,
     "mstate <> 'NC'",
     "struct='Y'",
     "parusedsc2 LIKE 'RES%'",
   ];
+  if (input.county?.trim()) {
+    where.unshift(`cntyname='${input.county.trim().replace(/'/g, "''")}'`);
+  }
   if (input.sourceKey === "nc_onemap_legacy_absentee_search") {
     where.push(`saledate IS NOT NULL`);
     where.push(`saledate <= DATE '${NC_ONEMAP_LEGACY_ABSENTEE_MAX_SALEDATE}'`);
@@ -4082,61 +4193,111 @@ function resolveLiveSourceUrl(sourceKey: SellerLiveSourceKey) {
 
 export async function runSellerLiveSearch(input: LiveSellerSearchInput) {
   const sourceKey = input.sourceKey ?? SELLER_LIVE_SOURCE_KEY;
-  const county = input.county.trim();
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
-  if (!county) throw new Error("County is required for a live seller search.");
+  const allCounties = Boolean(input.allCounties);
+  const allSources = Boolean(input.allSources);
+  const county = input.county?.trim() || "";
+  if (!allCounties && !county) throw new Error("County is required for a live seller search.");
+
   const source = SELLER_LIVE_SOURCES.find((item) => item.key === sourceKey);
   if (!source) throw new Error("Unsupported live seller source.");
 
-  const city = input.city?.trim() || undefined;
-  const blendedSourceKeys = COUNTY_BLEND_SOURCE_KEYS.has(sourceKey)
-    ? await getCountyLiveSourceKeys(county, sourceKey === "county_operational_blend" ? "operational" : "distress")
-    : [];
-  const rows = COUNTY_BLEND_SOURCE_KEYS.has(sourceKey)
-    ? mergeSellerRowsByParcel(
+  const city = allCounties ? undefined : input.city?.trim() || undefined;
+  const expandedSourceKeys = await resolveSellerLiveSourceKeys({ sourceKey, county, allCounties, allSources });
+  if (!expandedSourceKeys.length) {
+    throw new Error("No live seller sources matched the requested search scope.");
+  }
+
+  const aggregatePerSourceLimit = getAggregatePerSourceLimit(limit, expandedSourceKeys.length);
+  const rows = expandedSourceKeys.length === 1 && !COUNTY_BLEND_SOURCE_KEYS.has(sourceKey)
+    ? await fetchRowsForLiveSource({
+        sourceKey: expandedSourceKeys[0],
+        county: allCounties ? "" : county,
+        city,
+        limit,
+      })
+    : mergeSellerRowsByParcel(
         rankSellerRows(
           (
-            await Promise.all(
-              blendedSourceKeys.map((key) => fetchRowsForLiveSource({ sourceKey: key, county, city, limit })),
-            )
+            await mapWithConcurrency(expandedSourceKeys, 6, async (key) => {
+              const perSourceCounty = !allCounties
+                ? county
+                : isCountySpecificLiveSourceKey(key)
+                  ? ""
+                  : "";
+              return fetchRowsForLiveSource({
+                sourceKey: key,
+                county: perSourceCounty,
+                city,
+                limit: aggregatePerSourceLimit,
+              });
+            })
           ).flat(),
         ),
-      ).slice(0, limit)
-    : await fetchRowsForLiveSource({ sourceKey, county, city, limit });
+      ).slice(0, limit);
+
+  const blendedSourceKeys = COUNTY_BLEND_SOURCE_KEYS.has(sourceKey) && !allSources
+    ? expandedSourceKeys
+    : [];
+
+  const scopeCountyLabel = allCounties ? "All Counties" : county;
+  const scopeSourceLabel = allSources ? "All Sources" : source.label;
   if (!rows.length) {
     return {
       imported: 0,
       total: 0,
       errors: [],
-      sourceName: source.label,
-      sourceDescription: source.description,
-      sourceKey,
+      sourceName: scopeSourceLabel,
+      sourceDescription: allSources
+        ? "Aggregated seller sweep across the available live source set."
+        : source.description,
+      sourceKey: allSources ? undefined : sourceKey,
       blendedSourceKeys,
+      expandedSourceKeys,
+      county: scopeCountyLabel,
+      message: `No seller leads were returned for ${scopeCountyLabel} using ${scopeSourceLabel}.`,
     };
   }
 
-  const sourceUrl = COUNTY_BLEND_SOURCE_KEYS.has(sourceKey)
-    ? `blend:${blendedSourceKeys.map((key) => `${key}|${resolveLiveSourceUrl(key)}`).join(",")}`
-    : resolveLiveSourceUrl(sourceKey);
+  const sourceUrl = expandedSourceKeys.length > 1
+    ? `aggregate:${expandedSourceKeys.map((key) => `${key}|${resolveLiveSourceUrl(key)}`).join(",")}`
+    : resolveLiveSourceUrl(expandedSourceKeys[0]);
   const result = await importSellerRows({
     rows,
-    sourceName: source.label,
-    sourceType: source.sourceType satisfies SellerSourceType,
-    county,
+    sourceName: scopeSourceLabel,
+    sourceType: allSources ? "blended_search" : source.sourceType satisfies SellerSourceType,
+    county: scopeCountyLabel,
     integrationType: "live_api",
     sourceUrl,
     configuration: {
-      liveSourceKey: sourceKey,
+      liveSourceKey: allSources ? null : sourceKey,
+      allCounties,
+      allSources,
       city: city ?? null,
       limit,
+      expandedSourceKeys,
       blendedSourceKeys,
-      blendedSourceTypes: blendedSourceKeys
+      blendedSourceTypes: expandedSourceKeys
         .map((key) => SELLER_LIVE_SOURCES.find((item) => item.key === key)?.sourceType ?? null)
         .filter(Boolean),
     },
   });
 
-  return { ...result, sourceName: source.label, sourceDescription: source.description, sourceKey, blendedSourceKeys };
+  return {
+    ...result,
+    sourceName: scopeSourceLabel,
+    sourceDescription: allSources
+      ? "Aggregated seller sweep across the available live source set."
+      : source.description,
+    sourceKey: allSources ? undefined : sourceKey,
+    blendedSourceKeys,
+    expandedSourceKeys,
+    county: scopeCountyLabel,
+    message:
+      expandedSourceKeys.length > 1
+        ? `Aggregate seller sweep imported ${result.imported} lead${result.imported === 1 ? "" : "s"} across ${expandedSourceKeys.length} live source${expandedSourceKeys.length === 1 ? "" : "s"}.`
+        : undefined,
+  };
 }
 
 async function resolveSellerSourceProbeUrl(source: SellerSourceRecord) {

@@ -253,6 +253,8 @@ export function SellerEngineDashboard({
   const [liveCounty, setLiveCounty] = useState("Mecklenburg");
   const [liveCity, setLiveCity] = useState("");
   const [liveLimit, setLiveLimit] = useState("25");
+  const [liveAllCounties, setLiveAllCounties] = useState(false);
+  const [liveAllSources, setLiveAllSources] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [dealLoading, setDealLoading] = useState(false);
@@ -412,9 +414,11 @@ export function SellerEngineDashboard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sourceKey: liveSourceKey,
-        county: liveCounty,
-        city: liveCity,
+        county: liveAllCounties ? undefined : liveCounty,
+        city: liveAllCounties ? undefined : liveCity,
         limit: Number(liveLimit || 25),
+        allCounties: liveAllCounties,
+        allSources: liveAllSources,
       }),
     });
     const payload = await response.json();
@@ -429,6 +433,8 @@ export function SellerEngineDashboard({
     setLiveCounty(preset.county);
     setLiveCity(preset.city);
     setLiveLimit(String(preset.limit));
+    setLiveAllCounties(false);
+    setLiveAllSources(false);
     setMessage(`Preset loaded: ${preset.label}`);
   }
 
@@ -1010,16 +1016,56 @@ export function SellerEngineDashboard({
             This search hits the selected live county or statewide source when an operator initiates a run, then scores and imports the records into Seller Engine.
           </p>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <label className="seller-card flex items-start gap-3 px-3 py-3 text-sm text-white md:col-span-3">
+              <input
+                type="checkbox"
+                checked={liveAllSources}
+                onChange={(event) => setLiveAllSources(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-[var(--seller-gold)]"
+              />
+              <span>
+                <span className="block font-medium">All sources</span>
+                <span className="mt-1 block text-xs text-[var(--copy-soft)]">Aggregate every live seller source in one search run.</span>
+              </span>
+            </label>
+            <label className="seller-card flex items-start gap-3 px-3 py-3 text-sm text-white md:col-span-3">
+              <input
+                type="checkbox"
+                checked={liveAllCounties}
+                onChange={(event) => setLiveAllCounties(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-[var(--seller-gold)]"
+              />
+              <span>
+                <span className="block font-medium">All counties</span>
+                <span className="mt-1 block text-xs text-[var(--copy-soft)]">Run statewide instead of staying inside one county lane.</span>
+              </span>
+            </label>
             <select
               name="liveSourceKey"
               className="seller-input"
               value={liveSourceKey}
               onChange={(event) => setLiveSourceKey(event.target.value as SellerLiveSourceKey)}
+              disabled={liveAllSources}
             >
               {SELLER_LIVE_SOURCES.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}
             </select>
-            <input name="liveCounty" className="seller-input" placeholder="County" value={liveCounty} onChange={(event) => setLiveCounty(event.target.value)} required />
-            <input name="liveCity" className="seller-input" placeholder="City (optional)" value={liveCity} onChange={(event) => setLiveCity(event.target.value)} />
+            <input
+              name="liveCounty"
+              className="seller-input"
+              placeholder={liveAllCounties ? "Searching all counties" : "County"}
+              value={liveCounty}
+              onChange={(event) => setLiveCounty(event.target.value)}
+              required={!liveAllCounties}
+              disabled={liveAllCounties}
+            />
+            <input
+              name="liveCity"
+              className="seller-input"
+              placeholder={liveAllCounties ? "City disabled for all-counties runs" : "City (optional)"}
+              value={liveCity}
+              onChange={(event) => setLiveCity(event.target.value)}
+              disabled={liveAllCounties}
+            />
             <input name="liveLimit" type="number" min="1" max="100" value={liveLimit} onChange={(event) => setLiveLimit(event.target.value)} className="seller-input md:col-span-3 xl:col-span-1" />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -1030,10 +1076,11 @@ export function SellerEngineDashboard({
             ))}
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-[var(--copy-muted)]">
-            <span className="seller-signal">{selectedLiveSource?.label}</span>
-            <span className="seller-signal">{selectedLiveSource?.description}</span>
-            {liveSourceKey === "county_distress_blend" ? <span className="seller-signal">Blends active distress feeds for this county</span> : null}
-            {liveSourceKey === "county_operational_blend" ? <span className="seller-signal">Blends distress + absentee feeds for this county</span> : null}
+            <span className="seller-signal">{liveAllSources ? "All sources" : selectedLiveSource?.label}</span>
+            <span className="seller-signal">{liveAllSources ? "Aggregate every live seller source" : selectedLiveSource?.description}</span>
+            {liveSourceKey === "county_distress_blend" && !liveAllSources ? <span className="seller-signal">Blends active distress feeds for this county</span> : null}
+            {liveSourceKey === "county_operational_blend" && !liveAllSources ? <span className="seller-signal">Blends distress + absentee feeds for this county</span> : null}
+            {liveAllCounties ? <span className="seller-signal">Statewide county fanout enabled</span> : null}
           </div>
           <div className="mt-4">
             <Link href="/workspace/seller-engine/new" className="seller-button">
