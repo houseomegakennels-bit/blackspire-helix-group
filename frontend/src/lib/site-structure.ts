@@ -50,6 +50,7 @@ export const siteNavSections: SiteNavSection[] = [
     items: [
       { label: "Recon Engine", href: "/recon-engine", description: "Opportunity intelligence." },
       { label: "Helix Lawn Command", href: "/helix-lawn-command", description: "Local service automation." },
+      { label: "Social OS", href: "/social-os", description: "Protected client content workflows." },
       { label: "Demos", href: "/demos", description: "Proof surfaces and examples." },
       { label: "Services", href: "/services", description: "What Blackspire builds." },
       { label: "Industries", href: "/industries", description: "Where the systems apply." },
@@ -137,6 +138,14 @@ export const workspaceEntries: WorkspaceEntry[] = [
     status: "Live",
     description: "Review lawn-care lead intake, AI photo analysis, and local service workflow posture.",
     primaryAction: "Open lawn command",
+  },
+  {
+    title: "Social OS",
+    href: "/social-os",
+    division: "Client Workspaces",
+    status: "Live",
+    description: "Protected client content operations with reusable media, platform-specific edits, approval gates, retries, and audit logs.",
+    primaryAction: "Open client workspace",
   },
   {
     title: "Admin Console",

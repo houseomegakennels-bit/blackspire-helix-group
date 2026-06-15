@@ -3416,3 +3416,526 @@ body::after {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
+
+.social-os-shell {
+  position: relative;
+  min-height: 100vh;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(157, 99, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 88% 8%, rgba(82, 148, 255, 0.14), transparent 30%),
+    linear-gradient(180deg, #050711 0%, #070910 40%, #04050a 100%);
+}
+
+.social-os-shell .backdrop-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(140, 158, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(140, 158, 255, 0.05) 1px, transparent 1px);
+  background-size: 38px 38px;
+  mask-image: radial-gradient(circle at center, black, transparent 88%);
+  pointer-events: none;
+}
+
+.social-os-shell .panel,
+.social-os-shell .asset-card,
+.social-os-shell .campaign-group-card,
+.social-os-shell .recent-campaign-card,
+.social-os-shell .link-selector-card,
+.social-os-shell .campaign-asset-preview-card,
+.social-os-shell .ghost-button,
+.social-os-shell .sync-button,
+.social-os-shell .toggle-chip {
+  border-radius: 24px;
+  border: 1px solid rgba(134, 151, 255, 0.16);
+  background: linear-gradient(180deg, rgba(12, 16, 28, 0.92), rgba(7, 10, 18, 0.94));
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.24);
+}
+
+.social-os-shell .panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.social-os-shell .panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(157, 99, 255, 0.42), rgba(82, 148, 255, 0.2), transparent 85%);
+}
+
+.social-os-shell .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #c0b0ff;
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+}
+
+.social-os-shell .eyebrow::before {
+  content: "";
+  width: 34px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(157, 99, 255, 0.9), transparent);
+}
+
+.social-os-shell .hero-kicker {
+  margin-top: 18px;
+  color: rgba(166, 210, 255, 0.8);
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.social-os-shell .hero-copy {
+  margin-top: 18px;
+  max-width: 68ch;
+  color: rgba(231, 236, 255, 0.78);
+  line-height: 1.8;
+}
+
+.social-os-shell .hero-signal-row,
+.social-os-shell .social-os-tab-strip,
+.social-os-shell .social-os-status-strip,
+.social-os-shell .social-os-platform-tabs,
+.social-os-shell .social-os-editor-actions,
+.social-os-shell .social-os-review-grid,
+.social-os-shell .social-os-health-meta,
+.social-os-shell .social-os-admin-subgrid,
+.social-os-shell .campaign-actions,
+.social-os-shell .recent-campaign-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.social-os-shell .hero-signal,
+.social-os-shell .toggle-chip,
+.social-os-shell .recent-campaign-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(152, 174, 255, 0.18);
+  color: rgba(224, 231, 255, 0.86);
+  background: rgba(17, 21, 34, 0.75);
+  font-size: 12px;
+}
+
+.social-os-shell .hero-signal::before,
+.social-os-shell .intel-dot,
+.social-os-shell .timeline-dot {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #9d63ff, #64d8ff);
+  box-shadow: 0 0 16px rgba(100, 216, 255, 0.52);
+}
+
+.social-os-shell .sync-button,
+.social-os-shell .ghost-button {
+  padding: 12px 18px;
+  color: #eef1ff;
+  text-decoration: none;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.social-os-shell .sync-button {
+  border-color: rgba(157, 99, 255, 0.28);
+  background: linear-gradient(135deg, rgba(157, 99, 255, 0.24), rgba(82, 148, 255, 0.16));
+}
+
+.social-os-shell .ghost-button:hover,
+.social-os-shell .sync-button:hover,
+.social-os-shell .asset-card:hover,
+.social-os-shell .campaign-group-card:hover,
+.social-os-shell .recent-campaign-card:hover,
+.social-os-shell .link-selector-card:hover,
+.social-os-shell .campaign-asset-preview-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(160, 191, 255, 0.28);
+}
+
+.social-os-shell .ghost-button-active,
+.social-os-shell .social-os-complete,
+.social-os-shell .asset-card-active {
+  border-color: rgba(100, 216, 255, 0.32);
+  background: linear-gradient(135deg, rgba(100, 216, 255, 0.12), rgba(157, 99, 255, 0.16));
+}
+
+.social-os-shell .sync-meta {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  color: rgba(220, 227, 255, 0.75);
+}
+
+.social-os-shell .sync-meta strong {
+  color: #fff;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.social-os-shell .social-os-hero,
+.social-os-shell .social-os-auth-shell,
+.social-os-shell .social-os-tab-row,
+.social-os-shell .social-os-card,
+.social-os-shell .social-os-modal,
+.social-os-shell .social-os-nested-card {
+  padding: 26px;
+}
+
+.social-os-shell .social-os-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.9fr);
+  gap: 26px;
+}
+
+.social-os-shell .social-os-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
+  gap: 18px;
+}
+
+.social-os-shell .social-os-editor-layout,
+.social-os-shell .social-os-integrations-grid {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.social-os-shell .social-os-editor-layout {
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.88fr);
+}
+
+.social-os-shell .social-os-integrations-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.social-os-shell .social-os-main-column,
+.social-os-shell .social-os-side-column,
+.social-os-shell .social-os-hero-side,
+.social-os-shell .social-os-hero-actions,
+.social-os-shell .social-os-inline-meta,
+.social-os-shell .social-os-editor-main,
+.social-os-shell .social-os-editor-side,
+.social-os-shell .social-os-login-form,
+.social-os-shell .social-os-auth-grid,
+.social-os-shell .social-os-auth-actions,
+.social-os-shell .timeline-list,
+.social-os-shell .recent-campaigns-list,
+.social-os-shell .intel-list,
+.social-os-shell .social-os-health-list {
+  display: grid;
+  gap: 14px;
+}
+
+.social-os-shell .social-os-tab-row {
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.social-os-shell .social-os-status-strip {
+  justify-content: flex-end;
+}
+
+.social-os-shell .social-os-success-pill {
+  border-color: rgba(72, 214, 152, 0.34);
+  background: rgba(37, 119, 88, 0.32);
+}
+
+.social-os-shell .social-os-danger-pill,
+.social-os-shell .error-text {
+  border-color: rgba(255, 126, 148, 0.28);
+  color: #ffb5c3;
+}
+
+.social-os-shell .social-os-checklist-grid,
+.social-os-shell .social-os-template-grid,
+.social-os-shell .social-os-preview-grid,
+.social-os-shell .social-os-stats-grid,
+.social-os-shell .social-os-platform-grid,
+.social-os-shell .prompt-editor-grid,
+.social-os-shell .campaign-form,
+.social-os-shell .asset-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.social-os-shell .social-os-checklist-grid,
+.social-os-shell .social-os-template-grid,
+.social-os-shell .social-os-preview-grid,
+.social-os-shell .social-os-stats-grid,
+.social-os-shell .social-os-platform-grid,
+.social-os-shell .asset-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.social-os-shell .prompt-editor-grid,
+.social-os-shell .campaign-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.social-os-shell .social-os-checklist-card,
+.social-os-shell .social-os-health-item,
+.social-os-shell .social-os-upload-dropzone,
+.social-os-shell .campaign-asset-preview-card {
+  border-radius: 20px;
+  border: 1px solid rgba(113, 131, 255, 0.15);
+  background: rgba(9, 12, 20, 0.86);
+  padding: 18px;
+}
+
+.social-os-shell .social-os-health-item {
+  display: grid;
+  gap: 10px;
+}
+
+.social-os-shell .panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.social-os-shell .panel-heading span {
+  color: rgba(190, 201, 255, 0.68);
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  font-size: 11px;
+}
+
+.social-os-shell .panel-heading h2,
+.social-os-shell .panel-heading h3,
+.social-os-shell h1 {
+  margin: 10px 0 0;
+  color: #fff;
+}
+
+.social-os-shell h1 {
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1.02;
+}
+
+.social-os-shell .field {
+  display: grid;
+  gap: 8px;
+}
+
+.social-os-shell .field-span-2 {
+  grid-column: span 2;
+}
+
+.social-os-shell .field span {
+  color: rgba(196, 207, 255, 0.7);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+}
+
+.social-os-shell .field input,
+.social-os-shell .field textarea,
+.social-os-shell .field select,
+.social-os-shell .vault-search {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(126, 143, 255, 0.14);
+  background: rgba(8, 11, 19, 0.96);
+  color: #eef1ff;
+  padding: 13px 14px;
+  outline: none;
+}
+
+.social-os-shell .field textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.social-os-shell .field input:focus,
+.social-os-shell .field textarea:focus,
+.social-os-shell .field select:focus,
+.social-os-shell .vault-search:focus {
+  border-color: rgba(100, 216, 255, 0.34);
+  box-shadow: 0 0 0 3px rgba(100, 216, 255, 0.1);
+}
+
+.social-os-shell .recent-campaign-card,
+.social-os-shell .asset-card,
+.social-os-shell .campaign-group-card,
+.social-os-shell .link-selector-card,
+.social-os-shell .campaign-asset-preview-card {
+  padding: 16px;
+}
+
+.social-os-shell .campaign-group-card strong,
+.social-os-shell .asset-card strong,
+.social-os-shell .recent-campaign-card strong,
+.social-os-shell .link-selector-card strong {
+  color: #fff;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.social-os-shell .recent-campaign-card p,
+.social-os-shell .asset-card p,
+.social-os-shell .campaign-group-card p,
+.social-os-shell .timeline-copy p,
+.social-os-shell .empty-state,
+.social-os-shell .campaign-asset-preview-copy {
+  color: rgba(224, 231, 255, 0.72);
+  line-height: 1.7;
+}
+
+.social-os-shell .stat-card {
+  padding: 16px;
+}
+
+.social-os-shell .stat-card span {
+  color: rgba(196, 207, 255, 0.72);
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 11px;
+}
+
+.social-os-shell .stat-card strong {
+  display: block;
+  margin-top: 12px;
+  color: #fff;
+  font-size: 30px;
+}
+
+.social-os-shell .timeline-card,
+.social-os-shell .intel-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.social-os-shell .timeline-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.social-os-shell .timeline-header strong,
+.social-os-shell .timeline-header span {
+  color: #fff;
+}
+
+.social-os-shell .social-os-upload-card {
+  min-height: 340px;
+}
+
+.social-os-shell .social-os-upload-dropzone {
+  min-height: 250px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  border-style: dashed;
+  cursor: pointer;
+}
+
+.social-os-shell .social-os-upload-dropzone input,
+.social-os-shell .toggle-chip input {
+  display: none;
+}
+
+.social-os-shell .toggle-chip {
+  cursor: pointer;
+}
+
+.social-os-shell .social-os-inline-meta {
+  color: rgba(188, 201, 255, 0.64);
+  font-size: 12px;
+}
+
+.social-os-shell .social-os-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 6, 12, 0.74);
+  backdrop-filter: blur(16px);
+}
+
+.social-os-shell .social-os-modal {
+  width: min(680px, 100%);
+  display: grid;
+  gap: 18px;
+}
+
+.social-os-shell .social-os-log-output {
+  margin: 0;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(113, 131, 255, 0.12);
+  background: rgba(5, 8, 14, 0.96);
+  color: #e7ebff;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1200px) {
+  .social-os-shell .social-os-grid,
+  .social-os-shell .social-os-hero,
+  .social-os-shell .social-os-editor-layout,
+  .social-os-shell .social-os-integrations-grid,
+  .social-os-shell .social-os-checklist-grid,
+  .social-os-shell .social-os-template-grid,
+  .social-os-shell .social-os-preview-grid,
+  .social-os-shell .social-os-stats-grid,
+  .social-os-shell .social-os-platform-grid,
+  .social-os-shell .asset-grid,
+  .social-os-shell .prompt-editor-grid,
+  .social-os-shell .campaign-form {
+    grid-template-columns: 1fr;
+  }
+
+  .social-os-shell .field-span-2 {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .social-os-shell {
+    padding: 16px;
+  }
+
+  .social-os-shell .social-os-hero,
+  .social-os-shell .social-os-auth-shell,
+  .social-os-shell .social-os-tab-row,
+  .social-os-shell .social-os-card,
+  .social-os-shell .social-os-modal,
+  .social-os-shell .social-os-nested-card {
+    padding: 20px;
+  }
+
+  .social-os-shell .social-os-tab-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .social-os-shell .social-os-status-strip {
+    justify-content: flex-start;
+  }
+}
