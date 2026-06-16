@@ -97,7 +97,6 @@ function buildTemplateDraft(
   totalSpend: number,
   isLlc: boolean,
   isCashBuyer: boolean,
-  searchJobId: string,
 ): EdgeFnDraft {
   const countyRisk =
     county && propertyType ? getCountyOperationalRisk(county, propertyType) : null;
@@ -140,7 +139,6 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as OutreachRequest;
     const buyerName = body.buyerName?.trim();
     const mailingAddress = body.mailingAddress?.trim();
-    const searchJobId = body.searchJobId?.trim() || "unknown-job";
     const county = body.county?.trim() || null;
     const state = body.state?.trim() || null;
     const propertyType = body.propertyType?.trim() || null;
@@ -161,7 +159,7 @@ export async function POST(request: NextRequest) {
     const edgeDraft = await callOpenAiOutreach(body);
     const draft = edgeDraft ?? buildTemplateDraft(
       buyerName, mailingAddress, county, state, propertyType,
-      score, purchaseCount, totalSpend, isLlc, isCashBuyer, searchJobId,
+      score, purchaseCount, totalSpend, isLlc, isCashBuyer,
     );
 
     return NextResponse.json({
@@ -175,12 +173,4 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-}
-
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
 }

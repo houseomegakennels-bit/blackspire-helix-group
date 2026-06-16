@@ -18,7 +18,6 @@ import {
   type ContractTemplateApprovalStatus,
   type ContractTemplateLicenseStatus,
   type ContractTemplateRecord,
-  type ContractTemplateType,
 } from "@/lib/contract-template-registry";
 import type { SellerLeadView } from "@/lib/seller-engine-demo";
 import { listSellerLeads, updateSellerLead } from "@/lib/seller-engine-server";
@@ -2301,7 +2300,6 @@ function buildSellerOutreach(
 ): DealEngineDealDetail["sellerOutreach"] {
   const ownerName = sellerContact.ownerName || lead.ownerName;
   const address = lead.propertyAddress;
-  const county = lead.county;
   const summary =
     sellerSignal?.summary
     || "We help sellers who want a simpler direct-sale path without repair prep or listing friction.";
@@ -4947,13 +4945,6 @@ function mapTemplateCategory(templateType: string) {
   if (templateType === "buyer_assignment_fee_disclosure") return "assignment_disclosure";
   if (templateType === "title_company_submission_package") return "title_package";
   return "other";
-}
-
-function canPrepareTemplateForSignature(validation: DealContractTemplateValidation, draft: DealContractDraftRecord | null) {
-  return validation.purposeValid
-    && validation.missingFields.length === 0
-    && draft?.legalDisclaimerAcknowledged
-    && validation.template.approvalStatus !== "reference_only";
 }
 
 function buildTemplateSafetyLines(template: DealContractTemplateRecord) {

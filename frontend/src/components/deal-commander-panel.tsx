@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Panel, StatusPill } from "@/components/buyer-shell";
 import type { DealCommanderInsight } from "@/lib/deal-engine-server";
@@ -19,6 +19,26 @@ function priorityTone(priority: DealCommanderInsight["priority"]) {
   return "neutral";
 }
 
+async function fetchCommanderInsight(dealId: string) {
+  const response = await fetch("/api/deal-engine/commander", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dealId }),
+  });
+
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    error?: string;
+    insight?: DealCommanderInsight;
+  };
+
+  if (!response.ok || !payload.ok || !payload.insight) {
+    throw new Error(payload.error ?? "Commander insight generation failed.");
+  }
+
+  return payload.insight;
+}
+
 export function DealCommanderPanel({
   dealId,
   initialInsight,
@@ -27,43 +47,58 @@ export function DealCommanderPanel({
   initialInsight: DealCommanderInsight | null;
 }) {
   const [insight, setInsight] = useState(initialInsight);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!initialInsight);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadInsight() {
+  const loadInsight = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/deal-engine/commander", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId }),
-      });
-
-      const payload = (await response.json()) as {
-        ok?: boolean;
-        error?: string;
-        insight?: DealCommanderInsight;
-      };
-
-      if (!response.ok || !payload.ok || !payload.insight) {
-        throw new Error(payload.error ?? "Commander insight generation failed.");
-      }
-
-      setInsight(payload.insight);
+      setInsight(await fetchCommanderInsight(dealId));
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Commander insight generation failed.");
     } finally {
       setLoading(false);
     }
-  }
+  }, [dealId]);
 
   useEffect(() => {
-    if (!insight) {
-      void loadInsight();
+    if (insight) {
+      return;
     }
-  }, []);
+
+    let active = true;
+
+    async function bootstrapInsight() {
+      try {
+        const nextInsight = await fetchCommanderInsight(dealId);
+
+        if (!active) {
+          return;
+        }
+
+        setInsight(nextInsight);
+        setError(null);
+      } catch (caughtError) {
+        if (!active) {
+          return;
+        }
+
+        setError(caughtError instanceof Error ? caughtError.message : "Commander insight generation failed.");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void bootstrapInsight();
+
+    return () => {
+      active = false;
+    };
+  }, [dealId, insight]);
 
   return (
     <Panel

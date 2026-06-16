@@ -127,7 +127,7 @@ export function BuyerEngineReverseSearchPage({
               <StatusPill tone="active" label="buyer -> seller reverse lane live" />
             </div>
             <div className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
-              Use this when a buyer says, "Send me more like this," and the team needs to surface
+              Use this when a buyer says, &quot;Send me more like this,&quot; and the team needs to surface
               matching inventory already flowing through Seller Engine and Deal Engine.
             </div>
           </div>
