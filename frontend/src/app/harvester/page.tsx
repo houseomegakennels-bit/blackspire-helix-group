@@ -6,6 +6,8 @@ import { HarvesterIdentity } from "@/components/harvester-identity";
 import { MarketingShell } from "@/components/marketing-shell";
 import { getHarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
 
+export const dynamic = "force-dynamic";
+
 export default async function HarvesterPage() {
   const snapshot = await getHarvesterWorkspaceSnapshot();
   const style = {
