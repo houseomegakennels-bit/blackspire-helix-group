@@ -6,7 +6,6 @@
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "postCreateCommand": "bash ${containerWorkspaceFolder}/scripts/bootstrap-codespace.sh",
-  "postAttachCommand": "bash ${containerWorkspaceFolder}/scripts/agent-start.sh",
   "customizations": {
     "vscode": {
       "extensions": [

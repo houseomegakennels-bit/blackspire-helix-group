@@ -2,6 +2,29 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Codex Workspace",
+      "type": "shell",
+      "command": "bash",
+      "args": ["./scripts/open-codex-workspace.sh"],
+      "windows": {
+        "command": "C:\\Program Files\\Git\\bin\\bash.exe",
+        "args": ["./scripts/open-codex-workspace.sh"]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "focus": true
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Agent Start",
       "type": "shell",
       "command": "bash",
@@ -19,9 +42,6 @@
         "clear": true
       },
       "group": "build",
-      "runOptions": {
-        "runOn": "folderOpen"
-      },
       "problemMatcher": []
     },
     {

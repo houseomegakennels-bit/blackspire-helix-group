@@ -43,6 +43,7 @@ chmod +x \
   scripts/codex-use-api-key.sh \
   scripts/install-git-hooks.sh \
   scripts/materialize-env-from-secrets.sh \
+  scripts/open-codex-workspace.sh \
   scripts/sync-workspace.sh \
   scripts/env-check \
   scripts/env-sync
@@ -59,6 +60,7 @@ append_line_once "alias agent-save=\"bash $REPO_ROOT/scripts/agent-save.sh\"" "$
 append_line_once "alias bh=\"cd $REPO_ROOT\"" "$BASHRC"
 append_line_once "alias env-check=\"bash $REPO_ROOT/scripts/check-required-env.sh\"" "$BASHRC"
 append_line_once "alias env-sync=\"bash $REPO_ROOT/scripts/materialize-env-from-secrets.sh\"" "$BASHRC"
+append_line_once "alias codex-workspace=\"bash $REPO_ROOT/scripts/open-codex-workspace.sh\"" "$BASHRC"
 append_line_once "alias repo-root=\"cd $REPO_ROOT\"" "$BASHRC"
 
 echo ""

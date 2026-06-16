@@ -88,3 +88,15 @@ Bootstrap the full Codespace setup again:
 ```bash
 bash scripts/bootstrap-codespace.sh
 ```
+
+Open the full Codex workspace manually if the automatic task did not start:
+
+```bash
+bash scripts/open-codex-workspace.sh
+```
+
+Or use the shell alias added during bootstrap:
+
+```bash
+codex-workspace
+```
