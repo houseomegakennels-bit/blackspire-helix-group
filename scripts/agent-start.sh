@@ -84,6 +84,22 @@ else
 fi
 
 log ""
+log "Checking Codex auth..."
+if [ -f scripts/codex-auth-codespace.sh ]; then
+  bash scripts/codex-auth-codespace.sh || warn "Codex auth check failed."
+else
+  warn "scripts/codex-auth-codespace.sh is missing."
+fi
+
+log ""
+log "Materializing environment files from injected secrets..."
+if [ -f scripts/materialize-env-from-secrets.sh ]; then
+  bash scripts/materialize-env-from-secrets.sh || warn "Could not materialize one or more environment files."
+else
+  warn "scripts/materialize-env-from-secrets.sh is missing."
+fi
+
+log ""
 log "Checking required environment variables..."
 if [ -f scripts/check-required-env.sh ]; then
   if ! bash scripts/check-required-env.sh; then

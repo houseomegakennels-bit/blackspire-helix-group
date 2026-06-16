@@ -46,6 +46,7 @@ Ember Halo also needs these secrets for a full backend run:
 4. Rebuild or restart the codespace.
 
 GitHub injects Codespaces secrets as environment variables into the codespace session.
+Bootstrap writes those values into both repo-root `.env` and `frontend/.env.local`.
 
 ## Codex authentication policy in Codespaces
 
@@ -64,13 +65,13 @@ Check whether all required variables exist:
 bash scripts/check-required-env.sh
 ```
 
-Create a local `.env` from the currently injected environment variables:
+Create local env files from the currently injected environment variables:
 
 ```bash
 bash scripts/materialize-env-from-secrets.sh
 ```
 
-Force-refresh `.env` from the current environment variables:
+Force-refresh `.env` and `frontend/.env.local` from the current environment variables:
 
 ```bash
 bash scripts/materialize-env-from-secrets.sh --force

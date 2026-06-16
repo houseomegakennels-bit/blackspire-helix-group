@@ -1,35 +1,55 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
 
-target_file=".env"
+FORCE_WRITE=0
+[ "${1:-}" = "--force" ] && FORCE_WRITE=1
 
-if [ -f "$target_file" ] && [ "${1:-}" != "--force" ]; then
-  echo ".env already exists. Use --force to overwrite it."
-  exit 0
-fi
+write_env_file() {
+  local example_file="$1"
+  local target_file="$2"
 
-if [ ! -f .env.example ]; then
-  echo "No .env.example found."
-  exit 1
-fi
+  if [ ! -f "$example_file" ]; then
+    return 0
+  fi
 
-tmp_file="$(mktemp)"
-trap 'rm -f "$tmp_file"' EXIT
+  if [ -f "$target_file" ] && [ "$FORCE_WRITE" -ne 1 ]; then
+    echo "$target_file already exists. Use --force to overwrite it."
+    return 0
+  fi
 
-while IFS= read -r line; do
-  case "$line" in
-    ""|\#*)
-      echo "$line" >> "$tmp_file"
-      continue
-      ;;
-  esac
+  mkdir -p "$(dirname "$target_file")"
+  local tmp_file
+  tmp_file="$(mktemp)"
 
-  key="${line%%=*}"
-  value="${!key:-}"
-  printf "%s=%s\n" "$key" "$value" >> "$tmp_file"
-done < .env.example
+  while IFS= read -r line; do
+    case "$line" in
+      ""|\#*)
+        echo "$line" >> "$tmp_file"
+        continue
+        ;;
+    esac
 
-mv "$tmp_file" "$target_file"
-echo "Wrote .env from current environment variables."
+    key="${line%%=*}"
+    value="${!key:-}"
+
+    case "$key" in
+      NEXT_PUBLIC_SUPABASE_URL)
+        [ -z "$value" ] && value="${SUPABASE_URL:-}"
+        ;;
+      NEXT_PUBLIC_SUPABASE_ANON_KEY)
+        [ -z "$value" ] && value="${SUPABASE_ANON_KEY:-}"
+        ;;
+    esac
+
+    printf "%s=%s\n" "$key" "$value" >> "$tmp_file"
+  done < "$example_file"
+
+  mv "$tmp_file" "$target_file"
+  echo "Wrote $target_file from current environment variables."
+}
+
+write_env_file ".env.example" ".env"
+write_env_file "frontend/.env.example" "frontend/.env.local"

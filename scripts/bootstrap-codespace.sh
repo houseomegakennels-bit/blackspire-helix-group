@@ -66,6 +66,12 @@ echo "Checking Codex auth..."
 bash scripts/codex-auth-codespace.sh
 
 echo ""
+echo "Materializing environment files from Codespaces secrets..."
+if ! bash scripts/materialize-env-from-secrets.sh; then
+  echo "WARNING: Could not materialize one or more environment files from injected secrets."
+fi
+
+echo ""
 echo "Checking required environment variables..."
 if ! bash scripts/check-required-env.sh; then
   echo "WARNING: Workspace is missing one or more required secrets."
