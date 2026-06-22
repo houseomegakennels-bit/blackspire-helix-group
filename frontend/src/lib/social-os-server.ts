@@ -21,6 +21,8 @@ import type {
   SocialCampaignTemplate,
   SocialClientRecord,
   SocialClientUserRecord,
+  SocialCredentialAssistRecord,
+  SocialCredentialAssistStatus,
   SocialConnectionStatus,
   SocialIntegrationRecord,
   SocialMediaAssetRecord,
@@ -145,6 +147,21 @@ type SaveIntegrationInput = {
   apiKey?: string;
   cliCommand?: string;
   webhookUrl?: string;
+};
+
+type RequestAdminIntegrationHelpInput = {
+  platform: SocialPlatform;
+  preferredContact?: string;
+  requestNote?: string;
+};
+
+type UpdateAdminIntegrationRequestInput = {
+  clientId: string;
+  platform: SocialPlatform;
+  status: SocialCredentialAssistStatus;
+  preferredContact?: string;
+  requestNote?: string;
+  supportNote?: string;
 };
 
 type SaveCampaignInput = {
@@ -400,6 +417,11 @@ export async function getSocialOsAdminSnapshot(viewer: SocialViewer): Promise<So
       ...client,
       users: clientUsers,
       integrations: workspace.integrations.map(toPublicIntegration),
+      pendingCredentialRequests: workspace.integrations.filter(
+        (integration) =>
+          integration.credentialAssist.status !== "none"
+          && integration.credentialAssist.status !== "completed",
+      ).length,
       failedPushes: workspace.campaigns.flatMap((campaign) =>
         campaign.posts
           .filter((post) => post.status === "failed")
@@ -451,6 +473,16 @@ export async function saveIntegration(
   current.connectionStatus = determineSavedIntegrationStatus(current);
   current.lastError = null;
   current.updatedAt = now;
+  current.credentialAssist = {
+    ...current.credentialAssist,
+    status: "completed",
+    supportNote: viewer.isAdmin
+      ? "Blackspire stored the latest credential set."
+      : current.credentialAssist.supportNote,
+    updatedAt: now,
+    handledBy: viewer.username,
+    handledAt: now,
+  };
 
   appendAuditLog(state, {
     clientId,
@@ -489,6 +521,19 @@ export async function removeIntegration(
   current.connectionStatus = "not connected";
   current.lastError = null;
   current.updatedAt = new Date().toISOString();
+  current.credentialAssist = {
+    ...current.credentialAssist,
+    status:
+      current.credentialAssist.requestedAt || current.credentialAssist.requestNote
+        ? "awaiting_client"
+        : "none",
+    supportNote: viewer.isAdmin
+      ? "Credentials were removed. Provide a replacement set to reconnect."
+      : current.credentialAssist.supportNote,
+    updatedAt: current.updatedAt,
+    handledBy: viewer.username,
+    handledAt: current.updatedAt,
+  };
 
   appendAuditLog(state, {
     clientId,
@@ -541,6 +586,22 @@ export async function testIntegration(
 
   current.lastTestedAt = now;
   current.updatedAt = now;
+  current.credentialAssist = {
+    ...current.credentialAssist,
+    status:
+      current.connectionStatus === "connected"
+        ? "completed"
+        : current.credentialAssist.status === "none"
+          ? "awaiting_client"
+          : current.credentialAssist.status,
+    supportNote:
+      current.connectionStatus === "connected"
+        ? "Connection test passed."
+        : current.lastError ?? current.credentialAssist.supportNote,
+    updatedAt: now,
+    handledBy: viewer.username,
+    handledAt: now,
+  };
 
   appendAuditLog(state, {
     clientId,
@@ -550,6 +611,97 @@ export async function testIntegration(
     entityId: current.id,
     message: `${current.platformLabel} connection tested.`,
     metadata: { platform, status: current.connectionStatus },
+  });
+
+  await writeSocialOsState(state);
+}
+
+export async function requestAdminIntegrationHelp(
+  clientId: string,
+  viewer: SocialViewer,
+  input: RequestAdminIntegrationHelpInput,
+): Promise<void> {
+  const state = await readSocialOsState();
+  authorizeClientAccess(clientId, viewer);
+
+  const client = mustFindClient(state, clientId);
+  const workspace = ensureWorkspace(state, client);
+  const current = workspace.integrations.find((item) => item.platform === input.platform);
+  if (!current) {
+    throw new Error("Platform integration not found.");
+  }
+
+  const now = new Date().toISOString();
+  current.credentialAssist = {
+    ...current.credentialAssist,
+    status: "requested",
+    requestedBy: viewer.username,
+    preferredContact: input.preferredContact?.trim() ?? "",
+    requestNote: input.requestNote?.trim() ?? "",
+    supportNote: "Blackspire has been asked to help with this setup.",
+    requestedAt: now,
+    updatedAt: now,
+  };
+
+  appendAuditLog(state, {
+    clientId,
+    actorUsername: viewer.username,
+    eventType: "credential_update",
+    entityType: "integration_request",
+    entityId: current.id,
+    message: `${current.platformLabel} admin-assisted setup requested.`,
+    metadata: {
+      platform: current.platform,
+      preferredContact: current.credentialAssist.preferredContact,
+    },
+  });
+
+  await writeSocialOsState(state);
+}
+
+export async function updateAdminIntegrationRequest(
+  viewer: SocialViewer,
+  input: UpdateAdminIntegrationRequestInput,
+): Promise<void> {
+  if (!viewer.isAdmin) {
+    throw new Error("Admin access required.");
+  }
+
+  const state = await readSocialOsState();
+  const client = mustFindClient(state, input.clientId);
+  const workspace = ensureWorkspace(state, client);
+  const current = workspace.integrations.find((item) => item.platform === input.platform);
+  if (!current) {
+    throw new Error("Platform integration not found.");
+  }
+
+  const now = new Date().toISOString();
+  current.credentialAssist = {
+    ...current.credentialAssist,
+    status: input.status,
+    preferredContact: input.preferredContact?.trim() ?? current.credentialAssist.preferredContact,
+    requestNote: input.requestNote?.trim() ?? current.credentialAssist.requestNote,
+    supportNote: input.supportNote?.trim() ?? current.credentialAssist.supportNote,
+    requestedAt:
+      input.status === "requested"
+        ? current.credentialAssist.requestedAt ?? now
+        : current.credentialAssist.requestedAt,
+    updatedAt: now,
+    handledBy: viewer.username,
+    handledAt: now,
+  };
+
+  appendAuditLog(state, {
+    clientId: input.clientId,
+    actorUsername: viewer.username,
+    eventType: "credential_update",
+    entityType: "integration_request",
+    entityId: current.id,
+    message: `${current.platformLabel} admin-assist status updated to ${input.status}.`,
+    metadata: {
+      platform: current.platform,
+      status: input.status,
+    },
   });
 
   await writeSocialOsState(state);
@@ -1217,6 +1369,12 @@ function ensureWorkspace(state: SocialState, client: SocialClientRecord): Social
   const existing = state.workspaces[client.id];
   if (existing) {
     existing.integrations = existing.integrations ?? createDefaultIntegrations(client.id);
+    existing.integrations = existing.integrations.map((integration) => ({
+      ...integration,
+      credentialAssist:
+        integration.credentialAssist ??
+        createDefaultCredentialAssist(client.id, integration.platform, new Date().toISOString()),
+    }));
     existing.mediaLibrary = existing.mediaLibrary ?? [];
     existing.brandVoice = existing.brandVoice ?? createDefaultBrandVoice(client.id, new Date().toISOString());
     existing.campaigns = existing.campaigns ?? [];
@@ -1234,6 +1392,26 @@ function createDefaultWorkspace(clientId: string, now: string): SocialWorkspaceS
     mediaLibrary: [],
     brandVoice: createDefaultBrandVoice(clientId, now),
     campaigns: [],
+  };
+}
+
+function createDefaultCredentialAssist(
+  clientId: string,
+  platform: SocialPlatform,
+  now: string,
+): SocialCredentialAssistRecord {
+  return {
+    clientId,
+    platform,
+    status: "none",
+    requestedBy: null,
+    preferredContact: "",
+    requestNote: "",
+    supportNote: "",
+    requestedAt: null,
+    updatedAt: now,
+    handledBy: null,
+    handledAt: null,
   };
 }
 
@@ -1256,6 +1434,7 @@ function createDefaultIntegrations(clientId: string): SocialStoredIntegration[] 
     lastError: null,
     lastTestedAt: null,
     updatedAt: now,
+    credentialAssist: createDefaultCredentialAssist(clientId, platform, now),
   }));
 }
 
@@ -1327,6 +1506,7 @@ function toPublicIntegration(integration: SocialStoredIntegration): SocialIntegr
     lastError: integration.lastError,
     lastTestedAt: integration.lastTestedAt,
     updatedAt: integration.updatedAt,
+    credentialAssist: integration.credentialAssist,
   };
 }
 

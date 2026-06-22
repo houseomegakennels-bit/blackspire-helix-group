@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type {
   SocialCampaignRecord,
+  SocialIntegrationRecord,
   SocialPlatform,
   SocialWorkspaceSnapshot
 } from "@/types/social-os";
@@ -64,6 +65,18 @@ function createBlankOverrides() {
   };
 }
 
+function createAssistDrafts(integrations: SocialIntegrationRecord[]) {
+  return Object.fromEntries(
+    integrations.map((integration) => [
+      integration.platform,
+      {
+        preferredContact: integration.credentialAssist.preferredContact,
+        requestNote: integration.credentialAssist.requestNote,
+      },
+    ]),
+  ) as Record<SocialPlatform, { preferredContact: string; requestNote: string }>;
+}
+
 function parseTags(value: string): string[] {
   return value
     .split(",")
@@ -76,6 +89,12 @@ function formatDate(value: string | null | undefined): string {
     return "Not yet";
   }
   return new Date(value).toLocaleString();
+}
+
+function formatStatusLabel(value: string): string {
+  return value
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
 function formatBytes(value: number): string {
@@ -163,6 +182,7 @@ export function SocialOsWorkspace({
     facebook: { apiKey: "", cliCommand: "", webhookUrl: "" },
     x: { apiKey: "", cliCommand: "", webhookUrl: "" }
   });
+  const [assistDrafts, setAssistDrafts] = useState(createAssistDrafts(initialWorkspace.integrations));
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +204,7 @@ export function SocialOsWorkspace({
         facebook: { apiKey: "", cliCommand: "", webhookUrl: "" },
         x: { apiKey: "", cliCommand: "", webhookUrl: "" }
       });
+      setAssistDrafts(createAssistDrafts(nextWorkspace.integrations));
 
       if (!nextWorkspace.campaigns.length) {
         setSelectedCampaignId(null);
@@ -1095,7 +1116,7 @@ export function SocialOsWorkspace({
               <div className="panel-heading">
                 <div>
                   <span>{integration.platformLabel}</span>
-                  <h2>{integration.connectionStatus}</h2>
+                  <h2>{formatStatusLabel(integration.connectionStatus)}</h2>
                 </div>
                 <button
                   className="ghost-button"
@@ -1110,6 +1131,81 @@ export function SocialOsWorkspace({
                 >
                   Remove credentials
                 </button>
+              </div>
+              <div className="campaign-group-card">
+                <strong>Blackspire-managed setup</strong>
+                <p>Prefer a safer handoff? Request Blackspire to store, test, and monitor this platform for you.</p>
+                <div className="social-os-inline-meta">
+                  <span>Request status: {formatStatusLabel(integration.credentialAssist.status)}</span>
+                  <span>Requested: {formatDate(integration.credentialAssist.requestedAt)}</span>
+                  <span>Last updated: {formatDate(integration.credentialAssist.updatedAt)}</span>
+                </div>
+                <div className="prompt-editor-grid">
+                  <label className="field">
+                    <span>Preferred contact</span>
+                    <input
+                      value={assistDrafts[integration.platform].preferredContact}
+                      onChange={(event) =>
+                        setAssistDrafts((current) => ({
+                          ...current,
+                          [integration.platform]: {
+                            ...current[integration.platform],
+                            preferredContact: event.target.value
+                          }
+                        }))
+                      }
+                      placeholder="Email, Slack, or best callback number"
+                    />
+                  </label>
+                  <label className="field field-span-2">
+                    <span>Setup notes for Blackspire</span>
+                    <textarea
+                      value={assistDrafts[integration.platform].requestNote}
+                      onChange={(event) =>
+                        setAssistDrafts((current) => ({
+                          ...current,
+                          [integration.platform]: {
+                            ...current[integration.platform],
+                            requestNote: event.target.value
+                          }
+                        }))
+                      }
+                      placeholder="Share account owner, login steps, store link, or anything the team should know."
+                      rows={4}
+                    />
+                  </label>
+                </div>
+                {integration.credentialAssist.supportNote ? (
+                  <p className="empty-state">
+                    Blackspire note: {integration.credentialAssist.supportNote}
+                  </p>
+                ) : null}
+                <div className="social-os-editor-actions">
+                  <button
+                    className="sync-button"
+                    type="button"
+                    onClick={() =>
+                      callWorkspaceAction(
+                        "request-admin-integration-help",
+                        {
+                          platform: integration.platform,
+                          preferredContact: assistDrafts[integration.platform].preferredContact,
+                          requestNote: assistDrafts[integration.platform].requestNote
+                        },
+                        "Sending setup request...",
+                        `${integration.platformLabel} setup request sent to Blackspire.`
+                      )
+                    }
+                  >
+                    Request Blackspire setup
+                  </button>
+                </div>
+              </div>
+              <div className="panel-heading">
+                <div>
+                  <span>Self-managed credentials</span>
+                  <h2>Update directly</h2>
+                </div>
               </div>
               <div className="prompt-editor-grid">
                 <label className="field">

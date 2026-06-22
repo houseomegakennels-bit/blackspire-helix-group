@@ -1,7 +1,43 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { SocialAdminSnapshot } from "@/types/social-os";
+import type { SocialAdminSnapshot, SocialCredentialAssistStatus } from "@/types/social-os";
+
+function buildIntegrationDrafts(admin: SocialAdminSnapshot) {
+  return Object.fromEntries(
+    admin.clients.flatMap((client) =>
+      client.integrations.map((integration) => [
+        integration.id,
+        {
+          apiKey: "",
+          cliCommand: "",
+          webhookUrl: "",
+          status: integration.credentialAssist.status,
+          preferredContact: integration.credentialAssist.preferredContact,
+          requestNote: integration.credentialAssist.requestNote,
+          supportNote: integration.credentialAssist.supportNote,
+        },
+      ]),
+    ),
+  ) as Record<
+    string,
+    {
+      apiKey: string;
+      cliCommand: string;
+      webhookUrl: string;
+      status: SocialCredentialAssistStatus;
+      preferredContact: string;
+      requestNote: string;
+      supportNote: string;
+    }
+  >;
+}
+
+function formatStatusLabel(value: string): string {
+  return value
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
 
 export function SocialOsAdminConsole({
   initialAdmin
@@ -22,6 +58,7 @@ export function SocialOsAdminConsole({
   });
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
   const [loginDrafts, setLoginDrafts] = useState<Record<string, { username: string; password: string }>>({});
+  const [integrationDrafts, setIntegrationDrafts] = useState(buildIntegrationDrafts(initialAdmin));
 
   const runAction = async (
     action: string,
@@ -49,6 +86,7 @@ export function SocialOsAdminConsole({
       }
       startTransition(() => {
         setAdmin(data.admin as SocialAdminSnapshot);
+        setIntegrationDrafts(buildIntegrationDrafts(data.admin as SocialAdminSnapshot));
       });
       setNotice(successText);
     } catch (actionError) {
@@ -57,6 +95,19 @@ export function SocialOsAdminConsole({
       setBusyLabel(null);
     }
   };
+
+  const pendingRequests = admin.clients.flatMap((client) =>
+    client.integrations
+      .filter(
+        (integration) =>
+          integration.credentialAssist.status !== "none"
+          && integration.credentialAssist.status !== "completed",
+      )
+      .map((integration) => ({
+        client,
+        integration,
+      })),
+  );
 
   return (
     <main className="social-os-shell">
@@ -166,6 +217,7 @@ export function SocialOsAdminConsole({
                   <p>{client.brandName}</p>
                   <div className="social-os-inline-meta">
                     <span>{client.integrations.filter((item) => item.connectionStatus === "connected").length} healthy integrations</span>
+                    <span>{client.pendingCredentialRequests} credential requests</span>
                     <span>{client.failedPushes.length} failed push logs</span>
                   </div>
                   <div className="social-os-editor-actions">
@@ -282,6 +334,211 @@ export function SocialOsAdminConsole({
                       </div>
                     ))}
                   </div>
+                  <div className="social-os-admin-subgrid">
+                    {client.integrations.map((integration) => (
+                      <div key={integration.id} className="asset-card">
+                        <strong>{integration.platformLabel}</strong>
+                        <span>{formatStatusLabel(integration.connectionStatus)}</span>
+                        <p>
+                          Assist status: {formatStatusLabel(integration.credentialAssist.status)}
+                          {integration.credentialAssist.requestedAt
+                            ? ` · ${new Date(integration.credentialAssist.requestedAt).toLocaleString()}`
+                            : ""}
+                        </p>
+                        <p>
+                          Preferred contact: {integration.credentialAssist.preferredContact || "Not provided"}
+                        </p>
+                        <p>{integration.credentialAssist.requestNote || "No client request note yet."}</p>
+                        <p>Saved API key: {integration.maskedApiKey ?? "Not saved"}</p>
+                        <p>Saved CLI command: {integration.maskedCliCommand ?? "Not saved"}</p>
+                        <p>Saved webhook: {integration.maskedWebhookUrl ?? "Not saved"}</p>
+                        <input
+                          className="vault-search"
+                          value={integrationDrafts[integration.id]?.preferredContact ?? ""}
+                          onChange={(event) =>
+                            setIntegrationDrafts((current) => ({
+                              ...current,
+                              [integration.id]: {
+                                ...current[integration.id],
+                                preferredContact: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Preferred client contact"
+                        />
+                        <textarea
+                          className="vault-search"
+                          value={integrationDrafts[integration.id]?.requestNote ?? ""}
+                          onChange={(event) =>
+                            setIntegrationDrafts((current) => ({
+                              ...current,
+                              [integration.id]: {
+                                ...current[integration.id],
+                                requestNote: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Client request note"
+                        />
+                        <select
+                          className="vault-search"
+                          value={integrationDrafts[integration.id]?.status ?? integration.credentialAssist.status}
+                          onChange={(event) =>
+                            setIntegrationDrafts((current) => ({
+                              ...current,
+                              [integration.id]: {
+                                ...current[integration.id],
+                                status: event.target.value as SocialCredentialAssistStatus,
+                              },
+                            }))
+                          }
+                        >
+                          <option value="none">No request</option>
+                          <option value="requested">Requested</option>
+                          <option value="in_review">In review</option>
+                          <option value="awaiting_client">Awaiting client</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                        <textarea
+                          className="vault-search"
+                          value={integrationDrafts[integration.id]?.supportNote ?? integration.credentialAssist.supportNote}
+                          onChange={(event) =>
+                            setIntegrationDrafts((current) => ({
+                              ...current,
+                              [integration.id]: {
+                                ...current[integration.id],
+                                supportNote: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Internal / client-facing handoff note"
+                        />
+                        <input
+                          className="vault-search"
+                          value={integrationDrafts[integration.id]?.apiKey ?? ""}
+                          onChange={(event) =>
+                            setIntegrationDrafts((current) => ({
+                              ...current,
+                              [integration.id]: {
+                                ...current[integration.id],
+                                apiKey: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="New API key or token"
+                        />
+                        <input
+                          className="vault-search"
+                          value={integrationDrafts[integration.id]?.cliCommand ?? ""}
+                          onChange={(event) =>
+                            setIntegrationDrafts((current) => ({
+                              ...current,
+                              [integration.id]: {
+                                ...current[integration.id],
+                                cliCommand: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Optional CLI command"
+                        />
+                        <input
+                          className="vault-search"
+                          value={integrationDrafts[integration.id]?.webhookUrl ?? ""}
+                          onChange={(event) =>
+                            setIntegrationDrafts((current) => ({
+                              ...current,
+                              [integration.id]: {
+                                ...current[integration.id],
+                                webhookUrl: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Optional webhook URL"
+                        />
+                        <div className="social-os-editor-actions">
+                          <button
+                            className="sync-button"
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                "update-integration-request",
+                                {
+                                  clientId: client.id,
+                                  platform: integration.platform,
+                                  status: integrationDrafts[integration.id]?.status ?? integration.credentialAssist.status,
+                                  preferredContact:
+                                    integrationDrafts[integration.id]?.preferredContact
+                                    ?? integration.credentialAssist.preferredContact,
+                                  requestNote:
+                                    integrationDrafts[integration.id]?.requestNote
+                                    ?? integration.credentialAssist.requestNote,
+                                  supportNote: integrationDrafts[integration.id]?.supportNote ?? integration.credentialAssist.supportNote,
+                                },
+                                "Updating request status...",
+                                `${integration.platformLabel} request updated.`,
+                              )
+                            }
+                          >
+                            Update request
+                          </button>
+                          <button
+                            className="ghost-button"
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                "save-client-integration",
+                                {
+                                  clientId: client.id,
+                                  platform: integration.platform,
+                                  apiKey: integrationDrafts[integration.id]?.apiKey ?? "",
+                                  cliCommand: integrationDrafts[integration.id]?.cliCommand ?? "",
+                                  webhookUrl: integrationDrafts[integration.id]?.webhookUrl ?? "",
+                                },
+                                "Saving managed credentials...",
+                                `${integration.platformLabel} credentials stored.`,
+                              )
+                            }
+                          >
+                            Save credentials
+                          </button>
+                          <button
+                            className="ghost-button"
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                "test-client-integration",
+                                {
+                                  clientId: client.id,
+                                  platform: integration.platform,
+                                },
+                                "Testing managed connection...",
+                                `${integration.platformLabel} connection tested.`,
+                              )
+                            }
+                          >
+                            Test
+                          </button>
+                          <button
+                            className="ghost-button"
+                            type="button"
+                            onClick={() =>
+                              runAction(
+                                "remove-client-integration",
+                                {
+                                  clientId: client.id,
+                                  platform: integration.platform,
+                                },
+                                "Removing managed credentials...",
+                                `${integration.platformLabel} credentials removed.`,
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -289,6 +546,32 @@ export function SocialOsAdminConsole({
         </div>
 
         <div className="social-os-side-column">
+          <article className="panel social-os-card">
+            <div className="panel-heading">
+              <div>
+                <span>Credential intake</span>
+                <h2>Blackspire-managed requests</h2>
+              </div>
+            </div>
+            {pendingRequests.length ? (
+              <div className="recent-campaigns-list">
+                {pendingRequests.map(({ client, integration }) => (
+                  <div key={`${client.id}-${integration.id}`} className="campaign-group-card">
+                    <strong>{client.name}</strong>
+                    <span>{integration.platformLabel}</span>
+                    <p>Status: {formatStatusLabel(integration.credentialAssist.status)}</p>
+                    <p>{integration.credentialAssist.requestNote || "No request note provided."}</p>
+                    <p>Preferred contact: {integration.credentialAssist.preferredContact || "Not provided"}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-state">
+                No active admin-assisted credential requests right now.
+              </p>
+            )}
+          </article>
+
           <article className="panel social-os-card">
             <div className="panel-heading">
               <div>

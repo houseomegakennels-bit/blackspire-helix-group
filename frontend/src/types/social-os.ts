@@ -14,6 +14,13 @@ export type SocialConnectionStatus =
   | "token expired"
   | "needs reconnect";
 
+export type SocialCredentialAssistStatus =
+  | "none"
+  | "requested"
+  | "in_review"
+  | "awaiting_client"
+  | "completed";
+
 export type SocialCampaignStatus =
   | "draft"
   | "ready"
@@ -52,6 +59,20 @@ export interface SocialViewer {
   isAdmin: boolean;
 }
 
+export interface SocialCredentialAssistRecord {
+  clientId: string;
+  platform: SocialPlatform;
+  status: SocialCredentialAssistStatus;
+  requestedBy: string | null;
+  preferredContact: string;
+  requestNote: string;
+  supportNote: string;
+  requestedAt: string | null;
+  updatedAt: string;
+  handledBy: string | null;
+  handledAt: string | null;
+}
+
 export interface SocialIntegrationRecord {
   id: string;
   clientId: string;
@@ -66,6 +87,7 @@ export interface SocialIntegrationRecord {
   lastError: string | null;
   lastTestedAt: string | null;
   updatedAt: string;
+  credentialAssist: SocialCredentialAssistRecord;
 }
 
 export interface SocialMediaAssetRecord {
@@ -207,6 +229,7 @@ export interface SocialAdminSnapshot {
     SocialClientRecord & {
       users: SocialClientUserRecord[];
       integrations: SocialIntegrationRecord[];
+      pendingCredentialRequests: number;
       failedPushes: Array<{
         campaignName: string;
         platformLabel: string;

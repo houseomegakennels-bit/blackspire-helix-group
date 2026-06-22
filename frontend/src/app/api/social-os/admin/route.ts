@@ -5,9 +5,14 @@ import {
   createClientLogin,
   getSocialOsAdminSnapshot,
   getSocialOsViewer,
+  removeIntegration,
   resetClientPassword,
+  saveIntegration,
   setClientAccess,
+  testIntegration,
+  updateAdminIntegrationRequest,
 } from "@/lib/social-os-server";
+import type { SocialCredentialAssistStatus, SocialPlatform } from "@/types/social-os";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +64,38 @@ export async function POST(request: NextRequest) {
         break;
       case "set-client-access":
         await setClientAccess(viewer, String(payload.clientId ?? ""), Boolean(payload.disabled));
+        break;
+      case "save-client-integration":
+        await saveIntegration(String(payload.clientId ?? ""), viewer, {
+          platform: payload.platform as SocialPlatform,
+          apiKey: String(payload.apiKey ?? ""),
+          cliCommand: String(payload.cliCommand ?? ""),
+          webhookUrl: String(payload.webhookUrl ?? ""),
+        });
+        break;
+      case "remove-client-integration":
+        await removeIntegration(
+          String(payload.clientId ?? ""),
+          viewer,
+          payload.platform as SocialPlatform,
+        );
+        break;
+      case "test-client-integration":
+        await testIntegration(
+          String(payload.clientId ?? ""),
+          viewer,
+          payload.platform as SocialPlatform,
+        );
+        break;
+      case "update-integration-request":
+        await updateAdminIntegrationRequest(viewer, {
+          clientId: String(payload.clientId ?? ""),
+          platform: payload.platform as SocialPlatform,
+          status: payload.status as SocialCredentialAssistStatus,
+          preferredContact: typeof payload.preferredContact === "string" ? payload.preferredContact : "",
+          requestNote: typeof payload.requestNote === "string" ? payload.requestNote : "",
+          supportNote: typeof payload.supportNote === "string" ? payload.supportNote : "",
+        });
         break;
       default:
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });

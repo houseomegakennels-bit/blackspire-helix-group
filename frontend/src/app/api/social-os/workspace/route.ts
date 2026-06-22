@@ -7,6 +7,7 @@ import {
   getSocialOsWorkspaceSnapshot,
   pushCampaign,
   removeIntegration,
+  requestAdminIntegrationHelp,
   retryPlatformPush,
   saveBrandVoice,
   saveCampaign,
@@ -71,6 +72,13 @@ export async function POST(request: NextRequest) {
         break;
       case "test-integration":
         await testIntegration(clientId, viewer, payload.platform as SocialPlatform);
+        break;
+      case "request-admin-integration-help":
+        await requestAdminIntegrationHelp(clientId, viewer, {
+          platform: payload.platform as SocialPlatform,
+          preferredContact: typeof payload.preferredContact === "string" ? payload.preferredContact : "",
+          requestNote: typeof payload.requestNote === "string" ? payload.requestNote : "",
+        });
         break;
       case "save-campaign":
         await saveCampaign(clientId, viewer, {
