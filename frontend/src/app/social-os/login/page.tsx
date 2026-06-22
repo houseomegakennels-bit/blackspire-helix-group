@@ -9,7 +9,7 @@ export default async function SocialOsLoginPage() {
   const viewer = await getSocialOsViewer();
 
   if (viewer) {
-    redirect(viewer.isAdmin ? "/social-os/admin" : getClientWorkspacePath(viewer.clientId!));
+    redirect(viewer.isAdmin ? "/social-os/admin" : await getClientWorkspacePath(viewer.clientId!));
   }
 
   return (

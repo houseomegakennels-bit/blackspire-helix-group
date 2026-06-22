@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function SocialOsLandingPage() {
   const viewer = await getSocialOsViewer();
   if (viewer) {
-    redirect(viewer.isAdmin ? "/social-os/admin" : getClientWorkspacePath(viewer.clientId!));
+    redirect(viewer.isAdmin ? "/social-os/admin" : await getClientWorkspacePath(viewer.clientId!));
   }
 
   return (

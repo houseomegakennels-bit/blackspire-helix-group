@@ -110,6 +110,11 @@ const ONBOARDING_ITEMS: Array<{ key: string; label: string }> = [
   { key: "first-campaign-pushed", label: "First campaign pushed" },
 ];
 
+function resolveClientWorkspacePath(clientId: string, state: SocialState): string {
+  const client = state.clients.find((item) => item.id === clientId);
+  return client ? `/social-os/client/${client.slug}` : "/social-os";
+}
+
 type SocialStoredIntegration = SocialIntegrationRecord & {
   encryptedApiKey: string | null;
   encryptedCliCommand: string | null;
@@ -284,7 +289,7 @@ export async function authenticateSocialOsUser(username: string, password: strin
     refreshToken: data.session.refresh_token,
     redirectPath: viewer.isAdmin
       ? "/social-os/admin"
-      : getClientWorkspacePath(viewer.clientId!, state),
+      : resolveClientWorkspacePath(viewer.clientId!, state),
   };
 }
 
@@ -1040,13 +1045,13 @@ export async function setClientAccess(
   await writeSocialOsState(state);
 }
 
-export function getClientWorkspacePath(clientId: string, state?: SocialState): string {
-  const targetState = state;
-  if (targetState) {
-    const client = targetState.clients.find((item) => item.id === clientId);
-    return client ? `/social-os/client/${client.slug}` : "/social-os";
+export async function getClientWorkspacePath(clientId: string, state?: SocialState): Promise<string> {
+  if (state) {
+    return resolveClientWorkspacePath(clientId, state);
   }
-  return "/social-os";
+
+  const currentState = await readSocialOsState();
+  return resolveClientWorkspacePath(clientId, currentState);
 }
 
 function getSupabaseStorageClient(): SupabaseClient {

@@ -17,7 +17,7 @@ export default async function SocialOsAdminPage() {
   }
 
   if (!viewer.isAdmin) {
-    redirect(getClientWorkspacePath(viewer.clientId!));
+    redirect(await getClientWorkspacePath(viewer.clientId!));
   }
 
   const admin = await getSocialOsAdminSnapshot(viewer);

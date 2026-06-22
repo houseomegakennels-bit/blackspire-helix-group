@@ -21,8 +21,10 @@ export default async function SocialOsClientWorkspacePage({
     redirect("/social-os/login");
   }
 
-  if (!viewer.isAdmin && getClientWorkspacePath(viewer.clientId!) !== `/social-os/client/${slug}`) {
-    redirect(getClientWorkspacePath(viewer.clientId!));
+  const workspacePath = viewer.isAdmin ? null : await getClientWorkspacePath(viewer.clientId!);
+
+  if (!viewer.isAdmin && workspacePath && workspacePath !== `/social-os/client/${slug}`) {
+    redirect(workspacePath);
   }
 
   const workspace = await getSocialOsWorkspaceSnapshot(slug, viewer);
