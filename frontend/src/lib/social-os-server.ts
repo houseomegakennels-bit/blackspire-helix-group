@@ -1245,7 +1245,7 @@ function createDefaultIntegrations(clientId: string): SocialStoredIntegration[] 
     encryptedApiKey: null,
     encryptedCliCommand: null,
     encryptedWebhookUrl: null,
-    connectionStatus: platform === "tiktok-shop" ? "connected" : "not connected",
+    connectionStatus: "not connected",
     lastSuccessfulPush: null,
     lastFailedPush: null,
     lastError: null,
