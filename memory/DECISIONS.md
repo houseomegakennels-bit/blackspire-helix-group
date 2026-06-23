@@ -8,9 +8,23 @@
 
 ## 2026-06-01
 
-- **Stanly County routing:** Use direct ArcGIS Online endpoint (`services6.arcgis.com/w1igg0Q14weqYXUh/...`), NOT NC OneMap. Stanly removed from NC OneMap routing in n8n and frontend.
-- **Johnston/Columbus/Dare:** NC OneMap lag is the root cause of 0/0 results. Do NOT add workarounds — wait for NC OneMap to update.
-- **AI image model:** All new image generation uses `gpt-image-2`. Never pass `response_format` to gpt-image-1 or gpt-image-2 — these models reject that parameter with a 400 error.
-- **AI Storyboard app:** Standalone CLI tool, never merged into the Blackspire repo. Lives at `C:\Users\USER\Desktop\AI-Storyboard-Still-Generator\`.
-- **Repo safety rule:** Always check git status before editing. Never overwrite `oracle-helix-frontend/` without explicit direction — it contains untracked Codex work.
+- **Stanly County routing:** Use the direct ArcGIS Online endpoint for Stanly instead of NC OneMap.
+- **Johnston / Columbus / Dare lag:** Treat NC OneMap delay as a data issue, not a code issue, unless evidence changes.
+- **AI image model usage:** Use `gpt-image-2` for current image generation flows and do not pass `response_format`.
+- **AI Storyboard tool location:** Keep the storyboard generator as a standalone app outside this repo.
+- **Repo safety:** Always check git status before editing and avoid overwriting unrelated local work.
 
+## 2026-06-04 to 2026-06-16
+
+- **Division theming:** Each ecosystem division page should match its own logo palette, not inherit Buyer amber by default.
+- **Division backgrounds:** Workspace and marketing backgrounds should stay black-dominant and use logo-matched accent colors plus translucent watermark treatment.
+- **Seller Engine direction:** Keep Seller Engine focused on lead discovery, scoring, dossier intelligence, and clean handoff. Do not add automated texting/calling as part of Seller Engine scope.
+- **Buyer / Seller county strategy:** Prefer direct county or curated endpoints when they are more reliable than shared statewide feeds.
+- **Deal workflow:** Keep approved contract/document generation inside the Deal Engine and gate write actions on persistence readiness.
+
+## 2026-06-16 to 2026-06-23
+
+- **Codespaces Codex auth:** Codespaces should authenticate Codex with `OPENAI_API_KEY` from GitHub Codespaces secrets rather than desktop auth state.
+- **Codespaces startup:** The repo-managed `Codex Workspace` folder-open task is the preferred path for getting straight into the Codex workspace.
+- **Memory hygiene:** Shared memory belongs in repo-tracked docs under `memory/`; keep it current and do not leave the canonical state in local-only notes.
+- **Social OS scope:** Social OS client workspace and account settings live inside the same shared frontend and should follow the same shell, auth, and routing discipline as the rest of Helix.

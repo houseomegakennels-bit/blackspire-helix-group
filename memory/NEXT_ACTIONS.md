@@ -1,27 +1,21 @@
 # Next Actions
-Last updated: 2026-06-02
+Last updated: 2026-06-23
 
-## Session startup
-- Keep using `./scripts/agent-start.sh` or the equivalent safe startup flow at the beginning of each session.
-- Keep using `./scripts/agent-save.sh` or the `Agent Save` VS Code task before closing a session.
-- Approve automatic folder tasks if VS Code prompts for trust/permission.
+## Workspace / repo hygiene
+1. Keep using repo-managed startup flow: `scripts/agent-start.sh` or the `Codex Workspace` task in Codespaces.
+2. Keep shared memory updated when major product or infrastructure changes land.
+3. Continue avoiding secrets in repo docs, prompts, and `memory/`.
 
-## Buyer Engine — Pending Frontend Wire-ups
-1. **Realtime subscriptions** — `SearchJobDetail.tsx` → subscribe to `SearchJob` + `BuyerReport` channels
-2. **Export button** → call `export-csv` edge function, show download link
-3. **First operator account** → hit `/api/auth/bootstrap`
-4. **User roles admin** → extend admin tooling beyond `CountyDataSource`
-5. **Validate edge-function paths** → confirm `generate-outreach` and `summarize-buyer` behave correctly in production data flows
+## Codespaces
+1. Verify `OPENAI_API_KEY` is present in GitHub Codespaces secrets for `houseomegakennels-bit/blackspire-helix-group`.
+2. Rebuild the Codespace container after startup/bootstrap changes.
+3. If the automatic task does not launch, run `codex-workspace` manually inside the Codespace terminal.
 
-## Buyer Engine — County Data
-- Johnston, Columbus, Dare: 0/0 due to NC OneMap lag — monitor, will auto-resolve
-- n8n API key expires **2026-06-16** — renew before that date
+## Product follow-through
+1. Keep mobile QA tight across Seller / Harvester, Deal, Recon, and Social OS surfaces after each substantial UI change.
+2. Run targeted build checks after touching shared shells, routes, or auth-sensitive flows.
+3. Continue using real county/live-source validation whenever Seller or Buyer data-source work changes.
 
-## Repo Hygiene
-- `frontend/CLAUDE.md` and shared `memory/` notes are still local — commit when ready
-- inspect whether `frontend/public/brand/blackspire-buyer-engine-logo.png` should be kept, replaced, or discarded
-- `oracle-helix-frontend/` untracked Codex work — ask Charles what to do with it
-
-## AI Storyboard Still Generator
-- App is complete and working at `C:\Users\USER\Desktop\AI-Storyboard-Still-Generator\`
-- Potential enhancements: batch mode, video script output, custom shot count via CLI flag
+## Documentation
+1. Refresh high-level docs like `PROJECT_CONTEXT.md` when the product scope materially changes.
+2. Keep workflow and memory docs aligned so future sessions do not restart from stale assumptions.

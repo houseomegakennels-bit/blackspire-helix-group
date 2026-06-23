@@ -1,53 +1,48 @@
 # Session Log
 
-## 2026-05-22 - Desktop Codex sync verification
+## 2026-05-22 - Shared workspace baseline
 
 - Verified the workspace source of truth is `houseomegakennels-bit/blackspire-helix-group`.
-- Ran the startup sync flow from the desktop Codex environment using Git Bash.
-- Confirmed `AGENTS.md`, `PROJECT_CONTEXT.md`, `AI_WORKSPACE_SYNC.md`, and workspace scripts are readable.
-- Created the shared memory directory and baseline memory files because they were missing locally.
+- Established the shared memory model across desktop Codex, desktop VS Code, and Codespaces.
+- Added the baseline repo memory files and startup/save conventions.
 
-## 2026-05-22 - Workspace automation hardening
+## 2026-06-01 to 2026-06-02 - Buyer Engine county fixes and memory foundations
 
-- Added VS Code folder-open startup for `Agent Start`.
-- Added Windows Git Bash support for VS Code agent tasks.
-- Switched Codespaces startup sync to `postAttachCommand` so it runs when an editor attaches to the Codespace.
-- Added a repository git hook installer and pre-push frontend build guard.
+- Fixed Stanly County routing with a direct ArcGIS endpoint.
+- Documented NC OneMap lag issues for other counties as data problems rather than code regressions.
+- Added repo safety docs, startup automation helpers, and shared memory workflow.
+- Added Buyer Engine admin/source improvements and related operational notes.
 
-## 2026-06-01 - Buyer Engine county fixes + AI Storyboard app
+## 2026-06-04 to 2026-06-08 - Ecosystem visual alignment and Seller expansion
 
-### Stanly County — Fixed
-- Root cause of 0/0 smoke: NC OneMap data lag — Stanly was on NC OneMap which hadn't updated since early 2026
-- Switched Stanly to direct county ArcGIS Online endpoint: `services6.arcgis.com/w1igg0Q14weqYXUh/arcgis/rest/services/parcel_records_base_2/FeatureServer/3/query`
-- CountyDataSource.id `61984c19-fa01-41eb-9261-d8bebaecb217` updated in Supabase
-- n8n workflow updated: removed Stanly from NC OneMap routing, added dedicated `buildStanlyUrl()` branch
-- frontend `buyer-engine-data.ts`: `getCountyOperationalRisk()` updated — Stanly block before NC OneMap block
-- Smoke result: 128 sales, 72 buyers ✅
+- Brought ecosystem division pages in line with their logo palettes.
+- Added black-dominant, logo-matched backgrounds and translucent logo watermark treatment across division surfaces.
+- Expanded Seller Engine county coverage substantially and improved live-source ingestion behavior.
+- Added buyer follow-up and registry improvements alongside county/source enhancements.
 
-### Johnston, Columbus, Dare — NC OneMap Lag (not code bugs)
-- These still show 0/0 — NC OneMap records for these counties are lagged (last update Jan–Mar 2026)
-- Code is correct; data will auto-resolve when NC OneMap updates
+## 2026-06-07 to 2026-06-09 - Deal, Nexus, and Harvester workflow growth
 
-### AI Storyboard Still Generator — Built
-- Complete CLI app at `C:\Users\USER\Desktop\AI-Storyboard-Still-Generator\`
-- Uses gpt-4o (storyboard) + gpt-image-2 @ 1024x1536 (images)
-- Outputs: storyboard.json, storyboard.md, seedance-prompt.txt, seedance-shots.txt, hashtags.txt, prompts/, images/, metadata.json
-- Critical fix: gpt-image-2 rejects `response_format` param — do NOT pass it
-- Tested: "invader zim meets jimmy neutron" — 4/4 images generated ✅
+- Integrated Nexus skip-trace contact syncing into deal workflows.
+- Added Deal Engine persistence readiness, investor uploads, outreach drafting, underwriting, ARV, and closing coordination improvements.
+- Added approved contract PDF support and stabilized document-generation flows.
+- Built out Harvester intake, OCR, extraction, buyer matching, and seller-lead creation improvements.
 
-### Repo state as of session end
-- Branch: main, up to date with origin/main
-- Large untracked directory: oracle-helix-frontend/ (Codex-generated work — do not overwrite)
+## 2026-06-09 to 2026-06-13 - Recon, Sentinel, shared shell, and mobile hardening
 
-## 2026-06-02 - Repo cleanup and focused commits
+- Added Recon Engine phases including landing, billing, ingest, opportunity dashboard, and related public/product surfaces.
+- Added Sentinel Phase 1 as a command-intelligence layer.
+- Improved shared shell/navigation consistency across workspaces.
+- Tightened mobile layouts and removed multiple build/runtime blockers.
 
-### Pushed cleanup work
-- Added shared repo safety docs and startup automation helpers
-- Added Instagram growth planning docs after fixing bio emoji encoding
-- Added Buyer Engine admin county-source registry, AI summary route, and outreach fallback improvements
+## 2026-06-13 to 2026-06-16 - Codespaces and environment hardening
 
-### Remaining local work after cleanup
-- `frontend/CLAUDE.md`
-- shared `memory/` notes
-- `frontend/public/brand/blackspire-buyer-engine-logo.png`
-- `oracle-helix-frontend/` and `oracle-helix/`
+- Added repo-managed Codespaces env hydration from GitHub Codespaces secrets.
+- Added repo-managed Codespaces Codex authentication flow using `OPENAI_API_KEY`.
+- Added a direct Codespaces startup path so the workspace can open into Codex with the `Codex Workspace` task.
+- Documented Codespaces secret requirements and manual recovery commands.
+
+## 2026-06-16 to 2026-06-23 - Social OS and memory refresh
+
+- Added Social OS client workspace flows and account-setting surfaces on `main`.
+- Kept `main` clean and aligned with `origin/main`.
+- Refreshed shared `memory/` docs so current sessions no longer start from stale early-June context.

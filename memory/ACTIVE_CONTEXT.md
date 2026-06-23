@@ -1,19 +1,32 @@
 # Active Context
-Last updated: 2026-06-02
+Last updated: 2026-06-23
 
 - Source of truth repo: `houseomegakennels-bit/blackspire-helix-group`.
-- Current shared workspace model: desktop VS Code, desktop Codex, mobile Codespaces VS Code, and Codex inside Codespaces all sync through the same GitHub repository.
-- Required startup context: pull latest repo state, read `AGENTS.md`, `PROJECT_CONTEXT.md`, `AI_WORKSPACE_SYNC.md`, and all files in `memory/`.
-- Required session closeout: update shared memory, run build checks when code changed, then commit and push successful changes.
+- Current default branch state: `main` is clean locally and aligned with `origin/main`.
+- Shared workspace model: desktop Codex, desktop VS Code, Codespaces on desktop/mobile, and Claude/Codex sessions all sync through GitHub.
+- Required startup context: read `AGENTS.md`, `PROJECT_CONTEXT.md`, `AI_WORKSPACE_SYNC.md`, and all files in `memory/` before editing.
+- Required closeout: update shared memory when the repo state materially changes, run relevant verification, then commit and push.
 
-## ⚠️ Active Conflict Warning
-- `oracle-helix-frontend/` contains a large untracked directory of Codex-generated content (games, players, props, war-room, simulations, markets routes). Do NOT touch it without explicit instruction from Charles.
-- Remaining local changes are now limited to `frontend/CLAUDE.md`, one Buyer Engine logo file, shared `memory/` notes, and the Oracle Helix worktree.
+## Current platform scope
+- Marketing site and ecosystem shell are live in the `frontend/` Next.js app.
+- Core ecosystem work now exists on `main` for Buyer Engine, Seller Engine / Harvester, Deal Engine, Recon Engine, Sentinel, Social OS, Helix Lawn Command, and supporting shared shells.
+- Codespaces bootstrap is configured to install Codex CLI, hydrate env files from GitHub Codespaces secrets, and open the repo through the `Codex Workspace` startup task.
 
-## Last Completed Work (2026-06-02)
-- Added and pushed Buyer Engine admin + AI summary tools.
-- Added and pushed Instagram growth planning docs.
-- Stanly County fixed via direct ArcGIS Online endpoint (128 sales, 72 buyers)
-- AI Storyboard Still Generator built and tested (`C:\Users\USER\Desktop\AI-Storyboard-Still-Generator\`)
-- gpt-image-2 API fix: `response_format` param must NOT be passed to gpt-image-1/2 models
-- n8n API key expires **2026-06-16** — must be renewed
+## Current operating assumptions
+- Treat GitHub as the only shared authority for workspace state and memory.
+- Treat GitHub Codespaces secrets as the source of truth for runtime secrets and Codespaces Codex auth.
+- Do not store private keys, passwords, tokens, or raw credentials in repo docs or `memory/`.
+
+## Current watch items
+- If Codespaces still prompts for login, verify `OPENAI_API_KEY` exists in GitHub Codespaces secrets and rebuild the container.
+- Keep an eye on mobile quality, especially Seller / Harvester surfaces and any newly added workspace pages.
+- Keep memory files current when major capability changes land; the older June 2026 notes were stale before this refresh.
+
+## Recent completed work snapshot
+- Division pages were aligned to their logo palettes with page-specific backgrounds and translucent watermark treatments.
+- Seller Engine expanded county coverage and live-source search support.
+- Buyer Engine gained registry/admin improvements, hedge-fund group tagging, and stronger workflow support.
+- Deal Engine added contract, outreach, underwriting, persistence, and closing workflow improvements.
+- Recon Engine phases, public pages, and matching flows were integrated into the broader Helix site.
+- Codespaces startup/auth was hardened so the workspace can open directly into Codex with repo-managed bootstrap.
+- Social OS client workspace and account-setting flows were added on top of the existing ecosystem.
