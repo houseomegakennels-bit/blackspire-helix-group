@@ -207,6 +207,11 @@ type SaveBrandVoiceInput = {
   productDescriptionStyle: string;
 };
 
+type UpdateWorkspaceAccountInput = {
+  username: string;
+  newPassword?: string;
+};
+
 type CreateClientInput = {
   name: string;
   slug: string;
@@ -1033,6 +1038,91 @@ export async function saveBrandVoice(
     message: "Brand voice settings updated.",
     metadata: {},
   });
+
+  await writeSocialOsState(state);
+}
+
+export async function updateWorkspaceAccount(
+  viewer: SocialViewer,
+  input: UpdateWorkspaceAccountInput,
+): Promise<void> {
+  if (!viewer.clientId || viewer.isAdmin) {
+    throw new Error("Client workspace account access required.");
+  }
+
+  const normalizedUsername = input.username.trim().toLowerCase();
+  const nextPassword = input.newPassword?.trim() ?? "";
+
+  if (!normalizedUsername) {
+    throw new Error("Username is required.");
+  }
+
+  if (nextPassword && nextPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters.");
+  }
+
+  const [state, users] = await Promise.all([readSocialOsState(), listSocialAuthUsers()]);
+  const target = users.find((user) => user.id === viewer.userId);
+  if (!target) {
+    throw new Error("Workspace user not found.");
+  }
+
+  if (
+    users.some((user) => user.id !== viewer.userId && matchesUsername(user, normalizedUsername))
+  ) {
+    throw new Error("That workspace username already exists.");
+  }
+
+  const client = mustFindClient(state, viewer.clientId);
+  const currentUsername = getMetaText(target.user_metadata, "social_os_username") ?? viewer.username;
+  if (currentUsername.toLowerCase() === normalizedUsername && !nextPassword) {
+    throw new Error("No account changes to save.");
+  }
+
+  const admin = createAdminSupabaseAuthClient();
+  const nextMetadata = {
+    ...(target.user_metadata ?? {}),
+    social_os_username: normalizedUsername,
+  };
+  const updatePayload: {
+    email?: string;
+    password?: string;
+    user_metadata: Record<string, unknown>;
+  } = {
+    email: buildWorkspaceEmail(client.slug, normalizedUsername),
+    user_metadata: nextMetadata,
+  };
+
+  if (nextPassword) {
+    updatePayload.password = nextPassword;
+  }
+
+  const { error } = await admin.auth.admin.updateUserById(viewer.userId, updatePayload);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  appendAuditLog(state, {
+    clientId: viewer.clientId,
+    actorUsername: viewer.username,
+    eventType: "credential_update",
+    entityType: "auth_user",
+    entityId: viewer.userId,
+    message: `Workspace username updated from ${currentUsername} to ${normalizedUsername}.`,
+    metadata: { previousUsername: currentUsername, username: normalizedUsername },
+  });
+
+  if (nextPassword) {
+    appendAuditLog(state, {
+      clientId: viewer.clientId,
+      actorUsername: normalizedUsername,
+      eventType: "password_change",
+      entityType: "auth_user",
+      entityId: viewer.userId,
+      message: `Password changed for ${normalizedUsername}.`,
+      metadata: {},
+    });
+  }
 
   await writeSocialOsState(state);
 }

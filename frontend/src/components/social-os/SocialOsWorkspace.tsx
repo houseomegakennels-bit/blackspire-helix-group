@@ -55,6 +55,12 @@ interface CampaignFormState {
   >;
 }
 
+interface AccountSettingsState {
+  username: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 function createBlankOverrides() {
   return {
     tiktok: { caption: "", hashtagsText: "", cta: "", productLink: "", shopLink: "" },
@@ -183,6 +189,11 @@ export function SocialOsWorkspace({
     x: { apiKey: "", cliCommand: "", webhookUrl: "" }
   });
   const [assistDrafts, setAssistDrafts] = useState(createAssistDrafts(initialWorkspace.integrations));
+  const [accountSettings, setAccountSettings] = useState<AccountSettingsState>({
+    username: initialWorkspace.viewer.username,
+    newPassword: "",
+    confirmPassword: ""
+  });
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,6 +216,12 @@ export function SocialOsWorkspace({
         x: { apiKey: "", cliCommand: "", webhookUrl: "" }
       });
       setAssistDrafts(createAssistDrafts(nextWorkspace.integrations));
+      setAccountSettings((current) => ({
+        ...current,
+        username: nextWorkspace.viewer.username,
+        newPassword: "",
+        confirmPassword: ""
+      }));
 
       if (!nextWorkspace.campaigns.length) {
         setSelectedCampaignId(null);
@@ -255,12 +272,58 @@ export function SocialOsWorkspace({
       if (successMessage) {
         setNotice(successMessage);
       }
+      return data.workspace;
     } catch (actionError) {
       const message =
         actionError instanceof Error ? actionError.message : "Workspace update failed.";
       setError(message);
+      return null;
     } finally {
       setBusyLabel(null);
+    }
+  };
+
+  const handleSaveAccountSettings = async () => {
+    const username = accountSettings.username.trim().toLowerCase();
+    const newPassword = accountSettings.newPassword.trim();
+    const confirmPassword = accountSettings.confirmPassword.trim();
+
+    if (!username) {
+      setError("Username is required.");
+      setNotice(null);
+      return;
+    }
+
+    if (newPassword && newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      setNotice(null);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("New password and confirmation must match.");
+      setNotice(null);
+      return;
+    }
+
+    const updatedWorkspace = await callWorkspaceAction(
+      "update-workspace-account",
+      {
+        username,
+        newPassword
+      },
+      "Saving account settings...",
+      newPassword
+        ? "Username and password settings saved."
+        : "Username updated."
+    );
+
+    if (updatedWorkspace) {
+      setAccountSettings({
+        username: updatedWorkspace.viewer.username,
+        newPassword: "",
+        confirmPassword: ""
+      });
     }
   };
 
@@ -1409,6 +1472,66 @@ export function SocialOsWorkspace({
       {activeTab === "settings" ? (
         <section className="social-os-grid">
           <div className="social-os-main-column">
+            {!workspace.viewer.isAdmin ? (
+              <article className="panel social-os-card">
+                <div className="panel-heading">
+                  <div>
+                    <span>Account</span>
+                    <h2>Login settings</h2>
+                  </div>
+                </div>
+                <div className="campaign-form">
+                  <label className="field">
+                    <span>Username</span>
+                    <input
+                      autoComplete="username"
+                      value={accountSettings.username}
+                      onChange={(event) =>
+                        setAccountSettings((current) => ({
+                          ...current,
+                          username: event.target.value
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>New password</span>
+                    <input
+                      autoComplete="new-password"
+                      type="password"
+                      value={accountSettings.newPassword}
+                      onChange={(event) =>
+                        setAccountSettings((current) => ({
+                          ...current,
+                          newPassword: event.target.value
+                        }))
+                      }
+                      placeholder="Leave blank to keep current password"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Confirm new password</span>
+                    <input
+                      autoComplete="new-password"
+                      type="password"
+                      value={accountSettings.confirmPassword}
+                      onChange={(event) =>
+                        setAccountSettings((current) => ({
+                          ...current,
+                          confirmPassword: event.target.value
+                        }))
+                      }
+                      placeholder="Re-enter new password"
+                    />
+                  </label>
+                </div>
+                <div className="social-os-editor-actions">
+                  <button className="sync-button" type="button" onClick={handleSaveAccountSettings}>
+                    Save login settings
+                  </button>
+                </div>
+              </article>
+            ) : null}
             <article className="panel social-os-card">
               <div className="panel-heading">
                 <div>
@@ -1518,6 +1641,30 @@ export function SocialOsWorkspace({
             </article>
           </div>
           <div className="social-os-side-column">
+            {!workspace.viewer.isAdmin ? (
+              <article className="panel social-os-card">
+                <div className="panel-heading">
+                  <div>
+                    <span>Account safety</span>
+                    <h2>What changes here</h2>
+                  </div>
+                </div>
+                <div className="intel-list">
+                  <div className="intel-item">
+                    <span className="intel-dot" />
+                    <p>Username changes update the login Tyler uses on the Social OS sign-in page.</p>
+                  </div>
+                  <div className="intel-item">
+                    <span className="intel-dot" />
+                    <p>Password changes stay hidden, require 8 or more characters, and are never shown again after save.</p>
+                  </div>
+                  <div className="intel-item">
+                    <span className="intel-dot" />
+                    <p>All account changes are written into the audit log so Blackspire can trace them later.</p>
+                  </div>
+                </div>
+              </article>
+            ) : null}
             <article className="panel social-os-card">
               <div className="panel-heading">
                 <div>

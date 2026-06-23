@@ -13,6 +13,7 @@ import {
   saveCampaign,
   saveIntegration,
   testIntegration,
+  updateWorkspaceAccount,
 } from "@/lib/social-os-server";
 import type { SocialPlatform } from "@/types/social-os";
 
@@ -132,6 +133,12 @@ export async function POST(request: NextRequest) {
           ctaStyle: String(payload.ctaStyle ?? ""),
           emojiLevel: String(payload.emojiLevel ?? ""),
           productDescriptionStyle: String(payload.productDescriptionStyle ?? ""),
+        });
+        break;
+      case "update-workspace-account":
+        await updateWorkspaceAccount(viewer, {
+          username: String(payload.username ?? ""),
+          newPassword: typeof payload.newPassword === "string" ? payload.newPassword : "",
         });
         break;
       default:
