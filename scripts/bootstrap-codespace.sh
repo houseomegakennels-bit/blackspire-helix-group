@@ -44,6 +44,7 @@ chmod +x \
   scripts/install-git-hooks.sh \
   scripts/materialize-env-from-secrets.sh \
   scripts/open-codex-workspace.sh \
+  scripts/setup-picsart-mcp.sh \
   scripts/sync-workspace.sh \
   scripts/env-check \
   scripts/env-sync
@@ -66,6 +67,12 @@ append_line_once "alias repo-root=\"cd $REPO_ROOT\"" "$BASHRC"
 echo ""
 echo "Checking Codex auth..."
 bash scripts/codex-auth-codespace.sh
+
+echo ""
+echo "Configuring Picsart MCP for Codex and Claude..."
+if ! bash scripts/setup-picsart-mcp.sh; then
+  echo "WARNING: Picsart MCP setup did not complete."
+fi
 
 echo ""
 echo "Materializing environment files from Codespaces secrets..."
