@@ -1921,6 +1921,85 @@ body::after {
   }
 }
 
+/* ── Header entrance sweep ── */
+@keyframes headerSweepIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.luxury-header-inner {
+  animation: headerSweepIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .luxury-header-inner { animation: none; }
+}
+
+/* ── Scroll-triggered view-timeline reveals (progressive enhancement) ──
+   Falls back gracefully: elements without scroll-timeline just appear
+   immediately because the animation never fires in older browsers. */
+@supports (animation-timeline: view()) {
+  .scroll-reveal {
+    animation: revealUp 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 38%;
+  }
+
+  .scroll-reveal-left {
+    animation: revealLeft 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 38%;
+  }
+
+  .scroll-reveal-scale {
+    animation: revealScale 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 38%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scroll-reveal,
+    .scroll-reveal-left,
+    .scroll-reveal-scale {
+      animation: none;
+      opacity: 1;
+    }
+  }
+}
+
+/* ── Scroll-driven watermark parallax (progressive enhancement) ── */
+@supports (animation-timeline: scroll()) {
+  @keyframes watermarkParallax {
+    from { transform: translateY(0) scale(1); }
+    to   { transform: translateY(-12%) scale(1.06); }
+  }
+  @keyframes watermarkParallaxDivision {
+    from { transform: scale(1.04) translateY(0); }
+    to   { transform: scale(1.09) translateY(-6%); }
+  }
+
+  .luxury-watermark-img {
+    will-change: transform;
+    animation: watermarkParallax linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0% 100%;
+  }
+
+  .luxury-watermark-division .luxury-watermark-img {
+    animation: watermarkParallaxDivision linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0% 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .luxury-watermark-img,
+    .luxury-watermark-division .luxury-watermark-img {
+      animation: none;
+      will-change: auto;
+    }
+  }
+}
+
 /* Seller Engine */
 /* Seller Engine logo palette: crimson spire/wordmark + chrome/silver "BS". */
 .seller-shell {

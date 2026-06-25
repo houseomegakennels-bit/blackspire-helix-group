@@ -54,7 +54,7 @@ export function MarketingShell({
       </div>
       <div className="luxury-scroll-rail" aria-hidden="true" />
       <header className="luxury-header sticky top-0 z-40 border-b border-[var(--line)] bg-[hsl(0_0%_3%/.72)] backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-3 sm:py-4 lg:px-6">
+        <div className="luxury-header-inner mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-3 sm:py-4 lg:px-6">
           <Link href="/" className="min-w-0 max-w-[270px] transition duration-300 hover:opacity-95">
             <div className="relative h-[54px] w-[70px] overflow-hidden sm:h-[74px] sm:w-[96px]">
               <Image
@@ -76,7 +76,7 @@ export function MarketingShell({
 
       <footer className="luxury-footer border-t border-[var(--line)] bg-[hsl(0_0%_2%/.95)]">
         <div className="mx-auto grid max-w-[1400px] gap-8 px-4 py-12 lg:grid-cols-[1.2fr_0.8fr] lg:px-6">
-          <div className="space-y-4">
+          <div className="scroll-reveal space-y-4">
             <div className="relative h-[78px] w-[160px] overflow-hidden sm:h-[118px] sm:w-[242px]">
               <Image
                 src="/brand/blackspire-helix-group-logo-fit.png"
@@ -94,12 +94,12 @@ export function MarketingShell({
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="scroll-reveal-left grid gap-3 sm:grid-cols-2" style={{ animationDelay: "0.1s" }}>
             {ecosystemProjects.map((project) => (
               <Link
                 key={project.slug}
                 href={project.href}
-                className="ecosystem-footer-card rounded-[18px] px-4 py-4 transition hover:text-white"
+                className="ecosystem-footer-card scroll-reveal-scale rounded-[18px] px-4 py-4 transition hover:text-white"
                 style={
                   {
                     "--project-accent": project.accent,
