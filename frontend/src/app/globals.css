@@ -2000,6 +2000,21 @@ body::after {
   }
 }
 
+/* ── Card lift / 3D tilt hover (Batch 4) ── */
+.card-lift {
+  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-4px) perspective(700px) rotate3d(1, 0.1, 0, -1.5deg);
+  border-color: var(--line-strong);
+  box-shadow:
+    0 24px 52px hsl(0 0% 0% / 0.44),
+    0 0 28px hsl(31 100% 50% / 0.08);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-lift, .card-lift:hover { transform: none; transition: none; }
+}
+
 /* Seller Engine */
 /* Seller Engine logo palette: crimson spire/wordmark + chrome/silver "BS". */
 .seller-shell {
