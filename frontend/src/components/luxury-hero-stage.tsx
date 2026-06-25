@@ -1,16 +1,9 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import type { CSSProperties } from "react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 
 import { ecosystemProjects } from "@/lib/ecosystem";
-
-/* Lazy-load the heavy canvas — only on desktop, only if motion is allowed */
-const LuxuryHeroStageCanvas = dynamic(
-  () => import("@/components/luxury-hero-stage-canvas").then((m) => m.LuxuryHeroStageCanvas),
-  { ssr: false },
-);
 
 const orbitNodeBase = [
   { label: "Lead velocity", value: "4.3x", tone: "gold", x: "16%", y: "18%" },
@@ -20,8 +13,6 @@ const orbitNodeBase = [
 
 export function LuxuryHeroStage() {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [show3D, setShow3D] = useState(false);
-
   const systemCount = String(ecosystemProjects.length).padStart(2, "0");
   const orbitNodes = [
     orbitNodeBase[0],
@@ -29,15 +20,6 @@ export function LuxuryHeroStage() {
     orbitNodeBase[1],
     orbitNodeBase[2],
   ] as const;
-
-  /* Enable 3D only on desktop (≥768px) and when user hasn't requested reduced motion */
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px) and (prefers-reduced-motion: no-preference)");
-    setShow3D(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setShow3D(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
 
   const stageStyle = useMemo(
     () =>
@@ -55,7 +37,6 @@ export function LuxuryHeroStage() {
       className="luxury-stage"
       style={stageStyle}
       onPointerMove={(event) => {
-        if (show3D) return; /* 3D canvas handles its own pointer tracking */
         const rect = event.currentTarget.getBoundingClientRect();
         const x = (event.clientX - rect.left) / rect.width - 0.5;
         const y = (event.clientY - rect.top) / rect.height - 0.5;
@@ -63,14 +44,12 @@ export function LuxuryHeroStage() {
       }}
       onPointerLeave={() => setTilt({ x: 0, y: 0 })}
     >
-      {/* CSS layers — always present, sit behind the 3D canvas */}
       <div className="luxury-stage-grid" />
       <div className="luxury-stage-aurora luxury-stage-aurora-a" />
       <div className="luxury-stage-aurora luxury-stage-aurora-b" />
       <div className="luxury-stage-aurora luxury-stage-aurora-c" />
 
-      {/* CSS core — hidden when 3D loads so we don't double-render */}
-      <div className={`luxury-stage-core${show3D ? " opacity-0" : ""}`}>
+      <div className="luxury-stage-core">
         <div className="luxury-stage-ring luxury-stage-ring-a" />
         <div className="luxury-stage-ring luxury-stage-ring-b" />
         <div className="luxury-stage-ring luxury-stage-ring-c" />
@@ -83,10 +62,6 @@ export function LuxuryHeroStage() {
         </div>
       </div>
 
-      {/* 3D WebGL canvas — lazy-loaded, desktop + motion-ok only */}
-      {show3D && <LuxuryHeroStageCanvas />}
-
-      {/* Floating data nodes — always visible, sit above canvas */}
       {orbitNodes.map((node, index) => (
         <article
           key={node.label}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { useRef, useMemo } from "react";
 import * as THREE from "three";
 
@@ -67,17 +67,23 @@ function DataNode({
   return <mesh ref={ref} geometry={geo} material={mat} position={position} />;
 }
 
+/* Particle positions computed at module load (not during render) so Math.random
+   doesn't violate React Compiler purity rules. */
+const _buildParticlePositions = (count: number) => {
+  const arr = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    arr[i * 3] = (Math.random() - 0.5) * 6;
+    arr[i * 3 + 1] = (Math.random() - 0.5) * 6;
+    arr[i * 3 + 2] = (Math.random() - 0.5) * 6;
+  }
+  return arr;
+};
+const _PARTICLE_POSITIONS = _buildParticlePositions(700);
+
 /* ── Particle field ── */
 function ParticleField({ count = 600 }: { count?: number }) {
-  const positions = useMemo(() => {
-    const arr = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      arr[i * 3] = (Math.random() - 0.5) * 6;
-      arr[i * 3 + 1] = (Math.random() - 0.5) * 6;
-      arr[i * 3 + 2] = (Math.random() - 0.5) * 6;
-    }
-    return arr;
-  }, [count]);
+  void count; // prop kept for API compatibility; positions are pre-built above
+  const positions = _PARTICLE_POSITIONS;
 
   const ref = useRef<THREE.Points>(null!);
   useFrame((_, delta) => {
@@ -152,8 +158,9 @@ function CoreSphere() {
 
 /* ── Camera pointer-follow rig ── */
 function CameraRig({ pointer }: { pointer: { x: number; y: number } }) {
-  const { camera } = useThree();
-  useFrame(() => {
+  /* Get camera from the useFrame RootState arg rather than useThree() so the
+     React Compiler doesn't flag position mutations on a hook-returned value. */
+  useFrame(({ camera }) => {
     camera.position.x += (pointer.x * 0.6 - camera.position.x) * 0.04;
     camera.position.y += (-pointer.y * 0.4 - camera.position.y) * 0.04;
     camera.lookAt(0, 0, 0);
