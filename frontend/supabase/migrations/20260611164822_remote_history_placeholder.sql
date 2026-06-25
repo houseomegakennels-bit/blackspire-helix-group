@@ -1,0 +1,2 @@
+-- Remote history placeholder.
+-- This migration already exists on the linked Supabase project.

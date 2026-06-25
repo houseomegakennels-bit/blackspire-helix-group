@@ -48,6 +48,7 @@ export const siteNavSections: SiteNavSection[] = [
     label: "Products",
     href: "/services",
     items: [
+      { label: "Books", href: "/books", description: "Published audiobook catalog and chapter players." },
       { label: "Recon Engine", href: "/recon-engine", description: "Opportunity intelligence." },
       { label: "Helix Lawn Command", href: "/helix-lawn-command", description: "Local service automation." },
       { label: "Social OS", href: "/social-os", description: "Protected client content workflows." },
@@ -146,6 +147,14 @@ export const workspaceEntries: WorkspaceEntry[] = [
     status: "Live",
     description: "Protected client content operations with reusable media, platform-specific edits, approval gates, retries, and audit logs.",
     primaryAction: "Open client workspace",
+  },
+  {
+    title: "Book Studio",
+    href: "/studio/books",
+    division: "Creative Publishing",
+    status: "Live",
+    description: "Private manuscript workflow for scene extraction, character continuity, image approvals, audiobook generation, and public chapter-video publishing.",
+    primaryAction: "Open book studio",
   },
   {
     title: "Admin Console",
