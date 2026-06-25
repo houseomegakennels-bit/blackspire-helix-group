@@ -13,7 +13,7 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
   const [isPending, startTransition] = useTransition();
 
   async function handleImport(formData: FormData) {
-    setStatus("Importing and analyzing manuscript... (this may take 1–2 minutes for large books)");
+    setStatus("Creating book workspace...");
     try {
       const response = await fetch("/api/books/import", {
         method: "POST",

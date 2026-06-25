@@ -921,15 +921,20 @@ export async function importBookFromUpload(formData: FormData) {
     publishedAt: null,
   };
 
-  await saveBookRecord(book);
+  const savedBook = await saveBookRecord(book);
 
+  // Note: scene/character analysis is intentionally NOT run here. It makes one
+  // sequential OpenAI call per chapter and can exceed the serverless function
+  // timeout on large manuscripts, which previously crashed the upload to an
+  // error page. The workspace is created instantly; analysis is triggered
+  // separately from the studio console ("Analyze manuscript") via /analyze.
   const imports = formData.getAll("references").filter((entry): entry is File => entry instanceof File && entry.size > 0);
   const referenceZip = formData.get("referenceZip");
   if (imports.length || (referenceZip instanceof File && referenceZip.size > 0)) {
-    await importReferenceFiles(bookId, formData);
+    return importReferenceFiles(bookId, formData);
   }
 
-  return analyzeBook(bookId);
+  return savedBook;
 }
 
 export async function analyzeBook(bookId: string) {

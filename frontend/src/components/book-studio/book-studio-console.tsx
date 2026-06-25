@@ -80,27 +80,32 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
 
   async function callJson(url: string, init?: RequestInit) {
     setStatus("Working...");
-    const response = await fetch(url, init);
-    const payload = (await response.json()) as {
-      ok: boolean;
-      error?: string;
-      book?: HydratedBook;
-      scenes?: SceneRecord[];
-      references?: Array<ReferenceRecord & { assetUrl: string }>;
-      characters?: Array<CharacterBible & { canonicalReference?: ReferenceRecord & { assetUrl: string } }>;
-    };
+    try {
+      const response = await fetch(url, init);
+      const payload = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        book?: HydratedBook;
+        scenes?: SceneRecord[];
+        references?: Array<ReferenceRecord & { assetUrl: string }>;
+        characters?: Array<CharacterBible & { canonicalReference?: ReferenceRecord & { assetUrl: string } }>;
+      };
 
-    if (!payload.ok) {
-      setStatus(payload.error || "Request failed.");
+      if (!payload.ok) {
+        setStatus(payload.error || "Request failed.");
+        return null;
+      }
+
+      if (payload.book) {
+        syncBook(payload.book);
+      }
+
+      setStatus("Done.");
+      return payload;
+    } catch {
+      setStatus("The server took too long to respond. For large manuscripts, analysis can run long — wait a moment and try again.");
       return null;
     }
-
-    if (payload.book) {
-      syncBook(payload.book);
-    }
-
-    setStatus("Done.");
-    return payload;
   }
 
   async function analyzeBook() {
