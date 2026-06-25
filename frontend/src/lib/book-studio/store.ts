@@ -794,6 +794,30 @@ export async function writeAssetBuffer(
   return asset;
 }
 
+/**
+ * Mint a direct-to-storage upload target so the browser can PUT a large file
+ * straight to Supabase Storage, bypassing the serverless 4.5MB request-body
+ * limit. Returns null when remote storage is not configured (local dev), so
+ * callers can fall back to the in-request formData upload path.
+ */
+export async function createSignedUploadTarget(bookId: string, kind: AssetKind, fileName: string) {
+  const assetId = createId("asset");
+  const safeName = (fileName || "manuscript").replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const relativePath = path.join(bookId, kind, `${assetId}-${safeName}`).replace(/\\/g, "/");
+
+  if (!hasSupabaseStoreEnv()) {
+    return null;
+  }
+
+  const supabase = await ensureRemoteBookStudioStorage();
+  const { data, error } = await supabase.storage.from(BOOK_STUDIO_BUCKET).createSignedUploadUrl(relativePath);
+  if (error || !data) {
+    throw new Error(`Unable to create upload URL: ${error?.message ?? "unknown error"}`);
+  }
+
+  return { assetId, relativePath, signedUrl: data.signedUrl };
+}
+
 export function getAssetAbsolutePath(asset: AssetRecord) {
   return path.join(ASSET_ROOT, asset.relativePath);
 }

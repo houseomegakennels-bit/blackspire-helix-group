@@ -4,7 +4,7 @@ import AdmZip from "adm-zip";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { parseManuscript, parseReferenceDocx } from "@/lib/book-studio/documents";
+import { parseManuscript, parseManuscriptFromBuffer, parseReferenceDocx } from "@/lib/book-studio/documents";
 import {
   concatenateAudioAssets,
   generateImageBuffer,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/book-studio/media";
 import {
   createId,
+  createSignedUploadTarget,
   deleteBookRecord,
   getAssetUrl,
   getBookById,
@@ -874,23 +875,11 @@ export async function deleteBookWorkspace(bookId: string) {
   return { id: bookId, title: book.title };
 }
 
-export async function importBookFromUpload(formData: FormData) {
-  const manuscript = formData.get("manuscript");
-  if (!(manuscript instanceof File)) {
-    throw new Error("Upload a manuscript file to create a book.");
-  }
-
-  const parsed = await parseManuscript(manuscript);
-  const bookId = createId("book");
-  const slug = slugify(parsed.title);
-  const manuscriptAsset = await writeAssetBuffer(
-    bookId,
-    "manuscript",
-    manuscript.name,
-    manuscript.type || "application/octet-stream",
-    Buffer.from(await manuscript.arrayBuffer()),
-  );
-
+function buildBookRecord(
+  bookId: string,
+  parsed: Awaited<ReturnType<typeof parseManuscript>>,
+  manuscriptAsset: AssetRecord,
+): BookRecord {
   const chapters: ChapterRecord[] = parsed.chapters.map((chapter, index) => ({
     id: createId("chapter"),
     order: index + 1,
@@ -901,9 +890,9 @@ export async function importBookFromUpload(formData: FormData) {
     videoAssetId: null,
   }));
 
-  const book: BookRecord = {
+  return {
     id: bookId,
-    slug,
+    slug: slugify(parsed.title),
     title: parsed.title,
     synopsis: parsed.synopsis,
     status: "Draft",
@@ -920,6 +909,86 @@ export async function importBookFromUpload(formData: FormData) {
     updatedAt: nowIso(),
     publishedAt: null,
   };
+}
+
+/**
+ * Step 1 of the large-file upload flow: mint a direct-to-storage upload target.
+ * The browser uploads the manuscript straight to Supabase Storage (no size
+ * limit), then calls importBookFromStorageRef with the returned reference.
+ * Returns { direct: false } when remote storage is unavailable so the client
+ * can fall back to the legacy in-request formData upload.
+ */
+export async function createManuscriptUploadTarget(fileName: string, mimeType: string) {
+  if (!fileName) {
+    throw new Error("A manuscript file name is required to start the upload.");
+  }
+
+  const bookId = createId("book");
+  const target = await createSignedUploadTarget(bookId, "manuscript", fileName);
+  if (!target) {
+    return { direct: false as const, bookId };
+  }
+
+  return {
+    direct: true as const,
+    bookId,
+    assetId: target.assetId,
+    relativePath: target.relativePath,
+    signedUrl: target.signedUrl,
+    fileName,
+    mimeType: mimeType || "application/octet-stream",
+  };
+}
+
+/**
+ * Step 2 of the large-file upload flow: the manuscript is already in storage;
+ * download it, parse it, and create the workspace. No analysis here (see note
+ * in importBookFromUpload) — that runs separately via /analyze.
+ */
+export async function importBookFromStorageRef(input: {
+  bookId: string;
+  assetId: string;
+  relativePath: string;
+  fileName: string;
+  mimeType: string;
+}) {
+  if (!input?.bookId || !input.assetId || !input.relativePath || !input.fileName) {
+    throw new Error("Incomplete upload reference. Please re-upload the manuscript.");
+  }
+
+  const buffer = await readAssetBuffer(input.relativePath);
+  const parsed = await parseManuscriptFromBuffer(input.fileName, buffer);
+
+  const manuscriptAsset: AssetRecord = {
+    id: input.assetId,
+    kind: "manuscript",
+    label: input.fileName,
+    mimeType: input.mimeType || "application/octet-stream",
+    relativePath: input.relativePath,
+    createdAt: nowIso(),
+  };
+
+  const book = buildBookRecord(input.bookId, parsed, manuscriptAsset);
+  return saveBookRecord(book);
+}
+
+export async function importBookFromUpload(formData: FormData) {
+  const manuscript = formData.get("manuscript");
+  if (!(manuscript instanceof File)) {
+    throw new Error("Upload a manuscript file to create a book.");
+  }
+
+  const parsed = await parseManuscript(manuscript);
+  const bookId = createId("book");
+  const manuscriptAsset = await writeAssetBuffer(
+    bookId,
+    "manuscript",
+    manuscript.name,
+    manuscript.type || "application/octet-stream",
+    Buffer.from(await manuscript.arrayBuffer()),
+  );
+
+  const book = buildBookRecord(bookId, parsed, manuscriptAsset);
 
   const savedBook = await saveBookRecord(book);
 

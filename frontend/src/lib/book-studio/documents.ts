@@ -174,14 +174,13 @@ function splitChapters(text: string) {
   return chapters;
 }
 
-export async function parseManuscript(file: File): Promise<ParsedManuscript> {
-  const extension = file.name.toLowerCase().split(".").pop();
+export async function parseManuscriptFromBuffer(fileName: string, buffer: Buffer): Promise<ParsedManuscript> {
+  const extension = fileName.toLowerCase().split(".").pop();
   let text = "";
 
   if (extension === "txt" || extension === "md") {
-    text = cleanText(await file.text());
+    text = cleanText(buffer.toString("utf8"));
   } else if (extension === "docx") {
-    const buffer = Buffer.from(await file.arrayBuffer());
     const result = await mammoth.extractRawText({ buffer });
     text = cleanText(result.value);
   } else {
@@ -192,13 +191,17 @@ export async function parseManuscript(file: File): Promise<ParsedManuscript> {
     throw new Error("The uploaded manuscript did not contain readable text.");
   }
 
-  const title = deriveTitle(file.name, text);
+  const title = deriveTitle(fileName, text);
   return {
     title,
     synopsis: deriveSynopsis(text),
     text,
     chapters: splitChapters(text),
   };
+}
+
+export async function parseManuscript(file: File): Promise<ParsedManuscript> {
+  return parseManuscriptFromBuffer(file.name, Buffer.from(await file.arrayBuffer()));
 }
 
 export async function parseReferenceDocx(fileName: string, buffer: Buffer): Promise<ParsedReferenceDoc> {

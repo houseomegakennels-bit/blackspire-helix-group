@@ -12,30 +12,113 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
   const [status, setStatus] = useState<string>("");
   const [isPending, startTransition] = useTransition();
 
+  async function uploadReferences(bookId: string, formData: FormData) {
+    const refs = formData.getAll("references").filter((entry): entry is File => entry instanceof File && entry.size > 0);
+    const zip = formData.get("referenceZip");
+    const hasZip = zip instanceof File && zip.size > 0;
+    if (!refs.length && !hasZip) return true;
+
+    setStatus("Importing reference files...");
+    const refForm = new FormData();
+    refs.forEach((file) => refForm.append("references", file));
+    if (hasZip) refForm.append("referenceZip", zip);
+    const response = await fetch(`/api/books/${bookId}/reference-import`, { method: "POST", body: refForm });
+    const payload = (await response.json().catch(() => ({ ok: false }))) as { ok: boolean };
+    return payload.ok;
+  }
+
   async function handleImport(formData: FormData) {
-    setStatus("Creating book workspace...");
+    const manuscript = formData.get("manuscript");
+    if (!(manuscript instanceof File) || manuscript.size === 0) {
+      setStatus("Choose a manuscript file first.");
+      return;
+    }
+
     try {
-      const response = await fetch("/api/books/import", {
+      // 1. Ask the server for a direct-to-storage upload target. This bypasses
+      // the serverless 4.5MB request-body limit so large manuscripts work.
+      setStatus("Preparing upload...");
+      const targetResponse = await fetch("/api/books/upload-url", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: manuscript.name, mimeType: manuscript.type }),
       });
-      const payload = (await response.json()) as {
+      const target = (await targetResponse.json()) as {
         ok: boolean;
         error?: string;
-        book?: { id: string };
+        direct?: boolean;
+        signedUrl?: string;
+        bookId?: string;
+        assetId?: string;
+        relativePath?: string;
+        fileName?: string;
+        mimeType?: string;
       };
-
-      if (!payload.ok || !payload.book) {
-        setStatus(payload.error || "Book import failed.");
+      if (!target.ok) {
+        setStatus(target.error || "Could not start the upload.");
         return;
       }
 
+      let book: { id: string } | undefined;
+
+      if (target.direct && target.signedUrl) {
+        // 2. Upload the manuscript straight to storage (no size limit).
+        setStatus("Uploading manuscript...");
+        const put = await fetch(target.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": manuscript.type || "application/octet-stream", "x-upsert": "true" },
+          body: manuscript,
+        });
+        if (!put.ok) {
+          setStatus("Upload failed while sending the file. Please check your connection and try again.");
+          return;
+        }
+
+        // 3. Create the workspace from the storage reference (small JSON request).
+        setStatus("Creating book workspace...");
+        const importResponse = await fetch("/api/books/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookId: target.bookId,
+            assetId: target.assetId,
+            relativePath: target.relativePath,
+            fileName: target.fileName,
+            mimeType: target.mimeType,
+          }),
+        });
+        const payload = (await importResponse.json()) as { ok: boolean; error?: string; book?: { id: string } };
+        if (!payload.ok || !payload.book) {
+          setStatus(payload.error || "Book import failed.");
+          return;
+        }
+        book = payload.book;
+
+        // References upload after the workspace exists.
+        const refsOk = await uploadReferences(book.id, formData);
+        if (!refsOk) {
+          setStatus("Book created. Some reference files didn't import — you can add them inside the workspace.");
+        }
+      } else {
+        // Fallback (no remote storage / local dev): legacy formData upload,
+        // which also carries the references in one request.
+        setStatus("Creating book workspace...");
+        const importResponse = await fetch("/api/books/import", { method: "POST", body: formData });
+        const payload = (await importResponse.json()) as { ok: boolean; error?: string; book?: { id: string } };
+        if (!payload.ok || !payload.book) {
+          setStatus(payload.error || "Book import failed.");
+          return;
+        }
+        book = payload.book;
+      }
+
+      const createdBook = book;
       startTransition(() => {
-        router.push(`/studio/books/${payload.book!.id}`);
+        router.push(`/studio/books/${createdBook.id}`);
         router.refresh();
       });
     } catch {
-      setStatus("Import failed — the server took too long to respond. Try a smaller manuscript or check back shortly.");
+      setStatus("Something interrupted the upload. Please try again.");
     }
   }
 
