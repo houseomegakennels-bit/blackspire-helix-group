@@ -5,7 +5,7 @@ import { EngineStatusBadge } from "@/components/engine-status-badge";
 
 export function EngineCard({ engine }: { engine: RealEstateEngineConfig }) {
   return (
-    <div className="brand-panel p-5">
+    <div className="brand-panel card-lift scroll-reveal p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">{engine.slug.replaceAll("-", " ")}</div>
         <EngineStatusBadge status={engine.status} />
