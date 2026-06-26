@@ -39,10 +39,12 @@ export async function GET(
                   ? "video/mp4"
                   : "application/octet-stream";
 
-    return new NextResponse(bytes, {
+    return new Response(new Uint8Array(bytes), {
       headers: {
         "Content-Type": mimeType,
         "Cache-Control": "no-store",
+        "Content-Length": String(bytes.length),
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {
