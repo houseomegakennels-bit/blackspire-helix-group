@@ -1652,6 +1652,32 @@ async function importCharacterBibleDocument(
         draft.assets.push(sourceAsset);
       }
 
+      const replaceableReferenceIds = new Set(
+        draft.references
+          .filter((reference) => {
+            if (reference.source !== "character_bible_import" || reference.approved) return false;
+            if (draft.characters.some((character) => character.canonicalReferenceId === reference.id)) return false;
+            const asset = draft.assets.find((candidate) => candidate.id === reference.assetId);
+            return asset?.metadata?.sourceDocument === input.fileName;
+          })
+          .map((reference) => reference.id),
+      );
+      const replaceableAssetIds = new Set(
+        draft.references
+          .filter((reference) => replaceableReferenceIds.has(reference.id))
+          .map((reference) => reference.assetId),
+      );
+
+      if (replaceableReferenceIds.size) {
+        draft.references = draft.references.filter((reference) => !replaceableReferenceIds.has(reference.id));
+        const stillUsedAssetIds = new Set(draft.references.map((reference) => reference.assetId));
+        const assetsToDelete = draft.assets.filter(
+          (asset) => replaceableAssetIds.has(asset.id) && !stillUsedAssetIds.has(asset.id),
+        );
+        draft.assets = draft.assets.filter((asset) => !assetsToDelete.some((deletedAsset) => deletedAsset.id === asset.id));
+        await Promise.all(assetsToDelete.map((asset) => deleteAssetFile(asset).catch(() => undefined)));
+      }
+
       const importedCards =
         parsed.figures.length === 0
           ? await extractExplicitCharacterBibles(parsed.text, draft.title)
