@@ -914,6 +914,38 @@ function extractKnownCharactersFromText(book: BookRecord, text: string) {
     .map((character) => character.id);
 }
 
+function characterNameFromWorldBibleFigure(figure: {
+  sourceCode?: string | null;
+  title: string;
+  caption: string;
+  inferredRole: ReferenceRole;
+}) {
+  if (figure.inferredRole !== "character_reference") return "";
+  if (!figure.sourceCode?.startsWith("GH-")) return "";
+
+  const source = figure.title || figure.caption;
+  const withoutFigure = source.replace(/^Figure\s+/i, "");
+  const withoutCode = withoutFigure.replace(/\bGH-\d+[A-Z]?\b\s*[:—-]?\s*/i, "");
+  const name = withoutCode.split(/\s+[—-]\s+/)[0]?.replace(/\bproduction profile sheet\b.*$/i, "").trim();
+  if (!name || name.length > 80) return "";
+  return normalizeName(name.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()));
+}
+
+function ensureWorldBibleCharacter(draft: BookRecord, name: string, figureDescription: string) {
+  if (!name) return null;
+  const existing = draft.characters.find((character) =>
+    characterMatchCandidates(character).some((candidate) => candidate === normalizeLooseText(name)),
+  );
+  if (existing) return existing;
+
+  const card = createCharacterBibleCard(name, draft.title, {
+    coreDescription: figureDescription.slice(0, 420),
+    continuityNotes: "Seeded from imported Geminara World Bible character production sheet.",
+  });
+  draft.characters.push(card);
+  return card;
+}
+
 function referenceSignalText(book: BookRecord, reference: ReferenceRecord) {
   const asset = getReferenceAsset(book, reference);
   const { figureTitle, figureCaption } = getReferenceFigureText(book, reference);
@@ -1658,15 +1690,19 @@ async function importCharacterBibleDocument(
       for (const figure of parsed.figures) {
         if (!figure.image) continue;
 
-        const referenceSignalText = [figure.title, figure.caption].filter(Boolean).join(" ");
-        const characterIds = extractKnownCharactersFromText(draft, referenceSignalText);
-        const role =
-          inferReferenceRoleFromText(referenceSignalText) === "mood_reference" &&
-          characterIds.length > 0 &&
-          !/\bcityscape\b|\bcities\b|\bsky\b|\bplanet\b|\bworld\b|\blandscape\b/i.test(referenceSignalText)
-            ? "character_reference"
-            : inferReferenceRoleFromText(referenceSignalText);
+        const role = figure.inferredRole;
+        const seededCharacter = ensureWorldBibleCharacter(
+          draft,
+          characterNameFromWorldBibleFigure(figure),
+          figure.description,
+        );
+        const referenceSignalText = [figure.sourceCode ?? "", figure.title, figure.caption, figure.description].filter(Boolean).join(" ");
+        const characterIds = dedupeStrings([
+          ...(seededCharacter ? [seededCharacter.id] : []),
+          ...extractKnownCharactersFromText(draft, referenceSignalText),
+        ]);
         const chapterIds = matchChapterIds(draft, [
+          figure.sourceCode ?? "",
           figure.title,
           figure.caption,
           figure.inferredChapterLabel ?? "",
@@ -1686,6 +1722,10 @@ async function importCharacterBibleDocument(
           normalizedImage.buffer,
           {
             sourceDocument: input.fileName,
+            sourceCode: figure.sourceCode ?? null,
+            sourceSection: figure.sourceSection ?? null,
+            sourceStatus: figure.status ?? null,
+            canonBaseline: figure.canonBaseline ?? null,
             figureTitle: figure.title || null,
             figureCaption: figure.caption || null,
             inferredRole: role,
@@ -1708,10 +1748,14 @@ async function importCharacterBibleDocument(
           derivationKind: "none",
           derivationStatus: "approved",
           confidence: null,
-          label: figure.title || path.basename(figure.image.fileName),
+          label: figure.caption?.replace(/^Figure\s+/i, "") || figure.title || figure.sourceCode || path.basename(figure.image.fileName),
           crop: null,
           notes: [
             `Imported from ${input.fileName}.`,
+            figure.sourceCode ? `Code: ${figure.sourceCode}` : "",
+            figure.sourceSection,
+            figure.status,
+            figure.canonBaseline,
             figure.title ? `Title: ${figure.title}` : "",
             figure.caption,
           ]
@@ -1962,11 +2006,19 @@ export async function importReferenceFiles(bookId: string, formData: FormData) {
       chapterIds?: string[];
       figureTitle?: string | null;
       figureCaption?: string | null;
+      sourceCode?: string | null;
+      sourceSection?: string | null;
+      sourceStatus?: string | null;
+      canonBaseline?: string | null;
     } = {},
   ) => {
     const normalizedImage = await normalizeImportedReferenceImage(fileName, mimeType, buffer);
     const asset = await writeAssetBuffer(bookId, "reference_image", normalizedImage.fileName, normalizedImage.mimeType, normalizedImage.buffer, {
       importedFromDocument: options.sourceDocument ?? null,
+      sourceCode: options.sourceCode ?? null,
+      sourceSection: options.sourceSection ?? null,
+      sourceStatus: options.sourceStatus ?? null,
+      canonBaseline: options.canonBaseline ?? null,
       figureTitle: options.figureTitle ?? null,
       figureCaption: options.figureCaption ?? null,
     });
@@ -2006,8 +2058,9 @@ export async function importReferenceFiles(bookId: string, formData: FormData) {
         notes,
         sourceDocument: figure.sourceDocument,
         role: figure.inferredRole,
-        label: figure.title || figure.image.fileName,
+        label: figure.caption?.replace(/^Figure\s+/i, "") || figure.title || figure.sourceCode || figure.image.fileName,
         chapterIds: matchChapterIds(book, [
+          figure.sourceCode ?? "",
           figure.title,
           figure.caption,
           figure.inferredChapterLabel ?? "",
@@ -2015,6 +2068,10 @@ export async function importReferenceFiles(bookId: string, formData: FormData) {
         ]),
         figureTitle: figure.title || null,
         figureCaption: figure.caption || null,
+        sourceCode: figure.sourceCode ?? null,
+        sourceSection: figure.sourceSection ?? null,
+        sourceStatus: figure.status ?? null,
+        canonBaseline: figure.canonBaseline ?? null,
       });
     }
   };

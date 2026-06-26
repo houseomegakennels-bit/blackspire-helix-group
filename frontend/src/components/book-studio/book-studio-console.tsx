@@ -79,6 +79,11 @@ function referenceTitle(reference: ReferenceRecord) {
   return reference.label || reference.id;
 }
 
+function assetMetadata(book: HydratedBook, reference: ReferenceRecord, key: string) {
+  const value = book.assets.find((asset) => asset.id === reference.assetId)?.metadata?.[key];
+  return typeof value === "string" ? value : "";
+}
+
 function sceneVisualReferences(book: HydratedBook, scene: SceneRecord, role: "scene_reference" | "mood_reference") {
   return book.references.filter((reference) => {
     if (reference.role !== role || !reference.approved) return false;
@@ -1248,6 +1253,8 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                   <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">
                     <span>{reference.source}</span>
                     <span>{reference.approved ? "approved" : "not approved"}</span>
+                    {assetMetadata(book, reference, "sourceCode") ? <span>{assetMetadata(book, reference, "sourceCode")}</span> : null}
+                    {assetMetadata(book, reference, "sourceStatus") ? <span>{assetMetadata(book, reference, "sourceStatus").replace(/^Status:\s*/i, "")}</span> : null}
                     {reference.role === "scene_reference" && reference.approved ? <span>Scene visual anchor</span> : null}
                     {reference.role === "mood_reference" && reference.approved ? <span>Mood/world anchor</span> : null}
                     {isStoryboardSource(reference) ? <span>Storyboard Source</span> : null}
@@ -1265,6 +1272,11 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                     >
                       {book.references.some((candidate) => candidate.sourceReferenceId === reference.id) ? "Re-run character crop extraction" : "Extract character crops"}
                     </button>
+                  ) : null}
+                  {assetMetadata(book, reference, "sourceSection") ? (
+                    <p className="rounded-2xl border border-[var(--line)] bg-black/20 px-4 py-3 text-xs leading-5 text-[var(--copy-muted)]">
+                      {assetMetadata(book, reference, "sourceSection")}
+                    </p>
                   ) : null}
                   <button
                     type="button"

@@ -29,6 +29,10 @@ export type ParsedCharacterBibleFigure = {
   caption: string;
   description: string;
   sourceDocument: string;
+  sourceCode: string | null;
+  sourceSection: string | null;
+  status: string | null;
+  canonBaseline: string | null;
   inferredChapterLabel: string | null;
   inferredChapterNumber: number | null;
   inferredRole: "character_reference" | "scene_reference" | "mood_reference";
@@ -177,12 +181,45 @@ function buildRelationshipMap(relsXml: string) {
 
 function findParagraphContext(paragraphs: Array<{ text: string; relIds: string[] }>, index: number) {
   const context: string[] = [];
-  for (let offset = -2; offset <= 2; offset += 1) {
+  for (let offset = -7; offset <= 3; offset += 1) {
     const paragraph = paragraphs[index + offset];
     if (!paragraph?.text) continue;
     context.push(paragraph.text);
   }
   return uniqueStrings(context).join("\n");
+}
+
+function findNearbyLine(
+  paragraphs: Array<{ text: string; relIds: string[] }>,
+  index: number,
+  matcher: (text: string) => boolean,
+  before = 12,
+  after = 3,
+) {
+  for (let cursor = index; cursor >= Math.max(0, index - before); cursor -= 1) {
+    const text = paragraphs[cursor]?.text?.trim() ?? "";
+    if (text && matcher(text)) return text;
+  }
+  for (let cursor = index + 1; cursor <= Math.min(paragraphs.length - 1, index + after); cursor += 1) {
+    const text = paragraphs[cursor]?.text?.trim() ?? "";
+    if (text && matcher(text)) return text;
+  }
+  return "";
+}
+
+function parseProductionCode(text: string) {
+  const match = text.match(/\b((?:GH|FS|UG|LG|CM|CH|PR|AR|TE|LU|UM)-\d+[A-Z]?)\b/i);
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
+function roleFromProductionCode(code: string | null): ParsedCharacterBibleFigure["inferredRole"] | null {
+  const prefix = code?.split("-")[0] ?? "";
+  if (prefix === "GH" || prefix === "FS") return "character_reference" as const;
+  if (prefix === "UG" || prefix === "LG" || prefix === "LU" || prefix === "UM" || prefix === "PR" || prefix === "AR" || prefix === "TE") {
+    return "mood_reference" as const;
+  }
+  if (prefix === "CM" || prefix === "CH") return "scene_reference" as const;
+  return null;
 }
 
 function resolveDocxTargetPath(target: string) {
@@ -196,7 +233,11 @@ function mimeTypeFromFileName(fileName: string) {
   return DOCX_IMAGE_TYPES[extension] ?? "";
 }
 
-function inferFigureRole(text: string) {
+function inferFigureRole(text: string): ParsedCharacterBibleFigure["inferredRole"] {
+  const productionCode = parseProductionCode(text);
+  const productionRole = roleFromProductionCode(productionCode);
+  if (productionRole) return productionRole;
+
   const normalized = text.toLowerCase();
   if (
     /\bstoryboard\b/.test(normalized) ||
@@ -220,10 +261,10 @@ function inferFigureRole(text: string) {
 }
 
 function nearestFigureCaption(paragraphs: Array<{ text: string; relIds: string[] }>, index: number) {
-  for (let offset = 0; offset <= 3; offset += 1) {
+  for (let offset = 0; offset <= 8; offset += 1) {
     const candidates = [paragraphs[index - offset], paragraphs[index + offset]].filter(Boolean);
     for (const paragraph of candidates) {
-      if (paragraph?.text && /^figure\s+\d+:/i.test(paragraph.text)) {
+      if (paragraph?.text && /^figure\s+(?:[A-Z]{2}-\d+[A-Z]?|\d+):/i.test(paragraph.text)) {
         return paragraph.text;
       }
     }
@@ -232,9 +273,18 @@ function nearestFigureCaption(paragraphs: Array<{ text: string; relIds: string[]
 }
 
 function nearestFigureTitle(paragraphs: Array<{ text: string; relIds: string[] }>, index: number) {
-  for (let cursor = index; cursor >= Math.max(0, index - 4); cursor -= 1) {
+  const codedHeading = findNearbyLine(
+    paragraphs,
+    index,
+    (text) => /^[A-Z]{2}-\d+[A-Z]?\s+[—-]/.test(text),
+    16,
+    2,
+  );
+  if (codedHeading) return codedHeading;
+
+  for (let cursor = index; cursor >= Math.max(0, index - 8); cursor -= 1) {
     const text = paragraphs[cursor]?.text?.trim() ?? "";
-    if (!text || /^figure\s+\d+:/i.test(text)) continue;
+    if (!text || /^figure\s+(?:[A-Z]{2}-\d+[A-Z]?|\d+):/i.test(text)) continue;
     return text;
   }
   return "";
@@ -377,17 +427,26 @@ export async function parseCharacterBibleDocx(fileName: string, buffer: Buffer):
         const title = nearestFigureTitle(paragraphs, index);
         const caption = nearestFigureCaption(paragraphs, index);
         const context = findParagraphContext(paragraphs, index);
-        const description = uniqueStrings([title, caption, context]).join("\n\n") || summary || `Imported from ${fileName}.`;
+        const sourceCode = parseProductionCode([caption, title, context].join(" "));
+        const sourceSection = findNearbyLine(paragraphs, index, (text) => /^subsection:/i.test(text), 14, 2);
+        const status = findNearbyLine(paragraphs, index, (text) => /^status:/i.test(text), 14, 2);
+        const canonBaseline = findNearbyLine(paragraphs, index, (text) => /^canon visual baseline:/i.test(text), 14, 2);
+        const description = uniqueStrings([title, sourceSection, status, canonBaseline, caption, context]).join("\n\n") || summary || `Imported from ${fileName}.`;
         const chapter = parseChapterLabel([title, caption, context].join(" "));
+        const inferredRole = roleFromProductionCode(sourceCode) ?? inferFigureRole([title, caption, sourceSection, context].join(" "));
 
         return {
           title,
           caption,
           description,
           sourceDocument: fileName,
+          sourceCode,
+          sourceSection,
+          status,
+          canonBaseline,
           inferredChapterLabel: chapter.label,
           inferredChapterNumber: chapter.number,
-          inferredRole: inferFigureRole([title, caption, context].join(" ")),
+          inferredRole,
           image: {
             fileName: `${path.basename(fileName, path.extname(fileName))}-reference-${seenTargets.size}${path.extname(entryPath)}`,
             mimeType,
@@ -398,7 +457,7 @@ export async function parseCharacterBibleDocx(fileName: string, buffer: Buffer):
     )
     .filter((figure): figure is NonNullable<typeof figure> => Boolean(figure));
 
-  const mappedFigures = [...figures];
+  const mappedFigures: ParsedCharacterBibleFigure[] = [...figures];
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory || !entry.entryName.startsWith("word/media/")) continue;
     if (seenTargets.has(entry.entryName)) continue;
@@ -412,6 +471,10 @@ export async function parseCharacterBibleDocx(fileName: string, buffer: Buffer):
       caption: "",
       description: summary || `Imported from ${fileName}.`,
       sourceDocument: fileName,
+      sourceCode: null,
+      sourceSection: null,
+      status: null,
+      canonBaseline: null,
       inferredChapterLabel: null,
       inferredChapterNumber: null,
       inferredRole: "mood_reference",
