@@ -527,6 +527,41 @@ async function cropAndUpscaleStoryboardCandidate(
     .toBuffer();
 }
 
+async function normalizeImportedReferenceImage(fileName: string, mimeType: string, buffer: Buffer) {
+  if (mimeType === "image/gif" || mimeType === "image/svg+xml") {
+    return { fileName, mimeType, buffer };
+  }
+
+  try {
+    const image = sharp(buffer, { limitInputPixels: false }).rotate();
+    const metadata = await image.metadata();
+    const hasAlpha = Boolean(metadata.hasAlpha);
+    const baseName = path.basename(fileName, path.extname(fileName));
+
+    if (hasAlpha) {
+      return {
+        fileName: `${baseName}.png`,
+        mimeType: "image/png",
+        buffer: await image
+          .resize({ width: 2200, height: 2200, fit: "inside", withoutEnlargement: true })
+          .png({ compressionLevel: 9 })
+          .toBuffer(),
+      };
+    }
+
+    return {
+      fileName: `${baseName}.jpg`,
+      mimeType: "image/jpeg",
+      buffer: await image
+        .resize({ width: 2200, height: 2200, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 88, mozjpeg: true })
+        .toBuffer(),
+    };
+  } catch {
+    return { fileName, mimeType, buffer };
+  }
+}
+
 function findCharacterBibleSection(text: string) {
   const normalized = text.replace(/\r/g, "");
   const headingMatches = Array.from(
@@ -1637,13 +1672,18 @@ async function importCharacterBibleDocument(
           figure.inferredChapterLabel ?? "",
           String(figure.inferredChapterNumber ?? ""),
         ]);
+        const normalizedImage = await normalizeImportedReferenceImage(
+          figure.image.fileName,
+          figure.image.mimeType,
+          figure.image.buffer,
+        );
 
         const asset = await writeAssetBuffer(
           bookId,
           "reference_image",
-          figure.image.fileName,
-          figure.image.mimeType,
-          figure.image.buffer,
+          normalizedImage.fileName,
+          normalizedImage.mimeType,
+          normalizedImage.buffer,
           {
             sourceDocument: input.fileName,
             figureTitle: figure.title || null,
@@ -1682,9 +1722,6 @@ async function importCharacterBibleDocument(
 
       draft.assets.push(...newAssets);
       draft.references.push(...newReferences);
-      for (const reference of newReferences.filter((candidate) => isStoryboardSourceReference(draft, candidate))) {
-        await extractStoryboardDerivedReferences(draft, reference);
-      }
       autoLinkReferencesToCharacters(draft);
       autoLinkReferencesToScenes(draft);
       syncCharacterBibleReferences(draft);
@@ -1927,7 +1964,8 @@ export async function importReferenceFiles(bookId: string, formData: FormData) {
       figureCaption?: string | null;
     } = {},
   ) => {
-    const asset = await writeAssetBuffer(bookId, "reference_image", fileName, mimeType, buffer, {
+    const normalizedImage = await normalizeImportedReferenceImage(fileName, mimeType, buffer);
+    const asset = await writeAssetBuffer(bookId, "reference_image", normalizedImage.fileName, normalizedImage.mimeType, normalizedImage.buffer, {
       importedFromDocument: options.sourceDocument ?? null,
       figureTitle: options.figureTitle ?? null,
       figureCaption: options.figureCaption ?? null,

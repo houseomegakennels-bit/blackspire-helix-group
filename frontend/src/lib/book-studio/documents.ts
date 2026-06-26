@@ -398,5 +398,30 @@ export async function parseCharacterBibleDocx(fileName: string, buffer: Buffer):
     )
     .filter((figure): figure is NonNullable<typeof figure> => Boolean(figure));
 
-  return { text, summary, figures };
+  const mappedFigures = [...figures];
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory || !entry.entryName.startsWith("word/media/")) continue;
+    if (seenTargets.has(entry.entryName)) continue;
+
+    const mimeType = mimeTypeFromFileName(entry.entryName);
+    if (!mimeType) continue;
+
+    seenTargets.add(entry.entryName);
+    mappedFigures.push({
+      title: "",
+      caption: "",
+      description: summary || `Imported from ${fileName}.`,
+      sourceDocument: fileName,
+      inferredChapterLabel: null,
+      inferredChapterNumber: null,
+      inferredRole: "mood_reference",
+      image: {
+        fileName: `${path.basename(fileName, path.extname(fileName))}-reference-${seenTargets.size}${path.extname(entry.entryName)}`,
+        mimeType,
+        buffer: entry.getData(),
+      },
+    });
+  }
+
+  return { text, summary, figures: mappedFigures };
 }

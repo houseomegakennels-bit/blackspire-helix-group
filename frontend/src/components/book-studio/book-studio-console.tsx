@@ -224,8 +224,13 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
       setStatus(payload.error || "Character bible import failed.");
       return;
     }
+    const importedReferences = Math.max(0, payload.book.references.length - book.references.length);
     syncBook(payload.book);
-    setStatus("Character bible imported.");
+    setStatus(
+      importedReferences
+        ? `Character bible imported with ${importedReferences} new reference image${importedReferences === 1 ? "" : "s"}.`
+        : "Character bible imported, but no embedded reference images were found.",
+    );
   }
 
   async function patchCharacter(characterId: string, patch: Record<string, unknown>) {
