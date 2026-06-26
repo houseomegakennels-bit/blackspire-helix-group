@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createManuscriptUploadTarget } from "@/lib/book-studio/service";
+import { createBookAssetUploadTarget } from "@/lib/book-studio/service";
 import { guardSignedInApi } from "@/lib/operator-access";
 
 export const runtime = "nodejs";
@@ -10,8 +10,13 @@ export async function POST(request: Request) {
   if (denied) return denied;
 
   try {
-    const { fileName, mimeType } = (await request.json()) as { fileName?: string; mimeType?: string };
-    const target = await createManuscriptUploadTarget(fileName ?? "", mimeType ?? "");
+    const { fileName, mimeType, kind, bookId } = (await request.json()) as {
+      fileName?: string;
+      mimeType?: string;
+      kind?: "manuscript" | "character_bible_document";
+      bookId?: string;
+    };
+    const target = await createBookAssetUploadTarget(fileName ?? "", mimeType ?? "", kind ?? "manuscript", bookId);
     return NextResponse.json({ ok: true, ...target });
   } catch (error) {
     return NextResponse.json(

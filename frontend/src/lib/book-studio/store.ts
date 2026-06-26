@@ -161,6 +161,13 @@ type ReferenceRow = {
   approved: boolean;
   character_ids: string[] | null;
   scene_ids: string[] | null;
+  chapter_ids?: string[] | null;
+  source_reference_id?: string | null;
+  derivation_kind?: ReferenceRecord["derivationKind"] | null;
+  derivation_status?: ReferenceRecord["derivationStatus"] | null;
+  confidence?: number | null;
+  label?: string | null;
+  crop?: ReferenceRecord["crop"] | null;
   notes: string;
 };
 
@@ -218,6 +225,117 @@ type SceneRow = {
   render_manifest: RenderManifest | null;
 };
 
+const CHAPTER_LINK_NOTE_PREFIX = "[chapter-link:";
+const SOURCE_REFERENCE_NOTE_PREFIX = "[source-reference:";
+const DERIVATION_KIND_NOTE_PREFIX = "[derivation-kind:";
+const DERIVATION_STATUS_NOTE_PREFIX = "[derivation-status:";
+const CONFIDENCE_NOTE_PREFIX = "[confidence:";
+const LABEL_NOTE_PREFIX = "[reference-label:";
+const CROP_NOTE_PREFIX = "[crop:";
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function decodeReferenceNotes(reference: ReferenceRow) {
+  const detectedChapterIds = [...(reference.chapter_ids ?? [])];
+  let sourceReferenceId = reference.source_reference_id ?? null;
+  let derivationKind = reference.derivation_kind ?? "none";
+  let derivationStatus = reference.derivation_status ?? "approved";
+  let confidence = typeof reference.confidence === "number" ? reference.confidence : null;
+  let label = reference.label ?? null;
+  let crop = reference.crop ?? null;
+  const cleanedLines = reference.notes
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      let match = line.match(/^\[chapter-link:(.+?)\]$/);
+      if (match) {
+        detectedChapterIds.push(match[1]);
+        return false;
+      }
+
+      match = line.match(/^\[source-reference:(.+?)\]$/);
+      if (match) {
+        sourceReferenceId = match[1] || null;
+        return false;
+      }
+
+      match = line.match(/^\[derivation-kind:(.+?)\]$/);
+      if (match) {
+        derivationKind = (match[1] as ReferenceRecord["derivationKind"]) || "none";
+        return false;
+      }
+
+      match = line.match(/^\[derivation-status:(.+?)\]$/);
+      if (match) {
+        derivationStatus = (match[1] as ReferenceRecord["derivationStatus"]) || "approved";
+        return false;
+      }
+
+      match = line.match(/^\[confidence:(.+?)\]$/);
+      if (match) {
+        const parsed = Number.parseFloat(match[1]);
+        confidence = Number.isFinite(parsed) ? parsed : null;
+        return false;
+      }
+
+      match = line.match(/^\[reference-label:(.+?)\]$/);
+      if (match) {
+        label = match[1] || null;
+        return false;
+      }
+
+      match = line.match(/^\[crop:(.+?)\]$/);
+      if (match) {
+        try {
+          const parsed = JSON.parse(match[1]) as ReferenceRecord["crop"];
+          if (
+            parsed &&
+            typeof parsed.x === "number" &&
+            typeof parsed.y === "number" &&
+            typeof parsed.width === "number" &&
+            typeof parsed.height === "number"
+          ) {
+            crop = parsed;
+          }
+        } catch {
+          crop = null;
+        }
+        return false;
+      }
+
+      return true;
+    });
+
+  return {
+    notes: cleanedLines.join("\n").trim(),
+    chapterIds: uniqueStrings(detectedChapterIds),
+    sourceReferenceId,
+    derivationKind,
+    derivationStatus,
+    confidence,
+    label,
+    crop,
+  };
+}
+
+function encodeReferenceNotes(reference: ReferenceRecord) {
+  return [
+    reference.notes.trim(),
+    ...uniqueStrings(reference.chapterIds).map((chapterId) => `${CHAPTER_LINK_NOTE_PREFIX}${chapterId}]`),
+    reference.sourceReferenceId ? `${SOURCE_REFERENCE_NOTE_PREFIX}${reference.sourceReferenceId}]` : "",
+    reference.derivationKind !== "none" ? `${DERIVATION_KIND_NOTE_PREFIX}${reference.derivationKind}]` : "",
+    reference.derivationStatus !== "approved" ? `${DERIVATION_STATUS_NOTE_PREFIX}${reference.derivationStatus}]` : "",
+    typeof reference.confidence === "number" ? `${CONFIDENCE_NOTE_PREFIX}${reference.confidence}]` : "",
+    reference.label ? `${LABEL_NOTE_PREFIX}${reference.label}]` : "",
+    reference.crop ? `${CROP_NOTE_PREFIX}${JSON.stringify(reference.crop)}]` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function toBookRecord({
   book,
   assets,
@@ -244,6 +362,7 @@ function toBookRecord({
   }));
 
   const mappedReferences: ReferenceRecord[] = references.map((reference) => ({
+    ...decodeReferenceNotes(reference),
     id: reference.id,
     assetId: reference.asset_id,
     source: reference.source,
@@ -251,7 +370,6 @@ function toBookRecord({
     approved: reference.approved,
     characterIds: reference.character_ids ?? [],
     sceneIds: reference.scene_ids ?? [],
-    notes: reference.notes,
   }));
 
   const mappedCharacters: CharacterBible[] = characters.map((character) => ({
@@ -343,6 +461,25 @@ function toBookRecord({
   };
 }
 
+function normalizeBookRecord(book: BookRecord): BookRecord {
+  return {
+    ...book,
+    references: (book.references ?? []).map((reference) => ({
+      ...reference,
+      characterIds: reference.characterIds ?? [],
+      sceneIds: reference.sceneIds ?? [],
+      chapterIds: reference.chapterIds ?? [],
+      sourceReferenceId: reference.sourceReferenceId ?? null,
+      derivationKind: reference.derivationKind ?? "none",
+      derivationStatus: reference.derivationStatus ?? "approved",
+      confidence: typeof reference.confidence === "number" ? reference.confidence : null,
+      label: reference.label ?? null,
+      crop: reference.crop ?? null,
+      notes: reference.notes ?? "",
+    })),
+  };
+}
+
 async function loadBooksFromDatabase(supabase: SupabaseClient, where?: { column: "id" | "slug"; value: string }) {
   let query = supabase.from(BOOKS_TABLE).select("*");
   if (where) {
@@ -394,6 +531,26 @@ async function loadBooksFromDatabase(supabase: SupabaseClient, where?: { column:
   );
 }
 
+let supportsReferenceChapterIdsCache: boolean | null = null;
+let supportsReferenceMetadataColumnsCache: boolean | null = null;
+
+async function supportsReferenceChapterIdsColumn(supabase: SupabaseClient) {
+  if (supportsReferenceChapterIdsCache !== null) return supportsReferenceChapterIdsCache;
+  const { error } = await supabase.from(REFERENCES_TABLE).select("chapter_ids").limit(1);
+  supportsReferenceChapterIdsCache = !error;
+  return supportsReferenceChapterIdsCache;
+}
+
+async function supportsReferenceMetadataColumns(supabase: SupabaseClient) {
+  if (supportsReferenceMetadataColumnsCache !== null) return supportsReferenceMetadataColumnsCache;
+  const { error } = await supabase
+    .from(REFERENCES_TABLE)
+    .select("source_reference_id, derivation_kind, derivation_status, confidence, label, crop")
+    .limit(1);
+  supportsReferenceMetadataColumnsCache = !error;
+  return supportsReferenceMetadataColumnsCache;
+}
+
 async function deleteRowsNotInSet(
   supabase: SupabaseClient,
   table: string,
@@ -416,6 +573,8 @@ async function deleteRowsNotInSet(
 async function persistBookToDatabase(supabase: SupabaseClient, book: BookRecord) {
   const updatedAt = nowIso();
   const next = { ...book, updatedAt };
+  const supportsReferenceChapterIds = await supportsReferenceChapterIdsColumn(supabase);
+  const supportsReferenceMetadata = await supportsReferenceMetadataColumns(supabase);
 
   const { error: bookError } = await supabase.from(BOOKS_TABLE).upsert(
     {
@@ -466,7 +625,21 @@ async function persistBookToDatabase(supabase: SupabaseClient, book: BookRecord)
     approved: reference.approved,
     character_ids: reference.characterIds,
     scene_ids: reference.sceneIds,
-    notes: reference.notes,
+    ...(supportsReferenceChapterIds ? { chapter_ids: reference.chapterIds } : {}),
+    ...(supportsReferenceMetadata
+      ? {
+          source_reference_id: reference.sourceReferenceId,
+          derivation_kind: reference.derivationKind,
+          derivation_status: reference.derivationStatus,
+          confidence: reference.confidence,
+          label: reference.label,
+          crop: reference.crop,
+        }
+      : {}),
+    notes:
+      supportsReferenceChapterIds && supportsReferenceMetadata
+        ? reference.notes
+        : encodeReferenceNotes(reference),
   }));
   if (referenceRows.length) {
     const { error } = await supabase.from(REFERENCES_TABLE).upsert(referenceRows, { onConflict: "id" });
@@ -607,7 +780,10 @@ export async function readStore(): Promise<BookStudioStore> {
   if (parsed.version !== STORE_VERSION || !Array.isArray(parsed.books)) {
     throw new Error("Book Studio store is unreadable.");
   }
-  return parsed;
+  return {
+    ...parsed,
+    books: parsed.books.map((book) => normalizeBookRecord(book as BookRecord)),
+  };
 }
 
 export async function writeStore(store: BookStudioStore) {

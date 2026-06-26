@@ -12,6 +12,7 @@ import type { AssetRecord, VoiceName } from "@/lib/book-studio/types";
 const DEFAULT_TEXT_MODEL = process.env.OPENAI_BOOK_TEXT_MODEL?.trim() || "gpt-4.1-mini";
 const DEFAULT_IMAGE_MODEL = process.env.OPENAI_BOOK_IMAGE_MODEL?.trim() || "gpt-image-2";
 const DEFAULT_TTS_MODEL = process.env.OPENAI_BOOK_TTS_MODEL?.trim() || "gpt-4o-mini-tts";
+const MAX_IMAGE_REFERENCES = 8;
 
 type JsonSchema = Record<string, unknown>;
 
@@ -40,32 +41,16 @@ function getResponseText(payload: Record<string, unknown>) {
   return "";
 }
 
-function svgPlaceholder(title: string, accent: string, lines: string[]) {
-  const escapedLines = lines
-    .map((line) => line.replace(/[<&>"]/g, ""))
-    .slice(0, 5)
-    .map(
-      (line, index) =>
-        `<text x="68" y="${220 + index * 48}" fill="#f3efe7" font-size="26" font-family="Arial">${line}</text>`,
-    )
-    .join("");
+function getOpenAIError(payload: unknown) {
+  if (!payload || typeof payload !== "object") return "";
+  const error = (payload as { error?: unknown }).error;
+  if (!error || typeof error !== "object") return "";
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" ? message : "";
+}
 
-  return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024">
-      <defs>
-        <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
-          <stop offset="0%" stop-color="#060606" />
-          <stop offset="100%" stop-color="${accent}" />
-        </linearGradient>
-      </defs>
-      <rect width="1536" height="1024" fill="url(#bg)" />
-      <rect x="44" y="44" width="1448" height="936" rx="38" fill="rgba(0,0,0,0.35)" stroke="rgba(255,215,128,0.35)" />
-      <text x="68" y="120" fill="#f8dca1" font-size="32" font-family="Arial" letter-spacing="6">BLACKSPIRE BOOK STUDIO</text>
-      <text x="68" y="182" fill="#ffffff" font-size="56" font-family="Arial" font-weight="700">${title.replace(/[<&>"]/g, "")}</text>
-      ${escapedLines}
-    </svg>`,
-    "utf8",
-  );
+function toDataUrl(mimeType: string, buffer: Buffer) {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
 function createSilentWav(seconds: number) {
@@ -151,10 +136,76 @@ export async function runStructuredPrompt<T>({
   }
 }
 
+export async function runVisionStructuredPrompt<T>({
+  system,
+  user,
+  schema,
+  image,
+  model = DEFAULT_TEXT_MODEL,
+  fallback,
+}: {
+  system: string;
+  user: string;
+  schema: JsonSchema;
+  image: { mimeType: string; buffer: Buffer };
+  model?: string;
+  fallback: T;
+}) {
+  const apiKey = getApiKey();
+  if (!apiKey) return fallback;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        store: false,
+        input: [
+          {
+            role: "system",
+            content: [{ type: "input_text", text: system }],
+          },
+          {
+            role: "user",
+            content: [
+              { type: "input_text", text: user },
+              {
+                type: "input_image",
+                image_url: toDataUrl(image.mimeType, image.buffer),
+                detail: "high",
+              },
+            ],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "book_studio_vision_payload",
+            strict: true,
+            schema,
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!response.ok) return fallback;
+    const payload = (await response.json()) as Record<string, unknown>;
+    const text = getResponseText(payload);
+    if (!text) return fallback;
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function generateImageBuffer({
   prompt,
   references,
-  title,
 }: {
   prompt: string;
   references: Array<{ mimeType: string; fileName: string; buffer: Buffer }>;
@@ -162,12 +213,10 @@ export async function generateImageBuffer({
 }) {
   const apiKey = getApiKey();
   if (!apiKey) {
-    return {
-      buffer: svgPlaceholder(title, "#7f4e1d", [prompt.slice(0, 80), "OpenAI image key missing - placeholder render"]),
-      mimeType: "image/svg+xml",
-      extension: "svg",
-    };
+    throw new Error("OpenAI image generation is not configured. Add OPENAI_API_KEY in production.");
   }
+
+  const errors: string[] = [];
 
   try {
     if (references.length) {
@@ -177,7 +226,7 @@ export async function generateImageBuffer({
       form.append("size", "1536x1024");
       form.append("quality", "high");
 
-      for (const reference of references.slice(0, 4)) {
+      for (const reference of references.slice(0, MAX_IMAGE_REFERENCES)) {
         form.append(
           "image",
           new Blob([new Uint8Array(reference.buffer)], { type: reference.mimeType }),
@@ -200,6 +249,7 @@ export async function generateImageBuffer({
           extension: "png",
         };
       }
+      errors.push(getOpenAIError(payload) || `OpenAI image edit failed with status ${response.status}.`);
     }
 
     const response = await fetch("https://api.openai.com/v1/images/generations", {
@@ -226,15 +276,12 @@ export async function generateImageBuffer({
         extension: "png",
       };
     }
-  } catch {
-    // continue to placeholder
+    errors.push(getOpenAIError(payload) || `OpenAI image generation failed with status ${response.status}.`);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "OpenAI image generation request failed.");
   }
 
-  return {
-    buffer: svgPlaceholder(title, "#4a1642", [prompt.slice(0, 80), "OpenAI generation fallback placeholder"]),
-    mimeType: "image/svg+xml",
-    extension: "svg",
-  };
+  throw new Error(errors.filter(Boolean).join(" ") || "OpenAI image generation failed.");
 }
 
 function splitTextForSpeech(text: string, limit = 3900) {

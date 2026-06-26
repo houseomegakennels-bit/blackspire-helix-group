@@ -27,6 +27,68 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
     return payload.ok;
   }
 
+  async function uploadCharacterBible(bookId: string, formData: FormData) {
+    const characterBible = formData.get("characterBible");
+    if (!(characterBible instanceof File) || characterBible.size === 0) return true;
+
+    setStatus("Importing character bible...");
+    const targetResponse = await fetch("/api/books/upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: characterBible.name,
+        mimeType: characterBible.type,
+        kind: "character_bible_document",
+        bookId,
+      }),
+    });
+    const target = (await targetResponse.json().catch(() => ({ ok: false }))) as {
+      ok: boolean;
+      error?: string;
+      direct?: boolean;
+      signedUrl?: string;
+      assetId?: string;
+      relativePath?: string;
+      fileName?: string;
+      mimeType?: string;
+    };
+    if (!target.ok) {
+      setStatus(target.error || "Could not start the character bible upload.");
+      return false;
+    }
+
+    let response: Response;
+    if (target.direct && target.signedUrl) {
+      const put = await fetch(target.signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": characterBible.type || "application/octet-stream", "x-upsert": "true" },
+        body: characterBible,
+      });
+      if (!put.ok) {
+        setStatus("Character bible upload failed while sending the file.");
+        return false;
+      }
+
+      response = await fetch(`/api/books/${bookId}/character-bible-import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: target.assetId,
+          relativePath: target.relativePath,
+          fileName: target.fileName,
+          mimeType: target.mimeType,
+        }),
+      });
+    } else {
+      const body = new FormData();
+      body.append("characterBible", characterBible);
+      response = await fetch(`/api/books/${bookId}/character-bible-import`, { method: "POST", body });
+    }
+
+    const payload = (await response.json().catch(() => ({ ok: false }))) as { ok: boolean };
+    return payload.ok;
+  }
+
   async function handleImport(formData: FormData) {
     const manuscript = formData.get("manuscript");
     if (!(manuscript instanceof File) || manuscript.size === 0) {
@@ -35,13 +97,11 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
     }
 
     try {
-      // 1. Ask the server for a direct-to-storage upload target. This bypasses
-      // the serverless 4.5MB request-body limit so large manuscripts work.
       setStatus("Preparing upload...");
       const targetResponse = await fetch("/api/books/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: manuscript.name, mimeType: manuscript.type }),
+        body: JSON.stringify({ fileName: manuscript.name, mimeType: manuscript.type, kind: "manuscript" }),
       });
       const target = (await targetResponse.json()) as {
         ok: boolean;
@@ -62,7 +122,6 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
       let book: { id: string } | undefined;
 
       if (target.direct && target.signedUrl) {
-        // 2. Upload the manuscript straight to storage (no size limit).
         setStatus("Uploading manuscript...");
         const put = await fetch(target.signedUrl, {
           method: "PUT",
@@ -74,7 +133,6 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
           return;
         }
 
-        // 3. Create the workspace from the storage reference (small JSON request).
         setStatus("Creating book workspace...");
         const importResponse = await fetch("/api/books/import", {
           method: "POST",
@@ -93,17 +151,11 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
           return;
         }
         book = payload.book;
-
-        // References upload after the workspace exists.
-        const refsOk = await uploadReferences(book.id, formData);
-        if (!refsOk) {
-          setStatus("Book created. Some reference files didn't import — you can add them inside the workspace.");
-        }
       } else {
-        // Fallback (no remote storage / local dev): legacy formData upload,
-        // which also carries the references in one request.
         setStatus("Creating book workspace...");
-        const importResponse = await fetch("/api/books/import", { method: "POST", body: formData });
+        const manuscriptForm = new FormData();
+        manuscriptForm.append("manuscript", manuscript);
+        const importResponse = await fetch("/api/books/import", { method: "POST", body: manuscriptForm });
         const payload = (await importResponse.json()) as { ok: boolean; error?: string; book?: { id: string } };
         if (!payload.ok || !payload.book) {
           setStatus(payload.error || "Book import failed.");
@@ -113,6 +165,17 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
       }
 
       const createdBook = book;
+      const bibleOk = await uploadCharacterBible(createdBook.id, formData);
+      const refsOk = await uploadReferences(createdBook.id, formData);
+
+      if (!bibleOk && !refsOk) {
+        setStatus("Book created. Character bible and reference files need to be retried inside the workspace.");
+      } else if (!bibleOk) {
+        setStatus("Book created. Character bible import needs to be retried inside the workspace.");
+      } else if (!refsOk) {
+        setStatus("Book created. Some reference files didn't import — you can add them inside the workspace.");
+      }
+
       startTransition(() => {
         router.push(`/studio/books/${createdBook.id}`);
         router.refresh();
@@ -187,7 +250,8 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
               <div>
                 <div className="text-sm font-semibold text-white">Import a new manuscript</div>
                 <p className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
-                  Upload the manuscript first, then optionally include standalone images, `.docx` reference packs with embedded images, or a ZIP of either.
+                  Upload the manuscript first, then optionally attach a separate character bible `.docx`, plus any
+                  loose reference images or ZIP packs you want in the library.
                 </p>
               </div>
 
@@ -198,6 +262,16 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
                   type="file"
                   name="manuscript"
                   accept=".txt,.md,.docx"
+                  className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-[var(--copy-soft)]"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">Character Bible</span>
+                <input
+                  type="file"
+                  name="characterBible"
+                  accept=".docx"
                   className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-[var(--copy-soft)]"
                 />
               </label>

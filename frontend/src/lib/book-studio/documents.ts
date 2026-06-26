@@ -24,6 +24,27 @@ export type ParsedReferenceDoc = {
   }>;
 };
 
+export type ParsedCharacterBibleFigure = {
+  title: string;
+  caption: string;
+  description: string;
+  sourceDocument: string;
+  inferredChapterLabel: string | null;
+  inferredChapterNumber: number | null;
+  inferredRole: "character_reference" | "scene_reference" | "mood_reference";
+  image: {
+    fileName: string;
+    mimeType: string;
+    buffer: Buffer;
+  } | null;
+};
+
+export type ParsedCharacterBibleDoc = {
+  text: string;
+  summary: string;
+  figures: ParsedCharacterBibleFigure[];
+};
+
 const DOCX_IMAGE_TYPES: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -35,6 +56,8 @@ const DOCX_IMAGE_TYPES: Record<string, string> = {
   tiff: "image/tiff",
   svg: "image/svg+xml",
 };
+const CHAPTER_MARKER =
+  "(?:\\d+|[ivxlc]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)";
 
 function cleanText(text: string) {
   return text.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
@@ -55,6 +78,62 @@ function decodeXmlEntities(value: string) {
 
 function summarizeText(text: string, maxLength = 640) {
   return text.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function parseChapterLabel(value: string) {
+  const match = value.match(/\bchapter\s+([a-z0-9ivxlc-]+)\b/i);
+  if (!match) return { label: null, number: null as number | null };
+
+  const token = match[1].toLowerCase().replace(/[^a-z0-9ivxlc]+/g, "");
+  const words: Record<string, number> = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+  };
+  const roman: Record<string, number> = {
+    i: 1,
+    ii: 2,
+    iii: 3,
+    iv: 4,
+    v: 5,
+    vi: 6,
+    vii: 7,
+    viii: 8,
+    ix: 9,
+    x: 10,
+    xi: 11,
+    xii: 12,
+    xiii: 13,
+    xiv: 14,
+    xv: 15,
+    xvi: 16,
+    xvii: 17,
+    xviii: 18,
+    xix: 19,
+    xx: 20,
+  };
+
+  return {
+    label: match[0],
+    number: Number.parseInt(token, 10) || words[token] || roman[token] || null,
+  };
 }
 
 function readZipText(zip: AdmZip, entryName: string) {
@@ -117,6 +196,50 @@ function mimeTypeFromFileName(fileName: string) {
   return DOCX_IMAGE_TYPES[extension] ?? "";
 }
 
+function inferFigureRole(text: string) {
+  const normalized = text.toLowerCase();
+  if (
+    /\bstoryboard\b/.test(normalized) ||
+    /\bchapter\s+(?:\d+|[ivxlc]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(normalized)
+  ) {
+    return "scene_reference" as const;
+  }
+  if (
+    /\bcityscape\b/.test(normalized) ||
+    /\bcities\b/.test(normalized) ||
+    /\bsky\b/.test(normalized) ||
+    /\bplanet\b/.test(normalized) ||
+    /\bworld\b/.test(normalized) ||
+    /\benvironment\b/.test(normalized) ||
+    /\blandscape\b/.test(normalized) ||
+    /\bview\b/.test(normalized)
+  ) {
+    return "mood_reference" as const;
+  }
+  return "character_reference" as const;
+}
+
+function nearestFigureCaption(paragraphs: Array<{ text: string; relIds: string[] }>, index: number) {
+  for (let offset = 0; offset <= 3; offset += 1) {
+    const candidates = [paragraphs[index - offset], paragraphs[index + offset]].filter(Boolean);
+    for (const paragraph of candidates) {
+      if (paragraph?.text && /^figure\s+\d+:/i.test(paragraph.text)) {
+        return paragraph.text;
+      }
+    }
+  }
+  return "";
+}
+
+function nearestFigureTitle(paragraphs: Array<{ text: string; relIds: string[] }>, index: number) {
+  for (let cursor = index; cursor >= Math.max(0, index - 4); cursor -= 1) {
+    const text = paragraphs[cursor]?.text?.trim() ?? "";
+    if (!text || /^figure\s+\d+:/i.test(text)) continue;
+    return text;
+  }
+  return "";
+}
+
 function deriveTitle(fileName: string, text: string) {
   const heading = text
     .split("\n")
@@ -138,12 +261,12 @@ function deriveSynopsis(text: string) {
 function splitChapters(text: string) {
   const lines = text.split("\n");
   const chapters: Array<{ title: string; text: string }> = [];
-  let currentTitle = "Chapter 1";
+  let currentTitle = "";
   let currentLines: string[] = [];
 
   const flush = () => {
     const chapterText = cleanText(currentLines.join("\n"));
-    if (chapterText) {
+    if (chapterText && currentTitle) {
       chapters.push({ title: currentTitle, text: chapterText });
     }
     currentLines = [];
@@ -152,9 +275,9 @@ function splitChapters(text: string) {
   for (const line of lines) {
     const trimmed = line.trim();
     const isChapterBreak =
-      /^chapter\s+[\divxlc]+/i.test(trimmed) ||
+      new RegExp(`^chapter\\s+${CHAPTER_MARKER}\\b`, "i").test(trimmed) ||
       /^#{1,2}\s+/.test(trimmed) ||
-      /^part\s+[\divxlc]+/i.test(trimmed);
+      new RegExp(`^part\\s+${CHAPTER_MARKER}\\b`, "i").test(trimmed);
 
     if (isChapterBreak) {
       flush();
@@ -205,6 +328,23 @@ export async function parseManuscript(file: File): Promise<ParsedManuscript> {
 }
 
 export async function parseReferenceDocx(fileName: string, buffer: Buffer): Promise<ParsedReferenceDoc> {
+  const parsed = await parseCharacterBibleDocx(fileName, buffer);
+  return {
+    text: parsed.text,
+    summary: parsed.summary,
+    images: parsed.figures
+      .filter((figure): figure is ParsedCharacterBibleFigure & { image: NonNullable<ParsedCharacterBibleFigure["image"]> } => Boolean(figure.image))
+      .map((figure, index) => ({
+        fileName: figure.image.fileName || `${path.basename(fileName, path.extname(fileName))}-reference-${index + 1}.png`,
+        mimeType: figure.image.mimeType,
+        buffer: figure.image.buffer,
+        description: figure.description,
+        sourceDocument: figure.sourceDocument,
+      })),
+  };
+}
+
+export async function parseCharacterBibleDocx(fileName: string, buffer: Buffer): Promise<ParsedCharacterBibleDoc> {
   const result = await mammoth.extractRawText({ buffer });
   const text = cleanText(result.value);
   const summary = summarizeText(text);
@@ -213,41 +353,50 @@ export async function parseReferenceDocx(fileName: string, buffer: Buffer): Prom
   const relsXml = readZipText(zip, "word/_rels/document.xml.rels");
 
   if (!documentXml || !relsXml) {
-    return { text, summary, images: [] };
+    return { text, summary, figures: [] };
   }
 
   const paragraphs = parseDocxParagraphs(documentXml);
   const relationshipMap = buildRelationshipMap(relsXml);
-  const imageContexts = new Map<string, string[]>();
+  const seenTargets = new Set<string>();
 
-  paragraphs.forEach((paragraph, index) => {
-    const context = findParagraphContext(paragraphs, index);
-    for (const relId of paragraph.relIds) {
-      const target = relationshipMap.get(relId);
-      if (!target) continue;
-      const entryPath = resolveDocxTargetPath(target);
-      const mimeType = mimeTypeFromFileName(entryPath);
-      if (!mimeType) continue;
-      const contexts = imageContexts.get(entryPath) ?? [];
-      if (context) contexts.push(context);
-      imageContexts.set(entryPath, contexts);
-    }
-  });
+  const figures = paragraphs
+    .flatMap((paragraph, index) =>
+      paragraph.relIds.map((relId) => {
+        const target = relationshipMap.get(relId);
+        if (!target) return null;
+        const entryPath = resolveDocxTargetPath(target);
+        if (!entryPath || seenTargets.has(entryPath)) return null;
+        seenTargets.add(entryPath);
 
-  const images = Array.from(imageContexts.entries())
-    .map(([entryPath, contexts], index) => {
-      const entry = zip.getEntry(entryPath);
-      if (!entry) return null;
-      const description = uniqueStrings(contexts).join("\n\n") || summary || `Imported from ${fileName}.`;
-      return {
-        fileName: `${path.basename(fileName, path.extname(fileName))}-reference-${index + 1}${path.extname(entryPath)}`,
-        mimeType: mimeTypeFromFileName(entryPath),
-        buffer: entry.getData(),
-        description,
-        sourceDocument: fileName,
-      };
-    })
-    .filter((image): image is ParsedReferenceDoc["images"][number] => Boolean(image));
+        const mimeType = mimeTypeFromFileName(entryPath);
+        if (!mimeType) return null;
+        const entry = zip.getEntry(entryPath);
+        if (!entry) return null;
 
-  return { text, summary, images };
+        const title = nearestFigureTitle(paragraphs, index);
+        const caption = nearestFigureCaption(paragraphs, index);
+        const context = findParagraphContext(paragraphs, index);
+        const description = uniqueStrings([title, caption, context]).join("\n\n") || summary || `Imported from ${fileName}.`;
+        const chapter = parseChapterLabel([title, caption, context].join(" "));
+
+        return {
+          title,
+          caption,
+          description,
+          sourceDocument: fileName,
+          inferredChapterLabel: chapter.label,
+          inferredChapterNumber: chapter.number,
+          inferredRole: inferFigureRole([title, caption, context].join(" ")),
+          image: {
+            fileName: `${path.basename(fileName, path.extname(fileName))}-reference-${seenTargets.size}${path.extname(entryPath)}`,
+            mimeType,
+            buffer: entry.getData(),
+          },
+        };
+      }),
+    )
+    .filter((figure): figure is NonNullable<typeof figure> => Boolean(figure));
+
+  return { text, summary, figures };
 }

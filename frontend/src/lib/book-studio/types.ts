@@ -11,8 +11,27 @@ export type ReferenceRole =
   | "canonical_candidate"
   | "excluded";
 
+export type ReferenceSource =
+  | "upload"
+  | "character_bible_import"
+  | "portrait_generation"
+  | "scene_generation"
+  | "storyboard_derivation";
+
+export type ReferenceDerivationKind = "none" | "storyboard_crop_upscale";
+
+export type ReferenceDerivationStatus = "provisional" | "approved" | "rejected";
+
+export type ReferenceCrop = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type AssetKind =
   | "manuscript"
+  | "character_bible_document"
   | "reference_image"
   | "character_portrait"
   | "scene_image"
@@ -55,11 +74,18 @@ export type AssetRecord = {
 export type ReferenceRecord = {
   id: string;
   assetId: string;
-  source: "upload" | "portrait_generation" | "scene_generation";
+  source: ReferenceSource;
   role: ReferenceRole;
   approved: boolean;
   characterIds: string[];
   sceneIds: string[];
+  chapterIds: string[];
+  sourceReferenceId: string | null;
+  derivationKind: ReferenceDerivationKind;
+  derivationStatus: ReferenceDerivationStatus;
+  confidence: number | null;
+  label: string | null;
+  crop: ReferenceCrop | null;
   notes: string;
 };
 
@@ -98,6 +124,9 @@ export type SceneCharacterModifier = {
 export type RenderManifest = {
   compiledPrompt: string;
   characterReferenceIds: string[];
+  sceneReferenceIds: string[];
+  moodReferenceIds: string[];
+  visualAnchorReferenceIds: string[];
   styleNotes: string;
   modifiers: SceneCharacterModifier[];
 };

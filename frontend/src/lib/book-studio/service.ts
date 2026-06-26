@@ -3,14 +3,20 @@ import "server-only";
 import AdmZip from "adm-zip";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 
-import { parseManuscript, parseManuscriptFromBuffer, parseReferenceDocx } from "@/lib/book-studio/documents";
+import {
+  parseCharacterBibleDocx,
+  parseManuscript,
+  parseManuscriptFromBuffer,
+} from "@/lib/book-studio/documents";
 import {
   concatenateAudioAssets,
   generateImageBuffer,
   generateSpeechAudio,
   renderChapterVideoFromAssets,
   runStructuredPrompt,
+  runVisionStructuredPrompt,
 } from "@/lib/book-studio/media";
 import {
   createId,
@@ -52,6 +58,28 @@ const DEFAULT_STYLE = {
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
 const REFERENCE_DOCUMENT_EXTENSIONS = new Set(["docx"]);
+const WORD_NUMBER_MAP: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+};
 const SUPPORTED_IMAGE_TYPES: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -60,6 +88,8 @@ const SUPPORTED_IMAGE_TYPES: Record<string, string> = {
   gif: "image/gif",
   svg: "image/svg+xml",
 };
+const STORYBOARD_CROP_CONFIDENCE_THRESHOLD = 0.72;
+const STORYBOARD_EXTRACTION_MODEL = process.env.OPENAI_BOOK_VISION_MODEL?.trim() || "gpt-4.1-mini";
 
 function nowIso() {
   return new Date().toISOString();
@@ -304,7 +334,9 @@ function mergeCharacterBibles(existingCharacters: CharacterBible[], analyzedChar
 
 function bookCharacterReferences(book: BookRecord, character: CharacterBible) {
   return book.references.filter(
-    (reference) => reference.characterIds.includes(character.id) && reference.role !== "excluded",
+    (reference) =>
+      reference.characterIds.includes(character.id) &&
+      (reference.role === "character_reference" || reference.role === "canonical_candidate"),
   );
 }
 
@@ -347,9 +379,164 @@ function stripAutoMatchNotes(notes: string) {
     .trim();
 }
 
+function isStoryboardLikeText(value: string) {
+  return /\bstoryboard\b/i.test(value);
+}
+
+function getReferenceAsset(book: BookRecord, reference: ReferenceRecord) {
+  return book.assets.find((asset) => asset.id === reference.assetId) ?? null;
+}
+
+function getReferenceDisplayLabel(book: BookRecord, reference: ReferenceRecord) {
+  return reference.label || getReferenceAsset(book, reference)?.label || reference.id;
+}
+
+function getReferenceFigureText(book: BookRecord, reference: ReferenceRecord) {
+  const asset = getReferenceAsset(book, reference);
+  const figureTitle = typeof asset?.metadata?.figureTitle === "string" ? asset.metadata.figureTitle : "";
+  const figureCaption = typeof asset?.metadata?.figureCaption === "string" ? asset.metadata.figureCaption : "";
+  const noteTitle = reference.notes.match(/^Title:\s*(.+)$/im)?.[1] ?? "";
+  return {
+    figureTitle: figureTitle || noteTitle,
+    figureCaption: figureCaption || reference.notes,
+    combined: [
+      asset?.label,
+      reference.label,
+      figureTitle,
+      figureCaption,
+      noteTitle,
+      reference.notes,
+    ]
+      .filter((value): value is string => typeof value === "string" && Boolean(value))
+      .join("\n"),
+  };
+}
+
+function isStoryboardSourceReference(book: BookRecord, reference: ReferenceRecord) {
+  if (reference.sourceReferenceId || reference.derivationKind !== "none") return false;
+  if (reference.role !== "scene_reference") return false;
+  const haystack = getReferenceFigureText(book, reference).combined;
+  return isStoryboardLikeText(haystack) || reference.source === "character_bible_import";
+}
+
+function normalizeCrop(
+  crop: { x: number; y: number; width: number; height: number },
+  imageWidth: number,
+  imageHeight: number,
+) {
+  const left = Math.max(0, Math.floor(crop.x));
+  const top = Math.max(0, Math.floor(crop.y));
+  const width = Math.max(1, Math.floor(crop.width));
+  const height = Math.max(1, Math.floor(crop.height));
+  const clampedLeft = Math.min(left, Math.max(0, imageWidth - 1));
+  const clampedTop = Math.min(top, Math.max(0, imageHeight - 1));
+  const clampedWidth = Math.min(width, imageWidth - clampedLeft);
+  const clampedHeight = Math.min(height, imageHeight - clampedTop);
+
+  if (clampedWidth < 32 || clampedHeight < 32) return null;
+
+  return {
+    x: clampedLeft,
+    y: clampedTop,
+    width: clampedWidth,
+    height: clampedHeight,
+  };
+}
+
+function findCharacterByCandidateName(book: BookRecord, candidateName: string) {
+  const normalizedCandidate = normalizeLooseText(candidateName);
+  if (!normalizedCandidate) return null;
+
+  return (
+    book.characters.find((character) =>
+      characterMatchCandidates(character).some((candidate) => {
+        if (candidate === normalizedCandidate) return true;
+        const candidateWords = candidate.split(" ").filter(Boolean);
+        const incomingWords = normalizedCandidate.split(" ").filter(Boolean);
+        return (
+          candidateWords.length > 0 &&
+          incomingWords.length > 0 &&
+          candidateWords.every((word) => incomingWords.includes(word))
+        );
+      }),
+    ) ?? null
+  );
+}
+
+function mentionedCharactersFromReferenceText(book: BookRecord, reference: ReferenceRecord) {
+  const haystack = normalizeLooseText(getReferenceFigureText(book, reference).combined);
+  return book.characters.filter((character) =>
+    characterMatchCandidates(character).some((candidate) => {
+      if (!candidate) return false;
+      if (haystack.includes(candidate)) return true;
+      const words = candidate.split(" ").filter(Boolean);
+      return words.length > 1 && words.every((word) => haystack.includes(word));
+    }),
+  );
+}
+
+function fallbackStoryboardCandidates(
+  book: BookRecord,
+  reference: ReferenceRecord,
+  imageWidth: number,
+  imageHeight: number,
+) {
+  const mentioned = mentionedCharactersFromReferenceText(book, reference).slice(0, 8);
+  if (!mentioned.length) return [];
+
+  const columns = imageWidth >= imageHeight ? 3 : 2;
+  const rows = Math.ceil(mentioned.length / columns);
+  const cellWidth = Math.floor(imageWidth / columns);
+  const cellHeight = Math.floor(imageHeight / rows);
+
+  return mentioned.map((character, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const side = Math.max(64, Math.floor(Math.min(cellWidth, cellHeight) * 0.9));
+    return {
+      characterName: character.name,
+      confidence: 0.73,
+      x: column * cellWidth + Math.floor((cellWidth - side) / 2),
+      y: row * cellHeight + Math.floor((cellHeight - side) / 2),
+      width: side,
+      height: side,
+      reason: "Fallback crop from storyboard caption mention. Review before using for continuity.",
+    };
+  });
+}
+
+async function cropAndUpscaleStoryboardCandidate(
+  buffer: Buffer,
+  crop: { x: number; y: number; width: number; height: number },
+) {
+  return sharp(buffer)
+    .extract({
+      left: crop.x,
+      top: crop.y,
+      width: crop.width,
+      height: crop.height,
+    })
+    .resize({
+      width: 1024,
+      height: 1024,
+      fit: "inside",
+      withoutEnlargement: false,
+      kernel: sharp.kernel.lanczos3,
+    })
+    .png()
+    .toBuffer();
+}
+
 function findCharacterBibleSection(text: string) {
   const normalized = text.replace(/\r/g, "");
-  const match = /(principal\s+character\s+bible|character\s+bible(?:\s+\(.*?\)|\s+summaries?)?)/i.exec(normalized);
+  const headingMatches = Array.from(
+    normalized.matchAll(
+      /^\s*(principal\s+character\s+bible|character\s+bible(?:\s+\(.*?\)|\s+summaries?)?)\s*$/gim,
+    ),
+  );
+  const match =
+    headingMatches[headingMatches.length - 1] ??
+    /(principal\s+character\s+bible|character\s+bible(?:\s+\(.*?\)|\s+summaries?)?)/i.exec(normalized);
   if (!match?.index && match?.index !== 0) return null;
 
   const afterHeading = normalized.slice(match.index + match[0].length).trim();
@@ -357,7 +544,7 @@ function findCharacterBibleSection(text: string) {
 
   const stopPatterns = [
     /\n\s*(?:world\s+bible|location\s+bible|reference\s+library|art\s+notes|appendix|glossary|voice\s+cast)\b/i,
-    /\n\s*(?:chapter|part)\s+[\divxlc]+\b/i,
+    /\n\s*(?:chapter|part)\s+(?:\d+|[ivxlc]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/i,
   ];
 
   const stopIndex = stopPatterns
@@ -397,6 +584,52 @@ function inferVisualTrait(entryText: string, keywords: string[]) {
 }
 
 function splitCharacterBibleEntries(sectionText: string) {
+  const blockedHeadings = new Set([
+    "story canon",
+    "principal character bible",
+    "character bible",
+    "source images",
+    "canonical",
+  ]);
+  const paragraphs = sectionText
+    .split(/\n\s*\n/)
+    .map((paragraph) => normalizeName(paragraph))
+    .filter(Boolean);
+
+  const looksLikeCharacterHeading = (paragraph: string) => {
+    if (!paragraph || blockedHeadings.has(paragraph.toLowerCase())) return false;
+    if (/[.!?:]/.test(paragraph)) return false;
+    if (/^(chapter|part|figure)\b/i.test(paragraph)) return false;
+    const words = paragraph.split(" ").filter(Boolean);
+    if (!words.length || words.length > 5) return false;
+    return words.every((word) => /^[A-Z][A-Za-z'-]*$/.test(word) || /^(of|the|and)$/i.test(word));
+  };
+
+  const paragraphEntries: Array<{ name: string; text: string }> = [];
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const paragraph = paragraphs[index];
+    if (!looksLikeCharacterHeading(paragraph)) continue;
+
+    const body: string[] = [];
+    let cursor = index + 1;
+    while (cursor < paragraphs.length && !looksLikeCharacterHeading(paragraphs[cursor])) {
+      body.push(paragraphs[cursor]);
+      cursor += 1;
+    }
+
+    if (body.length) {
+      paragraphEntries.push({
+        name: paragraph,
+        text: `${paragraph}\n${body.join("\n\n")}`.trim(),
+      });
+      index = cursor - 1;
+    }
+  }
+
+  if (paragraphEntries.length) {
+    return paragraphEntries;
+  }
+
   const regexMatches =
     sectionText.match(
       /\b(?:[A-Z][a-z]+|[A-Z]{2,})(?:\s+(?:[A-Z][a-z]+|[A-Z]{2,}|of|the|and|Last|Firstborn|Tree|Commander|Chancellor|Hollow))+?\b/g,
@@ -543,6 +776,184 @@ Extract the named characters/entities from this character bible section into con
     );
 }
 
+function isGenericCoreDescription(character: CharacterBible, bookTitle: string) {
+  const normalized = character.coreDescription.trim().toLowerCase();
+  if (!normalized) return true;
+  return [
+    `${character.name.toLowerCase()} is a recurring figure in ${bookTitle.toLowerCase()}.`,
+    `${character.name.toLowerCase()} is a recurring character in the novel.`,
+  ].includes(normalized);
+}
+
+function inferChapterNumber(value: string) {
+  const match = value.match(/\bchapter\s+([a-z0-9ivxlc-]+)\b/i);
+  if (!match) return null;
+  const token = match[1].toLowerCase().replace(/[^a-z0-9ivxlc]+/g, "");
+  return Number.parseInt(token, 10) || WORD_NUMBER_MAP[token] || null;
+}
+
+function inferReferenceRoleFromText(text: string): ReferenceRole {
+  const normalized = text.toLowerCase();
+  if (/\bside view\b/.test(normalized) || /\b3\/4 view\b/.test(normalized) || /\bthree-quarter view\b/.test(normalized)) {
+    return "character_reference";
+  }
+  if (/\bstoryboard\b/.test(normalized) || inferChapterNumber(normalized)) return "scene_reference";
+  if (
+    /\bcityscape\b/.test(normalized) ||
+    /\bcities\b/.test(normalized) ||
+    /\bsky\b/.test(normalized) ||
+    /\bplanet\b/.test(normalized) ||
+    /\bworld\b/.test(normalized) ||
+    /\benvironment\b/.test(normalized) ||
+    /\blandscape\b/.test(normalized) ||
+    /\bshared atmosphere\b/.test(normalized)
+  ) {
+    return "mood_reference";
+  }
+  return "character_reference";
+}
+
+function mergeTextFragments(values: string[], limit = 4) {
+  return dedupeStrings(values.map((value) => value.trim()).filter(Boolean)).slice(0, limit).join(" ");
+}
+
+function inferCharacterFieldsFromDescription(description: string) {
+  const fragments = description
+    .split(/[.;]\s+/)
+    .map((fragment) => fragment.trim())
+    .filter(Boolean);
+
+  return {
+    coreDescription: mergeTextFragments(fragments.slice(0, 2), 2),
+    facialTraits: inferVisualTrait(description, ["eye", "face", "facial", "tattoo", "constellation"]),
+    bodyTraits: inferVisualTrait(description, ["streetwear", "clothing", "silhouette", "body", "survivor", "worn", "layered"]),
+    hair: inferVisualTrait(description, ["hair", "braid", "shaved", "silver"]),
+    vibe: inferVisualTrait(description, ["dreamer", "protective", "playful", "mentor", "resilient", "ancient", "loyal"]),
+  };
+}
+
+function matchChapterIds(book: BookRecord, values: string[]) {
+  const normalizedHaystack = normalizeLooseText(values.join(" "));
+  if (!normalizedHaystack) return [];
+
+  return book.chapters
+    .filter((chapter) => {
+      const chapterNumber = inferChapterNumber(chapter.title);
+      if (chapterNumber && normalizedHaystack.includes(`chapter ${chapterNumber}`)) return true;
+      const title = normalizeLooseText(chapter.title);
+      return Boolean(title && normalizedHaystack.includes(title));
+    })
+    .map((chapter) => chapter.id);
+}
+
+function matchSceneIds(book: BookRecord, values: string[]) {
+  const normalizedHaystack = normalizeLooseText(values.join(" "));
+  if (!normalizedHaystack) return [];
+
+  return book.scenes
+    .filter((scene) => {
+      const title = normalizeLooseText(scene.title);
+      if (title && normalizedHaystack.includes(title)) return true;
+      const summaryTerms = normalizeLooseText(scene.summary)
+        .split(" ")
+        .filter((word) => word.length > 5)
+        .slice(0, 8);
+      return summaryTerms.length >= 3 && summaryTerms.filter((word) => normalizedHaystack.includes(word)).length >= 3;
+    })
+    .map((scene) => scene.id);
+}
+
+function extractKnownCharactersFromText(book: BookRecord, text: string) {
+  const haystack = normalizeLooseText(text);
+  return book.characters
+    .filter((character) =>
+      characterMatchCandidates(character).some((candidate) => {
+        if (!candidate) return false;
+        if (haystack.includes(candidate)) return true;
+        return candidate
+          .split(" ")
+          .filter(Boolean)
+          .every((word) => haystack.includes(word));
+      }),
+    )
+    .map((character) => character.id);
+}
+
+function referenceSignalText(book: BookRecord, reference: ReferenceRecord) {
+  const asset = getReferenceAsset(book, reference);
+  const { figureTitle, figureCaption } = getReferenceFigureText(book, reference);
+  return [reference.label ?? "", asset?.label ?? "", figureTitle, figureCaption, stripAutoMatchNotes(reference.notes)]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function upsertCharacterBibleSeed(draft: BookRecord, characters: CharacterBible[]) {
+  const { characters: merged } = mergeCharacterBibles(draft.characters, characters);
+  draft.characters = merged;
+}
+
+function enrichCharactersFromImportedCards(
+  draft: BookRecord,
+  importedCards: Array<Pick<CharacterBible, "name" | "aliases" | "coreDescription" | "ageRange" | "sex" | "facialTraits" | "bodyTraits" | "hair" | "vibe" | "continuityNotes">>,
+) {
+  const byKey = new Map<string, CharacterBible>();
+  draft.characters.forEach((character) => {
+    for (const key of characterKeys(character)) byKey.set(key, character);
+  });
+
+  for (const card of importedCards) {
+    const target = characterKeys({ name: card.name, aliases: card.aliases }).map((key) => byKey.get(key)).find(Boolean);
+    if (!target) continue;
+
+    if (isGenericCoreDescription(target, draft.title) && card.coreDescription) {
+      target.coreDescription = card.coreDescription;
+    }
+    if ((target.ageRange === "adult" || !target.ageRange) && card.ageRange && card.ageRange !== "adult") {
+      target.ageRange = card.ageRange;
+    }
+    if (target.sex === "unknown" && card.sex && card.sex !== "unknown") {
+      target.sex = card.sex;
+    }
+    if (!target.facialTraits && card.facialTraits) target.facialTraits = card.facialTraits;
+    if (!target.bodyTraits && card.bodyTraits) target.bodyTraits = card.bodyTraits;
+    if (!target.hair && card.hair) target.hair = card.hair;
+    if (!target.vibe && card.vibe) target.vibe = card.vibe;
+    if (card.continuityNotes) {
+      target.continuityNotes = dedupeStrings([target.continuityNotes, card.continuityNotes]).join(" ");
+    }
+  }
+}
+
+function buildImportedCardsFromFigures(book: BookRecord, descriptions: Array<{ title: string; caption: string; description: string }>) {
+  return book.characters
+    .map((character) => {
+      const relevant = descriptions.filter((entry) =>
+        characterMatchCandidates(character).some((candidate) => normalizeLooseText(entry.description).includes(candidate)),
+      );
+      if (!relevant.length) return null;
+      const mergedDescription = mergeTextFragments(relevant.map((entry) => [entry.title, entry.caption].filter(Boolean).join(". ")), 4);
+      const inferred = inferCharacterFieldsFromDescription(mergedDescription);
+      return {
+        name: character.name,
+        aliases: character.aliases,
+        coreDescription: inferred.coreDescription || mergedDescription,
+        ageRange: character.ageRange,
+        sex: character.sex,
+        facialTraits: inferred.facialTraits,
+        bodyTraits: inferred.bodyTraits,
+        hair: inferred.hair,
+        vibe: inferred.vibe,
+        continuityNotes: mergeTextFragments(relevant.map((entry) => entry.description), 3),
+      };
+    })
+    .filter(
+      (
+        card,
+      ): card is Pick<CharacterBible, "name" | "aliases" | "coreDescription" | "ageRange" | "sex" | "facialTraits" | "bodyTraits" | "hair" | "vibe" | "continuityNotes"> =>
+        Boolean(card),
+    );
+}
+
 function autoLinkReferencesToCharacters(book: BookRecord) {
   const assetsById = new Map(book.assets.map((asset) => [asset.id, asset] as const));
 
@@ -585,6 +996,26 @@ function autoLinkReferencesToCharacters(book: BookRecord) {
       role: reference.role === "canonical_candidate" ? reference.role : "character_reference",
       characterIds: dedupeStrings([...reference.characterIds, ...matches.map((match) => match.characterId)]),
       notes: [preservedNotes, ...autoMatchNotes].filter(Boolean).join("\n"),
+    };
+  });
+}
+
+function autoLinkReferencesToScenes(book: BookRecord) {
+  book.references = book.references.map((reference) => {
+    if (reference.role !== "scene_reference" && reference.role !== "mood_reference") {
+      return reference;
+    }
+
+    const signalText = referenceSignalText(book, reference);
+    const sceneIds = matchSceneIds(book, [signalText]);
+    const chapterIds = matchChapterIds(book, [signalText]);
+
+    if (!sceneIds.length && !chapterIds.length) return reference;
+
+    return {
+      ...reference,
+      sceneIds: dedupeStrings([...reference.sceneIds, ...sceneIds]),
+      chapterIds: dedupeStrings([...reference.chapterIds, ...chapterIds]),
     };
   });
 }
@@ -661,16 +1092,45 @@ function buildCharacterPrompt(book: BookRecord, character: CharacterBible) {
   ].join("\n");
 }
 
+function sceneVisualReferences(book: BookRecord, scene: SceneRecord, role: "scene_reference" | "mood_reference") {
+  return book.references.filter((reference) => {
+    if (reference.role !== role || !reference.approved) return false;
+    if (reference.derivationStatus === "rejected") return false;
+    if (reference.sceneIds.includes(scene.id)) return true;
+    if (reference.chapterIds.includes(scene.chapterId)) return true;
+    return role === "mood_reference" && !reference.sceneIds.length && !reference.chapterIds.length;
+  });
+}
+
+function referencePromptLine(book: BookRecord, reference: ReferenceRecord) {
+  const asset = getReferenceAsset(book, reference);
+  const { figureTitle, figureCaption } = getReferenceFigureText(book, reference);
+  return [
+    reference.label || figureTitle || asset?.label || "Untitled reference",
+    figureCaption || "",
+    stripAutoMatchNotes(reference.notes) || "",
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
 function buildScenePrompt(book: BookRecord, scene: SceneRecord) {
   const characters = scene.characterIds
     .map((characterId) => book.characters.find((candidate) => candidate.id === characterId))
     .filter((candidate): candidate is CharacterBible => Boolean(candidate));
+  const sceneReferences = sceneVisualReferences(book, scene, "scene_reference");
+  const moodReferences = sceneVisualReferences(book, scene, "mood_reference");
   const continuity = characters
     .map((character) => {
       const modifier = scene.modifiers.find((entry) => entry.characterId === character.id);
       return `${character.name}: ${getCharacterBibleSummary(character)}${modifier ? `; scene modifier ${modifier.description}` : ""}`;
     })
     .join("\n");
+  const sceneReferenceNotes = sceneReferences.map((reference) => referencePromptLine(book, reference)).join("\n");
+  const moodReferenceNotes = moodReferences.map((reference) => referencePromptLine(book, reference)).join("\n");
+  const characterReferenceIds = dedupeStrings(characters.flatMap((character) => getCharacterBibleReferenceIds(book, character)));
+  const sceneReferenceIds = sceneReferences.map((reference) => reference.id);
+  const moodReferenceIds = moodReferences.map((reference) => reference.id);
 
   const prompt = [
     `Create one polished key image for a book scene titled "${scene.title}".`,
@@ -683,19 +1143,191 @@ function buildScenePrompt(book: BookRecord, scene: SceneRecord) {
     `Medium: ${book.styleProfile.medium}.`,
     `Tone: ${book.styleProfile.tone}.`,
     continuity ? `Character continuity:\n${continuity}` : "Focus on environment, storytelling, and scene composition.",
-    "Respect continuity. Keep recurring faces stable. No text, no watermark, no collage.",
+    sceneReferenceNotes
+      ? `Approved scene visual anchors:\n${sceneReferenceNotes}\nUse the attached scene reference images as direct composition, camera, setting, prop, color, and lighting anchors. Mirror the approved reference as closely as possible while adapting only what the scene text requires.`
+      : "",
+    moodReferenceNotes
+      ? `Approved mood/world anchors:\n${moodReferenceNotes}\nUse these attached references to preserve the world look, atmosphere, architecture, materials, and palette.`
+      : "",
+    "Respect continuity. Keep recurring faces stable. Preserve approved visual anchors. No text, no watermark, no collage.",
   ].join("\n\n");
 
   const manifest: RenderManifest = {
     compiledPrompt: prompt,
-    characterReferenceIds: dedupeStrings(
-      characters.flatMap((character) => getCharacterBibleReferenceIds(book, character)),
-    ),
+    characterReferenceIds,
+    sceneReferenceIds,
+    moodReferenceIds,
+    visualAnchorReferenceIds: dedupeStrings([...sceneReferenceIds, ...moodReferenceIds, ...characterReferenceIds]),
     styleNotes: `${book.styleProfile.visualDirection}; ${book.styleProfile.palette}; ${book.styleProfile.tone}`,
     modifiers: safeJson(scene.modifiers),
   };
 
   return { prompt, manifest };
+}
+
+function refreshScenePrompts(draft: BookRecord) {
+  draft.scenes = draft.scenes.map((scene) => {
+    const { prompt, manifest } = buildScenePrompt(draft, scene);
+    return {
+      ...scene,
+      imagePrompt: prompt,
+      renderManifest: manifest,
+    };
+  });
+}
+
+async function detectStoryboardCharacterPanels(
+  draft: BookRecord,
+  reference: ReferenceRecord,
+  image: { mimeType: string; buffer: Buffer },
+) {
+  const { figureTitle, figureCaption } = getReferenceFigureText(draft, reference);
+  const roster = draft.characters.map((character) => ({
+    name: character.name,
+    aliases: character.aliases,
+    summary: getCharacterBibleSummary(character),
+  }));
+
+  const fallback = { candidates: [] as Array<{ characterName: string; confidence: number; x: number; y: number; width: number; height: number; reason: string }> };
+  const result = await runVisionStructuredPrompt({
+    model: STORYBOARD_EXTRACTION_MODEL,
+    system: [
+      "You identify single-character storyboard panels for an audiobook illustration pipeline.",
+      "Only return crops when one named character is the clear visual subject.",
+      "Do not return crops for environment shots, cityscapes, wide establishing shots, multi-character collages, or ambiguous tiny figures.",
+      "Bounding boxes must be pixel coordinates relative to the full input image.",
+    ].join("\n"),
+    user: [
+      `Reference label: ${getReferenceDisplayLabel(draft, reference)}.`,
+      figureTitle ? `Figure title: ${figureTitle}.` : "",
+      figureCaption ? `Figure caption: ${figureCaption}.` : "",
+      `Known characters: ${JSON.stringify(roster)}.`,
+      "Return only high-confidence single-character panels. Use empty candidates when uncertain.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    image,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        candidates: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              characterName: { type: "string" },
+              confidence: { type: "number" },
+              x: { type: "number" },
+              y: { type: "number" },
+              width: { type: "number" },
+              height: { type: "number" },
+              reason: { type: "string" },
+            },
+            required: ["characterName", "confidence", "x", "y", "width", "height", "reason"],
+          },
+        },
+      },
+      required: ["candidates"],
+    },
+    fallback,
+  });
+
+  return Array.isArray(result.candidates) ? result.candidates : fallback.candidates;
+}
+
+async function extractStoryboardDerivedReferences(draft: BookRecord, parentReference: ReferenceRecord) {
+  if (!isStoryboardSourceReference(draft, parentReference)) return;
+
+  const parentAsset = getReferenceAsset(draft, parentReference);
+  if (!parentAsset) return;
+
+  const existingDerived = draft.references.filter(
+    (reference) =>
+      reference.sourceReferenceId === parentReference.id &&
+      reference.derivationKind === "storyboard_crop_upscale",
+  );
+  const removableDerived = existingDerived.filter((reference) => {
+    const lockedByCharacter = draft.characters.some((character) => character.canonicalReferenceId === reference.id);
+    return !lockedByCharacter && reference.derivationStatus !== "approved";
+  });
+
+  if (removableDerived.length) {
+    const removableAssetIds = new Set(removableDerived.map((reference) => reference.assetId));
+    draft.references = draft.references.filter((reference) => !removableDerived.some((candidate) => candidate.id === reference.id));
+    draft.assets = draft.assets.filter((asset) => !removableAssetIds.has(asset.id));
+  }
+
+  const preservedDerivedCharacterIds = new Set(
+    existingDerived
+      .filter((reference) => reference.derivationStatus === "approved")
+      .flatMap((reference) => reference.characterIds),
+  );
+
+  const sourceBuffer = await readAssetBuffer(parentAsset.relativePath);
+  const imageInfo = await sharp(sourceBuffer).metadata();
+  if (!imageInfo.width || !imageInfo.height) return;
+
+  let candidates = await detectStoryboardCharacterPanels(draft, parentReference, {
+    mimeType: parentAsset.mimeType,
+    buffer: sourceBuffer,
+  });
+  if (!candidates.length) {
+    candidates = fallbackStoryboardCandidates(draft, parentReference, imageInfo.width, imageInfo.height);
+  }
+
+  for (const candidate of candidates) {
+    if (candidate.confidence < STORYBOARD_CROP_CONFIDENCE_THRESHOLD) continue;
+    const character = findCharacterByCandidateName(draft, candidate.characterName);
+    if (!character) continue;
+    if (preservedDerivedCharacterIds.has(character.id)) continue;
+
+    const crop = normalizeCrop(candidate, imageInfo.width, imageInfo.height);
+    if (!crop) continue;
+
+    const upscaledBuffer = await cropAndUpscaleStoryboardCandidate(sourceBuffer, crop);
+    const label = `${character.name} storyboard crop`;
+    const asset = await writeAssetBuffer(
+      draft.id,
+      "reference_image",
+      `${slugify(character.name)}-${slugify(parentAsset.label)}-storyboard-crop.png`,
+      "image/png",
+      upscaledBuffer,
+      {
+        sourceDocument: typeof parentAsset.metadata?.sourceDocument === "string" ? parentAsset.metadata.sourceDocument : null,
+        sourceReferenceId: parentReference.id,
+        derivationKind: "storyboard_crop_upscale",
+        parentFigureTitle: typeof parentAsset.metadata?.figureTitle === "string" ? parentAsset.metadata.figureTitle : null,
+      },
+    );
+
+    draft.assets.push(asset);
+    draft.references.push({
+      id: createId("reference"),
+      assetId: asset.id,
+      source: "storyboard_derivation",
+      role: "character_reference",
+      approved: false,
+      characterIds: [character.id],
+      sceneIds: [],
+      chapterIds: [...parentReference.chapterIds],
+      sourceReferenceId: parentReference.id,
+      derivationKind: "storyboard_crop_upscale",
+      derivationStatus: "provisional",
+      confidence: candidate.confidence,
+      label,
+      crop,
+      notes: [
+        `Derived from storyboard source ${getReferenceDisplayLabel(draft, parentReference)}.`,
+        `Reason: ${candidate.reason}`,
+        typeof parentAsset.metadata?.figureTitle === "string" ? `Parent title: ${parentAsset.metadata.figureTitle}` : "",
+        typeof parentAsset.metadata?.figureCaption === "string" ? parentAsset.metadata.figureCaption : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    });
+  }
 }
 
 async function analyzeChapters(
@@ -911,6 +1543,157 @@ function buildBookRecord(
   };
 }
 
+async function importCharacterBibleDocument(
+  bookId: string,
+  input: {
+    fileName: string;
+    mimeType: string;
+    buffer: Buffer;
+    existingAsset?: AssetRecord;
+  },
+) {
+  const parsed = await parseCharacterBibleDocx(input.fileName, input.buffer);
+
+  return (
+    await mutateBookRecord(bookId, async (draft) => {
+      if (!draft.characters.length) {
+        const seeds = await extractExplicitCharacterBibles(draft.manuscriptText, draft.title);
+        if (seeds.length) {
+          upsertCharacterBibleSeed(draft, seeds);
+        }
+      }
+
+      const sourceAsset =
+        input.existingAsset ??
+        (await writeAssetBuffer(
+          bookId,
+          "character_bible_document",
+          input.fileName,
+          input.mimeType || "application/octet-stream",
+          input.buffer,
+          {
+            sourceDocument: input.fileName,
+            documentRole: "character_bible",
+          },
+        ));
+
+      if (!draft.assets.some((asset) => asset.id === sourceAsset.id)) {
+        draft.assets.push(sourceAsset);
+      }
+
+      const importedCards =
+        parsed.figures.length === 0
+          ? await extractExplicitCharacterBibles(parsed.text, draft.title)
+          : buildImportedCardsFromFigures(
+              draft,
+              parsed.figures
+                .filter((figure) => inferReferenceRoleFromText([figure.title, figure.caption].join(" ")) === "character_reference")
+                .map((figure) => ({
+                  title: figure.title,
+                  caption: figure.caption,
+                  description: [figure.title, figure.caption].filter(Boolean).join(". "),
+                })),
+            ).map((card) => createCharacterBibleCard(card.name, draft.title, card));
+
+      if (parsed.figures.length === 0 && importedCards.length) {
+        upsertCharacterBibleSeed(draft, importedCards);
+      }
+
+      if (importedCards.length) {
+        enrichCharactersFromImportedCards(
+          draft,
+          importedCards.map((card) => ({
+            name: card.name,
+            aliases: card.aliases,
+            coreDescription: card.coreDescription,
+            ageRange: card.ageRange,
+            sex: card.sex,
+            facialTraits: card.facialTraits,
+            bodyTraits: card.bodyTraits,
+            hair: card.hair,
+            vibe: card.vibe,
+            continuityNotes: card.continuityNotes,
+          })),
+        );
+      }
+
+      const newAssets: AssetRecord[] = [];
+      const newReferences: ReferenceRecord[] = [];
+
+      for (const figure of parsed.figures) {
+        if (!figure.image) continue;
+
+        const referenceSignalText = [figure.title, figure.caption].filter(Boolean).join(" ");
+        const characterIds = extractKnownCharactersFromText(draft, referenceSignalText);
+        const role =
+          inferReferenceRoleFromText(referenceSignalText) === "mood_reference" &&
+          characterIds.length > 0 &&
+          !/\bcityscape\b|\bcities\b|\bsky\b|\bplanet\b|\bworld\b|\blandscape\b/i.test(referenceSignalText)
+            ? "character_reference"
+            : inferReferenceRoleFromText(referenceSignalText);
+        const chapterIds = matchChapterIds(draft, [
+          figure.title,
+          figure.caption,
+          figure.inferredChapterLabel ?? "",
+          String(figure.inferredChapterNumber ?? ""),
+        ]);
+
+        const asset = await writeAssetBuffer(
+          bookId,
+          "reference_image",
+          figure.image.fileName,
+          figure.image.mimeType,
+          figure.image.buffer,
+          {
+            sourceDocument: input.fileName,
+            figureTitle: figure.title || null,
+            figureCaption: figure.caption || null,
+            inferredRole: role,
+            inferredChapterLabel: figure.inferredChapterLabel ?? null,
+            inferredChapterNumber: figure.inferredChapterNumber ?? null,
+          },
+        );
+
+        newAssets.push(asset);
+        newReferences.push({
+          id: createId("reference"),
+          assetId: asset.id,
+          source: "character_bible_import",
+          role,
+          approved: false,
+          characterIds,
+          sceneIds: [],
+          chapterIds,
+          sourceReferenceId: null,
+          derivationKind: "none",
+          derivationStatus: "approved",
+          confidence: null,
+          label: figure.title || path.basename(figure.image.fileName),
+          crop: null,
+          notes: [
+            `Imported from ${input.fileName}.`,
+            figure.title ? `Title: ${figure.title}` : "",
+            figure.caption,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        });
+      }
+
+      draft.assets.push(...newAssets);
+      draft.references.push(...newReferences);
+      for (const reference of newReferences.filter((candidate) => isStoryboardSourceReference(draft, candidate))) {
+        await extractStoryboardDerivedReferences(draft, reference);
+      }
+      autoLinkReferencesToCharacters(draft);
+      autoLinkReferencesToScenes(draft);
+      syncCharacterBibleReferences(draft);
+      refreshScenePrompts(draft);
+      return draft;
+    })
+  ).book;
+}
+
 /**
  * Step 1 of the large-file upload flow: mint a direct-to-storage upload target.
  * The browser uploads the manuscript straight to Supabase Storage (no size
@@ -918,13 +1701,17 @@ function buildBookRecord(
  * Returns { direct: false } when remote storage is unavailable so the client
  * can fall back to the legacy in-request formData upload.
  */
-export async function createManuscriptUploadTarget(fileName: string, mimeType: string) {
+export async function createBookAssetUploadTarget(
+  fileName: string,
+  mimeType: string,
+  kind: "manuscript" | "character_bible_document" = "manuscript",
+  bookId = createId("book"),
+) {
   if (!fileName) {
-    throw new Error("A manuscript file name is required to start the upload.");
+    throw new Error("A file name is required to start the upload.");
   }
 
-  const bookId = createId("book");
-  const target = await createSignedUploadTarget(bookId, "manuscript", fileName);
+  const target = await createSignedUploadTarget(bookId, kind, fileName);
   if (!target) {
     return { direct: false as const, bookId };
   }
@@ -938,6 +1725,10 @@ export async function createManuscriptUploadTarget(fileName: string, mimeType: s
     fileName,
     mimeType: mimeType || "application/octet-stream",
   };
+}
+
+export async function createManuscriptUploadTarget(fileName: string, mimeType: string) {
+  return createBookAssetUploadTarget(fileName, mimeType, "manuscript");
 }
 
 /**
@@ -970,6 +1761,41 @@ export async function importBookFromStorageRef(input: {
 
   const book = buildBookRecord(input.bookId, parsed, manuscriptAsset);
   return saveBookRecord(book);
+}
+
+export async function importCharacterBibleFromStorageRef(
+  bookId: string,
+  input: {
+    assetId: string;
+    relativePath: string;
+    fileName: string;
+    mimeType: string;
+  },
+) {
+  if (!bookId || !input?.assetId || !input.relativePath || !input.fileName) {
+    throw new Error("Incomplete character bible upload reference. Please re-upload the file.");
+  }
+
+  const buffer = await readAssetBuffer(input.relativePath);
+  const asset: AssetRecord = {
+    id: input.assetId,
+    kind: "character_bible_document",
+    label: input.fileName,
+    mimeType: input.mimeType || "application/octet-stream",
+    relativePath: input.relativePath,
+    createdAt: nowIso(),
+    metadata: {
+      sourceDocument: input.fileName,
+      documentRole: "character_bible",
+    },
+  };
+
+  return importCharacterBibleDocument(bookId, {
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    buffer,
+    existingAsset: asset,
+  });
 }
 
 export async function importBookFromUpload(formData: FormData) {
@@ -1006,6 +1832,19 @@ export async function importBookFromUpload(formData: FormData) {
   return savedBook;
 }
 
+export async function importCharacterBibleUpload(bookId: string, formData: FormData) {
+  const characterBible = formData.get("characterBible");
+  if (!(characterBible instanceof File) || characterBible.size === 0) {
+    throw new Error("Upload a character bible file to continue.");
+  }
+
+  return importCharacterBibleDocument(bookId, {
+    fileName: characterBible.name,
+    mimeType: characterBible.type || "application/octet-stream",
+    buffer: Buffer.from(await characterBible.arrayBuffer()),
+  });
+}
+
 export async function analyzeBook(bookId: string) {
   const book = await getBookById(bookId);
   if (!book) throw new Error("Book not found.");
@@ -1024,7 +1863,15 @@ export async function analyzeBook(bookId: string) {
 
   const analyzed = await analyzeChapters(chapters, book.title);
   const explicitCharacterBibles = await extractExplicitCharacterBibles(book.manuscriptText, book.title);
-  const enrichedCharacters = mergeCharacterBibles(explicitCharacterBibles, analyzed.characters);
+  const filteredAnalyzedCharacters = explicitCharacterBibles.length
+    ? analyzed.characters.filter((character) => {
+        const analyzedKeys = new Set(characterKeys(character));
+        return explicitCharacterBibles.some((explicitCharacter) =>
+          characterKeys(explicitCharacter).some((key) => analyzedKeys.has(key)),
+        );
+      })
+    : analyzed.characters;
+  const enrichedCharacters = mergeCharacterBibles(explicitCharacterBibles, filteredAnalyzedCharacters);
   const chapterSceneMap = new Map<string, string[]>();
   analyzed.scenes.forEach((scene) => {
     const list = chapterSceneMap.get(scene.chapterId) ?? [];
@@ -1037,6 +1884,7 @@ export async function analyzeBook(bookId: string) {
       const { characters, characterIdMap } = mergeCharacterBibles(draft.characters, enrichedCharacters.characters);
       draft.characters = characters;
       autoLinkReferencesToCharacters(draft);
+      autoLinkReferencesToScenes(draft);
       syncCharacterBibleReferences(draft);
       draft.scenes = analyzed.scenes.map((scene) => {
         const nextScene = {
@@ -1072,32 +1920,63 @@ export async function importReferenceFiles(bookId: string, formData: FormData) {
     options: {
       notes?: string;
       sourceDocument?: string | null;
+      role?: ReferenceRole;
+      label?: string | null;
+      chapterIds?: string[];
+      figureTitle?: string | null;
+      figureCaption?: string | null;
     } = {},
   ) => {
     const asset = await writeAssetBuffer(bookId, "reference_image", fileName, mimeType, buffer, {
       importedFromDocument: options.sourceDocument ?? null,
+      figureTitle: options.figureTitle ?? null,
+      figureCaption: options.figureCaption ?? null,
     });
     newAssets.push(asset);
     newReferences.push({
       id: createId("reference"),
       assetId: asset.id,
       source: "upload",
-      role: "character_reference",
+      role: options.role ?? "character_reference",
       approved: false,
       characterIds: [],
       sceneIds: [],
+      chapterIds: options.chapterIds ?? [],
+      sourceReferenceId: null,
+      derivationKind: "none",
+      derivationStatus: "approved",
+      confidence: null,
+      label: options.label ?? fileName,
+      crop: null,
       notes: options.notes ?? "",
     });
     importedCount += 1;
   };
 
   const importReferenceDoc = async (fileName: string, buffer: Buffer) => {
-    const parsed = await parseReferenceDocx(fileName, buffer);
-    for (const image of parsed.images) {
-      const notes = [`Imported from ${image.sourceDocument}.`, image.description].filter(Boolean).join("\n\n");
-      await pushReferenceBuffer(image.fileName, image.mimeType, image.buffer, {
+    const parsed = await parseCharacterBibleDocx(fileName, buffer);
+    for (const figure of parsed.figures) {
+      if (!figure.image) continue;
+      const notes = [
+        `Imported from ${figure.sourceDocument}.`,
+        figure.title ? `Title: ${figure.title}` : "",
+        figure.caption,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      await pushReferenceBuffer(figure.image.fileName, figure.image.mimeType, figure.image.buffer, {
         notes,
-        sourceDocument: image.sourceDocument,
+        sourceDocument: figure.sourceDocument,
+        role: figure.inferredRole,
+        label: figure.title || figure.image.fileName,
+        chapterIds: matchChapterIds(book, [
+          figure.title,
+          figure.caption,
+          figure.inferredChapterLabel ?? "",
+          String(figure.inferredChapterNumber ?? ""),
+        ]),
+        figureTitle: figure.title || null,
+        figureCaption: figure.caption || null,
       });
     }
   };
@@ -1144,11 +2023,16 @@ export async function importReferenceFiles(bookId: string, formData: FormData) {
   }
 
   return (
-    await mutateBookRecord(bookId, (draft) => {
+    await mutateBookRecord(bookId, async (draft) => {
       draft.assets.push(...newAssets);
       draft.references.push(...newReferences);
+      for (const reference of newReferences.filter((candidate) => isStoryboardSourceReference(draft, candidate))) {
+        await extractStoryboardDerivedReferences(draft, reference);
+      }
       autoLinkReferencesToCharacters(draft);
+      autoLinkReferencesToScenes(draft);
       syncCharacterBibleReferences(draft);
+      refreshScenePrompts(draft);
       draft.updatedAt = nowIso();
       return draft;
     })
@@ -1185,8 +2069,44 @@ export async function updateReference(referenceId: string, patch: Partial<Refere
       reference.approved = patch.approved ?? reference.approved;
       reference.characterIds = patch.characterIds ? dedupeStrings(patch.characterIds) : reference.characterIds;
       reference.sceneIds = patch.sceneIds ? dedupeStrings(patch.sceneIds) : reference.sceneIds;
+      reference.chapterIds = patch.chapterIds ? dedupeStrings(patch.chapterIds) : reference.chapterIds;
+      reference.sourceReferenceId = patch.sourceReferenceId ?? reference.sourceReferenceId;
+      reference.derivationKind = patch.derivationKind ?? reference.derivationKind;
+      reference.derivationStatus = patch.derivationStatus ?? reference.derivationStatus;
+      reference.confidence = typeof patch.confidence === "number" ? patch.confidence : reference.confidence;
+      reference.label = patch.label ?? reference.label;
+      reference.crop = patch.crop ?? reference.crop;
       reference.notes = patch.notes ?? reference.notes;
+      if ((patch.role || patch.label !== undefined || patch.notes !== undefined) && !patch.sceneIds && !patch.chapterIds) {
+        autoLinkReferencesToScenes(draft);
+      }
       syncCharacterBibleReferences(draft);
+      refreshScenePrompts(draft);
+      return draft;
+    })
+  ).book;
+}
+
+export async function extractReferenceCharacterCandidates(referenceId: string) {
+  const store = await readStore();
+  const book = store.books.find((candidate) =>
+    candidate.references.some((reference) => reference.id === referenceId),
+  );
+  if (!book) throw new Error("Reference not found.");
+
+  return (
+    await mutateBookRecord(book.id, async (draft) => {
+      const reference = draft.references.find((candidate) => candidate.id === referenceId);
+      if (!reference) throw new Error("Reference not found.");
+      if (!isStoryboardSourceReference(draft, reference)) {
+        throw new Error("Only storyboard source references can generate character crops.");
+      }
+
+      await extractStoryboardDerivedReferences(draft, reference);
+      autoLinkReferencesToCharacters(draft);
+      autoLinkReferencesToScenes(draft);
+      syncCharacterBibleReferences(draft);
+      refreshScenePrompts(draft);
       return draft;
     })
   ).book;
@@ -1321,6 +2241,13 @@ export async function generateCharacterReferences(bookId: string, characterId: s
           approved: false,
           characterIds: [character.id],
           sceneIds: [],
+          chapterIds: [],
+          sourceReferenceId: null,
+          derivationKind: "none",
+          derivationStatus: "approved",
+          confidence: null,
+          label: `${character.name} portrait candidate ${i + 1}`,
+          crop: null,
           notes: `Generated portrait candidate ${i + 1}.`,
         });
       }
@@ -1351,6 +2278,7 @@ export async function approveCanonicalLook(characterId: string, referenceId: str
       character.canonicalReferenceId = reference.id;
       character.status = "locked";
       syncCharacterBibleReferences(draft);
+      refreshScenePrompts(draft);
       return draft;
     })
   ).book;
@@ -1388,7 +2316,7 @@ export async function renderSceneImage(sceneId: string) {
       }
 
       const { prompt, manifest } = buildScenePrompt(draft, scene);
-      const resolvedReferences = await loadReferenceInputs(draft, manifest.characterReferenceIds);
+      const resolvedReferences = await loadReferenceInputs(draft, manifest.visualAnchorReferenceIds);
 
       const image = await generateImageBuffer({
         prompt,

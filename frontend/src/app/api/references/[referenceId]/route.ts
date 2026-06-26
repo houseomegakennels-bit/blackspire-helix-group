@@ -20,6 +20,13 @@ export async function PATCH(
       approved?: boolean;
       characterIds?: string[];
       sceneIds?: string[];
+      chapterIds?: string[];
+      sourceReferenceId?: string | null;
+      derivationKind?: "none" | "storyboard_crop_upscale";
+      derivationStatus?: "provisional" | "approved" | "rejected";
+      confidence?: number | null;
+      label?: string | null;
+      crop?: { x: number; y: number; width: number; height: number } | null;
       notes?: string;
     };
     const book = await updateReference(referenceId, body);

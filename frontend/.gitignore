@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+data/book-studio/
 
 # debug
 npm-debug.log*

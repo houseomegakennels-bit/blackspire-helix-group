@@ -23,7 +23,11 @@ function assetUrl(book: HydratedBook, assetId: string | null) {
 }
 
 function characterReferences(book: HydratedBook, character: CharacterBible) {
-  return book.references.filter((reference) => reference.characterIds.includes(character.id));
+  return book.references.filter(
+    (reference) =>
+      reference.characterIds.includes(character.id) &&
+      (reference.role === "character_reference" || reference.role === "canonical_candidate"),
+  );
 }
 
 function chapterScenes(book: HydratedBook, chapterId: string) {
@@ -61,6 +65,33 @@ function manualReferenceNotes(notes: string) {
     .filter((line) => !line.trim().startsWith("[auto-match:"))
     .join("\n")
     .trim();
+}
+
+function isStoryboardSource(reference: ReferenceRecord) {
+  return reference.role === "scene_reference" && !reference.sourceReferenceId && reference.derivationKind === "none";
+}
+
+function isStoryboardDerived(reference: ReferenceRecord) {
+  return reference.derivationKind === "storyboard_crop_upscale";
+}
+
+function referenceTitle(reference: ReferenceRecord) {
+  return reference.label || reference.id;
+}
+
+function sceneVisualReferences(book: HydratedBook, scene: SceneRecord, role: "scene_reference" | "mood_reference") {
+  return book.references.filter((reference) => {
+    if (reference.role !== role || !reference.approved) return false;
+    if (reference.sceneIds.includes(scene.id)) return true;
+    if (reference.chapterIds.includes(scene.chapterId)) return true;
+    return role === "mood_reference" && !reference.sceneIds.length && !reference.chapterIds.length;
+  });
+}
+
+function referenceApprovalLabel(reference: ReferenceRecord) {
+  if (reference.role === "scene_reference") return reference.approved ? "Remove scene visual anchor" : "Approve as scene visual anchor";
+  if (reference.role === "mood_reference") return reference.approved ? "Remove mood/world anchor" : "Approve as mood/world anchor";
+  return reference.approved ? "Remove from character bible use" : "Approve for character bible use";
 }
 
 export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }) {
@@ -127,6 +158,76 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
     setStatus("References imported.");
   }
 
+  async function importCharacterBible(formData: FormData) {
+    const characterBible = formData.get("characterBible");
+    if (!(characterBible instanceof File) || characterBible.size === 0) {
+      setStatus("Choose a character bible file first.");
+      return;
+    }
+
+    setStatus("Importing character bible...");
+    const targetResponse = await fetch("/api/books/upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: characterBible.name,
+        mimeType: characterBible.type,
+        kind: "character_bible_document",
+        bookId: book.id,
+      }),
+    });
+    const target = (await targetResponse.json().catch(() => ({ ok: false }))) as {
+      ok: boolean;
+      error?: string;
+      direct?: boolean;
+      signedUrl?: string;
+      assetId?: string;
+      relativePath?: string;
+      fileName?: string;
+      mimeType?: string;
+    };
+    if (!target.ok) {
+      setStatus(target.error || "Could not start the character bible upload.");
+      return;
+    }
+
+    let response: Response;
+    if (target.direct && target.signedUrl) {
+      const put = await fetch(target.signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": characterBible.type || "application/octet-stream", "x-upsert": "true" },
+        body: characterBible,
+      });
+      if (!put.ok) {
+        setStatus("Character bible upload failed while sending the file.");
+        return;
+      }
+
+      response = await fetch(`/api/books/${book.id}/character-bible-import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assetId: target.assetId,
+          relativePath: target.relativePath,
+          fileName: target.fileName,
+          mimeType: target.mimeType,
+        }),
+      });
+    } else {
+      const body = new FormData();
+      body.append("characterBible", characterBible);
+      response = await fetch(`/api/books/${book.id}/character-bible-import`, { method: "POST", body });
+    }
+
+    const payload = (await response.json()) as { ok: boolean; error?: string; book?: HydratedBook };
+    if (!payload.ok || !payload.book) {
+      setStatus(payload.error || "Character bible import failed.");
+      return;
+    }
+    syncBook(payload.book);
+    setStatus("Character bible imported.");
+  }
+
   async function patchCharacter(characterId: string, patch: Record<string, unknown>) {
     await callJson(`/api/characters/${characterId}`, {
       method: "PATCH",
@@ -149,6 +250,102 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
 
     router.push("/studio/books");
     router.refresh();
+  }
+
+  async function extractStoryboardCandidates(referenceId: string) {
+    await callJson(`/api/references/${referenceId}/extract-character-candidates`, {
+      method: "POST",
+    });
+  }
+
+  function renderCharacterReferenceCard(character: CharacterBible, reference: ReferenceRecord) {
+    return (
+      <div
+        key={reference.id}
+        className="overflow-hidden rounded-[22px] border border-[var(--line)] bg-black/25 text-left transition hover:border-[var(--line-strong)]"
+      >
+        <div className="relative h-[180px] w-full">
+          <Image
+            src={assetUrl(book, reference.assetId) || ""}
+            alt={`${character.name} reference`}
+            fill
+            unoptimized
+            className="object-cover"
+          />
+        </div>
+        <div className="space-y-3 p-3">
+          <div className="text-sm font-semibold text-white">{referenceTitle(reference)}</div>
+          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[var(--copy-soft)]">
+            <span>{reference.source}</span>
+            <span>{reference.approved ? "Bible reference" : "Not in bible yet"}</span>
+            {isStoryboardDerived(reference) ? <span>Storyboard-derived</span> : null}
+            {isStoryboardDerived(reference) ? <span>{reference.derivationStatus}</span> : null}
+            {typeof reference.confidence === "number" ? <span>{Math.round(reference.confidence * 100)}% match</span> : null}
+            {reference.id === character.canonicalReferenceId ? <span>Canonical</span> : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                startTransition(() =>
+                  void callJson(`/api/characters/${character.id}/approve-canonical-look`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ referenceId: reference.id }),
+                  }),
+                );
+              }}
+              className="rounded-full border border-[var(--line)] px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[var(--gold-soft)]"
+            >
+              {reference.id === character.canonicalReferenceId ? "Canonical look" : "Set canonical"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                startTransition(() =>
+                  void callJson(`/api/references/${reference.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      approved: !reference.approved,
+                      derivationStatus:
+                        isStoryboardDerived(reference) && !reference.approved
+                          ? "approved"
+                          : reference.derivationStatus,
+                      characterIds: uniqueStrings([...reference.characterIds, character.id]),
+                    }),
+                  }),
+                );
+              }}
+              className="rounded-full border border-[var(--line)] px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-soft)]"
+            >
+              {reference.approved ? "Remove from bible" : "Approve for bible use"}
+            </button>
+            {isStoryboardDerived(reference) ? (
+              <button
+                type="button"
+                onClick={() => {
+                  startTransition(() =>
+                    void callJson(`/api/references/${reference.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        approved: false,
+                        derivationStatus: "rejected",
+                        characterIds: uniqueStrings([...reference.characterIds, character.id]),
+                      }),
+                    }),
+                  );
+                }}
+                className="rounded-full border border-[var(--line)] px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-soft)]"
+              >
+                Reject
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const firstKeyScene = [...book.scenes]
@@ -319,43 +516,73 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
               </div>
             </div>
 
-            <form
-              action={async (formData) => {
-                await importReferences(formData);
-              }}
-              className="brand-panel space-y-4 p-6"
-            >
-              <div>
-                <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-soft)]">Reference Library</p>
-                <h2 className="brand-display mt-3 text-3xl text-white">Bring in images you made while writing</h2>
-                <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                  Upload standalone images, `.docx` files with embedded art and notes, or a ZIP any time. The studio will pull images plus nearby descriptions, then auto-match filenames, captions, and aliases to character bibles.
-                </p>
-              </div>
+            <div className="space-y-4">
+              <form
+                action={async (formData) => {
+                  await importCharacterBible(formData);
+                }}
+                className="brand-panel space-y-4 p-6"
+              >
+                <div>
+                  <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-soft)]">Character Bible</p>
+                  <h2 className="brand-display mt-3 text-3xl text-white">Import the continuity source doc</h2>
+                  <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                    Upload the dedicated character bible `.docx` to pull embedded portraits, figure captions, and text-only continuity notes into the right character cards.
+                  </p>
+                </div>
 
-              <label className="block">
-                <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">Reference files</span>
-                <input
-                  type="file"
-                  name="references"
-                  multiple
-                  accept="image/*,.docx"
-                  className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-[var(--copy-soft)]"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">ZIP</span>
-                <input
-                  type="file"
-                  name="referenceZip"
-                  accept=".zip"
-                  className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-[var(--copy-soft)]"
-                />
-              </label>
-              <button type="submit" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                Import reference assets
-              </button>
-            </form>
+                <label className="block">
+                  <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">Character bible file</span>
+                  <input
+                    type="file"
+                    name="characterBible"
+                    accept=".docx"
+                    className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-[var(--copy-soft)]"
+                  />
+                </label>
+                <button type="submit" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  Import character bible
+                </button>
+              </form>
+
+              <form
+                action={async (formData) => {
+                  await importReferences(formData);
+                }}
+                className="brand-panel space-y-4 p-6"
+              >
+                <div>
+                  <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-soft)]">Reference Library</p>
+                  <h2 className="brand-display mt-3 text-3xl text-white">Bring in extra images you made while writing</h2>
+                  <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
+                    Upload standalone images, `.docx` files with embedded art and notes, or a ZIP any time. The studio will pull images plus nearby descriptions, then auto-match filenames, captions, and aliases to character bibles.
+                  </p>
+                </div>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">Reference files</span>
+                  <input
+                    type="file"
+                    name="references"
+                    multiple
+                    accept="image/*,.docx"
+                    className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-[var(--copy-soft)]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">ZIP</span>
+                  <input
+                    type="file"
+                    name="referenceZip"
+                    accept=".zip"
+                    className="w-full rounded-2xl border border-[var(--line)] bg-black/30 px-4 py-3 text-sm text-[var(--copy-soft)]"
+                  />
+                </label>
+                <button type="submit" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
+                  Import reference assets
+                </button>
+              </form>
+            </div>
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
@@ -639,6 +866,45 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                             </label>
                           </div>
 
+                          {(() => {
+                            const sceneAnchors = sceneVisualReferences(book, scene, "scene_reference");
+                            const moodAnchors = sceneVisualReferences(book, scene, "mood_reference");
+                            const totalAnchors = sceneAnchors.length + moodAnchors.length;
+                            return (
+                              <div className="rounded-[24px] border border-[var(--line)] bg-black/20 p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs uppercase tracking-[0.2em] text-[var(--gold-soft)]">Visual anchor manifest</p>
+                                    <p className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
+                                      {totalAnchors
+                                        ? `${sceneAnchors.length} scene anchor(s) and ${moodAnchors.length} mood/world anchor(s) will be sent into image generation.`
+                                        : "No approved scene anchors yet. Link and approve scene or mood references in the Reference Library to guide this render."}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveTab("references")}
+                                    className="rounded-full border border-[var(--line)] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)]"
+                                  >
+                                    Manage anchors
+                                  </button>
+                                </div>
+                                {totalAnchors ? (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {[...sceneAnchors, ...moodAnchors].map((reference) => (
+                                      <span
+                                        key={`${scene.id}-${reference.id}`}
+                                        className="rounded-full border border-[var(--line)] px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-[var(--copy-muted)]"
+                                      >
+                                        {reference.role === "scene_reference" ? "Scene" : "Mood"}: {referenceTitle(reference)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
+
                           <div className="grid gap-3 md:grid-cols-2">
                             <button
                               type="button"
@@ -714,6 +980,21 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
             {book.characters.map((character) => {
               const references = characterReferences(book, character);
               const canonical = references.find((reference) => reference.id === character.canonicalReferenceId);
+              const groupedReferences = {
+                canonical: references.filter((reference) => reference.id === character.canonicalReferenceId),
+                approved: references.filter(
+                  (reference) => reference.id !== character.canonicalReferenceId && reference.approved && !isStoryboardDerived(reference),
+                ),
+                storyboard: references.filter(
+                  (reference) => reference.id !== character.canonicalReferenceId && isStoryboardDerived(reference),
+                ),
+                other: references.filter(
+                  (reference) =>
+                    reference.id !== character.canonicalReferenceId &&
+                    !reference.approved &&
+                    !isStoryboardDerived(reference),
+                ),
+              };
               return (
                 <div key={character.id} className="brand-card space-y-4 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -888,70 +1169,29 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                     <div className="text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)]">
                       Character bible references: approved images below will be reused for portrait and scene generation.
                     </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {references.length ? references.map((reference) => (
-                        <div
-                          key={reference.id}
-                          className="overflow-hidden rounded-[22px] border border-[var(--line)] bg-black/25 text-left transition hover:border-[var(--line-strong)]"
-                        >
-                          <div className="relative h-[180px] w-full">
-                            <Image
-                              src={assetUrl(book, reference.assetId) || ""}
-                              alt={`${character.name} reference`}
-                              fill
-                              unoptimized
-                              className="object-cover"
-                            />
-                          </div>
-                          <div className="space-y-3 p-3">
-                            <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[var(--copy-soft)]">
-                              <span>{reference.source}</span>
-                              <span>{reference.approved ? "Bible reference" : "Not in bible yet"}</span>
-                              {reference.id === character.canonicalReferenceId ? <span>Canonical</span> : null}
+                    {references.length ? (
+                      <div className="space-y-5">
+                        {[
+                          { title: "Canonical", items: groupedReferences.canonical },
+                          { title: "Approved Bible References", items: groupedReferences.approved },
+                          { title: "Storyboard-Derived Candidates", items: groupedReferences.storyboard },
+                          { title: "Other Linked References", items: groupedReferences.other },
+                        ]
+                          .filter((group) => group.items.length > 0)
+                          .map((group) => (
+                            <div key={group.title} className="space-y-3">
+                              <div className="text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">{group.title}</div>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {group.items.map((reference) => renderCharacterReferenceCard(character, reference))}
+                              </div>
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  startTransition(() =>
-                                    void callJson(`/api/characters/${character.id}/approve-canonical-look`, {
-                                      method: "PATCH",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ referenceId: reference.id }),
-                                    }),
-                                  );
-                                }}
-                                className="rounded-full border border-[var(--line)] px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[var(--gold-soft)]"
-                              >
-                                {reference.id === character.canonicalReferenceId ? "Canonical look" : "Set canonical"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  startTransition(() =>
-                                    void callJson(`/api/references/${reference.id}`, {
-                                      method: "PATCH",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({
-                                        approved: !reference.approved,
-                                        characterIds: uniqueStrings([...reference.characterIds, character.id]),
-                                      }),
-                                    }),
-                                  );
-                                }}
-                                className="rounded-full border border-[var(--line)] px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-soft)]"
-                              >
-                                {reference.approved ? "Remove from bible" : "Use in bible"}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )) : (
+                          ))}
+                      </div>
+                    ) : (
                         <div className="rounded-[22px] border border-dashed border-[var(--line)] px-4 py-8 text-sm text-[var(--copy-muted)]">
                           No character-linked references yet. Link uploads to this character, then approve the ones the bible should use.
                         </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </div>
               );
@@ -983,17 +1223,35 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                 <div className="relative h-[220px] w-full overflow-hidden rounded-[20px]">
                   <Image
                     src={assetUrl(book, reference.assetId) || ""}
-                    alt={reference.id}
+                    alt={referenceTitle(reference)}
                     fill
                     unoptimized
                     className="object-cover"
                   />
                 </div>
                 <div className="space-y-3">
+                  <div className="text-sm font-semibold text-white">{referenceTitle(reference)}</div>
                   <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">
                     <span>{reference.source}</span>
                     <span>{reference.approved ? "approved" : "not approved"}</span>
+                    {reference.role === "scene_reference" && reference.approved ? <span>Scene visual anchor</span> : null}
+                    {reference.role === "mood_reference" && reference.approved ? <span>Mood/world anchor</span> : null}
+                    {isStoryboardSource(reference) ? <span>Storyboard Source</span> : null}
+                    {isStoryboardDerived(reference) ? <span>Storyboard-derived</span> : null}
+                    {isStoryboardDerived(reference) ? <span>{reference.derivationStatus}</span> : null}
+                    {typeof reference.confidence === "number" ? <span>{Math.round(reference.confidence * 100)}% confidence</span> : null}
                   </div>
+                  {isStoryboardSource(reference) ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startTransition(() => void extractStoryboardCandidates(reference.id));
+                      }}
+                      className="rounded-full border border-[var(--line)] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)]"
+                    >
+                      {book.references.some((candidate) => candidate.sourceReferenceId === reference.id) ? "Re-run character crop extraction" : "Extract character crops"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {
@@ -1001,14 +1259,35 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                         void callJson(`/api/references/${reference.id}`, {
                           method: "PATCH",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ approved: !reference.approved }),
+                          body: JSON.stringify({
+                            approved: !reference.approved,
+                            derivationStatus:
+                              isStoryboardDerived(reference) && !reference.approved ? "approved" : reference.derivationStatus,
+                          }),
                         }),
                       );
                     }}
                     className="rounded-full border border-[var(--line)] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)]"
                   >
-                    {reference.approved ? "Remove from character bible use" : "Approve for character bible use"}
+                    {referenceApprovalLabel(reference)}
                   </button>
+                  {isStoryboardDerived(reference) ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startTransition(() =>
+                          void callJson(`/api/references/${reference.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ approved: false, derivationStatus: "rejected" }),
+                          }),
+                        );
+                      }}
+                      className="rounded-full border border-[var(--line)] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[var(--copy-soft)]"
+                    >
+                      Reject derived crop
+                    </button>
+                  ) : null}
                   <select
                     defaultValue={reference.role}
                     className="w-full rounded-2xl border border-[var(--line)] bg-black/25 px-4 py-3 text-sm text-[var(--copy-soft)]"
@@ -1070,6 +1349,45 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                       </option>
                     ))}
                   </select>
+
+                  <select
+                    defaultValue={reference.chapterIds[0] || ""}
+                    className="w-full rounded-2xl border border-[var(--line)] bg-black/25 px-4 py-3 text-sm text-[var(--copy-soft)]"
+                    onChange={(event) => {
+                      startTransition(() =>
+                        void callJson(`/api/references/${reference.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ chapterIds: event.currentTarget.value ? [event.currentTarget.value] : [] }),
+                        }),
+                      );
+                    }}
+                  >
+                    <option value="">No chapter linked</option>
+                    {book.chapters.map((chapter) => (
+                      <option key={chapter.id} value={chapter.id}>
+                        {chapter.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label className="block">
+                    <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">Label</span>
+                    <input
+                      defaultValue={reference.label || ""}
+                      className="w-full rounded-2xl border border-[var(--line)] bg-black/25 px-4 py-3 text-sm text-[var(--copy-soft)]"
+                      onBlur={(event) => {
+                        if (event.currentTarget.value === (reference.label || "")) return;
+                        startTransition(() =>
+                          void callJson(`/api/references/${reference.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ label: event.currentTarget.value || null }),
+                          }),
+                        );
+                      }}
+                    />
+                  </label>
 
                   <label className="block">
                     <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">Notes</span>
