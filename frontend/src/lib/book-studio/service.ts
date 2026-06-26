@@ -21,6 +21,7 @@ import {
 import {
   createId,
   createSignedUploadTarget,
+  deleteAssetFile,
   deleteBookRecord,
   getAssetUrl,
   getBookById,
@@ -1617,6 +1618,7 @@ async function importCharacterBibleDocument(
     mimeType: string;
     buffer: Buffer;
     existingAsset?: AssetRecord;
+    skipSourceAsset?: boolean;
   },
 ) {
   const parsed = await parseCharacterBibleDocx(input.fileName, input.buffer);
@@ -1632,19 +1634,21 @@ async function importCharacterBibleDocument(
 
       const sourceAsset =
         input.existingAsset ??
-        (await writeAssetBuffer(
-          bookId,
-          "character_bible_document",
-          input.fileName,
-          input.mimeType || "application/octet-stream",
-          input.buffer,
-          {
-            sourceDocument: input.fileName,
-            documentRole: "character_bible",
-          },
-        ));
+        (input.skipSourceAsset
+          ? null
+          : await writeAssetBuffer(
+              bookId,
+              "character_bible_document",
+              input.fileName,
+              input.mimeType || "application/octet-stream",
+              input.buffer,
+              {
+                sourceDocument: input.fileName,
+                documentRole: "character_bible",
+              },
+            ));
 
-      if (!draft.assets.some((asset) => asset.id === sourceAsset.id)) {
+      if (sourceAsset && !draft.assets.some((asset) => asset.id === sourceAsset.id)) {
         draft.assets.push(sourceAsset);
       }
 
@@ -1785,7 +1789,7 @@ async function importCharacterBibleDocument(
 export async function createBookAssetUploadTarget(
   fileName: string,
   mimeType: string,
-  kind: "manuscript" | "character_bible_document" = "manuscript",
+  kind: "manuscript" | "character_bible_document" | "character_bible_chunk" = "manuscript",
   bookId = createId("book"),
 ) {
   if (!fileName) {
@@ -1851,9 +1855,40 @@ export async function importCharacterBibleFromStorageRef(
     relativePath: string;
     fileName: string;
     mimeType: string;
+    chunks?: Array<{ relativePath: string; assetId?: string }>;
   },
 ) {
-  if (!bookId || !input?.assetId || !input.relativePath || !input.fileName) {
+  if (!bookId || !input?.fileName || (!input.relativePath && !input.chunks?.length)) {
+    throw new Error("Incomplete character bible upload reference. Please re-upload the file.");
+  }
+
+  if (input.chunks?.length) {
+    const buffers = await Promise.all(input.chunks.map((chunk) => readAssetBuffer(chunk.relativePath)));
+    const buffer = Buffer.concat(buffers);
+    const book = await importCharacterBibleDocument(bookId, {
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      buffer,
+      skipSourceAsset: true,
+    });
+
+    await Promise.all(
+      input.chunks.map((chunk) =>
+        deleteAssetFile({
+          id: chunk.assetId ?? chunk.relativePath,
+          kind: "character_bible_document",
+          label: path.basename(chunk.relativePath),
+          mimeType: input.mimeType || "application/octet-stream",
+          relativePath: chunk.relativePath,
+          createdAt: nowIso(),
+        }).catch(() => undefined),
+      ),
+    );
+
+    return book;
+  }
+
+  if (!input.assetId || !input.relativePath) {
     throw new Error("Incomplete character bible upload reference. Please re-upload the file.");
   }
 

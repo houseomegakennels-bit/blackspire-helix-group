@@ -976,7 +976,7 @@ export async function writeAssetBuffer(
  * limit. Returns null when remote storage is not configured (local dev), so
  * callers can fall back to the in-request formData upload path.
  */
-export async function createSignedUploadTarget(bookId: string, kind: AssetKind, fileName: string) {
+export async function createSignedUploadTarget(bookId: string, kind: AssetKind | "character_bible_chunk", fileName: string) {
   const assetId = createId("asset");
   const safeName = (fileName || "manuscript").replace(/[^a-zA-Z0-9._-]+/g, "-");
   const relativePath = path.join(bookId, kind, `${assetId}-${safeName}`).replace(/\\/g, "/");

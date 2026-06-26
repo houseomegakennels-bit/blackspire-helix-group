@@ -13,6 +13,9 @@ type HydratedBook = Omit<BookRecord, "assets"> & { assets: HydratedAsset[] };
 const TABS = ["overview", "scenes", "characters", "references", "queue", "publish"] as const;
 type TabId = (typeof TABS)[number];
 
+const LARGE_UPLOAD_THRESHOLD_BYTES = 45 * 1024 * 1024;
+const CHARACTER_BIBLE_CHUNK_BYTES = 8 * 1024 * 1024;
+
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -111,6 +114,92 @@ async function uploadToSignedStorageUrl(signedUrl: string, file: File) {
   });
 }
 
+async function createCharacterBibleUploadTarget(
+  bookId: string,
+  fileName: string,
+  mimeType: string,
+  kind: "character_bible_document" | "character_bible_chunk",
+) {
+  const targetResponse = await fetch("/api/books/upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName, mimeType, kind, bookId }),
+  });
+  return (await targetResponse.json().catch(() => ({ ok: false }))) as {
+    ok: boolean;
+    error?: string;
+    direct?: boolean;
+    signedUrl?: string;
+    assetId?: string;
+    relativePath?: string;
+    fileName?: string;
+    mimeType?: string;
+  };
+}
+
+async function uploadCharacterBibleToStorage(
+  bookId: string,
+  characterBible: File,
+  setStatus: (status: string) => void,
+) {
+  if (characterBible.size <= LARGE_UPLOAD_THRESHOLD_BYTES) {
+    const target = await createCharacterBibleUploadTarget(
+      bookId,
+      characterBible.name,
+      characterBible.type || "application/octet-stream",
+      "character_bible_document",
+    );
+    if (!target.ok) throw new Error(target.error || "Could not start the character bible upload.");
+    if (!target.direct || !target.signedUrl) return null;
+
+    const put = await uploadToSignedStorageUrl(target.signedUrl, characterBible);
+    if (!put.ok) {
+      const detail = await put.text().catch(() => "");
+      throw new Error(`Character bible upload failed while sending the file${detail ? `: ${detail.slice(0, 180)}` : "."}`);
+    }
+
+    return {
+      assetId: target.assetId,
+      relativePath: target.relativePath,
+      fileName: target.fileName,
+      mimeType: target.mimeType,
+    };
+  }
+
+  const chunks: Array<{ assetId?: string; relativePath: string }> = [];
+  const totalChunks = Math.ceil(characterBible.size / CHARACTER_BIBLE_CHUNK_BYTES);
+
+  for (let index = 0; index < totalChunks; index += 1) {
+    setStatus(`Uploading character bible chunk ${index + 1} of ${totalChunks}...`);
+    const start = index * CHARACTER_BIBLE_CHUNK_BYTES;
+    const end = Math.min(characterBible.size, start + CHARACTER_BIBLE_CHUNK_BYTES);
+    const chunk = characterBible.slice(start, end, characterBible.type || "application/octet-stream");
+    const chunkFile = new File([chunk], `${characterBible.name}.part-${String(index + 1).padStart(4, "0")}`, {
+      type: characterBible.type || "application/octet-stream",
+    });
+    const target = await createCharacterBibleUploadTarget(bookId, chunkFile.name, chunkFile.type, "character_bible_chunk");
+    if (!target.ok || !target.direct || !target.signedUrl || !target.relativePath) {
+      throw new Error(target.error || "Could not start a character bible chunk upload.");
+    }
+
+    const put = await uploadToSignedStorageUrl(target.signedUrl, chunkFile);
+    if (!put.ok) {
+      const detail = await put.text().catch(() => "");
+      throw new Error(`Character bible chunk ${index + 1} failed${detail ? `: ${detail.slice(0, 180)}` : "."}`);
+    }
+
+    chunks.push({ assetId: target.assetId, relativePath: target.relativePath });
+  }
+
+  return {
+    assetId: `chunked-${Date.now()}`,
+    relativePath: "",
+    fileName: characterBible.name,
+    mimeType: characterBible.type || "application/octet-stream",
+    chunks,
+  };
+}
+
 export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }) {
   const router = useRouter();
   const [book, setBook] = useState(initialBook);
@@ -182,55 +271,25 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
       return;
     }
 
-    setStatus("Importing character bible...");
-    const targetResponse = await fetch("/api/books/upload-url", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fileName: characterBible.name,
-        mimeType: characterBible.type,
-        kind: "character_bible_document",
-        bookId: book.id,
-      }),
-    });
-    const target = (await targetResponse.json().catch(() => ({ ok: false }))) as {
-      ok: boolean;
-      error?: string;
-      direct?: boolean;
-      signedUrl?: string;
-      assetId?: string;
-      relativePath?: string;
-      fileName?: string;
-      mimeType?: string;
-    };
-    if (!target.ok) {
-      setStatus(target.error || "Could not start the character bible upload.");
-      return;
-    }
-
     let response: Response;
-    if (target.direct && target.signedUrl) {
-      const put = await uploadToSignedStorageUrl(target.signedUrl, characterBible);
-      if (!put.ok) {
-        const detail = await put.text().catch(() => "");
-        setStatus(`Character bible upload failed while sending the file${detail ? `: ${detail.slice(0, 180)}` : "."}`);
-        return;
+    try {
+      setStatus("Importing character bible...");
+      const target = await uploadCharacterBibleToStorage(book.id, characterBible, setStatus);
+      if (target) {
+        setStatus("Processing character bible...");
+        response = await fetch(`/api/books/${book.id}/character-bible-import`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(target),
+        });
+      } else {
+        const body = new FormData();
+        body.append("characterBible", characterBible);
+        response = await fetch(`/api/books/${book.id}/character-bible-import`, { method: "POST", body });
       }
-
-      response = await fetch(`/api/books/${book.id}/character-bible-import`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          assetId: target.assetId,
-          relativePath: target.relativePath,
-          fileName: target.fileName,
-          mimeType: target.mimeType,
-        }),
-      });
-    } else {
-      const body = new FormData();
-      body.append("characterBible", characterBible);
-      response = await fetch(`/api/books/${book.id}/character-bible-import`, { method: "POST", body });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Character bible upload failed.");
+      return;
     }
 
     const payload = (await response.json()) as { ok: boolean; error?: string; book?: HydratedBook };

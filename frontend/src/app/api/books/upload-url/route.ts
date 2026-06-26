@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const { fileName, mimeType, kind, bookId } = (await request.json()) as {
       fileName?: string;
       mimeType?: string;
-      kind?: "manuscript" | "character_bible_document";
+      kind?: "manuscript" | "character_bible_document" | "character_bible_chunk";
       bookId?: string;
     };
     const target = await createBookAssetUploadTarget(fileName ?? "", mimeType ?? "", kind ?? "manuscript", bookId);
