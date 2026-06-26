@@ -102,7 +102,9 @@ async function uploadRemoteBytes(
   bytes: Blob | Buffer | string,
   contentType: string,
 ) {
-  const { error } = await supabase.storage.from(BOOK_STUDIO_BUCKET).upload(remotePath, bytes, {
+  const uploadBody = Buffer.isBuffer(bytes) ? new Uint8Array(bytes) : bytes;
+
+  const { error } = await supabase.storage.from(BOOK_STUDIO_BUCKET).upload(remotePath, uploadBody, {
     contentType,
     upsert: true,
   });
