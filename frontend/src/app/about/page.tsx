@@ -199,9 +199,9 @@ export default function AboutPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2">
+        <section className="grid gap-4 md:grid-cols-2 scroll-reveal">
           {companyOutcomes.map((outcome) => (
-            <article key={outcome.label} className="brand-panel px-6 py-8">
+            <article key={outcome.label} className="brand-panel card-lift px-6 py-8">
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">{outcome.label}</p>
               <h2 className="brand-display mt-3 text-3xl text-white">{outcome.value}</h2>
               <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">{outcome.detail}</p>
@@ -263,7 +263,7 @@ export default function AboutPage() {
         </section>
 
         <section className="brand-panel px-6 py-8 lg:px-10">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Why this company exists</p>
               <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">The founder story becomes the operating standard</h2>
@@ -273,9 +273,9 @@ export default function AboutPage() {
             </Link>
           </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          <div className="scroll-reveal mt-6 grid gap-4 lg:grid-cols-3" style={{ animationDelay: "0.1s" }}>
             {founderTimeline.map((step) => (
-              <article key={step.id} className="brand-card p-5">
+              <article key={step.id} className="brand-card card-lift p-5">
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] uppercase tracking-[0.24em] text-[var(--gold)]">{step.id}</span>
                   <div className="signal-bar h-px flex-1" />

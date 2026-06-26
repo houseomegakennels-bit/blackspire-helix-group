@@ -37,23 +37,23 @@ export function NexusShell({ children }: { children: ReactNode }) {
     >
       <DivisionWatermark logoSrc={brandAssets.nexus.logo} />
       <div className="relative z-10 mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-5">
-        <aside className="brand-panel sticky top-3 h-fit overflow-hidden p-5">
+        <aside className="brand-panel h-fit overflow-hidden p-5 lg:sticky lg:top-3">
           <div className="pointer-events-none absolute inset-x-8 top-0 h-36 rounded-b-[42px] bg-[radial-gradient(circle_at_top,hsl(265_88%_64%/.16),transparent_74%)]" />
           <div className="relative border-b border-[var(--line)] pb-5">
             <div className="mb-4 overflow-hidden rounded-[24px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(0_0%_2%/.96))] px-3 py-4">
-              <div className="relative mx-auto h-[172px] w-full max-w-[218px]">
+              <div className="relative mx-auto h-[110px] w-full max-w-[140px] sm:h-[172px] sm:max-w-[218px]">
                 <Image
                   src={brandAssets.nexus.logo}
                   alt={brandAssets.nexus.name}
                   fill
                   priority
                   className="object-contain"
-                  sizes="218px"
+                  sizes="(max-width: 640px) 140px, 218px"
                 />
               </div>
             </div>
             <p className="text-[10px] uppercase tracking-[0.48em] text-[var(--gold-soft)]">Blackspire Helix Group</p>
-            <h1 className="brand-display mt-3 text-3xl text-white">Blackspire Nexus</h1>
+            <h1 className="brand-display mt-3 text-2xl text-white sm:text-3xl">Blackspire Nexus</h1>
             <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
               Connecting properties to people through skip trace, contact intelligence, confidence scoring, and clean handoff into Deal Engine.
             </p>
@@ -62,7 +62,7 @@ export function NexusShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <nav className="mt-5 space-y-2">
+          <nav className="mt-5 hidden space-y-2 lg:block">
             {navItems.map((item) => (
               <Link
                 key={item.href}
@@ -73,7 +73,9 @@ export function NexusShell({ children }: { children: ReactNode }) {
               </Link>
             ))}
           </nav>
-          <RealEstateWorkflowRail active="nexus" compact />
+          <div className="hidden lg:block">
+            <RealEstateWorkflowRail active="nexus" compact />
+          </div>
         </aside>
         <section className="min-w-0 space-y-5">{children}</section>
       </div>

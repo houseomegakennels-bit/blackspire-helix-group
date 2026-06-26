@@ -6,16 +6,21 @@
   --panel: hsl(0 0% 5%);
   --panel-strong: hsl(20 22% 7%);
   --panel-soft: hsl(24 18% 9%);
-  --line: hsl(31 100% 50% / 0.2);
-  --line-strong: hsl(33 100% 58% / 0.45);
+  --line: hsl(31 100% 50% / 0.22);
+  --line-strong: hsl(33 100% 58% / 0.52);
   --gold: hsl(33 100% 56%);
   --gold-strong: hsl(28 100% 50%);
-  --gold-soft: hsl(40 96% 79%);
+  --gold-soft: hsl(40 96% 82%);
   --copy-soft: hsl(220 10% 72%);
   --copy-muted: hsl(220 6% 52%);
   --success: hsl(39 100% 62%);
   --warn: hsl(32 100% 52%);
   --danger: hsl(18 100% 56%);
+  /* Mesh gradient anchors — used for layered atmospheric depth */
+  --mesh-a: hsl(32 100% 32% / 0.24);
+  --mesh-b: hsl(215 92% 60% / 0.16);
+  --mesh-c: hsl(0 0% 100% / 0.03);
+  --bloom: hsl(33 100% 56% / 0.2);
 }
 
 /* ── DIVISION THEME CLASSES ──────────────────────────────────────────────
@@ -172,9 +177,9 @@ html {
 
 body {
   background:
-    radial-gradient(circle at 15% 12%, hsl(32 100% 32% / 0.18), transparent 26%),
-    radial-gradient(circle at 82% 14%, hsl(215 92% 60% / 0.12), transparent 24%),
-    radial-gradient(circle at bottom, hsl(30 100% 28% / 0.18), transparent 24%),
+    radial-gradient(circle at 15% 12%, hsl(32 100% 32% / 0.24), transparent 28%),
+    radial-gradient(circle at 82% 14%, hsl(215 92% 60% / 0.15), transparent 26%),
+    radial-gradient(circle at 50% 100%, hsl(30 100% 28% / 0.22), transparent 28%),
     linear-gradient(180deg, hsl(0 0% 1%) 0%, hsl(220 20% 2%) 24%, hsl(0 0% 3%) 55%, hsl(18 28% 4%) 100%);
   color: var(--foreground);
   font-family: var(--font-body), Arial, Helvetica, sans-serif;
@@ -223,10 +228,11 @@ body::after {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% -10%, hsl(38 100% 68% / 0.12), transparent 24%),
-    linear-gradient(120deg, transparent 0%, hsl(31 100% 60% / 0.04) 45%, transparent 70%);
+    radial-gradient(circle at 50% -10%, hsl(38 100% 68% / 0.18), transparent 26%),
+    radial-gradient(circle at 50% 105%, hsl(28 100% 42% / 0.12), transparent 28%),
+    linear-gradient(120deg, transparent 0%, hsl(31 100% 60% / 0.05) 45%, transparent 70%);
   mix-blend-mode: screen;
-  opacity: 0.8;
+  opacity: 0.88;
 }
 
 .brand-panel {
@@ -480,9 +486,10 @@ body::after {
   background:
     linear-gradient(180deg, hsl(0 0% 6% / 0.97), hsl(24 18% 9% / 0.97)),
     radial-gradient(circle at top right, var(--project-surface), transparent 58%),
-    radial-gradient(circle at bottom left, hsl(0 0% 100% / 0.02), transparent 42%);
+    radial-gradient(circle at bottom left, hsl(0 0% 100% / 0.04), transparent 42%),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--project-accent) 6%, transparent), transparent 64%);
   box-shadow:
-    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 60%, transparent),
+    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 72%, transparent),
     inset 0 1px 0 hsl(32 100% 76% / 0.05),
     0 16px 34px hsl(0 0% 0% / 0.42),
     0 0 0 1px hsl(0 0% 100% / 0.02);
@@ -565,14 +572,20 @@ body::after {
 
 /* Per-division accent hover — each card glows in its own branch color */
 .project-card:hover {
-  transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--project-accent, #d4af37) 62%, var(--line));
+  transform: translateY(-5px) perspective(900px) rotate3d(1, 0.08, 0, -1.2deg);
+  border-color: color-mix(in srgb, var(--project-accent, #d4af37) 68%, var(--line));
   box-shadow:
-    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 85%, transparent),
-    inset 0 1px 0 hsl(32 100% 76% / 0.08),
-    0 28px 74px hsl(0 0% 0% / 0.6),
-    0 0 0 1px color-mix(in srgb, var(--project-accent, #d4af37) 28%, transparent),
-    0 0 46px color-mix(in srgb, var(--project-accent, #d4af37) 22%, transparent);
+    inset 0 2px 0 color-mix(in srgb, var(--project-accent, #d4af37) 92%, transparent),
+    inset 0 1px 0 hsl(32 100% 76% / 0.1),
+    0 32px 80px hsl(0 0% 0% / 0.64),
+    0 0 0 1px color-mix(in srgb, var(--project-accent, #d4af37) 36%, transparent),
+    0 0 62px color-mix(in srgb, var(--project-accent, #d4af37) 30%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-card:hover {
+    transform: translateY(-2px);
+  }
 }
 
 .division-logo-showcase {
@@ -1489,9 +1502,11 @@ body::after {
   gap: 0.8rem;
   padding: 0.7rem 1.1rem;
   border-radius: 999px;
-  border: 1px solid hsl(206 78% 66% / 0.24);
+  border: 1px solid hsl(206 78% 66% / 0.32);
   background: linear-gradient(180deg, hsl(226 22% 8% / 0.92), hsl(220 24% 10% / 0.94));
-  box-shadow: inset 0 1px 0 hsl(202 90% 80% / 0.07);
+  box-shadow:
+    inset 0 1px 0 hsl(202 90% 80% / 0.08),
+    0 0 22px hsl(206 78% 66% / 0.08);
 }
 
 .luxury-badge-dot {
@@ -1499,14 +1514,14 @@ body::after {
   height: 0.55rem;
   border-radius: 999px;
   background: hsl(196 100% 72%);
-  box-shadow: 0 0 18px hsl(196 100% 72% / 0.62);
+  box-shadow: 0 0 24px hsl(196 100% 72% / 0.78);
   animation: beaconPulse 1.8s ease-in-out infinite;
 }
 
 .luxury-kicker {
   color: var(--gold-soft);
   font-size: 11px;
-  letter-spacing: 0.34em;
+  letter-spacing: 0.38em;
   text-transform: uppercase;
 }
 
@@ -1517,14 +1532,15 @@ body::after {
 }
 
 .luxury-hero-title {
-  font-size: clamp(3.7rem, 7vw, 7rem);
-  line-height: 0.92;
+  font-size: clamp(4rem, 7.5vw, 8rem);
+  line-height: 0.88;
+  letter-spacing: -0.01em;
 }
 
 .luxury-hero-subtitle {
   max-width: 48rem;
-  font-size: 1.08rem;
-  line-height: 2.05rem;
+  font-size: 1.1rem;
+  line-height: 2.1rem;
 }
 
 .luxury-hero-cta {
@@ -1544,10 +1560,11 @@ body::after {
   overflow: hidden;
   padding: 1.1rem 1.15rem 1rem;
   border-radius: 22px;
-  border: 1px solid hsl(206 78% 66% / 0.16);
+  border: 1px solid hsl(206 78% 66% / 0.22);
   background:
     linear-gradient(180deg, hsl(228 26% 7% / 0.95), hsl(220 18% 9% / 0.95)),
-    radial-gradient(circle at top right, hsl(204 84% 64% / 0.08), transparent 52%);
+    radial-gradient(circle at top right, hsl(204 84% 64% / 0.12), transparent 52%);
+  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.32);
 }
 
 .luxury-metric-card::before {
@@ -1569,9 +1586,10 @@ body::after {
 
 .luxury-metric-value {
   font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(2rem, 4vw, 3.2rem);
-  line-height: 1;
+  font-size: clamp(2.1rem, 4.2vw, 3.5rem);
+  line-height: 0.96;
   color: white;
+  letter-spacing: -0.01em;
 }
 
 .luxury-metric-label {
@@ -1585,14 +1603,15 @@ body::after {
   position: relative;
   min-height: 620px;
   border-radius: 34px;
-  border: 1px solid hsl(206 78% 66% / 0.22);
+  border: 1px solid hsl(206 78% 66% / 0.28);
   background:
     linear-gradient(180deg, hsl(226 24% 6% / 0.96), hsl(220 26% 5% / 0.98)),
-    radial-gradient(circle at top, hsl(208 84% 56% / 0.12), transparent 58%),
-    radial-gradient(circle at bottom, hsl(190 92% 54% / 0.08), transparent 50%);
+    radial-gradient(circle at top, hsl(208 84% 56% / 0.16), transparent 58%),
+    radial-gradient(circle at bottom, hsl(190 92% 54% / 0.12), transparent 50%);
   box-shadow:
-    inset 0 1px 0 hsl(202 90% 80% / 0.05),
-    0 38px 120px hsl(228 48% 2% / 0.58);
+    inset 0 1px 0 hsl(202 90% 80% / 0.08),
+    0 48px 140px hsl(228 48% 2% / 0.72),
+    0 0 0 1px hsl(0 0% 100% / 0.015);
   overflow: hidden;
   transform-style: preserve-3d;
 }
@@ -1627,30 +1646,30 @@ body::after {
 .luxury-stage-aurora {
   border-radius: 999px;
   filter: blur(28px);
-  opacity: 0.74;
+  opacity: 0.86;
   animation: driftField 11s ease-in-out infinite;
 }
 
 .luxury-stage-aurora-a {
   inset: 8% auto auto 6%;
-  width: 220px;
-  height: 220px;
-  background: radial-gradient(circle, hsl(206 86% 60% / 0.24), transparent 68%);
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, hsl(206 86% 60% / 0.32), transparent 68%);
 }
 
 .luxury-stage-aurora-b {
   inset: auto 8% 14% auto;
-  width: 260px;
-  height: 260px;
-  background: radial-gradient(circle, hsl(188 100% 66% / 0.18), transparent 70%);
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, hsl(188 100% 66% / 0.26), transparent 70%);
   animation-delay: -3s;
 }
 
 .luxury-stage-aurora-c {
   inset: 42% auto auto 36%;
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, hsl(0 0% 100% / 0.12), transparent 70%);
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, hsl(0 0% 100% / 0.16), transparent 70%);
   animation-delay: -5s;
 }
 
@@ -1675,7 +1694,7 @@ body::after {
 }
 
 .luxury-stage-ring {
-  border: 1px solid hsl(202 84% 72% / 0.16);
+  border: 1px solid hsl(202 84% 72% / 0.22);
 }
 
 .luxury-stage-ring-a {
@@ -1687,22 +1706,22 @@ body::after {
 .luxury-stage-ring-b {
   width: 72%;
   height: 72%;
-  border-color: hsl(188 100% 74% / 0.22);
+  border-color: hsl(188 100% 74% / 0.30);
   animation: orbitSpinReverse 16s linear infinite;
 }
 
 .luxury-stage-ring-c {
   width: 46%;
   height: 46%;
-  border-color: hsl(207 88% 80% / 0.24);
+  border-color: hsl(207 88% 80% / 0.32);
   animation: orbitSpin 10s linear infinite;
 }
 
 .luxury-stage-pulse {
   width: 18%;
   height: 18%;
-  background: radial-gradient(circle, hsl(196 100% 78% / 0.86), hsl(208 84% 56% / 0.3) 44%, transparent 72%);
-  box-shadow: 0 0 36px hsl(196 100% 70% / 0.3);
+  background: radial-gradient(circle, hsl(196 100% 78% / 0.92), hsl(208 84% 56% / 0.38) 44%, transparent 72%);
+  box-shadow: 0 0 52px hsl(196 100% 70% / 0.46);
   animation: beaconPulse 2.6s ease-in-out infinite;
 }
 
@@ -1793,23 +1812,33 @@ body::after {
   top: var(--node-y);
   display: grid;
   gap: 0.28rem;
-  min-width: 140px;
-  padding: 0.9rem 1rem;
+  min-width: 148px;
+  padding: 0.95rem 1.05rem;
   border-radius: 18px;
-  border: 1px solid hsl(0 0% 100% / 0.08);
-  background: linear-gradient(180deg, hsl(220 18% 9% / 0.88), hsl(0 0% 6% / 0.92));
-  box-shadow: 0 18px 30px hsl(0 0% 0% / 0.3);
+  border: 1px solid hsl(0 0% 100% / 0.12);
+  background: linear-gradient(180deg, hsl(220 18% 9% / 0.92), hsl(0 0% 6% / 0.96));
+  box-shadow:
+    0 22px 44px hsl(0 0% 0% / 0.42),
+    inset 0 1px 0 hsl(0 0% 100% / 0.04);
   transform: translate(-50%, -50%);
   animation: floatNode 7s ease-in-out infinite;
   animation-delay: var(--node-delay);
 }
 
 .luxury-stage-node-gold {
-  border-color: hsl(204 88% 68% / 0.24);
+  border-color: hsl(204 88% 68% / 0.32);
+  box-shadow:
+    0 22px 44px hsl(0 0% 0% / 0.42),
+    0 0 28px hsl(204 88% 68% / 0.12),
+    inset 0 1px 0 hsl(204 88% 80% / 0.06);
 }
 
 .luxury-stage-node-silver {
-  border-color: hsl(188 88% 72% / 0.2);
+  border-color: hsl(188 88% 72% / 0.28);
+  box-shadow:
+    0 22px 44px hsl(0 0% 0% / 0.42),
+    0 0 24px hsl(188 88% 72% / 0.10),
+    inset 0 1px 0 hsl(188 88% 80% / 0.05);
 }
 
 .luxury-stage-node-label {
@@ -1821,7 +1850,9 @@ body::after {
 
 .luxury-stage-node-value {
   color: white;
-  font-size: 1.45rem;
+  font-size: 1.62rem;
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 600;
 }
 
 .luxury-stage-rail {
@@ -1902,8 +1933,9 @@ body::after {
 
 .luxury-section-heading h2 {
   font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(2.4rem, 4vw, 4rem);
-  line-height: 0.95;
+  font-size: clamp(2.6rem, 4.5vw, 4.8rem);
+  line-height: 0.92;
+  letter-spacing: -0.01em;
   color: white;
   margin: 0;
 }
@@ -2135,6 +2167,100 @@ body::after {
     translate: none;
     scale: none;
   }
+}
+
+/* ── Header entrance sweep ── */
+@keyframes headerSweepIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.luxury-header-inner {
+  animation: headerSweepIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .luxury-header-inner { animation: none; }
+}
+
+/* ── Scroll-triggered view-timeline reveals (progressive enhancement) ──
+   Falls back gracefully: elements without scroll-timeline just appear
+   immediately because the animation never fires in older browsers. */
+@supports (animation-timeline: view()) {
+  .scroll-reveal {
+    animation: revealUp 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 38%;
+  }
+
+  .scroll-reveal-left {
+    animation: revealLeft 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 38%;
+  }
+
+  .scroll-reveal-scale {
+    animation: revealScale 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 38%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scroll-reveal,
+    .scroll-reveal-left,
+    .scroll-reveal-scale {
+      animation: none;
+      opacity: 1;
+    }
+  }
+}
+
+/* ── Scroll-driven watermark parallax (progressive enhancement) ── */
+@supports (animation-timeline: scroll()) {
+  @keyframes watermarkParallax {
+    from { transform: translateY(0) scale(1); }
+    to   { transform: translateY(-12%) scale(1.06); }
+  }
+  @keyframes watermarkParallaxDivision {
+    from { transform: scale(1.04) translateY(0); }
+    to   { transform: scale(1.09) translateY(-6%); }
+  }
+
+  .luxury-watermark-img {
+    will-change: transform;
+    animation: watermarkParallax linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0% 100%;
+  }
+
+  .luxury-watermark-division .luxury-watermark-img {
+    animation: watermarkParallaxDivision linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0% 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .luxury-watermark-img,
+    .luxury-watermark-division .luxury-watermark-img {
+      animation: none;
+      will-change: auto;
+    }
+  }
+}
+
+/* ── Card lift / 3D tilt hover (Batch 4) ── */
+.card-lift {
+  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-4px) perspective(700px) rotate3d(1, 0.1, 0, -1.5deg);
+  border-color: var(--line-strong);
+  box-shadow:
+    0 24px 52px hsl(0 0% 0% / 0.44),
+    0 0 28px hsl(31 100% 50% / 0.08);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-lift, .card-lift:hover { transform: none; transition: none; }
 }
 
 /* Seller Engine */
@@ -2579,6 +2705,14 @@ body::after {
   .division-logo-stage {
     min-height: 190px;
   }
+
+  .brand-table-shell {
+    overflow-x: auto;
+  }
+
+  .division-hero {
+    min-height: auto;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2617,6 +2751,25 @@ body::after {
 
   .division-logo-stage::before {
     inset: 12px;
+  }
+
+  .brand-panel { border-radius: 20px; }
+  .brand-card { border-radius: 16px; }
+  .seller-panel { border-radius: 20px; }
+  .seller-card { border-radius: 14px; }
+}
+
+@media (max-width: 480px) {
+  .luxury-stage-node {
+    display: none;
+  }
+
+  .luxury-stage {
+    min-height: 360px;
+  }
+
+  .luxury-stage-plate {
+    min-width: 180px;
   }
 }
 

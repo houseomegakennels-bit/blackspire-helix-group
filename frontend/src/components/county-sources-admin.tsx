@@ -94,7 +94,7 @@ export function CountySourcesAdmin({
         ) : null}
 
         <div className="brand-table-shell">
-          <table className="w-full border-collapse text-left text-sm">
+          <table className="w-full min-w-[740px] border-collapse text-left text-sm">
             <thead className="brand-table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">County / State</th>

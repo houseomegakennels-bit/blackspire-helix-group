@@ -757,7 +757,7 @@ export function BuyerReportsMonitor({
         description="Every CSV action now writes an exports record to Supabase so operators have a recoverable trail instead of clipboard-only work."
       >
         <div className="brand-table-shell">
-          <table className="w-full border-collapse text-left text-sm">
+          <table className="w-full min-w-[560px] border-collapse text-left text-sm">
             <thead className="brand-table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">File</th>
@@ -856,7 +856,7 @@ export function BuyerReportsMonitor({
           </div>
         ) : null}
         <div className="brand-table-shell">
-          <table className="w-full border-collapse text-left text-sm">
+          <table className="w-full min-w-[820px] border-collapse text-left text-sm">
             <thead className="brand-table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">Buyer</th>

@@ -60,25 +60,25 @@ const proofSignals = [
 export default function Home() {
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1500px] px-4 py-8 lg:px-6 lg:py-10">
-        <div className="space-y-8">
-          <section className="brand-panel px-6 py-8 lg:px-8 lg:py-10">
+      <div className="mx-auto max-w-[1500px] px-3 py-6 sm:px-4 sm:py-8 lg:px-6 lg:py-10">
+        <div className="space-y-6 sm:space-y-8">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
             <div className="grid gap-8 xl:grid-cols-[0.92fr_1.08fr] xl:items-center">
               <div className="space-y-7">
                 <div className="space-y-4">
-                  <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold-soft)]">
+                  <p className="reveal-up text-xs uppercase tracking-[0.36em] text-[var(--gold-soft)]" style={{ animationDelay: "0.05s" }}>
                     BLACKSPIRE HELIX GROUP
                   </p>
-                  <h1 className="brand-display brand-accent-text text-4xl leading-tight text-white sm:text-5xl lg:text-6xl">
+                  <h1 className="reveal-up brand-display brand-accent-text text-3xl leading-tight text-white sm:text-4xl md:text-5xl lg:text-6xl" style={{ animationDelay: "0.12s" }}>
                     Organized AI systems for serious operators.
                   </h1>
-                  <p className="max-w-3xl text-base leading-8 text-[var(--copy-soft)]">
+                  <p className="reveal-up max-w-3xl text-base leading-8 text-[var(--copy-soft)]" style={{ animationDelay: "0.22s" }}>
                     {parentBrand.description} The operating map is simple: parent company strategy,
                     real estate intelligence, live workspaces, product divisions, and company access.
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
+                <div className="reveal-up flex flex-wrap gap-3" style={{ animationDelay: "0.32s" }}>
                   <Link href="/workspaces" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                     Open workspace directory
                   </Link>
@@ -90,9 +90,9 @@ export default function Home() {
                   </Link>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {commandMetrics.map((metric) => (
-                    <div key={metric.label} className="brand-card p-4">
+                <div className="scroll-reveal grid gap-3 sm:grid-cols-3" style={{ animationDelay: "0.08s" }}>
+                  {commandMetrics.map((metric, i) => (
+                    <div key={metric.label} className="brand-card card-lift p-4" style={{ animationDelay: `${i * 0.07}s` }}>
                       <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">{metric.label}</div>
                       <div className="brand-display mt-2 text-3xl text-white">{metric.value}</div>
                     </div>
@@ -103,9 +103,9 @@ export default function Home() {
               <LuxuryHeroStage />
             </div>
 
-            <div className="mt-8 grid gap-4 lg:grid-cols-2">
-              {proofSignals.map((signal) => (
-                <div key={signal.label} className="brand-card p-5">
+            <div className="scroll-reveal mt-8 grid gap-4 lg:grid-cols-2">
+              {proofSignals.map((signal, i) => (
+                <div key={signal.label} className="brand-card card-lift p-5" style={{ animationDelay: `${i * 0.1}s` }}>
                   <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">{signal.label}</div>
                   <div className="brand-display mt-3 text-2xl text-white lg:text-3xl">{signal.value}</div>
                   <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">{signal.detail}</p>
@@ -114,8 +114,8 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
-            <div className="flex flex-wrap items-end justify-between gap-4">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+            <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Operating thesis</p>
                 <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">
@@ -127,12 +127,13 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {operatingLanes.map((lane) => (
+            <div className="scroll-reveal mt-6 grid gap-4 lg:grid-cols-3" style={{ animationDelay: "0.1s" }}>
+              {operatingLanes.map((lane, i) => (
                 <Link
                   key={lane.id}
                   href={lane.href}
-                  className="brand-card block p-5 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]"
+                  className="brand-card card-lift block p-5"
+                  style={{ animationDelay: `${i * 0.08}s` }}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">{lane.id}</span>
@@ -145,8 +146,8 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
-            <div className="flex flex-wrap items-end justify-between gap-4">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+            <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Real estate operating chain</p>
                 <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">
@@ -158,7 +159,7 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="mt-6 grid gap-3 lg:grid-cols-4">
+            <div className="scroll-reveal mt-6 grid gap-3 lg:grid-cols-4" style={{ animationDelay: "0.1s" }}>
               {realEstatePipeline.map((stage, index) => (
                 <Link
                   key={stage}
@@ -171,7 +172,8 @@ export default function Home() {
                           ? "/workspace/deal-engine"
                           : "/workspace/buyer-engine"
                   }
-                  className="brand-card block p-5 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]"
+                  className="brand-card card-lift block p-5"
+                  style={{ animationDelay: `${index * 0.07}s` }}
                 >
                   <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">
                     Step {String(index + 1).padStart(2, "0")}
@@ -191,8 +193,8 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
-            <div className="flex flex-wrap items-end justify-between gap-4">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+            <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Operator workspaces</p>
                 <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">
@@ -204,9 +206,9 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {featuredWorkspaces.map((entry) => (
-                <Link key={entry.href} href={entry.href} className="brand-card block p-5 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]">
+            <div className="scroll-reveal mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4" style={{ animationDelay: "0.1s" }}>
+              {featuredWorkspaces.map((entry, i) => (
+                <Link key={entry.href} href={entry.href} className="brand-card card-lift block p-5" style={{ animationDelay: `${i * 0.07}s` }}>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">{entry.division}</span>
                     <span className="rounded-full border border-[var(--line)] px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-[var(--gold-soft)]">
@@ -220,8 +222,8 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
-            <div className="flex flex-wrap items-end justify-between gap-4">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+            <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Division portfolio</p>
                 <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">
@@ -233,21 +235,23 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            <div className="scroll-reveal mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3" style={{ animationDelay: "0.1s" }}>
               {ecosystemProjects.slice(0, 6).map((project) => (
                 <EcosystemCard key={project.slug} project={project} />
               ))}
             </div>
           </section>
 
-          <section className="brand-panel px-6 py-8 lg:px-8">
-            <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Build lanes</p>
-            <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">
-              What Blackspire Helix Group builds.
-            </h2>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <section className="brand-panel px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+            <div className="scroll-reveal">
+              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Build lanes</p>
+              <h2 className="brand-display mt-3 text-3xl text-white lg:text-4xl">
+                What Blackspire Helix Group builds.
+              </h2>
+            </div>
+            <div className="scroll-reveal mt-6 grid gap-4 md:grid-cols-2" style={{ animationDelay: "0.1s" }}>
               {serviceLines.map((service, index) => (
-                <div key={service} className="brand-card p-5">
+                <div key={service} className="brand-card card-lift p-5" style={{ animationDelay: `${index * 0.05}s` }}>
                   <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">
                     Lane {String(index + 1).padStart(2, "0")}
                   </div>

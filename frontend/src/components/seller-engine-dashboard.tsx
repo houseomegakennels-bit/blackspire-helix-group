@@ -586,7 +586,7 @@ export function SellerEngineDashboard({
         <div className="relative grid gap-7 xl:grid-cols-[1.2fr_0.8fr]">
           <div>
             <p className="text-xs uppercase tracking-[0.44em] text-[var(--seller-silver)]">Motivated seller intelligence</p>
-            <h2 className="brand-display mt-4 max-w-4xl text-5xl leading-[0.98] text-white lg:text-7xl">
+            <h2 className="brand-display mt-4 max-w-4xl text-4xl leading-[0.98] text-white sm:text-5xl lg:text-7xl">
               Find the pressure.
               <br />
               <span className="seller-accent-text">Qualify the seller.</span>
@@ -1121,7 +1121,7 @@ export function SellerEngineDashboard({
               <button type="button" className="seller-button py-2" onClick={() => void probeSourceHealth()}>Run source health checks</button>
             </div>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {[
               ["Sources", sourceMetrics.total],
               ["Active", sourceMetrics.active],
