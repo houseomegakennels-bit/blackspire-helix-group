@@ -7,6 +7,18 @@ import { useState, useTransition } from "react";
 import { BookStudioStage } from "@/components/book-studio/book-studio-stage";
 import type { BookListItem } from "@/lib/book-studio/types";
 
+async function uploadToSignedStorageUrl(signedUrl: string, file: File) {
+  const body = new FormData();
+  body.append("cacheControl", "3600");
+  body.append("", file);
+
+  return fetch(signedUrl, {
+    method: "PUT",
+    headers: { "x-upsert": "true" },
+    body,
+  });
+}
+
 export function BookStudioIndex({ books }: { books: BookListItem[] }) {
   const router = useRouter();
   const [status, setStatus] = useState<string>("");
@@ -59,13 +71,10 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
 
     let response: Response;
     if (target.direct && target.signedUrl) {
-      const put = await fetch(target.signedUrl, {
-        method: "PUT",
-        headers: { "Content-Type": characterBible.type || "application/octet-stream", "x-upsert": "true" },
-        body: characterBible,
-      });
+      const put = await uploadToSignedStorageUrl(target.signedUrl, characterBible);
       if (!put.ok) {
-        setStatus("Character bible upload failed while sending the file.");
+        const detail = await put.text().catch(() => "");
+        setStatus(`Character bible upload failed while sending the file${detail ? `: ${detail.slice(0, 180)}` : "."}`);
         return false;
       }
 
@@ -123,13 +132,10 @@ export function BookStudioIndex({ books }: { books: BookListItem[] }) {
 
       if (target.direct && target.signedUrl) {
         setStatus("Uploading manuscript...");
-        const put = await fetch(target.signedUrl, {
-          method: "PUT",
-          headers: { "Content-Type": manuscript.type || "application/octet-stream", "x-upsert": "true" },
-          body: manuscript,
-        });
+        const put = await uploadToSignedStorageUrl(target.signedUrl, manuscript);
         if (!put.ok) {
-          setStatus("Upload failed while sending the file. Please check your connection and try again.");
+          const detail = await put.text().catch(() => "");
+          setStatus(`Upload failed while sending the file${detail ? `: ${detail.slice(0, 180)}` : ". Please check your connection and try again."}`);
           return;
         }
 

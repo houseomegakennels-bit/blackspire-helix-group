@@ -94,6 +94,18 @@ function referenceApprovalLabel(reference: ReferenceRecord) {
   return reference.approved ? "Remove from character bible use" : "Approve for character bible use";
 }
 
+async function uploadToSignedStorageUrl(signedUrl: string, file: File) {
+  const body = new FormData();
+  body.append("cacheControl", "3600");
+  body.append("", file);
+
+  return fetch(signedUrl, {
+    method: "PUT",
+    headers: { "x-upsert": "true" },
+    body,
+  });
+}
+
 export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }) {
   const router = useRouter();
   const [book, setBook] = useState(initialBook);
@@ -193,13 +205,10 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
 
     let response: Response;
     if (target.direct && target.signedUrl) {
-      const put = await fetch(target.signedUrl, {
-        method: "PUT",
-        headers: { "Content-Type": characterBible.type || "application/octet-stream", "x-upsert": "true" },
-        body: characterBible,
-      });
+      const put = await uploadToSignedStorageUrl(target.signedUrl, characterBible);
       if (!put.ok) {
-        setStatus("Character bible upload failed while sending the file.");
+        const detail = await put.text().catch(() => "");
+        setStatus(`Character bible upload failed while sending the file${detail ? `: ${detail.slice(0, 180)}` : "."}`);
         return;
       }
 
