@@ -126,6 +126,11 @@ function characterMatchCandidates(character: Pick<CharacterBible, "name" | "alia
     .filter(Boolean);
 }
 
+function loosePhraseIncludes(haystack: string, candidate: string) {
+  if (!haystack || !candidate) return false;
+  return ` ${haystack} `.includes(` ${candidate} `);
+}
+
 function splitFallbackScenes(chapterId: string, chapterTitle: string, text: string, chapterOrder: number) {
   const paragraphs = text
     .split(/\n\s*\n/)
@@ -157,7 +162,7 @@ function splitFallbackScenes(chapterId: string, chapterTitle: string, text: stri
 
   for (const paragraph of paragraphs) {
     chunk.push(paragraph);
-    if (chunk.join(" ").length > 1100 || chunk.length >= 3) {
+    if (chunk.join(" ").length > 1800) {
       flush();
     }
   }
@@ -179,29 +184,84 @@ function splitFallbackScenes(chapterId: string, chapterTitle: string, text: stri
 }
 
 function extractFallbackCharacters(text: string) {
-  const matches = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g) ?? [];
-  const blocked = new Set([
+  const matches = text.match(/\b[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g) ?? [];
+  const blocked = new Set(
+    [
     "Chapter",
+    "Chapter One",
+    "Chapter Two",
+    "Chapter Three",
+    "Chapter Four",
+    "Chapter Five",
+    "Chapter Six",
+    "Chapter Seven",
+    "Chapter Eight",
+    "Chapter Nine",
+    "Chapter Ten",
+    "Chapter Eleven",
     "Part",
     "The",
+    "The Boy",
+    "Who Stole",
     "And",
     "But",
     "When",
     "Then",
     "After",
     "Before",
+    "Above",
+    "Some",
+    "They",
+    "His",
+    "It",
+    "One",
+    "Someone",
+    "Something",
+    "Everyone",
+    "Every",
+    "He",
+    "Her",
+    "She",
+    "In",
+    "To",
+    "An",
+    "Or",
+    "No",
+    "Not",
+    "Down",
+    "That",
+    "Its",
+    "Power",
+    "Rain",
+    "Another",
+    "Friends",
+    "Neighbors",
+    "Millions",
+    "Cargo",
+    "Luxury",
+    "Military",
+    "Merchant",
+    "Disaster",
+    "Light",
+    "Neon",
     "Blackspire",
     "Principal",
     "Character",
     "Bible",
+    "Chronological Manuscript",
+    "Draft",
     "Working",
     "Edition",
     "Story",
     "Canon",
     "Canonical",
     "Universe",
-  ]);
-  return dedupeStrings(matches.filter((match) => !blocked.has(match))).slice(0, 10);
+    "Lower Geminara",
+    "Upper Geminara",
+    "Geminara",
+    ].map((value) => value.toLowerCase()),
+  );
+  return dedupeStrings(matches.filter((match) => !blocked.has(normalizeName(match).toLowerCase()))).slice(0, 10);
 }
 
 function createCharacterBibleCard(
@@ -281,6 +341,25 @@ function shouldPreserveCharacterBible(character: CharacterBible) {
       character.continuityNotes ||
       character.voiceAssignment,
   );
+}
+
+function isLikelyFalseCharacterName(name: string) {
+  const normalized = normalizeName(name).toLowerCase();
+  if (!normalized) return true;
+  if (["kael", "nyx", "orin", "commander solen", "the first rememberer", "ancient luxari elder"].includes(normalized)) {
+    return false;
+  }
+  if (
+    /^(chapter|part|draft|manuscript|chronological manuscript|the boy|the boy who|who stole|stole light|light|some|they|his|it|one|two|three|someone|something|everyone|every|he|her|she|in|to|an|as|or|no|not|down|that|its|power|rain|another|friends|neighbors|millions|cargo|luxury|military|merchant|disaster|neon|above|lower geminara|upper geminara|geminara|people|thousands|morning|because|except|even|most|only|for)$/i.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+  if (/^(in|at|if|across|as|only|for|between|except|because|even|most|the|another)\s+/i.test(normalized)) return true;
+  if (/\b(upper geminara|lower geminara|geminara)\b/i.test(normalized)) return true;
+  if (/\bkael$/i.test(normalized) && normalized !== "kael") return true;
+  return /\b(chapter|draft|manuscript|edition|working|script)\b/i.test(normalized);
 }
 
 function mergeCharacterBibles(existingCharacters: CharacterBible[], analyzedCharacters: CharacterBible[]) {
@@ -469,9 +548,7 @@ function mentionedCharactersFromReferenceText(book: BookRecord, reference: Refer
   return book.characters.filter((character) =>
     characterMatchCandidates(character).some((candidate) => {
       if (!candidate) return false;
-      if (haystack.includes(candidate)) return true;
-      const words = candidate.split(" ").filter(Boolean);
-      return words.length > 1 && words.every((word) => haystack.includes(word));
+      return loosePhraseIncludes(haystack, candidate);
     }),
   );
 }
@@ -905,11 +982,7 @@ function extractKnownCharactersFromText(book: BookRecord, text: string) {
     .filter((character) =>
       characterMatchCandidates(character).some((candidate) => {
         if (!candidate) return false;
-        if (haystack.includes(candidate)) return true;
-        return candidate
-          .split(" ")
-          .filter(Boolean)
-          .every((word) => haystack.includes(word));
+        return loosePhraseIncludes(haystack, candidate);
       }),
     )
     .map((character) => character.id);
@@ -996,7 +1069,7 @@ function buildImportedCardsFromFigures(book: BookRecord, descriptions: Array<{ t
   return book.characters
     .map((character) => {
       const relevant = descriptions.filter((entry) =>
-        characterMatchCandidates(character).some((candidate) => normalizeLooseText(entry.description).includes(candidate)),
+        characterMatchCandidates(character).some((candidate) => loosePhraseIncludes(normalizeLooseText(entry.description), candidate)),
       );
       if (!relevant.length) return null;
       const mergedDescription = mergeTextFragments(relevant.map((entry) => [entry.title, entry.caption].filter(Boolean).join(". ")), 4);
@@ -1039,10 +1112,7 @@ function autoLinkReferencesToCharacters(book: BookRecord) {
     const matches = book.characters
       .map((character) => {
         const matchedTerm = characterMatchCandidates(character).find((candidate) => {
-          const words = candidate.split(" ").filter(Boolean);
-          if (!words.length) return false;
-          if (haystack.includes(candidate)) return true;
-          return words.every((word) => haystack.includes(word));
+          return loosePhraseIncludes(haystack, candidate);
         });
 
         return matchedTerm ? { characterId: character.id, characterName: character.name, matchedTerm } : null;
@@ -1506,7 +1576,18 @@ Return a compact scene list for production. Include only important recurring cha
       fallback: fallbackPayload,
     });
 
-    for (const character of payload.characters) {
+    const payloadSceneTexts = (payload.scenes ?? []).map((scene: { sourceText?: string; summary?: string }) => scene.sourceText || scene.summary || "");
+    const averageSceneLength =
+      payloadSceneTexts.length > 0
+        ? payloadSceneTexts.reduce((total: number, value: string) => total + value.length, 0) / payloadSceneTexts.length
+        : 0;
+    const scenePayload =
+      (payload.scenes ?? []).length > 12 || averageSceneLength < 350 ? fallbackPayload.scenes : (payload.scenes ?? fallbackPayload.scenes);
+    const characterPayload = (payload.characters ?? fallbackPayload.characters).filter(
+      (character: { name?: string }) => character.name && !isLikelyFalseCharacterName(character.name),
+    );
+
+    for (const character of characterPayload) {
       const key = normalizeName(character.name).toLowerCase();
       if (!key) continue;
       const existing = characterMap.get(key);
@@ -1528,7 +1609,7 @@ Return a compact scene list for production. Include only important recurring cha
       }
     }
 
-    payload.scenes.forEach((scene, index) => {
+    scenePayload.forEach((scene, index) => {
       const characterIds = dedupeStrings(scene.characters ?? [])
         .map((name) => characterMap.get(normalizeName(name).toLowerCase())?.id ?? null)
         .filter((value): value is string => Boolean(value));
@@ -1991,17 +2072,16 @@ export async function analyzeBook(bookId: string) {
   const book = await getBookById(bookId);
   if (!book) throw new Error("Book not found.");
 
-  const chapters = book.chapters.map((chapter) => ({
-    id: chapter.id,
-    title: chapter.title,
-    text:
-      book.manuscriptText
-        .split(/\n\s*\n/)
-        .filter(Boolean)
-        .slice((chapter.order - 1) * 6, chapter.order * 6)
-        .join("\n\n") || book.manuscriptText,
-    order: chapter.order,
-  }));
+  const reparsed = await parseManuscriptFromBuffer(`${book.slug || book.id}.txt`, Buffer.from(book.manuscriptText, "utf8"));
+  const chapters = book.chapters.map((chapter) => {
+    const parsedChapter = reparsed.chapters[chapter.order - 1];
+    return {
+      id: chapter.id,
+      title: parsedChapter?.title || chapter.title,
+      text: parsedChapter?.text || chapter.summary || book.manuscriptText,
+      order: chapter.order,
+    };
+  });
 
   const analyzed = await analyzeChapters(chapters, book.title);
   const explicitCharacterBibles = await extractExplicitCharacterBibles(book.manuscriptText, book.title);
@@ -2025,19 +2105,46 @@ export async function analyzeBook(bookId: string) {
     await mutateBookRecord(bookId, (draft) => {
       const { characters, characterIdMap } = mergeCharacterBibles(draft.characters, enrichedCharacters.characters);
       draft.characters = characters;
+      const falseCharacterIds = new Set(
+        draft.characters
+          .filter((character) => isLikelyFalseCharacterName(character.name) && !character.canonicalReferenceId)
+          .map((character) => character.id),
+      );
+      if (falseCharacterIds.size) {
+        draft.references = draft.references.map((reference) => ({
+          ...reference,
+          characterIds: reference.characterIds.filter((characterId) => !falseCharacterIds.has(characterId)),
+        }));
+        draft.characters = draft.characters.filter((character) => !falseCharacterIds.has(character.id));
+      }
       autoLinkReferencesToCharacters(draft);
       autoLinkReferencesToScenes(draft);
       syncCharacterBibleReferences(draft);
       draft.scenes = analyzed.scenes.map((scene) => {
+        const mappedCharacterIds = scene.characterIds.map((characterId) => characterIdMap.get(characterId) ?? characterId);
+        const knownCharacterIds = extractKnownCharactersFromText(draft, [scene.sourceText, scene.summary, scene.title].join("\n"));
         const nextScene = {
           ...scene,
-          characterIds: dedupeStrings(scene.characterIds.map((characterId) => characterIdMap.get(characterId) ?? characterId)),
+          characterIds: dedupeStrings(knownCharacterIds.length ? knownCharacterIds : mappedCharacterIds).filter((characterId) => {
+            const character = draft.characters.find((candidate) => candidate.id === characterId);
+            return character ? !isLikelyFalseCharacterName(character.name) : false;
+          }),
         };
         const { prompt, manifest } = buildScenePrompt(draft, nextScene);
         return { ...nextScene, imagePrompt: prompt, renderManifest: manifest };
       });
+      const usedCharacterIds = new Set(draft.scenes.flatMap((scene) => scene.characterIds));
+      const referencedCharacterIds = new Set(draft.references.flatMap((reference) => reference.characterIds));
+      draft.characters = draft.characters.filter((character) => {
+        if (!isLikelyFalseCharacterName(character.name)) return true;
+        if (usedCharacterIds.has(character.id)) return true;
+        if (referencedCharacterIds.has(character.id)) return true;
+        return Boolean(character.canonicalReferenceId || character.backupReferenceIds.length);
+      });
       draft.chapters = draft.chapters.map((chapter) => ({
         ...chapter,
+        title: reparsed.chapters[chapter.order - 1]?.title || chapter.title,
+        summary: reparsed.chapters[chapter.order - 1]?.text.slice(0, 240) || chapter.summary,
         sceneIds: chapterSceneMap.get(chapter.id) ?? [],
       }));
       return draft;
@@ -2468,7 +2575,7 @@ export async function renderSceneImage(sceneId: string) {
       const gate = canRenderScene(draft, scene);
       if (!gate.ok) {
         scene.imageStatus = "blocked";
-        return draft;
+        throw new Error(gate.reason);
       }
 
       const { prompt, manifest } = buildScenePrompt(draft, scene);
