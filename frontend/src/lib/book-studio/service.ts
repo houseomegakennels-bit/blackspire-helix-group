@@ -4,7 +4,6 @@ import AdmZip from "adm-zip";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import sharp from "sharp";
 
 import {
   parseCharacterBibleDocx,
@@ -53,6 +52,10 @@ import type {
 
 function bookStudioTempDir(...segments: string[]) {
   return path.join(os.tmpdir(), "blackspire-book-studio", ...segments);
+}
+
+async function getSharp() {
+  return (await import("sharp")).default;
 }
 
 const DEFAULT_STYLE = {
@@ -592,6 +595,7 @@ async function cropAndUpscaleStoryboardCandidate(
   buffer: Buffer,
   crop: { x: number; y: number; width: number; height: number },
 ) {
+  const sharp = await getSharp();
   return sharp(buffer)
     .extract({
       left: crop.x,
@@ -616,6 +620,7 @@ async function normalizeImportedReferenceImage(fileName: string, mimeType: strin
   }
 
   try {
+    const sharp = await getSharp();
     const image = sharp(buffer, { limitInputPixels: false }).rotate();
     const metadata = await image.metadata();
     const hasAlpha = Boolean(metadata.hasAlpha);
@@ -1409,6 +1414,7 @@ async function extractStoryboardDerivedReferences(draft: BookRecord, parentRefer
   );
 
   const sourceBuffer = await readAssetBuffer(parentAsset.relativePath);
+  const sharp = await getSharp();
   const imageInfo = await sharp(sourceBuffer).metadata();
   if (!imageInfo.width || !imageInfo.height) return;
 

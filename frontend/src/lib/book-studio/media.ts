@@ -4,8 +4,6 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import ffmpegPath from "ffmpeg-static";
-
 import { readAssetBuffer } from "@/lib/book-studio/store";
 import type { AssetRecord, VoiceName } from "@/lib/book-studio/types";
 
@@ -327,6 +325,8 @@ function splitTextForSpeech(text: string, limit = 3900) {
 }
 
 async function runFfmpeg(args: string[]) {
+  const ffmpegModule = await import("ffmpeg-static");
+  const ffmpegPath = ffmpegModule.default;
   const executable = typeof ffmpegPath === "string" ? ffmpegPath : null;
   if (!executable) {
     throw new Error("ffmpeg-static is unavailable in this environment.");
