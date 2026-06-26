@@ -2,6 +2,7 @@ import "server-only";
 
 import AdmZip from "adm-zip";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 
@@ -49,6 +50,10 @@ import type {
   SceneRecord,
   VoiceName,
 } from "@/lib/book-studio/types";
+
+function bookStudioTempDir(...segments: string[]) {
+  return path.join(os.tmpdir(), "blackspire-book-studio", ...segments);
+}
 
 const DEFAULT_STYLE = {
   visualDirection: "cinematic realism",
@@ -2614,7 +2619,7 @@ async function ensureSceneAudioAsset(draft: BookRecord, scene: SceneRecord) {
 
   const primaryCharacter = speakingCharacters[0];
   const voice = primaryCharacter?.voiceAssignment?.characterVoice || fallbackVoice();
-  const tempDir = path.join(process.cwd(), "data", "book-studio", "tmp");
+  const tempDir = bookStudioTempDir("audio");
   await mkdir(tempDir, { recursive: true });
   const tempPath = path.join(tempDir, `${scene.id}.wav`);
 
@@ -2686,7 +2691,7 @@ async function ensureChapterAudio(draft: BookRecord, chapterId: string) {
     if (existing) return existing;
   }
 
-  const tmpDir = path.join(process.cwd(), "data", "book-studio", "tmp");
+  const tmpDir = bookStudioTempDir("audio");
   await mkdir(tmpDir, { recursive: true });
   const targetPath = path.join(tmpDir, `${chapter.id}.wav`);
   await concatenateAudioAssets({ assets: sceneAssets, outputPath: targetPath });
@@ -2721,7 +2726,7 @@ export async function renderChapterVideo(chapterId: string) {
         .map(async (scene) => {
           const asset = draft.assets.find((candidate) => candidate.id === scene.imageAssetId);
           if (!asset) throw new Error(`Scene ${scene.title} is missing a rendered image.`);
-          const tmpDir = path.join(process.cwd(), "data", "book-studio", "tmp", "video-stage", chapter.id);
+          const tmpDir = bookStudioTempDir("video-stage", chapter.id);
           await mkdir(tmpDir, { recursive: true });
           const stagedPath = path.join(tmpDir, `${scene.id}${path.extname(asset.label || asset.relativePath) || ".png"}`);
           await writeFile(stagedPath, await readAssetBuffer(asset.relativePath));
@@ -2729,7 +2734,7 @@ export async function renderChapterVideo(chapterId: string) {
         });
       const stagedSceneAssets = await Promise.all(sceneAssets);
 
-      const tmpDir = path.join(process.cwd(), "data", "book-studio", "tmp");
+      const tmpDir = bookStudioTempDir("video");
       await mkdir(tmpDir, { recursive: true });
       const outputPath = path.join(tmpDir, `${chapter.id}.mp4`);
       const stagedAudioPath = path.join(tmpDir, `${chapter.id}.audio.wav`);

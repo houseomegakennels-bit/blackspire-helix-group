@@ -33,6 +33,22 @@ const CHARACTERS_TABLE = "book_studio_characters";
 const CHAPTERS_TABLE = "book_studio_chapters";
 const SCENES_TABLE = "book_studio_scenes";
 
+function getSupabaseUrl() {
+  return process.env.SUPABASE_URL?.trim() || process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "";
+}
+
+function getSupabaseServiceKey() {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+}
+
+function assertWritableLocalStoreAllowed() {
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Book Studio production storage is not configured. Set NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.",
+    );
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -50,6 +66,7 @@ export function slugify(value: string) {
 }
 
 async function ensureStoreFiles() {
+  assertWritableLocalStoreAllowed();
   await mkdir(ASSET_ROOT, { recursive: true });
   try {
     await stat(STORE_FILE);
@@ -60,12 +77,12 @@ async function ensureStoreFiles() {
 }
 
 function hasSupabaseStoreEnv() {
-  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+  return Boolean(getSupabaseUrl() && getSupabaseServiceKey());
 }
 
 function getSupabaseAdmin(): SupabaseClient {
-  const url = process.env.SUPABASE_URL?.trim();
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const url = getSupabaseUrl();
+  const key = getSupabaseServiceKey();
   if (!url || !key) {
     throw new Error("Missing Supabase server credentials for Book Studio.");
   }
