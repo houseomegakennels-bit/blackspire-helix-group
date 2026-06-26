@@ -140,7 +140,7 @@ export default function ServicesPage() {
         </section>
 
         <section className="brand-panel px-6 py-8 lg:px-10">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Decision support</p>
               <h2 className="brand-display mt-3 text-4xl text-white">Choose the right engagement lane faster</h2>
@@ -165,7 +165,7 @@ export default function ServicesPage() {
 
         {/* ── SERVICE LAYERS TIMELINE ───────────────────────────────── */}
         <section className="brand-panel px-6 py-10 lg:px-10">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Core service layers</p>
               <h2 className="brand-display mt-3 text-4xl text-white">The build architecture behind every Blackspire engagement</h2>
@@ -194,7 +194,7 @@ export default function ServicesPage() {
 
         {/* ── ENGAGEMENT MODES ──────────────────────────────────────── */}
         <section>
-          <div className="mb-6">
+          <div className="scroll-reveal mb-6">
             <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Engagement modes</p>
             <h2 className="brand-display mt-3 text-4xl text-white">How we work with you</h2>
           </div>
@@ -226,7 +226,7 @@ export default function ServicesPage() {
 
         {/* ── USE CASE MATRIX ───────────────────────────────────────── */}
         <section className="brand-panel px-6 py-10 lg:px-10">
-          <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div className="scroll-reveal mb-6 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Use-case matrix</p>
               <h2 className="brand-display mt-3 text-4xl text-white">What we make AI employees do</h2>
@@ -259,14 +259,14 @@ export default function ServicesPage() {
         </section>
 
         <section className="brand-panel px-6 py-10 lg:px-10">
-          <div className="mb-6">
+          <div className="scroll-reveal mb-6">
             <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Delivery sequence</p>
             <h2 className="brand-display mt-3 text-4xl text-white">How a Blackspire engagement actually moves</h2>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="scroll-reveal grid gap-4 lg:grid-cols-3" style={{ animationDelay: "0.1s" }}>
             {deliverySequence.map((step) => (
-              <article key={step.id} className="brand-card p-5">
+              <article key={step.id} className="brand-card card-lift p-5">
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] uppercase tracking-[0.28em] text-[var(--gold)]">{step.id}</span>
                   <div className="signal-bar h-px flex-1" />
@@ -283,7 +283,7 @@ export default function ServicesPage() {
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute left-1/2 top-0 h-60 w-60 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_92%_55%/.1),transparent_65%)] blur-3xl" />
           </div>
-          <div className="relative z-10 text-center max-w-3xl mx-auto">
+          <div className="scroll-reveal relative z-10 text-center max-w-3xl mx-auto">
             <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Ready to build</p>
             <h2 className="brand-display mt-3 text-4xl text-white lg:text-5xl">
               Tell us what needs to run better.

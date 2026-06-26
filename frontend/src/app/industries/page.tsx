@@ -92,7 +92,7 @@ export default function IndustriesPage() {
           <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Thesis pillars</p>
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             {thesisPillars.map((pillar, i) => (
-              <article key={pillar.number} className={`brand-panel relative overflow-hidden px-6 py-8 shine-card reveal-up stagger-${i + 1}`}>
+              <article key={pillar.number} className={`brand-panel card-lift relative overflow-hidden px-6 py-8 shine-card reveal-up stagger-${i + 1}`}>
                 <div className="pointer-events-none absolute right-4 top-3 ghost-number opacity-[0.06]">
                   {pillar.number}
                 </div>
@@ -110,7 +110,7 @@ export default function IndustriesPage() {
 
         {/* ── INDUSTRY GRID ─────────────────────────────────────────── */}
         <section>
-          <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div className="scroll-reveal mb-6 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Industry map</p>
               <h2 className="brand-display mt-3 text-4xl text-white">Where the operating model lands best</h2>
@@ -120,7 +120,7 @@ export default function IndustriesPage() {
             </Link>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="scroll-reveal grid gap-5 sm:grid-cols-2 lg:grid-cols-3" style={{ animationDelay: "0.1s" }}>
             {industries.map((industry, i) => {
               const accent = industryAccents[i % industryAccents.length];
               return (
@@ -146,7 +146,7 @@ export default function IndustriesPage() {
         {/* ── BOTTOM CTA ────────────────────────────────────────────── */}
         <section className="brand-panel relative overflow-hidden px-6 py-12 lg:px-10">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(38_92%_55%/.08),transparent_55%)]" />
-          <div className="relative z-10 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="scroll-reveal relative z-10 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Your industry is next</p>
               <h2 className="brand-display mt-3 text-4xl text-white lg:text-5xl">

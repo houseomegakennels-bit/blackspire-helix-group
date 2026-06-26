@@ -227,7 +227,7 @@ export default function ContactPage() {
             <section className="brand-panel px-6 py-8">
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Intake guide</p>
               <h2 className="brand-display mt-3 text-2xl text-white">What to bring to the first conversation</h2>
-              <div className="mt-5 space-y-3">
+              <div className="scroll-reveal mt-5 space-y-3">
                 {intakePrompts.map((prompt, index) => (
                   <article key={prompt} className={`brand-card p-4 reveal-up stagger-${index + 1}`}>
                     <div className="flex items-start gap-3">
@@ -243,8 +243,8 @@ export default function ContactPage() {
 
             <section className="brand-panel px-6 py-8">
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">Best-fit projects</p>
-              <div className="mt-4 space-y-3">
-                <div className="brand-card p-4">
+              <div className="scroll-reveal mt-4 space-y-3">
+                <div className="brand-card card-lift p-4">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--copy-muted)] mb-2">We build</p>
                   <p className="text-sm leading-7 text-[var(--copy-soft)]">
                     Lead capture systems, buyer intelligence, service-business intake, operator
@@ -252,7 +252,7 @@ export default function ContactPage() {
                     business leverage.
                   </p>
                 </div>
-                <div className="brand-card p-4">
+                <div className="brand-card card-lift p-4">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--copy-muted)] mb-2">Expected outcome</p>
                   <p className="text-sm leading-7 text-[var(--copy-soft)]">
                     A cleaner system, sharper automation logic, and a more convincing
@@ -276,9 +276,9 @@ export default function ContactPage() {
             <section className="brand-panel px-6 py-8">
               <p className="text-[10px] uppercase tracking-[0.42em] text-[var(--gold-soft)]">What happens next</p>
               <h2 className="brand-display mt-3 text-2xl text-white">A clearer response path after you reach out</h2>
-              <div className="mt-5 space-y-3">
+              <div className="scroll-reveal mt-5 space-y-3">
                 {responseSequence.map((step) => (
-                  <article key={step.id} className="brand-card p-4">
+                  <article key={step.id} className="brand-card card-lift p-4">
                     <div className="flex items-start gap-3">
                       <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--gold)]">
                         {step.id}
