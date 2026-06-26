@@ -860,7 +860,11 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                             <span className="rounded-full border border-[var(--line)] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-soft)]">
                               image {scene.imageStatus}
                             </span>
-                            <span className="rounded-full border border-[var(--line)] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-[var(--copy-soft)]">
+                            <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                              scene.audioStatus === "failed"
+                                ? "border-red-400/50 text-red-200"
+                                : "border-[var(--line)] text-[var(--copy-soft)]"
+                            }`}>
                               audio {scene.audioStatus}
                             </span>
                           </div>

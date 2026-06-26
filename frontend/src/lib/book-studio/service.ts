@@ -2618,26 +2618,37 @@ async function ensureSceneAudioAsset(draft: BookRecord, scene: SceneRecord) {
   await mkdir(tempDir, { recursive: true });
   const tempPath = path.join(tempDir, `${scene.id}.wav`);
 
-  const audio = await generateSpeechAudio({
-    text: scene.sourceText,
-    voice,
-    targetPath: tempPath,
-  });
+  try {
+    const audio = await generateSpeechAudio({
+      text: scene.sourceText,
+      voice,
+      targetPath: tempPath,
+    });
 
-  const asset = await writeAssetBuffer(
-    draft.id,
-    "scene_audio",
-    `${slugify(scene.title)}.${audio.extension}`,
-    audio.mimeType,
-    await readFile(tempPath),
-    { sceneId: scene.id, durationSeconds: audio.durationSeconds },
-  );
+    const asset = await writeAssetBuffer(
+      draft.id,
+      "scene_audio",
+      `${slugify(scene.title)}.${audio.extension}`,
+      audio.mimeType,
+      await readFile(tempPath),
+      { sceneId: scene.id, durationSeconds: audio.durationSeconds },
+    );
 
-  draft.assets.push(asset);
-  scene.audioAssetId = asset.id;
-  scene.audioStatus = "ready";
-  scene.estimatedDurationSeconds = audio.durationSeconds;
-  return asset;
+    draft.assets.push(asset);
+    scene.audioAssetId = asset.id;
+    scene.audioStatus = "ready";
+    scene.estimatedDurationSeconds = audio.durationSeconds;
+    return asset;
+  } catch (error) {
+    if (scene.audioAssetId) {
+      const previous = draft.assets.find((asset) => asset.id === scene.audioAssetId);
+      if (previous) await deleteAssetFile(previous);
+      draft.assets = draft.assets.filter((asset) => asset.id !== scene.audioAssetId);
+    }
+    scene.audioAssetId = null;
+    scene.audioStatus = "failed";
+    throw error;
+  }
 }
 
 export async function generateSceneAudio(sceneId: string) {

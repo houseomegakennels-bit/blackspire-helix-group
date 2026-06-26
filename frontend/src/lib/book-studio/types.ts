@@ -2,7 +2,7 @@ export type BookStatus = "Draft" | "ApprovedForRender" | "Published";
 
 export type SceneImageStatus = "missing" | "blocked" | "provisional" | "ready";
 
-export type SceneAudioStatus = "missing" | "ready";
+export type SceneAudioStatus = "missing" | "failed" | "ready";
 
 export type ReferenceRole =
   | "character_reference"

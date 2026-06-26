@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -76,6 +76,30 @@ function createSilentWav(seconds: number) {
   buffer.writeUInt32LE(dataSize, 40);
 
   return buffer;
+}
+
+function isEffectivelySilentWav(buffer: Buffer) {
+  const dataIndex = buffer.indexOf("data", 36, "ascii");
+  if (dataIndex < 0 || dataIndex + 8 >= buffer.length) return false;
+  const dataStart = dataIndex + 8;
+  const dataEnd = Math.min(buffer.length, dataStart + buffer.readUInt32LE(dataIndex + 4));
+  let peak = 0;
+
+  for (let offset = dataStart; offset + 1 < dataEnd; offset += 2) {
+    const sample = Math.abs(buffer.readInt16LE(offset));
+    if (sample > peak) peak = sample;
+    if (peak > 64) return false;
+  }
+
+  return true;
+}
+
+async function safeUnlink(filePath: string) {
+  try {
+    await unlink(filePath);
+  } catch {
+    // Temp cleanup should never hide the original generation error.
+  }
 }
 
 export async function runStructuredPrompt<T>({
@@ -335,8 +359,7 @@ export async function generateSpeechAudio({
   const estimatedDurationSeconds = Math.max(4, Math.round((text.split(/\s+/).length / 160) * 60));
 
   if (!apiKey) {
-    await writeFile(targetPath, createSilentWav(estimatedDurationSeconds));
-    return { mimeType: "audio/wav", extension: "wav", durationSeconds: estimatedDurationSeconds };
+    throw new Error("OpenAI API key is not configured, so scene audio cannot be generated.");
   }
 
   const chunks = splitTextForSpeech(text);
@@ -359,8 +382,14 @@ export async function generateSpeechAudio({
         signal: AbortSignal.timeout(90_000),
       });
 
-      if (!response.ok) throw new Error("OpenAI TTS request failed.");
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(`OpenAI TTS request failed (${response.status}): ${errorText || response.statusText}`);
+      }
       const bytes = Buffer.from(await response.arrayBuffer());
+      if (isEffectivelySilentWav(bytes)) {
+        throw new Error("OpenAI TTS returned silent audio; no scene audio asset was saved.");
+      }
       const chunkPath = targetPath.replace(/\.wav$/i, `.${i}.wav`);
       await writeFile(chunkPath, bytes);
       chunkPaths.push(chunkPath);
@@ -391,9 +420,10 @@ export async function generateSpeechAudio({
     }
 
     return { mimeType: "audio/wav", extension: "wav", durationSeconds: estimatedDurationSeconds };
-  } catch {
-    await writeFile(targetPath, createSilentWav(estimatedDurationSeconds));
-    return { mimeType: "audio/wav", extension: "wav", durationSeconds: estimatedDurationSeconds };
+  } catch (error) {
+    await Promise.all(chunkPaths.map((chunkPath) => safeUnlink(chunkPath)));
+    await safeUnlink(targetPath);
+    throw error;
   }
 }
 
