@@ -228,7 +228,7 @@ export async function generateImageBuffer({
 
       for (const reference of references.slice(0, MAX_IMAGE_REFERENCES)) {
         form.append(
-          "image",
+          "image[]",
           new Blob([new Uint8Array(reference.buffer)], { type: reference.mimeType }),
           path.basename(reference.fileName),
         );
