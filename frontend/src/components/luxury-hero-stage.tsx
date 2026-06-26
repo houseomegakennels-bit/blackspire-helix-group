@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { CSSProperties } from "react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { ecosystemProjects } from "@/lib/ecosystem";
 
@@ -12,6 +12,25 @@ const LuxuryHeroStageCanvas = dynamic(
   { ssr: false },
 );
 
+/* Gate the 3D scene behind desktop width + motion preference.
+   useSyncExternalStore is the idiomatic way to read a browser media query:
+   server render and first paint return false (CSS fallback shows), the client
+   swaps to 3D only when the query matches, and it re-evaluates automatically
+   on viewport resize or reduced-motion preference change — with no
+   setState-in-effect cascade. */
+const HERO_3D_QUERY = "(min-width: 768px) and (prefers-reduced-motion: no-preference)";
+
+function subscribeHero3D(onChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  const mq = window.matchMedia(HERO_3D_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+function getHero3DSnapshot() {
+  return window.matchMedia(HERO_3D_QUERY).matches;
+}
+
 const orbitNodeBase = [
   { label: "Lead velocity", value: "4.3x", tone: "gold", x: "16%", y: "18%" },
   { label: "Response lag", value: "-82%", tone: "gold", x: "14%", y: "74%" },
@@ -20,7 +39,7 @@ const orbitNodeBase = [
 
 export function LuxuryHeroStage() {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [show3D, setShow3D] = useState(false);
+  const show3D = useSyncExternalStore(subscribeHero3D, getHero3DSnapshot, () => false);
 
   const systemCount = String(ecosystemProjects.length).padStart(2, "0");
   const orbitNodes = [
@@ -29,15 +48,6 @@ export function LuxuryHeroStage() {
     orbitNodeBase[1],
     orbitNodeBase[2],
   ] as const;
-
-  /* Enable 3D only on desktop (≥768px) and when user hasn't requested reduced motion */
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px) and (prefers-reduced-motion: no-preference)");
-    setShow3D(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setShow3D(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
 
   const stageStyle = useMemo(
     () =>
