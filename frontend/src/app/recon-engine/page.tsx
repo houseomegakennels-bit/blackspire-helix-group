@@ -31,23 +31,23 @@ export default function ReconEnginePage() {
           </div>
           <div className="relative z-10 grid items-center gap-10 xl:grid-cols-[1fr_0.85fr]">
             <div>
-              <div className="flex items-center gap-3">
+              <div className="reveal-up flex items-center gap-3">
                 <span className="live-dot" />
                 <p className="cmd-text" style={{ color: "#c4b5fd" }}>
                   BLACKSPIRE HELIX GROUP / Recon Engine
                 </p>
               </div>
-              <h1 className="brand-accent-text mt-4 text-5xl font-black leading-[1.02] tracking-tight lg:text-7xl">
+              <h1 className="reveal-up brand-accent-text mt-4 text-5xl font-black leading-[1.02] tracking-tight lg:text-7xl" style={{ animationDelay: "0.1s" }}>
                 Find Revenue<br />
                 <span className="text-white">Before Your</span><br />
                 <span className="text-white">Competitors Do.</span>
               </h1>
-              <p className="mt-6 max-w-xl text-base leading-8 text-[var(--copy-soft)]">
+              <p className="reveal-up mt-6 max-w-xl text-base leading-8 text-[var(--copy-soft)]" style={{ animationDelay: "0.2s" }}>
                 Blackspire Recon Engine scans contracts, grants, procurement opportunities, and
                 business programs to uncover opportunities your competitors never see — then
                 fit-scores and matches them to your business.
               </p>
-              <div className="mt-8 flex flex-wrap gap-3">
+              <div className="reveal-up mt-8 flex flex-wrap gap-3" style={{ animationDelay: "0.32s" }}>
                 <Link href="#scan" className="recon-button inline-flex px-6 py-4 text-sm uppercase tracking-[0.18em]">
                   Get free opportunity scan
                 </Link>
@@ -76,16 +76,16 @@ export default function ReconEnginePage() {
 
         {/* ── PILLARS ────────────────────────────────────────────── */}
         <section>
-          <div className="mb-2 flex items-center justify-center gap-4">
+          <div className="scroll-reveal mb-2 flex items-center justify-center gap-4">
             <div className="h-px w-12 bg-[hsl(258_90%_60%/.5)]" />
             <p className="text-center text-[11px] uppercase tracking-[0.34em] text-[var(--copy-muted)]">
               Opportunity intelligence <span style={{ color: "#c4b5fd" }}>before</span> the competition
             </p>
             <div className="h-px w-12 bg-[hsl(258_90%_60%/.5)]" />
           </div>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="scroll-reveal mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5" style={{ animationDelay: "0.1s" }}>
             {reconPillars.map((pillar) => (
-              <div key={pillar.key} className="brand-card p-5 text-center">
+              <div key={pillar.key} className="brand-card card-lift p-5 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[hsl(258_90%_70%/.35)] bg-[hsl(258_90%_60%/.12)] text-2xl">
                   {pillar.icon}
                 </div>
@@ -110,7 +110,7 @@ export default function ReconEnginePage() {
               Opportunity Snapshot showing the contract, grant, and vendor-program channels your
               business should be tracking — and the fastest way to start winning them.
             </p>
-            <div className="mt-6">
+            <div className="scroll-reveal mt-6">
               <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">Built for</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {reconIndustries.map((industry) => (
@@ -127,14 +127,14 @@ export default function ReconEnginePage() {
 
         {/* ── PRICING ────────────────────────────────────────────── */}
         <section id="pricing">
-          <div className="mb-6 text-center">
+          <div className="scroll-reveal mb-6 text-center">
             <p className="text-[10px] uppercase tracking-[0.42em]" style={{ color: "#c4b5fd" }}>Plans</p>
             <h2 className="brand-display mt-3 text-4xl text-white">Choose your intelligence level</h2>
             <p className="mt-3 text-sm text-[var(--copy-soft)]">
               Subscribe for ongoing matched opportunities, or unlock single opportunities pay-as-you-go.
             </p>
           </div>
-          <div className="grid gap-5 lg:grid-cols-4">
+          <div className="scroll-reveal grid gap-5 lg:grid-cols-4" style={{ animationDelay: "0.1s" }}>
             {reconPlans.map((plan) => (
               <div key={plan.id} className="recon-plan-card flex flex-col p-6" data-highlight={plan.highlighted ? "true" : "false"}>
                 {plan.highlighted ? (
@@ -172,7 +172,7 @@ export default function ReconEnginePage() {
         {/* ── BOTTOM CTA ─────────────────────────────────────────── */}
         <section className="brand-panel relative overflow-hidden px-6 py-12 text-center lg:px-10">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(258_90%_60%/.12),transparent_60%)]" />
-          <div className="relative z-10 mx-auto max-w-3xl">
+          <div className="scroll-reveal relative z-10 mx-auto max-w-3xl">
             <h2 className="brand-display text-4xl text-white lg:text-5xl">
               Your competitors are bidding. Are you even seeing the opportunities?
             </h2>

@@ -13,7 +13,7 @@ export function EcosystemCard({
 }) {
   return (
     <article
-      className={`project-card brand-panel h-full p-5 ${mode === "stacked" ? "space-y-5" : "space-y-4"}`}
+      className={`project-card brand-panel scroll-reveal-scale h-full p-5 ${mode === "stacked" ? "space-y-5" : "space-y-4"}`}
       style={
         {
           "--project-accent": project.accent,
