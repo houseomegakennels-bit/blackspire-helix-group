@@ -1,10 +1,29 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { CSSProperties } from "react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { Component, useMemo, useState, useSyncExternalStore } from "react";
 
 import { ecosystemProjects } from "@/lib/ecosystem";
+
+/* If the WebGL canvas throws (context creation fails, e.g. WebGL disabled in
+   enterprise/remote browsers), render nothing and notify the parent so the CSS
+   hero core stays visible instead of leaving an empty stage. */
+class HeroCanvasBoundary extends Component<
+  { onError: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 /* Lazy-load the heavy canvas — only on desktop, only if motion is allowed */
 const LuxuryHeroStageCanvas = dynamic(
@@ -40,6 +59,10 @@ const orbitNodeBase = [
 export function LuxuryHeroStage() {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const show3D = useSyncExternalStore(subscribeHero3D, getHero3DSnapshot, () => false);
+  /* Only treat 3D as active once the canvas has actually created its WebGL
+     context (onReady). Until then — and if it fails — the CSS core stays. */
+  const [canvasReady, setCanvasReady] = useState(false);
+  const stage3DActive = show3D && canvasReady;
 
   const systemCount = String(ecosystemProjects.length).padStart(2, "0");
   const orbitNodes = [
@@ -65,7 +88,7 @@ export function LuxuryHeroStage() {
       className="luxury-stage"
       style={stageStyle}
       onPointerMove={(event) => {
-        if (show3D) return; /* 3D canvas handles its own pointer tracking */
+        if (stage3DActive) return; /* active 3D canvas handles its own pointer tracking */
         const rect = event.currentTarget.getBoundingClientRect();
         const x = (event.clientX - rect.left) / rect.width - 0.5;
         const y = (event.clientY - rect.top) / rect.height - 0.5;
@@ -79,8 +102,9 @@ export function LuxuryHeroStage() {
       <div className="luxury-stage-aurora luxury-stage-aurora-b" />
       <div className="luxury-stage-aurora luxury-stage-aurora-c" />
 
-      {/* CSS core — hidden when 3D loads so we don't double-render */}
-      <div className={`luxury-stage-core${show3D ? " opacity-0" : ""}`}>
+      {/* CSS core — hidden only once 3D has actually rendered, so a failed/
+          unavailable WebGL context still shows the core */}
+      <div className={`luxury-stage-core${stage3DActive ? " opacity-0" : ""}`}>
         <div className="luxury-stage-ring luxury-stage-ring-a" />
         <div className="luxury-stage-ring luxury-stage-ring-b" />
         <div className="luxury-stage-ring luxury-stage-ring-c" />
@@ -93,8 +117,13 @@ export function LuxuryHeroStage() {
         </div>
       </div>
 
-      {/* 3D WebGL canvas — lazy-loaded, desktop + motion-ok only */}
-      {show3D && <LuxuryHeroStageCanvas />}
+      {/* 3D WebGL canvas — lazy-loaded, desktop + motion-ok only.
+          Wrapped so a context-creation failure falls back to the CSS core. */}
+      {show3D && (
+        <HeroCanvasBoundary onError={() => setCanvasReady(false)}>
+          <LuxuryHeroStageCanvas onReady={() => setCanvasReady(true)} />
+        </HeroCanvasBoundary>
+      )}
 
       {/* Floating data nodes — always visible, sit above canvas */}
       {orbitNodes.map((node, index) => (

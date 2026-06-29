@@ -5,7 +5,7 @@ import { Suspense, useRef, useState, useCallback } from "react";
 
 import { HeroScene3D } from "@/components/luxury-hero-stage-3d";
 
-export function LuxuryHeroStageCanvas() {
+export function LuxuryHeroStageCanvas({ onReady }: { onReady?: () => void } = {}) {
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -31,6 +31,7 @@ export function LuxuryHeroStageCanvas() {
         gl={{ antialias: true, alpha: true }}
         dpr={[1, 1.5]}
         style={{ background: "transparent" }}
+        onCreated={() => onReady?.()}
       >
         <Suspense fallback={null}>
           <HeroScene3D pointer={pointer} />
