@@ -427,7 +427,73 @@ export async function generateSpeechAudio({
   }
 }
 
-export async function renderChapterVideoFromAssets({
+const MOTION_VIDEO_WIDTH = 1280;
+const MOTION_VIDEO_HEIGHT = 720;
+const MOTION_VIDEO_FPS = 20;
+const MOTION_FADE_SECONDS = 0.4;
+const MOTION_MAX_ZOOM = 1.08;
+
+function motionVideoEnabled() {
+  return (process.env.BOOK_STUDIO_MOTION_VIDEO?.trim().toLowerCase() || "on") !== "off";
+}
+
+function kenBurnsExpressions(sceneIndex: number, frameCount: number) {
+  const zoomSpan = MOTION_MAX_ZOOM - 1;
+  const progress = `(on/${frameCount})`;
+  const centerX = "(iw-iw/zoom)/2";
+  const centerY = "(ih-ih/zoom)/2";
+
+  switch (sceneIndex % 4) {
+    case 0:
+      return { zoom: `1+${zoomSpan}*${progress}`, x: centerX, y: centerY };
+    case 1:
+      return { zoom: `${MOTION_MAX_ZOOM}-${zoomSpan}*${progress}`, x: centerX, y: centerY };
+    case 2:
+      return { zoom: `${MOTION_MAX_ZOOM}`, x: `(iw-iw/zoom)*${progress}`, y: centerY };
+    default:
+      return { zoom: `${MOTION_MAX_ZOOM}`, x: centerX, y: `(ih-ih/zoom)*${progress}` };
+  }
+}
+
+async function renderSceneMotionClip({
+  imagePath,
+  clipPath,
+  durationSeconds,
+  sceneIndex,
+}: {
+  imagePath: string;
+  clipPath: string;
+  durationSeconds: number;
+  sceneIndex: number;
+}) {
+  const frameCount = Math.max(MOTION_VIDEO_FPS, Math.round(durationSeconds * MOTION_VIDEO_FPS));
+  const { zoom, x, y } = kenBurnsExpressions(sceneIndex, frameCount);
+  const fadeOutStart = Math.max(0, durationSeconds - MOTION_FADE_SECONDS);
+  const filters = [
+    `scale=${MOTION_VIDEO_WIDTH * 2}:${MOTION_VIDEO_HEIGHT * 2}:force_original_aspect_ratio=increase`,
+    `crop=${MOTION_VIDEO_WIDTH * 2}:${MOTION_VIDEO_HEIGHT * 2}`,
+    `zoompan=z='${zoom}':x='${x}':y='${y}':d=${frameCount}:s=${MOTION_VIDEO_WIDTH}x${MOTION_VIDEO_HEIGHT}:fps=${MOTION_VIDEO_FPS}`,
+    `fade=t=in:st=0:d=${MOTION_FADE_SECONDS}`,
+    `fade=t=out:st=${fadeOutStart.toFixed(2)}:d=${MOTION_FADE_SECONDS}`,
+    "format=yuv420p",
+  ].join(",");
+
+  await runFfmpeg([
+    "-y",
+    "-i",
+    imagePath,
+    "-vf",
+    filters,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-an",
+    clipPath,
+  ]);
+}
+
+async function renderChapterSlideshowFromAssets({
   sceneAssets,
   audioPath,
   outputPath,
@@ -472,6 +538,83 @@ export async function renderChapterVideoFromAssets({
     "aac",
     outputPath,
   ]);
+}
+
+async function renderChapterMotionVideoFromAssets({
+  sceneAssets,
+  audioPath,
+  outputPath,
+}: {
+  sceneAssets: Array<{ path: string; durationSeconds: number }>;
+  audioPath: string;
+  outputPath: string;
+}) {
+  const clipPaths: string[] = [];
+
+  try {
+    for (let i = 0; i < sceneAssets.length; i += 1) {
+      const clipPath = outputPath.replace(/\.mp4$/i, `.clip-${i}.mp4`);
+      await renderSceneMotionClip({
+        imagePath: sceneAssets[i].path,
+        clipPath,
+        durationSeconds: Math.max(2, sceneAssets[i].durationSeconds),
+        sceneIndex: i,
+      });
+      clipPaths.push(clipPath);
+    }
+
+    const concatFile = outputPath.replace(/\.mp4$/i, ".clips.ffconcat");
+    const lines = ["ffconcat version 1.0"];
+    for (const clipPath of clipPaths) {
+      lines.push(`file '${clipPath.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`);
+    }
+    await writeFile(concatFile, lines.join("\n"), "utf8");
+
+    await runFfmpeg([
+      "-y",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      concatFile,
+      "-i",
+      audioPath,
+      "-shortest",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      outputPath,
+    ]);
+  } finally {
+    await Promise.all(clipPaths.map((clipPath) => safeUnlink(clipPath)));
+  }
+}
+
+export async function renderChapterVideoFromAssets({
+  sceneAssets,
+  audioPath,
+  outputPath,
+}: {
+  sceneAssets: Array<{ path: string; durationSeconds: number }>;
+  audioPath: string;
+  outputPath: string;
+}) {
+  if (motionVideoEnabled() && sceneAssets.length) {
+    try {
+      await renderChapterMotionVideoFromAssets({ sceneAssets, audioPath, outputPath });
+      return;
+    } catch (error) {
+      console.error(
+        "Motion chapter video failed; falling back to still slideshow.",
+        error instanceof Error ? error.message : error,
+      );
+      await safeUnlink(outputPath);
+    }
+  }
+
+  await renderChapterSlideshowFromAssets({ sceneAssets, audioPath, outputPath });
 }
 
 export async function concatenateAudioAssets({
