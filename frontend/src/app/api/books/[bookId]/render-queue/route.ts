@@ -4,6 +4,7 @@ import { guardSignedInApi } from "@/lib/operator-access";
 import { hydrateBookForClient, renderQueue } from "@/lib/book-studio/service";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(
   request: Request,
@@ -14,7 +15,7 @@ export async function POST(
 
   try {
     const { bookId } = await params;
-    const body = (await request.json()) as { mode?: "key_scenes" | "chapter" | "full_book" };
+    const body = (await request.json()) as { mode?: "key_scenes" | "full_book" };
     const book = await renderQueue(bookId, body.mode || "key_scenes");
     return NextResponse.json({ ok: true, book: hydrateBookForClient(book) });
   } catch (error) {

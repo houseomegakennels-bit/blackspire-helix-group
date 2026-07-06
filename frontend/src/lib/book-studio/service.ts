@@ -2766,7 +2766,7 @@ export async function renderChapterVideo(chapterId: string) {
   ).book;
 }
 
-export async function renderQueue(bookId: string, mode: "key_scenes" | "chapter" | "full_book") {
+export async function renderQueue(bookId: string, mode: "key_scenes" | "full_book") {
   const book = await getBookById(bookId);
   if (!book) throw new Error("Book not found.");
 
@@ -2786,11 +2786,13 @@ export async function publishBook(bookId: string) {
   const book = await getBookById(bookId);
   if (!book) throw new Error("Book not found.");
 
-  let latest = book;
-  await assignVoices(bookId);
-
-  for (const chapter of latest.chapters) {
-    latest = (await renderChapterVideo(chapter.id)) as BookRecord;
+  const chaptersMissingMedia = book.chapters
+    .filter((chapter) => !chapter.videoAssetId && !chapter.audioAssetId)
+    .map((chapter) => chapter.title);
+  if (chaptersMissingMedia.length) {
+    throw new Error(
+      `Cannot publish yet. Render chapter media first for: ${chaptersMissingMedia.join(", ")}.`,
+    );
   }
 
   return (
