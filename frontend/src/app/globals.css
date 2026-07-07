@@ -930,6 +930,16 @@ body::after {
   pointer-events: none;
 }
 
+/* WebGL grain-gradient backdrop (Paper Shaders) — sits beneath the orbital
+   field and watermark so it tints the void without competing with them. */
+.luxury-shader-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* ── Recon Engine (purple/gold) accents ── */
 .recon-button {
   border-radius: 14px;

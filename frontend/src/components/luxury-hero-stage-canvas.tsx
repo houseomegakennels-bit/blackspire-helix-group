@@ -1,6 +1,7 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
+import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { Suspense, useRef, useState, useCallback } from "react";
 
 import { HeroScene3D } from "@/components/luxury-hero-stage-3d";
@@ -35,6 +36,12 @@ export function LuxuryHeroStageCanvas({ onReady }: { onReady?: () => void } = {}
       >
         <Suspense fallback={null}>
           <HeroScene3D pointer={pointer} />
+          {/* Bloom lifts the gold rings/particles into a cinematic glow.
+              Low threshold + mipmapBlur keeps it soft; the canvas stays
+              transparent so the CSS aurora layers behind it remain visible. */}
+          <EffectComposer>
+            <Bloom mipmapBlur intensity={0.65} luminanceThreshold={0.2} luminanceSmoothing={0.3} />
+          </EffectComposer>
         </Suspense>
       </Canvas>
     </div>

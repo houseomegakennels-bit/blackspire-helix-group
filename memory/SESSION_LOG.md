@@ -57,6 +57,13 @@
 - Added Ken Burns motion chapter videos and the public `BookPlayer` listener experience with Range-request seeking.
 - Fixed chapter narration cutoff (scene durations now fit probed narration length), raised OpenAI media timeouts to 240s, and capped motion-video bitrate under the Supabase 50MB object limit.
 
+## 2026-07-07 - Open-source adoption: shader backdrop and hero bloom
+
+- Evaluated Postiz (AGPL — service-only integration if adopted) and Remotion (license OK at current size, but rendering infra doesn't fit Vercel yet); recorded both in `DECISIONS.md`.
+- Adopted `@paper-design/shaders-react`: gold grain-gradient WebGL backdrop on parent-brand marketing pages, desktop + motion-ok gated with CSS fallback; division pages intentionally excluded.
+- Adopted `@react-three/postprocessing`: soft bloom pass on the hero 3D scene inside the existing gates.
+- Verified with production build, tsc, and headless-Chromium screenshots (desktop home, mobile fallback, Recon division page). Noted pre-existing quirk: the hero's `canvasReady` handshake from PR #6 doesn't complete under software WebGL, so the CSS core keeps rendering behind the canvas — behavior identical before/after this change (A/B tested).
+
 ## 2026-07-07 - Fable-mode skill and repo maintenance
 
 - Added the `fable-mode` Claude Code skill at `.claude/skills/fable-mode/SKILL.md` (branch `claude/opus-skill-file-triggers-ajmhjd`) — a disciplined operating mode activated by phrases like "fable mode".
