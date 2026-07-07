@@ -62,7 +62,10 @@
 - Evaluated Postiz (AGPL — service-only integration if adopted) and Remotion (license OK at current size, but rendering infra doesn't fit Vercel yet); recorded both in `DECISIONS.md`.
 - Adopted `@paper-design/shaders-react`: gold grain-gradient WebGL backdrop on parent-brand marketing pages, desktop + motion-ok gated with CSS fallback; division pages intentionally excluded.
 - Adopted `@react-three/postprocessing`: soft bloom pass on the hero 3D scene inside the existing gates.
-- Verified with production build, tsc, and headless-Chromium screenshots (desktop home, mobile fallback, Recon division page). Noted pre-existing quirk: the hero's `canvasReady` handshake from PR #6 doesn't complete under software WebGL, so the CSS core keeps rendering behind the canvas — behavior identical before/after this change (A/B tested).
+- Verified with production build, tsc, and headless-Chromium screenshots (desktop home, mobile fallback, Recon division page).
+- Root-caused and fixed the hero `canvasReady` handshake from PR #6: React effects inside the R3F canvas tree (and `Canvas onCreated`) never flush under the current React 19 + R3F 9 pairing, so readiness is now detected from the DOM side (canvas element still mounted a frame after mount = context creation succeeded; failures still unmount via the error boundary). Verified: the CSS core now gets `opacity-0` once the 3D scene is live.
+- Fixed the one standing lint error (`react-hooks/set-state-in-effect` in `book-player.tsx`) by resetting playback state during render on chapter change; lint is now fully clean.
+- Confirmed the mobile home layout is structurally sound (headline in the first viewport); the earlier empty-looking capture was a transient render state.
 
 ## 2026-07-07 - Fable-mode skill and repo maintenance
 

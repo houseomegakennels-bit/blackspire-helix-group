@@ -2,13 +2,30 @@
 
 import { Canvas } from "@react-three/fiber";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
-import { Suspense, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 
 import { HeroScene3D } from "@/components/luxury-hero-stage-3d";
 
 export function LuxuryHeroStageCanvas({ onReady }: { onReady?: () => void } = {}) {
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  /* Readiness must be detected from the DOM side: React effects inside the
+     R3F canvas tree (and the Canvas onCreated prop) never flush under this
+     React 19 + R3F 9 pairing, so no in-tree callback can report success.
+     A canvas element still mounted a frame after mount means context
+     creation succeeded — a failed context throws during mount and the
+     error boundary above unmounts this whole subtree. */
+  useEffect(() => {
+    if (!onReady) return;
+    let raf = 0;
+    const check = () => {
+      if (canvasRef.current?.querySelector("canvas")) onReady();
+      else raf = requestAnimationFrame(check);
+    };
+    raf = requestAnimationFrame(check);
+    return () => cancelAnimationFrame(raf);
+  }, [onReady]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
