@@ -260,7 +260,7 @@ export async function generateImageBuffer({
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
         body: form,
-        signal: AbortSignal.timeout(90_000),
+        signal: AbortSignal.timeout(240_000),
       });
       const payload = (await response.json()) as { data?: Array<{ b64_json?: string }> };
       const b64 = payload.data?.[0]?.b64_json;
@@ -287,7 +287,7 @@ export async function generateImageBuffer({
         quality: "high",
         output_format: "png",
       }),
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(240_000),
     });
     const payload = (await response.json()) as { data?: Array<{ b64_json?: string }> };
     const b64 = payload.data?.[0]?.b64_json;
@@ -379,7 +379,7 @@ export async function generateSpeechAudio({
           input: chunks[i],
           response_format: "wav",
         }),
-        signal: AbortSignal.timeout(90_000),
+        signal: AbortSignal.timeout(240_000),
       });
 
       if (!response.ok) {
