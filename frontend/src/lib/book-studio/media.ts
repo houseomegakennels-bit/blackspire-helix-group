@@ -324,6 +324,43 @@ function splitTextForSpeech(text: string, limit = 3900) {
   return segments.length ? segments : [text.slice(0, limit)];
 }
 
+async function probeMediaDurationSeconds(filePath: string) {
+  const ffmpegModule = await import("ffmpeg-static");
+  const ffmpegPath = ffmpegModule.default;
+  const executable = typeof ffmpegPath === "string" ? ffmpegPath : null;
+  if (!executable) {
+    throw new Error("ffmpeg-static is unavailable in this environment.");
+  }
+
+  const stderr = await new Promise<string>((resolve, reject) => {
+    const child = spawn(executable, ["-i", filePath, "-f", "null", "-"], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let output = "";
+    child.stderr.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", () => resolve(output));
+  });
+
+  const match = stderr.match(/Duration: (\d+):(\d+):(\d+)\.(\d+)/);
+  if (!match) throw new Error(`Unable to probe media duration for ${path.basename(filePath)}.`);
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(`0.${match[4]}`);
+}
+
+// The video track must cover the full narration or `-shortest` in the mux
+// cuts the end of the chapter audio; scene durations are only estimates.
+function fitSceneDurationsToAudio(
+  sceneAssets: Array<{ path: string; durationSeconds: number }>,
+  audioDurationSeconds: number,
+) {
+  const raw = sceneAssets.map((scene) => Math.max(2, scene.durationSeconds));
+  const rawTotal = raw.reduce((sum, value) => sum + value, 0);
+  const scale = (audioDurationSeconds + 1) / rawTotal;
+  return sceneAssets.map((scene, i) => ({ ...scene, durationSeconds: Math.max(2, raw[i] * scale) }));
+}
+
 async function runFfmpeg(args: string[]) {
   const ffmpegModule = await import("ffmpeg-static");
   const ffmpegPath = ffmpegModule.default;
@@ -489,11 +526,11 @@ async function renderSceneMotionClip({
     "-preset",
     "ultrafast",
     "-b:v",
-    "1200k",
+    "800k",
     "-maxrate",
-    "1500k",
+    "1000k",
     "-bufsize",
-    "3000k",
+    "2000k",
     "-an",
     clipPath,
   ]);
@@ -607,6 +644,11 @@ export async function renderChapterVideoFromAssets({
   audioPath: string;
   outputPath: string;
 }) {
+  if (sceneAssets.length) {
+    const audioDurationSeconds = await probeMediaDurationSeconds(audioPath);
+    sceneAssets = fitSceneDurationsToAudio(sceneAssets, audioDurationSeconds);
+  }
+
   if (motionVideoEnabled() && sceneAssets.length) {
     try {
       await renderChapterMotionVideoFromAssets({ sceneAssets, audioPath, outputPath });
