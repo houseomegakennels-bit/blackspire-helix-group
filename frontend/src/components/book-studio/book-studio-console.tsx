@@ -206,6 +206,7 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [status, setStatus] = useState("");
   const [sceneFilter, setSceneFilter] = useState<"all" | "key" | "pending" | "blocked">("all");
+  const [publishProgress, setPublishProgress] = useState<Record<string, "queued" | "rendering" | "done" | "failed">>({});
   const [isPending, startTransition] = useTransition();
 
   function syncBook(nextBook: HydratedBook) {
@@ -247,6 +248,29 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
 
   async function analyzeBook() {
     await callJson(`/api/books/${book.id}/analyze`, { method: "POST" });
+  }
+
+  async function renderAndPublish() {
+    const pendingChapters = book.chapters.filter((chapter) => !chapter.videoAssetId);
+    setPublishProgress(Object.fromEntries(pendingChapters.map((chapter) => [chapter.id, "queued" as const])));
+
+    if (pendingChapters.length) {
+      const voices = await callJson(`/api/books/${book.id}/assign-voices`, { method: "POST" });
+      if (!voices) return;
+    }
+
+    for (const chapter of pendingChapters) {
+      setPublishProgress((prev) => ({ ...prev, [chapter.id]: "rendering" }));
+      const result = await callJson(`/api/chapters/${chapter.id}/render-video`, { method: "POST" });
+      if (!result) {
+        setPublishProgress((prev) => ({ ...prev, [chapter.id]: "failed" }));
+        setStatus(`Chapter "${chapter.title}" failed to render. Fix the blocker and publish again to resume from here.`);
+        return;
+      }
+      setPublishProgress((prev) => ({ ...prev, [chapter.id]: "done" }));
+    }
+
+    await callJson(`/api/books/${book.id}/publish`, { method: "POST" });
   }
 
   async function importReferences(formData: FormData) {
@@ -770,11 +794,11 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                   <button
                     type="button"
                     onClick={() => {
-                      startTransition(() => void callJson(`/api/books/${book.id}/publish`, { method: "POST" }));
+                      startTransition(() => void renderAndPublish());
                     }}
                     className="brand-button inline-flex justify-center px-5 py-3 text-sm uppercase tracking-[0.18em] transition"
                   >
-                    Publish sample book
+                    Render &amp; publish book
                   </button>
                 ) : null}
               </div>
@@ -1610,12 +1634,15 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
               <button
                 type="button"
                 onClick={() => {
-                  startTransition(() => void callJson(`/api/books/${book.id}/publish`, { method: "POST" }));
+                  startTransition(() => void renderAndPublish());
                 }}
                 className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition"
               >
-                Publish book
+                Render &amp; publish book
               </button>
+              <p className="text-xs leading-6 text-[var(--copy-muted)]">
+                Renders each remaining chapter video one at a time, then publishes. If a chapter fails, fix it and publish again — finished chapters are skipped.
+              </p>
 
               {book.status === "Published" ? (
                 <Link
@@ -1630,14 +1657,32 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
             <div className="grid gap-4">
               {book.chapters.map((chapter) => {
                 const videoUrl = assetUrl(book, chapter.videoAssetId);
+                const progress = publishProgress[chapter.id];
                 return (
                   <div key={chapter.id} className="brand-card p-4">
-                    <div className="text-lg font-semibold text-white">{chapter.title}</div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-lg font-semibold text-white">{chapter.title}</div>
+                      {progress ? (
+                        <span
+                          className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${
+                            progress === "failed"
+                              ? "border-red-400/60 text-red-300"
+                              : progress === "done"
+                                ? "border-[var(--line-strong)] text-[var(--gold-soft)]"
+                                : "border-[var(--line)] text-[var(--copy-soft)]"
+                          }`}
+                        >
+                          {progress === "queued" ? "Queued" : progress === "rendering" ? "Rendering…" : progress === "done" ? "Rendered" : "Failed"}
+                        </span>
+                      ) : null}
+                    </div>
                     {videoUrl ? (
                       <video controls className="mt-3 w-full rounded-[18px]" src={videoUrl} />
                     ) : (
                       <div className="mt-3 rounded-[18px] border border-dashed border-[var(--line)] px-4 py-8 text-center text-sm text-[var(--copy-muted)]">
-                        Render this chapter video from the queue tab before final publish.
+                        {progress === "rendering"
+                          ? "Rendering this chapter video now…"
+                          : "This chapter renders automatically during publish, or from the queue tab."}
                       </div>
                     )}
                   </div>

@@ -4,6 +4,7 @@ import { guardSignedInApi } from "@/lib/operator-access";
 import { hydrateBookForClient, renderSceneImage } from "@/lib/book-studio/service";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(
   _request: Request,

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
 
+import { BookPlayer, type PlayerChapter } from "@/components/book-player";
 import { MarketingShell } from "@/components/marketing-shell";
 import { getPublishedBook } from "@/lib/book-studio/service";
 import { getAssetUrl } from "@/lib/book-studio/store";
@@ -17,6 +18,34 @@ export default async function PublicBookDetailPage({
   if (!book) notFound();
 
   const cover = book.assets.find((asset) => asset.id === book.coverAssetId);
+
+  const assetById = new Map(book.assets.map((asset) => [asset.id, asset]));
+  const sceneById = new Map(book.scenes.map((scene) => [scene.id, scene]));
+  const playerChapters: PlayerChapter[] = [...book.chapters]
+    .sort((a, b) => a.order - b.order)
+    .map((chapter) => {
+      const video = chapter.videoAssetId ? assetById.get(chapter.videoAssetId) : null;
+      const audio = chapter.audioAssetId ? assetById.get(chapter.audioAssetId) : null;
+      const sceneImages = chapter.sceneIds
+        .map((sceneId) => sceneById.get(sceneId))
+        .filter((scene): scene is NonNullable<typeof scene> => Boolean(scene))
+        .sort((a, b) => a.order - b.order)
+        .map((scene) => {
+          const image = scene.imageAssetId ? assetById.get(scene.imageAssetId) : null;
+          return image ? { url: getAssetUrl(image), title: scene.title } : null;
+        })
+        .filter((image): image is { url: string; title: string } => Boolean(image));
+
+      return {
+        id: chapter.id,
+        order: chapter.order,
+        title: chapter.title,
+        summary: chapter.summary,
+        videoUrl: video ? getAssetUrl(video) : null,
+        audioUrl: audio ? getAssetUrl(audio) : null,
+        sceneImages,
+      };
+    });
 
   return (
     <MarketingShell>
@@ -58,32 +87,8 @@ export default async function PublicBookDetailPage({
           </div>
         </section>
 
-        <div className="mt-6 grid gap-6">
-          {book.chapters.map((chapter) => {
-            const chapterVideo = book.assets.find((asset) => asset.id === chapter.videoAssetId);
-            const chapterAudio = book.assets.find((asset) => asset.id === chapter.audioAssetId);
-            return (
-              <section key={chapter.id} className="brand-panel p-6 lg:p-8">
-                <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-soft)]">Chapter {chapter.order}</p>
-                    <h2 className="brand-display mt-2 text-3xl text-white">{chapter.title}</h2>
-                    <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">{chapter.summary}</p>
-                  </div>
-                </div>
-
-                {chapterVideo ? (
-                  <video controls className="mt-6 w-full rounded-[22px]" src={getAssetUrl(chapterVideo)} />
-                ) : chapterAudio ? (
-                  <audio controls className="mt-6 w-full" src={getAssetUrl(chapterAudio)} />
-                ) : (
-                  <div className="mt-6 rounded-[22px] border border-dashed border-[var(--line)] px-4 py-10 text-center text-sm text-[var(--copy-muted)]">
-                    Chapter media is not available yet.
-                  </div>
-                )}
-              </section>
-            );
-          })}
+        <div className="mt-6">
+          <BookPlayer bookTitle={book.title} chapters={playerChapters} />
         </div>
       </div>
     </MarketingShell>

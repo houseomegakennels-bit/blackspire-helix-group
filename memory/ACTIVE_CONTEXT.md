@@ -1,5 +1,5 @@
 # Active Context
-Last updated: 2026-06-23
+Last updated: 2026-07-06
 
 - Source of truth repo: `houseomegakennels-bit/blackspire-helix-group`.
 - Current default branch state: `main` is clean locally and aligned with `origin/main`.
@@ -10,6 +10,8 @@ Last updated: 2026-06-23
 ## Current platform scope
 - Marketing site and ecosystem shell are live in the `frontend/` Next.js app.
 - Core ecosystem work now exists on `main` for Buyer Engine, Seller Engine / Harvester, Deal Engine, Recon Engine, Sentinel, Social OS, Helix Lawn Command, and supporting shared shells.
+- Book Studio (audiobook/visual-book pipeline) is live: admin console at `/studio/books`, public listener pages at `/books`. Core logic in `frontend/src/lib/book-studio/`. Pipeline: import manuscript → analyze chapters/scenes/characters → character bible + reference imports → approve canonical looks → assign voices → render scene images (OpenAI) → TTS audio → Ken Burns motion chapter videos (ffmpeg) → incremental publish.
+- Book Studio storage is dual-mode: Supabase (tables `book_studio_*`, private bucket `blackspire-book-studio`) when `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set (required on Vercel), local `frontend/data/book-studio/` otherwise. Media generation needs `OPENAI_API_KEY`; `BOOK_STUDIO_MOTION_VIDEO=off` forces legacy still-slideshow chapter videos.
 - Codespaces bootstrap is configured to install Codex CLI, hydrate env files from GitHub Codespaces secrets, and open the repo through the `Codex Workspace` startup task.
 
 ## Current operating assumptions
