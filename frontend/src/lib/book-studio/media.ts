@@ -488,6 +488,12 @@ async function renderSceneMotionClip({
     "libx264",
     "-preset",
     "ultrafast",
+    "-b:v",
+    "1200k",
+    "-maxrate",
+    "1500k",
+    "-bufsize",
+    "3000k",
     "-an",
     clipPath,
   ]);
