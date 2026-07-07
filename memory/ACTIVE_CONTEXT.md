@@ -13,7 +13,7 @@ Last updated: 2026-07-07
 - Book Studio (audiobook/visual-book pipeline) is live: admin console at `/studio/books`, public listener pages at `/books`. Core logic in `frontend/src/lib/book-studio/`. Pipeline: import manuscript → analyze chapters/scenes/characters → character bible + reference imports → approve canonical looks → assign voices → render scene images (OpenAI) → TTS audio → Ken Burns motion chapter videos (ffmpeg) → incremental publish.
 - Book Studio storage is dual-mode: Supabase (tables `book_studio_*`, private bucket `blackspire-book-studio`) when `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set (required on Vercel), local `frontend/data/book-studio/` otherwise. Media generation needs `OPENAI_API_KEY`; `BOOK_STUDIO_MOTION_VIDEO=off` forces legacy still-slideshow chapter videos.
 - Codespaces bootstrap is configured to install Codex CLI, hydrate env files from GitHub Codespaces secrets, and open the repo through the `Codex Workspace` startup task.
-- A `fable-mode` Claude Code skill lives at `.claude/skills/fable-mode/SKILL.md` (say "fable mode" in a Claude Code session to activate it); it becomes active by default once its branch `claude/opus-skill-file-triggers-ajmhjd` is merged to `main`.
+- A `fable-mode` Claude Code skill lives at `.claude/skills/fable-mode/SKILL.md` on `main`; say "fable mode" in a Claude Code session in this repo to activate it.
 
 ## Current operating assumptions
 - Treat GitHub as the only shared authority for workspace state and memory.
