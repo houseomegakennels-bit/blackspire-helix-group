@@ -60,5 +60,5 @@
 ## 2026-07-07 - Fable-mode skill and repo maintenance
 
 - Added the `fable-mode` Claude Code skill at `.claude/skills/fable-mode/SKILL.md` (branch `claude/opus-skill-file-triggers-ajmhjd`) — a disciplined operating mode activated by phrases like "fable mode".
-- Retargeted stalled PR #6 from the stale `claude/hello-r0FRI` base to `main`; against trunk it reduced to two small visual-only fix commits (a11y contrast lift, WebGL hero fallback), pending a verification build before merge.
+- Retargeted stalled PR #6 from the stale `claude/hello-r0FRI` base to `main`; against trunk it reduced to two small visual-only fix commits (a11y contrast lift, WebGL hero fallback). Merged to `main` after a clean local frontend build of the merged result.
 - Refreshed this session log, which had been stale since June 23.
