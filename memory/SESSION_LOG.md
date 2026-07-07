@@ -46,3 +46,19 @@
 - Added Social OS client workspace flows and account-setting surfaces on `main`.
 - Kept `main` clean and aligned with `origin/main`.
 - Refreshed shared `memory/` docs so current sessions no longer start from stale early-June context.
+
+## 2026-06-29 - Visual revamp follow-ups (PR #6)
+
+- "2056 aesthetic" visual revamp landed in batches; two follow-up commits (WCAG AA contrast lift for `--copy-muted`, WebGL-fallback fix so the CSS hero core stays visible when WebGL is unavailable) remained open on PR #6, originally based against the stale `claude/hello-r0FRI` branch.
+
+## 2026-07-06 to 2026-07-07 - Book Studio production hardening (PRs #7, #8)
+
+- Hardened Book Studio media routes for Vercel (300s route budgets, per-chapter publish rendering with resume, ffmpeg-static bundling).
+- Added Ken Burns motion chapter videos and the public `BookPlayer` listener experience with Range-request seeking.
+- Fixed chapter narration cutoff (scene durations now fit probed narration length), raised OpenAI media timeouts to 240s, and capped motion-video bitrate under the Supabase 50MB object limit.
+
+## 2026-07-07 - Fable-mode skill and repo maintenance
+
+- Added the `fable-mode` Claude Code skill at `.claude/skills/fable-mode/SKILL.md` (branch `claude/opus-skill-file-triggers-ajmhjd`) — a disciplined operating mode activated by phrases like "fable mode".
+- Retargeted stalled PR #6 from the stale `claude/hello-r0FRI` base to `main`; against trunk it reduced to two small visual-only fix commits (a11y contrast lift, WebGL hero fallback), pending a verification build before merge.
+- Refreshed this session log, which had been stale since June 23.

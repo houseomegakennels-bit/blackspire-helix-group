@@ -5,6 +5,8 @@ Last updated: 2026-07-06
 1. Keep using repo-managed startup flow: `scripts/agent-start.sh` or the `Codex Workspace` task in Codespaces.
 2. Keep shared memory updated when major product or infrastructure changes land.
 3. Continue avoiding secrets in repo docs, prompts, and `memory/`.
+4. Merge branch `claude/opus-skill-file-triggers-ajmhjd` to `main` to make the `fable-mode` skill active by default.
+5. The n8n Buyer Engine workflow backup in `memory/` is from 2026-06-07 — re-export if the live workflow has changed since.
 
 ## Codespaces
 1. Verify `OPENAI_API_KEY` is present in GitHub Codespaces secrets for `houseomegakennels-bit/blackspire-helix-group`.
