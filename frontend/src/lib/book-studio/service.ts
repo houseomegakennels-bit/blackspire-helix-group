@@ -1587,13 +1587,22 @@ Return a compact scene list for production. Include only important recurring cha
       fallback: fallbackPayload,
     });
 
+    const chapterTextForAnalysis = chapter.text.slice(0, 12000);
     const payloadSceneTexts = (payload.scenes ?? []).map((scene: { sourceText?: string; summary?: string }) => scene.sourceText || scene.summary || "");
-    const averageSceneLength =
-      payloadSceneTexts.length > 0
-        ? payloadSceneTexts.reduce((total: number, value: string) => total + value.length, 0) / payloadSceneTexts.length
-        : 0;
+    const totalSceneTextLength = payloadSceneTexts.reduce((total: number, value: string) => total + value.length, 0);
+    const averageSceneLength = payloadSceneTexts.length > 0 ? totalSceneTextLength / payloadSceneTexts.length : 0;
+    // The model is told to keep sourceText excerpts "short and representative,"
+    // which for narration purposes means it can legally hand back scenes that
+    // only quote fragments of the chapter and silently drop everything else -
+    // the audio is generated straight from sourceText, so a low-coverage scene
+    // list turns into missing narration, not just a terser summary. Fall back
+    // to the full-text mechanical split whenever the model's scenes don't
+    // account for most of what it was shown.
+    const coverageRatio = chapterTextForAnalysis.length > 0 ? totalSceneTextLength / chapterTextForAnalysis.length : 1;
     const scenePayload =
-      (payload.scenes ?? []).length > 12 || averageSceneLength < 350 ? fallbackPayload.scenes : (payload.scenes ?? fallbackPayload.scenes);
+      (payload.scenes ?? []).length > 12 || averageSceneLength < 350 || coverageRatio < 0.92
+        ? fallbackPayload.scenes
+        : (payload.scenes ?? fallbackPayload.scenes);
     const characterPayload = (payload.characters ?? fallbackPayload.characters).filter(
       (character: { name?: string }) => character.name && !isLikelyFalseCharacterName(character.name),
     );
@@ -2262,6 +2271,83 @@ export async function appendChaptersFromText(bookId: string, additionalManuscrip
       return draft;
     })
   ).book;
+}
+
+// Repairs chapters whose scenes were analyzed before the coverage gate above
+// existed: the model's sourceText excerpts are verbatim but partial, quoting
+// fragments of the chapter in order and dropping everything between them.
+// Since each excerpt is a real substring of the original chapter text, its
+// position can be located exactly; the fix redistributes the *full* chapter
+// text across the existing scene boundaries (same IDs, same images, same
+// characters - only sourceText/summary/duration change) so narration covers
+// 100% of the story again. Stale audio/video assets are deleted and cleared
+// so the next production run regenerates them from the corrected text.
+export async function repairSceneNarrationCoverage(bookId: string, chapterFullTexts: Record<number, string>) {
+  const results: Array<{ order: number; status: "fixed" | "skipped"; reason?: string }> = [];
+
+  return {
+    book: (
+      await mutateBookRecord(bookId, async (draft) => {
+        for (const [orderStr, rawFullText] of Object.entries(chapterFullTexts)) {
+          const order = Number(orderStr);
+          const chapter = draft.chapters.find((candidate) => candidate.order === order);
+          if (!chapter) {
+            results.push({ order, status: "skipped", reason: "chapter not found" });
+            continue;
+          }
+
+          const fullText = rawFullText.replace(/\s+/g, " ").trim();
+          const scenes = chapter.sceneIds
+            .map((id) => draft.scenes.find((candidate) => candidate.id === id))
+            .filter((scene): scene is SceneRecord => Boolean(scene))
+            .sort((a, b) => a.order - b.order);
+
+          const starts = scenes.map((scene) => fullText.indexOf(scene.sourceText.replace(/\s+/g, " ").trim().slice(0, 80)));
+          if (!scenes.length || starts.some((index) => index < 0)) {
+            results.push({ order, status: "skipped", reason: "could not locate one of this chapter's scene excerpts in the supplied text" });
+            continue;
+          }
+
+          for (let i = 0; i < scenes.length; i += 1) {
+            const scene = scenes[i];
+            const start = starts[i];
+            const end = i + 1 < scenes.length ? starts[i + 1] : fullText.length;
+            const segment = fullText.slice(start, end).trim();
+            scene.sourceText = segment;
+            scene.summary = segment.slice(0, 240);
+            scene.estimatedDurationSeconds = estimateDuration(segment);
+
+            if (scene.audioAssetId) {
+              const stale = draft.assets.find((asset) => asset.id === scene.audioAssetId);
+              if (stale) await deleteAssetFile(stale).catch(() => undefined);
+              draft.assets = draft.assets.filter((asset) => asset.id !== scene.audioAssetId);
+            }
+            scene.audioAssetId = null;
+            scene.audioStatus = "missing";
+          }
+
+          if (chapter.audioAssetId) {
+            const stale = draft.assets.find((asset) => asset.id === chapter.audioAssetId);
+            if (stale) await deleteAssetFile(stale).catch(() => undefined);
+            draft.assets = draft.assets.filter((asset) => asset.id !== chapter.audioAssetId);
+          }
+          chapter.audioAssetId = null;
+
+          if (chapter.videoAssetId) {
+            const stale = draft.assets.find((asset) => asset.id === chapter.videoAssetId);
+            if (stale) await deleteAssetFile(stale).catch(() => undefined);
+            draft.assets = draft.assets.filter((asset) => asset.id !== chapter.videoAssetId);
+          }
+          chapter.videoAssetId = null;
+
+          results.push({ order, status: "fixed" });
+        }
+
+        return draft;
+      })
+    ).book,
+    results,
+  };
 }
 
 export async function importReferenceFiles(bookId: string, formData: FormData) {
