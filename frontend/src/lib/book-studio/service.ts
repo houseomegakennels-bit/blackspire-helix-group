@@ -2163,6 +2163,107 @@ export async function analyzeBook(bookId: string) {
   ).book;
 }
 
+// Appends new chapters to a book that already has rendered media, without
+// touching its existing chapters/scenes/assets. Unlike analyzeBook, which
+// reparses the book's *entire* manuscript and replaces the whole scene list
+// (fine for a fresh import, but it would mint new scene IDs for every
+// chapter and orphan already-rendered images/audio/video), this only runs
+// scene/character analysis on the supplied new-chapter text and merges the
+// result in additively. Do not call analyzeBook again on a book this has
+// been used on.
+export async function appendChaptersFromText(bookId: string, additionalManuscriptText: string) {
+  const book = await getBookById(bookId);
+  if (!book) throw new Error("Book not found.");
+
+  const parsed = await parseManuscriptFromBuffer(
+    `${book.slug || book.id}-addendum.txt`,
+    Buffer.from(additionalManuscriptText, "utf8"),
+  );
+  if (!parsed.chapters.length) throw new Error("No chapters found in the supplied text.");
+
+  const startOrder = book.chapters.length ? Math.max(...book.chapters.map((chapter) => chapter.order)) + 1 : 1;
+
+  const newChapterInputs = parsed.chapters.map((chapter, index) => ({
+    id: createId("chapter"),
+    title: chapter.title,
+    text: chapter.text,
+    order: startOrder + index,
+  }));
+
+  const analyzed = await analyzeChapters(newChapterInputs, book.title);
+
+  return (
+    await mutateBookRecord(bookId, (draft) => {
+      const existingCharacterIds = new Set(draft.characters.map((character) => character.id));
+      const { characters, characterIdMap } = mergeCharacterBibles(draft.characters, analyzed.characters);
+
+      // Characters that didn't match the existing roster are new to this
+      // batch. Match the precedent from the original import: only the
+      // locked canon cast blocks rendering, so new incidental names default
+      // to optional instead of stalling every scene they appear in on a
+      // missing portrait. Give them the book's established uniform
+      // narration voice instead of the default per-character voice policy.
+      draft.characters = characters.map((character) => {
+        if (existingCharacterIds.has(character.id)) return character;
+        return {
+          ...character,
+          requiredForRender: false,
+          voiceAssignment: {
+            narratorVoice: "marin",
+            characterVoice: "onyx",
+            fallbackVoice: "sage",
+            rationale: `${character.name} assigned the book's uniform narration voice (onyx).`,
+          },
+        };
+      });
+
+      const chapterSceneMap = new Map<string, string[]>();
+      analyzed.scenes.forEach((scene) => {
+        const list = chapterSceneMap.get(scene.chapterId) ?? [];
+        list.push(scene.id);
+        chapterSceneMap.set(scene.chapterId, list);
+      });
+
+      const newScenes: SceneRecord[] = analyzed.scenes.map((scene) => {
+        const mappedCharacterIds = scene.characterIds.map((characterId) => characterIdMap.get(characterId) ?? characterId);
+        const knownCharacterIds = extractKnownCharactersFromText(draft, [scene.sourceText, scene.summary, scene.title].join("\n"));
+        const nextScene = {
+          ...scene,
+          characterIds: dedupeStrings(knownCharacterIds.length ? knownCharacterIds : mappedCharacterIds).filter((characterId) => {
+            const character = draft.characters.find((candidate) => candidate.id === characterId);
+            return character ? !isLikelyFalseCharacterName(character.name) : false;
+          }),
+        };
+        const { prompt, manifest } = buildScenePrompt(draft, nextScene);
+        return { ...nextScene, imagePrompt: prompt, renderManifest: manifest };
+      });
+
+      draft.scenes = [...draft.scenes, ...newScenes];
+
+      const newChapters: ChapterRecord[] = newChapterInputs.map((input) => ({
+        id: input.id,
+        order: input.order,
+        title: input.title,
+        summary: input.text.slice(0, 220),
+        sceneIds: chapterSceneMap.get(input.id) ?? [],
+        audioAssetId: null,
+        videoAssetId: null,
+      }));
+
+      draft.chapters = [...draft.chapters, ...newChapters];
+      draft.manuscriptText = `${draft.manuscriptText.trim()}\n\n${newChapterInputs
+        .map((input) => `${input.title}\n\n${input.text}`)
+        .join("\n\n")}`;
+
+      autoLinkReferencesToCharacters(draft);
+      autoLinkReferencesToScenes(draft);
+      syncCharacterBibleReferences(draft);
+
+      return draft;
+    })
+  ).book;
+}
+
 export async function importReferenceFiles(bookId: string, formData: FormData) {
   const book = await getBookById(bookId);
   if (!book) throw new Error("Book not found.");
