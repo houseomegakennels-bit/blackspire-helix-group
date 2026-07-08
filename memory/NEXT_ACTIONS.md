@@ -1,5 +1,5 @@
 # Next Actions
-Last updated: 2026-07-06
+Last updated: 2026-07-08
 
 ## Workspace / repo hygiene
 1. Keep using repo-managed startup flow: `scripts/agent-start.sh` or the `Codex Workspace` task in Codespaces.
@@ -18,9 +18,10 @@ Last updated: 2026-07-06
 3. Continue using real county/live-source validation whenever Seller or Buyer data-source work changes.
 
 ## Book Studio
-1. Produce Geminara Part One end-to-end (manuscript + world bible import → reviewed renders → publish to `/books`).
+1. Geminara Part One is complete: all 10 chapters produced (images, onyx narration, motion video) and Published at `/books/geminara-part-one`. No further production work needed unless new chapters/content are added.
 2. Verify chapter video render times stay inside the 300s route budget on Vercel for long chapters; drop motion render resolution if needed.
 3. Confirm ffmpeg-static ships in the deployed render routes after the `outputFileTracingIncludes` change.
+4. Vercel has not auto-deployed merged `main` as of this writing (site runs older page code, but the book plays fine on the current deploy); if/when a deploy happens, confirm the new BookPlayer listening room appears correctly for all 10 chapters.
 
 ## Documentation
 1. Refresh high-level docs like `PROJECT_CONTEXT.md` when the product scope materially changes.

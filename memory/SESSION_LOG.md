@@ -72,3 +72,11 @@
 - Added the `fable-mode` Claude Code skill at `.claude/skills/fable-mode/SKILL.md` (branch `claude/opus-skill-file-triggers-ajmhjd`) — a disciplined operating mode activated by phrases like "fable mode".
 - Retargeted stalled PR #6 from the stale `claude/hello-r0FRI` base to `main`; against trunk it reduced to two small visual-only fix commits (a11y contrast lift, WebGL hero fallback). Merged to `main` after a clean local frontend build of the merged result.
 - Refreshed this session log, which had been stale since June 23.
+
+## 2026-07-08 - Geminara Part One: chapters 7-10 finished, book complete
+
+- Resumed production from `BOOK_STUDIO_HANDOFF.md` on branch `claude/geminara-part-one-production-rpi8a7`: chapter 7 had stopped 2/3 scene images in on an OpenAI billing limit; chapters 8-10 hadn't started.
+- Container setup: installed system ffmpeg (apt, since the `ffmpeg-static` postinstall download is blocked by egress) and symlinked it in for `ffmpeg-static`, stubbed `server-only`, pulled the three `BOOK_STUDIO_*` secrets from Supabase Vault straight into `frontend/.env.local` (gitignored, never printed to the transcript).
+- Ran `runner-produce-chapters.mts 7 8 9 10` end to end with no billing errors this time: finished chapter 7's scene 3 image/audio/video, then produced all of chapters 8, 9, and 10 (11 scene images, narration, 3 chapter videos).
+- Review gates: spot-checked probed audio/video duration for all four chapter videos (0.00s diff each). Compared scene art for the recurring cast (Kael, Orin, Nyx, Commander Solen) against the canon character sheets; Orin's "older, weathered" rendering and Nyx's mixed quadruped/humanoid-feline forms are documented, intentional book-aligned refinements already present in the approved chapters 1-6 art, not new drift, and Orin stays visually distinct from Commander Solen when both share a frame.
+- Geminara — Part One is now fully produced end-to-end: all 10 chapters, 33 scenes, images + onyx narration + Ken Burns motion video, still Published and live at `/books/geminara-part-one`.

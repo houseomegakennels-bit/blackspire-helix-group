@@ -1,5 +1,5 @@
 # Active Context
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 - Source of truth repo: `houseomegakennels-bit/blackspire-helix-group`.
 - Current default branch state: `main` is clean locally and aligned with `origin/main`.
@@ -14,6 +14,7 @@ Last updated: 2026-07-07
 - Book Studio storage is dual-mode: Supabase (tables `book_studio_*`, private bucket `blackspire-book-studio`) when `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set (required on Vercel), local `frontend/data/book-studio/` otherwise. Media generation needs `OPENAI_API_KEY`; `BOOK_STUDIO_MOTION_VIDEO=off` forces legacy still-slideshow chapter videos.
 - Codespaces bootstrap is configured to install Codex CLI, hydrate env files from GitHub Codespaces secrets, and open the repo through the `Codex Workspace` startup task.
 - A `fable-mode` Claude Code skill lives at `.claude/skills/fable-mode/SKILL.md` on `main`; say "fable mode" in a Claude Code session in this repo to activate it.
+- **Geminara — Part One is fully produced end-to-end.** All 10 chapters (33 scenes) have scene images, onyx-voiced narration, and Ken Burns motion videos; the book stays Published at https://blackspirehelix.com/books/geminara-part-one. Chapters 7–10 were finished from `BOOK_STUDIO_HANDOFF.md`'s handoff point (chapter 7 had stopped 2/3 scenes in on an OpenAI billing limit) on branch `claude/geminara-part-one-production-rpi8a7`; no billing errors this run. Audio/video duration match was spot-checked at 0.00s diff for all four new chapter videos, and scene art for the recurring cast (Kael, Orin, Nyx, Commander Solen) was checked against the canon character sheets and against chapters 1–6 for consistency — Orin's "older, weathered" look and Nyx's mixed quadruped/humanoid-feline forms are pre-existing, intentional book-aligned choices already established in earlier chapters, not new drift.
 
 ## Current operating assumptions
 - Treat GitHub as the only shared authority for workspace state and memory.
