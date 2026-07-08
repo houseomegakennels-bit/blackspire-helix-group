@@ -34,11 +34,16 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
   const activeChapter = chapters.find((chapter) => chapter.id === activeId) ?? chapters[0];
   const activeIndex = chapters.findIndex((chapter) => chapter.id === activeChapter?.id);
 
-  useEffect(() => {
+  /* Reset playback state when the chapter changes — adjusted during render
+     (React's replacement for setState-in-effect) so the reset applies in the
+     same pass instead of flashing the old time/scene for one frame. */
+  const [prevActiveId, setPrevActiveId] = useState(activeId);
+  if (prevActiveId !== activeId) {
+    setPrevActiveId(activeId);
     setCurrentTime(0);
     setDuration(0);
     setSceneIndex(0);
-  }, [activeId]);
+  }
 
   // Audio-only chapters rotate through their scene artwork while playing.
   useEffect(() => {

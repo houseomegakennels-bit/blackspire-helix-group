@@ -57,6 +57,16 @@
 - Added Ken Burns motion chapter videos and the public `BookPlayer` listener experience with Range-request seeking.
 - Fixed chapter narration cutoff (scene durations now fit probed narration length), raised OpenAI media timeouts to 240s, and capped motion-video bitrate under the Supabase 50MB object limit.
 
+## 2026-07-07 - Open-source adoption: shader backdrop and hero bloom
+
+- Evaluated Postiz (AGPL — service-only integration if adopted) and Remotion (license OK at current size, but rendering infra doesn't fit Vercel yet); recorded both in `DECISIONS.md`.
+- Adopted `@paper-design/shaders-react`: gold grain-gradient WebGL backdrop on parent-brand marketing pages, desktop + motion-ok gated with CSS fallback; division pages intentionally excluded.
+- Adopted `@react-three/postprocessing`: soft bloom pass on the hero 3D scene inside the existing gates.
+- Verified with production build, tsc, and headless-Chromium screenshots (desktop home, mobile fallback, Recon division page).
+- Root-caused and fixed the hero `canvasReady` handshake from PR #6: React effects inside the R3F canvas tree (and `Canvas onCreated`) never flush under the current React 19 + R3F 9 pairing, so readiness is now detected from the DOM side (canvas element still mounted a frame after mount = context creation succeeded; failures still unmount via the error boundary). Verified: the CSS core now gets `opacity-0` once the 3D scene is live.
+- Fixed the one standing lint error (`react-hooks/set-state-in-effect` in `book-player.tsx`) by resetting playback state during render on chapter change; lint is now fully clean.
+- Confirmed the mobile home layout is structurally sound (headline in the first viewport); the earlier empty-looking capture was a transient render state.
+
 ## 2026-07-07 - Fable-mode skill and repo maintenance
 
 - Added the `fable-mode` Claude Code skill at `.claude/skills/fable-mode/SKILL.md` (branch `claude/opus-skill-file-triggers-ajmhjd`) — a disciplined operating mode activated by phrases like "fable mode".

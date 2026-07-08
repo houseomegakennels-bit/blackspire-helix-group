@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { EcosystemMark } from "@/components/ecosystem-mark";
 import { MarketingNav } from "@/components/marketing-nav";
+import { ShaderBackdrop } from "@/components/shader-backdrop";
 import { ecosystemProjects } from "@/lib/ecosystem";
 import { siteNavSections } from "@/lib/site-structure";
 
@@ -34,6 +35,13 @@ export function MarketingShell({
       className={`luxury-shell min-h-screen text-foreground ${isDivisionWatermark ? "luxury-shell-division" : ""}`}
       style={themeStyle}
     >
+      {/* Parent-brand pages only: division pages keep their own logo-matched
+          palettes and skip the gold shader layer. */}
+      {!isDivisionWatermark && (
+        <div aria-hidden="true">
+          <ShaderBackdrop />
+        </div>
+      )}
       <div className="luxury-orbital-field" aria-hidden="true">
         <span className="luxury-orbital-ring luxury-orbital-ring-a" />
         <span className="luxury-orbital-ring luxury-orbital-ring-b" />

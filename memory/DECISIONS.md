@@ -28,3 +28,10 @@
 - **Codespaces startup:** The repo-managed `Codex Workspace` folder-open task is the preferred path for getting straight into the Codex workspace.
 - **Memory hygiene:** Shared memory belongs in repo-tracked docs under `memory/`; keep it current and do not leave the canonical state in local-only notes.
 - **Social OS scope:** Social OS client workspace and account settings live inside the same shared frontend and should follow the same shell, auth, and routing discipline as the rest of Helix.
+
+## 2026-07-07
+
+- **Postiz (Social OS):** Postiz is AGPL-3.0 — never copy its code into Social OS. If adopted, run it as a separate self-hosted service and integrate only through its public API; its provider architecture may be read for design ideas only.
+- **Remotion (Book Studio):** Hold off. The free license currently covers for-profit companies up to 3 employees (recheck at adoption — a 5.0 license revision is pending), but rendering requires headless Chromium (`@remotion/lambda` / Cloud Run), which doesn't fit the current Vercel ffmpeg pipeline. Revisit when React-authored motion graphics (animated captions, kinetic typography) are needed.
+- **Paper Shaders (frontend):** Adopted `@paper-design/shaders-react` for WebGL background gradients on parent-brand marketing pages — desktop + motion-ok gated, CSS layers remain the fallback, division pages keep their logo palettes.
+- **Hero postprocessing:** Adopted `@react-three/postprocessing` bloom on the 3D hero, inside the existing desktop/motion/WebGL gates.
