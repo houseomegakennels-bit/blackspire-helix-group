@@ -361,6 +361,22 @@ function fitSceneDurationsToAudio(
   return sceneAssets.map((scene, i) => ({ ...scene, durationSeconds: Math.max(2, raw[i] * scale) }));
 }
 
+// Guards the fix above: if a future change (rounding, a dropped fit step, a
+// bad concat) ever makes the rendered video shorter than its narration again,
+// fail loudly here instead of silently shipping a chapter with -shortest
+// cutting off the end of the audio.
+async function assertVideoCoversAudio(outputPath: string, audioDurationSeconds: number | null) {
+  if (audioDurationSeconds == null) return;
+  const videoDurationSeconds = await probeMediaDurationSeconds(outputPath);
+  const shortfall = audioDurationSeconds - videoDurationSeconds;
+  if (shortfall > 0.5) {
+    throw new Error(
+      `Chapter video (${videoDurationSeconds.toFixed(2)}s) is shorter than its narration audio ` +
+        `(${audioDurationSeconds.toFixed(2)}s) by ${shortfall.toFixed(2)}s; -shortest would cut off narration.`,
+    );
+  }
+}
+
 async function runFfmpeg(args: string[]) {
   const ffmpegModule = await import("ffmpeg-static");
   const ffmpegPath = ffmpegModule.default;
@@ -644,14 +660,16 @@ export async function renderChapterVideoFromAssets({
   audioPath: string;
   outputPath: string;
 }) {
+  let audioDurationSeconds: number | null = null;
   if (sceneAssets.length) {
-    const audioDurationSeconds = await probeMediaDurationSeconds(audioPath);
+    audioDurationSeconds = await probeMediaDurationSeconds(audioPath);
     sceneAssets = fitSceneDurationsToAudio(sceneAssets, audioDurationSeconds);
   }
 
   if (motionVideoEnabled() && sceneAssets.length) {
     try {
       await renderChapterMotionVideoFromAssets({ sceneAssets, audioPath, outputPath });
+      await assertVideoCoversAudio(outputPath, audioDurationSeconds);
       return;
     } catch (error) {
       console.error(
@@ -663,6 +681,7 @@ export async function renderChapterVideoFromAssets({
   }
 
   await renderChapterSlideshowFromAssets({ sceneAssets, audioPath, outputPath });
+  await assertVideoCoversAudio(outputPath, audioDurationSeconds);
 }
 
 export async function concatenateAudioAssets({
