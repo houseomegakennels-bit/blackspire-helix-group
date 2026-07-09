@@ -595,6 +595,8 @@ async function renderChapterSlideshowFromAssets({
     "libx264",
     "-c:a",
     "aac",
+    "-movflags",
+    "+faststart",
     outputPath,
   ]);
 }
@@ -644,6 +646,8 @@ async function renderChapterMotionVideoFromAssets({
       "copy",
       "-c:a",
       "aac",
+      "-movflags",
+      "+faststart",
       outputPath,
     ]);
   } finally {
