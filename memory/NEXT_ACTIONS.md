@@ -1,5 +1,5 @@
 # Next Actions
-Last updated: 2026-07-08 (later)
+Last updated: 2026-07-09
 
 ## Workspace / repo hygiene
 1. Keep using repo-managed startup flow: `scripts/agent-start.sh` or the `Codex Workspace` task in Codespaces.
@@ -29,3 +29,11 @@ Last updated: 2026-07-08 (later)
 ## Documentation
 1. Refresh high-level docs like `PROJECT_CONTEXT.md` when the product scope materially changes.
 2. Keep workflow and memory docs aligned so future sessions do not restart from stale assumptions.
+
+## Hermes agent / skills / tools (added 2026-07-09)
+1. On the next real Codespace rebuild, confirm `scripts/setup-hermes-agent.sh` actually completes: `ollama list` shows `hermes3:8b`, `aider --model ollama/hermes3:8b` starts and responds, and it's visibly using `.aider-conventions.md` (ask it something where the fable-mode discipline changes the answer, e.g. does it verify before declaring a task done). Note: a dry run in this Claude Code Remote session (not a real Codespace) failed at the `curl https://ollama.com/install.sh` step with a 403 — this sandbox's outbound proxy doesn't allowlist `ollama.com`, so this step was only syntax-checked (`bash -n`) here, not exercised end-to-end; `bootstrap-codespace.sh` treats it as non-fatal (prints a WARNING and continues) either way, but a real Codespace should have normal outbound internet access and should actually complete this step.
+2. Confirm Headroom is actually wrapping Aider (`alias aider="headroom wrap aider"` in `.bashrc`) and check its own reported token-reduction stats on a real exchange.
+3. Spot-check each newly added skill's SKILL.md trigger phrase actually activates it (13 from `Leonxlnx/taste-skill`, 24 from `addyosmani/agent-skills`).
+4. Before ever starting `scripts/telegram-aider-bridge.py`, test the allowlist with a message from an unauthorized Telegram account first and confirm it's silently ignored, before testing with the allowed account.
+5. If `jo-inc/camofox-browser` is ever used, keep it to the approved scope in `scripts/setup-camofox.sh`'s header comment (existing legitimate public-records pulls only).
+6. `TOOLS_AVAILABLE.md` lists further tools (Whisper, yt-dlp, browser-use, Firecrawl, Fooocus, VoxCPM2) that are documented but not installed — revisit if Book Studio's OpenAI costs or Seller/Buyer Engine ingestion work call for one of them specifically.
