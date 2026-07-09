@@ -19,7 +19,7 @@ install_ollama() {
   fi
 
   echo "Installing Ollama..."
-  curl -fsSL https://ollama.com/install.sh | sh
+  curl -fsSL https://ollama.com/install.sh | sh || echo "WARNING: Ollama install failed."
 }
 
 ensure_ollama_running() {
@@ -103,9 +103,12 @@ EOF
 }
 
 echo "Setting up local Hermes agent (Ollama + Aider + Headroom)..."
-install_ollama
-ensure_ollama_running
-pull_hermes_model
+# Each step is independent and non-fatal: a failure in one (e.g. Ollama
+# install blocked or unreachable) should not skip the others, since Aider,
+# Headroom, and the conventions file are each useful on their own.
+install_ollama || true
+ensure_ollama_running || true
+pull_hermes_model || true
 install_aider
 install_headroom
 write_aider_config
