@@ -45,6 +45,7 @@ chmod +x \
   scripts/materialize-env-from-secrets.sh \
   scripts/open-codex-workspace.sh \
   scripts/setup-picsart-mcp.sh \
+  scripts/setup-hermes-agent.sh \
   scripts/sync-workspace.sh \
   scripts/env-check \
   scripts/env-sync
@@ -63,6 +64,7 @@ append_line_once "alias env-check=\"bash $REPO_ROOT/scripts/check-required-env.s
 append_line_once "alias env-sync=\"bash $REPO_ROOT/scripts/materialize-env-from-secrets.sh\"" "$BASHRC"
 append_line_once "alias codex-workspace=\"bash $REPO_ROOT/scripts/open-codex-workspace.sh\"" "$BASHRC"
 append_line_once "alias repo-root=\"cd $REPO_ROOT\"" "$BASHRC"
+append_line_once "alias aider=\"headroom wrap aider\"" "$BASHRC"
 
 echo ""
 echo "Checking Codex auth..."
@@ -72,6 +74,12 @@ echo ""
 echo "Configuring Picsart MCP for Codex and Claude..."
 if ! bash scripts/setup-picsart-mcp.sh; then
   echo "WARNING: Picsart MCP setup did not complete."
+fi
+
+echo ""
+echo "Setting up local Hermes agent (Ollama + Aider + Headroom)..."
+if ! bash scripts/setup-hermes-agent.sh; then
+  echo "WARNING: Hermes agent setup did not complete."
 fi
 
 echo ""
