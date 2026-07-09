@@ -37,6 +37,16 @@ Ember Halo also needs these secrets for a full backend run:
 - `TWILIO_PHONE_NUMBER`
 - `FIRST_ADMIN_EMAIL`
 
+The Telegram-Aider bridge (`scripts/telegram-aider-bridge.py`, personal/opt-in
+only — see its own docstring, and note it is never started automatically)
+needs these two if you choose to run it:
+
+- `TELEGRAM_BOT_TOKEN` — your bot's token from BotFather.
+- `TELEGRAM_ALLOWED_USER_ID` — your own numeric Telegram user ID. The bridge
+  refuses to start without this set, and silently ignores every sender
+  except this one ID — this is the bridge's actual access boundary, not the
+  bot token.
+
 ## Recommended setup
 
 1. In GitHub, open:
