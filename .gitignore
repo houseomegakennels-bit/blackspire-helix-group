@@ -41,6 +41,10 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Optional, manually-installed local tools (e.g. camofox-browser) - not
+# part of the repo, cloned on demand by scripts/setup-camofox.sh
+.tools/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
