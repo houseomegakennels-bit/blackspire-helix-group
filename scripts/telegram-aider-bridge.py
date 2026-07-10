@@ -34,6 +34,26 @@ limitation):
 Both TELEGRAM_BOT_TOKEN and TELEGRAM_ALLOWED_USER_ID must come from the
 environment (set them as Codespaces secrets - see CODESPACES_SECRETS.md).
 Neither is ever hardcoded here.
+
+RUNNING IT PERSISTENTLY (so closing the Codespace terminal doesn't kill it):
+
+    tmux new -s telegram-bridge
+    python3 scripts/telegram-aider-bridge.py
+    # Ctrl+B then D to detach; it keeps running.
+    # Reattach later with: tmux attach -t telegram-bridge
+
+Or with nohup, if you don't want a tmux session to reattach to:
+
+    nohup python3 scripts/telegram-aider-bridge.py > /tmp/telegram-bridge.out 2>&1 &
+    disown
+    # Check it's alive:  ps aux | grep telegram-aider-bridge
+    # Watch logs:        tail -f .telegram-bridge.log
+    # Stop it:           pkill -f telegram-aider-bridge.py
+
+Either way, this only survives you closing the terminal - it does NOT
+survive the whole Codespace idling out. Codespaces stop automatically after
+an inactivity timeout (default 30 minutes, configurable in GitHub settings),
+which kills this process along with everything else in the container.
 """
 import logging
 import os
