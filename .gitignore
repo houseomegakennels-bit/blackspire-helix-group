@@ -157,3 +157,7 @@ vite.config.ts.timestamp-*
 
 # Local media-rendering tool bundles
 frontend/promo/tools/
+.aider*
+# ...but .aiderignore is a committed repo file (tells Aider which paths to
+# skip), so keep it tracked even though .aider* would otherwise ignore it.
+!.aiderignore
