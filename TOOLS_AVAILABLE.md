@@ -1,19 +1,37 @@
-# Tools Available (Documented, Not Auto-Installed)
+# Tools Available
 
-These tools were reviewed as candidate additions for this repo's Codespace.
-None of them are wired into `scripts/bootstrap-codespace.sh` or any shared
-alias — installing/running them is a deliberate, manual action, so they
-don't add startup time or attack surface to every fresh Codespace by
-default. Install commands are listed for when you actually want one.
+Tools reviewed as candidate additions for this repo's Codespace. The first
+section lists what's **auto-installed on every fresh session** via
+`scripts/bootstrap-codespace.sh`; everything after it is **documented but not
+auto-installed** — a deliberate, manual action when you actually want it, so
+it doesn't add startup time or attack surface to every fresh Codespace.
+Install commands are listed for those.
 
-## Already wired into bootstrap (for contrast, not part of this list)
+## Already wired into bootstrap (auto-installed on every fresh session)
 
-Ollama + Hermes + Aider + Headroom (`scripts/setup-hermes-agent.sh`), and the
-Telegram-Aider bridge (`scripts/telegram-aider-bridge.py`, standalone/opt-in
-— see its own docstring) are covered elsewhere and are not "documented but
-uninstalled" — the Hermes stack runs automatically on bootstrap; the
-Telegram bridge is started manually but is a first-class part of this
-repo's own scripts, not a third-party tool.
+These run automatically from `scripts/bootstrap-codespace.sh`, each as a
+non-fatal step, so a fresh Codespace has them ready without a manual install:
+
+- **Ollama + Hermes + Aider + Headroom** — `scripts/setup-hermes-agent.sh`.
+- **browser-use/browser-use** — `scripts/setup-browser-use.sh`. LLM-driven
+  browser automation: give it a goal and it drives a real browser (navigate,
+  click, fill forms, read the page) like a person, rather than calling an API.
+  Needs an LLM backend — point it at the local Hermes model (Ollama) for a
+  free/self-hosted setup, or set a provider API key.
+- **Firecrawl SDK** — `scripts/setup-firecrawl.sh`. Installs `firecrawl-py`,
+  the *client* for turning web pages into clean markdown/structured data.
+  The SDK alone does nothing until it can reach a backend: set
+  `FIRECRAWL_API_KEY` for the hosted cloud API (see `CODESPACES_SECRETS.md`),
+  or point it at a self-hosted Firecrawl engine (its own Docker service, not
+  installed by bootstrap).
+
+The Telegram-Aider bridge (`scripts/telegram-aider-bridge.py`) is
+standalone/opt-in — started manually, never auto-run — see its own docstring.
+
+**browser-use vs. Firecrawl vs. camofox** — easy to conflate: browser-use
+*acts* in a browser to complete a task like a human; Firecrawl *reads* sites
+into structured data for ingestion; camofox (below) is a *stealth* browser
+about not getting blocked. Different jobs.
 
 ## GPU-dependent — will run poorly or not at all on this Codespace
 
@@ -53,21 +71,6 @@ here.
   ```bash
   pip install --user -U yt-dlp
   ```
-
-## Relevant to Seller/Buyer Engine data ingestion — worth a closer look later
-
-Not adopted this pass; flagged as genuinely relevant to existing
-county/public-records and listing-data ingestion work (see
-`memory/ACTIVE_CONTEXT.md`), but each deserves its own separate evaluation
-rather than being bundled in here.
-
-- **browser-use/browser-use** — LLM-driven browser automation.
-  ```bash
-  pip install --user browser-use
-  ```
-- **Firecrawl** (`firecrawl-dev/firecrawl`) — site-to-markdown/structured-data
-  scraping API/self-hosted service. See its own repo for self-host vs.
-  hosted-API setup.
 
 ## Scoped-use-only tool (documented here, setup script lives separately)
 

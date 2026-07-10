@@ -47,6 +47,13 @@ needs these two if you choose to run it:
   except this one ID — this is the bridge's actual access boundary, not the
   bot token.
 
+Optional, only if you use Firecrawl's hosted cloud API (the `firecrawl-py`
+SDK is auto-installed by bootstrap, but does nothing until it can reach a
+backend — see `TOOLS_AVAILABLE.md`):
+
+- `FIRECRAWL_API_KEY` — from your Firecrawl account. Leave unset if you point
+  the SDK at a self-hosted Firecrawl instance instead.
+
 ## Recommended setup
 
 1. In GitHub, open:
