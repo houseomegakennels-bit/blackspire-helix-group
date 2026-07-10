@@ -990,6 +990,22 @@ export async function writeAssetBuffer(
 }
 
 /**
+ * Replace an existing asset's bytes in place at its current relativePath -
+ * for maintenance fixes (e.g. remuxing a video) where the asset identity and
+ * every reference to it (chapter.videoAssetId, etc.) should stay unchanged.
+ */
+export async function overwriteAssetBuffer(relativePath: string, buffer: Buffer, mimeType: string) {
+  if (hasSupabaseStoreEnv()) {
+    const supabase = await ensureRemoteBookStudioStorage();
+    await uploadRemoteBytes(supabase, relativePath.replace(/\\/g, "/"), buffer, mimeType);
+  } else {
+    const absolutePath = path.join(ASSET_ROOT, relativePath);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, buffer);
+  }
+}
+
+/**
  * Mint a direct-to-storage upload target so the browser can PUT a large file
  * straight to Supabase Storage, bypassing the serverless 4.5MB request-body
  * limit. Returns null when remote storage is not configured (local dev), so

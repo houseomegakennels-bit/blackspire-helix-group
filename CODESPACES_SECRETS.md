@@ -37,6 +37,23 @@ Ember Halo also needs these secrets for a full backend run:
 - `TWILIO_PHONE_NUMBER`
 - `FIRST_ADMIN_EMAIL`
 
+The Telegram-Aider bridge (`scripts/telegram-aider-bridge.py`, personal/opt-in
+only — see its own docstring, and note it is never started automatically)
+needs these two if you choose to run it:
+
+- `TELEGRAM_BOT_TOKEN` — your bot's token from BotFather.
+- `TELEGRAM_ALLOWED_USER_ID` — your own numeric Telegram user ID. The bridge
+  refuses to start without this set, and silently ignores every sender
+  except this one ID — this is the bridge's actual access boundary, not the
+  bot token.
+
+Optional, only if you use Firecrawl's hosted cloud API (the `firecrawl-py`
+SDK is auto-installed by bootstrap, but does nothing until it can reach a
+backend — see `TOOLS_AVAILABLE.md`):
+
+- `FIRECRAWL_API_KEY` — from your Firecrawl account. Leave unset if you point
+  the SDK at a self-hosted Firecrawl instance instead.
+
 ## Recommended setup
 
 1. In GitHub, open:
