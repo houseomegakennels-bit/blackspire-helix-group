@@ -109,13 +109,4 @@ if ! bash scripts/check-required-env.sh; then
 fi
 
 echo ""
-echo "Installing Hermes Agent (Nous Research)..."
-if curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup; then
-  echo "Hermes Agent installed. Run 'hermes setup' once to configure API keys, or 'hermes' to start."
-else
-  echo "WARNING: Hermes Agent install did not complete. Install manually with:"
-  echo "  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
-fi
-
-echo ""
 echo "Codespace bootstrap complete for $REPO_NAME."
