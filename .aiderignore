@@ -1,0 +1,5 @@
+# Skills are agent instruction files, not part of the code Aider should map.
+# The .claude/skills entries are symlinks into .agents/skills, which Aider's
+# repo-map can't resolve and warns about noisily on every run - ignore both.
+.agents/skills/
+.claude/skills/

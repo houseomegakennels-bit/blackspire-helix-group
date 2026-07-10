@@ -9,7 +9,10 @@ set -euo pipefail
 # should not break the rest of the Codespace bootstrap.
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-HERMES_MODEL="${HERMES_MODEL:-hermes3:8b}"
+# Default to the 3B model: it runs acceptably on a default (no-GPU, modest
+# CPU/RAM) Codespace. The 8B model pegs the CPU and gets OOM-killed on the
+# default machine - use it only on a larger machine type: HERMES_MODEL=hermes3:8b
+HERMES_MODEL="${HERMES_MODEL:-hermes3:3b}"
 OLLAMA_HOST_URL="http://127.0.0.1:11434"
 
 install_ollama() {
@@ -49,7 +52,7 @@ pull_hermes_model() {
   echo "Pulling ${HERMES_MODEL} (this can take a few minutes on first run)..."
   if ! ollama pull "${HERMES_MODEL}"; then
     echo "WARNING: Failed to pull ${HERMES_MODEL}."
-    echo "If this Codespace is memory-constrained, try HERMES_MODEL=hermes3:3b instead."
+    echo "On a larger machine you can use the bigger model: HERMES_MODEL=hermes3:8b"
     return 1
   fi
 }
@@ -96,6 +99,10 @@ write_aider_config() {
 # settings directly through a bare aider binary, so context compression
 # is applied automatically.
 model: ollama/${HERMES_MODEL}
+# Tell Aider/litellm where the local Ollama server is, so it doesn't emit the
+# "OLLAMA_API_BASE: Not set" warning and reliably reaches the model.
+set-env:
+  - OLLAMA_API_BASE=${OLLAMA_HOST_URL}
 read:
   - .aider-conventions.md
 EOF
