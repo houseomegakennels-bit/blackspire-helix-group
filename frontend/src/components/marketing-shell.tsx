@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { EcosystemMark } from "@/components/ecosystem-mark";
 import { MarketingNav } from "@/components/marketing-nav";
+import { ScrollMotionProvider } from "@/components/scroll-motion-provider";
 import { ShaderBackdrop } from "@/components/shader-backdrop";
 import { ecosystemProjects } from "@/lib/ecosystem";
 import { siteNavSections } from "@/lib/site-structure";
@@ -31,10 +32,11 @@ export function MarketingShell({
   const isDivisionWatermark = Boolean(watermarkLogoSrc);
   const watermarkSrc = watermarkLogoSrc ?? "/brand/blackspire-helix-group-logo-fit.png";
   return (
-    <main
-      className={`luxury-shell min-h-screen text-foreground ${isDivisionWatermark ? "luxury-shell-division" : ""}`}
-      style={themeStyle}
-    >
+    <ScrollMotionProvider>
+      <main
+        className={`luxury-shell min-h-screen text-foreground ${isDivisionWatermark ? "luxury-shell-division" : ""}`}
+        style={themeStyle}
+      >
       {/* Parent-brand pages only: division pages keep their own logo-matched
           palettes and skip the gold shader layer. */}
       {!isDivisionWatermark && (
@@ -136,6 +138,7 @@ export function MarketingShell({
           </div>
         </div>
       </footer>
-    </main>
+      </main>
+    </ScrollMotionProvider>
   );
 }

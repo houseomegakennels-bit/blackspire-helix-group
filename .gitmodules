@@ -1,0 +1,15 @@
+[submodule "mcp-servers/tradingview-mcp"]
+	path = mcp-servers/tradingview-mcp
+	url = https://github.com/tradesdontlie/tradingview-mcp.git
+[submodule "mcp-servers/r3f-scroll-rig"]
+	path = mcp-servers/r3f-scroll-rig
+	url = https://github.com/14islands/r3f-scroll-rig.git
+[submodule "mcp-servers/gsap"]
+	path = mcp-servers/gsap
+	url = https://github.com/greensock/GSAP.git
+[submodule "mcp-servers/lenis"]
+	path = mcp-servers/lenis
+	url = https://github.com/darkroomengineering/lenis.git
+[submodule "mcp-servers/theatre"]
+	path = mcp-servers/theatre
+	url = https://github.com/theatre-js/theatre.git
