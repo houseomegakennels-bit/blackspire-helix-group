@@ -80,6 +80,7 @@ install_headroom() {
 write_aider_config() {
   local conventions_file="${REPO_ROOT}/.aider-conventions.md"
   local config_file="${REPO_ROOT}/.aider.conf.yml"
+  local settings_file="${REPO_ROOT}/.aider.model.settings.yml"
   local skill_file="${REPO_ROOT}/.claude/skills/fable-mode/SKILL.md"
 
   if [ -f "$skill_file" ]; then
@@ -103,10 +104,30 @@ model: ollama/${HERMES_MODEL}
 # "OLLAMA_API_BASE: Not set" warning and reliably reaches the model.
 set-env:
   - OLLAMA_API_BASE=${OLLAMA_HOST_URL}
+# Small local models (hermes3:3b) can't make use of a large repo-map and get
+# swamped by it, spending their tiny context on repo scanning instead of the
+# task. Disable the map and keep chat history tight.
+map-tokens: 0
+max-chat-history-tokens: 2048
+# "whole" edit format rewrites entire files instead of demanding precise diff
+# hunks - far more reliable for a weak model that struggles to emit exact diffs.
+edit-format: whole
 read:
   - .aider-conventions.md
 EOF
   echo "Wrote Aider config: $config_file"
+
+  cat > "$settings_file" <<EOF
+# CRITICAL for local models: Ollama defaults to a ~2048-token context and
+# SILENTLY truncates anything longer. Aider's prompt (system rules +
+# conventions + the file being edited) easily exceeds that, so without this
+# the model sees a chopped prompt and returns nothing useful - the usual
+# reason "the local model doesn't work" in Aider. Raise the context window.
+- name: ollama/${HERMES_MODEL}
+  extra_params:
+    num_ctx: 8192
+EOF
+  echo "Wrote Aider model settings: $settings_file"
 }
 
 echo "Setting up local Hermes agent (Ollama + Aider + Headroom)..."
