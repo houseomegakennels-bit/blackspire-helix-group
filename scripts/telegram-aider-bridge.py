@@ -59,6 +59,7 @@ import logging
 import os
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 try:
@@ -72,6 +73,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_FILE = REPO_ROOT / ".telegram-bridge.log"
 MAX_TELEGRAM_MESSAGE = 4000  # stay under Telegram's 4096-character hard cap
 AIDER_TIMEOUT_SECONDS = 600
+OLLAMA_BASE = os.environ.get("OLLAMA_API_BASE", "http://127.0.0.1:11434")
 
 YES_WORDS = {"yes", "y", "confirm", "apply"}
 NO_WORDS = {"no", "n", "cancel", "revert", "discard"}
@@ -116,6 +118,17 @@ def _chunk(text: str, size: int = MAX_TELEGRAM_MESSAGE):
 def _run(args: list[str]) -> str:
     result = subprocess.run(args, cwd=str(REPO_ROOT), capture_output=True, text=True)
     return (result.stdout or "") + (result.stderr or "")
+
+
+def _ollama_up() -> bool:
+    """True if the local Ollama server answers. Aider is useless without it -
+    checking first lets us send a clean message instead of relaying Aider's
+    long retry/backoff spam when the model server is down or was killed."""
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_BASE}/api/version", timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def _git_status_paths() -> set[str]:
@@ -178,6 +191,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if _state == "processing":
         await update.message.reply_text("Still processing the previous message - please wait.")
+        return
+
+    if not _ollama_up():
+        await update.message.reply_text(
+            "The local model server (Ollama) isn't responding, so Aider has no "
+            "model to run. Start it in the Codespace with:\n"
+            "  nohup ollama serve > ~/.ollama/serve.log 2>&1 &\n"
+            "then send your message again."
+        )
         return
 
     _state = "processing"
