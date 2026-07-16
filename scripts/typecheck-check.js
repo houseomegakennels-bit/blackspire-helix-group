@@ -1,0 +1,1 @@
+import {spawnSync} from 'node:child_process'; for(const f of ['packages/hermes/hermes.js','apps/telegram/bot.js']){const r=spawnSync('node',['--check',f],{stdio:'inherit'}); if(r.status) process.exit(r.status)} console.log('Typecheck syntax check passed.');

@@ -1,0 +1,1 @@
+import fs from 'node:fs'; import {DB_PATH} from '../packages/shared/config.js'; const target=process.argv[2]||`${DB_PATH}.bak`; fs.copyFileSync(DB_PATH,target); console.log(`Backup written to ${target}`);
