@@ -1,0 +1,1 @@
+import fs from 'node:fs'; for(const f of ['apps/api/server.js','apps/telegram/bot.js','apps/jarvis-pwa/public/index.html','apps/jarvis-pwa/public/manifest.webmanifest']){if(!fs.existsSync(f)) throw new Error(`${f} missing`)} console.log('Build check passed.');

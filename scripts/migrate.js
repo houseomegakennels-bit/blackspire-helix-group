@@ -1,0 +1,1 @@
+import {migrate} from '../packages/task-engine/db.js'; import {seedWorkspace} from '../packages/workspace-registry/workspaces.js'; migrate(); seedWorkspace(); console.log('Migrated Blackspire Command SQLite database.');

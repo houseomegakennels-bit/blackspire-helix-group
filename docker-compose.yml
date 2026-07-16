@@ -1,0 +1,8 @@
+services:
+  blackspire-command:
+    build: .
+    ports: ["8787:8787"]
+    env_file: .env
+    volumes: ["command-data:/app/.blackspire-command"]
+volumes:
+  command-data:
