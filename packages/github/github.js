@@ -42,7 +42,13 @@ export function inspectChangedFiles({ cwd = '.' } = {}) {
   return output.split('\n').map((line) => ({ status: line.slice(0, 2).trim() || 'modified', path: line.slice(3).trim() }));
 }
 
-export function commitAll(message, { cwd = '.' } = {}) {
+export function isProtectedBranch(branch, protectedBranches = ['main', 'master', 'work']) {
+  return protectedBranches.includes(branch);
+}
+
+export function commitAll(message, { cwd = '.', protectedBranches = ['main', 'master', 'work'] } = {}) {
+  const branch = git(['branch', '--show-current'], cwd).stdout.trim();
+  if (isProtectedBranch(branch, protectedBranches)) return { ok: false, code: null, stdout: '', stderr: `Refusing to commit directly on protected branch ${branch}` };
   ensureGitIdentity({ cwd });
   git(['add', '.'], cwd);
   const result = git(['commit', '-m', message], cwd);
