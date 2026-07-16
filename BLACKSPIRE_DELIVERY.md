@@ -45,6 +45,13 @@ verified, and what remains.
 - `tests/acceptance.test.js` (updated — fixed 3 pre-existing failures exposed once the database layer could actually run)
 - `tests/hardening.test.js` (updated — fixed rate-limit-bucket assumptions that depended on the IP-spoofing bug this pass closes)
 
+**Follow-up commit on this same PR (CI workflow):**
+- `.github/workflows/blackspire-ci.yml` (new) — CI workflow described below
+- `package.json` — added `"engines": {"node": ">=22.5.0"}`
+- `packages/shared/security.js` — raised the production Node-version floor from 20+ to 22.5+ to match what
+  `node:sqlite` actually requires (a real gap the CI-workflow request surfaced: the old floor would have
+  wrongly certified a Node 20/21 production config as safe when the app would actually crash on import)
+
 ## Exact test count
 
 **114 tests, 0 failures.** (47 tests existed on the branch before this pass; they could not be executed in
@@ -70,6 +77,35 @@ npm audit --audit-level=high   # PASS — "found 0 vulnerabilities" (0 runtime n
 
 Additionally, every new/changed runtime file was syntax-checked individually with `node --check` (13 files,
 all passed), since the repo's `lint`/`typecheck` scripts only check two specific files by design.
+
+## Continuous integration
+
+**Workflow file:** [`.github/workflows/blackspire-ci.yml`](.github/workflows/blackspire-ci.yml)
+
+Runs on every `pull_request` and every `push` to `main`. From a clean checkout: `npm install` →
+`rm -rf .blackspire-command` → `npm run db:migrate` → `npm test` → `npm run build` → `npm run lint` →
+`npm run typecheck` → `npm run security:scan` → `npm audit --audit-level=high`. Node version is read from
+`package.json`'s `"engines": {"node": ">=22.5.0"}` field via `actions/setup-node`'s `node-version-file`
+input, so CI can never silently drift from what the app itself requires — `packages/task-engine/db.js` uses
+`node:sqlite` (`DatabaseSync`), which does not exist before Node 22.5.0. (Fixing this exact floor is also
+why `packages/shared/security.js`'s production Node-version check was raised from 20+ to 22.5+ in this same
+follow-up — the previous floor would have wrongly certified a Node 20/21 production config as safe when it
+would actually crash on import.)
+
+Any step failing stops the job immediately (each `run:` step fails the job on a non-zero exit; commands are
+piped through `tee` into per-step log files, and `bash`'s default `pipefail` on GitHub's Linux runners means
+`tee` cannot mask that exit code). `npm` dependencies are cached via `actions/setup-node`'s built-in `cache: npm`
+(keyed off `package-lock.json`). All environment variables set in the workflow are test-only, non-secret
+placeholders (`SESSION_SECRET`, `TELEGRAM_ALLOWED_USERS`, `PORT`, `TRUST_PROXY`, `RATE_LIMIT_DISABLED`); no
+real credentials are referenced. `COMMAND_ADMIN_TOKEN` and `HERMES_TEST_PROVIDER` are deliberately **not**
+set at the workflow level — the test suite is self-contained and some files intentionally exercise this
+project's built-in default admin token or real (non-mock) provider-selection logic, and a global override
+would silently break those tests instead of testing anything real. On any failure, `ci-logs/*.log` (every
+step's captured output) plus any `npm` debug log are uploaded as a build artifact.
+
+The full 9-command sequence above was run locally end-to-end with exactly the same job-level environment
+variables the workflow sets, in a stripped environment (`env -i`) to catch anything relying on ambient
+variables that CI wouldn't have — 114/114 tests pass and every other command is clean.
 
 ### Restart-persistence acceptance test (ran as `tests/persistence.test.js`, also runnable standalone via `node --test tests/persistence.test.js`)
 

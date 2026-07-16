@@ -8,7 +8,10 @@ import { rateLimit } from './rateLimits.js';
 
 export { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
-const MIN_NODE_MAJOR = 20;
+// packages/task-engine/db.js uses node:sqlite (DatabaseSync), which does not exist before Node 22.5.0 —
+// the module import itself throws on older Node, so the floor here must match that, not a generic LTS floor.
+const MIN_NODE_MAJOR = 22;
+const MIN_NODE_MINOR_AT_MIN_MAJOR = 5;
 
 export function requireProductionSafeConfig(env = process.env, { dbDir = path.dirname(DB_PATH), attachmentsDir = ATTACHMENTS_DIR } = {}) {
   const errors = [];
@@ -23,8 +26,9 @@ export function requireProductionSafeConfig(env = process.env, { dbDir = path.di
     if (env.RATE_LIMIT_DISABLED === 'true') errors.push('Rate limiting cannot be disabled in production.');
     if (env.TRUST_PROXY !== 'true' && env.TRUST_PROXY !== 'false') errors.push('TRUST_PROXY must be explicitly set to "true" or "false" in production.');
     if (env.GIT_WORKFLOW_ENABLED === 'true' && spawnSync('git', ['--version'], { encoding: 'utf8' }).status !== 0) errors.push('Git workflow is enabled but the git binary is not available.');
-    const nodeMajor = Number(String(env.NODE_VERSION_OVERRIDE || process.versions.node).split('.')[0]);
-    if (!Number.isFinite(nodeMajor) || nodeMajor < MIN_NODE_MAJOR) errors.push(`Node.js ${MIN_NODE_MAJOR}+ is required (running ${process.versions.node}).`);
+    const [nodeMajor, nodeMinor] = String(env.NODE_VERSION_OVERRIDE || process.versions.node).split('.').map(Number);
+    const nodeSupported = Number.isFinite(nodeMajor) && (nodeMajor > MIN_NODE_MAJOR || (nodeMajor === MIN_NODE_MAJOR && nodeMinor >= MIN_NODE_MINOR_AT_MIN_MAJOR));
+    if (!nodeSupported) errors.push(`Node.js ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR_AT_MIN_MAJOR}+ is required (running ${process.versions.node}) because packages/task-engine/db.js uses node:sqlite.`);
     if (!writable(attachmentsDir)) errors.push('Telegram attachment directory is not writable.');
   }
   if (!writable(dbDir)) errors.push('Database directory is not writable.');
