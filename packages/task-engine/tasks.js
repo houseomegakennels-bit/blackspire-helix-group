@@ -81,16 +81,29 @@ export function recordEvidence(taskId, kind, details = {}) {
 }
 
 
-export function createApproval(taskId, action, reason) {
+export function createApproval(taskId, action, reason, { riskLevel = 'high', requestedBy = 'hermes', expiresAt = null } = {}) {
+  const existing = query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND action=${esc(action)} AND status='pending' ORDER BY created_at DESC LIMIT 1;`)[0];
+  if (existing) return existing.id;
   const approvalId = id('approval');
-  execSql(`INSERT INTO approvals VALUES (${esc(approvalId)},${esc(taskId)},${esc(action)},'pending',${esc(reason || '')},${esc(now())},NULL);`);
-  audit(taskId, 'policy', 'approval.created', { approvalId, action, reason });
+  execSql(`INSERT INTO approvals VALUES (${esc(approvalId)},${esc(taskId)},${esc(action)},'pending',${esc(reason || '')},${esc(now())},NULL,${esc(riskLevel)},${esc(requestedBy)},NULL,NULL,${esc(expiresAt || '')});`);
+  audit(taskId, 'policy', 'approval.created', { approvalId, action, reason, riskLevel, requestedBy, expiresAt });
   return approvalId;
 }
 
-export function decideApproval(taskId, status, reason = '') {
-  execSql(`UPDATE approvals SET status=${esc(status)}, reason=${esc(reason)}, decided_at=${esc(now())} WHERE task_id=${esc(taskId)} AND status='pending';`);
-  audit(taskId, 'administrator', `approval.${status}`, { reason });
+export function decideApproval(taskId, status, reason = '', { decidedBy = 'administrator' } = {}) {
+  const approval = query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND status='pending' ORDER BY created_at DESC LIMIT 1;`)[0];
+  if (!approval) {
+    audit(taskId, 'administrator', `approval.${status}.idempotent`, { reason });
+    return null;
+  }
+  if (approval.expires_at && Date.parse(approval.expires_at) < Date.now()) {
+    execSql(`UPDATE approvals SET status='expired', decided_at=${esc(now())}, decided_by=${esc(decidedBy)}, decision_note='Expired before decision' WHERE id=${esc(approval.id)};`);
+    audit(taskId, 'administrator', 'approval.expired', { reason: 'Expired before decision' });
+    return 'expired';
+  }
+  execSql(`UPDATE approvals SET status=${esc(status)}, reason=${esc(approval.reason || reason)}, decided_at=${esc(now())}, decided_by=${esc(decidedBy)}, decision_note=${esc(reason)} WHERE id=${esc(approval.id)};`);
+  audit(taskId, 'administrator', `approval.${status}`, { reason, decidedBy });
+  return status;
 }
 
 export function taskRecords(taskId) {

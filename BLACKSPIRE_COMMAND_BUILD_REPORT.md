@@ -83,7 +83,7 @@ The test creates an isolated temporary Git repository, registers it as a workspa
 The final credential-free acceptance pass ran these exact commands:
 
 - `npm run db:migrate` — PASSED.
-- `npm test` — PASSED, 38 tests.
+- `npm test` — PASSED, 47 tests.
 - `npm run build` — PASSED.
 - `npm run lint` — PASSED.
 - `npm run typecheck` — PASSED.
@@ -93,7 +93,7 @@ The final credential-free acceptance pass ran these exact commands:
 ## Validation Commands Run
 
 - `npm run db:migrate` — passed.
-- `npm test` — passed, 38 tests.
+- `npm test` — passed, 47 tests.
 - `npm run build` — passed.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
@@ -150,3 +150,53 @@ Expected local result: Hermes creates a `hermes/<taskId>` branch, writes the fil
 - Live GitHub draft PR creation requires GitHub credentials and a target repository policy.
 - Live OpenAI, Anthropic, Codex, and Claude Code execution requires the respective credentials/installed CLIs.
 - Telegram webhook mode, file uploads, result-file delivery, voice-note transcription, secure session cookies, CSRF protection, rate limiting, and incident bundle export remain unimplemented and must not be described as complete.
+
+## PRODUCTION HARDENING RESULTS
+
+| Requirement | Status | Exact file paths | Exact tests | Credentials still required | Remaining limitations |
+|---|---:|---|---|---|---|
+| Approval request/decision persistence with risk, requester, decider, expiration, idempotency, and audit | FUNCTIONAL LOCAL | `packages/task-engine/db.js`, `packages/task-engine/tasks.js`, `packages/hermes/hermes.js`, `apps/api/server.js` | `tests/hardening.test.js` approval records test | None local | Approval UI can expose more detail. |
+| Secure Jarvis session login/logout/status/revoke | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/api/server.js`, `apps/jarvis-pwa/public/index.html` | `tests/hardening.test.js` secure session test; `tests/acceptance.test.js` Jarvis asset test | Strong `COMMAND_ADMIN_TOKEN`, `SESSION_SECRET` | Browser E2E should be added with a real browser. |
+| HttpOnly/SameSite cookie sessions and no token in localStorage | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/jarvis-pwa/public/index.html` | `tests/hardening.test.js`; `tests/acceptance.test.js` asserts no `localStorage.commandToken` | HTTPS for Secure cookies in production | Production deployment must set HTTPS base URL. |
+| CSRF protection for state-changing session requests | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/api/server.js`, `apps/jarvis-pwa/public/index.html` | `tests/hardening.test.js` missing/invalid/valid CSRF checks | None local | Bearer-token API clients remain CSRF-exempt by design. |
+| Rate limiting for login/API actions/Telegram | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/api/server.js`, `apps/telegram/bot.js` | `tests/hardening.test.js` login rate-limit test; Telegram command test | None local | Production distributed deployments need shared rate-limit storage. |
+| Telegram webhook secret validation and fast ack | FUNCTIONAL LOCAL / LIVE WITH TOKEN | `apps/api/server.js`, `apps/telegram/bot.js` | `tests/hardening.test.js` webhook secret/dispatch tests | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, HTTPS URL | Live Telegram webhook not verified without credentials. |
+| Telegram file and voice-note handling boundaries | MOCKED | `apps/telegram/bot.js` | `tests/hardening.test.js` file/voice tests | Telegram bot token; transcription adapter | Malware scanning and real Telegram download API remain future work. |
+| Evidence bundle export JSON/Markdown with redaction and audit | FUNCTIONAL LOCAL | `apps/api/server.js`, `packages/task-engine/tasks.js` | `tests/hardening.test.js` evidence export test | None local | Bundle streaming/large-file delivery should be added. |
+| Emergency-stop reset strong re-authentication | FUNCTIONAL LOCAL | `apps/api/server.js`, `packages/shared/security.js` | `tests/hardening.test.js` reset confirmation test | Active session and CSRF confirmation | Child-process termination registry remains partial. |
+| Production startup/config validation | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/api/server.js` | `tests/hardening.test.js` production validation test | Production secrets/domain/webhook secret | Add CLI preflight command output formatting. |
+| Security headers and browser policies | FUNCTIONAL LOCAL | `apps/api/server.js` | `tests/acceptance.test.js` header check | HTTPS for HSTS in production | Inline Jarvis script keeps dev CSP looser; production CSP removes unsafe-inline but UI should be externalized. |
+| Telegram/Jarvis admin parity | FUNCTIONAL LOCAL / STUBBED WHERE NOTED | `apps/telegram/bot.js`, `apps/jarvis-pwa/public/index.html`, `apps/api/server.js` | `tests/hardening.test.js` Telegram commands; `tests/acceptance.test.js` Jarvis controls | Telegram token for live transport | Evidence export in Jarvis is API-backed but needs a visible download button polish. |
+
+## SAFE TO EXPOSE TO THE INTERNET?
+
+NO.
+
+The foundation is substantially harder than the previous local prototype: secure cookie sessions, CSRF, rate limiting, webhook secret validation, stronger emergency reset, production config validation, security headers, evidence exports, and hardening tests now exist. It is still not safe for public internet exposure because live Telegram/GitHub/provider paths are unverified without credentials, Telegram file downloads are boundary-mocked, distributed rate limiting is not backed by a shared store, service hardening/TLS deployment is not included, and production Jarvis CSP should move inline JavaScript into a separate asset.
+
+## SAFE TO MERGE?
+
+YES, as a local foundation and hardening baseline — not as an internet-exposed production deployment.
+
+1. Credential-free local acceptance and hardening tests pass.
+2. Secure session, CSRF, rate limiting, approval persistence, webhook secret checks, and evidence export are implemented.
+3. Production config validation refuses unsafe defaults.
+4. External live integrations remain honestly credential-gated.
+5. Telegram file handling is mocked/boundary-safe, not a full malware-scanned pipeline.
+6. Distributed rate limiting and production service/TLS deployment remain future work.
+7. Jarvis should externalize inline JS before strict production CSP.
+8. No real secrets are committed; security scan and audit pass.
+
+## WHAT I MUST CONFIGURE FROM MY IPHONE
+
+1. Set `COMMAND_ADMIN_TOKEN` to a long unique admin secret in the host environment.
+2. Set `SESSION_SECRET` to a separate 32+ character random value.
+3. Create a Telegram bot in BotFather and set `TELEGRAM_BOT_TOKEN`.
+4. Generate and set `TELEGRAM_WEBHOOK_SECRET`.
+5. Set `TELEGRAM_ALLOWED_USERS` to your numeric Telegram user ID.
+6. Add `GITHUB_TOKEN` and authenticate `gh` for live draft PR creation.
+7. Add `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` if live model providers are desired.
+8. Point `PUBLIC_BASE_URL` to an HTTPS domain and enable production secure cookies.
+9. Open `/jarvis` on iPhone Safari, log in with the admin secret, and add it to Home Screen.
+10. Send `/health` from the allowlisted Telegram account, then `/task Create \`docs/mobile-verification.md\` with a short mobile smoke-test note.`
+11. Tap the Jarvis emergency stop, then reset it from an authenticated fresh Jarvis session using the confirmation flow.
