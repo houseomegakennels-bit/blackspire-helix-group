@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PORT, ADMIN_TOKEN } from '../../packages/shared/config.js';
 import { json, readJson, id } from '../../packages/shared/util.js';
-import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit } from '../../packages/task-engine/tasks.js';
+import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, decideApproval } from '../../packages/task-engine/tasks.js';
 import { listWorkspaces } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
 
@@ -45,8 +45,8 @@ async function route(req, res) {
       if (!task) return json(res, 404, { error: 'not found' });
       if (!match[2]) return json(res, 200, { task });
       if (match[2] === 'logs') return json(res, 200, { logs: logs(task.id) });
-      if (match[2] === 'approve') return json(res, 200, { task: transition(task.id, 'queued', { summary: 'Approved by administrator' }) });
-      if (match[2] === 'reject') return json(res, 200, { task: transition(task.id, 'cancelled', { error: 'Rejected by administrator' }) });
+      if (match[2] === 'approve') { decideApproval(task.id, 'approved', 'Approved by administrator'); return json(res, 200, { task: transition(task.id, 'queued', { summary: 'Approved by administrator' }) }); }
+      if (match[2] === 'reject') { decideApproval(task.id, 'rejected', 'Rejected by administrator'); return json(res, 200, { task: transition(task.id, 'cancelled', { error: 'Rejected by administrator' }) }); }
       if (match[2] === 'pause') return json(res, 200, { task: transition(task.id, 'waiting_for_approval', { summary: 'Paused by administrator' }) });
       if (match[2] === 'resume') return json(res, 200, { task: transition(task.id, 'queued') });
       if (match[2] === 'cancel') return json(res, 200, { task: transition(task.id, 'cancelled', { error: 'Cancelled by administrator' }) });

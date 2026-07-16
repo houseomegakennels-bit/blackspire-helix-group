@@ -80,6 +80,19 @@ export function recordEvidence(taskId, kind, details = {}) {
   execSql(`INSERT INTO task_evidence VALUES (${esc(id('ev'))},${esc(taskId)},${esc(kind)},${esc(JSON.stringify(details))},${esc(now())});`);
 }
 
+
+export function createApproval(taskId, action, reason) {
+  const approvalId = id('approval');
+  execSql(`INSERT INTO approvals VALUES (${esc(approvalId)},${esc(taskId)},${esc(action)},'pending',${esc(reason || '')},${esc(now())},NULL);`);
+  audit(taskId, 'policy', 'approval.created', { approvalId, action, reason });
+  return approvalId;
+}
+
+export function decideApproval(taskId, status, reason = '') {
+  execSql(`UPDATE approvals SET status=${esc(status)}, reason=${esc(reason)}, decided_at=${esc(now())} WHERE task_id=${esc(taskId)} AND status='pending';`);
+  audit(taskId, 'administrator', `approval.${status}`, { reason });
+}
+
 export function taskRecords(taskId) {
   return {
     logs: logs(taskId),
@@ -89,6 +102,7 @@ export function taskRecords(taskId) {
     changedFiles: query(`SELECT * FROM changed_files WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
     commands: query(`SELECT * FROM command_results WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
     evidence: query(`SELECT * FROM task_evidence WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
+    approvals: query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
   };
 }
 

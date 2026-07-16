@@ -43,7 +43,7 @@ This report is a strict implementation audit of the current Blackspire Command f
 | Persist usage/estimated cost | FUNCTIONAL LOCAL (estimated) | `packages/task-engine/tasks.js`, `packages/providers/providers.js` | `tests/orchestration.test.js` verifies records; mock usage persisted | Real provider usage responses for live costs | Implement exact model pricing tables. |
 | Persist changed files | FUNCTIONAL LOCAL | `packages/task-engine/tasks.js`, `packages/hermes/hermes.js` | `tests/orchestration.test.js` asserts changed files exist | None local | Parse line counts. |
 | Persist command results | FUNCTIONAL LOCAL | `packages/task-engine/tasks.js`, `packages/hermes/hermes.js` | `tests/orchestration.test.js` asserts command result exists | None local | Add command log download endpoint. |
-| Persist approval records | STUBBED | `packages/task-engine/db.js`, `packages/hermes/hermes.js` | High-risk task pauses; approval table exists but not fully written | None local | Write approval rows for every approval pause/decision. |
+| Persist approval records | FUNCTIONAL LOCAL | `packages/task-engine/tasks.js`, `packages/hermes/hermes.js`, `apps/api/server.js` | `tests/acceptance.test.js` verifies approval pause/approve/reject paths | None local | Add approval center detail endpoint. |
 | Persist final evidence | FUNCTIONAL LOCAL | `packages/task-engine/tasks.js`, `packages/hermes/hermes.js` | `tests/orchestration.test.js` asserts final evidence exists | None local | Add incident/evidence bundle endpoint. |
 | Cancellation prevents subsequent stages | FUNCTIONAL LOCAL | `apps/api/server.js`, `apps/worker/worker.js`, `packages/hermes/hermes.js` | `tests/orchestration.test.js` cancellation test | None local | Add child-process kill registry. |
 | Emergency stop prevents claims/new work | FUNCTIONAL LOCAL | `apps/api/server.js`, `apps/worker/worker.js`, `packages/task-engine/tasks.js` | `tests/orchestration.test.js`; `tests/integration.test.js` | None local | Add stronger reset authentication. |
@@ -61,7 +61,7 @@ This report is a strict implementation audit of the current Blackspire Command f
 
 ## End-to-End Local Coding Change Proven
 
-Automated test `tests/orchestration.test.js` now proves one genuine local coding change from queued request through worker claim, staged Hermes orchestration, mocked provider artifact, temporary Git branch, edit application, validation, commit, PR-packet fallback, persisted evidence, and completed result.
+Automated tests `tests/orchestration.test.js` and `tests/acceptance.test.js` now prove one genuine local coding change from queued request through worker claim, staged Hermes orchestration, mocked provider artifact, temporary Git branch, edit application, validation, commit, PR-packet fallback, persisted evidence, and completed result.
 
 The test creates an isolated temporary Git repository, registers it as a workspace, submits a coding task, and verifies:
 
@@ -78,17 +78,39 @@ The test creates an isolated temporary Git repository, registers it as a workspa
 11. Cancellation prevents subsequent stages.
 12. Emergency stop prevents new task creation/claims.
 
+## A. FINAL TEST RESULTS
+
+The final credential-free acceptance pass ran these exact commands:
+
+- `npm run db:migrate` — PASSED.
+- `npm test` — PASSED, 38 tests.
+- `npm run build` — PASSED.
+- `npm run lint` — PASSED.
+- `npm run typecheck` — PASSED.
+- `npm run security:scan` — PASSED.
+- `npm audit --audit-level=high` — PASSED, 0 vulnerabilities.
+
 ## Validation Commands Run
 
 - `npm run db:migrate` — passed.
-- `npm test` — passed, 28 tests.
+- `npm test` — passed, 38 tests.
 - `npm run build` — passed.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
 - `npm run security:scan` — passed.
 - `npm audit --audit-level=high` — passed, 0 vulnerabilities.
 
-## WHAT I MUST CONFIGURE FROM MY IPHONE
+## B. CREDENTIALS I MUST PROVIDE
+
+- `COMMAND_ADMIN_TOKEN` production value.
+- Numeric Telegram user ID for `TELEGRAM_ALLOWED_USERS`.
+- `TELEGRAM_BOT_TOKEN` from BotFather for live Telegram polling/sending.
+- `GITHUB_TOKEN` and authenticated `gh` CLI or a future GitHub App for live draft PR creation.
+- `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` for live model calls.
+- Installed/authenticated `codex` and/or `claude` CLIs for those execution modes.
+- HTTPS domain/container host for real iPhone PWA use outside local development.
+
+## C. WHAT I MUST CONFIGURE FROM MY IPHONE
 
 1. Set a strong `COMMAND_ADMIN_TOKEN` in the host/container environment.
 2. Set `TELEGRAM_ALLOWED_USERS` to your numeric Telegram user ID.
@@ -98,6 +120,29 @@ The test creates an isolated temporary Git repository, registers it as a workspa
 6. Add `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` before expecting real model calls.
 7. Install/authenticate `codex` and/or `claude` CLIs if those execution modes are desired.
 8. Put the API behind HTTPS before using it outside local development.
+
+## D. SAFE TO MERGE?
+
+NO — not as a production system. It is safe to merge only as a local foundation if the team accepts these constraints:
+
+1. Credential-free local orchestration is now proven end-to-end.
+2. External provider and Telegram/GitHub live paths are credential-gated and not live-verified.
+3. Telegram webhook, file upload, and voice-note handling remain missing.
+4. Secure cookie sessions, CSRF, and rate limiting remain missing.
+5. GitHub App flow and live draft PR creation remain unverified.
+6. Provider cost accounting is persisted but estimated unless real provider responses are used.
+7. Approval records exist, but approval UI/detail endpoints need refinement.
+8. Production TLS/reverse proxy/service hardening remains to be done.
+9. Incident bundle export remains missing.
+10. The local tests are clean and suitable as the baseline for the next hardening PR.
+
+## E. POST-MERGE FIRST TASK
+
+Submit this low-risk verification task through Telegram or Jarvis:
+
+`Create \`docs/mobile-verification.md\` with a one-paragraph note saying Blackspire Command completed a post-merge mobile smoke test.`
+
+Expected local result: Hermes creates a `hermes/<taskId>` branch, writes the file inside `docs/`, runs the workspace validation command, commits the change, and creates a manual PR packet unless live GitHub credentials are configured.
 
 ## Real Blockers / Limitations
 

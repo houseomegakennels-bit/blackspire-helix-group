@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence } from '../task-engine/tasks.js';
+import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
@@ -74,6 +74,7 @@ function approvalDecision(request) {
 
 function recordApprovalPause(taskId, reason) {
   createSubtasks(taskId, [{ title: 'Approval required', stage: 'approval', status: 'waiting_for_approval', details: { reason } }]);
+  createApproval(taskId, 'high_risk_execution', reason);
   recordEvidence(taskId, 'approval_required', { reason });
   transition(taskId, 'waiting_for_approval', { summary: reason, current_stage: 'approval' });
 }
