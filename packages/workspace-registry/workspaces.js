@@ -1,0 +1,5 @@
+import {execSql,query,esc,migrate} from '../task-engine/db.js'; import {id,now} from '../shared/util.js'; migrate();
+export function seedWorkspace(){ if(query(`SELECT * FROM workspaces LIMIT 1;`).length) return; execSql(`INSERT INTO workspaces VALUES ('blackspire-command','Blackspire Command','Safe local foundation workspace','local/blackspire-command','work','[".","docs","packages","apps","tests"]','["npm test","npm run build","npm run lint"]','{"preferred":["codex","openai","anthropic","manual"],"fallback":"manual"}','low',500,'["OPENAI_API_KEY","ANTHROPIC_API_KEY","GITHUB_TOKEN","TELEGRAM_BOT_TOKEN"]','["read","write_branch","test","draft_pr"]','unknown','.',${esc(now())});`)}
+export function listWorkspaces(){seedWorkspace(); return query(`SELECT * FROM workspaces ORDER BY name;`).map(parse)}
+export function getWorkspace(idv='blackspire-command'){seedWorkspace(); const w=query(`SELECT * FROM workspaces WHERE id=${esc(idv)};`)[0]; return w&&parse(w)}
+function parse(w){ for(const k of ['allowed_paths','build_commands','secret_references','enabled_tools']) w[k]=JSON.parse(w[k]||'[]'); w.provider_policy=JSON.parse(w.provider_policy||'{}'); return w;}
