@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval } from '../task-engine/tasks.js';
+import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
@@ -8,6 +8,7 @@ import { createTaskBranch, applyEdits, inspectChangedFiles, commitAll, createPul
 
 const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider', 'execute_provider', 'apply_edits', 'validate', 'commit', 'pull_request', 'summarize'];
 const MAX_RETRIES = 2;
+const HIGH_RISK_ACTION = 'high_risk_execution';
 
 export async function processTask(task) {
   const workspace = getWorkspace(task.workspace_id);
@@ -15,8 +16,9 @@ export async function processTask(task) {
   if (await shouldStop(task.id)) return;
 
   try {
-    const approval = approvalDecision(task.request);
-    if (approval.requiresApproval) {
+    const approval = evaluateApproval(task);
+    if (approval.status === 'blocked') return transition(task.id, 'failed', { error: approval.reason });
+    if (approval.status === 'pending') {
       recordApprovalPause(task.id, approval.reason);
       return;
     }
@@ -67,14 +69,32 @@ async function shouldStop(taskId) {
   return false;
 }
 
-function approvalDecision(request) {
-  if (/deploy|delete|merge|billing|credential|trading|funds|production/i.test(request)) return { requiresApproval: true, reason: 'High-impact task requires administrator approval before execution' };
-  return { requiresApproval: false };
+function requiresApproval(request) {
+  return /deploy|delete|merge|billing|credential|trading|funds|production/i.test(request);
+}
+
+// Approvals are persisted state, not a per-run regex check: once an approval is recorded for a task,
+// every subsequent run (resume, worker retry, etc.) reads that record instead of re-deciding from the
+// request text. That is what stops an approved or rejected task from looping back into a fresh approval
+// prompt every time it is picked up. A stale "approved" decision that outlived its own expiry window is
+// treated as blocked, not clear, so the task cannot slip through on an approval that has gone cold.
+function evaluateApproval(task) {
+  if (!requiresApproval(task.request)) return { status: 'clear' };
+  const approval = latestApproval(task.id, HIGH_RISK_ACTION);
+  if (!approval) return { status: 'pending', reason: 'High-impact task requires administrator approval before execution' };
+  if (approval.status === 'approved') {
+    if (approval.expires_at && Date.parse(approval.expires_at) < Date.now()) return { status: 'blocked', reason: 'Approval expired before execution' };
+    return { status: 'clear' };
+  }
+  if (approval.status === 'rejected') return { status: 'blocked', reason: 'Task was rejected by administrator' };
+  if (approval.status === 'expired') return { status: 'blocked', reason: 'Approval expired before decision' };
+  return { status: 'pending', reason: approval.reason || 'High-impact task requires administrator approval before execution' };
 }
 
 function recordApprovalPause(taskId, reason) {
+  const expiresAt = new Date(Date.now() + Number(process.env.APPROVAL_TTL_MS || 30 * 60 * 1000)).toISOString();
   createSubtasks(taskId, [{ title: 'Approval required', stage: 'approval', status: 'waiting_for_approval', details: { reason } }]);
-  createApproval(taskId, 'high_risk_execution', reason);
+  createApproval(taskId, HIGH_RISK_ACTION, reason, { expiresAt });
   recordEvidence(taskId, 'approval_required', { reason });
   transition(taskId, 'waiting_for_approval', { summary: reason, current_stage: 'approval' });
 }

@@ -1,15 +1,16 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN_TOKEN, DB_PATH } from './config.js';
-import { now, redact } from './util.js';
+import { spawnSync } from 'node:child_process';
+import { DB_PATH, ATTACHMENTS_DIR } from './config.js';
+import { redact } from './util.js';
+import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions } from './sessions.js';
+import { rateLimit } from './rateLimits.js';
 
-const sessions = new Map();
-const revokedBefore = { value: 0 };
-const buckets = new Map();
-const MAX_BUCKETS = 2000;
+export { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
-export function requireProductionSafeConfig(env = process.env) {
+const MIN_NODE_MAJOR = 20;
+
+export function requireProductionSafeConfig(env = process.env, { dbDir = path.dirname(DB_PATH), attachmentsDir = ATTACHMENTS_DIR } = {}) {
   const errors = [];
   if (env.NODE_ENV === 'production') {
     if (!env.COMMAND_ADMIN_TOKEN || env.COMMAND_ADMIN_TOKEN === 'dev-admin-token-change-me' || env.COMMAND_ADMIN_TOKEN.length < 24) errors.push('Set a strong COMMAND_ADMIN_TOKEN before production use.');
@@ -20,50 +21,24 @@ export function requireProductionSafeConfig(env = process.env) {
     if (env.DEBUG === 'true') errors.push('DEBUG=true is not allowed in production.');
     if (env.CORS_ORIGIN === '*') errors.push('Wildcard CORS is not allowed in production.');
     if (env.RATE_LIMIT_DISABLED === 'true') errors.push('Rate limiting cannot be disabled in production.');
+    if (env.TRUST_PROXY !== 'true' && env.TRUST_PROXY !== 'false') errors.push('TRUST_PROXY must be explicitly set to "true" or "false" in production.');
+    if (env.GIT_WORKFLOW_ENABLED === 'true' && spawnSync('git', ['--version'], { encoding: 'utf8' }).status !== 0) errors.push('Git workflow is enabled but the git binary is not available.');
+    const nodeMajor = Number(String(env.NODE_VERSION_OVERRIDE || process.versions.node).split('.')[0]);
+    if (!Number.isFinite(nodeMajor) || nodeMajor < MIN_NODE_MAJOR) errors.push(`Node.js ${MIN_NODE_MAJOR}+ is required (running ${process.versions.node}).`);
+    if (!writable(attachmentsDir)) errors.push('Telegram attachment directory is not writable.');
   }
-  try {
-    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-    fs.accessSync(path.dirname(DB_PATH), fs.constants.W_OK);
-  } catch {
-    errors.push('Database directory is not writable.');
-  }
+  if (!writable(dbDir)) errors.push('Database directory is not writable.');
   return { ok: errors.length === 0, errors };
 }
 
-export function createSession(adminToken, { userAgent = '', ip = 'local' } = {}) {
-  if (adminToken !== ADMIN_TOKEN) return null;
-  const sessionId = crypto.randomBytes(24).toString('hex');
-  const csrfToken = crypto.randomBytes(24).toString('hex');
-  const createdAt = Date.now();
-  const expiresAt = createdAt + Number(process.env.SESSION_TTL_MS || 8 * 60 * 60 * 1000);
-  sessions.set(sessionId, { sessionId, csrfToken, createdAt, expiresAt, rotatedAt: createdAt, userAgent, ip });
-  return sessions.get(sessionId);
-}
-
-export function rotateSession(sessionId) {
-  const session = getSession(sessionId);
-  if (!session) return null;
-  sessions.delete(sessionId);
-  return createSession(ADMIN_TOKEN, { userAgent: session.userAgent, ip: session.ip });
-}
-
-export function getSession(sessionId) {
-  const session = sessions.get(sessionId);
-  if (!session) return null;
-  if (session.createdAt < revokedBefore.value || Date.now() > session.expiresAt) {
-    sessions.delete(sessionId);
-    return null;
+function writable(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
-  return session;
-}
-
-export function destroySession(sessionId) {
-  sessions.delete(sessionId);
-}
-
-export function revokeAllSessions() {
-  revokedBefore.value = Date.now();
-  sessions.clear();
 }
 
 export function parseCookies(header = '') {
@@ -83,20 +58,6 @@ export function checkCsrf(req, session) {
   if (!session) return false;
   const token = req.headers['x-csrf-token'];
   return Boolean(token && token === session.csrfToken);
-}
-
-export function rateLimit(key, { limit = 20, windowMs = 60000 } = {}) {
-  if (process.env.RATE_LIMIT_DISABLED === 'true' && process.env.NODE_ENV !== 'production') return { allowed: true, remaining: limit };
-  const nowMs = Date.now();
-  if (buckets.size > MAX_BUCKETS) buckets.delete(buckets.keys().next().value);
-  const bucket = buckets.get(key) || { count: 0, resetAt: nowMs + windowMs };
-  if (nowMs > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = nowMs + windowMs;
-  }
-  bucket.count += 1;
-  buckets.set(key, bucket);
-  return { allowed: bucket.count <= limit, remaining: Math.max(0, limit - bucket.count), retryAfter: Math.ceil((bucket.resetAt - nowMs) / 1000), resetAt: bucket.resetAt };
 }
 
 export function safeError(error) {

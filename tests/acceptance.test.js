@@ -12,7 +12,7 @@ process.env.PORT = '8892';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 process.env.TELEGRAM_ALLOWED_USERS = '1001';
 
-const { execSql, query } = await import('../packages/task-engine/db.js');
+const { execSql, query, closeDb } = await import('../packages/task-engine/db.js');
 const { createTask, getTask, transition, claimNext, heartbeat, createSubtasks, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, taskRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { start } = await import('../apps/api/server.js');
 const { startWorker } = await import('../apps/worker/worker.js');
@@ -48,7 +48,7 @@ let workspaceRoot;
 
 test('clean migration enables SQLite WAL mode', () => {
   execSql('PRAGMA wal_checkpoint;');
-  const mode = execSql('PRAGMA journal_mode;').trim();
+  const mode = query('PRAGMA journal_mode;')[0].journal_mode;
   assert.equal(mode, 'wal');
 });
 
@@ -76,9 +76,13 @@ test('task engine persists lifecycle, approvals-adjacent records, audit, subtask
 
 test('backup and restore preserves SQLite data', () => {
   const backup = path.join(root, 'backup.sqlite');
+  execSql('PRAGMA wal_checkpoint(TRUNCATE);');
   fs.copyFileSync(process.env.BLACKSPIRE_DB_PATH, backup);
   const before = query('SELECT COUNT(*) AS count FROM tasks;')[0].count;
-  createTask({ workspaceId: 'accept', request: 'after backup', idempotencyKey: 'after-backup' });
+  const extra = createTask({ workspaceId: 'accept', request: 'after backup', idempotencyKey: 'after-backup' });
+  transition(extra.id, 'completed');
+  execSql('PRAGMA wal_checkpoint(TRUNCATE);');
+  closeDb();
   fs.copyFileSync(backup, process.env.BLACKSPIRE_DB_PATH);
   const after = query('SELECT COUNT(*) AS count FROM tasks;')[0].count;
   assert.equal(after, before);

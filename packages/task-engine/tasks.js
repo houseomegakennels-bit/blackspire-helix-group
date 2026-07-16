@@ -90,6 +90,13 @@ export function createApproval(taskId, action, reason, { riskLevel = 'high', req
   return approvalId;
 }
 
+// The most recent approval record for a task+action, regardless of status. Hermes uses this as the
+// persisted "approved-action marker": once a decision is recorded here, re-running the task must not
+// re-trigger the same approval prompt (that would loop forever on every resume).
+export function latestApproval(taskId, action) {
+  return query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND action=${esc(action)} ORDER BY created_at DESC LIMIT 1;`)[0] || null;
+}
+
 export function decideApproval(taskId, status, reason = '', { decidedBy = 'administrator' } = {}) {
   const approval = query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND status='pending' ORDER BY created_at DESC LIMIT 1;`)[0];
   if (!approval) {

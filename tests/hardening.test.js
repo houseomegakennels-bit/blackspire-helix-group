@@ -11,12 +11,13 @@ process.env.SESSION_SECRET = 'x'.repeat(40);
 process.env.PORT = '8893';
 process.env.TELEGRAM_ALLOWED_USERS = '1001';
 process.env.TELEGRAM_WEBHOOK_SECRET = 'telegram-secret';
-process.env.LOGIN_RATE_LIMIT = '2';
+process.env.LOGIN_RATE_LIMIT = '20';
 
 const { start } = await import('../apps/api/server.js');
 const { createTask, taskRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { handleTelegramUpdate, handleTelegramAttachment } = await import('../apps/telegram/bot.js');
 const { requireProductionSafeConfig, rateLimit } = await import('../packages/shared/security.js');
+const { resetRateLimit } = await import('../packages/shared/rateLimits.js');
 
 let server;
 let cookie = '';
@@ -43,15 +44,21 @@ test('secure session login, status, csrf, logout, revocation, and no browser sec
   assert.equal((await (await fetch('http://localhost:8893/api/auth/session', { headers: { cookie } })).json()).authenticated, false);
 });
 
-test('failed login rate limiting returns retry-after and separates IPs', async () => {
+test('failed login rate limiting returns retry-after and ignores spoofed forwarded-for by default', async () => {
+  resetRateLimit('login:');
+  process.env.LOGIN_RATE_LIMIT = '2';
   const headers = { 'content-type': 'application/json', 'x-forwarded-for': 'rate-ip-a' };
   await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
   await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
   const limited = await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
   assert.equal(limited.status, 429);
   assert.ok(limited.headers.get('retry-after'));
-  const otherIp = await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers: { ...headers, 'x-forwarded-for': 'rate-ip-b' }, body: JSON.stringify({ adminToken: 'hardening-token' }) });
-  assert.equal(otherIp.status, 200);
+  // TRUST_PROXY is disabled by default, so a spoofed X-Forwarded-For does NOT open a fresh bucket:
+  // the real (loopback) socket IP is still over its limit even with a different claimed IP and valid credentials.
+  const spoofed = await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers: { ...headers, 'x-forwarded-for': 'rate-ip-b' }, body: JSON.stringify({ adminToken: 'hardening-token' }) });
+  assert.equal(spoofed.status, 429);
+  resetRateLimit('login:');
+  process.env.LOGIN_RATE_LIMIT = '20';
 });
 
 test('approval records are created, idempotent, approved, rejected, and expiration blocks execution', async () => {
@@ -80,21 +87,21 @@ test('Telegram webhook secret validation, duplicate protection, unauthorized use
   assert.equal((await handleTelegramUpdate({ update_id: 3, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8893')).ignored, true);
 });
 
-test('Telegram file and voice attachment handling uses safe boundaries', async () => {
-  let result = await handleTelegramAttachment({ message: { from: { id: 1001 }, chat: { id: 1 }, document: { file_id: 'file1', file_name: '../unsafe.txt', file_size: 20, mime_type: 'text/plain' } } }, 'http://localhost:8893');
-  assert.match(result.text[0], /Attachment/);
+// Pre-download rejection boundaries only (no network involved). The full download/mime/size/text-extraction/
+// voice-transcription/cleanup workflow against a mocked Telegram HTTP API is covered in tests/telegram-files.test.js.
+test('Telegram attachment size and MIME rejections happen before any network call', async () => {
+  let result = await handleTelegramAttachment({ message: { from: { id: 1001 }, chat: { id: 1 }, document: { file_id: 'file0', file_name: 'huge.txt', file_size: 999_999_999, mime_type: 'text/plain' } } }, 'http://localhost:8893');
+  assert.match(result.text[0], /too large/);
   result = await handleTelegramAttachment({ message: { from: { id: 1001 }, chat: { id: 1 }, document: { file_id: 'file2', file_name: 'bad.exe', file_size: 20, mime_type: 'application/x-msdownload' } } }, 'http://localhost:8893');
   assert.match(result.text[0], /not allowlisted/);
-  result = await handleTelegramAttachment({ message: { from: { id: 1001 }, chat: { id: 1 }, voice: { file_id: 'voice1', file_size: 20, mime_type: 'audio/ogg' } } }, 'http://localhost:8893');
-  assert.match(result.text[0], /transcription is unavailable/);
 });
 
 test('evidence export supports JSON/Markdown, redaction, missing task, and audit event', async () => {
-  const task = createTask({ workspaceId: 'blackspire-command', request: 'export openai-test-redacted-secret', idempotencyKey: 'export-hardening' });
+  const task = createTask({ workspaceId: 'blackspire-command', request: 'export sk-test1234567', idempotencyKey: 'export-hardening' });
   let response = await fetch(`http://localhost:8893/api/tasks/${task.id}/export.json`, { headers: { authorization: 'Bearer hardening-token' } });
   assert.equal(response.status, 200);
   const text = await response.text();
-  assert.equal(text.includes('openai-test-redacted-secret'), false);
+  assert.equal(text.includes('sk-test1234567'), false);
   response = await fetch(`http://localhost:8893/api/tasks/${task.id}/export.md`, { headers: { authorization: 'Bearer hardening-token' } });
   assert.equal(response.status, 200);
   assert.equal((await fetch('http://localhost:8893/api/tasks/nope/export.json', { headers: { authorization: 'Bearer hardening-token' } })).status, 404);

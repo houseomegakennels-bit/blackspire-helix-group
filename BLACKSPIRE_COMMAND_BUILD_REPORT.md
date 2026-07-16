@@ -2,6 +2,63 @@
 
 This report is a strict implementation audit of the current Blackspire Command foundation against the Foundation Build Plan after the orchestration hardening pass. It distinguishes working local runtime from mocked test coverage, credential-gated live integrations, adapter-only behavior, and missing production features.
 
+## FINAL MERGE-READINESS PASS (this branch, supersedes PR #20)
+
+PR #20's draft branch (`codex/build-blackspire-command-foundation-news8d`) could not actually run in this
+environment: `packages/task-engine/db.js` shelled out to the `sqlite3` CLI binary via `spawnSync`, and that
+binary is neither installed nor installable here (no apt access to the package). `npm run db:migrate` failed
+before any other work could be verified. Everything below was built directly on top of that branch's code —
+nothing was thrown away — starting with making the database layer actually run.
+
+Summary of what changed in this pass (see `BLACKSPIRE_DELIVERY.md` for the full account):
+
+1. **`packages/task-engine/db.js` now uses Node's built-in `node:sqlite` (`DatabaseSync`)** instead of
+   spawning the `sqlite3` CLI per query. WAL mode + `busy_timeout=5000` are set on every connection so
+   multiple Node processes (API, worker, Telegram bridge) can share one SQLite file safely. This is what
+   unblocked running the project in this sandbox at all, and it also gives real transactions
+   (`BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK`) and indexed lookups for the new tables below.
+2. **Persistent sessions** (`packages/shared/sessions.js`) — a `sessions` SQLite table replaces the
+   in-memory `Map`. Create/lookup/rotate/logout/revoke-all/revoked-before/cleanup are all persisted and
+   indexed. Proven across real OS process restarts in `tests/persistence.test.js` (not just within one
+   process, where an in-memory Map would have looked fine too).
+3. **Persistent rate limiting** (`packages/shared/rateLimits.js`) — a `rate_limits` table with a single
+   atomic UPSERT (CASE-based window rollover) replaces the in-memory bucket Map. WAL + busy_timeout make
+   concurrent writers from separate processes serialize instead of racing. Bounded cleanup, Retry-After,
+   and audit-on-exceed are included.
+4. **Trusted proxy handling** (`packages/shared/net.js`) — `X-Forwarded-For` is ignored by default; only
+   honored when `TRUST_PROXY=true` is set explicitly. `tests/trusted-proxy.test.js` proves a spoofed header
+   is ignored by default and honored only when trust is turned on.
+5. **Approval resume loop fixed** — the previous code re-evaluated a regex against the task request on
+   every run, so an *approved* high-risk task paused for approval again forever on resume. `packages/task-engine/tasks.js`
+   now exposes `latestApproval(taskId, action)` as the persisted approval marker, and `packages/hermes/hermes.js`
+   reads it instead of re-deciding from scratch. Rejected and expired approvals now explicitly fail the task
+   instead of leaving it stuck or re-prompting. See `tests/approval-resume.test.js`.
+6. **Telegram file/voice workflow** (`apps/telegram/bot.js`) — real `getFile` + download against a mocked
+   Telegram HTTP API, MIME allowlist and size checks both before and after download, safe filename
+   generation, temporary storage + cleanup, text extraction, task/workspace association
+   (`packages/task-engine/attachments.js`), `sendDocument`-based evidence/large-log delivery, and a
+   configurable transcription adapter (`packages/shared/transcription.js`) with explicit
+   ok/unavailable/failed states. See `tests/telegram-files.test.js`.
+7. **Evidence export completeness** — `apps/api/server.js`'s export bundle now has a fixed, explicit key
+   order and pulls branch/commit/PR-or-manual-handoff up from the buried "final" evidence record, plus a
+   sanitized `Content-Disposition` filename. See `tests/evidence-export.test.js`.
+8. **Production startup is now actually enforced** — `requireProductionSafeConfig()` existed before but was
+   only ever surfaced at `/ready`; `apps/api/server.js`'s `start()` now calls it at boot and `process.exit(1)`s
+   on an unsafe production config. Added checks: Node version, git binary presence, attachment directory
+   writability, and explicit `TRUST_PROXY` configuration. One test per failure mode plus a valid-config test
+   in `tests/production-validation.test.js`, and a real spawned-process boot/refusal test in
+   `tests/production-startup.test.js`.
+9. **Cookie/CSRF review** — added a session rotation endpoint (`POST /api/auth/rotate`) that returns fresh
+   cookies and invalidates the old session id; bearer-token auth is now off by default in production unless
+   `ALLOW_BEARER_AUTH=true` is explicitly set. See `tests/cookies-csrf.test.js`.
+10. **Jarvis** — added evidence export download buttons, an approval-history view, an explicit
+    emergency-stop/Telegram-mode status badge row, and 401 handling that prompts re-login instead of
+    silently failing. See `tests/jarvis.test.js`.
+
+**Exact test count: 114 tests, all passing** (up from the 47 tests present on this branch before this pass;
+`npm test` on PR #20's branch could not even run in this environment because of the `sqlite3` CLI
+dependency).
+
 ## Status Legend
 
 - **LIVE**: Production adapter contains real execution code and will operate against an external service when valid credentials/CLI auth are supplied.
@@ -56,8 +113,8 @@ This report is a strict implementation audit of the current Blackspire Command f
 | Docker/local startup | FUNCTIONAL LOCAL | `Dockerfile`, `docker-compose.yml`, `scripts/start-local.js` | `npm run build`; previous manual startup smoke | Docker for compose | Add container healthcheck. |
 | Backup/restore | FUNCTIONAL LOCAL | `scripts/backup.js`, `scripts/restore.js` | Script-level only | Existing SQLite DB | Add automated backup/restore test. |
 | Secret redaction/security scan | FUNCTIONAL LOCAL | `packages/shared/util.js`, `packages/execution/runner.js`, `packages/providers/providers.js`, `scripts/secret-scan.js` | `npm run security:scan` | None local | Add redaction unit tests. |
-| Telegram webhook, file upload, result-file delivery, voice-note transcription | MISSING | None | No test | Telegram token, HTTPS URL | Implement webhook and file APIs. |
-| Rate limiting, CSRF, secure cookies/session revocation | MISSING | None | No test | HTTPS/domain/session secret | Implement before production exposure. |
+| Telegram webhook, file upload, result-file delivery, voice-note transcription | MOCKED (real `getFile`/download/`sendDocument` code path, exercised against a mocked Telegram HTTP API) | `apps/telegram/bot.js`, `packages/shared/transcription.js`, `packages/task-engine/attachments.js` | `tests/telegram-files.test.js` | `TELEGRAM_BOT_TOKEN`, HTTPS webhook URL for live verification | Live transport (real `api.telegram.org`) is unverified without a real bot token; a real transcription backend still needs to be wired into the `http` adapter mode. |
+| Rate limiting, CSRF, secure cookies/session revocation | FUNCTIONAL LOCAL (SQLite-persisted, restart-proof) | `packages/shared/sessions.js`, `packages/shared/rateLimits.js`, `packages/shared/security.js`, `apps/api/server.js` | `tests/persistence.test.js`, `tests/cookies-csrf.test.js`, `tests/trusted-proxy.test.js` | None local | Distributed (multi-host) deployments still need a shared SQLite volume or a future move to a networked store. |
 
 ## End-to-End Local Coding Change Proven
 
@@ -83,7 +140,7 @@ The test creates an isolated temporary Git repository, registers it as a workspa
 The final credential-free acceptance pass ran these exact commands:
 
 - `npm run db:migrate` — PASSED.
-- `npm test` — PASSED, 47 tests.
+- `npm test` — PASSED, 114 tests.
 - `npm run build` — PASSED.
 - `npm run lint` — PASSED.
 - `npm run typecheck` — PASSED.
@@ -93,7 +150,7 @@ The final credential-free acceptance pass ran these exact commands:
 ## Validation Commands Run
 
 - `npm run db:migrate` — passed.
-- `npm test` — passed, 47 tests.
+- `npm test` — passed, 114 tests.
 - `npm run build` — passed.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
@@ -168,23 +225,36 @@ Expected local result: Hermes creates a `hermes/<taskId>` branch, writes the fil
 | Security headers and browser policies | FUNCTIONAL LOCAL | `apps/api/server.js` | `tests/acceptance.test.js` header check | HTTPS for HSTS in production | Inline Jarvis script keeps dev CSP looser; production CSP removes unsafe-inline but UI should be externalized. |
 | Telegram/Jarvis admin parity | FUNCTIONAL LOCAL / STUBBED WHERE NOTED | `apps/telegram/bot.js`, `apps/jarvis-pwa/public/index.html`, `apps/api/server.js` | `tests/hardening.test.js` Telegram commands; `tests/acceptance.test.js` Jarvis controls | Telegram token for live transport | Evidence export in Jarvis is API-backed but needs a visible download button polish. |
 
-## SAFE TO EXPOSE TO THE INTERNET?
+## SAFE TO EXPOSE TO THE INTERNET? (updated after the final merge-readiness pass)
 
 NO.
 
-The foundation is substantially harder than the previous local prototype: secure cookie sessions, CSRF, rate limiting, webhook secret validation, stronger emergency reset, production config validation, security headers, evidence exports, and hardening tests now exist. It is still not safe for public internet exposure because live Telegram/GitHub/provider paths are unverified without credentials, Telegram file downloads are boundary-mocked, distributed rate limiting is not backed by a shared store, service hardening/TLS deployment is not included, and production Jarvis CSP should move inline JavaScript into a separate asset.
+Sessions, rate limits, approvals, and startup validation are now persisted, restart-proof, and actually
+enforced (not just implemented and left unwired, as several items were before this pass). It is still not
+safe for unsupervised public internet exposure because: live Telegram/GitHub/provider network paths remain
+unverified without real credentials; Telegram file transfer is proven against a mocked HTTP API, not the
+real `api.telegram.org`; SQLite (even with WAL) is a single-host store, so a distributed/multi-host
+deployment needs a shared volume or a future networked backend; and there is no TLS-terminating reverse
+proxy or container hardening included in this repository. `node:sqlite` is also still an experimental Node
+API (stable as of the LTS Node version this project targets, but the runtime itself flags it as
+experimental) and warrants a Node upgrade watch.
 
 ## SAFE TO MERGE?
 
 YES, as a local foundation and hardening baseline — not as an internet-exposed production deployment.
 
-1. Credential-free local acceptance and hardening tests pass.
-2. Secure session, CSRF, rate limiting, approval persistence, webhook secret checks, and evidence export are implemented.
-3. Production config validation refuses unsafe defaults.
-4. External live integrations remain honestly credential-gated.
-5. Telegram file handling is mocked/boundary-safe, not a full malware-scanned pipeline.
-6. Distributed rate limiting and production service/TLS deployment remain future work.
-7. Jarvis should externalize inline JS before strict production CSP.
+1. 114 tests pass from a clean state (`rm -rf .blackspire-command && npm run db:migrate && npm test`), plus
+   `npm run build`, `npm run lint`, `npm run typecheck`, `npm run security:scan`, and `npm audit --audit-level=high` all pass.
+2. Sessions, rate limits, approval decisions, and production config validation are now persisted in SQLite
+   and proven to survive real process restarts, not just in-memory state that looks correct until a restart.
+3. The approval-resume infinite-loop bug is fixed and covered by a dedicated regression test.
+4. Trusted-proxy handling closes an IP-spoofing gap that previously let rate limits and audit IPs be forged
+   via `X-Forwarded-For`.
+5. External live integrations (Telegram transport, GitHub PR creation, OpenAI/Anthropic/Codex/Claude Code)
+   remain honestly credential-gated and are not claimed as live-verified.
+6. Telegram file/voice handling is proven against a mocked Telegram HTTP API; the real network path needs a
+   human to verify with a real bot token before being called "live."
+7. Distributed (multi-host) rate limiting/session storage and TLS/reverse-proxy deployment remain future work.
 8. No real secrets are committed; security scan and audit pass.
 
 ## WHAT I MUST CONFIGURE FROM MY IPHONE

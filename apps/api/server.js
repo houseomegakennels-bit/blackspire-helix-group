@@ -1,13 +1,16 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { PORT, ADMIN_TOKEN } from '../../packages/shared/config.js';
+import { PORT, ADMIN_TOKEN, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
 import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, decideApproval, taskRecords } from '../../packages/task-engine/tasks.js';
-import { listWorkspaces } from '../../packages/workspace-registry/workspaces.js';
+import { attachmentsForTask } from '../../packages/task-engine/attachments.js';
+import { listWorkspaces, getWorkspace } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
-import { handleTelegramUpdate } from '../telegram/bot.js';
-import { createSession, getSession, destroySession, revokeAllSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
+import { handleTelegramUpdate, dispatchReply } from '../telegram/bot.js';
+import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
+import { clientIp } from '../../packages/shared/net.js';
+import { cleanupRateLimits } from '../../packages/shared/rateLimits.js';
 
 let emergencyStopMemory = false;
 
@@ -16,7 +19,7 @@ function isPublicAsset(url = '') {
 }
 
 function authContext(req) {
-  if (req.headers.authorization === `Bearer ${ADMIN_TOKEN}`) return { ok: true, mode: 'bearer', session: null };
+  if (ALLOW_BEARER_AUTH && req.headers.authorization === `Bearer ${ADMIN_TOKEN}`) return { ok: true, mode: 'bearer', session: null };
   const session = getSession(parseCookies(req.headers.cookie || '').bc_session);
   if (session) return { ok: true, mode: 'session', session };
   return { ok: false, mode: 'none', session: null };
@@ -40,6 +43,13 @@ async function route(req, res) {
 
     if (u.pathname === '/api/auth/session') return json(res, 200, { authenticated: auth.ok, csrfToken: auth.session?.csrfToken, expiresAt: auth.session?.expiresAt });
     if (u.pathname === '/api/auth/logout' && req.method === 'POST') { if (auth.session) destroySession(auth.session.sessionId); return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() }); }
+    if (u.pathname === '/api/auth/rotate' && req.method === 'POST') {
+      if (auth.mode !== 'session') return json(res, 401, { error: 'session required' });
+      const rotated = rotateSession(auth.session.sessionId);
+      if (!rotated) return json(res, 401, { error: 'session expired' });
+      audit(null, 'auth', 'session.rotated', { ip: clientIp(req) });
+      return writeJson(res, 200, { ok: true, csrfToken: rotated.csrfToken, expiresAt: rotated.expiresAt }, { 'set-cookie': sessionCookie(rotated) });
+    }
     if (u.pathname === '/api/auth/revoke-all' && req.method === 'POST') { revokeAllSessions(); audit(null, 'administrator', 'sessions.revoked'); return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() }); }
     if (u.pathname === '/health') return json(res, 200, { ok: true, service: 'blackspire-command-api', emergencyStop: getFlag('emergency_stop') === 'active' || emergencyStopMemory, telegramMode: process.env.TELEGRAM_MODE || (process.env.TELEGRAM_BOT_TOKEN ? 'polling' : 'dry-run') });
     if (u.pathname === '/ready') return json(res, 200, { ok: true, providers: activeModes(), productionConfig: requireProductionSafeConfig() });
@@ -81,9 +91,9 @@ async function route(req, res) {
 async function login(req, res) {
   const limit = checkLimit(req, 'login', Number(process.env.LOGIN_RATE_LIMIT || 5), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
-  const session = createSession(body.adminToken, { ip: ip(req), userAgent: req.headers['user-agent'] || '' });
-  if (!session) { audit(null, 'auth', 'login.failed', { ip: ip(req) }); return json(res, 401, { error: 'invalid credentials' }); }
-  audit(null, 'auth', 'login.succeeded', { ip: ip(req) });
+  const session = createSession(body.adminToken, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '' });
+  if (!session) { audit(null, 'auth', 'login.failed', { ip: clientIp(req) }); return json(res, 401, { error: 'invalid credentials' }); }
+  audit(null, 'auth', 'login.succeeded', { ip: clientIp(req) });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: session.expiresAt }, { 'set-cookie': sessionCookie(session) });
 }
 
@@ -112,15 +122,46 @@ function taskRoute(req, res, match) {
   return json(res, 404, { error: 'not found' });
 }
 
-function exportTask(res, taskId, format) {
+function buildEvidenceBundle(taskId) {
   const task = getTask(taskId);
-  if (!task) return json(res, 404, { error: 'task not found' });
-  const bundle = redact(JSON.stringify({ task, ...taskRecords(taskId) }, null, 2));
-  if (bundle.length > Number(process.env.EVIDENCE_BUNDLE_MAX_BYTES || 500000)) return json(res, 413, { error: 'evidence bundle too large' });
+  if (!task) return null;
+  const records = taskRecords(taskId);
+  const finalEvidence = records.evidence.find((entry) => entry.kind === 'final');
+  const finalDetails = finalEvidence ? JSON.parse(finalEvidence.details || '{}') : {};
+  // Explicit top-level keys (in this fixed order) so every export has the same stable shape, with
+  // branch/commit/PR-or-manual-handoff pulled up from the buried "final" evidence record for easy reading.
+  return {
+    taskId: task.id,
+    taskRequest: task.request,
+    status: task.status,
+    workspace: getWorkspace(task.workspace_id),
+    plan: task.plan ? JSON.parse(task.plan) : null,
+    subtasks: records.subtasks,
+    providerAttempts: records.providerAttempts,
+    usage: records.usage,
+    approvalHistory: records.approvals,
+    changedFiles: records.changedFiles,
+    commandResults: records.commands,
+    logs: records.logs,
+    attachments: attachmentsForTask(taskId),
+    branch: finalDetails.branch?.branch || finalDetails.branch || null,
+    commit: finalDetails.commit || null,
+    pullRequestOrManualHandoff: finalDetails.pullRequest || null,
+    finalEvidence: records.evidence,
+    task,
+  };
+}
+
+function exportTask(res, taskId, format) {
+  const bundle = buildEvidenceBundle(taskId);
+  if (!bundle) return json(res, 404, { error: 'task not found' });
+  const redacted = redact(JSON.stringify(bundle, null, 2));
+  if (redacted.length > Number(process.env.EVIDENCE_BUNDLE_MAX_BYTES || 500000)) return json(res, 413, { error: 'evidence bundle too large' });
   audit(taskId, 'administrator', 'evidence.exported', { format });
-  if (format === 'json') return writeJson(res, 200, JSON.parse(bundle), { 'content-disposition': `attachment; filename="${taskId}-evidence.json"` });
-  res.writeHead(200, { 'content-type': 'text/markdown', 'content-disposition': `attachment; filename="${taskId}-evidence.md"` });
-  return res.end(`# Task Evidence ${taskId}\n\n\`\`\`json\n${bundle}\n\`\`\`\n`);
+  const safeName = String(taskId).replace(/[^A-Za-z0-9_-]/g, '_');
+  if (format === 'json') return writeJson(res, 200, JSON.parse(redacted), { 'content-disposition': `attachment; filename="${safeName}-evidence.json"`, 'cache-control': 'no-store' });
+  res.writeHead(200, { 'content-type': 'text/markdown', 'content-disposition': `attachment; filename="${safeName}-evidence.md"`, 'cache-control': 'no-store' });
+  return res.end(`# Task Evidence ${safeName}\n\n\`\`\`json\n${redacted}\n\`\`\`\n`);
 }
 
 async function telegramWebhook(req, res) {
@@ -128,14 +169,28 @@ async function telegramWebhook(req, res) {
   const body = await readJson(req);
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
-  setTimeout(() => handleTelegramUpdate(body), 0).unref();
+  setTimeout(async () => {
+    const reply = await handleTelegramUpdate(body);
+    await dispatchReply(process.env.TELEGRAM_BOT_TOKEN, reply);
+  }, 0).unref();
 }
 
-function checkLimit(req, bucket, limit, windowMs) { const result = rateLimit(`${bucket}:${ip(req)}`, { limit, windowMs }); if (!result.allowed) audit(null, 'rate-limit', 'rate_limit.exceeded', { bucket, ip: ip(req) }); return result; }
+function checkLimit(req, bucket, limit, windowMs) { const result = rateLimit(`${bucket}:${clientIp(req)}`, { limit, windowMs }); if (!result.allowed) audit(null, 'rate-limit', 'rate_limit.exceeded', { bucket, ip: clientIp(req) }); return result; }
 function limited(res, limit) { res.setHeader('retry-after', String(limit.retryAfter)); return json(res, 429, { error: 'rate limit exceeded', retryAfter: limit.retryAfter }); }
-function ip(req) { return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'local'; }
 function isStateChanging(req) { return !['GET', 'HEAD', 'OPTIONS'].includes(req.method); }
 function setSecurityHeaders(req, res) { res.setHeader('x-frame-options', 'DENY'); res.setHeader('x-content-type-options', 'nosniff'); res.setHeader('referrer-policy', 'no-referrer'); res.setHeader('permissions-policy', 'microphone=(self), camera=(), geolocation=()'); res.setHeader('cache-control', req.url?.startsWith('/api/') ? 'no-store' : 'no-cache'); if (process.env.NODE_ENV === 'production') res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains'); const inline = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-inline'"; res.setHeader('content-security-policy', `default-src 'self'; script-src 'self'${inline}; style-src 'self'${inline}; connect-src 'self'; img-src 'self' data:`); }
 function serve(res, file, type) { res.writeHead(200, { 'content-type': type }); fs.createReadStream(path.resolve(file)).pipe(res); }
-export function start(port = PORT) { return http.createServer(route).listen(port, () => console.log(JSON.stringify({ service: 'api', port }))); }
+
+export function start(port = PORT) {
+  const validation = requireProductionSafeConfig();
+  if (process.env.NODE_ENV === 'production' && !validation.ok) {
+    console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors }));
+    process.exit(1);
+  }
+  const server = http.createServer(route).listen(port, () => console.log(JSON.stringify({ service: 'api', port })));
+  const cleanupTimer = setInterval(() => { cleanupExpiredSessions(); cleanupRateLimits(); }, Number(process.env.CLEANUP_INTERVAL_MS || 15 * 60 * 1000));
+  cleanupTimer.unref();
+  server.on('close', () => clearInterval(cleanupTimer));
+  return server;
+}
 if (import.meta.url === `file://${process.argv[1]}`) start();
