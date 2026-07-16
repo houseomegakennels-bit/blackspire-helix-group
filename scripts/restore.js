@@ -1,0 +1,1 @@
+import fs from 'node:fs'; import {DB_PATH} from '../packages/shared/config.js'; const src=process.argv[2]; if(!src) throw new Error('Usage: npm run db:restore -- <backup-file>'); fs.copyFileSync(src,DB_PATH); console.log(`Restored ${src} to ${DB_PATH}`);

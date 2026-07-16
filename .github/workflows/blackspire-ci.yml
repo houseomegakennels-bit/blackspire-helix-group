@@ -1,0 +1,83 @@
+name: Blackspire Command CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+defaults:
+  run:
+    shell: bash
+
+# Test-only, non-secret configuration. None of these values are real credentials.
+# Deliberately NOT set here: COMMAND_ADMIN_TOKEN and HERMES_TEST_PROVIDER. The test suite is self-contained —
+# each test file sets whatever admin token / provider mode it needs at import time (a documented convention
+# throughout tests/*.test.js), and some files (e.g. tests/integration.test.js) intentionally exercise the
+# built-in default admin token or real (non-mock) provider-selection logic. Overriding either at the job
+# level would silently break those tests instead of testing anything real.
+env:
+  NODE_ENV: test
+  SESSION_SECRET: ci-test-session-secret-not-a-real-secret-000000
+  TELEGRAM_ALLOWED_USERS: '1001'
+  PORT: '8787'
+  TRUST_PROXY: 'false'
+  RATE_LIMIT_DISABLED: 'false'
+
+jobs:
+  build-and-test:
+    name: Install, migrate, test, build, lint, typecheck, scan, audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # node-version-file reads the "engines.node" field from package.json (>=22.5.0), which is the actual
+      # floor this project requires — packages/task-engine/db.js uses node:sqlite (DatabaseSync), which does
+      # not exist before Node 22.5.0. Keeping the version declared in package.json (not duplicated here)
+      # means this workflow can't silently drift from what the app itself checks at production startup.
+      - name: Set up Node.js (project-required version)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Prepare log directory
+        run: mkdir -p ci-logs
+
+      - name: npm install
+        run: npm install 2>&1 | tee ci-logs/01-install.log
+
+      - name: Clean local Blackspire Command state
+        run: rm -rf .blackspire-command
+
+      - name: Run database migrations
+        run: npm run db:migrate 2>&1 | tee ci-logs/02-db-migrate.log
+
+      - name: Run test suite
+        run: npm test 2>&1 | tee ci-logs/03-test.log
+
+      - name: Run build check
+        run: npm run build 2>&1 | tee ci-logs/04-build.log
+
+      - name: Run lint check
+        run: npm run lint 2>&1 | tee ci-logs/05-lint.log
+
+      - name: Run typecheck
+        run: npm run typecheck 2>&1 | tee ci-logs/06-typecheck.log
+
+      - name: Run secret scan
+        run: npm run security:scan 2>&1 | tee ci-logs/07-security-scan.log
+
+      - name: Run npm audit (high severity and above)
+        run: npm audit --audit-level=high 2>&1 | tee ci-logs/08-npm-audit.log
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackspire-ci-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-logs/**/*.log
+            /home/runner/.npm/_logs/*.log
+          if-no-files-found: ignore
+          retention-days: 14
