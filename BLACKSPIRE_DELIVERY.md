@@ -9,7 +9,7 @@ verified, and what remains.
 - **Branch:** `claude/blackspire-final-merge-readiness`
 - **Base branch it was built on:** `codex/build-blackspire-command-foundation-news8d` (the head branch of
   the existing draft PR) — nothing from that branch was discarded; this pass adds to it.
-- **Commit SHA (HEAD of this branch at delivery):** see the `git log -1` output on `claude/blackspire-final-merge-readiness` after push — the delivery commit is the one whose message begins "feat: final merge-readiness pass".
+- **Commit SHA (HEAD of this branch at delivery):** `cac318923423a117c665ff6f677dd49a4394a378`
 - **Supersedes:** [PR #20](https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/20) (draft, not merged, not modified by this work).
 - **This PR:** a new draft PR from `claude/blackspire-final-merge-readiness` into `main` (URL provided in the PR description / chat reply once created).
 
