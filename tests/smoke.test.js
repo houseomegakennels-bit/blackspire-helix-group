@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict'; import {spawn} from 'node:child_process';
+const child=spawn('node',['apps/api/server.js'],{env:{...process.env,PORT:'8792',COMMAND_ADMIN_TOKEN:'smoke',BLACKSPIRE_DB_PATH:'.blackspire-command/smoke.sqlite'}}); await new Promise(r=>setTimeout(r,500)); const health=await fetch('http://localhost:8792/health'); assert.equal(health.status,200); child.kill('SIGTERM'); console.log('End-to-end local smoke test passed.');

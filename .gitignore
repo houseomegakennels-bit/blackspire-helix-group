@@ -161,3 +161,7 @@ frontend/promo/tools/
 # ...but .aiderignore is a committed repo file (tells Aider which paths to
 # skip), so keep it tracked even though .aider* would otherwise ignore it.
 !.aiderignore
+.blackspire-command/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
