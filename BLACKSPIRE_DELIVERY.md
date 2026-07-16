@@ -11,7 +11,7 @@ verified, and what remains.
   the existing draft PR) — nothing from that branch was discarded; this pass adds to it.
 - **Commit SHA (HEAD of this branch at delivery):** `cac318923423a117c665ff6f677dd49a4394a378`
 - **Supersedes:** [PR #20](https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/20) (draft, not merged, not modified by this work).
-- **This PR:** a new draft PR from `claude/blackspire-final-merge-readiness` into `main` (URL provided in the PR description / chat reply once created).
+- **This PR:** [#21](https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/21) (draft, `claude/blackspire-final-merge-readiness` → `main`)
 
 ## Files changed in this pass
 
