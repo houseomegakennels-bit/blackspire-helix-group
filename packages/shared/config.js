@@ -4,3 +4,10 @@ export const ADMIN_TOKEN = process.env.COMMAND_ADMIN_TOKEN || 'dev-admin-token-c
 export const TELEGRAM_ALLOWED_USERS = (process.env.TELEGRAM_ALLOWED_USERS || '1001').split(',').map((v)=>Number(v.trim())).filter(Boolean);
 export const PORT = Number(process.env.PORT || 8787);
 export const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+export const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-session-secret-change-me';
+export const NODE_ENV = process.env.NODE_ENV || 'development';
+export const PUBLIC_URL = process.env.PUBLIC_URL || PUBLIC_BASE_URL;
+export const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
+export const TELEGRAM_MODE = process.env.TELEGRAM_MODE || 'polling';
+export const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
+export const ATTACHMENT_TMP_DIR = process.env.ATTACHMENT_TMP_DIR || `${DATA_DIR}/attachments`;

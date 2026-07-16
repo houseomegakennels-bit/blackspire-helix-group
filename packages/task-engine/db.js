@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS subtasks(id TEXT PRIMARY KEY,task_id TEXT,title TEXT,
 CREATE TABLE IF NOT EXISTS changed_files(id TEXT PRIMARY KEY,task_id TEXT,path TEXT,status TEXT,additions INTEGER,deletions INTEGER,created_at TEXT);
 CREATE TABLE IF NOT EXISTS command_results(id TEXT PRIMARY KEY,task_id TEXT,command TEXT,cwd TEXT,ok INTEGER,code INTEGER,stdout TEXT,stderr TEXT,duration_ms INTEGER,created_at TEXT);
 CREATE TABLE IF NOT EXISTS task_evidence(id TEXT PRIMARY KEY,task_id TEXT,kind TEXT,details TEXT,created_at TEXT);
-CREATE TABLE IF NOT EXISTS system_flags(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT);`);
+CREATE TABLE IF NOT EXISTS system_flags(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT);
+CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT,csrf_token TEXT,ip TEXT,user_agent TEXT,expires_at TEXT,revoked_at TEXT,created_at TEXT,rotated_from TEXT);
+CREATE INDEX IF NOT EXISTS idx_sessions_lookup ON sessions(id,expires_at,revoked_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_cleanup ON sessions(expires_at,revoked_at);
+CREATE TABLE IF NOT EXISTS session_revocations(user_id TEXT PRIMARY KEY,revoked_before TEXT,updated_at TEXT);
+CREATE TABLE IF NOT EXISTS rate_limits(scope TEXT,key TEXT,window_start INTEGER,count INTEGER,updated_at TEXT,PRIMARY KEY(scope,key,window_start));
+CREATE INDEX IF NOT EXISTS idx_rate_limits_cleanup ON rate_limits(updated_at);
+CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY,task_id TEXT,workspace_id TEXT,telegram_file_id TEXT,path TEXT,mime TEXT,size INTEGER,kind TEXT,content TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS evidence_exports(id TEXT PRIMARY KEY,task_id TEXT,format TEXT,path TEXT,size INTEGER,created_at TEXT);`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT']]) ensureColumn('tasks', name, definition);
 }

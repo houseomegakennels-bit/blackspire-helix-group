@@ -1,11 +1,14 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { PORT, ADMIN_TOKEN } from '../../packages/shared/config.js';
+import { PORT, ADMIN_TOKEN, NODE_ENV } from '../../packages/shared/config.js';
 import { json, readJson, id } from '../../packages/shared/util.js';
 import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, decideApproval } from '../../packages/task-engine/tasks.js';
 import { listWorkspaces } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
+import { createSession, lookupSession, revokeSession, revokeAll, rotateSession, sessionCookies, clearCookies, parseCookies, requireCsrf, clientIp, assertProductionSafe } from '../../packages/security/session-store.js';
+import { checkRateLimit } from '../../packages/security/rate-limit.js';
+import { exportEvidence } from '../../packages/evidence/export.js';
 
 let emergencyStopMemory = false;
 
@@ -13,8 +16,12 @@ function isPublicAsset(url = '') {
   return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || url.startsWith('/manifest') || url.startsWith('/sw.js');
 }
 
+function getSession(req) { return lookupSession(parseCookies(req.headers.cookie || '')['__Host-bsc_session']); }
 function auth(req) {
-  return isPublicAsset(req.url) || req.headers.authorization === `Bearer ${ADMIN_TOKEN}`;
+  if (isPublicAsset(req.url) || req.url === '/api/login') return true;
+  const session = getSession(req);
+  if (session && requireCsrf(req, session)) return true;
+  return NODE_ENV !== 'production' && req.headers.authorization === `Bearer ${ADMIN_TOKEN}`;
 }
 
 async function route(req, res) {
@@ -22,10 +29,50 @@ async function route(req, res) {
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('referrer-policy', 'no-referrer');
   res.setHeader('content-security-policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:");
+  const ip = clientIp(req);
+  const apiLimit = checkRateLimit({ scope: 'api', key: ip, limit: 1000, windowMs: 60000 });
+  if (!apiLimit.allowed) return json(res, 429, { error: 'rate limit exceeded' });
   if (!auth(req)) return json(res, 401, { error: 'unauthorized' });
 
   const u = new URL(req.url, `http://${req.headers.host}`);
   try {
+    
+    if (u.pathname === '/api/login' && req.method === 'POST') {
+      const loginLimit = checkRateLimit({ scope: 'login', key: ip, limit: 10, windowMs: 60000 });
+      if (!loginLimit.allowed) return json(res, 429, { error: 'login rate limit exceeded' });
+      const body = await readJson(req);
+      if (body.adminToken !== ADMIN_TOKEN) return json(res, 401, { error: 'invalid credentials' });
+      const session = createSession({ ip, userAgent: req.headers['user-agent'] || '' });
+      res.setHeader('set-cookie', sessionCookies(session));
+      res.setHeader('cache-control', 'no-store');
+      return json(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: session.expiresAt });
+    }
+    if (u.pathname === '/api/session' && req.method === 'GET') {
+      const session = getSession(req);
+      res.setHeader('cache-control', 'no-store');
+      return json(res, 200, { authenticated: Boolean(session), csrfToken: session?.csrf_token, expiresAt: session?.expires_at });
+    }
+    if (u.pathname === '/api/session/rotate' && req.method === 'POST') {
+      const current = getSession(req);
+      if (!current) return json(res, 401, { error: 'unauthorized' });
+      const session = rotateSession(current.id, { ip, userAgent: req.headers['user-agent'] || '' });
+      res.setHeader('set-cookie', sessionCookies(session));
+      res.setHeader('cache-control', 'no-store');
+      return json(res, 200, { ok: true, csrfToken: session.csrfToken });
+    }
+    if (u.pathname === '/api/logout' && req.method === 'POST') {
+      const current = getSession(req);
+      if (current) revokeSession(current.id);
+      res.setHeader('set-cookie', clearCookies());
+      res.setHeader('cache-control', 'no-store');
+      return json(res, 200, { ok: true });
+    }
+    if (u.pathname === '/api/session/revoke_all' && req.method === 'POST') {
+      revokeAll('admin');
+      res.setHeader('set-cookie', clearCookies());
+      res.setHeader('cache-control', 'no-store');
+      return json(res, 200, { ok: true });
+    }
     if (u.pathname === '/health') return json(res, 200, { ok: true, service: 'blackspire-command-api', emergencyStop: getFlag('emergency_stop') === 'active' || emergencyStopMemory });
     if (u.pathname === '/ready') return json(res, 200, { ok: true, providers: activeModes() });
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: listWorkspaces() });
@@ -39,6 +86,14 @@ async function route(req, res) {
       return json(res, 202, { task });
     }
 
+    
+    const ev = u.pathname.match(/^\/api\/tasks\/([^/]+)\/(evidence\.json|evidence\.md)$/);
+    if (ev) {
+      const exported = exportEvidence(ev[1], ev[2].endsWith('.md') ? 'md' : 'json');
+      if (!exported) return json(res, 404, { error: 'not found' });
+      res.writeHead(200, { 'content-type': exported.contentType, 'content-disposition': `attachment; filename="${exported.filename.replace(/[^a-zA-Z0-9_.-]/g,'_')}"`, 'cache-control': 'no-store' });
+      return res.end(exported.content);
+    }
     const match = u.pathname.match(/^\/api\/tasks\/([^/]+)(?:\/(logs|approve|reject|pause|resume|cancel))?$/);
     if (match) {
       const task = getTask(match[1]);
@@ -80,6 +135,8 @@ function serve(res, file, type) {
 }
 
 export function start(port = PORT) {
+  const startup = assertProductionSafe();
+  if (!startup.ok) throw new Error(`Unsafe production configuration: ${startup.failures.join(', ')}`);
   return http.createServer(route).listen(port, () => console.log(JSON.stringify({ service: 'api', port })));
 }
 

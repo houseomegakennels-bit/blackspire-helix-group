@@ -51,13 +51,13 @@ This report is a strict implementation audit of the current Blackspire Command f
 | Telegram polling runtime | FUNCTIONAL LOCAL DRY-RUN / LIVE WITH TOKEN | `apps/telegram/bot.js`, `scripts/start-local.js` | `tests/integration.test.js` dry-run polling test | `TELEGRAM_BOT_TOKEN` for live polling | Add webhook route. |
 | Telegram message sending | MOCKED / LIVE WITH TOKEN | `apps/telegram/bot.js` | `tests/integration.test.js` mocked Bot API shape | `TELEGRAM_BOT_TOKEN` | Run live Telegram test after token. |
 | Jarvis PWA API connectivity | FUNCTIONAL LOCAL | `apps/jarvis-pwa/public/index.html`, `apps/api/server.js` | `tests/integration.test.js` API endpoint used by Jarvis | Admin token | Add browser E2E test. |
-| Jarvis authentication | FUNCTIONAL LOCAL | `apps/jarvis-pwa/public/index.html`, `apps/api/server.js` | Protected API tests | Strong `COMMAND_ADMIN_TOKEN` | Replace localStorage bearer with secure sessions before production. |
+| Jarvis authentication | FUNCTIONAL LOCAL | `apps/jarvis-pwa/public/index.html`, `apps/api/server.js`, `packages/security/session-store.js` | `tests/acceptance.test.js` verifies no admin token localStorage and session/CSRF flow | Strong `COMMAND_ADMIN_TOKEN`, `SESSION_SECRET` | Add full browser automation. |
 | Voice input/spoken output | STUBBED | `apps/jarvis-pwa/public/index.html` | No automated voice test | Browser speech APIs | Add server transcription/TTS adapters. |
 | Docker/local startup | FUNCTIONAL LOCAL | `Dockerfile`, `docker-compose.yml`, `scripts/start-local.js` | `npm run build`; previous manual startup smoke | Docker for compose | Add container healthcheck. |
-| Backup/restore | FUNCTIONAL LOCAL | `scripts/backup.js`, `scripts/restore.js` | Script-level only | Existing SQLite DB | Add automated backup/restore test. |
-| Secret redaction/security scan | FUNCTIONAL LOCAL | `packages/shared/util.js`, `packages/execution/runner.js`, `packages/providers/providers.js`, `scripts/secret-scan.js` | `npm run security:scan` | None local | Add redaction unit tests. |
-| Telegram webhook, file upload, result-file delivery, voice-note transcription | MISSING | None | No test | Telegram token, HTTPS URL | Implement webhook and file APIs. |
-| Rate limiting, CSRF, secure cookies/session revocation | MISSING | None | No test | HTTPS/domain/session secret | Implement before production exposure. |
+| Backup/restore | FUNCTIONAL LOCAL | `scripts/backup.js`, `scripts/restore.js` | `tests/acceptance.test.js` backup/restore test | Existing SQLite DB | Add scheduled encrypted backups. |
+| Secret redaction/security scan | FUNCTIONAL LOCAL | `packages/shared/util.js`, `packages/execution/runner.js`, `packages/providers/providers.js`, `packages/evidence/export.js`, `scripts/secret-scan.js` | `npm run security:scan`; `tests/acceptance.test.js` evidence redaction path | None local | Expand provider-specific token patterns. |
+| Telegram attachments, document delivery, and voice-note transcription adapter | FUNCTIONAL LOCAL / MOCKED BOT API | `packages/telegram/attachments.js` | `tests/acceptance.test.js` mocked getFile/download/sendDocument/voice tests | `TELEGRAM_BOT_TOKEN` for live Bot API | Add live Telegram credential test and webhook route. |
+| Persistent sessions, rate limits, CSRF cookies, trusted proxy, and startup checks | FUNCTIONAL LOCAL | `packages/security/session-store.js`, `packages/security/rate-limit.js`, `apps/api/server.js` | `tests/acceptance.test.js` session/rate-limit/security tests | Production `SESSION_SECRET`, HTTPS, proxy settings | Add external penetration test before internet exposure. |
 
 ## End-to-End Local Coding Change Proven
 
@@ -83,7 +83,7 @@ The test creates an isolated temporary Git repository, registers it as a workspa
 The final credential-free acceptance pass ran these exact commands:
 
 - `npm run db:migrate` — PASSED.
-- `npm test` — PASSED, 38 tests.
+- `npm test` — PASSED, 40 tests.
 - `npm run build` — PASSED.
 - `npm run lint` — PASSED.
 - `npm run typecheck` — PASSED.
@@ -93,7 +93,7 @@ The final credential-free acceptance pass ran these exact commands:
 ## Validation Commands Run
 
 - `npm run db:migrate` — passed.
-- `npm test` — passed, 38 tests.
+- `npm test` — passed, 40 tests.
 - `npm run build` — passed.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
@@ -123,17 +123,17 @@ The final credential-free acceptance pass ran these exact commands:
 
 ## D. SAFE TO MERGE?
 
-NO — not as a production system. It is safe to merge only as a local foundation if the team accepts these constraints:
+YES for merging the credential-free local foundation baseline; NO for exposing it directly to the public internet. Reasons:
 
 1. Credential-free local orchestration is now proven end-to-end.
 2. External provider and Telegram/GitHub live paths are credential-gated and not live-verified.
-3. Telegram webhook, file upload, and voice-note handling remain missing.
-4. Secure cookie sessions, CSRF, and rate limiting remain missing.
+3. Telegram attachment and voice-note workflows are functional locally with mocked Bot API transport; live webhook validation remains future work.
+4. Secure cookie sessions, CSRF, persistent rate limits, and trusted proxy parsing now have local tests, but still need external security review.
 5. GitHub App flow and live draft PR creation remain unverified.
 6. Provider cost accounting is persisted but estimated unless real provider responses are used.
-7. Approval records exist, but approval UI/detail endpoints need refinement.
+7. Approval records, decisions, and resume semantics are persisted and tested; approval-center UX can still be refined.
 8. Production TLS/reverse proxy/service hardening remains to be done.
-9. Incident bundle export remains missing.
+9. Evidence bundle JSON/Markdown export is implemented and tested; richer incident bundle packaging remains future work.
 10. The local tests are clean and suitable as the baseline for the next hardening PR.
 
 ## E. POST-MERGE FIRST TASK
@@ -149,4 +149,32 @@ Expected local result: Hermes creates a `hermes/<taskId>` branch, writes the fil
 - Live Telegram Bot API send/receive still requires your bot token and allowlisted user ID.
 - Live GitHub draft PR creation requires GitHub credentials and a target repository policy.
 - Live OpenAI, Anthropic, Codex, and Claude Code execution requires the respective credentials/installed CLIs.
-- Telegram webhook mode, file uploads, result-file delivery, voice-note transcription, secure session cookies, CSRF protection, rate limiting, and incident bundle export remain unimplemented and must not be described as complete.
+- Live Telegram webhook mode remains unverified; attachment and voice-note handling are credential-free mocked/local only. Internet exposure still requires HTTPS, live bot credentials, reverse-proxy deployment proof, and external security review.
+
+
+### LIVE VS MOCKED
+
+- Telegram Bot API transport: MOCKED locally; LIVE only after `TELEGRAM_BOT_TOKEN` and live polling/webhook validation.
+- Telegram attachment file handling: FUNCTIONAL LOCAL with mocked Bot API responses.
+- OpenAI: LIVE with key; mocked HTTP path tested.
+- Anthropic: LIVE with key; mocked HTTP path tested.
+- Codex CLI: LIVE if installed/authenticated; mocked CLI parser tested.
+- Claude Code CLI: LIVE if installed/authenticated; mocked CLI parser tested.
+- GitHub draft PR: LIVE with `gh` and `GITHUB_TOKEN`; manual PR packet fallback is FUNCTIONAL LOCAL.
+- Jarvis PWA: FUNCTIONAL LOCAL.
+
+### SAFE TO EXPOSE TO THE INTERNET?
+
+NO. Local session, CSRF, persistent rate-limit, and startup checks are implemented, but the system still lacks live Telegram webhook validation, external security review, production TLS/proxy deployment proof, and full browser E2E coverage.
+
+### SAFE TO MERGE?
+
+YES for the local foundation baseline because sessions, revocation, rate limits, trusted-proxy handling, CSRF/cookie behavior, approval resume semantics, Telegram attachment boundaries, production startup validation, tests, audits, and documentation are current. NO for direct internet exposure until the remaining production items are completed.
+
+### REMAINING POST-MERGE WORK
+
+- Live Telegram webhook and attachment tests with real bot credentials.
+- GitHub App flow and authenticated draft PR creation.
+- External security review of session, CSRF, proxy, and rate-limit behavior.
+- Full browser E2E for Jarvis on iPhone viewport.
+- Incident bundle export hardening and download UX.

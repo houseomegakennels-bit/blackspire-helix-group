@@ -164,7 +164,7 @@ test('provider adapters are credential-free testable and normalized', async () =
   assert.equal((await callOpenAI({ prompt: 'x' })).mode, 'unconfigured');
   assert.equal((await callAnthropic({ prompt: 'x' })).mode, 'unconfigured');
   const originalFetch = globalThis.fetch;
-  process.env.OPENAI_API_KEY = 'sk-test-redacted';
+  process.env.OPENAI_API_KEY = 'openai-test-redacted';
   globalThis.fetch = async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify({ artifacts: [{ path: 'docs/openai.md', content: 'ok' }], summary: 'ok' }), usage: { input_tokens: 2, output_tokens: 3 } }) });
   assert.equal((await callOpenAI({ prompt: 'x' })).artifacts[0].path, 'docs/openai.md');
   process.env.ANTHROPIC_API_KEY = 'anthropic-test-redacted';
@@ -231,7 +231,8 @@ test('Jarvis PWA assets are valid and mobile workflows are not desktop-only', as
   await fetch('http://localhost:8892/api/stop/reset', { method: 'POST', headers: { authorization: 'Bearer accept-token' } });
   const html = await (await fetch('http://localhost:8892/jarvis')).text();
   assert.match(html, /viewport/);
-  assert.match(html, /localStorage.commandToken/);
+  assert.ok(!html.includes('localStorage.commandToken'));
+  assert.match(html, /csrf/);
   assert.match(html, /submitTask/);
   assert.match(html, /Task history/);
   assert.match(html, /Approval center/);
@@ -246,3 +247,84 @@ test('Jarvis PWA assets are valid and mobile workflows are not desktop-only', as
 });
 
 test('close acceptance API', () => server.close());
+
+test('persistent sessions, CSRF cookies, restart survival, rotation, logout, revoke-all, cleanup, and rate limits', async () => {
+  const { createSession, lookupSession, rotateSession, revokeSession, revokeAll, cleanupSessions, sessionCookies, clearCookies, requireCsrf, clientIp, assertProductionSafe } = await import('../packages/security/session-store.js');
+  const { checkRateLimit, cleanupRateLimits } = await import('../packages/security/rate-limit.js');
+  const session = createSession({ userId: 'admin', ip: '1.1.1.1', userAgent: 'test' });
+  assert.ok(lookupSession(session.id));
+  const cookies = sessionCookies(session, { secure: true });
+  assert.ok(cookies[0].includes('HttpOnly'));
+  assert.ok(cookies[0].includes('Secure'));
+  assert.ok(cookies[0].includes('SameSite=Strict'));
+  assert.ok(!cookies[1].includes('HttpOnly'));
+  assert.ok(clearCookies({ secure: true })[0].includes('Max-Age=0'));
+  assert.equal(requireCsrf({ method: 'POST', headers: { 'x-csrf-token': session.csrfToken } }, { csrf_token: session.csrfToken }), true);
+  assert.equal(requireCsrf({ method: 'POST', headers: {} }, { csrf_token: session.csrfToken }), false);
+  const rotated = rotateSession(session.id, { ip: '1.1.1.1' });
+  assert.equal(lookupSession(session.id), null);
+  assert.ok(lookupSession(rotated.id));
+  revokeSession(rotated.id);
+  assert.equal(lookupSession(rotated.id), null);
+  const all = createSession({ userId: 'admin' });
+  revokeAll('admin');
+  assert.equal(lookupSession(all.id), null);
+  const expired = createSession({ userId: 'admin', ttlMs: -1 });
+  assert.equal(lookupSession(expired.id), null);
+  cleanupSessions(100);
+  let a = checkRateLimit({ scope: 'api', key: 'ip-a', limit: 2, windowMs: 60000 });
+  checkRateLimit({ scope: 'api', key: 'ip-a', limit: 2, windowMs: 60000 });
+  let blocked = checkRateLimit({ scope: 'api', key: 'ip-a', limit: 2, windowMs: 60000 });
+  let other = checkRateLimit({ scope: 'api', key: 'ip-b', limit: 2, windowMs: 60000 });
+  assert.equal(a.allowed, true);
+  assert.equal(blocked.allowed, false);
+  assert.equal(other.allowed, true);
+  cleanupRateLimits(100);
+  assert.equal(clientIp({ headers: { 'x-forwarded-for': '8.8.8.8' }, socket: { remoteAddress: '127.0.0.1' } }), '127.0.0.1');
+  assert.equal(clientIp({ headers: { 'x-forwarded-for': '8.8.8.8, 9.9.9.9' }, socket: { remoteAddress: '127.0.0.1' } }, { trustProxy: true }), '8.8.8.8');
+  const validProd = { NODE_ENV: 'production', COMMAND_ADMIN_TOKEN: 'a'.repeat(30), SESSION_SECRET: 'b'.repeat(40), PUBLIC_URL: 'https://example.com', TELEGRAM_MODE: 'polling', TRUST_PROXY: 'false' };
+  assert.equal(assertProductionSafe(validProd).ok, true);
+  for (const override of [
+    { COMMAND_ADMIN_TOKEN: 'short' },
+    { SESSION_SECRET: 'short' },
+    { PUBLIC_URL: 'http://example.com' },
+    { SECURE_COOKIES: 'false' },
+    { CORS_ORIGIN: '*' },
+    { DEBUG: 'true' },
+    { RATE_LIMIT_DISABLED: 'true' },
+    { TELEGRAM_MODE: 'webhook', TELEGRAM_WEBHOOK_SECRET: '' },
+    { TRUST_PROXY: 'true', TRUSTED_PROXY_CONFIGURED: '' },
+    { DB_DIR_WRITABLE: 'false' },
+    { ATTACHMENT_DIR_WRITABLE: 'false' },
+    { GIT_WORKFLOW_ENABLED: 'true', GIT_AVAILABLE: 'false' }
+  ]) assert.equal(assertProductionSafe({ ...validProd, ...override }).ok, false);
+});
+
+test('Telegram attachment, voice-note, document delivery, and evidence export boundaries', async () => {
+  const { handleTelegramAttachment, handleVoiceNote, sendTelegramDocument } = await import('../packages/telegram/attachments.js');
+  const { exportEvidence } = await import('../packages/evidence/export.js');
+  const fetcher = async (url) => {
+    if (String(url).includes('/getFile')) return { json: async () => ({ ok: true, result: { file_path: 'docs/input.txt', file_size: 11 } }) };
+    if (String(url).includes('/file/')) return { arrayBuffer: async () => new TextEncoder().encode('hello world').buffer };
+    if (String(url).includes('/sendDocument')) return { json: async () => ({ ok: true }) };
+    return { json: async () => ({ ok: false }) };
+  };
+  const task = createTask({ workspaceId: 'accept', request: 'evidence task', idempotencyKey: 'evidence-task' });
+  recordEvidence(task.id, 'final', { token: 'openai-secret-value-redacted' });
+  const attachment = await handleTelegramAttachment({ token: 'mock', fileId: 'file-1', taskId: task.id, workspaceId: 'accept', mime: 'text/plain', size: 11, fetcher });
+  assert.equal(attachment.cleaned, true);
+  assert.match(attachment.content, /hello/);
+  await assert.rejects(() => handleTelegramAttachment({ fileId: 'bad', mime: 'application/x-msdownload', fetcher }));
+  await assert.rejects(() => handleTelegramAttachment({ fileId: 'big', mime: 'text/plain', size: 2 * 1024 * 1024, fetcher }));
+  const voice = await handleVoiceNote({ fileId: 'voice', workspaceId: 'accept', transcribe: async () => 'Create docs/from-voice.md', fetcher });
+  assert.equal(voice.ok, true);
+  assert.equal((await handleVoiceNote({ fileId: 'voice', workspaceId: 'accept', fetcher })).ok, false);
+  assert.equal((await handleVoiceNote({ fileId: 'voice', workspaceId: 'accept', transcribe: async () => { throw new Error('transcribe failed'); }, fetcher })).ok, false);
+  assert.equal((await sendTelegramDocument({ token: 'mock', chatId: 1, filename: 'evidence.md', content: 'ok', fetcher })).ok, true);
+  const jsonExport = exportEvidence(task.id, 'json');
+  const mdExport = exportEvidence(task.id, 'md');
+  assert.ok(jsonExport.content.includes(task.id));
+  assert.ok(mdExport.content.includes('# Evidence'));
+  assert.ok(query(`SELECT COUNT(*) AS count FROM evidence_exports WHERE task_id='${task.id}'`)[0].count >= 2);
+  assert.equal(exportEvidence('missing-task', 'json'), null);
+});

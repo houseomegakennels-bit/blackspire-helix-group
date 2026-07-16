@@ -1,0 +1,5 @@
+import { execSql, query, esc, migrate } from '../task-engine/db.js';
+import { now } from '../shared/util.js';
+migrate();
+export function checkRateLimit({scope,key,limit=60,windowMs=60000}){ cleanupRateLimits(1000); const ws=Math.floor(Date.now()/windowMs)*windowMs; execSql(`INSERT INTO rate_limits VALUES (${esc(scope)},${esc(key)},${ws},0,${esc(now())}) ON CONFLICT(scope,key,window_start) DO NOTHING; UPDATE rate_limits SET count=count+1, updated_at=${esc(now())} WHERE scope=${esc(scope)} AND key=${esc(key)} AND window_start=${ws};`); const row=query(`SELECT count FROM rate_limits WHERE scope=${esc(scope)} AND key=${esc(key)} AND window_start=${ws};`)[0]; return {allowed:Number(row.count)<=limit,count:Number(row.count),limit,resetAt:new Date(ws+windowMs).toISOString()}; }
+export function cleanupRateLimits(limit=1000){ const cutoff=new Date(Date.now()-24*60*60*1000).toISOString(); execSql(`DELETE FROM rate_limits WHERE rowid IN (SELECT rowid FROM rate_limits WHERE updated_at < ${esc(cutoff)} LIMIT ${Number(limit)});`); }
