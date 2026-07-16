@@ -5,7 +5,7 @@ export function startWorker({ intervalMs = Number(process.env.WORKER_POLL_MS || 
   let running = false;
   async function tick() {
     if (running || getFlag('emergency_stop') === 'active') return;
-    const task = claimNext();
+    const task = claimNext({ workerId: process.env.WORKER_ID || 'worker-local' });
     if (!task) return;
     running = true;
     try {
