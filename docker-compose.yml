@@ -1,8 +1,52 @@
 services:
-  blackspire-command:
+  api:
     build: .
+    command: ["npm", "run", "command:dev"]
     ports: ["8787:8787"]
     env_file: .env
-    volumes: ["command-data:/app/.blackspire-command"]
+    environment:
+      - BLACKSPIRE_WORKSPACE_ROOT=/workspace/blackspire
+    volumes:
+      - command-data:/app/.blackspire-command
+      - /opt/blackspire:/workspace/blackspire
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    build: .
+    command: ["npm", "run", "worker"]
+    env_file: .env
+    environment:
+      - BLACKSPIRE_WORKSPACE_ROOT=/workspace/blackspire
+    volumes:
+      - command-data:/app/.blackspire-command
+      - /opt/blackspire:/workspace/blackspire
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "for p in /proc/[0-9]*/cmdline; do grep -aq worker.js \"$$p\" 2>/dev/null && exit 0; done; exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  telegram:
+    build: .
+    command: ["npm", "run", "telegram:poll"]
+    env_file: .env
+    environment:
+      - PUBLIC_BASE_URL=http://api:8787
+    volumes:
+      - command-data:/app/.blackspire-command
+    restart: unless-stopped
+    profiles: ["telegram"]
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   command-data:

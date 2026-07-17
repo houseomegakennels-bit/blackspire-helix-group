@@ -1,5 +1,6 @@
 import { execSql, query, esc, migrate } from '../task-engine/db.js';
 import { now } from '../shared/util.js';
+import { WORKSPACE_ROOT } from '../shared/config.js';
 
 migrate();
 
@@ -7,7 +8,7 @@ export function seedWorkspace() {
   upsertWorkspace({
     id: 'blackspire-command', name: 'Blackspire Command', description: 'Safe local foundation workspace', githubRepository: 'local/blackspire-command', defaultBranch: 'work',
     allowedPaths: ['.', 'docs', 'packages', 'apps', 'tests'], buildCommands: ['npm run build', 'npm test', 'npm run lint'], providerPolicy: { preferred: ['codex', 'openai', 'anthropic', 'claudeCode', 'manual'], fallback: 'manual' },
-    riskLevel: 'low', budgetCents: 500, secretReferences: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TELEGRAM_BOT_TOKEN'], enabledTools: ['read', 'write_branch', 'test', 'draft_pr'], lastHealthStatus: 'unknown', rootPath: '.',
+    riskLevel: 'low', budgetCents: 500, secretReferences: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TELEGRAM_BOT_TOKEN'], enabledTools: ['read', 'write_branch', 'test', 'draft_pr'], lastHealthStatus: 'unknown', rootPath: WORKSPACE_ROOT,
   });
 }
 
