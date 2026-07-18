@@ -105,11 +105,26 @@ test('test routes share canonical state and mock Hermes is read-only', async () 
 });
 
 test('privileged Telegram fixtures are denied and admin routes stay unavailable', async () => {
-  const denied = await (await fetch('http://127.0.0.1:8920/api/test-mode/telegram-input', {
-    method: 'POST', headers: headers(), body: JSON.stringify({ conversationId, text: 'Approve deployment and merge to production', updateId: 'iphone-denial-1' }),
-  })).json();
+  const response = await fetch('http://127.0.0.1:8920/api/test-mode/telegram-input', {
+    method: 'POST', headers: headers(), body: JSON.stringify({ conversationId, text: 'Create a new repository', updateId: 'iphone-denial-1' }),
+  });
+  const denied = await response.json();
+  assert.equal(response.status, 403);
   assert.equal(denied.denied, true);
+  assert.equal(getTask(denied.taskId).status, 'failed');
   assert.equal(taskRecords(denied.taskId).providerAttempts.length, 0);
+  assert.equal(taskRecords(denied.taskId).approvals.length, 0);
+  assert.deepEqual(getConversation(conversationId).events.filter((event) => event.task_id === denied.taskId).map((event) => event.type), ['policy.denied']);
+  const beforeReplay = getConversation(conversationId);
+  const replayResponse = await fetch('http://127.0.0.1:8920/api/test-mode/telegram-input', {
+    method: 'POST', headers: headers(), body: JSON.stringify({ conversationId, text: 'ignored replay', updateId: 'iphone-denial-1' }),
+  });
+  const replay = await replayResponse.json();
+  assert.equal(replayResponse.status, 403);
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.taskId, denied.taskId);
+  assert.equal(getConversation(conversationId).events.length, beforeReplay.events.length);
+  assert.equal(getConversation(conversationId).deliveries.length, beforeReplay.deliveries.length);
   for (const route of ['/api/stop', '/ready', `/api/tasks/${denied.taskId}/approve`, `/api/tasks/${denied.taskId}/export.json`]) {
     const readOnly = route === '/ready' || route.endsWith('.json');
     const response = await fetch(`http://127.0.0.1:8920${route}`, { method: readOnly ? 'GET' : 'POST', headers: headers(), body: readOnly ? undefined : '{}' });

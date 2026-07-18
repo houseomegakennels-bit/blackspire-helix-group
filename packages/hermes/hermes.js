@@ -3,7 +3,7 @@ import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateS
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
-import { decide } from '../policy/policy.js';
+import { classifyRequest, decide, evaluateRequestPolicy } from '../policy/policy.js';
 import { createTaskBranch, applyEdits, inspectChangedFiles, commitAll, createPullRequest, getRepositoryMetadata } from '../github/github.js';
 
 const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider', 'execute_provider', 'apply_edits', 'validate', 'commit', 'pull_request', 'summarize'];
@@ -16,6 +16,13 @@ export async function processTask(task) {
   if (await shouldStop(task.id)) return;
 
   try {
+    const authority = task.authority_class || (task.source_channel === 'telegram' ? 'telegram' : 'authenticated_admin');
+    const ingress = evaluateRequestPolicy({ request: task.request, channel: task.source_channel || 'api', authority });
+    if (task.policy_decision === 'denied' || !ingress.allowed) {
+      recordEvidence(task.id, 'policy_denial', { reason: ingress.reason, actionClass: task.action_class || ingress.actionClass });
+      recordTaskEvent(task.id, 'policy.denied', { status: 'failed', reason: ingress.reason, actionClass: task.action_class || ingress.actionClass });
+      return transition(task.id, 'failed', { error: ingress.reason, summary: 'Denied by Blackspire policy' });
+    }
     const approval = evaluateApproval(task);
     if (approval.status === 'blocked') return transition(task.id, 'failed', { error: approval.reason });
     if (approval.status === 'pending') {
@@ -89,8 +96,9 @@ async function shouldStop(taskId) {
   return false;
 }
 
-function requiresApproval(request) {
-  return /deploy|delete|merge|billing|credential|trading|funds|production/i.test(request);
+function requiresApproval(task) {
+  const actionClass = task.action_class || classifyRequest(task.request).actionClass;
+  return decide(actionClass).requiresApproval;
 }
 
 // Approvals are persisted state, not a per-run regex check: once an approval is recorded for a task,
@@ -99,7 +107,7 @@ function requiresApproval(request) {
 // prompt every time it is picked up. A stale "approved" decision that outlived its own expiry window is
 // treated as blocked, not clear, so the task cannot slip through on an approval that has gone cold.
 function evaluateApproval(task) {
-  if (!requiresApproval(task.request)) return { status: 'clear' };
+  if (!requiresApproval(task)) return { status: 'clear' };
   const approval = latestApproval(task.id, HIGH_RISK_ACTION);
   if (!approval) return { status: 'pending', reason: 'High-impact task requires administrator approval before execution' };
   if (approval.status === 'approved') {

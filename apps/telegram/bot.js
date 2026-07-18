@@ -42,7 +42,7 @@ export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
     return send(`Conversation set to ${conversationId}`);
   }
   if (text.startsWith('/task ')) {
-    const result = createUnifiedInput({ channel: 'telegram', actorId: String(from.id), channelKey: String(chatId), conversationId: conversations.get(from.id) || null, workspaceId: sessions.get(from.id) || 'blackspire-command', text: text.slice(6), idempotencyKey: `telegram:${update.update_id}`, metadata: { chatId } });
+    const result = createUnifiedInput({ channel: 'telegram', actorId: String(from.id), channelKey: String(chatId), conversationId: conversations.get(from.id) || null, workspaceId: sessions.get(from.id) || 'blackspire-command', text: text.slice(6), idempotencyKey: `telegram:${update.update_id}`, metadata: { chatId }, authority: 'telegram' });
     if (result.conversationId) conversations.set(from.id, result.conversationId);
     return send(result.taskId ? `${result.denied ? 'Denied' : 'Queued'} conversation ${result.conversationId} task ${result.taskId}${result.error ? `: ${result.error}` : ''}` : `Task rejected: ${result.error || 'unknown error'}`);
   }
@@ -152,10 +152,10 @@ export async function handleTelegramAttachment(update, apiBase = PUBLIC_BASE_URL
 async function handleDocument({ file, mime, buffer, storedPath, safeName, chatId, workspaceId, apiBase, send }) {
   const textExcerpt = TEXT_MIME_TYPES.has(mime) ? buffer.toString('utf8').slice(0, 2000) : null;
   const request = textExcerpt ? `Process uploaded attachment ${safeName}:\n\n${textExcerpt}` : `Process uploaded attachment ${safeName}`;
-  const result = createUnifiedInput({ channel: 'telegram', actorId: String(chatId), channelKey: String(chatId), workspaceId, text: request, idempotencyKey: `telegram:file:${chatId}:${file.file_id}`, metadata: { chatId, attachment: true } });
+  const result = createUnifiedInput({ channel: 'telegram', actorId: String(chatId), channelKey: String(chatId), workspaceId, text: request, idempotencyKey: `telegram:file:${chatId}:${file.file_id}`, metadata: { chatId, attachment: true }, authority: 'telegram' });
   const attachmentId = recordAttachment({ taskId: result.taskId || null, workspaceId, chatId, fileId: file.file_id, fileName: safeName, mimeType: mime, sizeBytes: buffer.length, kind: 'document', storedPath, textExcerpt });
   audit(result.taskId || null, 'telegram', 'attachment.received', { attachmentId, kind: 'document', mimeType: mime, sizeBytes: buffer.length });
-  return send(result.taskId ? `Attachment stored and task queued ${result.taskId}` : `Attachment rejected: ${result.error}`);
+  return send(result.taskId ? `${result.denied ? 'Attachment denied' : 'Attachment stored and task queued'} ${result.taskId}${result.error ? `: ${result.error}` : ''}` : `Attachment rejected: ${result.error}`);
 }
 
 async function handleVoiceNote({ file, mime, buffer, storedPath, chatId, workspaceId, apiBase, send }) {
@@ -170,10 +170,10 @@ async function handleVoiceNote({ file, mime, buffer, storedPath, chatId, workspa
     audit(null, 'telegram', 'attachment.voice_transcription_failed', { attachmentId, reason: transcription.reason });
     return send(`Voice note transcription failed: ${transcription.reason}. The failure was recorded for administrator follow-up.`);
   }
-  const result = createUnifiedInput({ channel: 'telegram', actorId: String(chatId), channelKey: String(chatId), workspaceId, text: transcription.text, idempotencyKey: `telegram:voice:${chatId}:${file.file_id}`, metadata: { chatId, attachment: true } });
+  const result = createUnifiedInput({ channel: 'telegram', actorId: String(chatId), channelKey: String(chatId), workspaceId, text: transcription.text, idempotencyKey: `telegram:voice:${chatId}:${file.file_id}`, metadata: { chatId, attachment: true }, authority: 'telegram' });
   const attachmentId = recordAttachment({ taskId: result.taskId || null, workspaceId, chatId, fileId: file.file_id, fileName: `${file.file_id}.oga`, mimeType: mime, sizeBytes: buffer.length, kind: 'voice', storedPath, textExcerpt: transcription.text, transcriptionStatus: 'ok' });
   audit(result.taskId || null, 'telegram', 'attachment.voice_transcribed', { attachmentId });
-  return send(result.taskId ? `Voice task queued ${result.taskId}: ${transcription.text}` : `Voice task rejected: ${result.error}`);
+  return send(result.taskId ? `${result.denied ? 'Voice task denied' : 'Voice task queued'} ${result.taskId}${result.denied ? `: ${result.error}` : `: ${transcription.text}`}` : `Voice task rejected: ${result.error}`);
 }
 
 export async function sendTelegramDocument(token, chatId, filePath, caption = '') {

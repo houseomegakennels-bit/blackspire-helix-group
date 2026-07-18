@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Repository-creation policy denial fixed
+
+- Traced Unified Input from normalization through classification, authority, policy, approvals, task/event creation, worker claim, Hermes/provider dispatch, and Telegram outbox delivery.
+- Replaced the phrase-sensitive Telegram regex boundary with normalized action classification and explicit authority; repository creation/deletion/visibility and unknown protected-resource mutations now fail closed for Telegram, test mode, and untrusted Jarvis/API.
+- Denied inputs now begin terminally failed, return HTTP 403, record one sanitized `policy.denied` event, preserve denial across replay, cannot be elevated by approval/resume, and never create queued/running/success events or Hermes/provider/worker/approval records.
+- Under Node 22.23.1, 7 focused policy tests, 35 focused Unified/iPhone/Telegram tests, and 139 full tests passed; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
+- The disposable tunnel remained stopped. Production, real Telegram, credentials, providers, databases, DNS/Vercel, Docker, firewall, host security, remote branches, trading, and funds were unchanged.
+
 ## 2026-07-18 — Expired disposable test state reconciled
 
 - Re-read canonical memory, ran the living-memory check, and inspected the branch, worktrees, divergence, recent commits, and local process state before resuming work.

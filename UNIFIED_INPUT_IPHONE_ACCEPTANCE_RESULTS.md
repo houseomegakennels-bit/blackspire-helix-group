@@ -22,6 +22,8 @@ The disconnected-session recovery reran the credential-free targeted suites and 
 
 Pending creation of the private Codespace URL and operator execution in iPhone Safari.
 
+The first approved VPS Quick Tunnel restage was stopped before device delivery after live validation found that “Create a new repository” returned HTTP 202. The disposable application, tunnel, authentication material, and SQLite state were removed. The local policy fix now returns HTTP 403 with zero Hermes/provider/worker dispatch and passed 7 focused policy tests, 35 focused integration tests, and the complete 139-test regression. A fresh isolated restage requires separate explicit approval.
+
 | Scenario | Result |
 |---|---|
 | A. Happy path | Pending device run |

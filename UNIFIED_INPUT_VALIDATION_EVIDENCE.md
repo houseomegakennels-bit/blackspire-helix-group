@@ -19,9 +19,10 @@ These identifiers came from disposable SQLite state and are retained only as val
 | Cancellation | Audit recorded `cancellation_requested`; the mock token ran once; cleanup evidence and events were stored; final state was `cancelled`; sanitized Telegram delivery was generated. |
 | Outbox | Mock transport failed twice, reached configured terminal `failed` status with two attempts, remained visible through Jarvis, and did not change the queued task. |
 | Redaction | The secret-shaped fixture was absent from API-visible shared state, events, outbox errors, logs, and evidence. |
-| Authority | Telegram deployment, merge, repository creation, secret, host-security, budget, emergency-control, constitutional, and trading/funds requests were denied. |
+| Authority | Telegram deployment, merge, repository creation/deletion/visibility, secret, host-security, budget, emergency-control, constitutional, and trading/funds requests were denied before dispatch. Repository wording, casing, punctuation, replay, untrusted Jarvis/API, test authority, and unknown protected-resource mutations were covered. |
+| Repository policy regression | “Create a new repository” and four natural-language variants returned the canonical forbidden result; tasks began and remained `failed`, recorded only sanitized `policy.denied`, produced no success/completion outbox event, and recorded zero worker claims, approvals, provider attempts, usage, commands, or changed files. |
 | Channel binding | A different Telegram chat could not attach to a Jarvis-only conversation. |
 | Network | A fixture-level fetch guard rejected non-loopback destinations; recorded external attempts remained empty. |
 | Cleanup | API closed, database handle closed, fetch restored, and the entire temporary root was removed and checked absent. |
 
-The expected Node experimental SQLite warning was the only runtime warning.
+The policy fix passed 7 focused classifier/authority tests, 35 focused Unified/iPhone/Telegram tests, and 139 full repository tests with zero failures or skips under Node 22.23.1. Build, lint, typecheck, secret scan, living-memory, and whitespace gates passed. The expected Node experimental SQLite warning was the only runtime warning.
