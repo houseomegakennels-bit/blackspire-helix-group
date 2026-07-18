@@ -1,41 +1,14 @@
 # AGENTS.md
 
-## Mission
-Build reliable AI systems and automation infrastructure for BLACKSPIRE HELIX GROUP.
+## Permanent operating instructions
 
-## Core Rules
-- Keep architecture clean and easy to maintain.
-- Use environment variables for private credentials.
-- Do not put API keys or passwords in source files.
-- Prioritize mobile responsiveness.
-- Preserve the BLACKSPIRE brand direction.
-- Avoid breaking existing features.
-- Explain major changes clearly.
-
-## Coding Standards
-- Use reusable components.
-- Keep APIs modular.
-- Validate user inputs.
-- Optimize for scalability and security.
-- Prefer readable solutions over unnecessary complexity.
-- Keep frontend, backend, docs, prompts, and tests organized.
-
-## Workflow
-Before finalizing work:
-1. Analyze the request.
-2. Identify dependencies.
-3. Check security-sensitive areas.
-4. Verify mobile and desktop responsiveness.
-5. Ensure production readiness.
-6. Summarize what changed and what still needs testing.
-
-## UI Philosophy
-Dark luxury aesthetic.
-Black and gold visual hierarchy.
-Minimal, polished, futuristic, cinematic, and enterprise-grade.
-
-## Quality Bar
-Output should feel polished, modern, fast, persuasive, and clean enough for real-world deployment.
-
-## Review Guidelines
-When reviewing code, look for exposed credentials, broken routing, weak auth flows, payment logic issues, database permission problems, mobile layout bugs, accessibility problems, build failures, and unnecessary complexity.
+- Before planning or changing anything, read `docs/BLACKSPIRE_SOURCE_OF_TRUTH.md` in full.
+- Treat that file as canonical project memory unless current code or verified evidence proves it outdated.
+- Inspect Git status, the current branch, recent commits, and relevant code before acting.
+- Reconcile documentation/code conflicts; never blindly trust either or invent completed work, results, deployments, credentials, or decisions.
+- Never record secret values, tokens, passwords, private keys, raw environment contents, or sensitive paths in documentation.
+- After meaningful verified work, update the living memory with evidence, commit hashes, tests, blockers, decisions, and rollback information.
+- Preserve Blackspire's Constitution and approval boundaries, workspace isolation, budgets, evidence requirements, emergency controls, and trading restrictions.
+- Prefer agent-driven execution; give the operator only unavoidable manual iPhone actions.
+- Never push, merge, deploy, spend money, alter host security, expose secrets, or enable live trading without the required explicit approval.
+- Keep changes maintainable, secure, mobile-responsive, and consistent with Blackspire's dark black-and-gold product direction.
