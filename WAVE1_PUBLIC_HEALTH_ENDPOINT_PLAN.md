@@ -46,3 +46,6 @@ Next.js documents Route Handlers as `route.js|ts` files inside `app` using the W
 ## Rollback
 
 Revert the health endpoint commit and let Vercel deploy the prior application version. No host, port, DNS, Docker, credential, or security rollback is required.
+## Deployment trigger
+
+- 2026-07-18: GitHub-to-Vercel initial production deployment triggered after connecting the `frontend` project to `main` with Root Directory `frontend`.
