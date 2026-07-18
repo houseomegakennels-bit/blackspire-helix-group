@@ -2,12 +2,11 @@
 
 ## Immediate safe actions
 
-1. Review the four preserved local commits above `origin/feature/unified-input-foundation`; do not rewrite them.
+1. Preserve the four original commits and backup branch; do not rewrite them or the integration merge.
 2. Keep all validation credential-free and mock-only until explicit authority changes.
-3. Re-run full tests and gates after reconciling the local stack into a reviewable branch.
+3. Run the isolated, expiring mock-only iPhone acceptance and verify teardown.
 4. When included Codespaces usage renews, inspect the designated existing Codespace before any creation request; do not enable billing.
-5. With explicit approval, run the isolated, expiring mock-only iPhone acceptance and verify teardown.
-6. Before production Command promotion, verify VPS ownership, supervision, persistent storage, backups/restores, HTTPS, health monitoring, and rollback.
+5. Before production Command promotion, verify VPS ownership, supervision, persistent storage, backups/restores, HTTPS, health monitoring, and rollback.
 
 ## Operator-only actions
 

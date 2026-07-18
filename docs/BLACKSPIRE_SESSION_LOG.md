@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Unified Input integrated with canonical main
+
+- Created `backup/unified-input-foundation-9bdfa5f` at the preserved four-commit head, then merged `origin/main` non-destructively as `b270ad3`; no rebase, reset, squash, or history rewrite occurred.
+- Resolved only `AGENTS.md` and `docs/BLACKSPIRE_SOURCE_OF_TRUTH.md` conflicts by keeping the canonical-memory structure and the verified Unified Node/VPS/disposable-test constraints. Main introduced no runtime or schema overlap.
+- Under Node 22.23.1, 40 targeted and 132 full tests passed with zero failures/skips. Build, lint, typecheck, secret scan, dependency audit, and whitespace checks passed.
+- Verified canonical Jarvis/Telegram state sharing, policy/workspace/budget denial before provider dispatch, cancellation, delivery-failure isolation, and replay/idempotency using mock Hermes, mock Telegram, loopback services, and disposable SQLite only.
+- Real Telegram remained disconnected; no production credentials, providers, databases, push, PR, deployment, DNS/Vercel, Docker configuration, or host-security change occurred.
+
 ## 2026-07-18 — Canonical living-memory system established
 
 - Fetched origin and created isolated worktree `/tmp/blackspire-memory-canonical` on `docs/canonical-living-memory` from `origin/main` `cccfbba`.
