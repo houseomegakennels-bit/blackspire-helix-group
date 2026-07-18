@@ -2,6 +2,8 @@
 
 Status: credential-free local vertical slice validated.
 
+The temporary iPhone test-build layer is now implemented locally behind fail-closed test mode. It adds no production deployment or production behavior and awaits private Codespace validation.
+
 ## Complete
 
 - Unified Telegram text/attachment/voice and Jarvis/API intake
@@ -14,6 +16,7 @@ Status: credential-free local vertical slice validated.
 - Retryable Telegram outbox with a default three-attempt bound and configurable test delay
 - Cross-channel conversation binding protection
 - Loopback-only, credential-free E2E fixture with verified cleanup and external-call guard
+- Private-test mobile UI, expiring test authentication, fixed actor/workspace, read-only mock Hermes, and mock delivery controls
 
 ## Not performed
 

@@ -1,4 +1,4 @@
-import { claimNext, getFlag } from '../../packages/task-engine/tasks.js';
+import { claimNext, getFlag, setFlag } from '../../packages/task-engine/tasks.js';
 import { processTask } from '../../packages/hermes/hermes.js';
 import { drainTelegramOutbox } from '../../packages/unified-input/unified.js';
 import { dispatchReply } from '../telegram/bot.js';
@@ -7,6 +7,7 @@ export function startWorker({ intervalMs = Number(process.env.WORKER_POLL_MS || 
   let running = false;
   async function tick() {
     if (running || getFlag('emergency_stop') === 'active') return;
+    if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true' && getFlag('test_worker_hold') === 'active') { await deliverEvents(); return; }
     const task = claimNext({ workerId: process.env.WORKER_ID || 'worker-local' });
     if (!task) { await deliverEvents(); return; }
     running = true;
@@ -25,6 +26,11 @@ export function startWorker({ intervalMs = Number(process.env.WORKER_POLL_MS || 
 
 async function deliverEvents() {
   return drainTelegramOutbox(async (reply) => {
+    const failures = Number(getFlag('test_mock_delivery_failures') || 0);
+    if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true' && failures > 0) {
+      setFlag('test_mock_delivery_failures', String(failures - 1));
+      throw new Error('sanitized mock Telegram delivery failure');
+    }
     const result = await dispatchReply(process.env.TELEGRAM_BOT_TOKEN, reply);
     if (!result.sent) throw new Error(result.reason || 'telegram delivery failed');
     return result;

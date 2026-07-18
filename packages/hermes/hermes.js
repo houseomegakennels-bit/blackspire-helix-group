@@ -23,6 +23,8 @@ export async function processTask(task) {
       return;
     }
 
+    if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true') return processReadOnlyTestTask(task);
+
     transition(task.id, 'running', { current_stage: 'inspect_workspace' });
     const context = await stage(task.id, 'inspect_workspace', () => inspectWorkspace(workspace));
     const plan = await stage(task.id, 'build_plan', () => buildPlan(task, workspace, context));
@@ -48,6 +50,22 @@ export async function processTask(task) {
     audit(task.id, 'hermes', 'task.failed', { error: error.message });
     return transition(task.id, 'failed', { error: error.message });
   }
+}
+
+async function processReadOnlyTestTask(task) {
+  transition(task.id, 'running', { current_stage: 'mock_status' });
+  const selected = selectProvider({ preferred: ['mock'] });
+  audit(task.id, 'hermes', 'provider.selected', selected);
+  recordTaskEvent(task.id, 'provider.selected', selected);
+  if (remainingBudget(task.id) <= 0) return transition(task.id, 'failed', { error: 'Task budget exhausted before provider execution' });
+  const started = Date.now();
+  const result = await executeProviderRequest({ selected, packet: { taskId: task.id, request: task.request, testMode: true }, workspace: null });
+  recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket: { taskId: task.id, testMode: true }, responsePacket: { summary: result.summary, model: result.model }, error: result.error, latencyMs: Date.now() - started });
+  recordUsage(task.id, result.usage);
+  if (!result.ok) return transition(task.id, 'failed', { error: result.error || 'mock provider failed' });
+  const evidence = { provider: result.provider, mode: result.mode, model: result.model, changedFiles: [], readOnly: true };
+  recordEvidence(task.id, 'final', evidence);
+  return transition(task.id, 'completed', { summary: { result: 'status reported', changedFiles: [], provider: result.provider, model: result.model }, evidence });
 }
 
 async function stage(taskId, name, fn) {

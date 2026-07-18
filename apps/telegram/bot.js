@@ -204,6 +204,7 @@ export async function sendTelegramMessage(token, chatId, text, extra = {}) {
 // verified only once a real TELEGRAM_BOT_TOKEN is configured and a human confirms delivery end-to-end.
 export async function dispatchReply(token, reply) {
   if (!reply || reply.ignored) return { sent: false, reason: 'ignored' };
+  if (process.env.TELEGRAM_MODE === 'mock') return { sent: true, mode: 'mock', result: { fixture: true } };
   if (!token) return { sent: false, reason: 'no bot token configured (dry-run)' };
   if (reply.document) {
     const result = await sendTelegramDocument(token, reply.chatId, reply.document.path, reply.document.caption || '');

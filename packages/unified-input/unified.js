@@ -65,7 +65,11 @@ export function getConversation(conversationId) {
     const records = taskRecords(task.id);
     return {
       ...task,
-      providerAttribution: records.providerAttempts.map(({ provider, mode, status, created_at }) => ({ provider, mode, status, created_at })),
+      providerAttribution: records.providerAttempts.map(({ provider, mode, status, response_packet, created_at }) => {
+        let model = null;
+        try { model = JSON.parse(response_packet || '{}').model || null; } catch { /* sanitized legacy packet */ }
+        return { provider, mode, model, status, created_at };
+      }),
       evidenceMetadata: records.evidence.map(({ id, kind, created_at }) => ({ id, kind, created_at })),
     };
   });

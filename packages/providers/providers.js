@@ -13,7 +13,7 @@ export function activeModes() {
 }
 
 export function selectProvider(policy = {}) {
-  if (process.env.HERMES_TEST_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock' };
+  if (process.env.HERMES_TEST_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock', model: 'mock-hermes-status-v1' };
   const modes = activeModes();
   for (const provider of policy.preferred || ['codex', 'openai', 'anthropic', 'claudeCode', 'manual']) {
     if (provider === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex };
@@ -28,7 +28,7 @@ export function selectProvider(policy = {}) {
 export async function executeProviderRequest({ selected, packet, workspace }) {
   const started = Date.now();
   try {
-    if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', started, response: mockResponse(packet) });
+    if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', model: selected.model, started, response: mockResponse(packet) });
     if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, started, response: await callOpenAI({ prompt: JSON.stringify(packet) }) });
     if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, started, response: await callAnthropic({ prompt: JSON.stringify(packet) }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
@@ -93,9 +93,9 @@ function writeTaskPacket(packet, workspaceRoot = '.') {
   return packetPath;
 }
 
-function normalizeProviderResult({ provider, mode, started, response }) {
+function normalizeProviderResult({ provider, mode, model = null, started, response }) {
   return {
-    ok: Boolean(response.ok), provider, mode, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
+    ok: Boolean(response.ok), provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
     usage: { provider, mode, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents || 0 },
     error: response.ok ? null : redact(response.error || 'provider failed'), raw: response,
   };
