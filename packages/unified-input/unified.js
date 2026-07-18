@@ -1,12 +1,12 @@
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, migrate } from '../task-engine/db.js';
-import { createTask, getTask, getFlag, transition, recordEvidence, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery } from '../task-engine/tasks.js';
+import { createTask, getTask, getFlag, transition, recordEvidence, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 
 migrate();
 
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
-const TELEGRAM_BLOCKED = /(?:\b(approve|reject|deploy|merge|reset\s+emergency|credential|secret|token|password|api[ _-]?key|private\s+key|trade|trading|funds)\b|\.env\b)/i;
+const TELEGRAM_BLOCKED = /(?:\b(approve|reject|deploy|merge|credential|secret|token|password|api[ _-]?key|private\s+key|trade|trading|funds|budget\s+increase|increase\s+(?:the\s+)?budget|emergency\s+(?:stop|control)|reset\s+emergency|host\s+security|constitutional?|constitution)\b|\.env\b)/i;
 const ALWAYS_BLOCKED = /(?:\b(live\s+trad(?:e|ing)|send\s+funds|transfer\s+funds)\b|\b(show|read|print|expose|return)\b.{0,80}(?:\b(secret|credential|token|password|api[ _-]?key|private\s+key)\b|\.env\b))/i;
 
 export function createUnifiedInput({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {} }) {
@@ -60,7 +60,25 @@ function resolveConversation({ conversationId, workspaceId, channel, channelKey,
 export function getConversation(conversationId) {
   const conversation = query(`SELECT * FROM conversations WHERE id=${esc(conversationId)};`)[0];
   if (!conversation) return null;
-  return { conversation, tasks: query(`SELECT * FROM tasks WHERE conversation_id=${esc(conversationId)} ORDER BY created_at;`), events: conversationEvents(conversationId) };
+  const tasks = query(`SELECT * FROM tasks WHERE conversation_id=${esc(conversationId)} ORDER BY created_at;`).map((task) => {
+    const records = taskRecords(task.id);
+    return {
+      ...task,
+      providerAttribution: records.providerAttempts.map(({ provider, mode, status, created_at }) => ({ provider, mode, status, created_at })),
+      evidenceMetadata: records.evidence.map(({ id, kind, created_at }) => ({ id, kind, created_at })),
+    };
+  });
+  return {
+    conversation,
+    messages: query(`SELECT id,conversation_id,channel,actor_id,text,policy_status,created_at FROM unified_inputs WHERE conversation_id=${esc(conversationId)} ORDER BY created_at,id;`),
+    tasks,
+    events: conversationEvents(conversationId),
+    deliveries: deliveryRecords(conversationId),
+  };
+}
+
+export function channelCanAccessConversation(channel, channelKey, conversationId) {
+  return Boolean(query(`SELECT id FROM conversation_bindings WHERE conversation_id=${esc(conversationId)} AND channel=${esc(channel)} AND channel_key=${esc(String(channelKey))};`)[0]);
 }
 
 export function channelCanAccessTask(channel, channelKey, taskId) {

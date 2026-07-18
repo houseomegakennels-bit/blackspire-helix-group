@@ -13,6 +13,8 @@ process.env.PORT = '8902';
 
 const { createUnifiedInput, getConversation, cancelFromChannel, drainTelegramOutbox } = await import('../packages/unified-input/unified.js');
 const { getTask, taskRecords, deliveryRecords } = await import('../packages/task-engine/tasks.js');
+const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
+const { processTask } = await import('../packages/hermes/hermes.js');
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
 const { start } = await import('../apps/api/server.js');
 
@@ -27,6 +29,9 @@ test('Telegram and Jarvis share canonical conversation history and task events',
   assert.deepEqual(shared.tasks.map((task) => task.id), [telegram.taskId, jarvis.taskId]);
   assert.ok(shared.events.some((event) => event.task_id === telegram.taskId));
   assert.ok(shared.events.some((event) => event.task_id === jarvis.taskId));
+  assert.deepEqual(shared.messages.map((message) => message.id), [telegram.inputId, jarvis.inputId]);
+  assert.ok(shared.tasks.every((task) => Array.isArray(task.evidenceMetadata)));
+  assert.ok(Array.isArray(shared.deliveries));
 });
 
 test('duplicate unified inputs are idempotent', () => {
@@ -46,6 +51,16 @@ test('policy and workspace denial prevent provider execution', () => {
   const workspace = createUnifiedInput({ channel: 'jarvis', actorId: 'session-2', channelKey: 'session-2', workspaceId: 'not-allowed', text: 'safe status', idempotencyKey: 'workspace-denied' });
   assert.equal(workspace.status, 403);
   assert.equal(workspace.error, 'workspace not found');
+});
+
+test('workspace budget denial occurs before provider execution', async () => {
+  upsertWorkspace({ id: 'zero-budget', name: 'Zero budget', githubRepository: 'local/blackspire-command', allowedPaths: ['.'], buildCommands: ['npm run build'], providerPolicy: { preferred: ['mock'] }, budgetCents: 0, rootPath: process.cwd() });
+  const created = createUnifiedInput({ channel: 'jarvis', actorId: 'session-budget', channelKey: 'session-budget', workspaceId: 'zero-budget', text: 'prepare a harmless local summary', idempotencyKey: 'budget-denied' });
+  await processTask(getTask(created.taskId));
+  const task = getTask(created.taskId);
+  assert.equal(task.status, 'failed');
+  assert.match(task.error, /budget exhausted/i);
+  assert.equal(taskRecords(task.id).providerAttempts.length, 0);
 });
 
 test('canonical cancellation emits sanitized Telegram event', async () => {
@@ -69,10 +84,16 @@ test('delivery failures stay retryable without changing canonical state', async 
 });
 
 test('Telegram cannot use privileged commands', async () => {
-  for (const [offset, command] of ['/approve task_x', '/deploy production', '/merge main', '/reset emergency', '/secret access', '/trade funds'].entries()) {
+  for (const [offset, command] of ['/approve task_x', '/deploy production', '/merge main', '/reset emergency', '/secret access', '/trade funds', '/task increase the budget', '/task change host security', '/task amend the constitution'].entries()) {
     const reply = await handleTelegramUpdate({ update_id: 500 + offset, message: { from: { id: 1001 }, chat: { id: 50 }, text: command } }, 'http://127.0.0.1:1');
     assert.match(reply.text[0], /require|cannot|not found/i);
   }
+});
+
+test('Telegram cannot attach itself to another channel conversation', async () => {
+  const privateConversation = createUnifiedInput({ channel: 'jarvis', actorId: 'session-private', channelKey: 'session-private', text: 'private status', idempotencyKey: 'private-conversation' });
+  const reply = await handleTelegramUpdate({ update_id: 700, message: { from: { id: 1001 }, chat: { id: 70 }, text: `/conversation ${privateConversation.conversationId}` } }, 'http://127.0.0.1:1');
+  assert.match(reply.text[0], /not found|not available/i);
 });
 
 let server;
