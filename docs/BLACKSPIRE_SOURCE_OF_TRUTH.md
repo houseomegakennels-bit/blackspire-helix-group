@@ -6,7 +6,7 @@ The durable authority is GitHub repository `houseomegakennels-bit/blackspire-hel
 
 - Last reconciled: 2026-07-18 UTC
 - Base `origin/main`: `029e38add2157d5b7caefb3a6c5d85e9270f80f2`
-- Last verified implementation commit: `c21db483dcb7230bdb501be1552f698197bc7f07`
+- Last verified implementation commit: `aedb9dbdc49266c6ee80ba526948bdabba6e0e15`
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
 
@@ -51,7 +51,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Restricted Hermes readiness at `ac3d887`: 35 focused Hermes/policy/Unified tests and 148 full tests passed with zero failures/skips under Node 22.23.1; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - Restricted subscription Codex acceptance: official Codex CLI 0.144.5 reported ChatGPT login; one noninteractive invocation was attempted with no API key, retry, fallback, or observed tool call. The response contract did not pass, canonical task state remained failed, and disposable runtime/state were removed. Detailed normalized evidence is in `RESTRICTED_CODEX_ACCEPTANCE.md`.
 - Subscription Codex worker implementation at `c21db48`: 38 targeted and 154 full tests passed with zero failures/skips under Node 22.23.1; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
-- Subscription Codex diagnostic working tree: one authorized invocation produced category `nonzero_exit_with_structured_stdout_error`; a confirmed stdout/stderr classification defect was fixed locally. Forty targeted and 156 full tests passed with zero failures/skips; final static/security gates are recorded with the milestone commit.
+- Subscription Codex diagnostic at `aedb9db`: one authorized invocation produced category `nonzero_exit_with_structured_stdout_error`; a confirmed stdout/stderr classification defect was fixed. Forty targeted and 156 full tests passed with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 
 ## Environments and integrations
 
