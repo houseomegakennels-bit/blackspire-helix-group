@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Review publication preserved and blocked before preview
+
+- Recovered clean `feature/unified-input-foundation` at `85beabc`, confirmed the accepted worker commits, verified no secret-shaped or temporary runtime state, and created an owner-only complete Git recovery bundle outside the repository.
+- Verified the bundle and recorded only its sanitized SHA-256. Publication gates passed with 40 targeted and 156 full tests plus build, lint, typecheck, secret scan, living-memory, and whitespace checks.
+- GitHub deployment evidence confirmed that both the root and frontend Vercel projects create previews for non-main refs. The official Vercel CLI was inspected, but no authenticated Vercel session or approved token was available.
+- Validated the proposed ignored-build command locally: it skips only `feature/unified-input-foundation` and permits `main` and unrelated branches. Because neither project setting could be read back, no branch push or draft PR was attempted.
+- Production, domains, Telegram, deployments, previews, remotes, Git history, host security, trading, and funds remained unchanged.
+
 ## 2026-07-18 — Restricted subscription Codex acceptance passed
 
 - Recovered the required `aedb9db` implementation, verified Codex CLI 0.144.5 and existing ChatGPT login without inspecting authentication material, and passed all credential-free pre-dispatch gates before consuming the final allowance.
