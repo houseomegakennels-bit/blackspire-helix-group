@@ -23,4 +23,4 @@ Canonical state is committed before channel delivery. Delivery attempts live in 
 - Production: `npm run start:production`, which validates an explicit production profile before migration/start.
 - Gates: `npm test`, `npm run build`, `npm run lint`, `npm run typecheck`, `npm run security:scan`, and `git diff --check`.
 
-There is no paid-provider fallback. Provider mode is explicit and defaults to `manual`; test mode requires `mock`. Real Telegram is never started by the production wrapper and is forbidden in test profiles.
+There is no paid-provider fallback. Provider mode is explicit and defaults to credential-free `mock`; restricted test mode also requires `mock`. Production provider selection requires separate explicit configuration and authorization. Real Telegram is never started by the production wrapper and is forbidden in test profiles.

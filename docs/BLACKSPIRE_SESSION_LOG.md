@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Restricted Hermes safety boundary established
+
+- Recovered `feature/unified-input-foundation` at `db078a4`, preserved the pre-existing untracked readiness handoff, and created `backup/restricted-hermes-readiness-db078a4` before editing; no history was rewritten.
+- Added a strict version 1 low-risk Hermes contract, exact/size-bounded response validation, credential-free loopback adapter, shared Hermes/provider dispatch guard, explicit mock-default provider routing, budget/deadline/cancellation/replay controls, actor persistence, cancelled-state finality, and sanitized provider/evidence persistence.
+- Verified that privileged and unknown privileged-looking input stops before Hermes; Hermes cannot change authority, actor/channel/workspace/canonical IDs, budget, or provider; and missing/placeholder credentials, paid fallback, mismatches, cancellation, deadline expiry, emergency stop, and replay fail closed.
+- Under Node 22.23.1, 35 focused Hermes/policy/Unified tests and 148 full tests passed with zero failures/skips; build, lint, and typecheck passed. Secret scan, living-memory, and whitespace results were run immediately before the milestone commit.
+- Used only mock providers, a credential-free loopback fake Hermes service, and disposable SQLite. Real Hermes and Telegram remained disconnected; no credential was loaded, no paid call occurred, and production, remotes, deployment, network, host security, trading, and funds were unchanged.
+
 ## 2026-07-18 — Operator iPhone acceptance completed and test removed
 
 - Operator confirmed that the harmless task, shared-conversation follow-up, idempotent replay, Telegram policy denial, eligible cancellation, and bounded mock delivery-failure scenarios all passed in iPhone Safari.

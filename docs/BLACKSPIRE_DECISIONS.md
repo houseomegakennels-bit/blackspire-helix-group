@@ -12,3 +12,6 @@
 - Prefer Codex/code automation for safe repeatable work while preserving operator approval boundaries.
 - Preserve unpublished commits and unrelated artifacts. Roll back shared work with reviewed reverts, not reset/history rewriting.
 - Legacy `memory/`, `PROJECT_CONTEXT.md`, workflow, and delivery documents are historical evidence and are superseded for current-state recovery.
+- Restricted Hermes receives only the versioned low-risk contract; Blackspire-owned identity, authority, canonical IDs, provider allowlist, budget, policy, cancellation, deadlines, replay, evidence, and emergency controls are immutable across the boundary.
+- Runtime modes are explicit: mock is the credential-free default, restricted test permits only loopback fake Hermes with mock providers, and production can never be selected by fallback.
+- The Command API remains tested same-origin-only; no permissive CORS behavior or misleading cross-origin promise is configured.

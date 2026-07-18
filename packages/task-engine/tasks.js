@@ -7,14 +7,14 @@ export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
 }
 
-export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
+export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
   const existing = idempotencyKey && query(`SELECT * FROM tasks WHERE idempotency_key=${esc(idempotencyKey)};`)[0];
   if (existing) return existing;
   const task = {
     id: id('task'), workspace_id: workspaceId, request, status: initialStatus, idempotency_key: idempotencyKey || id('idem'), provider: null,
     plan: null, summary: initialSummary, error: initialError, budget_cents: budgetCents, retry_count: 0, created_at: now(), updated_at: now(),
     worker_id: null, claimed_at: null, heartbeat_at: null, current_stage: null, evidence: null,
-    conversation_id: conversationId, input_id: inputId, source_channel: sourceChannel, action_class: actionClass, authority_class: authorityClass, policy_decision: policyDecision,
+    conversation_id: conversationId, input_id: inputId, source_channel: sourceChannel, actor_id: actorId, action_class: actionClass, authority_class: authorityClass, policy_decision: policyDecision,
   };
   execSql(`INSERT INTO tasks(${Object.keys(task).join(',')}) VALUES (${Object.values(task).map(esc).join(',')});`);
   audit(task.id, 'system', 'task.created', { request, workspaceId, status: initialStatus, actionClass, authorityClass, policyDecision });
@@ -31,6 +31,8 @@ export function listTasks() {
 }
 
 export function transition(taskId, status, patch = {}) {
+  const current = getTask(taskId);
+  if (current?.status === 'cancelled' && !['cancelled','failed','queued'].includes(status)) return current;
   const sets = [`status=${esc(status)}`, `updated_at=${esc(now())}`, ...Object.entries(patch).map(([key, value]) => `${key}=${esc(typeof value === 'string' ? value : JSON.stringify(value))}`)];
   execSql(`UPDATE tasks SET ${sets.join(',')} WHERE id=${esc(taskId)};`);
   audit(taskId, 'system', 'task.transition', { status, ...patch });
@@ -104,7 +106,7 @@ export function updateSubtask(taskId, stage, status, details = {}) {
 }
 
 export function recordProviderAttempt(taskId, attempt) {
-  execSql(`INSERT INTO provider_attempts VALUES (${esc(id('attempt'))},${esc(taskId)},${esc(attempt.provider)},${esc(attempt.mode)},${esc(attempt.status)},${esc(JSON.stringify(attempt.requestPacket || {}))},${esc(JSON.stringify(attempt.responsePacket || {}))},${esc(attempt.error || '')},${Number(attempt.latencyMs || 0)},${esc(now())});`);
+  execSql(`INSERT INTO provider_attempts VALUES (${esc(id('attempt'))},${esc(taskId)},${esc(attempt.provider)},${esc(attempt.mode)},${esc(attempt.status)},${esc(redact(JSON.stringify(attempt.requestPacket || {})))},${esc(redact(JSON.stringify(attempt.responsePacket || {})))},${esc(redact(attempt.error || ''))},${Number(attempt.latencyMs || 0)},${esc(now())});`);
 }
 
 export function recordUsage(taskId, usage) {
@@ -120,7 +122,7 @@ export function recordCommandResult(taskId, result) {
 }
 
 export function recordEvidence(taskId, kind, details = {}) {
-  execSql(`INSERT INTO task_evidence VALUES (${esc(id('ev'))},${esc(taskId)},${esc(kind)},${esc(JSON.stringify(details))},${esc(now())});`);
+  execSql(`INSERT INTO task_evidence VALUES (${esc(id('ev'))},${esc(taskId)},${esc(kind)},${esc(redact(JSON.stringify(details)))},${esc(now())});`);
 }
 
 

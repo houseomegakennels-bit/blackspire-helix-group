@@ -6,7 +6,7 @@ The durable authority is GitHub repository `houseomegakennels-bit/blackspire-hel
 
 - Last reconciled: 2026-07-18 UTC
 - Base `origin/main`: `029e38add2157d5b7caefb3a6c5d85e9270f80f2`
-- Last verified implementation commit: `b270ad3d18b12a6c32de8cbc0335ca9d51d32aae`
+- Last verified implementation commit: `db078a40ebadc47dae64b82df1aafb637eaedb67`; Restricted Hermes readiness changes are verified in the working tree pending the milestone commit
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
 
@@ -29,7 +29,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 | Wave 1 monitoring | OPERATOR-CONFIRMED complete | `WAVE1_MONITORING_COMPLETION.md` records UptimeRobot HTTP monitoring and email alerts. Current dashboard/alert delivery is `UNVERIFIED`. |
 | Unified Jarvis + Telegram | VERIFIED locally and OPERATOR-CONFIRMED on iPhone Safari after main integration and repository-policy fix, not published | Harmless input, shared-conversation follow-up, idempotent replay, Telegram policy denial, cancellation, and bounded mock delivery failure passed on the isolated disposable surface; 139 full tests passed with mock-only providers and disposable state. |
 | Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
-| Hermes/providers | VERIFIED with mock/manual paths | Provider attribution and fail-closed controls are tested. Real paid providers and production credentials were not exercised. |
+| Hermes/providers | VERIFIED credential-free readiness foundation | Version 1 restricted contract, exact response validation, shared dispatch guard, loopback fake adapter, mock default, paid-provider test isolation, budgets, deadlines, cancellation, replay, and sanitized evidence are locally tested. Real paid providers and production credentials were not exercised. |
 | VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. No disposable iPhone test process or tunnel was active at the latest local inspection. |
 | Codespace recovery/test | BLOCKED | Preparation exists; creation returned a usage-budget HTTP 402 and no resource was created or changed. |
 
@@ -48,6 +48,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Post-integration at `b270ad3`: 40 targeted and 132 full tests passed with zero failures/skips under Node 22.23.1. Build, lint, typecheck, full-tree secret scan, dependency audit, and whitespace checks passed. Real Telegram, paid/live providers, and production Unified Jarvis remain `UNVERIFIED`.
 - Repository-policy fix at the current branch head: 7 focused policy tests, 35 focused Unified/iPhone/Telegram tests, and 139 full tests passed with zero failures/skips under Node 22.23.1. Repository creation variants return HTTP 403, remain terminal without queued/running events, and record zero Hermes, provider, worker, or approval dispatch. Build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - Operator iPhone Safari acceptance at `eceb921`: harmless task, follow-up conversation reuse, idempotent replay, Telegram denial before Hermes, eligible cancellation, and bounded mock delivery failure all passed. The temporary application, authentication material, SQLite workspace, loopback listener, and Quick Tunnel were then removed and verified absent.
+- Restricted Hermes readiness working tree: 35 focused Hermes/policy/Unified tests and 148 full tests passed with zero failures/skips under Node 22.23.1; build, lint, and typecheck passed. Final secret, living-memory, and whitespace gates are recorded in the milestone session entry after completion.
 
 ## Environments and integrations
 
@@ -71,7 +72,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 
 ## Blockers and next safe actions
 
-Current blockers: the implementation remains unpublished; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
+Current blockers: the implementation remains unpublished; Codespaces usage credit is exhausted; restricted real-Hermes acceptance still requires separate provider/model/credential/spend approval; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
 Immediate safe actions:
 

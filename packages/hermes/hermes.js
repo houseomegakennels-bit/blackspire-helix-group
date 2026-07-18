@@ -5,6 +5,10 @@ import { selectProvider, executeProviderRequest } from '../providers/providers.j
 import { runAllowed } from '../execution/runner.js';
 import { classifyRequest, decide, evaluateRequestPolicy } from '../policy/policy.js';
 import { createTaskBranch, applyEdits, inspectChangedFiles, commitAll, createPullRequest, getRepositoryMetadata } from '../github/github.js';
+import { query, esc } from '../task-engine/db.js';
+import { createHermesRequest } from './contract.js';
+import { dispatchHermes } from './adapter.js';
+import { guardDispatch } from '../execution/dispatchGuard.js';
 
 const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider', 'execute_provider', 'apply_edits', 'validate', 'commit', 'pull_request', 'summarize'];
 const MAX_RETRIES = 2;
@@ -30,18 +34,25 @@ export async function processTask(task) {
       return;
     }
 
-    if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true') return processReadOnlyTestTask(task);
+    if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true') return processReadOnlyTestTask(task, workspace);
+
+    const actorId = taskActor(task);
+    const hermesRequest = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: workspace.enabled_tools || ['read','status'], timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 30_000) });
+    const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: hermesRequest.deadline, phase: 'hermes' });
+    recordEvidence(task.id, hermesGuard.ok ? 'hermes_selection' : 'hermes_prevented', { allowed: hermesGuard.ok, reason: hermesGuard.reason || 'credential-free Hermes permitted', requestId: hermesRequest.requestId });
+    if (!hermesGuard.ok) return transition(task.id, hermesGuard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: hermesGuard.reason });
+    const hermesResponse = await dispatchHermes(hermesRequest, { allowedProviders: allowedProviders(workspace) });
 
     transition(task.id, 'running', { current_stage: 'inspect_workspace' });
     const context = await stage(task.id, 'inspect_workspace', () => inspectWorkspace(workspace));
     const plan = await stage(task.id, 'build_plan', () => buildPlan(task, workspace, context));
     transition(task.id, 'running', { plan });
     await stage(task.id, 'decompose', () => persistSubtasks(task.id, plan));
-    const selected = await stage(task.id, 'select_provider', () => selectProvider(workspace.provider_policy));
+    const selected = await stage(task.id, 'select_provider', () => selectProvider(workspace.provider_policy, { requested: hermesResponse.provider, model: hermesResponse.model }));
     audit(task.id, 'hermes', 'provider.selected', selected);
     recordTaskEvent(task.id, 'provider.selected', { provider: selected.provider, mode: selected.mode });
     if (remainingBudget(task.id) <= 0) return transition(task.id, 'failed', { error: 'Task budget exhausted before provider execution' });
-    const providerResult = await providerWithRetries(task, workspace, selected, plan, context);
+    const providerResult = await providerWithRetries(task, workspace, selected, plan, context, hermesRequest);
     if (!providerResult.ok) return transition(task.id, 'failed', { error: providerResult.error || 'provider failed' });
     if (await shouldStop(task.id)) return;
 
@@ -59,15 +70,24 @@ export async function processTask(task) {
   }
 }
 
-async function processReadOnlyTestTask(task) {
+async function processReadOnlyTestTask(task, workspace) {
+  const actorId = taskActor(task);
+  const request = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: ['read','status'] });
+  const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: request.deadline, phase: 'hermes' });
+  if (!hermesGuard.ok) return transition(task.id, 'failed', { error: hermesGuard.reason });
+  const hermes = await dispatchHermes(request, { allowedProviders: ['mock'] });
   transition(task.id, 'running', { current_stage: 'mock_status' });
-  const selected = selectProvider({ preferred: ['mock'] });
+  const selected = selectProvider({ preferred: ['mock'] }, { requested: hermes.provider, model: hermes.model });
   audit(task.id, 'hermes', 'provider.selected', selected);
   recordTaskEvent(task.id, 'provider.selected', selected);
   if (remainingBudget(task.id) <= 0) return transition(task.id, 'failed', { error: 'Task budget exhausted before provider execution' });
   const started = Date.now();
-  const result = await executeProviderRequest({ selected, packet: { taskId: task.id, request: task.request, testMode: true }, workspace: null });
-  recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket: { taskId: task.id, testMode: true }, responsePacket: { summary: result.summary, model: result.model }, error: result.error, latencyMs: Date.now() - started });
+  const guard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', selected, deadline: request.deadline, idempotencyKey: request.idempotencyKey, allowedProviders: ['mock'] });
+  if (!guard.ok) return transition(task.id, guard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: guard.reason });
+  const packet = { taskId: task.id, request: request.objective, idempotencyKey: request.idempotencyKey, deadline: request.deadline, cancellationReference: request.cancellationReference };
+  const result = await executeProviderRequest({ selected, packet, workspace: null, deadline: request.deadline });
+  if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider }); return getTask(task.id); }
+  recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket: packet, responsePacket: { summary: result.summary, model: result.model }, error: result.error, latencyMs: Date.now() - started });
   recordUsage(task.id, result.usage);
   if (!result.ok) return transition(task.id, 'failed', { error: result.error || 'mock provider failed' });
   const evidence = { provider: result.provider, mode: result.mode, model: result.model, changedFiles: [], readOnly: true };
@@ -152,14 +172,18 @@ function persistSubtasks(taskId, plan) {
   return { count: plan.stages.length };
 }
 
-async function providerWithRetries(task, workspace, selected, plan, context) {
+async function providerWithRetries(task, workspace, selected, plan, context, hermesRequest) {
   let last;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
     if (remainingBudget(task.id) <= 0) return { ok: false, error: 'Task budget exhausted' };
     if (await shouldStop(task.id)) return { ok: false, error: 'cancelled' };
-    const requestPacket = { taskId: task.id, request: task.request, plan, context, attempt };
+    const guard = guardDispatch({ task, workspace, actorId: taskActor(task), channel: task.source_channel || 'api', selected, deadline: hermesRequest.deadline, idempotencyKey: hermesRequest.idempotencyKey, allowedProviders: allowedProviders(workspace) });
+    recordEvidence(task.id, guard.ok ? 'dispatch_attempt' : 'dispatch_prevented', { allowed: guard.ok, reason: guard.reason || 'guard passed', provider: selected.provider, attempt });
+    if (!guard.ok) return { ok: false, error: guard.reason };
+    const requestPacket = { taskId: task.id, request: hermesRequest.objective, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference };
     const started = Date.now();
-    const result = await executeProviderRequest({ selected, packet: requestPacket, workspace });
+    const result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline });
+    if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt }); return { ok: false, error: 'cancelled' }; }
     last = result;
     recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket: { artifacts: result.artifacts, summary: result.summary, manualPacketPath: result.manualPacketPath }, error: result.error, latencyMs: Date.now() - started });
     recordUsage(task.id, result.usage || { provider: result.provider, mode: result.mode });
@@ -167,6 +191,17 @@ async function providerWithRetries(task, workspace, selected, plan, context) {
     transition(task.id, 'running', { retry_count: attempt });
   }
   return last;
+}
+
+function taskActor(task) {
+  if (task.actor_id) return task.actor_id;
+  if (!task.input_id) return task.authority_class || 'authenticated_admin';
+  return query(`SELECT actor_id FROM unified_inputs WHERE id=${esc(task.input_id)};`)[0]?.actor_id || task.authority_class || 'untrusted';
+}
+
+function allowedProviders(workspace) {
+  const preferred = workspace.provider_policy?.preferred || [];
+  return preferred.filter((provider) => provider === 'mock' || process.env.BLACKSPIRE_RUNTIME_MODE === 'production');
 }
 
 function remainingBudget(taskId) {

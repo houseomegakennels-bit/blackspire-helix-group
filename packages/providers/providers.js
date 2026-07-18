@@ -12,28 +12,32 @@ export function activeModes() {
   };
 }
 
-export function selectProvider(policy = {}) {
+export function selectProvider(policy = {}, { requested = null, model = null } = {}) {
   if (process.env.HERMES_TEST_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock', model: 'mock-hermes-status-v1' };
-  const requested = process.env.BLACKSPIRE_PROVIDER_MODE || 'manual';
+  requested ||= process.env.BLACKSPIRE_PROVIDER_MODE || 'mock';
   const preferred = policy.preferred || ['manual'];
-  if (requested === 'manual' || !preferred.includes(requested)) return { provider: 'manual', mode: 'handoff' };
+  if (!preferred.includes(requested)) return { provider: requested, mode: 'unconfigured', model };
+  if (requested === 'mock') return { provider: 'mock', mode: 'mock', model: model || 'mock-hermes-status-v1' };
+  if (requested === 'manual') return { provider: 'manual', mode: 'handoff', model };
   const modes = activeModes();
   if (requested === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex };
   if (requested === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api' };
   if (requested === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api' };
   if (requested === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli' };
-  return { provider: 'manual', mode: 'handoff' };
+  return { provider: requested, mode: 'unconfigured', model };
 }
 
-export async function executeProviderRequest({ selected, packet, workspace }) {
+export async function executeProviderRequest({ selected, packet, workspace, deadline = null }) {
   const started = Date.now();
   try {
     if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', model: selected.model, started, response: mockResponse(packet) });
-    if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, started, response: await callOpenAI({ prompt: JSON.stringify(packet) }) });
-    if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, started, response: await callAnthropic({ prompt: JSON.stringify(packet) }) });
+    const timeoutMs = deadline ? Math.max(1, Date.parse(deadline) - Date.now()) : 30_000;
+    if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, started, response: await callOpenAI({ prompt: JSON.stringify(packet), timeoutMs }) });
+    if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, started, response: await callAnthropic({ prompt: JSON.stringify(packet), timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
     if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', started, response: runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path)) });
-    return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
+    if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
+    return { ok: false, provider: selected.provider || 'unknown', mode: selected.mode || 'unconfigured', artifacts: [], usage: usage(selected, Date.now() - started), error: 'provider is not explicitly configured', raw: null };
   } catch (error) {
     return { ok: false, provider: selected.provider, mode: selected.mode, artifacts: [], usage: usage(selected, Date.now() - started), error: redact(error.message), raw: null };
   }

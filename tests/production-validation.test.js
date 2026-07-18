@@ -60,8 +60,8 @@ test('rejects secure cookies disabled', () => {
   assert.match(requireProductionSafeConfig(validEnv({ SECURE_COOKIES: 'false' }), dirs()).errors.join(), /SECURE_COOKIES/);
 });
 
-test('rejects wildcard CORS', () => {
-  assert.match(requireProductionSafeConfig(validEnv({ CORS_ORIGIN: '*' }), dirs()).errors.join(), /CORS/);
+test('same-origin API does not treat legacy CORS_ORIGIN as an authorization control', () => {
+  assert.equal(requireProductionSafeConfig(validEnv({ CORS_ORIGIN: '*' }), dirs()).ok, true);
 });
 
 test('rejects debug mode', () => {
