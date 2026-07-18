@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Disposable iPhone test staged
+
+- Validated the loopback launcher lifecycle on port 8790 with disposable SQLite, mock Hermes, mock Telegram, test-only authentication, and complete cleanup; durable port 8787 remained healthy.
+- Started the approved expiring Quick Tunnel with the already-present pinned Cloudflare image and a retained command session. The loopback health contract is live and the tunnel container registered, but its generated hostname did not resolve during the verification window.
+- No URL, access code, credential, or environment value was recorded in repository memory. Real Telegram, production credentials/providers/databases, DNS/Vercel, Docker configuration, firewall, and host security remained untouched.
+- Device acceptance remains blocked on temporary hostname resolution. Teardown remains automatic at expiry or available through `npm run stop:iphone-test`.
+
 ## 2026-07-18 — Unified Input integrated with canonical main
 
 - Created `backup/unified-input-foundation-9bdfa5f` at the preserved four-commit head, then merged `origin/main` non-destructively as `b270ad3`; no rebase, reset, squash, or history rewrite occurred.

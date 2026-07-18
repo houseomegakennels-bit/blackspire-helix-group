@@ -30,7 +30,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 | Unified Jarvis + Telegram | VERIFIED locally after main integration, not published | Merge `b270ad3`; 40 targeted and 132 full tests passed with mock-only providers and disposable state. |
 | Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
 | Hermes/providers | VERIFIED with mock/manual paths | Provider attribution and fail-closed controls are tested. Real paid providers and production credentials were not exercised. |
-| VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. |
+| VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. A separate disposable loopback iPhone test is active and does not use VPS production state. |
 | Codespace recovery/test | BLOCKED | Preparation exists; creation returned a usage-budget HTTP 402 and no resource was created or changed. |
 
 ## Important branches and commits
@@ -69,13 +69,13 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 
 ## Blockers and next safe actions
 
-Current blockers: iPhone Safari device acceptance is pending; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
+Current blockers: the active Quick Tunnel hostname has not resolved in DNS, so iPhone Safari device acceptance is pending; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
 Immediate safe actions:
 
-1. Run the isolated loopback iPhone test lifecycle with disposable SQLite and mock providers.
-2. Start an expiring HTTPS tunnel only after local validation and verify teardown without touching durable VPS state.
-3. Complete operator iPhone Safari acceptance, then stop and verify cleanup.
+1. Recheck the active expiring Quick Tunnel hostname without changing DNS, Docker, firewall, or host security.
+2. Complete operator iPhone Safari acceptance if the hostname resolves, then stop and verify cleanup.
+3. If it remains unresolved, stop the disposable test and request approval for a different already-reviewed tunnel transport.
 4. Complete production readiness, backup, monitoring, stable HTTPS, and rollback verification before any VPS promotion.
 
 Operator-only actions include spending/budget changes, credential provisioning, GitHub authorization, device acceptance, real Telegram connection, production/DNS/provider/host-security changes, approval-policy changes, emergency-control changes, trading, and funds actions.
