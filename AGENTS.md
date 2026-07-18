@@ -1,41 +1,11 @@
-# AGENTS.md
+# Blackspire Agent Rules
 
-## Mission
-Build reliable AI systems and automation infrastructure for BLACKSPIRE HELIX GROUP.
-
-## Core Rules
-- Keep architecture clean and easy to maintain.
-- Use environment variables for private credentials.
-- Do not put API keys or passwords in source files.
-- Prioritize mobile responsiveness.
-- Preserve the BLACKSPIRE brand direction.
-- Avoid breaking existing features.
-- Explain major changes clearly.
-
-## Coding Standards
-- Use reusable components.
-- Keep APIs modular.
-- Validate user inputs.
-- Optimize for scalability and security.
-- Prefer readable solutions over unnecessary complexity.
-- Keep frontend, backend, docs, prompts, and tests organized.
-
-## Workflow
-Before finalizing work:
-1. Analyze the request.
-2. Identify dependencies.
-3. Check security-sensitive areas.
-4. Verify mobile and desktop responsiveness.
-5. Ensure production readiness.
-6. Summarize what changed and what still needs testing.
-
-## UI Philosophy
-Dark luxury aesthetic.
-Black and gold visual hierarchy.
-Minimal, polished, futuristic, cinematic, and enterprise-grade.
-
-## Quality Bar
-Output should feel polished, modern, fast, persuasive, and clean enough for real-world deployment.
-
-## Review Guidelines
-When reviewing code, look for exposed credentials, broken routing, weak auth flows, payment logic issues, database permission problems, mobile layout bugs, accessibility problems, build failures, and unnecessary complexity.
+1. Read `docs/BLACKSPIRE_SOURCE_OF_TRUTH.md` first.
+2. Before work, inspect the branch, HEAD, `git status`, worktrees, and recent commits.
+3. Reconcile documentation against code, commits, tests, deployment evidence, and operator-confirmed results; mark unsupported claims `UNVERIFIED`.
+4. Never record secrets, raw credentials, tokens, or credential-file contents.
+5. After meaningful verified work, update only affected canonical-memory sections and append one dated session-log entry.
+6. Prefer Codex and safe code automation over manual operator work. Never bypass required operator authority.
+7. Protect approval boundaries, workspace isolation, budgets, evidence integrity, emergency controls, and the prohibition on live trading or funds movement.
+8. Preserve unrelated and unpublished work. Never push, merge, deploy, or change production without explicit authority.
+9. Follow `docs/BLACKSPIRE_MEMORY_MAINTENANCE.md` before committing a milestone.
