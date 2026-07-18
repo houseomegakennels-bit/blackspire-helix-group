@@ -4,7 +4,7 @@
 
 1. Preserve the four original commits and backup branch; do not rewrite them or the integration merge.
 2. Keep all validation credential-free and mock-only until explicit authority changes.
-3. After explicit approval, restage the isolated mock-only iPhone test, run operator Safari acceptance, then stop it and verify complete teardown.
+3. Preserve the completed operator iPhone acceptance and teardown evidence; restage only for an explicitly approved new acceptance need.
 4. When included Codespaces usage renews, inspect the designated existing Codespace before any creation request; do not enable billing.
 5. Before production Command promotion, verify VPS ownership, supervision, persistent storage, backups/restores, HTTPS, health monitoring, and rollback.
 

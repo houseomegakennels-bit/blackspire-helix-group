@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Operator iPhone acceptance completed and test removed
+
+- Operator confirmed that the harmless task, shared-conversation follow-up, idempotent replay, Telegram policy denial, eligible cancellation, and bounded mock delivery-failure scenarios all passed in iPhone Safari.
+- The acceptance surface used only disposable SQLite, mock Hermes, mock Telegram, test-only authentication, loopback port 8790, and a temporary Quick Tunnel; no secret, URL, cookie, or access-code value was recorded in repository memory.
+- Stopped the application and expiry watcher, removed the authentication/runtime directory and active SQLite workspace, removed the Quick Tunnel container, confirmed the loopback listener was gone, and confirmed the former public endpoint no longer reached the application.
+- Production tracked state and HEAD were unchanged, real Telegram remained disconnected, and no credentials/providers/databases, push, PR, merge, deployment, DNS/Vercel, firewall, host-security, trading, or funds action occurred.
+
 ## 2026-07-18 — Repository-creation policy denial fixed
 
 - Traced Unified Input from normalization through classification, authority, policy, approvals, task/event creation, worker claim, Hermes/provider dispatch, and Telegram outbox delivery.

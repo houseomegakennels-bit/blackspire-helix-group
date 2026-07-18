@@ -27,7 +27,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 | Command control plane | VERIFIED on `origin/main` | Merged through PR #21; historical delivery evidence records 114 tests passing. |
 | Public health endpoint | VERIFIED implemented and merged | `afc330c`, merged by `e4ddbc9`; deployment trigger commits `642c0e0`, `cccfbba`. Point-in-time live checks are historical evidence. |
 | Wave 1 monitoring | OPERATOR-CONFIRMED complete | `WAVE1_MONITORING_COMPLETION.md` records UptimeRobot HTTP monitoring and email alerts. Current dashboard/alert delivery is `UNVERIFIED`. |
-| Unified Jarvis + Telegram | VERIFIED locally after main integration and repository-policy fix, not published | Repository creation now resolves through normalized action and authority policy to terminal HTTP 403 denial before Hermes; 139 full tests passed with mock-only providers and disposable state. |
+| Unified Jarvis + Telegram | VERIFIED locally and OPERATOR-CONFIRMED on iPhone Safari after main integration and repository-policy fix, not published | Harmless input, shared-conversation follow-up, idempotent replay, Telegram policy denial, cancellation, and bounded mock delivery failure passed on the isolated disposable surface; 139 full tests passed with mock-only providers and disposable state. |
 | Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
 | Hermes/providers | VERIFIED with mock/manual paths | Provider attribution and fail-closed controls are tested. Real paid providers and production credentials were not exercised. |
 | VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. No disposable iPhone test process or tunnel was active at the latest local inspection. |
@@ -45,8 +45,9 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Merged base delivery: 114 tests, zero failures; build, lint, typecheck, security scan, audit, and whitespace checks passed as recorded in `BLACKSPIRE_DELIVERY.md`.
 - Unified Input iPhone milestone at `dccb391`: 5 targeted iPhone tests, 25 targeted regression tests, and 130 full tests passed.
 - Dual-environment head `9bdfa5f`: 14 targeted and 132 full tests passed with zero failures/skips under Node 22.23.1; build, lint, typecheck, full-tree secret scan, dependency audit, disposable lifecycle smoke, and whitespace checks passed.
-- Post-integration at `b270ad3`: 40 targeted and 132 full tests passed with zero failures/skips under Node 22.23.1. Build, lint, typecheck, full-tree secret scan, dependency audit, and whitespace checks passed. Real iPhone Safari, real Telegram, paid/live providers, and production Unified Jarvis remain `UNVERIFIED`.
+- Post-integration at `b270ad3`: 40 targeted and 132 full tests passed with zero failures/skips under Node 22.23.1. Build, lint, typecheck, full-tree secret scan, dependency audit, and whitespace checks passed. Real Telegram, paid/live providers, and production Unified Jarvis remain `UNVERIFIED`.
 - Repository-policy fix at the current branch head: 7 focused policy tests, 35 focused Unified/iPhone/Telegram tests, and 139 full tests passed with zero failures/skips under Node 22.23.1. Repository creation variants return HTTP 403, remain terminal without queued/running events, and record zero Hermes, provider, worker, or approval dispatch. Build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
+- Operator iPhone Safari acceptance at `eceb921`: harmless task, follow-up conversation reuse, idempotent replay, Telegram denial before Hermes, eligible cancellation, and bounded mock delivery failure all passed. The temporary application, authentication material, SQLite workspace, loopback listener, and Quick Tunnel were then removed and verified absent.
 
 ## Environments and integrations
 
@@ -70,12 +71,12 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 
 ## Blockers and next safe actions
 
-Current blockers: operator iPhone Safari acceptance requires an explicitly approved disposable-test restage; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
+Current blockers: the implementation remains unpublished; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
 Immediate safe actions:
 
 1. Preserve the unpublished Unified Input stack and its backup branch without rewriting history.
-2. After explicit approval, restage the isolated mock-only iPhone test, complete operator Safari acceptance, then verify teardown without touching durable state.
+2. Preserve the operator-confirmed iPhone acceptance and verified teardown evidence; do not restage unless a new acceptance need is explicitly approved.
 3. Continue credential-free local checks only when they validate new work or reconcile changed state.
 4. Complete production readiness, backup, monitoring, stable HTTPS, and rollback verification before any VPS promotion.
 
