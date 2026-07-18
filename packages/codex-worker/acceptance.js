@@ -19,8 +19,8 @@ export async function runRestrictedCodexAcceptance({ task, workspace, actorId, w
   audit(current.id, 'hermes', 'codex_worker.selected', { worker:'codex-subscription', invocationLimit:1 });
   const result = await worker(request, { timeoutMs });
   if (getTask(current.id)?.status === 'cancelled') { recordEvidence(current.id, 'late_response_ignored', { worker:'codex-subscription' }); return getTask(current.id); }
-  recordProviderAttempt(current.id, { provider:'codex-subscription', mode:'chatgpt-subscription', status:result.ok?'completed':'failed', requestPacket:{ requestId:request.requestId, idempotencyKey:request.idempotencyKey, deadline:request.deadline }, responsePacket:{ status:result.status, worker:result.worker, toolCalls:result.toolCalls }, error:result.error });
-  recordEvidence(current.id, 'codex_worker_result', { worker:result.worker, authenticationMode:result.authenticationMode, invocationCount:result.invocationCount, toolCalls:result.toolCalls, status:result.status, contractValidated:result.ok });
+  recordProviderAttempt(current.id, { provider:'codex-subscription', mode:'chatgpt-subscription', status:result.ok?'completed':'failed', requestPacket:{ requestId:request.requestId, idempotencyKey:request.idempotencyKey, deadline:request.deadline }, responsePacket:{ status:result.status, worker:result.worker, toolCalls:result.toolCalls, diagnostic:result.diagnostic||null }, error:result.error });
+  recordEvidence(current.id, 'codex_worker_result', { worker:result.worker, authenticationMode:result.authenticationMode, invocationCount:result.invocationCount, toolCalls:result.toolCalls, status:result.status, contractValidated:result.ok, diagnostic:result.diagnostic||null });
   if (!result.ok) return transition(current.id, result.status === 'timeout' ? 'cancelled' : 'failed', { error:result.error });
   return transition(current.id, 'completed', { summary:{ result:result.result, worker:result.worker }, evidence:{ worker:result.worker, authenticationMode:result.authenticationMode } });
 }

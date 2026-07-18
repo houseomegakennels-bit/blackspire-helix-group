@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Subscription Codex failure channel classified
+
+- Recovered clean `a59a9a2`, confirmed Codex CLI 0.144.5 and official noninteractive/schema/stdin/read-only flags locally, and verified saved ChatGPT authentication without inspecting credential contents.
+- Added sanitized diagnostic capture for exit category, signal, timeout, byte counts, structured-record count, parser stage, schema status, duration, and cleanup; raw stdout, stderr, prompts, reasoning, account metadata, and authentication material are never persisted.
+- Consumed exactly one authorized invocation: exit code 1, no timeout or signal, 857 stdout bytes, no stderr, four structured JSONL records, zero observed tool calls, and no final-parser or contract-validation success. Canonical state remained failed; no retry or fallback occurred.
+- Confirmed and fixed a scoped adapter defect: `codex exec --json` failure events arrive on stdout, while nonzero classification previously inspected only stderr. Credential-free regression coverage now classifies either channel without retaining content.
+- Forty targeted and 156 full tests passed with zero failures/skips. `OPENAI_API_KEY` remained absent, Blackspire made no standalone Responses API call, disposable state and the diagnostic child were removed, and production, Telegram, remotes, deployment, host security, trading, and funds were unchanged.
+
 ## 2026-07-18 — Subscription Codex worker path tested once
 
 - Recovered the verified Restricted Hermes boundary at `b3aa302`, preserved the earlier untracked readiness handoff outside the worktree, and confirmed a clean branch before implementation.

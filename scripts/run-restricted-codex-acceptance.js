@@ -15,13 +15,13 @@ try {
   ({ closeDb }=await import('../packages/task-engine/db.js'));
   const { runRestrictedCodexAcceptance }=await import('../packages/codex-worker/acceptance.js');
   workspaces.upsertWorkspace({id:'subscription-codex-acceptance',name:'Subscription Codex Acceptance',githubRepository:'synthetic/restricted-status',allowedPaths:[],buildCommands:[],providerPolicy:{preferred:['codex-subscription']},budgetCents:1,secretReferences:[],enabledTools:['status'],rootPath:runtime});
-  const task=tasks.createTask({workspaceId:'subscription-codex-acceptance',request:'Return one concise sanitized sentence confirming that the restricted Codex worker path is operational. Do not modify files, call tools, access external resources, or propose privileged actions.',idempotencyKey:'restricted-subscription-codex-acceptance-v1',budgetCents:1,sourceChannel:'api',actorId:'restricted-test-actor',authorityClass:'authenticated_admin'});
+  const task=tasks.createTask({workspaceId:'subscription-codex-acceptance',request:'Return a structured result confirming that the restricted subscription Codex worker path is operational. Make no file changes, use no tools, access no external resources, and perform no privileged action.',idempotencyKey:'restricted-subscription-codex-diagnostic-v2',budgetCents:1,sourceChannel:'api',actorId:'restricted-test-actor',authorityClass:'authenticated_admin'});
   const result=await runRestrictedCodexAcceptance({task,workspace:workspaces.getWorkspace('subscription-codex-acceptance'),actorId:'restricted-test-actor',timeoutMs:45_000});
   const records=tasks.taskRecords(task.id);
   const attempt=records.providerAttempts[0];
   const evidence=records.evidence.find((row)=>row.kind==='codex_worker_result');
   const details=evidence?JSON.parse(evidence.details):{};
-  const safe={timestamp:new Date().toISOString(),worker:'codex-subscription',authenticationMode:'chatgpt-subscription',invocationCount:records.providerAttempts.length,successfulInvocations:attempt?.status==='completed'?1:0,retries:0,fallbackProviders:0,toolCalls:details.toolCalls||0,canonicalTaskStatus:result.status,contractValidated:Boolean(details.contractValidated)};
+  const safe={timestamp:new Date().toISOString(),worker:'codex-subscription',authenticationMode:'chatgpt-subscription',invocationCount:records.providerAttempts.length,successfulInvocations:attempt?.status==='completed'?1:0,retries:0,fallbackProviders:0,toolCalls:details.toolCalls||0,canonicalTaskStatus:result.status,contractValidated:Boolean(details.contractValidated),diagnostic:details.diagnostic||null};
   process.stdout.write(`${JSON.stringify(safe)}\n`);
   if (result.status!=='completed') process.exitCode=1;
 } finally {
