@@ -108,8 +108,8 @@ Production DNS was not changed during the Unified Input or memory work. Root Bla
 
 | Integration | Purpose | Status | Authentication method (name only) | Environment | Limitations / next action |
 |---|---|---|---|---|---|
-| Git/GitHub | Source history, CI, branches, PR artifacts | implemented | GitHub CLI/OAuth | local + GitHub | Feature commits are local/unpushed; obtain required authority before publishing |
-| GitHub Codespaces | Private HTTPS device test candidate | blocked | GitHub OAuth `codespace` scope | test | Current CLI authorization lacks the required scope; operator reauthorization is needed |
+| Git/GitHub | Source history, CI, branches, PR artifacts | implemented | Root-owned Blackspire GitHub CLI wrapper with operator-provided fine-grained PAT | local + GitHub | Credential value is external to the repository and scoped to wrapper child processes only |
+| GitHub Codespaces | Private HTTPS device test candidate | authorized | Fine-grained PAT through the Blackspire GitHub CLI wrapper | test | Identity, repository access, and Codespaces listing verified; temporary lifecycle validation is approved next |
 | Vercel | Public frontend deployment | production | Vercel project credentials | production | Do not use for stateful Unified Jarvis SQLite test without a new design/approval |
 | UptimeRobot | Public health monitoring | documented production | UptimeRobot account auth | production | Dashboard and alert delivery need fresh verification |
 | Telegram | Constrained intake and delivery | mock validated | Bot token + webhook secret by name only | local/test | Real bot/API is intentionally disconnected and unverified |
@@ -141,7 +141,7 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 
 | Severity | Blocker / risk | Owner | Evidence | Safest resolution | Approval required |
 |---|---|---|---|---|---|
-| High | No iPhone-accessible HTTPS test URL | Operator for OAuth; Codex afterward | `gh codespace list` returned missing `codespace` scope during prior work | Reauthorize GitHub CLI with `codespace`, then let Codex create a private expiring Codespace | Operator OAuth action; deployment already scoped but re-check external action |
+| High | No iPhone-accessible HTTPS test URL | Codex | Headless wrapper now lists Codespaces and accesses the repository successfully | Create the approved private expiring Codespace and expose only the authenticated test port | Already approved for this credential-free test |
 | High | SQLite is single-host and unsuitable for multi-instance/serverless production as designed | Engineering | Known limitations and persistence implementation | Keep disposable/single-instance for test; design durable shared persistence before production | Architecture and production approval |
 | Medium | Canonical Constitution document/location not found | Product/security owner | Repository search on 2026-07-18 | Identify or author through a separately approved constitutional process | Yes |
 | Medium | Real Telegram transport and device flow unverified | Operator + engineering | Known limitations and test evidence | Run mock-only iPhone acceptance first; authorize real Telegram separately if ever needed | Yes for any real bot/token |
@@ -151,8 +151,8 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 ## Immediate Next Safe Actions
 
 1. Run `scripts/update-source-of-truth-check.sh` at the start of the next session and inspect Git/relevant code before planning.
-2. Obtain the operator-only GitHub CLI `codespace` OAuth scope without sharing any token.
-3. Re-run the targeted tests and gates, then create an isolated, private, expiring Codespace using only test configuration and disposable SQLite.
+2. Re-run the targeted tests and gates, then create an isolated, private, expiring Codespace using only test configuration and disposable SQLite.
+3. Verify Codespace create/start/stop/delete permissions through the approved temporary lifecycle without touching unrelated existing Codespaces.
 4. Perform the documented iPhone Safari acceptance scenarios, capture sanitized evidence, and tear the test surface down.
 5. Update this file with the actual URL status, device results, cleanup evidence, new commit, and remaining blockers.
 
@@ -172,6 +172,14 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 - **Evidence/recovery documents:** `BLACKSPIRE_DELIVERY.md`, `BLACKSPIRE_COMMAND_BUILD_REPORT.md`, `UNIFIED_INPUT_VALIDATION_EVIDENCE.md`, `UNIFIED_INPUT_LOCAL_E2E_RESULTS.md`, and `UNIFIED_INPUT_IPHONE_ACCEPTANCE_RESULTS.md`.
 
 ## Change Log
+
+### 2026-07-18 — Persistent headless GitHub authentication configured
+
+- **Authentication:** Operator-provided fine-grained PAT loaded only by the root-owned Blackspire GitHub CLI wrapper. The credential value remains outside the repository and is not recorded here.
+- **Verification:** GitHub identity, Codespaces listing, repository visibility, and repository permissions succeeded; the wrapper did not leave `GH_TOKEN` in the parent environment.
+- **Safeguards:** Root-only storage modes, repository ignore rules, secret-scan protection, and backup exclusion were added. The earlier device authorization flow is no longer used.
+- **Next action:** Use the already approved temporary Codespace to verify create/start/stop/delete lifecycle permissions and run private iPhone acceptance.
+- **Long-term recommendation:** Migrate to a dedicated Blackspire GitHub App using short-lived installation or user tokens after a separately reviewed permissions design.
 
 ### 2026-07-18 — Disconnected Unified Input session recovered and reverified
 
