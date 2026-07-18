@@ -141,7 +141,7 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 
 | Severity | Blocker / risk | Owner | Evidence | Safest resolution | Approval required |
 |---|---|---|---|---|---|
-| High | No iPhone-accessible HTTPS test URL | Codex | Headless wrapper now lists Codespaces and accesses the repository successfully | Create the approved private expiring Codespace and expose only the authenticated test port | Already approved for this credential-free test |
+| High | Codespace creation is denied by the account usage budget | Operator | GitHub returned HTTP 402 on the approved private creation attempt; a follow-up list confirmed no partial Codespace | Authorize a separate Codespaces budget change or provide an already disposable operator-designated Codespace | Yes for spending/budget change or reuse of an existing resource |
 | High | SQLite is single-host and unsuitable for multi-instance/serverless production as designed | Engineering | Known limitations and persistence implementation | Keep disposable/single-instance for test; design durable shared persistence before production | Architecture and production approval |
 | Medium | Canonical Constitution document/location not found | Product/security owner | Repository search on 2026-07-18 | Identify or author through a separately approved constitutional process | Yes |
 | Medium | Real Telegram transport and device flow unverified | Operator + engineering | Known limitations and test evidence | Run mock-only iPhone acceptance first; authorize real Telegram separately if ever needed | Yes for any real bot/token |
@@ -180,6 +180,7 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 - **Safeguards:** Root-only storage modes, repository ignore rules, secret-scan protection, and backup exclusion were added. The earlier device authorization flow is no longer used.
 - **Next action:** Use the already approved temporary Codespace to verify create/start/stop/delete lifecycle permissions and run private iPhone acceptance.
 - **Long-term recommendation:** Migrate to a dedicated Blackspire GitHub App using short-lived installation or user tokens after a separately reviewed permissions design.
+- **Codespace blocker:** The approved creation request reached GitHub but returned HTTP 402 because free usage or the Codespaces budget is exhausted. No Codespace was created and no existing Codespace was modified.
 
 ### 2026-07-18 — Disconnected Unified Input session recovered and reverified
 
