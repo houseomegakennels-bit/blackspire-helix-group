@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Expired disposable test state reconciled
+
+- Re-read canonical memory, ran the living-memory check, and inspected the branch, worktrees, divergence, recent commits, and local process state before resuming work.
+- Confirmed the unpublished Unified Input stack and its backup remain preserved with a clean working tree before this documentation update.
+- Found no active disposable iPhone launcher or Quick Tunnel, so removed the stale active-surface claim; operator Safari acceptance now requires an explicitly approved isolated restage.
+- Did not repeat completed test suites or alter the separate durable API/worker, credentials, production state, network configuration, Git history, or remote branches.
+
 ## 2026-07-18 — Disposable iPhone test staged
 
 - Validated the loopback launcher lifecycle on port 8790 with disposable SQLite, mock Hermes, mock Telegram, test-only authentication, and complete cleanup; durable port 8787 remained healthy.

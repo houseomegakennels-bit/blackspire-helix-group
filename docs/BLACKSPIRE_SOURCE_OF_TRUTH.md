@@ -30,7 +30,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 | Unified Jarvis + Telegram | VERIFIED locally after main integration, not published | Merge `b270ad3`; 40 targeted and 132 full tests passed with mock-only providers and disposable state. |
 | Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
 | Hermes/providers | VERIFIED with mock/manual paths | Provider attribution and fail-closed controls are tested. Real paid providers and production credentials were not exercised. |
-| VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. A separate disposable loopback iPhone test is active and does not use VPS production state. |
+| VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. No disposable iPhone test process or tunnel was active at the latest local inspection. |
 | Codespace recovery/test | BLOCKED | Preparation exists; creation returned a usage-budget HTTP 402 and no resource was created or changed. |
 
 ## Important branches and commits
@@ -69,12 +69,13 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 
 ## Blockers and next safe actions
 
-Current blockers: the active expiring Quick Tunnel is HTTPS-reachable, but operator iPhone Safari acceptance is pending; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
+Current blockers: operator iPhone Safari acceptance requires an explicitly approved disposable-test restage; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
 Immediate safe actions:
 
-1. Complete operator iPhone Safari acceptance against the active expiring test.
-2. Stop the disposable test and verify URL, process, authentication, and SQLite cleanup while durable VPS health remains unchanged.
+1. Preserve the unpublished Unified Input stack and its backup branch without rewriting history.
+2. After explicit approval, restage the isolated mock-only iPhone test, complete operator Safari acceptance, then verify teardown without touching durable state.
+3. Continue credential-free local checks only when they validate new work or reconcile changed state.
 4. Complete production readiness, backup, monitoring, stable HTTPS, and rollback verification before any VPS promotion.
 
 Operator-only actions include spending/budget changes, credential provisioning, GitHub authorization, device acceptance, real Telegram connection, production/DNS/provider/host-security changes, approval-policy changes, emergency-control changes, trading, and funds actions.
