@@ -64,9 +64,14 @@ export function completeDelivery(deliveryId) {
   execSql(`UPDATE channel_deliveries SET status='delivered',updated_at=${esc(now())},last_error='' WHERE id=${esc(deliveryId)};`);
 }
 
-export function failDelivery(deliveryId, error) {
+export function failDelivery(deliveryId, error, { maxAttempts = Number(process.env.TELEGRAM_OUTBOX_MAX_ATTEMPTS || 3), retrySeconds = Number(process.env.TELEGRAM_OUTBOX_RETRY_SECONDS || 30) } = {}) {
   const safe = redact(String(error || 'delivery failed'));
-  execSql(`UPDATE channel_deliveries SET status='pending',attempts=attempts+1,last_error=${esc(safe)},next_attempt_at=datetime('now','+30 seconds'),updated_at=${esc(now())} WHERE id=${esc(deliveryId)};`);
+  const parsedAttempts = Number(maxAttempts);
+  const parsedDelay = Number(retrySeconds);
+  const boundedAttempts = Number.isFinite(parsedAttempts) ? Math.max(1, Math.floor(parsedAttempts)) : 3;
+  const boundedDelay = Number.isFinite(parsedDelay) ? Math.max(0, Math.floor(parsedDelay)) : 30;
+  execSql(`UPDATE channel_deliveries SET status=CASE WHEN attempts+1>=${boundedAttempts} THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=${esc(safe)},next_attempt_at=CASE WHEN attempts+1>=${boundedAttempts} THEN '' ELSE datetime('now','+${boundedDelay} seconds') END,updated_at=${esc(now())} WHERE id=${esc(deliveryId)};`);
+  return query(`SELECT * FROM channel_deliveries WHERE id=${esc(deliveryId)};`)[0] || null;
 }
 
 export function deliveryRecords(conversationId) {

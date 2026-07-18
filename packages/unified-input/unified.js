@@ -1,13 +1,14 @@
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, migrate } from '../task-engine/db.js';
-import { createTask, getTask, getFlag, transition, recordEvidence, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
+import { createTask, getTask, getFlag, transition, recordEvidence, recordTaskEvent, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 
 migrate();
 
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
-const TELEGRAM_BLOCKED = /(?:\b(approve|reject|deploy|merge|credential|secret|token|password|api[ _-]?key|private\s+key|trade|trading|funds|budget\s+increase|increase\s+(?:the\s+)?budget|emergency\s+(?:stop|control)|reset\s+emergency|host\s+security|constitutional?|constitution)\b|\.env\b)/i;
+const TELEGRAM_BLOCKED = /(?:\b(approve|reject|deploy|merge|credential|secret|token|password|api[ _-]?key|private\s+key|trade|trading|funds|budget\s+increase|increase\s+(?:the\s+)?budget|emergency\s+(?:stop|control)|reset\s+emergency|host\s+security|constitutional?|constitution|create\s+(?:a\s+)?repositor(?:y|ies)|repository\s+creation)\b|\.env\b)/i;
 const ALWAYS_BLOCKED = /(?:\b(live\s+trad(?:e|ing)|send\s+funds|transfer\s+funds)\b|\b(show|read|print|expose|return)\b.{0,80}(?:\b(secret|credential|token|password|api[ _-]?key|private\s+key)\b|\.env\b))/i;
+const cancellationTokens = new Map();
 
 export function createUnifiedInput({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {} }) {
   if (!CHANNELS.has(channel)) return { error: 'unsupported channel', status: 422 };
@@ -89,9 +90,33 @@ export function channelCanAccessTask(channel, channelKey, taskId) {
 
 export function cancelFromChannel(channel, channelKey, taskId) {
   if (!channelCanAccessTask(channel, channelKey, taskId)) return { error: 'task not found for channel', status: 404 };
+  return requestCancellation(taskId, { actor: channel });
+}
+
+export function registerCancellationToken(taskId, token) {
+  if (!token || typeof token.cancel !== 'function') throw new TypeError('cancellation token must provide cancel()');
+  cancellationTokens.set(taskId, token);
+  return () => cancellationTokens.delete(taskId);
+}
+
+export function requestCancellation(taskId, { actor = 'administrator' } = {}) {
   const task = getTask(taskId);
-  if (['completed', 'failed', 'cancelled'].includes(task.status)) return { task };
-  return { task: transition(taskId, 'cancelled', { error: `Cancelled from ${channel}` }) };
+  if (!task) return { error: 'task not found', status: 404 };
+  if (['completed', 'failed', 'cancelled'].includes(task.status)) return { task, cleanup: { invoked: false, reason: 'terminal task' } };
+  audit(taskId, actor, 'cancellation_requested', { actor });
+  recordTaskEvent(taskId, 'task.cancellation_requested', { status: task.status, actor });
+  const token = cancellationTokens.get(taskId);
+  let cleanup = { invoked: false, cleaned: true, reason: 'no active cancellation token' };
+  try {
+    if (token) cleanup = { invoked: true, cleaned: true, ...sanitize(token.cancel() || {}) };
+  } catch (error) {
+    cleanup = { invoked: true, cleaned: false, error: redact(error.message) };
+  } finally {
+    cancellationTokens.delete(taskId);
+  }
+  recordEvidence(taskId, 'cancellation_cleanup', cleanup);
+  recordTaskEvent(taskId, 'task.cancellation_cleanup', cleanup);
+  return { task: transition(taskId, 'cancelled', { error: `Cancelled from ${actor}` }), cleanup };
 }
 
 export async function drainTelegramOutbox(send, { limit = 20 } = {}) {
@@ -105,8 +130,8 @@ export async function drainTelegramOutbox(send, { limit = 20 } = {}) {
       completeDelivery(delivery.id);
       results.push({ id: delivery.id, status: 'delivered' });
     } catch (error) {
-      failDelivery(delivery.id, error.message);
-      results.push({ id: delivery.id, status: 'pending' });
+      const failed = failDelivery(delivery.id, error.message);
+      results.push({ id: delivery.id, status: failed?.status || 'pending' });
     }
   }
   return results;

@@ -71,7 +71,7 @@ export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
     const result = await get(route, apiBase);
     return send(JSON.stringify(result).slice(0, 3500));
   }
-  if (/^\/(stop|approve|reject|deploy|merge|reset|secrets?|credentials?|trade|trading)(?:\s|$)/i.test(text)) return send('Telegram cannot perform privileged actions. Use authenticated Jarvis.');
+  if (/^\/(stop|approve|reject|deploy|merge|reset|secrets?|credentials?|trade|trading|create[_-]?repo(?:sitory)?)(?:\s|$)/i.test(text)) return send('Telegram cannot perform privileged actions. Use authenticated Jarvis.');
   if (update.message?.document || update.message?.voice) return handleTelegramAttachment(update, apiBase, send);
   return send('Unknown command. Use /help.');
 }

@@ -11,7 +11,7 @@ import { handleTelegramUpdate, dispatchReply } from '../telegram/bot.js';
 import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
 import { clientIp } from '../../packages/shared/net.js';
 import { cleanupRateLimits } from '../../packages/shared/rateLimits.js';
-import { createUnifiedInput, getConversation } from '../../packages/unified-input/unified.js';
+import { createUnifiedInput, getConversation, requestCancellation } from '../../packages/unified-input/unified.js';
 import { conversationEvents } from '../../packages/task-engine/tasks.js';
 
 let emergencyStopMemory = false;
@@ -144,7 +144,7 @@ function taskRoute(req, res, match) {
   if (match[2] === 'reject') { decideApproval(task.id, 'rejected', 'Rejected by administrator'); return json(res, 200, { task: transition(task.id, 'cancelled', { error: 'Rejected by administrator' }) }); }
   if (match[2] === 'pause') return json(res, 200, { task: transition(task.id, 'waiting_for_approval', { summary: 'Paused by administrator' }) });
   if (match[2] === 'resume') return json(res, 200, { task: transition(task.id, 'queued') });
-  if (match[2] === 'cancel') return json(res, 200, { task: transition(task.id, 'cancelled', { error: 'Cancelled by administrator' }) });
+  if (match[2] === 'cancel') return json(res, 200, requestCancellation(task.id, { actor: 'administrator' }));
   return json(res, 404, { error: 'not found' });
 }
 
@@ -207,13 +207,13 @@ function isStateChanging(req) { return !['GET', 'HEAD', 'OPTIONS'].includes(req.
 function setSecurityHeaders(req, res) { res.setHeader('x-frame-options', 'DENY'); res.setHeader('x-content-type-options', 'nosniff'); res.setHeader('referrer-policy', 'no-referrer'); res.setHeader('permissions-policy', 'microphone=(self), camera=(), geolocation=()'); res.setHeader('cache-control', req.url?.startsWith('/api/') ? 'no-store' : 'no-cache'); if (process.env.NODE_ENV === 'production') res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains'); const inline = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-inline'"; res.setHeader('content-security-policy', `default-src 'self'; script-src 'self'${inline}; style-src 'self'${inline}; connect-src 'self'; img-src 'self' data:`); }
 function serve(res, file, type) { res.writeHead(200, { 'content-type': type }); fs.createReadStream(path.resolve(file)).pipe(res); }
 
-export function start(port = PORT) {
+export function start(port = PORT, host) {
   const validation = requireProductionSafeConfig();
   if (process.env.NODE_ENV === 'production' && !validation.ok) {
     console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors }));
     process.exit(1);
   }
-  const server = http.createServer(route).listen(port, () => console.log(JSON.stringify({ service: 'api', port })));
+  const server = http.createServer(route).listen(port, host, () => console.log(JSON.stringify({ service: 'api', port, host: host || 'default' })));
   const cleanupTimer = setInterval(() => { cleanupExpiredSessions(); cleanupRateLimits(); }, Number(process.env.CLEANUP_INTERVAL_MS || 15 * 60 * 1000));
   cleanupTimer.unref();
   server.on('close', () => clearInterval(cleanupTimer));
