@@ -1,211 +1,89 @@
-# Blackspire Command — Canonical Source of Truth
+# Blackspire Canonical Source of Truth
 
-## Document Authority
+## Authority
 
-- **Purpose:** Give every future agent a concise, evidence-backed recovery point without relying on chat history.
-- **Governs:** Verified repository state, current architecture, active work, authority boundaries, validations, deployment knowledge, blockers, recovery, and immediate next actions.
-- **Does not govern:** Secret values, raw logs/evidence, production authorization, live operational state after the verification time, or policy changes. Code and verified external evidence can supersede this document and must then be reconciled here.
-- **Last verified date:** 2026-07-18 UTC.
-- **Last verified commit:** `43735f6` (repository state before the current dual-environment readiness commit).
-- **Verified branch:** `feature/unified-input-foundation`; three local commits ahead of its upstream at verification time.
+The durable authority is GitHub repository `houseomegakennels-bit/blackspire-helix-group`. Code, commits, tests, deployment evidence, and explicit operator-confirmed results outrank summaries. Unsupported current-state claims are `UNVERIFIED`.
 
-Claims are limited to repository evidence, local test evidence, Git history, live HTTP checks, or explicit operator confirmation. `UNVERIFIED` means the repository does not currently provide enough evidence. Older documents remain historical evidence; current-state claims that conflict with this document are `SUPERSEDED`.
+- Last reconciled: 2026-07-18 UTC
+- Base `origin/main`: `029e38add2157d5b7caefb3a6c5d85e9270f80f2`
+- Last verified implementation commit: `9bdfa5fa636df8730f046fc2d66eb4683e5aaba1` (pre-integration validation)
+- Canonical memory merged by PR #24; this feature branch preserves the canonical structure
+- Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
 
-## Product Mission
+This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.md`, root `memory/*.md`, and historical delivery/planning documents for current-state recovery. Those remain evidence and history, not living authority.
 
-- **Blackspire Command:** A secure, evidence-oriented control plane for turning authorized requests into policy-checked tasks and auditable outcomes.
-- **Jarvis:** The authenticated operator interface and API for shared conversations, tasks, ordered events, evidence, provider attribution, delivery state, and eligible cancellation.
-- **Telegram:** A constrained input/delivery channel. It shares canonical state but cannot grant privileged authority.
-- **Hermes:** The staged orchestration runtime. Deterministic Blackspire policy and budget checks precede provider execution.
-- **Codex and Claude Code:** Optional credential-gated provider/CLI adapters behind Hermes. They are not the canonical state store and are not used by credential-free validation.
-- **GitHub and canonical task persistence:** Git/GitHub hold reviewed code history and optional branch/PR artifacts; SQLite currently holds canonical runtime conversations, tasks, events, evidence metadata, approvals, and delivery records.
+## Verified architecture
 
-## Current Architecture
+- `frontend/` is the Next.js public Blackspire surface deployed separately through Vercel. Its sanitized `/health` route is on `origin/main`.
+- Root Blackspire Command is a Node.js control plane: API, Jarvis PWA, worker, Telegram bridge, Hermes orchestration, deterministic policy, workspace registry, approvals, evidence, audit, emergency controls, provider adapters, and SQLite persistence.
+- Unified Input adds shared Jarvis/Telegram conversations, ordered events, idempotency, cancellation, channel bindings, a delivery outbox, and mock-safe acceptance tooling.
+- Canonical runtime state is persisted before channel delivery. SQLite is validated for a single durable host, not multi-instance/serverless production.
+- The planned production-state owner is the durable VPS. Codespaces and Quick Tunnels are disposable development/recovery/test surfaces and must not own production state or uptime.
 
-- **Control plane:** Root Node.js service (`apps/api`, `apps/worker`, `packages/*`) with authentication, rate limits, workspace registry, deterministic policy, task lifecycle, approvals, evidence, audit, backup/restore, health, and emergency controls.
-- **Unified input:** `packages/unified-input/unified.js` accepts Jarvis/API and Telegram-style inputs, resolves channel bindings and canonical conversations, enforces policy before dispatch, persists inputs/tasks/events, supports idempotency and cancellation, and queues sanitized Telegram deliveries.
-- **Hermes runtime adapter:** `packages/hermes/hermes.js` coordinates inspect/plan/provider/validation/evidence stages. The isolated iPhone test mode uses the read-only mock Hermes path.
-- **Workers/providers:** `apps/worker/worker.js` drains the delivery outbox. `packages/providers/providers.js` normalizes mock, manual, Codex CLI, Claude Code CLI, OpenAI, and Anthropic modes; live modes require explicit configuration and authority.
-- **Persistence:** `packages/task-engine/db.js` defines and migrates the root Command schema with `node:sqlite`; `scripts/migrate.js` initializes it. Unified tables cover conversations, channel bindings, inputs, task messages/events, and channel deliveries alongside the established task, approval, evidence, audit, usage, and operational tables.
-- **Jarvis:** `apps/jarvis-pwa` is the local PWA; `apps/jarvis-pwa/public/test-mode.html` is the mobile test surface with test-mode banner, command input, IDs, task state, ordered timeline, provider/evidence, delivery state, and cancellation.
-- **Telegram:** `apps/telegram/bot.js` supplies allowlisted local polling/webhook logic, attachment controls, replay protection, unified intake, and sanitized replies. Mock delivery is validated; real Telegram transport is not.
-- **Deployments:** `frontend/` is a separate Next.js public surface deployed through Vercel. Root Blackspire Command has Docker/local launch configuration but no verified public deployment. The Unified Jarvis iPhone build is locally staged only.
-- **Monitoring:** The public frontend exposes a sanitized `/health`; the Wave 1 monitoring documents describe an UptimeRobot monitor and email alert path. Monitor dashboard state is not independently verified in this session.
+## Implementation and validation status
 
-## Current Verified State
+| Area | Status | Evidence and limit |
+|---|---|---|
+| Command control plane | VERIFIED on `origin/main` | Merged through PR #21; historical delivery evidence records 114 tests passing. |
+| Public health endpoint | VERIFIED implemented and merged | `afc330c`, merged by `e4ddbc9`; deployment trigger commits `642c0e0`, `cccfbba`. Point-in-time live checks are historical evidence. |
+| Wave 1 monitoring | OPERATOR-CONFIRMED complete | `WAVE1_MONITORING_COMPLETION.md` records UptimeRobot HTTP monitoring and email alerts. Current dashboard/alert delivery is `UNVERIFIED`. |
+| Unified Jarvis + Telegram | VERIFIED locally, not published | Implementation and validation through `9bdfa5f`; post-main integration validation is required before advancing this record. |
+| Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
+| Hermes/providers | VERIFIED with mock/manual paths | Provider attribution and fail-closed controls are tested. Real paid providers and production credentials were not exercised. |
+| VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. |
+| Codespace recovery/test | BLOCKED | Preparation exists; creation returned a usage-budget HTTP 402 and no resource was created or changed. |
 
-| Component | Status | Evidence | Relevant files / commits | Known limitations |
-|---|---|---|---|---|
-| Blackspire Command control plane | validated | Complete local regression and gates recorded on 2026-07-18 | `apps/api/server.js`, `packages/`, `tests/`; base history through `cccfbba` | Root service is not verified publicly deployed; SQLite is single-host |
-| Unified Jarvis + Telegram intake | validated | Credential-free E2E and shared-state tests | `packages/unified-input/unified.js`, `tests/unified-input*.test.js`; `2d2a915`, `dddfb1b`, `875a78e` | Real Telegram transport remains untested |
-| Hermes orchestration | validated | Mock provider and orchestration tests; provider attribution persisted | `packages/hermes/hermes.js`, `packages/providers/providers.js` | Live providers are credential/configuration gated and were not exercised |
-| Canonical persistence/outbox | validated | Schema initialization, idempotency, cancellation, delivery-failure, and backup/restore tests | `packages/task-engine/db.js`, `scripts/migrate.js`, `packages/unified-input/` | `node:sqlite` is local/single-node; no production database for this slice |
-| Jarvis local PWA/API | validated | Auth/API/PWA tests and targeted unified regression | `apps/jarvis-pwa/`, `apps/api/server.js`, `tests/jarvis-pwa.test.js` | Local-only for Command; device/browser acceptance remains pending |
-| iPhone test build | staged | 5 targeted tests, launcher smoke, cleanup, and mobile markup checks | test-build documents and code; `dccb391` | No HTTPS test URL; real iPhone Safari acceptance not run |
-| Telegram input/delivery | validated | Mock intake, replay, attachment, authority, outbox tests | `apps/telegram/bot.js`, `tests/telegram-files.test.js`, unified tests | Real bot/token/API connection is `UNVERIFIED` and intentionally absent |
-| Public frontend | production | Git history plus live HTTP 200 checks on 2026-07-18 | `frontend/`, `.github/workflows/blackspire-ci.yml`; `afc330c`, `642c0e0`, `cccfbba` | Only public frontend/health was live-checked; broader production behavior not revalidated |
-| Public health | production | `https://blackspirehelix.com/health` and Vercel project health URL returned the sanitized `up` contract on 2026-07-18 | `frontend/src/app/health/route.js`, `frontend/src/lib/public-health.mjs` | Availability is point-in-time |
-| Wave 1 monitoring | production | Completion document records active UptimeRobot/email configuration | `WAVE1_MONITORING_COMPLETION.md` | Current monitor dashboard/alert delivery is `UNVERIFIED` this session |
-| Oracle Helix / Ember Halo / other product surfaces | implemented | Source, tests, and deployment configuration exist | `oracle-helix/`, `ember-halo/`, `frontend/src/app/` | Current live deployment state was not comprehensively checked |
+## Important branches and commits
 
-## Completed Milestones
+- `origin/main`: `029e38a`, including canonical-memory PR #24.
+- `feature/unified-input-foundation`: preserved commits `70e7f36`, `273a25b`, `43735f6`, and `9bdfa5f`; integration uses a merge commit, never rebase or history rewriting.
+- Backup before integration: `backup/unified-input-foundation-9bdfa5f` at `9bdfa5f`.
+- Existing `feature/public-health-route` remains intentionally untouched.
 
-- Blackspire Command control plane, policy, workspace, approval, evidence, authentication, persistence, hardening, orchestration, Telegram attachment, and health foundations are present in merged base history and pass the current local regression suite.
-- Unified Jarvis and Telegram intake persists one canonical conversation/task history with ordered events, policy-before-provider behavior, attribution, idempotency, cross-channel attachment protection, cancellation, and retryable delivery state (`2d2a915`, `dddfb1b`, `875a78e`).
-- Credential-free local E2E validation used temporary SQLite, loopback services, mock Hermes, and mock Telegram; evidence is in `UNIFIED_INPUT_LOCAL_E2E_RESULTS.md` and `UNIFIED_INPUT_VALIDATION_EVIDENCE.md`.
-- The disposable, expiring, mobile iPhone test surface was implemented and locally validated (`dccb391`). No public test deployment was created.
-- A sanitized public frontend health endpoint was merged and is live at the custom and Vercel URLs (`afc330c`, deployment-trigger commits `642c0e0` and `cccfbba`).
-- The older 114-test delivery snapshot in `BLACKSPIRE_DELIVERY.md` and 124-test Unified Input snapshot in `UNIFIED_INPUT_FOUNDATION.md` are `SUPERSEDED` by the 130-test validation at `dccb391`; their historical architectural evidence remains useful.
+## Tests and evidence
 
-## Active Work
+- Merged base delivery: 114 tests, zero failures; build, lint, typecheck, security scan, audit, and whitespace checks passed as recorded in `BLACKSPIRE_DELIVERY.md`.
+- Unified Input iPhone milestone at `dccb391`: 5 targeted iPhone tests, 25 targeted regression tests, and 130 full tests passed.
+- Dual-environment head `9bdfa5f`: 14 targeted and 132 full tests passed with zero failures/skips under Node 22.23.1; build, lint, typecheck, full-tree secret scan, dependency audit, disposable lifecycle smoke, and whitespace checks passed.
+- Post-integration results must be recorded only after rerunning. Real iPhone Safari, real Telegram, paid/live providers, and production Unified Jarvis remain `UNVERIFIED`.
 
-- **Current branch/worktree:** `feature/unified-input-foundation` in an isolated worktree; clean before this documentation task; ahead of `origin/main` by four local commits.
-- **Current objective:** Prepare a dual-environment VPS/Codespace recovery model and run an expiring VPS Quick Tunnel for credential-free iPhone acceptance.
-- **Files under development:** Environment scripts, devcontainer metadata, test-mode one-time authentication, provider fail-closed behavior, tests, and environment runbooks.
-- **Acceptance criteria:** One production-state owner, deterministic setup/migrations, isolated disposable tests, mock-only test transport, complete gates, local commit, and an expiring iPhone URL without disturbing the durable VPS runtime.
-- **Approved scope:** Repository readiness, local commit, and a temporary VPS Quick Tunnel on isolated port 8790. Codespace creation/billing and production deployment remain prohibited.
-- **Prohibited actions:** Push, merge, deployment, production credential/database/provider use, real Telegram connection, paid calls, DNS/host-security changes, secret disclosure, and live trading or funds actions.
+## Environments and integrations
 
-## Decisions and ADR Summary
+- Public frontend production is owned by Vercel; production configuration remains external.
+- VPS is the sole planned Command state owner. Actual live ownership and health are `UNVERIFIED`.
+- Codespaces are disposable development/recovery/test environments and are currently limited by exhausted usage credit.
+- Quick Tunnel is temporary, expiring, isolated, and mock-only; it is never production.
+- Mock/local validated integrations: Hermes, Telegram input/delivery behavior, disposable SQLite, loopback API/PWA, policy denial, cancellation, idempotency, outbox failure, and backup/restore.
+- Implemented but not live-validated here: Codex CLI, Claude Code CLI, OpenAI, Anthropic, real Telegram, and production Command startup.
+- GitHub headless authentication method: root-owned Blackspire GitHub CLI wrapper using an operator-provided fine-grained personal access token. Method name only; no value belongs in Git or memory.
 
-| Decision | Reason | Date | Evidence | Supersedes |
-|---|---|---|---|---|
-| Make this file canonical living memory | Chat history and scattered planning files are not reliable session recovery | 2026-07-18 | This document and root `AGENTS.md` | Legacy `memory/` files and `PROJECT_CONTEXT.md` as current-state authorities |
-| Persist canonical state before channel delivery | Delivery failure must not corrupt task state and must remain retryable/visible | 2026-07-18 | Unified implementation/tests, `875a78e` | Direct channel-owned task state |
-| Run deterministic policy before Hermes/providers | Authority, workspace, budget, emergency, and trading controls must not depend on a model | 2026-07-18 | `packages/unified-input/unified.js`, policy tests | Any provider-first interpretation |
-| Keep Telegram non-approving and non-privileged | A messaging channel cannot expand constitutional/operator authority | 2026-07-18 | Unified policy classifier and tests | Older generic Telegram `/approve` command behavior for unified intake |
-| Use mock Hermes/Telegram and disposable SQLite for acceptance | Proves the vertical slice without credentials, spend, production state, or external calls | 2026-07-18 | E2E and iPhone test-build evidence | Live-provider validation for this phase |
-| Prefer a private expiring Codespace for first device test | It can expose HTTPS while retaining disposable local SQLite and test-only configuration | 2026-07-18 | `UNIFIED_INPUT_IPHONE_TEST_BUILD_PLAN.md` | Public Vercel for a stateful SQLite test runtime |
+## Security and authority restrictions
 
-No standalone Constitution text or ADR defining it was found in the inspected repository. Its authority boundaries are therefore preserved as explicit requirements and enforced policy categories, while the canonical Constitution document/location is `UNVERIFIED`.
+- Deterministic policy must run before any model/provider.
+- Required approvals cannot be created or widened by an agent or Telegram.
+- Enforce workspace/path/tool isolation and budget limits before execution.
+- Evidence, audit records, provider attribution, and delivery failures must remain durable and sanitized.
+- Emergency stop and Safe Mode deny work before provider dispatch; Telegram cannot alter them.
+- No secret disclosure, credential persistence in docs, unapproved push/merge/deploy, host-security changes, production calls, budget increases, real Telegram connection, live trading, or funds movement.
+- The location/text of a canonical Constitution is `UNVERIFIED`; do not invent one.
 
-## Security and Authority Boundaries
+## Blockers and next safe actions
 
-- **Constitution authority:** Constitutional changes are privileged and denied from Telegram. The location/text of a canonical Constitution is `UNVERIFIED`; do not invent or alter it.
-- **Approvals:** High-risk execution pauses before provider dispatch. Required operator approvals cannot be manufactured by an agent or channel.
-- **Telegram restrictions:** Telegram cannot approve/reject privileged work or authorize deployment, merge, repository creation, credentials/secrets, host security, budget increases, emergency controls, constitutional changes, trading, or funds actions.
-- **Workspace isolation:** Every task resolves an allowed workspace and path/tool policy; cross-channel conversation attachment requires explicit binding/authorization.
-- **Budgets:** Workspace and task budget checks precede provider execution. Budget increases require separate authority.
-- **Secrets:** Values belong in approved environment/secret stores only. Responses, events, evidence, logs, and delivery payloads are sanitized; documentation records authentication method names only.
-- **Emergency stop / Safe Mode:** Execution must stop or deny before provider dispatch when emergency or safe-mode policy requires it. Telegram cannot change emergency controls.
-- **Deployment and merge:** Never deploy, push, merge, open/approve a PR, or change production behavior without the required explicit approval.
-- **Live trading:** Live trading, funds movement, and Telegram trading authority are prohibited. No current approval enables them.
+Current blockers: post-integration validation is pending; Codespaces usage credit is exhausted; device acceptance, real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
-## Environments and Deployments
+Immediate safe actions:
 
-| Environment | Verified state | Domain / health | Provider | Root / branch | Notes |
-|---|---|---|---|---|---|
-| Local Command | validated | loopback only | Node.js + local SQLite | repository root / `feature/unified-input-foundation` | Mock and controlled providers used for validation |
-| Temporary iPhone test | locally validated; VPS tunnel startup pending final review | No active URL at this entry | VPS Quick Tunnel on isolated port 8790 | repository root / feature branch | Disposable SQLite, one-time test auth, mock Hermes/Telegram, expiry/cleanup; never production |
-| Codespace development | prepared locally | Private port metadata for 8790 only | Existing Codespace after included usage renews | repository root / feature branch | Disposable state only; no credential auto-loading; never an uptime dependency |
-| Preview | `UNVERIFIED` / none for Unified Jarvis | No verified Unified Jarvis preview URL | None verified | N/A | Do not infer from frontend previews |
-| Public frontend production | production | `https://blackspirehelix.com`; `/health` live-checked | Vercel | `frontend/` / `main` | Sanitized health only was independently checked this session |
-| Vercel project URL | production | `https://frontend-tau-woad-73.vercel.app/health` live-checked | Vercel | `frontend/` / `main` | Project identity is documented in `frontend/README.md` |
-| Oracle Helix deployment | `UNVERIFIED` | Configuration exists; live URL not asserted here | Vercel workflow | `oracle-helix/` / `main` path trigger | Requires separate live verification |
+1. Complete credential-free post-integration tests and gates.
+2. Run the isolated loopback iPhone test lifecycle with disposable SQLite and mock providers.
+3. Start an expiring HTTPS tunnel only after local validation and verify teardown without touching durable VPS state.
+4. Complete production readiness, backup, monitoring, stable HTTPS, and rollback verification before any VPS promotion.
 
-Production DNS was not changed during the Unified Input or memory work. Root Blackspire Command is not proven deployed to Vercel and its SQLite runtime should not be treated as serverless production persistence.
+Operator-only actions include spending/budget changes, credential provisioning, GitHub authorization, device acceptance, real Telegram connection, production/DNS/provider/host-security changes, approval-policy changes, emergency-control changes, trading, and funds actions.
 
-## Integrations
+## Rollback and recovery
 
-| Integration | Purpose | Status | Authentication method (name only) | Environment | Limitations / next action |
-|---|---|---|---|---|---|
-| Git/GitHub | Source history, CI, branches, PR artifacts | implemented | Root-owned Blackspire GitHub CLI wrapper with operator-provided fine-grained PAT | local + GitHub | Credential value is external to the repository and scoped to wrapper child processes only |
-| GitHub Codespaces | Private HTTPS device test candidate | authorized | Fine-grained PAT through the Blackspire GitHub CLI wrapper | test | Identity, repository access, and Codespaces listing verified; temporary lifecycle validation is approved next |
-| Vercel | Public frontend deployment | production | Vercel project credentials | production | Do not use for stateful Unified Jarvis SQLite test without a new design/approval |
-| UptimeRobot | Public health monitoring | documented production | UptimeRobot account auth | production | Dashboard and alert delivery need fresh verification |
-| Telegram | Constrained intake and delivery | mock validated | Bot token + webhook secret by name only | local/test | Real bot/API is intentionally disconnected and unverified |
-| Mock Hermes | Credential-free task execution proof | validated | none | local/test | Read-only/status fixture only |
-| OpenAI / Anthropic | Optional provider APIs | implemented | provider API key by name only | not exercised | No production credentials or paid calls used in this work |
-| Codex / Claude Code | Optional CLI execution adapters | implemented | CLI authentication by name only | local | Live adapter execution not part of credential-free slice |
-| SQLite | Canonical task/conversation persistence | validated | filesystem permissions | local/test | Single-host; temporary test database must be removed at teardown |
-
-## Tests and Validation
-
-Latest verified commands/results at `dccb391` are recorded in `UNIFIED_INPUT_IPHONE_ACCEPTANCE_RESULTS.md` and `UNIFIED_INPUT_IPHONE_TEST_BUILD_STATUS.md`:
-
-- `npm run test:iphone` — 5 passed, 0 failed.
-- Targeted Unified Input, security, and Jarvis regression — 25 passed, 0 failed. The exact file list was not retained in the acceptance document and is therefore `UNVERIFIED`; do not reconstruct it from memory.
-- `npm test` — 130 passed, 0 failed, 0 skipped.
-- `npm run build` — passed.
-- `npm run lint` — passed.
-- `npm run typecheck` — passed.
-- `npm run security:scan` — passed.
-- `npm audit --audit-level=high` — passed with 0 vulnerabilities.
-- `git diff --check` — passed.
-- Expiring loopback launcher smoke — passed and reported cleanup complete.
-
-The earlier credential-free E2E milestone retains its exact commands (without requiring any production service) in `UNIFIED_INPUT_LOCAL_E2E_RESULTS.md`; that snapshot recorded 70 targeted tests and 125 full tests passing before the iPhone test-build additions. Its test totals are historical, not the current 130-test baseline.
-
-Current dual-environment verification on 2026-07-18: 14 targeted tests passed; the complete suite passed 132 tests with 0 failed and 0 skipped under Node 22.23.1. Build, lint, typecheck, complete-working-tree secret scan, dependency audit (0 vulnerabilities), disposable launcher lifecycle smoke, and whitespace checks passed. GitHub CI for unpushed commits remains `UNVERIFIED`. Real iPhone Safari, real Telegram, live provider, and production Unified Jarvis deployment tests have not run.
-
-## Known Blockers and Risks
-
-| Severity | Blocker / risk | Owner | Evidence | Safest resolution | Approval required |
-|---|---|---|---|---|---|
-| High | Codespace creation is denied by the account usage budget | Operator | GitHub returned HTTP 402 on the approved private creation attempt; a follow-up list confirmed no partial Codespace | Authorize a separate Codespaces budget change or provide an already disposable operator-designated Codespace | Yes for spending/budget change or reuse of an existing resource |
-| High | SQLite is single-host and unsuitable for multi-instance/serverless production as designed | Engineering | Known limitations and persistence implementation | Keep disposable/single-instance for test; design durable shared persistence before production | Architecture and production approval |
-| Medium | Canonical Constitution document/location not found | Product/security owner | Repository search on 2026-07-18 | Identify or author through a separately approved constitutional process | Yes |
-| Medium | Real Telegram transport and device flow unverified | Operator + engineering | Known limitations and test evidence | Run mock-only iPhone acceptance first; authorize real Telegram separately if ever needed | Yes for any real bot/token |
-| Medium | Live provider behavior/cost boundaries not validated in this slice | Engineering/security | Mock-only evidence | Keep providers disabled until credential, spend, policy, and test approval | Yes |
-| Low | Legacy planning/memory documents contain superseded status and test totals | Documentation | `PROJECT_CONTEXT.md`, `BLACKSPIRE_DELIVERY.md`, `memory/` | Use this file as authority and update legacy docs only when relevant | No for documentation-only work |
-
-## Immediate Next Safe Actions
-
-1. Start the reviewed VPS Quick Tunnel test on isolated port 8790 and perform the documented iPhone Safari acceptance scenarios.
-2. After explicit acceptance completion, stop the test and verify URL, authentication, SQLite, and processes are gone while the durable VPS remains healthy.
-3. After included Codespaces usage renews, inspect existing Codespace `vigilant-spork-4q759jvvrwx9c744`; do not create another or enable billing.
-4. Run the Codespace readiness/bootstrap commands only after the reviewed commit is available from the canonical Git repository through a separately approved push.
-5. Complete the go-live checklist before any production Command promotion.
-
-## Operator-Only Actions
-
-- Complete GitHub's device authorization page for the GitHub CLI and approve the requested `codespace` scope. Do not paste the resulting token or any credential into chat or documentation.
-- On the first real iPhone run, open the private HTTPS URL, authenticate with the temporary test-only method, execute the acceptance steps in `UNIFIED_INPUT_IPHONE_TEST_GUIDE.md`, and report only the sanitized outcome.
-- Any production, DNS, paid provider, real Telegram, constitutional, emergency-control, host-security, budget-increase, trading, or funds action requires its own explicit approval and is not implied here.
-
-## Rollback and Recovery
-
-- **Important branches:** `main`/`origin/main` is the merged base; `feature/unified-input-foundation` contains the four local Unified Input/test-build commits plus this memory commit.
-- **Relevant commits:** base `cccfbba8dc56c086e0ff8e6bd5ca5d2bd972ba4e`; Unified Input `2d2a915`, `dddfb1b`; validation `875a78e`; iPhone test build `dccb391`.
-- **Code rollback:** Do not rewrite history or reset the worktree. Prefer a reviewed `git revert <commit>` after confirming the exact target and obtaining authority for any shared branch change.
-- **Test-build teardown:** Stop the process, remove the disposable Codespace/deployment and test-only auth/config, and confirm temporary SQLite/state deletion per `UNIFIED_INPUT_TEST_BUILD_TEARDOWN.md`.
-- **Persistence recovery:** Use the tested `npm run db:backup` / `npm run db:restore -- <backup-file>` scripts only after stopping writers and validating the exact disposable/local target; Unified Input rollback details are in `UNIFIED_INPUT_ROLLBACK.md` and `UNIFIED_INPUT_TEST_BUILD_ROLLBACK.md`.
-- **Evidence/recovery documents:** `BLACKSPIRE_DELIVERY.md`, `BLACKSPIRE_COMMAND_BUILD_REPORT.md`, `UNIFIED_INPUT_VALIDATION_EVIDENCE.md`, `UNIFIED_INPUT_LOCAL_E2E_RESULTS.md`, and `UNIFIED_INPUT_IPHONE_ACCEPTANCE_RESULTS.md`.
-
-## Change Log
-
-### 2026-07-18 — Dual-environment readiness implemented
-
-- **Architecture:** The VPS is the sole planned canonical production-state owner. Codespaces and Quick Tunnels are disposable development/test surfaces and never uptime dependencies.
-- **Implementation:** Added Node/runtime contracts, deterministic bootstrap, fail-closed environment validation, private Codespace port metadata, explicit provider selection, one-time test authentication, isolated start/health/stop/production wrappers, and six recovery/promotion runbooks.
-- **Isolation:** iPhone mode uses temporary SQLite, mock Hermes, mock Telegram, a loopback application, and an expiring tunnel. It rejects inherited provider, Telegram, and GitHub credentials; no paid fallback exists.
-- **Verification:** 14 targeted and 132 complete tests passed with zero failures/skips. Build, lint, typecheck, full-working-tree secret scan, dependency audit, disposable lifecycle smoke, and whitespace checks passed.
-- **External state:** No Codespace, billing, production database, production provider, real Telegram, DNS, Vercel, host security, push, merge, or production deployment was changed.
-- **Rollback:** `npm run stop:iphone-test` removes only the recorded disposable runtime/tunnel. Repository changes should be reversed by reviewed revert, never reset.
-
-### 2026-07-18 — Persistent headless GitHub authentication configured
-
-- **Authentication:** Operator-provided fine-grained PAT loaded only by the root-owned Blackspire GitHub CLI wrapper. The credential value remains outside the repository and is not recorded here.
-- **Verification:** GitHub identity, Codespaces listing, repository visibility, and repository permissions succeeded; the wrapper did not leave `GH_TOKEN` in the parent environment.
-- **Safeguards:** Root-only storage modes, repository ignore rules, secret-scan protection, and backup exclusion were added. The earlier device authorization flow is no longer used.
-- **Next action:** Use the already approved temporary Codespace to verify create/start/stop/delete lifecycle permissions and run private iPhone acceptance.
-- **Long-term recommendation:** Migrate to a dedicated Blackspire GitHub App using short-lived installation or user tokens after a separately reviewed permissions design.
-- **Codespace blocker:** The approved creation request reached GitHub but returned HTTP 402 because free usage or the Codespaces budget is exhausted. No Codespace was created and no existing Codespace was modified.
-
-### 2026-07-18 — Disconnected Unified Input session recovered and reverified
-
-- **Summary:** Recovered the clean isolated `feature/unified-input-foundation` worktree at `2ab3394`, reconciled the five local commits above base `cccfbba`, and confirmed no implementation work was missing or partially staged.
-- **Implementation:** Unified Input remains complete through `dccb391`; this documentation reconciliation is the commit containing this entry.
-- **Tests:** Targeted credential-free suites passed (1 E2E, 34 unified/core/orchestration/hardening, 35 Jarvis/Telegram/persistence/integration, and 5 iPhone-mode tests). Complete regression passed with 130 tests, 0 failed, 0 skipped under Node 22.23.1. Build, lint, typecheck, secret scan, dependency audit, source-memory, and whitespace checks passed.
-- **Boundary evidence:** Mock Hermes, mock Telegram delivery, loopback services, temporary SQLite, and controlled local providers only. No real Telegram, production credentials, production calls, deployment, push, merge, or host-security change occurred.
-- **Rollback:** Preserve the recovered commits and use reviewed `git revert` operations rather than reset or history rewriting.
-- **Remaining blocker:** Private iPhone Safari acceptance still requires an operator-authorized GitHub CLI `codespace` OAuth scope and a separately confirmed credential-free local end-to-end validation run.
-
-### 2026-07-18 — Canonical living memory established
-
-- **Summary:** Reconciled Git, code, architecture, local validations, deployment configuration, live health checks, and legacy planning documents into one canonical memory; added a read-only staleness/secret-shape check.
-- **Branch:** `feature/unified-input-foundation`.
-- **Commit:** implementation state verified through `dccb391e550e64bbfc8930d28238738e426131f8`; the documentation commit is the commit containing this entry (`docs: establish canonical Blackspire living memory`).
-- **Tests:** Documentation checker and secret scans are required before committing; latest product baseline is 5 targeted iPhone, 25 targeted unified/security/Jarvis, and 130 full tests passing.
-- **Decision:** This file supersedes legacy memory documents for current-state recovery; historical evidence remains linked rather than deleted.
-- **Remaining blocker:** GitHub CLI lacks `codespace` OAuth scope, so no private iPhone test URL or device acceptance result exists.
+- Preserve commits; use reviewed `git revert`, never reset or history rewriting, for shared-history rollback.
+- Recover pre-integration Unified work from `backup/unified-input-foundation-9bdfa5f`.
+- Use tested backup/restore commands only against an explicitly identified stopped local/disposable database.
+- Disposable iPhone state and tunnel must be stopped and deleted without touching durable VPS state.
+- Recovery begins with `git fetch`, worktree/branch/status inspection, this file, then affected code/evidence. Never copy production state into Codespaces or tests.
