@@ -6,6 +6,7 @@
 - Verified Codex CLI 0.144.5 reports ChatGPT login through its official status command, then added a versioned single-use worker adapter using noninteractive ephemeral execution, ignored user configuration/rules, read-only sandboxing, stdin-only instructions, strict structured output, timeout termination, replay prevention, credential stripping, and disposable cleanup.
 - Credential-free pre-dispatch tests denied privileged requests and exercised policy, identity, cancellation, deadline, emergency-stop, replay, response validation, evidence redaction, and cleanup before live execution.
 - Exactly one subscription Codex invocation was attempted. It returned no contract-valid result: zero successes, retries, fallbacks, and observed tool calls; canonical state remained failed and no second invocation was attempted.
+- Under Node 22.23.1, 38 targeted Codex/Hermes/policy/Unified/evidence tests and 154 full tests passed with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - `OPENAI_API_KEY` remained absent, Blackspire made no standalone OpenAI API call, disposable SQLite/runtime state was removed, the child process terminated, and production, real Telegram, remotes, deployment, host security, trading, and funds were unchanged.
 
 ## 2026-07-18 — Restricted Hermes safety boundary established
