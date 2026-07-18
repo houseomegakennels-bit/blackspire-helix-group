@@ -13,3 +13,6 @@
 - Prefer agent-driven execution; give the operator only unavoidable manual iPhone actions.
 - Never push, merge, deploy, spend money, alter host security, expose secrets, or enable live trading without the required explicit approval.
 - Keep changes maintainable, secure, mobile-responsive, and consistent with Blackspire's dark black-and-gold product direction.
+- Use Node.js `22.23.1` as the development baseline (`.node-version`) and deterministic `npm ci`; reject unsupported runtimes instead of compensating silently.
+- Treat the VPS as the sole planned owner of canonical production state. Codespaces, Quick Tunnels, and iPhone tests must use disposable isolated state and mock providers only.
+- Never load production credentials automatically in a Codespace or test launcher. Production startup and disposable test startup are separate commands.

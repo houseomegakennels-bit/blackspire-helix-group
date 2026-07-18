@@ -7,7 +7,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'
 const port = Number(process.env.PORT || 8787);
 const expiresAt = new Date(Date.now() + Math.min(Number(process.env.UNIFIED_TEST_TTL_MS || 2 * 60 * 60 * 1000), 4 * 60 * 60 * 1000));
 
-for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT']) delete process.env[key];
+for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT', 'GH_TOKEN', 'GITHUB_TOKEN']) delete process.env[key];
 Object.assign(process.env, {
   NODE_ENV: 'test', UNIFIED_IPHONE_TEST_MODE: 'true', UNIFIED_TEST_EXPIRES_AT: expiresAt.toISOString(),
   UNIFIED_TEST_WORKSPACE_ID: 'iphone-test', UNIFIED_TEST_ACTOR_ID: 'iphone-test-operator', UNIFIED_TEST_CHANNEL_KEY: 'iphone-test-chat',
@@ -15,6 +15,7 @@ Object.assign(process.env, {
   TELEGRAM_TMP_DIR: path.join(dataDir, 'telegram-files'), COMMAND_ADMIN_TOKEN: crypto.randomBytes(32).toString('hex'), ALLOW_BEARER_AUTH: 'false',
   SECURE_COOKIES: 'true', SESSION_TTL_MS: String(expiresAt.getTime() - Date.now()), HERMES_TEST_PROVIDER: 'mock', TELEGRAM_MODE: 'mock',
   TELEGRAM_OUTBOX_MAX_ATTEMPTS: '2', TELEGRAM_OUTBOX_RETRY_SECONDS: '30', WORKER_POLL_MS: '500', PORT: String(port),
+  UNIFIED_TEST_ACCESS_CODE: process.env.UNIFIED_TEST_ACCESS_CODE || crypto.randomBytes(18).toString('base64url'),
 });
 
 const nativeFetch = globalThis.fetch;

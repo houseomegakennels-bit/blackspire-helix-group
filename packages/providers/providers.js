@@ -14,14 +14,14 @@ export function activeModes() {
 
 export function selectProvider(policy = {}) {
   if (process.env.HERMES_TEST_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock', model: 'mock-hermes-status-v1' };
+  const requested = process.env.BLACKSPIRE_PROVIDER_MODE || 'manual';
+  const preferred = policy.preferred || ['manual'];
+  if (requested === 'manual' || !preferred.includes(requested)) return { provider: 'manual', mode: 'handoff' };
   const modes = activeModes();
-  for (const provider of policy.preferred || ['codex', 'openai', 'anthropic', 'claudeCode', 'manual']) {
-    if (provider === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex };
-    if (provider === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api' };
-    if (provider === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api' };
-    if (provider === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli' };
-    if (provider === 'manual') return { provider: 'manual', mode: 'handoff' };
-  }
+  if (requested === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex };
+  if (requested === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api' };
+  if (requested === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api' };
+  if (requested === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli' };
   return { provider: 'manual', mode: 'handoff' };
 }
 

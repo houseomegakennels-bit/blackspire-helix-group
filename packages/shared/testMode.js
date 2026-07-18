@@ -3,7 +3,7 @@ import { DB_PATH } from './config.js';
 
 const CREDENTIAL_KEYS = [
   'TELEGRAM_BOT_TOKEN', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY',
-  'TELEGRAM_WEBHOOK_SECRET',
+  'TELEGRAM_WEBHOOK_SECRET', 'GH_TOKEN', 'GITHUB_TOKEN',
 ];
 
 export function testModeConfig(env = process.env, now = Date.now()) {
@@ -15,6 +15,7 @@ export function testModeConfig(env = process.env, now = Date.now()) {
   if (env.NODE_ENV !== 'test') errors.push('test mode requires NODE_ENV=test');
   if (env.HERMES_TEST_PROVIDER !== 'mock') errors.push('test mode requires mock Hermes');
   if (env.TELEGRAM_MODE !== 'mock') errors.push('test mode requires mock Telegram');
+  if (!env.UNIFIED_TEST_ACCESS_CODE || env.UNIFIED_TEST_ACCESS_CODE.length < 12) errors.push('test mode requires a one-time access code');
   if (!Number.isFinite(expiresAt) || expiresAt <= now || expiresAt > now + 4 * 60 * 60 * 1000) errors.push('test mode expiry must be within four hours');
   if (!dbPath.startsWith('/tmp/') && !dbPath.includes('blackspire-test')) errors.push('test mode database must be disposable');
   for (const key of CREDENTIAL_KEYS) if (env[key]) errors.push(`test mode forbids ${key}`);

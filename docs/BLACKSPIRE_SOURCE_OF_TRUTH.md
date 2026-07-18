@@ -6,8 +6,8 @@
 - **Governs:** Verified repository state, current architecture, active work, authority boundaries, validations, deployment knowledge, blockers, recovery, and immediate next actions.
 - **Does not govern:** Secret values, raw logs/evidence, production authorization, live operational state after the verification time, or policy changes. Code and verified external evidence can supersede this document and must then be reconciled here.
 - **Last verified date:** 2026-07-18 UTC.
-- **Last verified commit:** `2ab33944333ffed0aea9a59291f2099b8e687d81` (the recovered implementation state inspected before the documentation-only reconciliation containing this entry).
-- **Verified branch:** `feature/unified-input-foundation`; four local commits ahead of `origin/main` at verification time.
+- **Last verified commit:** `43735f6` (repository state before the current dual-environment readiness commit).
+- **Verified branch:** `feature/unified-input-foundation`; three local commits ahead of its upstream at verification time.
 
 Claims are limited to repository evidence, local test evidence, Git history, live HTTP checks, or explicit operator confirmation. `UNVERIFIED` means the repository does not currently provide enough evidence. Older documents remain historical evidence; current-state claims that conflict with this document are `SUPERSEDED`.
 
@@ -60,10 +60,10 @@ Claims are limited to repository evidence, local test evidence, Git history, liv
 ## Active Work
 
 - **Current branch/worktree:** `feature/unified-input-foundation` in an isolated worktree; clean before this documentation task; ahead of `origin/main` by four local commits.
-- **Current objective:** Establish this permanent repository memory and a safe staleness/secret-shape checker. The next product objective is a private, temporary, iPhone-accessible Unified Jarvis acceptance surface.
-- **Files under development:** `AGENTS.md`, this document, and `scripts/update-source-of-truth-check.sh` only.
-- **Acceptance criteria:** Canonical memory reflects verified state, uncertainties are labeled, checker is read-only, documentation/security checks pass, and changes are committed locally.
-- **Approved scope:** Local documentation, read-only verification, and a local commit. Codespaces scope was operator-authorized for the prior test-build objective, but no deployment exists.
+- **Current objective:** Prepare a dual-environment VPS/Codespace recovery model and run an expiring VPS Quick Tunnel for credential-free iPhone acceptance.
+- **Files under development:** Environment scripts, devcontainer metadata, test-mode one-time authentication, provider fail-closed behavior, tests, and environment runbooks.
+- **Acceptance criteria:** One production-state owner, deterministic setup/migrations, isolated disposable tests, mock-only test transport, complete gates, local commit, and an expiring iPhone URL without disturbing the durable VPS runtime.
+- **Approved scope:** Repository readiness, local commit, and a temporary VPS Quick Tunnel on isolated port 8790. Codespace creation/billing and production deployment remain prohibited.
 - **Prohibited actions:** Push, merge, deployment, production credential/database/provider use, real Telegram connection, paid calls, DNS/host-security changes, secret disclosure, and live trading or funds actions.
 
 ## Decisions and ADR Summary
@@ -96,7 +96,8 @@ No standalone Constitution text or ADR defining it was found in the inspected re
 | Environment | Verified state | Domain / health | Provider | Root / branch | Notes |
 |---|---|---|---|---|---|
 | Local Command | validated | loopback only | Node.js + local SQLite | repository root / `feature/unified-input-foundation` | Mock and controlled providers used for validation |
-| Temporary iPhone test | staged locally | No URL | Planned private GitHub Codespace | repository root / feature branch | Disposable SQLite, mock Hermes/Telegram, test auth, expiry/cleanup implemented |
+| Temporary iPhone test | locally validated; VPS tunnel startup pending final review | No active URL at this entry | VPS Quick Tunnel on isolated port 8790 | repository root / feature branch | Disposable SQLite, one-time test auth, mock Hermes/Telegram, expiry/cleanup; never production |
+| Codespace development | prepared locally | Private port metadata for 8790 only | Existing Codespace after included usage renews | repository root / feature branch | Disposable state only; no credential auto-loading; never an uptime dependency |
 | Preview | `UNVERIFIED` / none for Unified Jarvis | No verified Unified Jarvis preview URL | None verified | N/A | Do not infer from frontend previews |
 | Public frontend production | production | `https://blackspirehelix.com`; `/health` live-checked | Vercel | `frontend/` / `main` | Sanitized health only was independently checked this session |
 | Vercel project URL | production | `https://frontend-tau-woad-73.vercel.app/health` live-checked | Vercel | `frontend/` / `main` | Project identity is documented in `frontend/README.md` |
@@ -135,7 +136,7 @@ Latest verified commands/results at `dccb391` are recorded in `UNIFIED_INPUT_IPH
 
 The earlier credential-free E2E milestone retains its exact commands (without requiring any production service) in `UNIFIED_INPUT_LOCAL_E2E_RESULTS.md`; that snapshot recorded 70 targeted tests and 125 full tests passing before the iPhone test-build additions. Its test totals are historical, not the current 130-test baseline.
 
-Known failing tests: none in that local run. Known skipped tests: none. A current GitHub CI run for the four unpushed feature commits is `UNVERIFIED`. Real iPhone Safari, real Telegram, live provider, and public Unified Jarvis deployment tests have not run.
+Current dual-environment verification on 2026-07-18: 14 targeted tests passed; the complete suite passed 132 tests with 0 failed and 0 skipped under Node 22.23.1. Build, lint, typecheck, complete-working-tree secret scan, dependency audit (0 vulnerabilities), disposable launcher lifecycle smoke, and whitespace checks passed. GitHub CI for unpushed commits remains `UNVERIFIED`. Real iPhone Safari, real Telegram, live provider, and production Unified Jarvis deployment tests have not run.
 
 ## Known Blockers and Risks
 
@@ -150,11 +151,11 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 
 ## Immediate Next Safe Actions
 
-1. Run `scripts/update-source-of-truth-check.sh` at the start of the next session and inspect Git/relevant code before planning.
-2. Re-run the targeted tests and gates, then create an isolated, private, expiring Codespace using only test configuration and disposable SQLite.
-3. Verify Codespace create/start/stop/delete permissions through the approved temporary lifecycle without touching unrelated existing Codespaces.
-4. Perform the documented iPhone Safari acceptance scenarios, capture sanitized evidence, and tear the test surface down.
-5. Update this file with the actual URL status, device results, cleanup evidence, new commit, and remaining blockers.
+1. Start the reviewed VPS Quick Tunnel test on isolated port 8790 and perform the documented iPhone Safari acceptance scenarios.
+2. After explicit acceptance completion, stop the test and verify URL, authentication, SQLite, and processes are gone while the durable VPS remains healthy.
+3. After included Codespaces usage renews, inspect existing Codespace `vigilant-spork-4q759jvvrwx9c744`; do not create another or enable billing.
+4. Run the Codespace readiness/bootstrap commands only after the reviewed commit is available from the canonical Git repository through a separately approved push.
+5. Complete the go-live checklist before any production Command promotion.
 
 ## Operator-Only Actions
 
@@ -172,6 +173,15 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 - **Evidence/recovery documents:** `BLACKSPIRE_DELIVERY.md`, `BLACKSPIRE_COMMAND_BUILD_REPORT.md`, `UNIFIED_INPUT_VALIDATION_EVIDENCE.md`, `UNIFIED_INPUT_LOCAL_E2E_RESULTS.md`, and `UNIFIED_INPUT_IPHONE_ACCEPTANCE_RESULTS.md`.
 
 ## Change Log
+
+### 2026-07-18 — Dual-environment readiness implemented
+
+- **Architecture:** The VPS is the sole planned canonical production-state owner. Codespaces and Quick Tunnels are disposable development/test surfaces and never uptime dependencies.
+- **Implementation:** Added Node/runtime contracts, deterministic bootstrap, fail-closed environment validation, private Codespace port metadata, explicit provider selection, one-time test authentication, isolated start/health/stop/production wrappers, and six recovery/promotion runbooks.
+- **Isolation:** iPhone mode uses temporary SQLite, mock Hermes, mock Telegram, a loopback application, and an expiring tunnel. It rejects inherited provider, Telegram, and GitHub credentials; no paid fallback exists.
+- **Verification:** 14 targeted and 132 complete tests passed with zero failures/skips. Build, lint, typecheck, full-working-tree secret scan, dependency audit, disposable lifecycle smoke, and whitespace checks passed.
+- **External state:** No Codespace, billing, production database, production provider, real Telegram, DNS, Vercel, host security, push, merge, or production deployment was changed.
+- **Rollback:** `npm run stop:iphone-test` removes only the recorded disposable runtime/tunnel. Repository changes should be reversed by reviewed revert, never reset.
 
 ### 2026-07-18 — Persistent headless GitHub authentication configured
 

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { PORT, ADMIN_TOKEN, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
@@ -121,6 +122,13 @@ async function login(req, res) {
 async function testModeLogin(req, res) {
   if (!TEST_MODE.enabled || !TEST_MODE.ok || !isSameOrigin(req)) return json(res, 404, { error: 'not found' });
   const limit = checkLimit(req, 'test-login', 10, 60000); if (!limit.allowed) return limited(res, limit);
+  const body = await readJson(req);
+  const supplied = Buffer.from(String(body.accessCode || ''));
+  const expected = Buffer.from(String(process.env.UNIFIED_TEST_ACCESS_CODE || ''));
+  if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
+    audit(null, 'test-mode', 'session.denied', { actor: TEST_MODE.testActor });
+    return json(res, 404, { error: 'test session unavailable' });
+  }
   const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '' });
   if (!session) return json(res, 503, { error: 'test session unavailable' });
   audit(null, 'test-mode', 'session.created', { actor: TEST_MODE.testActor });

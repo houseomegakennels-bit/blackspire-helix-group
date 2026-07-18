@@ -11,6 +11,7 @@ process.env.UNIFIED_TEST_EXPIRES_AT = new Date(Date.now() + 60 * 60 * 1000).toIS
 process.env.UNIFIED_TEST_WORKSPACE_ID = 'iphone-test';
 process.env.UNIFIED_TEST_ACTOR_ID = 'iphone-test-operator';
 process.env.UNIFIED_TEST_CHANNEL_KEY = 'iphone-test-chat';
+process.env.UNIFIED_TEST_ACCESS_CODE = 'local-one-time-code';
 process.env.BLACKSPIRE_DATA_DIR = root;
 process.env.BLACKSPIRE_DB_PATH = path.join(root, 'iphone.sqlite');
 process.env.UNIFIED_TEST_WORKSPACE_ROOT = root;
@@ -55,7 +56,9 @@ test('test mode starts fail-closed and creates a short-lived test session', asyn
   assert.equal(status.testActor, 'iphone-test-operator');
   assert.ok(status.expiresAt);
 
-  const login = await fetch('http://127.0.0.1:8920/api/test-mode/session', { method: 'POST', headers: { origin: 'http://127.0.0.1:8920' } });
+  const missingCode = await fetch('http://127.0.0.1:8920/api/test-mode/session', { method: 'POST', headers: { origin: 'http://127.0.0.1:8920', 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(missingCode.status, 404);
+  const login = await fetch('http://127.0.0.1:8920/api/test-mode/session', { method: 'POST', headers: { origin: 'http://127.0.0.1:8920', 'content-type': 'application/json' }, body: JSON.stringify({ accessCode: 'local-one-time-code' }) });
   assert.equal(login.status, 200);
   cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
   const body = await login.json();
@@ -138,6 +141,7 @@ test('test-mode browser contract is mobile, structured, and contains no privileg
   assert.match(html, /Ordered event timeline/);
   assert.match(html, /Mock Telegram delivery/);
   assert.match(html, /Expires/);
+  assert.match(html, /access code/i);
   assert.doesNotMatch(html, /GLOBAL STOP|Approval center|Admin token/);
 });
 
