@@ -2,6 +2,8 @@
 
 Status: credential-free local vertical slice validated.
 
+Recovery verification on 2026-07-18 confirmed the isolated worktree was clean at `2ab3394`, the implementation remained complete through `dccb391`, and the full 130-test regression plus build, lint, typecheck, secret scan, dependency audit, and whitespace gates passed under Node 22.23.1.
+
 The temporary iPhone test-build layer is now implemented locally behind fail-closed test mode. It adds no production deployment or production behavior and awaits private Codespace validation.
 
 ## Complete

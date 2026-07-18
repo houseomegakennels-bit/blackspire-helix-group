@@ -20,3 +20,5 @@ Test-only endpoints return `404` outside safe test mode. While enabled, the API 
 The UI uses text-only DOM assignment for API data. It displays only canonical IDs, sanitized task state, event types/timestamps, provider/model attribution, evidence kinds, and delivery status/attempt counts. It does not expose raw logs, request packets, stack traces, environment values, workspace paths, authentication material, or evidence bodies.
 
 No production database, provider, Telegram bot, public port, production URL, or paid API participates in this build.
+
+Recovery verification on 2026-07-18 used only temporary SQLite, loopback services, mock Hermes, mock Telegram delivery, and controlled local providers. No Telegram token or production credential was loaded, no production endpoint was called, and no deployment, push, merge, DNS, or host-security action occurred.

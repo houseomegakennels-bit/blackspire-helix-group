@@ -15,10 +15,10 @@ Status: local test-build implementation complete; private Codespace deployment p
 - Complete regression: 130 passed, 0 failed, 0 skipped
 - Build, lint, typecheck, secret scan, dependency audit, and whitespace checks passed
 - Expiring launcher smoke test passed and removed its temporary state
+- Local test-build commit: `dccb391e550e64bbfc8930d28238738e426131f8`
 
 ## Pending
 
-- Local commit SHA
 - Private Codespace URL and expiry
 - Safari acceptance by the operator
 - Post-acceptance Codespace and disposable-state teardown

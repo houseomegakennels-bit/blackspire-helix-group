@@ -16,6 +16,8 @@ The local iPhone test-mode contract passes against temporary SQLite, loopback AP
 - Dependency audit: 0 vulnerabilities
 - Launcher smoke: loopback status/UI passed; expiry cleanup reported `cleaned: true`
 
+The disconnected-session recovery reran the credential-free targeted suites and complete repository gates on 2026-07-18. The complete regression remained 130 passed, 0 failed, 0 skipped; build, lint, typecheck, secret scan, dependency audit, source-memory, and whitespace checks remained green. An initial attempt with the shell's Node 18.19.1 failed before application execution because `node:sqlite` is unavailable there; rerunning with the repository's required Node 22.23.1 runtime passed without code changes.
+
 ## Device acceptance
 
 Pending creation of the private Codespace URL and operator execution in iPhone Safari.

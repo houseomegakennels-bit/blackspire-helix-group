@@ -6,7 +6,7 @@
 - **Governs:** Verified repository state, current architecture, active work, authority boundaries, validations, deployment knowledge, blockers, recovery, and immediate next actions.
 - **Does not govern:** Secret values, raw logs/evidence, production authorization, live operational state after the verification time, or policy changes. Code and verified external evidence can supersede this document and must then be reconciled here.
 - **Last verified date:** 2026-07-18 UTC.
-- **Last verified commit:** `dccb391e550e64bbfc8930d28238738e426131f8` (the implementation state inspected before the documentation-only commit containing this file).
+- **Last verified commit:** `2ab33944333ffed0aea9a59291f2099b8e687d81` (the recovered implementation state inspected before the documentation-only reconciliation containing this entry).
 - **Verified branch:** `feature/unified-input-foundation`; four local commits ahead of `origin/main` at verification time.
 
 Claims are limited to repository evidence, local test evidence, Git history, live HTTP checks, or explicit operator confirmation. `UNVERIFIED` means the repository does not currently provide enough evidence. Older documents remain historical evidence; current-state claims that conflict with this document are `SUPERSEDED`.
@@ -172,6 +172,15 @@ Known failing tests: none in that local run. Known skipped tests: none. A curren
 - **Evidence/recovery documents:** `BLACKSPIRE_DELIVERY.md`, `BLACKSPIRE_COMMAND_BUILD_REPORT.md`, `UNIFIED_INPUT_VALIDATION_EVIDENCE.md`, `UNIFIED_INPUT_LOCAL_E2E_RESULTS.md`, and `UNIFIED_INPUT_IPHONE_ACCEPTANCE_RESULTS.md`.
 
 ## Change Log
+
+### 2026-07-18 — Disconnected Unified Input session recovered and reverified
+
+- **Summary:** Recovered the clean isolated `feature/unified-input-foundation` worktree at `2ab3394`, reconciled the five local commits above base `cccfbba`, and confirmed no implementation work was missing or partially staged.
+- **Implementation:** Unified Input remains complete through `dccb391`; this documentation reconciliation is the commit containing this entry.
+- **Tests:** Targeted credential-free suites passed (1 E2E, 34 unified/core/orchestration/hardening, 35 Jarvis/Telegram/persistence/integration, and 5 iPhone-mode tests). Complete regression passed with 130 tests, 0 failed, 0 skipped under Node 22.23.1. Build, lint, typecheck, secret scan, dependency audit, source-memory, and whitespace checks passed.
+- **Boundary evidence:** Mock Hermes, mock Telegram delivery, loopback services, temporary SQLite, and controlled local providers only. No real Telegram, production credentials, production calls, deployment, push, merge, or host-security change occurred.
+- **Rollback:** Preserve the recovered commits and use reviewed `git revert` operations rather than reset or history rewriting.
+- **Remaining blocker:** Private iPhone Safari acceptance still requires an operator-authorized GitHub CLI `codespace` OAuth scope and a separately confirmed credential-free local end-to-end validation run.
 
 ### 2026-07-18 — Canonical living memory established
 

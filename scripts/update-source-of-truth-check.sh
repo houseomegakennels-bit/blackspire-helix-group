@@ -28,7 +28,7 @@ if [[ -n "$verified_commit" ]] && git cat-file -e "${verified_commit}^{commit}" 
     stale_reason="HEAD matches the verified implementation commit"
   elif git merge-base --is-ancestor "$verified_commit" HEAD; then
     changed_since="$(git diff --name-only "$verified_commit"..HEAD)"
-    non_memory_changes="$(printf '%s\n' "$changed_since" | grep -Ev '^(AGENTS\.md|docs/BLACKSPIRE_SOURCE_OF_TRUTH\.md|scripts/update-source-of-truth-check\.sh)$' || true)"
+    non_memory_changes="$(printf '%s\n' "$changed_since" | grep -Ev '^(AGENTS\.md|UNIFIED_INPUT_IMPLEMENTATION_STATUS\.md|UNIFIED_INPUT_IPHONE_ACCEPTANCE_RESULTS\.md|UNIFIED_INPUT_IPHONE_TEST_BUILD_STATUS\.md|UNIFIED_INPUT_TEST_BUILD_ROLLBACK\.md|UNIFIED_INPUT_TEST_BUILD_SECURITY_BOUNDARY\.md|docs/BLACKSPIRE_SOURCE_OF_TRUTH\.md|scripts/update-source-of-truth-check\.sh)$' || true)"
     if [[ -z "$non_memory_changes" ]]; then
       stale="no"
       stale_reason="only canonical-memory files changed after the verified implementation commit"
