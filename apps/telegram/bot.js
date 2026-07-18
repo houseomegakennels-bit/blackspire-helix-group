@@ -6,12 +6,14 @@ import { rateLimit } from '../../packages/shared/security.js';
 import { transcribeVoice } from '../../packages/shared/transcription.js';
 import { recordAttachment } from '../../packages/task-engine/attachments.js';
 import { audit } from '../../packages/task-engine/tasks.js';
+import { createUnifiedInput, getConversation, channelCanAccessTask, cancelFromChannel } from '../../packages/unified-input/unified.js';
 
 const MIME_EXTENSIONS = { 'text/plain': '.txt', 'text/markdown': '.md', 'application/json': '.json', 'audio/ogg': '.oga', 'audio/mpeg': '.mp3' };
 const ALLOWED_MIME_TYPES = Object.keys(MIME_EXTENSIONS);
 const TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'application/json']);
 
 const sessions = new Map();
+const conversations = new Map();
 const seen = new Set();
 
 export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
@@ -26,21 +28,31 @@ export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
   const chatId = msg?.chat?.id;
   const send = (message, extra = {}) => ({ chatId, text: chunk(escapeMarkdown(message)), ...extra });
 
-  if (text.startsWith('/start') || text.startsWith('/help')) return send('Blackspire Command online. Use /task <request>, /tasks, /workspaces, /status, /export <id>, /stop.');
+  if (text.startsWith('/start') || text.startsWith('/help')) return send('Blackspire Command online. Use /task <request>, /conversation <id>, /tasks, /workspaces, /status, or /cancel <task-id>. Privileged actions require authenticated Jarvis.');
   if (text.startsWith('/status') || text.startsWith('/health')) return send(JSON.stringify(await get('/health', apiBase)));
   if (text.startsWith('/workspaces')) return send((await get('/api/workspaces', apiBase)).workspaces.map((w) => `${w.id}: ${w.name}`).join('\n'));
   if (text.startsWith('/use ')) {
     sessions.set(from.id, text.slice(5).trim());
     return send(`Workspace set to ${sessions.get(from.id)}`);
   }
-  if (text.startsWith('/task ')) {
-    const body = { request: text.slice(6), workspaceId: sessions.get(from.id) || 'blackspire-command' };
-    const result = await post('/api/tasks', body, apiBase);
-    return send(result.task ? `Queued ${result.task.id}: ${result.task.request}` : `Task rejected: ${result.error || 'unknown error'}`);
+  if (text.startsWith('/conversation ')) {
+    const conversationId = text.slice(14).trim();
+    if (!getConversation(conversationId)) return send('Conversation not found.');
+    conversations.set(from.id, conversationId);
+    return send(`Conversation set to ${conversationId}`);
   }
-  if (text.startsWith('/tasks')) return send((await get('/api/tasks', apiBase)).tasks.map((t) => `${t.id} ${t.status} ${t.request}`).join('\n') || 'No tasks');
+  if (text.startsWith('/task ')) {
+    const result = createUnifiedInput({ channel: 'telegram', actorId: String(from.id), channelKey: String(chatId), conversationId: conversations.get(from.id) || null, workspaceId: sessions.get(from.id) || 'blackspire-command', text: text.slice(6), idempotencyKey: `telegram:${update.update_id}`, metadata: { chatId } });
+    if (result.conversationId) conversations.set(from.id, result.conversationId);
+    return send(result.taskId ? `${result.denied ? 'Denied' : 'Queued'} conversation ${result.conversationId} task ${result.taskId}${result.error ? `: ${result.error}` : ''}` : `Task rejected: ${result.error || 'unknown error'}`);
+  }
+  if (text.startsWith('/tasks')) {
+    const conversation = getConversation(conversations.get(from.id));
+    return send((conversation?.tasks || []).map((t) => `${t.id} ${t.status} ${t.request}`).join('\n') || 'No tasks in this conversation');
+  }
   if (text.startsWith('/export ')) {
     const taskId = text.slice(8).trim();
+    if (!channelCanAccessTask('telegram', String(chatId), taskId)) return send('Task not found for this Telegram conversation.');
     const bundle = await get(`/api/tasks/${taskId}/export.json`, apiBase);
     audit(taskId, 'telegram', 'evidence.delivery_requested', { chatId });
     return deliverPayload(chatId, bundle, `${taskId}-evidence.json`, send);
@@ -48,15 +60,18 @@ export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
   const one = text.match(/^\/(task_status|logs|approve|reject|pause|resume|cancel)\s+(\S+)/);
   if (one) {
     const [, cmd, taskId] = one;
+    if (['approve', 'reject', 'pause', 'resume'].includes(cmd)) return send('Privileged task actions require an authenticated Jarvis session.');
+    if (!channelCanAccessTask('telegram', String(chatId), taskId)) return send('Task not found for this Telegram conversation.');
+    if (cmd === 'cancel') return send(JSON.stringify(cancelFromChannel('telegram', String(chatId), taskId)));
     if (cmd === 'logs') {
       const result = await get(`/api/tasks/${taskId}/logs`, apiBase);
       return deliverPayload(chatId, result, `${taskId}-logs.json`, send);
     }
-    const route = cmd === 'task_status' ? `/api/tasks/${taskId}` : `/api/tasks/${taskId}/${cmd}`;
-    const result = cmd === 'task_status' ? await get(route, apiBase) : await post(route, {}, apiBase);
+    const route = `/api/tasks/${taskId}`;
+    const result = await get(route, apiBase);
     return send(JSON.stringify(result).slice(0, 3500));
   }
-  if (text.startsWith('/stop')) return send(JSON.stringify(await post('/api/stop', {}, apiBase)));
+  if (/^\/(stop|approve|reject|deploy|merge|reset|secrets?|credentials?|trade|trading)(?:\s|$)/i.test(text)) return send('Telegram cannot perform privileged actions. Use authenticated Jarvis.');
   if (update.message?.document || update.message?.voice) return handleTelegramAttachment(update, apiBase, send);
   return send('Unknown command. Use /help.');
 }

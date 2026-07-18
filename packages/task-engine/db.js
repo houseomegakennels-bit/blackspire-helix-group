@@ -101,6 +101,11 @@ CREATE TABLE IF NOT EXISTS system_flags(key TEXT PRIMARY KEY,value TEXT,updated_
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,csrf_token TEXT,created_at INTEGER,expires_at INTEGER,rotated_at INTEGER,user_agent TEXT,ip TEXT,revoked_at INTEGER);
 CREATE TABLE IF NOT EXISTS rate_limits(bucket_key TEXT PRIMARY KEY,count INTEGER,window_started_at INTEGER,reset_at INTEGER,window_ms INTEGER,updated_at INTEGER);
 CREATE TABLE IF NOT EXISTS telegram_attachments(id TEXT PRIMARY KEY,task_id TEXT,workspace_id TEXT,chat_id TEXT,file_id TEXT,file_name TEXT,mime_type TEXT,size_bytes INTEGER,kind TEXT,stored_path TEXT,text_excerpt TEXT,transcription_status TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY,workspace_id TEXT,status TEXT,created_at TEXT,updated_at TEXT);
+CREATE TABLE IF NOT EXISTS conversation_bindings(id TEXT PRIMARY KEY,conversation_id TEXT,channel TEXT,channel_key TEXT,metadata TEXT,created_at TEXT,UNIQUE(channel,channel_key));
+CREATE TABLE IF NOT EXISTS unified_inputs(id TEXT PRIMARY KEY,conversation_id TEXT,channel TEXT,actor_id TEXT,text TEXT,idempotency_key TEXT,policy_status TEXT,created_at TEXT,UNIQUE(channel,idempotency_key));
+CREATE TABLE IF NOT EXISTS task_events(id TEXT PRIMARY KEY,conversation_id TEXT,task_id TEXT,type TEXT,payload TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS channel_deliveries(id TEXT PRIMARY KEY,event_id TEXT,conversation_id TEXT,channel TEXT,channel_key TEXT,status TEXT,attempts INTEGER,last_error TEXT,next_attempt_at TEXT,created_at TEXT,updated_at TEXT,UNIQUE(event_id,channel,channel_key));
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_idempotency ON tasks(idempotency_key);
 CREATE INDEX IF NOT EXISTS idx_audit_task ON audit_events(task_id);
@@ -109,7 +114,11 @@ CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_revoked ON sessions(revoked_at);
 CREATE INDEX IF NOT EXISTS idx_rate_limits_reset ON rate_limits(reset_at);
-CREATE INDEX IF NOT EXISTS idx_telegram_attachments_task ON telegram_attachments(task_id);`);
-  for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT']]) ensureColumn('tasks', name, definition);
+CREATE INDEX IF NOT EXISTS idx_telegram_attachments_task ON telegram_attachments(task_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_bindings_conversation ON conversation_bindings(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_unified_inputs_conversation ON unified_inputs(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_task_events_conversation ON task_events(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_channel_deliveries_status ON channel_deliveries(status, next_attempt_at);`);
+  for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
 }

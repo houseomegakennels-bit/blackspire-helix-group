@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval } from '../task-engine/tasks.js';
+import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, taskRecords, recordTaskEvent } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
@@ -30,6 +30,8 @@ export async function processTask(task) {
     await stage(task.id, 'decompose', () => persistSubtasks(task.id, plan));
     const selected = await stage(task.id, 'select_provider', () => selectProvider(workspace.provider_policy));
     audit(task.id, 'hermes', 'provider.selected', selected);
+    recordTaskEvent(task.id, 'provider.selected', { provider: selected.provider, mode: selected.mode });
+    if (remainingBudget(task.id) <= 0) return transition(task.id, 'failed', { error: 'Task budget exhausted before provider execution' });
     const providerResult = await providerWithRetries(task, workspace, selected, plan, context);
     if (!providerResult.ok) return transition(task.id, 'failed', { error: providerResult.error || 'provider failed' });
     if (await shouldStop(task.id)) return;
@@ -127,6 +129,7 @@ function persistSubtasks(taskId, plan) {
 async function providerWithRetries(task, workspace, selected, plan, context) {
   let last;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+    if (remainingBudget(task.id) <= 0) return { ok: false, error: 'Task budget exhausted' };
     if (await shouldStop(task.id)) return { ok: false, error: 'cancelled' };
     const requestPacket = { taskId: task.id, request: task.request, plan, context, attempt };
     const started = Date.now();
@@ -138,6 +141,12 @@ async function providerWithRetries(task, workspace, selected, plan, context) {
     transition(task.id, 'running', { retry_count: attempt });
   }
   return last;
+}
+
+function remainingBudget(taskId) {
+  const task = getTask(taskId);
+  const spent = taskRecords(taskId).usage.reduce((sum, row) => sum + Number(row.cost_cents || 0), 0);
+  return Number(task?.budget_cents || 0) - spent;
 }
 
 function applyProviderEdits(task, workspace, providerResult) {

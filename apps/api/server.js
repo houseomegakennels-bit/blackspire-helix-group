@@ -11,6 +11,8 @@ import { handleTelegramUpdate, dispatchReply } from '../telegram/bot.js';
 import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
 import { clientIp } from '../../packages/shared/net.js';
 import { cleanupRateLimits } from '../../packages/shared/rateLimits.js';
+import { createUnifiedInput, getConversation } from '../../packages/unified-input/unified.js';
+import { conversationEvents } from '../../packages/task-engine/tasks.js';
 
 let emergencyStopMemory = false;
 
@@ -56,6 +58,15 @@ async function route(req, res) {
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: listWorkspaces() });
     if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks() });
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
+    if (u.pathname === '/api/unified-input' && req.method === 'POST') return unifiedInputRoute(req, res, auth);
+
+    const conversationMatch = u.pathname.match(/^\/api\/conversations\/([^/]+)(?:\/(events))?$/);
+    if (conversationMatch && req.method === 'GET') {
+      const conversation = getConversation(conversationMatch[1]);
+      if (!conversation) return json(res, 404, { error: 'conversation not found' });
+      if (conversationMatch[2] === 'events') return json(res, 200, { conversationId: conversationMatch[1], events: conversationEvents(conversationMatch[1], u.searchParams.get('after') || '') });
+      return json(res, 200, conversation);
+    }
 
     const exportMatch = u.pathname.match(/^\/api\/tasks\/([^/]+)\/export\.(json|md)$/);
     if (exportMatch) return exportTask(res, exportMatch[1], exportMatch[2]);
@@ -105,6 +116,21 @@ async function createTaskRoute(req, res) {
   if (!request || request.length > 4000) return json(res, 422, { error: 'request is required and must be under 4000 characters' });
   const task = createTask({ workspaceId: body.workspaceId || 'blackspire-command', request, idempotencyKey: body.idempotencyKey || id('idem') });
   return json(res, 202, { task });
+}
+
+async function unifiedInputRoute(req, res, auth) {
+  const limit = checkLimit(req, 'unified-input', Number(process.env.TASK_RATE_LIMIT || 20), 60000); if (!limit.allowed) return limited(res, limit);
+  const body = await readJson(req);
+  const result = createUnifiedInput({
+    channel: body.channel === 'api' ? 'api' : 'jarvis',
+    actorId: auth.session?.sessionId || auth.mode,
+    channelKey: body.channelKey || auth.session?.sessionId || `bearer:${clientIp(req)}`,
+    conversationId: body.conversationId || null,
+    workspaceId: body.workspaceId || 'blackspire-command',
+    text: body.text || body.request,
+    idempotencyKey: body.idempotencyKey || id('idem'),
+  });
+  return json(res, result.status && result.status >= 400 ? result.status : (result.denied ? 403 : 202), result);
 }
 
 function taskRoute(req, res, match) {
