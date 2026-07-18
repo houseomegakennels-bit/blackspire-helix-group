@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Subscription Codex worker path tested once
+
+- Recovered the verified Restricted Hermes boundary at `b3aa302`, preserved the earlier untracked readiness handoff outside the worktree, and confirmed a clean branch before implementation.
+- Verified Codex CLI 0.144.5 reports ChatGPT login through its official status command, then added a versioned single-use worker adapter using noninteractive ephemeral execution, ignored user configuration/rules, read-only sandboxing, stdin-only instructions, strict structured output, timeout termination, replay prevention, credential stripping, and disposable cleanup.
+- Credential-free pre-dispatch tests denied privileged requests and exercised policy, identity, cancellation, deadline, emergency-stop, replay, response validation, evidence redaction, and cleanup before live execution.
+- Exactly one subscription Codex invocation was attempted. It returned no contract-valid result: zero successes, retries, fallbacks, and observed tool calls; canonical state remained failed and no second invocation was attempted.
+- `OPENAI_API_KEY` remained absent, Blackspire made no standalone OpenAI API call, disposable SQLite/runtime state was removed, the child process terminated, and production, real Telegram, remotes, deployment, host security, trading, and funds were unchanged.
+
 ## 2026-07-18 — Restricted Hermes safety boundary established
 
 - Recovered `feature/unified-input-foundation` at `db078a4`, preserved the pre-existing untracked readiness handoff, and created `backup/restricted-hermes-readiness-db078a4` before editing; no history was rewritten.
