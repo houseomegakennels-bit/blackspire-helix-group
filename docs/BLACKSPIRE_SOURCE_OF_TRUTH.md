@@ -6,7 +6,7 @@ The durable authority is GitHub repository `houseomegakennels-bit/blackspire-hel
 
 - Last reconciled: 2026-07-18 UTC
 - Base `origin/main`: `029e38add2157d5b7caefb3a6c5d85e9270f80f2`
-- Last verified implementation commit: `db078a40ebadc47dae64b82df1aafb637eaedb67`; Restricted Hermes readiness changes are verified in the working tree pending the milestone commit
+- Last verified implementation commit: `ac3d887293eda4cd33b2019655f4fd89a3e8d2b4`
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
 
@@ -48,7 +48,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Post-integration at `b270ad3`: 40 targeted and 132 full tests passed with zero failures/skips under Node 22.23.1. Build, lint, typecheck, full-tree secret scan, dependency audit, and whitespace checks passed. Real Telegram, paid/live providers, and production Unified Jarvis remain `UNVERIFIED`.
 - Repository-policy fix at the current branch head: 7 focused policy tests, 35 focused Unified/iPhone/Telegram tests, and 139 full tests passed with zero failures/skips under Node 22.23.1. Repository creation variants return HTTP 403, remain terminal without queued/running events, and record zero Hermes, provider, worker, or approval dispatch. Build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - Operator iPhone Safari acceptance at `eceb921`: harmless task, follow-up conversation reuse, idempotent replay, Telegram denial before Hermes, eligible cancellation, and bounded mock delivery failure all passed. The temporary application, authentication material, SQLite workspace, loopback listener, and Quick Tunnel were then removed and verified absent.
-- Restricted Hermes readiness working tree: 35 focused Hermes/policy/Unified tests and 148 full tests passed with zero failures/skips under Node 22.23.1; build, lint, and typecheck passed. Final secret, living-memory, and whitespace gates are recorded in the milestone session entry after completion.
+- Restricted Hermes readiness at `ac3d887`: 35 focused Hermes/policy/Unified tests and 148 full tests passed with zero failures/skips under Node 22.23.1; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 
 ## Environments and integrations
 
