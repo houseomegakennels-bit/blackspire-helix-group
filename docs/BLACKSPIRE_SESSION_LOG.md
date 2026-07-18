@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-18 — Restricted subscription Codex acceptance passed
+
+- Recovered the required `aedb9db` implementation, verified Codex CLI 0.144.5 and existing ChatGPT login without inspecting authentication material, and passed all credential-free pre-dispatch gates before consuming the final allowance.
+- Aligned the worker validator and official output schema with the approved exact three-field version 1 contract, retained sanitized JSONL event-type diagnostics, and invoked the official noninteractive client exactly once.
+- The invocation exited zero after 7,156 ms with 431 stdout bytes, no stderr, signal, timeout, error event, retry, fallback, or observed tool call. Four sanitized event types were recorded and the response contract passed; canonical task state reached completed.
+- Forty targeted and 156 full tests passed with zero failures/skips. Build, lint, typecheck, secret scan, living-memory, whitespace, teardown, and scope checks passed.
+- `OPENAI_API_KEY` remained absent, Blackspire made no standalone Responses API call, disposable state and the child were removed, and production, Telegram, remotes, deployment, host security, trading, and funds were unchanged.
+
 ## 2026-07-18 — Subscription Codex failure channel classified
 
 - Recovered clean `a59a9a2`, confirmed Codex CLI 0.144.5 and official noninteractive/schema/stdin/read-only flags locally, and verified saved ChatGPT authentication without inspecting credential contents.

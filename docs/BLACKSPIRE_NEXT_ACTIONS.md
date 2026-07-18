@@ -7,7 +7,7 @@
 3. Preserve the completed operator iPhone acceptance and teardown evidence; restage only for an explicitly approved new acceptance need.
 4. When included Codespaces usage renews, inspect the designated existing Codespace before any creation request; do not enable billing.
 5. Before production Command promotion, verify VPS ownership, supervision, persistent storage, backups/restores, HTTPS, health monitoring, and rollback.
-6. Review the classified subscription Codex diagnostic and stdout JSONL classification fix. Any further live Codex invocation requires separate explicit approval; do not switch to API-key billing or another provider.
+6. Preserve the completed restricted subscription Codex acceptance. Any new live Codex task requires a separately scoped approval; do not switch to API-key billing or another provider.
 
 ## Operator-only actions
 
