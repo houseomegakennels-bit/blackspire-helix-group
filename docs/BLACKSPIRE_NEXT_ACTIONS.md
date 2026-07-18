@@ -4,7 +4,7 @@
 
 1. Preserve the four original commits and backup branch; do not rewrite them or the integration merge.
 2. Keep all validation credential-free and mock-only until explicit authority changes.
-3. Recheck the active expiring tunnel hostname; if it resolves, run mock-only iPhone acceptance and verify teardown. If not, stop it and seek approval for another reviewed transport.
+3. Run mock-only iPhone Safari acceptance against the active expiring tunnel, then stop it and verify complete teardown.
 4. When included Codespaces usage renews, inspect the designated existing Codespace before any creation request; do not enable billing.
 5. Before production Command promotion, verify VPS ownership, supervision, persistent storage, backups/restores, HTTPS, health monitoring, and rollback.
 

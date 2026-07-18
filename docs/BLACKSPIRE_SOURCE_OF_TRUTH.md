@@ -69,13 +69,12 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 
 ## Blockers and next safe actions
 
-Current blockers: the active Quick Tunnel hostname has not resolved in DNS, so iPhone Safari device acceptance is pending; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
+Current blockers: the active expiring Quick Tunnel is HTTPS-reachable, but operator iPhone Safari acceptance is pending; Codespaces usage credit is exhausted; real Telegram, live providers, and production Command state are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
 Immediate safe actions:
 
-1. Recheck the active expiring Quick Tunnel hostname without changing DNS, Docker, firewall, or host security.
-2. Complete operator iPhone Safari acceptance if the hostname resolves, then stop and verify cleanup.
-3. If it remains unresolved, stop the disposable test and request approval for a different already-reviewed tunnel transport.
+1. Complete operator iPhone Safari acceptance against the active expiring test.
+2. Stop the disposable test and verify URL, process, authentication, and SQLite cleanup while durable VPS health remains unchanged.
 4. Complete production readiness, backup, monitoring, stable HTTPS, and rollback verification before any VPS promotion.
 
 Operator-only actions include spending/budget changes, credential provisioning, GitHub authorization, device acceptance, real Telegram connection, production/DNS/provider/host-security changes, approval-policy changes, emergency-control changes, trading, and funds actions.
