@@ -15,7 +15,7 @@ try {
   ({ closeDb }=await import('../packages/task-engine/db.js'));
   const { runRestrictedCodexAcceptance }=await import('../packages/codex-worker/acceptance.js');
   workspaces.upsertWorkspace({id:'subscription-codex-acceptance',name:'Subscription Codex Acceptance',githubRepository:'synthetic/restricted-status',allowedPaths:[],buildCommands:[],providerPolicy:{preferred:['codex-subscription']},budgetCents:1,secretReferences:[],enabledTools:['status'],rootPath:runtime});
-  const task=tasks.createTask({workspaceId:'subscription-codex-acceptance',request:'Return a structured result confirming that the restricted subscription Codex worker path is operational. Make no file changes, use no tools, access no external resources, and perform no privileged action.',idempotencyKey:'restricted-subscription-codex-diagnostic-v2',budgetCents:1,sourceChannel:'api',actorId:'restricted-test-actor',authorityClass:'authenticated_admin'});
+  const task=tasks.createTask({workspaceId:'subscription-codex-acceptance',request:'Return only a structured result confirming that the restricted subscription Codex worker path is operational. Make no file changes, invoke no tools, access no external resources, and perform no privileged actions.',idempotencyKey:'restricted-subscription-codex-final-v3',budgetCents:1,sourceChannel:'api',actorId:'restricted-test-actor',authorityClass:'authenticated_admin'});
   const result=await runRestrictedCodexAcceptance({task,workspace:workspaces.getWorkspace('subscription-codex-acceptance'),actorId:'restricted-test-actor',timeoutMs:45_000});
   const records=tasks.taskRecords(task.id);
   const attempt=records.providerAttempts[0];
