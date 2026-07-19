@@ -24,11 +24,15 @@ const TEST_MODE = requireSafeTestMode();
 // pathname key only: no path segment from the request ever reaches the filesystem, so
 // traversal is not possible. Add an entry here to expose a new asset; nothing else.
 const PUBLIC_ASSETS = {
-  '/manifest.webmanifest': { file: 'apps/jarvis-pwa/public/manifest.webmanifest', type: 'application/manifest+json', immutable: false },
-  '/sw.js': { file: 'apps/jarvis-pwa/public/sw.js', type: 'text/javascript', immutable: false },
-  // Optional first-party WebGL enhancement. The asset ships on the Jarvis UI branch;
-  // until that branch lands this route answers 404 and the PWA keeps its CSS/SVG core.
-  '/helix-core.js': { file: 'apps/jarvis-pwa/public/helix-core.js', type: 'text/javascript', immutable: true },
+  '/manifest.webmanifest': { file: 'apps/jarvis-pwa/public/manifest.webmanifest', type: 'application/manifest+json; charset=utf-8', immutable: false },
+  '/sw.js': { file: 'apps/jarvis-pwa/public/sw.js', type: 'text/javascript; charset=utf-8', immutable: false },
+  // The three assets below are the externalized Jarvis shell: index.html carries no inline
+  // script or style, so the sign-in view cannot render without them and they must resolve
+  // before authentication. They ship on the Jarvis UI branch; until that branch lands these
+  // routes answer 404 rather than serving a truncated shell.
+  '/jarvis.css': { file: 'apps/jarvis-pwa/public/jarvis.css', type: 'text/css; charset=utf-8', immutable: false },
+  '/jarvis.js': { file: 'apps/jarvis-pwa/public/jarvis.js', type: 'text/javascript; charset=utf-8', immutable: false },
+  '/helix-core.js': { file: 'apps/jarvis-pwa/public/helix-core.js', type: 'text/javascript; charset=utf-8', immutable: true },
 };
 
 function isPublicAsset(url = '') {
