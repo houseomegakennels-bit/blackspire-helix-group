@@ -1,5 +1,17 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-19 — Jarvis UI handoff reviewed; core contracts prepared
+
+- Recovered `feature/unified-input-foundation` at `7dbe07f` and verified the Jarvis UI branch `feature/jarvis-pwa-ui` at full SHA `bdbdd49580486dc091d39ece287b9fae13e0d2ab`, clean, sharing merge base `7dbe07f`. The UI branch was not merged, cherry-picked, pushed, or deployed.
+- Replaced two ad-hoc asset routes with an exact-match allowlist and hardened `serve()`, which previously wrote a 200 header before piping an unchecked path — a missing file produced a truncated 200 plus an unhandled stream error. Tightened `isPublicAsset()` off prefix matching, removing a prefix-match auth-exemption surface.
+- Added `/helix-core.js` as an immutable same-origin entry. Rejected the handoff's framing that it blocks the UI: the import is caught and falls back to the SVG core, and the asset exists only on the UI branch, so the route answers 404 until that branch lands.
+- Did not fix the production CSP gap. Cause confirmed as one inline `<style>` and one inline `<script>` in `index.html` against `script-src 'self'`; it predates the UI branch. The correct fix is frontend extraction on the UI branch. A pinned hash was rejected as breaking on the next frontend edit; no nonce mechanism exists. CSP was not weakened and no Vercel or production configuration was touched. This remains the production blocker.
+- Did not expose Safe Mode. No `safe_mode` flag or concept exists anywhere in `apps/` or `packages/`; `emergency_stop` and `TEST_MODE` are adjacent but different, and mapping either would create duplicate authority and a falsely reassuring indicator. Documented the missing canonical source instead and left the UI reporting "not reported by control plane".
+- Corrected two false documentation claims against observed refs: the restricted worker branch is **published** at `7dbe07f` (the source of truth claimed the remote was still `2ab3394`), and the rollback document claimed the work was one local commit when the published range is `029e38a..7dbe07f`, ahead=25. Scoped the "no standalone Responses API call" claims to the restricted subscription Codex worker path only.
+- A canceled Vercel deployment state was reported in the handoff but could **not** be confirmed from this host and is recorded `UNVERIFIED`; no canceled state was written on the strength of a summary.
+- 162 of 162 tests passed on Node 22.23.1 in a disposable container, including 6 new static-asset route tests. Build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. The host Node 18 install was not modified.
+- Production, Vercel, Telegram, remotes, deployments, host security, trading, and funds remained unchanged. Nothing was pushed and no PR was opened.
+
 ## 2026-07-18 — Review publication preserved and blocked before preview
 
 - Recovered clean `feature/unified-input-foundation` at `85beabc`, confirmed the accepted worker commits, verified no secret-shaped or temporary runtime state, and created an owner-only complete Git recovery bundle outside the repository.
@@ -14,7 +26,7 @@
 - Aligned the worker validator and official output schema with the approved exact three-field version 1 contract, retained sanitized JSONL event-type diagnostics, and invoked the official noninteractive client exactly once.
 - The invocation exited zero after 7,156 ms with 431 stdout bytes, no stderr, signal, timeout, error event, retry, fallback, or observed tool call. Four sanitized event types were recorded and the response contract passed; canonical task state reached completed.
 - Forty targeted and 156 full tests passed with zero failures/skips. Build, lint, typecheck, secret scan, living-memory, whitespace, teardown, and scope checks passed.
-- `OPENAI_API_KEY` remained absent, Blackspire made no standalone Responses API call, disposable state and the child were removed, and production, Telegram, remotes, deployment, host security, trading, and funds were unchanged.
+- `OPENAI_API_KEY` remained absent, the restricted subscription Codex worker path made no standalone Responses API call (this scope covers that path only, not every Blackspire component), disposable state and the child were removed, and production, Telegram, remotes, deployment, host security, trading, and funds were unchanged.
 
 ## 2026-07-18 — Subscription Codex failure channel classified
 
@@ -22,7 +34,7 @@
 - Added sanitized diagnostic capture for exit category, signal, timeout, byte counts, structured-record count, parser stage, schema status, duration, and cleanup; raw stdout, stderr, prompts, reasoning, account metadata, and authentication material are never persisted.
 - Consumed exactly one authorized invocation: exit code 1, no timeout or signal, 857 stdout bytes, no stderr, four structured JSONL records, zero observed tool calls, and no final-parser or contract-validation success. Canonical state remained failed; no retry or fallback occurred.
 - Confirmed and fixed a scoped adapter defect: `codex exec --json` failure events arrive on stdout, while nonzero classification previously inspected only stderr. Credential-free regression coverage now classifies either channel without retaining content.
-- Forty targeted and 156 full tests passed with zero failures/skips. `OPENAI_API_KEY` remained absent, Blackspire made no standalone Responses API call, disposable state and the diagnostic child were removed, and production, Telegram, remotes, deployment, host security, trading, and funds were unchanged.
+- Forty targeted and 156 full tests passed with zero failures/skips. `OPENAI_API_KEY` remained absent, the restricted subscription Codex worker path made no standalone Responses API call (this scope covers that path only, not every Blackspire component), disposable state and the diagnostic child were removed, and production, Telegram, remotes, deployment, host security, trading, and funds were unchanged.
 
 ## 2026-07-18 — Subscription Codex worker path tested once
 

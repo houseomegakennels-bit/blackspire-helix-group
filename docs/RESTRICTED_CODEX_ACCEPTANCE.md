@@ -27,6 +27,6 @@ This is normalized failure evidence only. It contains no prompt/response payload
 - Sanitized JSONL metadata: stdout present (431 bytes), stderr absent, four records with event types `thread.started`, `turn.started`, `item.completed`, and `turn.completed`; no error subtype was present.
 - The exact version 1 `operational` response contract validated. Canonical task state reached `completed`, while Blackspire-owned policy, identity, authority, IDs, budget, permissions, and state remained outside worker control.
 - Replay, cancellation, deadline, emergency-stop, mismatch, privileged-action, and evidence-redaction controls passed credential-free regression tests. Disposable runtime and SQLite state were removed and the child terminated.
-- `OPENAI_API_KEY` remained absent. Blackspire made no standalone Responses API call; no production, Telegram, public listener, repository operation, deployment, or credential access occurred.
+- `OPENAI_API_KEY` remained absent. The restricted subscription Codex worker path made no standalone Responses API call; this scope covers that path only and is not a claim about every Blackspire component. no production, Telegram, public listener, repository operation, deployment, or credential access occurred.
 
 Only sanitized metadata and the harmless contract-valid result were retained. Authentication material, account metadata, environment values, hidden prompts, reasoning, raw JSONL, private runtime paths, and stack traces were not recorded.
