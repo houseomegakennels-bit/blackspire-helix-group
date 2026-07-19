@@ -17,15 +17,19 @@ test('boot API for jarvis tests', () => { server = start(8898); assert.ok(server
 
 test('Jarvis markup exposes evidence download, approval history, and status badge wiring', async () => {
   const html = await (await fetch('http://localhost:8898/jarvis')).text();
-  assert.doesNotMatch(html, /localStorage/i, 'admin token must never be persisted to localStorage');
-  assert.match(html, /downloadExport\('json'\)/);
-  assert.match(html, /downloadExport\('md'\)/);
-  assert.match(html, /loadApprovalHistory/);
-  assert.match(html, /api\/tasks\/\$\{selectedTaskId\}\/export\.\$\{format\}/);
-  assert.match(html, /renderStatus/);
+  // Behavior lives in the CSP-externalized /jarvis.js, which is read from disk here
+  // because serving it is the control plane's concern, not this test's.
+  const appScript = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  assert.match(html, /<script src="\/jarvis\.js"><\/script>/, 'the page loads its script same-origin');
+  assert.doesNotMatch(html + appScript, /localStorage/i, 'admin token must never be persisted to localStorage');
+  assert.match(appScript, /downloadExport\('json'\)/);
+  assert.match(appScript, /downloadExport\('md'\)/);
+  assert.match(appScript, /loadApprovalHistory/);
+  assert.match(appScript, /api\/tasks\/\$\{selectedTaskId\}\/export\.\$\{format\}/);
+  assert.match(appScript, /renderStatus/);
   assert.match(html, /Emergency stop/);
-  assert.match(html, /Telegram: /);
-  assert.match(html, /Session expired/);
+  assert.match(appScript, /Telegram: /);
+  assert.match(appScript, /Session expired/);
   assert.match(html, /viewport/);
 });
 

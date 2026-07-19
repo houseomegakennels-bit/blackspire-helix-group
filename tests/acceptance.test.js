@@ -234,16 +234,19 @@ test('Telegram local bridge covers allowlist, duplicates, commands, chunking, es
 test('Jarvis PWA assets are valid and mobile workflows are not desktop-only', async () => {
   { const login = await fetch('http://localhost:8892/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': 'jarvis-reset' }, body: JSON.stringify({ adminToken: 'accept-token' }) }); const b = await login.json(); const c = login.headers.get('set-cookie').split(',').map((v) => v.split(';')[0]).join('; '); await fetch('http://localhost:8892/api/stop/reset', { method: 'POST', headers: { cookie: c, 'x-csrf-token': b.csrfToken, 'x-confirmation-token': `${b.csrfToken}:RESET` } }); }
   const html = await (await fetch('http://localhost:8892/jarvis')).text();
+  // Script and style are externalized for CSP; read them from disk since serving
+  // them is the control plane's concern, not this acceptance check's.
+  const appScript = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
   assert.match(html, /viewport/);
-  assert.doesNotMatch(html, /localStorage.commandToken/);
-  assert.match(html, /api\/auth\/login/);
-  assert.match(html, /submitCommand/);
+  assert.doesNotMatch(html + appScript, /localStorage.commandToken/);
+  assert.match(appScript, /api\/auth\/login/);
+  assert.match(appScript, /submitCommand/);
   assert.match(html, /Recent conversations/);
   assert.match(html, /Approval center/);
   assert.match(html, /aria-label="Workspace"/);
   assert.match(html, /Emergency stop/);
   // Voice stays an inert, staged boundary: no browser speech service is authorized.
-  assert.doesNotMatch(html, /SpeechRecognition|speechSynthesis/);
+  assert.doesNotMatch(html + appScript, /SpeechRecognition|speechSynthesis/);
   assert.match(html, /Voice input is staged but not connected/);
   assert.match(await (await fetch('http://localhost:8892/sw.js')).text(), /caches/);
   const manifest = await (await fetch('http://localhost:8892/manifest.webmanifest')).json();
