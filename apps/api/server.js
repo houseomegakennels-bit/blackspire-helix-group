@@ -35,8 +35,11 @@ const PUBLIC_ASSETS = {
   '/helix-core.js': { file: 'apps/jarvis-pwa/public/helix-core.js', type: 'text/javascript; charset=utf-8', immutable: true },
 };
 
-function isPublicAsset(url = '') {
-  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || Object.hasOwn(PUBLIC_ASSETS, url) || url === '/api/auth/login' || url === '/api/auth/session';
+// Assets are matched on the normalized pathname alone so cache-busting query strings
+// (/jarvis.css?v=2) resolve before login. Every other public route keeps its existing
+// whole-URL comparison, so this widens nothing beyond the asset allowlist itself.
+function isPublicAsset(url = '', pathname = '') {
+  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || Object.hasOwn(PUBLIC_ASSETS, pathname) || url === '/api/auth/login' || url === '/api/auth/session';
 }
 
 function authContext(req) {
@@ -53,7 +56,14 @@ function writeJson(res, status, body, headers = {}) {
 
 async function route(req, res) {
   setSecurityHeaders(req, res);
-  const u = new URL(req.url, `http://${req.headers.host}`);
+  // A malformed request line must not reach routing: reject it before any lookup rather
+  // than throwing past the handler below.
+  let u;
+  try {
+    u = new URL(req.url, `http://${req.headers.host}`);
+  } catch {
+    return json(res, 400, { error: 'bad request' });
+  }
   try {
     if (u.pathname === '/api/test-mode' && req.method === 'GET') return json(res, 200, publicTestModeStatus(TEST_MODE));
     if (u.pathname === '/api/test-mode/session' && req.method === 'POST') return testModeLogin(req, res);
@@ -62,7 +72,7 @@ async function route(req, res) {
     if (u.pathname === '/telegram/webhook' && req.method === 'POST') return telegramWebhook(req, res);
 
     const auth = authContext(req);
-    if (!isPublicAsset(req.url) && !auth.ok) return json(res, 401, { error: 'unauthorized' });
+    if (!isPublicAsset(req.url, u.pathname) && !auth.ok) return json(res, 401, { error: 'unauthorized' });
     if (isStateChanging(req) && auth.mode === 'session' && !checkCsrf(req, auth.session)) return json(res, 403, { error: 'invalid csrf token' });
     if (TEST_MODE.enabled && !testModeAllowsRequest(u.pathname, req.method)) return json(res, 404, { error: 'not found' });
 

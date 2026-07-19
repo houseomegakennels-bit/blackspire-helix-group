@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import net from 'node:net';
 import { spawn } from 'node:child_process';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-static-'));
@@ -74,6 +75,100 @@ test('authenticated requests receive byte-identical assets', async () => {
       assert.equal(await response.text(), fs.readFileSync(path.resolve(asset.file), 'utf8'), `${asset.url} body`);
     }
   });
+});
+
+test('cache-busting query strings resolve before login', async () => {
+  await withAssets(async () => {
+    for (const [asset, query] of [
+      [PUBLIC_ASSETS[0], '?v=2'],
+      [PUBLIC_ASSETS[1], '?update=1'],
+      [PUBLIC_ASSETS[2], '?v=2'],
+      [PUBLIC_ASSETS[3], '?v=2'],
+      [PUBLIC_ASSETS[4], '?v=2'],
+    ]) {
+      const response = await fetch(`${base}${asset.url}${query}`);
+      // No cookie, no bearer: a 401 here means the shell cannot style or boot itself.
+      assert.equal(response.status, 200, `${asset.url}${query} status`);
+      assert.equal(response.headers.get('content-type'), asset.type, `${asset.url}${query} content-type`);
+      assert.equal(await response.text(), fs.readFileSync(path.resolve(asset.file), 'utf8'), `${asset.url}${query} body`);
+    }
+  });
+});
+
+test('query strings do not change authenticated asset behavior', async () => {
+  await withAssets(async () => {
+    const login = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base },
+      body: JSON.stringify({ adminToken: 'static-token' }),
+    });
+    assert.equal(login.status, 200);
+    const cookie = login.headers.getSetCookie().map((entry) => entry.split(';')[0]).join('; ');
+
+    for (const asset of PUBLIC_ASSETS) {
+      const response = await fetch(`${base}${asset.url}?v=2`, { headers: { cookie } });
+      assert.equal(response.status, 200, `${asset.url} status`);
+      assert.equal(response.headers.get('content-type'), asset.type, `${asset.url} content-type`);
+      assert.equal(await response.text(), fs.readFileSync(path.resolve(asset.file), 'utf8'), `${asset.url} body`);
+    }
+  });
+});
+
+test('a query string cannot make a non-asset path public', async () => {
+  // The exemption keys on the exact pathname, so decorating any other route must not
+  // smuggle it past authentication.
+  for (const attempt of [
+    '/api/tasks?v=2',
+    '/api/workspaces?v=2',
+    '/api/stop?v=2',
+    '/jarvis.css.map?v=2',
+    '/jarvis.jsx?v=2',
+    '/jarvis.js.map?v=2',
+    '/package.json?v=2',
+    '/.env?v=2',
+    '/apps/api/server.js?v=2',
+    '/jarvis.js/extra?v=2',
+    '/notjarvis.js?v=2',
+    '/jarvis.js%2E%2E%2Fpackage.json?v=2',
+    '/../package.json?v=2',
+    '/jarvis.css/../../../package.json?v=2',
+  ]) {
+    const response = await fetch(`${base}${attempt}`, { redirect: 'manual' });
+    assert.ok(response.status === 404 || response.status === 401, `${attempt} -> ${response.status}`);
+    const body = await response.text();
+    assert.doesNotMatch(body, /"dependencies"|root:x:|PUBLIC_ASSETS/, `${attempt} leaked file contents`);
+  }
+});
+
+test('API routes with query strings keep their authentication boundary', async () => {
+  // Unauthenticated: still refused.
+  for (const attempt of ['/api/tasks?limit=1', '/api/workspaces?x=1']) {
+    assert.equal((await fetch(`${base}${attempt}`)).status, 401, `${attempt} must stay authenticated`);
+  }
+  // Authenticated: still reachable, so the fix did not narrow anything either.
+  const login = await fetch(`${base}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: base },
+    body: JSON.stringify({ adminToken: 'static-token' }),
+  });
+  const cookie = login.headers.getSetCookie().map((entry) => entry.split(';')[0]).join('; ');
+  assert.equal((await fetch(`${base}/api/tasks?limit=1`, { headers: { cookie } })).status, 200);
+});
+
+test('a malformed request target fails safely', async () => {
+  // Sent raw: fetch() would reject these before they ever hit the server.
+  for (const target of ['http://', '//\\', '/%']) {
+    const status = await new Promise((resolve, reject) => {
+      const socket = net.connect(8899, 'localhost', () => {
+        socket.write(`GET ${target} HTTP/1.1\r\nHost: localhost:8899\r\nConnection: close\r\n\r\n`);
+      });
+      let raw = '';
+      socket.on('data', (chunk) => { raw += chunk; });
+      socket.on('end', () => resolve(Number(raw.split(' ')[1])));
+      socket.on('error', reject);
+    });
+    assert.ok(status >= 400 && status < 500, `${target} -> ${status} (must refuse, not fault)`);
+  }
 });
 
 test('a missing allowlisted asset answers 404 instead of a truncated 200', async () => {
