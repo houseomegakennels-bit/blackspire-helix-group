@@ -20,8 +20,19 @@ import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
 let emergencyStopMemory = false;
 const TEST_MODE = requireSafeTestMode();
 
+// Exact-match allowlist of publicly servable frontend assets. Lookup is by literal
+// pathname key only: no path segment from the request ever reaches the filesystem, so
+// traversal is not possible. Add an entry here to expose a new asset; nothing else.
+const PUBLIC_ASSETS = {
+  '/manifest.webmanifest': { file: 'apps/jarvis-pwa/public/manifest.webmanifest', type: 'application/manifest+json', immutable: false },
+  '/sw.js': { file: 'apps/jarvis-pwa/public/sw.js', type: 'text/javascript', immutable: false },
+  // Optional first-party WebGL enhancement. The asset ships on the Jarvis UI branch;
+  // until that branch lands this route answers 404 and the PWA keeps its CSS/SVG core.
+  '/helix-core.js': { file: 'apps/jarvis-pwa/public/helix-core.js', type: 'text/javascript', immutable: true },
+};
+
 function isPublicAsset(url = '') {
-  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || url.startsWith('/manifest') || url.startsWith('/sw.js') || url === '/api/auth/login' || url === '/api/auth/session';
+  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || Object.hasOwn(PUBLIC_ASSETS, url) || url === '/api/auth/login' || url === '/api/auth/session';
 }
 
 function authContext(req) {
@@ -103,8 +114,10 @@ async function route(req, res) {
     }
 
     if (u.pathname === '/' || u.pathname === '/jarvis') return serve(res, TEST_MODE.enabled ? 'apps/jarvis-pwa/public/test-mode.html' : 'apps/jarvis-pwa/public/index.html', 'text/html');
-    if (u.pathname === '/manifest.webmanifest') return serve(res, 'apps/jarvis-pwa/public/manifest.webmanifest', 'application/manifest+json');
-    if (u.pathname === '/sw.js') return serve(res, 'apps/jarvis-pwa/public/sw.js', 'text/javascript');
+    if (Object.hasOwn(PUBLIC_ASSETS, u.pathname)) {
+      const asset = PUBLIC_ASSETS[u.pathname];
+      return serve(res, asset.file, asset.type, asset.immutable ? 'public, max-age=31536000, immutable' : undefined);
+    }
     return json(res, 404, { error: 'not found' });
   } catch (error) {
     return json(res, 500, { error: safeError(error) });
@@ -277,7 +290,16 @@ function checkLimit(req, bucket, limit, windowMs) { const result = rateLimit(`${
 function limited(res, limit) { res.setHeader('retry-after', String(limit.retryAfter)); return json(res, 429, { error: 'rate limit exceeded', retryAfter: limit.retryAfter }); }
 function isStateChanging(req) { return !['GET', 'HEAD', 'OPTIONS'].includes(req.method); }
 function setSecurityHeaders(req, res) { res.setHeader('x-frame-options', 'DENY'); res.setHeader('x-content-type-options', 'nosniff'); res.setHeader('referrer-policy', 'no-referrer'); res.setHeader('permissions-policy', 'microphone=(self), camera=(), geolocation=()'); res.setHeader('cache-control', req.url?.startsWith('/api/') ? 'no-store' : 'no-cache'); if (process.env.NODE_ENV === 'production') res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains'); const inline = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-inline'"; res.setHeader('content-security-policy', `default-src 'self'; script-src 'self'${inline}; style-src 'self'${inline}; connect-src 'self'; img-src 'self' data:`); }
-function serve(res, file, type) { res.writeHead(200, { 'content-type': type }); fs.createReadStream(path.resolve(file)).pipe(res); }
+function serve(res, file, type, cacheControl) {
+  const resolved = path.resolve(file);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return json(res, 404, { error: 'not found' });
+  const headers = { 'content-type': type };
+  if (cacheControl) headers['cache-control'] = cacheControl;
+  res.writeHead(200, headers);
+  const stream = fs.createReadStream(resolved);
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
+}
 
 export function start(port = PORT, host) {
   const validation = requireProductionSafeConfig();
