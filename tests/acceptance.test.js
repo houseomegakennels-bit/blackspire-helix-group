@@ -237,12 +237,14 @@ test('Jarvis PWA assets are valid and mobile workflows are not desktop-only', as
   assert.match(html, /viewport/);
   assert.doesNotMatch(html, /localStorage.commandToken/);
   assert.match(html, /api\/auth\/login/);
-  assert.match(html, /submitTask/);
-  assert.match(html, /Task history/);
+  assert.match(html, /submitCommand/);
+  assert.match(html, /Recent conversations/);
   assert.match(html, /Approval center/);
-  assert.match(html, /Workspace selector/);
-  assert.match(html, /GLOBAL STOP/);
-  assert.match(html, /SpeechRecognition/);
+  assert.match(html, /aria-label="Workspace"/);
+  assert.match(html, /Emergency stop/);
+  // Voice stays an inert, staged boundary: no browser speech service is authorized.
+  assert.doesNotMatch(html, /SpeechRecognition|speechSynthesis/);
+  assert.match(html, /Voice input is staged but not connected/);
   assert.match(await (await fetch('http://localhost:8892/sw.js')).text(), /caches/);
   const manifest = await (await fetch('http://localhost:8892/manifest.webmanifest')).json();
   assert.equal(manifest.display, 'standalone');

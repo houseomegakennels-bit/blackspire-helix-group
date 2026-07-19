@@ -1,23 +1,1247 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#050505"><link rel="manifest" href="/manifest.webmanifest"><title>Jarvis Command</title><style>body{margin:0;background:#050505;color:#f6e7b7;font-family:Inter,system-ui,sans-serif}main{max-width:560px;margin:auto;min-height:100vh;padding:18px;display:grid;gap:16px}section,.card{border:1px solid #4b3715;background:linear-gradient(180deg,#13110d,#080807);border-radius:22px;padding:16px;box-shadow:0 20px 60px #0008}input,textarea,button,select{font:inherit;border-radius:14px;border:1px solid #6e5220;background:#0c0b09;color:#fff;padding:14px;min-height:48px}button{background:#c9a227;color:#070707;font-weight:800}.danger{background:#5b0b0b;color:#fff}.ghost{background:#111;color:#f6e7b7}nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grid{display:grid;gap:10px}.task{border-left:4px solid #c9a227}.mic{border-radius:999px;width:84px;height:84px;justify-self:center;font-size:32px}.small{font-size:12px;color:#ccb77b}.status-bar{display:flex;gap:10px;flex-wrap:wrap}.badge{border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;background:#1a1712;border:1px solid #6e5220}.badge.on{background:#5b0b0b;color:#fff;border-color:#5b0b0b}.badge.off{background:#123b1a;color:#bdf7c9;border-color:#1e5c2e}pre{white-space:pre-wrap;overflow-wrap:anywhere}@media(min-width:700px){main{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}</style></head><body><main><header class="wide"><p class="small">BLACKSPIRE COMMAND</p><h1>Jarvis Mobile Console</h1><p>Phone-first control for Hermes tasks, approvals, workspaces, health, and emergency stop.</p><div class="status-bar" id="statusBar" aria-live="polite"></div></header><section id="signin"><h2>Sign in</h2><p id="sessionNotice" class="small" role="alert"></p><input id="token" aria-label="Admin token" placeholder="Admin token"><button onclick="login()">Unlock</button><button class="ghost" onclick="logout()">Logout</button><p class="small">First local token defaults to dev-admin-token-change-me; rotate for production.</p></section><section><h2>Conversation</h2><textarea id="cmd" aria-label="Command request" placeholder="Ask Hermes to do safe workspace work"></textarea><button class="mic" aria-label="Push to talk" onclick="voice()">🎙</button><button onclick="submitTask()">Send task</button><pre id="stream" aria-live="polite"></pre></section><section><h2>Current task</h2><div id="current" class="card">No task selected.</div><nav><button class="ghost" onclick="downloadExport('json')">Download JSON</button><button class="ghost" onclick="downloadExport('md')">Download Markdown</button><button class="ghost" onclick="loadApprovalHistory()">Approval history</button></nav><pre id="approvalHistory"></pre></section><section><h2>Workspace selector</h2><select id="workspace" aria-label="Workspace"></select><button class="ghost" onclick="loadWorkspaces()">Refresh workspaces</button></section><section><h2>Approval center</h2><div id="approvals" class="grid"></div></section><section><h2>System health</h2><button class="ghost" onclick="health()">Check health</button><pre id="health"></pre></section><section><h2>Settings</h2><button class="ghost" onclick="readAloud()">Read last response aloud</button><button class="ghost" onclick="navigator.serviceWorker?.register('/sw.js')">Install PWA support</button></section><section><h2>Emergency controls</h2><button class="danger" onclick="stopAll()">GLOBAL STOP</button></section><section class="wide"><h2>Task history</h2><div id="tasks" class="grid"></div></section><section class="wide"><h2>Task details and logs</h2><pre id="logs"></pre></section></main><script>
-let csrfToken='';let selectedTaskId='';let currentConversationId='';const H={'content-type':'application/json'};
-async function login(){const r=await fetch('/api/auth/login',{method:'POST',headers:H,credentials:'same-origin',body:JSON.stringify({adminToken:document.getElementById('token').value})});if(!r.ok){sessionNotice.textContent='Sign-in failed. Check the admin token.';return}const d=await r.json();csrfToken=d.csrfToken||'';document.getElementById('token').value='';sessionNotice.textContent='';loadAll()}
-async function logout(){await fetch('/api/auth/logout',{method:'POST',headers:{...H,'x-csrf-token':csrfToken},credentials:'same-origin'});csrfToken='';selectedTaskId='';current.textContent='No task selected.';sessionNotice.textContent='Signed out.'}
-async function session(){const d=await (await fetch('/api/auth/session',{credentials:'same-origin'})).json();csrfToken=d.csrfToken||csrfToken;if(!d.authenticated){sessionNotice.textContent='Session expired or not signed in. Enter the admin token to continue.'}return d.authenticated}
-async function api(p,o={}){const method=o.method||'GET';const headers={...H,...(o.headers||{})};if(method!=='GET')headers['x-csrf-token']=csrfToken;const r=await fetch(p,{...o,credentials:'same-origin',headers});if(r.status===401){sessionNotice.textContent='Session expired. Please sign in again.';return{error:'unauthorized'}}return r.json()}
-async function loadWorkspaces(){const d=await api('/api/workspaces');workspace.innerHTML=(d.workspaces||[]).map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
-async function submitTask(){stream.textContent='Hermes acknowledged. Planning...';const field=document.getElementById('conversationId');const d=await api('/api/unified-input',{method:'POST',body:JSON.stringify({text:cmd.value,workspaceId:workspace.value,conversationId:field?.value||currentConversationId||null,idempotencyKey:'jarvis-'+Date.now()})});if(d.taskId){selectedTaskId=d.taskId;currentConversationId=d.conversationId;field.value=d.conversationId;current.textContent=JSON.stringify(d,null,2);await loadConversation()}else current.textContent=JSON.stringify(d,null,2);setTimeout(loadAll,1200)}
-async function loadConversation(){if(!currentConversationId)return;const d=await api('/api/conversations/'+currentConversationId);stream.textContent=JSON.stringify({conversationId:currentConversationId,tasks:d.tasks,events:d.events},null,2)}
-function ensureConversationControls(){if(document.getElementById('conversationId'))return;const field=document.createElement('input');field.id='conversationId';field.setAttribute('aria-label','Conversation ID');field.placeholder='Conversation ID (optional)';field.addEventListener('change',()=>{currentConversationId=field.value.trim();loadConversation()});cmd.before(field)}
-async function loadTasks(){const d=await api('/api/tasks');tasks.innerHTML=(d.tasks||[]).map(t=>`<button class="card task" onclick="details('${t.id}')"><b>${t.status}</b><br>${t.request}<br><span class="small">${t.id}</span></button>`).join('');approvals.innerHTML=(d.tasks||[]).filter(t=>t.status==='waiting_for_approval').map(t=>`<div class="card"><b>${t.request}</b><button onclick="act('${t.id}','approve')">Approve</button><button class="danger" onclick="act('${t.id}','reject')">Reject</button></div>`).join('')||'No approvals pending.'}
-async function details(id){selectedTaskId=id;const d=await api('/api/tasks/'+id);current.textContent=JSON.stringify(d.task,null,2);logs.textContent=JSON.stringify(await api('/api/tasks/'+id+'/logs'),null,2);approvalHistory.textContent=''}
-async function act(id,a){await api('/api/tasks/'+id+'/'+a,{method:'POST',body:'{}'});loadAll()}
-async function loadApprovalHistory(){if(!selectedTaskId){approvalHistory.textContent='Select a task first.';return}const d=await api('/api/tasks/'+selectedTaskId+'/approvals');approvalHistory.textContent=(d.approvals||[]).map(a=>`${a.created_at} ${a.action} -> ${a.status}${a.decided_by?` by ${a.decided_by}`:''}${a.decision_note?`: ${a.decision_note}`:''}`).join('\n')||'No approval history for this task.'}
-function downloadExport(format){if(!selectedTaskId){stream.textContent='Select a task before downloading evidence.';return}const a=document.createElement('a');a.href=`/api/tasks/${selectedTaskId}/export.${format}`;a.rel='noopener';document.body.appendChild(a);a.click();a.remove()}
-async function health(){const d=await api('/health');document.getElementById('health').textContent=JSON.stringify(d,null,2);renderStatus(d)}
-async function stopAll(){const d=await api('/api/stop',{method:'POST',body:'{}'});document.getElementById('health').textContent=JSON.stringify(d,null,2);health()}
-function renderStatus(h){if(!h||h.error){statusBar.innerHTML='';return}statusBar.innerHTML=`<span class="badge ${h.emergencyStop?'on':'off'}">Emergency stop: ${h.emergencyStop?'ACTIVE':'inactive'}</span><span class="badge">Telegram: ${h.telegramMode}</span>`}
-function voice(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){stream.textContent='Speech-to-text adapter unavailable in this browser.';return}const r=new R();r.onresult=e=>cmd.value=e.results[0][0].transcript;r.start()}
-function readAloud(){speechSynthesis.speak(new SpeechSynthesisUtterance(stream.textContent||current.textContent))}
-async function loadAll(){const authed=await session();if(!authed)return;ensureConversationControls();loadWorkspaces();loadTasks();loadConversation();health()}
-ensureConversationControls();loadAll();navigator.serviceWorker?.register('/sw.js');
-</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#04070C">
+<meta name="description" content="Blackspire Jarvis — mobile command interface for the Blackspire Command control plane.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%2304070C'/%3E%3Cg fill='none' stroke='%234FD8FF' stroke-width='5'%3E%3Cellipse cx='90' cy='90' rx='62' ry='24' transform='rotate(-18 90 90)'/%3E%3Cellipse cx='90' cy='90' rx='40' ry='52' transform='rotate(14 90 90)' opacity='.7'/%3E%3C/g%3E%3Ccircle cx='90' cy='90' r='13' fill='%234FD8FF'/%3E%3C/svg%3E">
+<title>Blackspire Jarvis</title>
+<style>
+/* == Blackspire Jarvis design tokens — see BLACKSPIRE_JARVIS_DESIGN_SYSTEM.md == */
+:root{
+  --void:#04070C; --obsidian:#080D15; --graphite:#101826; --line:#1C2A3D;
+  --white:#EAF3F8; --muted:#7C93AB; --ion:#4FD8FF; --arc:#A8E9FF;
+  --amber:#F5B84A; --red:#E25B5B; --green:#57B98A;
+  --r-panel:16px; --r-ctl:12px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--void);color:var(--white);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;overflow-wrap:anywhere}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.skip{position:absolute;left:12px;top:-48px;z-index:30;background:var(--graphite);color:var(--white);padding:10px 14px;border-radius:var(--r-ctl);transition:top 160ms ease-out}
+.skip:focus{top:calc(8px + env(safe-area-inset-top))}
+
+#app{max-width:560px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 14px 28px;display:grid;gap:14px}
+@media(min-width:760px){#app{max-width:960px}}
+
+/* Header + status rail */
+header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0}
+.eyebrow.ion{color:var(--ion)}
+h1{font-size:24px;font-weight:700;letter-spacing:-.01em;margin:2px 0 0}
+h2{font-size:17px;font-weight:700;letter-spacing:-.01em;margin:0 0 12px}
+h3{font-size:13px;font-weight:600;margin:0 0 6px;color:var(--muted)}
+.rail{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;font-weight:600;background:var(--obsidian);color:var(--muted)}
+.badge .dot{width:7px;height:7px;border-radius:999px;background:var(--muted);flex:none}
+.badge[data-tone="ok"]{color:var(--green)} .badge[data-tone="ok"] .dot{background:var(--green)}
+.badge[data-tone="warn"]{color:var(--amber)} .badge[data-tone="warn"] .dot{background:var(--amber)}
+.badge[data-tone="bad"]{color:var(--red);border-color:#4a2626} .badge[data-tone="bad"] .dot{background:var(--red)}
+.badge[data-tone="ion"]{color:var(--ion)} .badge[data-tone="ion"] .dot{background:var(--ion)}
+
+/* View rail */
+nav.views{display:flex;gap:6px;overflow-x:auto;padding:2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+nav.views[hidden]{display:none}
+nav.views::-webkit-scrollbar{display:none}
+nav.views a{flex:none;display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--obsidian);color:var(--muted);text-decoration:none;font-size:13px;font-weight:600;transition:color 160ms ease-out,border-color 160ms ease-out}
+nav.views a[aria-current="page"]{color:var(--ion);border-color:#245064;background:var(--graphite)}
+nav.views a:focus-visible{outline:2px solid var(--ion);outline-offset:2px}
+nav.views svg{width:16px;height:16px;flex:none}
+
+/* Panels */
+.panel{border:1px solid var(--line);border-radius:var(--r-panel);background:var(--obsidian);padding:16px}
+.panel.raised{background:var(--graphite)}
+section[data-view]{display:grid;gap:14px}
+section[data-view][hidden]{display:none}
+@media(min-width:760px){section[data-view]{grid-template-columns:1fr 1fr;align-items:start}.wide{grid-column:1/-1}}
+.stack{display:grid;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>*{flex:1 1 140px}
+.row>.chip{flex:0 0 auto}
+p{margin:0}
+p.muted,span.muted{color:var(--muted)}
+.notice{min-height:20px;font-size:13px;color:var(--amber)}
+.empty{color:var(--muted);border:1px dashed var(--line);border-radius:var(--r-ctl);padding:14px;font-size:13px}
+
+/* Controls */
+button,textarea,input,select{font:inherit;color:var(--white);border-radius:var(--r-ctl);border:1px solid var(--line);background:var(--graphite);min-height:44px}
+textarea,input,select{width:100%;padding:12px;font-size:16px}
+textarea{min-height:96px;resize:vertical}
+button{padding:10px 16px;font-weight:650;cursor:pointer;transition:transform 160ms ease-out,border-color 160ms ease-out}
+button:active{transform:scale(.98)}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--ion);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{position:relative;overflow:hidden;background:linear-gradient(180deg,#134457,#0D2F3E);border-color:#2A6A85;color:var(--arc)}
+/* Shimmer sweep: concept adapted from Magic UI shimmer-button (MIT), re-implemented */
+button.primary::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 42%,rgba(168,233,255,.22) 50%,transparent 58%);transform:translateX(-100%);animation:shimmer 3.2s ease-in-out infinite}
+button.danger{background:#2A1214;border-color:#4a2626;color:#F3B8B8}
+button.ghost{background:var(--obsidian);color:var(--muted)}
+button.copy{min-height:34px;padding:5px 10px;font-size:12px;flex:none}
+@keyframes shimmer{0%{transform:translateX(-100%)}55%,100%{transform:translateX(100%)}}
+
+/* Facts */
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.fact{border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--graphite);padding:10px 12px;min-width:0}
+.fact .label{display:block;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.fact .value{display:block;margin-top:4px}
+.fact.span2{grid-column:span 2}
+
+/* Timeline (staggered entry: concept adapted from Magic UI animated-list, MIT, re-implemented) */
+ol.timeline{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+ol.timeline li{border-left:2px solid var(--line);padding:4px 0 4px 12px;animation:rise 240ms ease-out backwards}
+ol.timeline li:nth-child(-n+8){animation-delay:calc(var(--i,0)*40ms)}
+ol.timeline li .etype{font-weight:650;font-size:13px}
+ol.timeline li[data-tone="ion"]{border-left-color:var(--ion)}
+ol.timeline li[data-tone="ok"]{border-left-color:var(--green)}
+ol.timeline li[data-tone="warn"]{border-left-color:var(--amber)}
+ol.timeline li[data-tone="bad"]{border-left-color:var(--red)}
+ol.timeline time,.stamp{display:block;color:var(--muted);font-size:11px}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Messages */
+ol.msgs{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+ol.msgs li{border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--graphite);padding:10px 12px;animation:rise 240ms ease-out backwards}
+.chip{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ion)}
+.chip[data-ch="telegram"]{color:var(--arc)} .chip[data-ch="denied"]{color:var(--red)}
+
+/* State pill */
+.state{display:inline-flex;align-items:center;gap:7px;font-weight:650;font-size:13px}
+.state .dot{width:8px;height:8px;border-radius:999px;background:var(--muted)}
+.state[data-tone="ion"] .dot{background:var(--ion);animation:pulse 2.4s ease-in-out infinite}
+.state[data-tone="ok"] .dot{background:var(--green)}
+.state[data-tone="warn"] .dot{background:var(--amber);animation:pulse 2.4s ease-in-out infinite}
+.state[data-tone="bad"] .dot{background:var(--red)}
+@keyframes pulse{50%{opacity:.35}}
+
+/* Helix Core card — the one luminous element */
+.helix-card{position:relative;border:1px solid #245064;border-radius:var(--r-panel);background:radial-gradient(120% 90% at 50% 0%,#0B1826 0%,var(--obsidian) 70%);padding:14px 16px;display:grid;grid-template-columns:132px 1fr;gap:14px;align-items:center}
+.helix-wrap{position:relative;width:132px;height:132px}
+.helix-enhancement{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;opacity:.7}
+.helix{width:100%;height:100%;display:block}
+.helix .ring{fill:none;stroke:var(--ion);stroke-width:1.4;opacity:.75;transform-origin:120px 120px}
+.helix .arcv{fill:none;stroke:var(--arc);stroke-width:.9;stroke-dasharray:10 26;opacity:.5;transform-origin:120px 120px}
+.helix .node{fill:var(--arc)}
+.helix .nucleus{fill:var(--ion)}
+.helix .nucleus-halo{fill:url(#halo)}
+.helix .listen-ring{fill:none;stroke:var(--arc);stroke-width:1.2;opacity:0;transform-origin:120px 120px}
+.g1,.g2,.g3,.ga{transform-origin:120px 120px;transform-box:view-box}
+.g1{animation:orbit 28s linear infinite}
+.g2{animation:orbit 34s linear infinite reverse}
+.g3{animation:orbit 22s linear infinite}
+.ga{animation:orbit 46s linear infinite reverse}
+.core-pulse{animation:corePulse 6s ease-in-out infinite;transform-origin:120px 120px}
+@keyframes orbit{to{transform:rotate(360deg)}}
+@keyframes corePulse{50%{opacity:.55}}
+@keyframes listen{0%{opacity:.7;transform:scale(.35)}100%{opacity:0;transform:scale(1.05)}}
+/* Helix states */
+.helix-card[data-core="dormant"] .g1,.helix-card[data-core="dormant"] .g2,.helix-card[data-core="dormant"] .g3,.helix-card[data-core="dormant"] .ga{animation-duration:80s}
+.helix-card[data-core="listening"] .listen-ring{animation:listen 1.8s ease-out infinite}
+.helix-card[data-core="processing"] .g1{animation-duration:9s}
+.helix-card[data-core="processing"] .g2{animation-duration:12s}
+.helix-card[data-core="processing"] .g3{animation-duration:7s}
+.helix-card[data-core="approval"] .ring{stroke:var(--amber);stroke-dasharray:34 14}
+.helix-card[data-core="approval"] .nucleus,.helix-card[data-core="approval"] .node{fill:var(--amber)}
+.helix-card[data-core="approval"] .g1,.helix-card[data-core="approval"] .g2,.helix-card[data-core="approval"] .g3{animation-play-state:paused}
+.helix-card[data-core="completed"] .g1,.helix-card[data-core="completed"] .g2,.helix-card[data-core="completed"] .g3,.helix-card[data-core="completed"] .ga{animation:none}
+.helix-card[data-core="completed"] .ring{opacity:1}
+.helix-card[data-core="denied"] .ring,.helix-card[data-core="denied"] .arcv{stroke:var(--red);animation:none}
+.helix-card[data-core="denied"] .nucleus,.helix-card[data-core="denied"] .node{fill:var(--red)}
+.helix-card[data-core="denied"] .g1,.helix-card[data-core="denied"] .g2,.helix-card[data-core="denied"] .g3,.helix-card[data-core="denied"] .ga,.helix-card[data-core="denied"] .core-pulse{animation:none}
+.helix-card[data-core="cancelled"] .ring,.helix-card[data-core="cancelled"] .arcv{stroke:var(--muted);opacity:.4}
+.helix-card[data-core="cancelled"] .nucleus,.helix-card[data-core="cancelled"] .node{fill:var(--muted)}
+.helix-card[data-core="cancelled"] .g1,.helix-card[data-core="cancelled"] .g2,.helix-card[data-core="cancelled"] .g3{animation-duration:120s}
+.helix-card[data-core="offline"]{border-color:var(--line)}
+.helix-card[data-core="offline"] .ring,.helix-card[data-core="offline"] .arcv{stroke:var(--muted);opacity:.3;animation:none}
+.helix-card[data-core="offline"] .nucleus,.helix-card[data-core="offline"] .node{fill:var(--muted)}
+.helix-card[data-core="offline"] .g1,.helix-card[data-core="offline"] .g2,.helix-card[data-core="offline"] .g3,.helix-card[data-core="offline"] .ga,.helix-card[data-core="offline"] .core-pulse{animation:none}
+.helix-card[data-core="emergency"]{border-color:#5a2a2a}
+.helix-card[data-core="emergency"] .ring,.helix-card[data-core="emergency"] .arcv{stroke:var(--red)}
+.helix-card[data-core="emergency"] .nucleus,.helix-card[data-core="emergency"] .node{fill:var(--red)}
+.helix-card[data-core="emergency"] .g1,.helix-card[data-core="emergency"] .g2,.helix-card[data-core="emergency"] .g3,.helix-card[data-core="emergency"] .ga,.helix-card[data-core="emergency"] .core-pulse{animation:none}
+.paused .helix *,.paused ol.timeline li,.paused button.primary::after{animation-play-state:paused !important}
+
+/* Toast + offline */
+#toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--graphite);border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity 160ms ease-out;z-index:20;max-width:88vw}
+#toast.show{opacity:1}
+#offlineBar{display:none;border:1px solid #4a3a1e;background:#1A1408;color:var(--amber);border-radius:var(--r-ctl);padding:9px 12px;font-size:13px;font-weight:600}
+#offlineBar.show{display:block}
+#updateBar{display:none;border:1px solid #245064;background:#0B1E2A;color:var(--arc);border-radius:var(--r-ctl);padding:9px 12px;font-size:13px;font-weight:600}
+#updateBar.show{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#updateBar button{min-height:34px;padding:5px 12px}
+
+/* Mic (voice-ready, disabled — see JARVIS_VOICE_UI_CONTRACT.md) */
+.mic{flex:0 0 44px;width:44px;min-height:44px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
+
+/* Reduced motion: state stays visible via color+label; motion collapses */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition-duration:1ms !important}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div id="app">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Blackspire Command</p>
+      <h1>Jarvis</h1>
+    </div>
+    <div class="rail" id="statusBar" role="status" aria-live="polite"></div>
+  </header>
+
+  <div id="offlineBar" role="status">Offline — showing last synced canonical state. Reconnecting…</div>
+  <div id="updateBar" role="status"><span>A new Jarvis version is ready.</span><button id="applyUpdate" type="button">Reload</button></div>
+
+  <nav class="views" aria-label="Screens" id="viewNav">
+    <a href="#/command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-18 12 12)"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>Command</a>
+    <a href="#/conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Conversation</a>
+    <a href="#/task"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Task</a>
+    <a href="#/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 4v16M5 7h9M5 12h13M5 17h7"/></svg>Events</a>
+    <a href="#/approvals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg>Approvals</a>
+    <a href="#/system"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0M12 14l3.5-4"/><path d="M4 19h16"/></svg>System</a>
+    <a href="#/evidence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13h5M10 17h5"/></svg>Evidence</a>
+  </nav>
+
+  <main id="main">
+
+    <!-- Sign in -->
+    <section data-view="signin" hidden>
+      <div class="panel wide">
+        <h2>Sign in</h2>
+        <div class="stack">
+          <p class="muted">Operator authentication for the Blackspire control plane. The token is sent once and never persisted in this browser.</p>
+          <p class="notice" id="sessionNotice" role="alert"></p>
+          <label class="sr-only" for="token">Admin token</label>
+          <input id="token" type="password" autocomplete="current-password" placeholder="Admin token">
+          <div class="row">
+            <button class="primary" id="loginBtn" type="button">Unlock Jarvis</button>
+            <button class="ghost" id="logoutBtn" type="button">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1 · Command Center -->
+    <section data-view="command" hidden>
+      <div class="helix-card wide" data-core="dormant" id="helixCard">
+        <div class="helix-wrap" id="helixMount">
+          <svg class="helix" data-helix-fallback="svg" viewBox="0 0 240 240" aria-hidden="true" focusable="false">
+            <defs>
+              <radialGradient id="halo"><stop offset="0%" stop-color="#4FD8FF" stop-opacity=".5"/><stop offset="70%" stop-color="#4FD8FF" stop-opacity=".08"/><stop offset="100%" stop-color="#4FD8FF" stop-opacity="0"/></radialGradient>
+            </defs>
+            <circle class="listen-ring" cx="120" cy="120" r="104"/>
+            <g class="ga"><path class="arcv" d="M120 22 A98 98 0 0 1 218 120"/><path class="arcv" d="M120 218 A98 98 0 0 1 22 120"/></g>
+            <g class="g1" style="transform:rotate(0deg)">
+              <ellipse class="ring" cx="120" cy="120" rx="92" ry="30" transform="rotate(-18 120 120)"/>
+              <circle class="node" r="3.4" cx="207.5" cy="91.6"/>
+            </g>
+            <g class="g2">
+              <ellipse class="ring" cx="120" cy="120" rx="68" ry="50" transform="rotate(14 120 120)" opacity=".6"/>
+              <circle class="node" r="3" cx="186" cy="136.5"/>
+            </g>
+            <g class="g3">
+              <ellipse class="ring" cx="120" cy="120" rx="42" ry="72" transform="rotate(-6 120 120)" opacity=".5"/>
+              <circle class="node" r="2.6" cx="161.5" cy="115.6"/>
+            </g>
+            <g class="core-pulse"><circle class="nucleus-halo" cx="120" cy="120" r="34"/><circle class="nucleus" cx="120" cy="120" r="11"/><circle cx="120" cy="120" r="5" fill="#04070C"/></g>
+          </svg>
+        </div>
+        <div class="stack" style="gap:6px">
+          <p class="eyebrow ion">Helix Core</p>
+          <p class="state" id="coreState" data-tone="ion"><span class="dot"></span><span id="coreStateLabel">Dormant</span></p>
+          <p class="muted" style="font-size:13px" id="coreDetail">Awaiting your command.</p>
+          <p class="sr-only" id="coreSr" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="panel wide">
+        <h2 id="composerHeading">Command</h2>
+        <div class="stack">
+          <label class="sr-only" for="workspace">Workspace</label>
+          <select id="workspace" aria-label="Workspace"></select>
+          <label class="sr-only" for="cmd">Command for Hermes</label>
+          <textarea id="cmd" placeholder="Ask Hermes to do safe workspace work" enterkeyhint="send"></textarea>
+          <div class="row" style="align-items:center">
+            <button class="primary" id="sendBtn" type="button">Send command</button>
+            <button class="mic ghost" id="micBtn" type="button" disabled aria-describedby="micHint" aria-label="Voice input (not yet enabled)">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
+            </button>
+          </div>
+          <p class="muted" style="font-size:12px" id="micHint">Voice input is staged but not connected. No microphone permission is requested.</p>
+          <p class="notice" id="composerNotice" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Current task</h2>
+        <div class="stack" id="currentTaskCard"><p class="empty">No task yet. Submit a command to create one.</p></div>
+      </div>
+
+      <div class="panel">
+        <h2>Delivery &amp; attribution</h2>
+        <div class="stack" id="attributionCard"><p class="empty">Hermes, provider, and Telegram delivery attribution appear after dispatch.</p></div>
+      </div>
+
+      <div class="panel wide">
+        <h2>Recent conversations</h2>
+        <div class="stack" id="recentConversations"><p class="empty">No conversations yet.</p></div>
+      </div>
+    </section>
+
+    <!-- 2 · Conversation -->
+    <section data-view="conversation" hidden>
+      <div class="panel wide">
+        <h2 id="convTitle">Conversation</h2>
+        <div class="facts">
+          <div class="fact span2"><span class="label">Canonical conversation ID</span><span class="value mono" id="convId">—</span><div class="row" style="margin-top:8px"><button class="copy ghost" data-copy="convId" type="button">Copy ID</button></div></div>
+          <div class="fact"><span class="label">Workspace</span><span class="value mono" id="convWorkspace">—</span></div>
+          <div class="fact"><span class="label">Sync</span><span class="value mono" id="convSync">—</span></div>
+        </div>
+      </div>
+      <div class="panel wide">
+        <h2>Timeline</h2>
+        <ol class="msgs" id="messageList"></ol>
+        <p class="empty" id="messagesEmpty">No messages yet. Canonical Jarvis, web, and Telegram messages share this timeline.</p>
+      </div>
+      <div class="panel wide">
+        <h2>Follow-up</h2>
+        <div class="stack">
+          <label class="sr-only" for="followCmd">Follow-up command</label>
+          <textarea id="followCmd" placeholder="Continue this conversation" enterkeyhint="send"></textarea>
+          <button class="primary" id="followBtn" type="button">Send follow-up</button>
+          <p class="notice" id="followNotice" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 · Task Detail -->
+    <section data-view="task" hidden>
+      <div class="panel wide">
+        <h2>Task detail</h2>
+        <div class="facts" id="taskFacts">
+          <div class="fact span2"><span class="label">Canonical task ID</span><span class="value mono" id="taskIdValue">—</span><div class="row" style="margin-top:8px"><button class="copy ghost" data-copy="taskIdValue" type="button">Copy ID</button></div></div>
+          <div class="fact"><span class="label">State</span><span class="value"><span class="state" id="taskStatePill"><span class="dot"></span><span id="taskStateLabel">—</span></span></span></div>
+          <div class="fact"><span class="label">Workspace</span><span class="value mono" id="taskWorkspace">—</span></div>
+          <div class="fact"><span class="label">Risk / action class</span><span class="value mono" id="taskRisk">—</span></div>
+          <div class="fact"><span class="label">Authority</span><span class="value mono" id="taskAuthority">—</span></div>
+          <div class="fact"><span class="label">Hermes stage</span><span class="value mono" id="taskStage">—</span></div>
+          <div class="fact"><span class="label">Hermes skill</span><span class="value mono" id="taskHermesSkill">—</span></div>
+          <div class="fact"><span class="label">Worker</span><span class="value mono" id="taskWorker">—</span></div>
+          <div class="fact"><span class="label">Provider / model</span><span class="value mono" id="taskProvider">—</span></div>
+          <div class="fact"><span class="label">Budget</span><span class="value mono" id="taskBudget">—</span></div>
+          <div class="fact"><span class="label">Started</span><span class="value mono" id="taskStarted">—</span></div>
+          <div class="fact"><span class="label">Completed</span><span class="value mono" id="taskCompleted">—</span></div>
+          <div class="fact"><span class="label">Updated</span><span class="value mono" id="taskUpdated">—</span></div>
+          <div class="fact"><span class="label">Duration</span><span class="value mono" id="taskDuration">—</span></div>
+          <div class="fact"><span class="label">Idempotency key</span><span class="value mono" id="taskIdem">—</span></div>
+          <div class="fact span2"><span class="label">Request</span><span class="value" id="taskRequest">—</span></div>
+          <div class="fact span2"><span class="label">Outcome</span><span class="value" id="taskOutcome">—</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Controls</h2>
+        <div class="stack">
+          <button class="danger" id="cancelBtn" type="button" disabled>Cancel task</button>
+          <p class="notice" id="taskNotice" role="status" aria-live="polite"></p>
+          <div class="row">
+            <button class="ghost" id="exportJsonBtn" type="button">Download evidence (JSON)</button>
+            <button class="ghost" id="exportMdBtn" type="button">Download evidence (Markdown)</button>
+          </div>
+          <p class="muted" style="font-size:12px">Exports are sanitized and redacted by the control plane.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Approval history</h2>
+        <div class="stack" id="approvalHistory"><p class="empty">No approval history for this task.</p></div>
+      </div>
+      <div class="panel wide">
+        <h2>Evidence &amp; delivery</h2>
+        <div class="stack" id="taskEvidence"><p class="empty">No evidence recorded yet.</p></div>
+      </div>
+    </section>
+
+    <!-- 4 · Event Timeline -->
+    <section data-view="events" hidden>
+      <div class="panel wide">
+        <h2>Ordered event timeline</h2>
+        <p class="muted" style="font-size:13px;margin-bottom:12px">Canonical events for the active conversation, oldest first. Unknown event types render as sanitized system events.</p>
+        <ol class="timeline" id="eventList"></ol>
+        <p class="empty" id="eventsEmpty">No events yet. Open a conversation to follow its canonical event stream.</p>
+      </div>
+    </section>
+
+    <!-- 5 · Approval Center -->
+    <section data-view="approvals" hidden>
+      <div class="panel wide">
+        <h2>Approval center</h2>
+        <p class="muted" style="font-size:13px;margin-bottom:12px">Approvals are decided by the control plane. Jarvis only submits your decision; it cannot create or widen approvals.</p>
+        <div class="stack" id="approvalList"><p class="empty">No approvals pending.</p></div>
+      </div>
+    </section>
+
+    <!-- 6 · System Status -->
+    <section data-view="system" hidden>
+      <div class="panel wide">
+        <h2>System status</h2>
+        <div class="facts" id="systemFacts">
+          <div class="fact"><span class="label">Control plane</span><span class="value" id="sysApi">—</span></div>
+          <div class="fact"><span class="label">Connection</span><span class="value" id="sysLink">—</span></div>
+          <div class="fact"><span class="label">Emergency stop</span><span class="value" id="sysStop">—</span></div>
+          <div class="fact"><span class="label">Safe Mode</span><span class="value" id="sysSafeMode">Not reported</span></div>
+          <div class="fact"><span class="label">Telegram adapter</span><span class="value mono" id="sysTelegram">—</span></div>
+          <div class="fact"><span class="label">Providers</span><span class="value mono" id="sysProviders">—</span></div>
+          <div class="fact"><span class="label">Active workspace</span><span class="value mono" id="sysWorkspace">—</span></div>
+          <div class="fact"><span class="label">Mode</span><span class="value" id="sysMode">Production</span></div>
+          <div class="fact"><span class="label">Polling</span><span class="value mono" id="sysPolling">—</span></div>
+          <div class="fact"><span class="label">Last sync</span><span class="value mono" id="sysSync">—</span></div>
+          <div class="fact"><span class="label">PWA update</span><span class="value" id="sysPwa">Current</span></div>
+          <div class="fact"><span class="label">Hermes / workers</span><span class="value" id="sysHermes">Reported per task</span></div>
+        </div>
+      </div>
+      <div class="panel wide">
+        <h2>Emergency controls</h2>
+        <div class="stack">
+          <p class="muted" style="font-size:13px">Emergency stop halts dispatch before any provider is contacted. It is enforced by the control plane, not this interface.</p>
+          <button class="danger" id="stopBtn" type="button">Emergency stop</button>
+          <button class="ghost" id="stopResetBtn" type="button">Reset emergency stop</button>
+          <p class="notice" id="stopNotice" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 · Evidence View -->
+    <section data-view="evidence" hidden>
+      <div class="panel wide">
+        <h2>Evidence</h2>
+        <p class="muted" style="font-size:13px;margin-bottom:12px">Sanitized evidence for the selected task. The control plane redacts secrets, headers, raw output, and internal paths before anything reaches this view.</p>
+        <div class="stack" id="evidenceView"><p class="empty">Select a task to inspect its evidence summary.</p></div>
+      </div>
+    </section>
+
+  </main>
+
+  <p class="sr-only" id="announcer" aria-live="polite"></p>
+  <div id="toast" role="status"></div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+   Blackspire Jarvis — no-build command interface.
+   Canonical backend state always wins; this file renders it.
+   Security: dynamic data only ever becomes textContent.
+   ============================================================ */
+
+/* ---------- tiny DOM helpers ---------- */
+const byId = (id) => document.getElementById(id);
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+};
+const fmtTime = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleTimeString();
+};
+const fmtDuration = (a, b) => {
+  if (!a || !b) return '—';
+  const ms = new Date(b) - new Date(a);
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const s = Math.round(ms / 1000);
+  return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+};
+
+/* ---------- status vocabulary (single source, color never alone) ---------- */
+const STATUS = {
+  queued: { label: 'Queued', tone: 'warn', core: 'processing' },
+  running: { label: 'Processing', tone: 'ion', core: 'processing' },
+  waiting_for_approval: { label: 'Awaiting approval', tone: 'warn', core: 'approval' },
+  completed: { label: 'Completed', tone: 'ok', core: 'completed' },
+  failed: { label: 'Failed', tone: 'bad', core: 'denied' },
+  cancelled: { label: 'Cancelled', tone: 'muted', core: 'cancelled' },
+};
+const statusInfo = (task) => {
+  if (!task) return { label: '—', tone: 'muted', core: 'dormant' };
+  const base = STATUS[task.status] || { label: 'Unknown state', tone: 'muted', core: 'dormant' };
+  if (task.status === 'failed' && task.policy_decision === 'denied') return { label: 'Denied by policy', tone: 'bad', core: 'denied' };
+  return base;
+};
+const EVENT_LABELS = {
+  'input.received': ['Input received', 'ion'],
+  'policy.allowed': ['Policy allowed', 'ok'],
+  'policy.denied': ['Policy denied', 'bad'],
+  'task.created': ['Task created', 'ion'],
+  'task.queued': ['Task queued', 'warn'],
+  'task.running': ['Task processing', 'ion'],
+  'task.waiting_for_approval': ['Awaiting approval', 'warn'],
+  'hermes.selected': ['Hermes selected', 'ion'],
+  'provider.selected': ['Provider selected', 'ion'],
+  'task.completed': ['Task completed', 'ok'],
+  'task.failed': ['Task failed', 'bad'],
+  'task.cancellation_requested': ['Cancellation requested', 'warn'],
+  'task.cancellation_cleanup': ['Cancellation cleanup', 'warn'],
+  'task.cancelled': ['Task cancelled', 'muted'],
+  'approval.required': ['Approval required', 'warn'],
+  'approval.granted': ['Approval granted', 'ok'],
+  'approval.denied': ['Approval denied', 'bad'],
+  'delivery.pending': ['Delivery pending', 'warn'],
+  'delivery.retry_wait': ['Delivery retry scheduled', 'warn'],
+  'delivery.delivered': ['Delivered to channel', 'ok'],
+  'delivery.terminal_failed': ['Delivery failed (terminal)', 'bad'],
+};
+/* Unknown event types must render safely and never crash. */
+const eventLabel = (type) => EVENT_LABELS[type] || ['System event', 'muted'];
+
+/* ---------- voice boundary (stub only — see JARVIS_VOICE_UI_CONTRACT.md) ----------
+   States reserved for a future, separately authorized voice service:
+   idle · listening · transcribing · processing · speaking · interrupted · denied · error.
+   No speech API, provider, or microphone permission is used today. */
+const voice = { state: 'idle' };
+
+/* ---------- app state (memory only; refresh recovery via URL hash) ---------- */
+const store = {
+  authed: false, csrfToken: '',
+  view: 'command', conversationId: '', taskId: '',
+  conversation: null, tasks: [], workspaces: [],
+  health: null, ready: null, testMode: null,
+  offline: false, lastSync: null, pollMs: 2500, inflight: false,
+  idemKey: '', announcedState: '', swWaiting: null, loading: false,
+  workspaceTouched: false, refreshError: '', helix: null,
+};
+let selectedTaskId = '';
+
+/* ---------- typed API layer ---------- */
+/** @typedef {Object} UnifiedInputResponse
+ * @property {string=} conversationId
+ * @property {string=} taskId
+ * @property {boolean=} duplicate
+ * @property {boolean=} denied
+ * @property {string=} error
+ */
+/** @typedef {Object} TaskRecord
+ * @property {string} id
+ * @property {string} status
+ * @property {string=} conversation_id
+ * @property {string=} workspace_id
+ * @property {Array<Object>=} providerAttribution
+ * @property {Array<Object>=} evidenceMetadata
+ */
+/** @typedef {Object} ConversationResponse
+ * @property {Object=} conversation
+ * @property {Array<Object>=} messages
+ * @property {Array<Object>=} events
+ * @property {Array<TaskRecord>=} tasks
+ * @property {Array<Object>=} deliveries
+ */
+/** @typedef {Object} SystemHealth
+ * @property {boolean=} ok
+ * @property {boolean=} emergencyStop
+ * @property {string=} telegramMode
+ */
+const api = {
+  /** @template T @param {string} path @param {RequestInit=} options @returns {Promise<{response: Response, body: T}>} */
+  async request(path, options = {}) {
+    const method = options.method || 'GET';
+    const headers = { 'content-type': 'application/json' };
+    if (method !== 'GET' && store.csrfToken) headers['x-csrf-token'] = store.csrfToken;
+    Object.assign(headers, options.headers || {});
+    const response = await fetch(path, { method, credentials: 'same-origin', headers, body: options.body, signal: options.signal });
+    let body = {};
+    try { body = await response.json(); } catch { body = { error: 'Unexpected response from control plane' }; }
+    if (response.status === 401 && store.authed) { store.authed = false; setNotice('sessionNotice', 'Session expired. Enter the admin token to continue.'); render(); }
+    return { response, body };
+  },
+  session: () => api.request('/api/auth/session'),
+  login: (adminToken) => api.request('/api/auth/login', { method: 'POST', body: JSON.stringify({ adminToken }) }),
+  logout: () => api.request('/api/auth/logout', { method: 'POST', body: '{}' }),
+  health: (signal) => api.request('/health', { signal }),
+  ready: (signal) => api.request('/ready', { signal }),
+  testMode: (signal) => api.request('/api/test-mode', { signal }),
+  workspaces: (signal) => api.request('/api/workspaces', { signal }),
+  tasks: (signal) => api.request('/api/tasks', { signal }),
+  task: (id, signal) => api.request('/api/tasks/' + encodeURIComponent(id), { signal }),
+  taskApprovals: (id, signal) => api.request('/api/tasks/' + encodeURIComponent(id) + '/approvals', { signal }),
+  /** @returns {Promise<{response: Response, body: ConversationResponse}>} */
+  conversation: (id, signal) => api.request('/api/conversations/' + encodeURIComponent(id), { signal }),
+  /** @returns {Promise<{response: Response, body: UnifiedInputResponse}>} */
+  submitInput: (payload) => api.request('/api/unified-input', { method: 'POST', body: JSON.stringify(payload) }),
+  cancelTask: (id) => api.request('/api/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '{}' }),
+  approveTask: (id) => api.request('/api/tasks/' + encodeURIComponent(id) + '/approve', { method: 'POST', body: '{}' }),
+  rejectTask: (id) => api.request('/api/tasks/' + encodeURIComponent(id) + '/reject', { method: 'POST', body: '{}' }),
+  stop: () => api.request('/api/stop', { method: 'POST', body: '{}' }),
+  stopReset: () => api.request('/api/stop/reset', { method: 'POST', body: '{}', headers: { 'x-confirmation-token': store.csrfToken + ':RESET' } }),
+};
+
+/* ---------- notices, toast, announcements ---------- */
+function setNotice(id, text) { const node = byId(id); if (node) node.textContent = text || ''; }
+let toastTimer = 0;
+function toast(text) {
+  const node = byId('toast');
+  node.textContent = text; node.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove('show'), 2600);
+}
+function announce(text) { byId('announcer').textContent = text; }
+
+/* ---------- router (hash keeps refresh recovery credential-free) ---------- */
+const VIEWS = ['command', 'conversation', 'task', 'events', 'approvals', 'system', 'evidence'];
+function parseHash() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/');
+  const view = VIEWS.includes(parts[0]) ? parts[0] : 'command';
+  const id = parts[1] ? decodeURIComponent(parts[1]) : '';
+  if (view === 'conversation' && id) store.conversationId = id;
+  if (view === 'task' && id) { store.taskId = id; selectedTaskId = id; }
+  store.view = view;
+}
+function go(view, id) { location.hash = '#/' + view + (id ? '/' + encodeURIComponent(id) : ''); }
+window.addEventListener('hashchange', () => { parseHash(); refreshSoon(); render(); });
+
+/* ---------- derived helpers ---------- */
+const currentTask = () => {
+  const list = (store.conversation?.tasks || []).filter(taskInActiveWorkspace);
+  return list.find((t) => t.id === store.taskId) || list[list.length - 1] || store.tasks.filter(taskInActiveWorkspace).find((t) => t.id === store.taskId) || null;
+};
+const cancellable = (task) => Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
+const latestAttribution = (task) => (task?.providerAttribution || []).slice(-1)[0] || null;
+const activeWorkspaceId = () => byId('workspace')?.value || '';
+function taskInActiveWorkspace(task) {
+  const active = activeWorkspaceId();
+  return Boolean(task && (!active || task.workspace_id === active));
+}
+function eventTime(taskId, ...types) {
+  const events = store.conversation?.events || [];
+  return events.find((event) => event.task_id === taskId && types.includes(event.type))?.created_at || '';
+}
+
+/* ---------- Helix Core state ---------- */
+function coreStateFor() {
+  if (store.health?.emergencyStop) return ['emergency', 'Emergency stop', 'Dispatch is frozen by the control plane.'];
+  if (store.offline) return ['offline', 'Offline', 'No connection to the control plane.'];
+  if (document.activeElement === byId('cmd') || document.activeElement === byId('followCmd')) return ['listening', 'Listening', 'Composing a command.'];
+  const task = currentTask();
+  if (task) {
+    const info = statusInfo(task);
+    const detail = { processing: 'Hermes is working within Blackspire constraints.', approval: 'A decision is required in the Approval center.', completed: 'Canonical state is stable.', denied: 'Blackspire policy locked this request.', cancelled: 'The orbit wound down safely.' }[info.core];
+    return [info.core, info.label, detail || 'Awaiting your command.'];
+  }
+  return ['dormant', 'Dormant', 'Awaiting your command.'];
+}
+function renderCore() {
+  const [core, label, detail] = coreStateFor();
+  byId('helixCard').dataset.core = core;
+  const tone = { emergency: 'bad', denied: 'bad', approval: 'warn', completed: 'ok', offline: 'muted', cancelled: 'muted' }[core] || 'ion';
+  byId('coreState').dataset.tone = tone;
+  byId('coreStateLabel').textContent = label;
+  byId('coreDetail').textContent = detail;
+  byId('coreSr').textContent = 'Helix Core state: ' + label;
+  store.helix?.setState(core);
+}
+
+/* ---------- header status rail ---------- */
+function badge(label, value, tone) {
+  const b = el('span', 'badge', ''); b.dataset.tone = tone || '';
+  b.append(el('span', 'dot'), document.createTextNode(label + value));
+  return b;
+}
+function renderStatus(h) {
+  const rail = byId('statusBar'); rail.replaceChildren();
+  rail.append(badge('Link: ', store.offline ? 'offline' : 'online', store.offline ? 'bad' : 'ok'));
+  if (h && !h.error) {
+    rail.append(badge('Emergency stop: ', h.emergencyStop ? 'ACTIVE' : 'inactive', h.emergencyStop ? 'bad' : 'ok'));
+    rail.append(badge('Telegram: ', h.telegramMode || 'unknown', 'ion'));
+  }
+  if (store.testMode?.enabled) rail.append(badge('Mode: ', 'TEST FIXTURE', 'warn'));
+}
+
+/* ---------- renderers ---------- */
+function renderNav() {
+  byId('viewNav').hidden = !store.authed;
+  for (const link of byId('viewNav').querySelectorAll('a')) {
+    const target = link.getAttribute('href').slice(2);
+    if (target === store.view) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+}
+function renderViews() {
+  for (const section of document.querySelectorAll('section[data-view]')) {
+    const name = section.dataset.view;
+    section.hidden = store.authed ? name !== store.view : name !== 'signin';
+  }
+}
+
+function taskStatePill(task) {
+  const info = statusInfo(task);
+  const pill = el('span', 'state'); pill.dataset.tone = info.tone;
+  pill.append(el('span', 'dot'), el('span', null, info.label));
+  return pill;
+}
+
+function renderCurrentTask() {
+  const wrap = byId('currentTaskCard'); wrap.replaceChildren();
+  const task = currentTask();
+  if (!task) { wrap.append(el('p', 'empty', 'No task yet. Submit a command to create one.')); return; }
+  wrap.append(taskStatePill(task));
+  const req = el('p', null, task.request || '—'); req.style.fontSize = '14px';
+  wrap.append(req);
+  const ids = el('p', 'mono', 'task ' + task.id + (task.conversation_id ? ' · conversation ' + task.conversation_id : ''));
+  ids.classList.add('stamp');
+  wrap.append(ids);
+  const open = el('button', 'ghost', 'Open task detail'); open.type = 'button';
+  open.addEventListener('click', () => go('task', task.id));
+  wrap.append(open);
+}
+
+function renderAttribution() {
+  const wrap = byId('attributionCard'); wrap.replaceChildren();
+  const task = currentTask();
+  const conv = store.conversation;
+  if (!task) { wrap.append(el('p', 'empty', 'Hermes, provider, and Telegram delivery attribution appear after dispatch.')); return; }
+  const attr = latestAttribution(task);
+  const facts = el('div', 'facts');
+  const fact = (label, value) => {
+    const f = el('div', 'fact');
+    f.append(el('span', 'label', label), el('span', 'value mono', value ?? '—'));
+    return f;
+  };
+  facts.append(
+    fact('Hermes stage', task.current_stage || 'Not dispatched'),
+    fact('Worker', task.worker_id || 'Unassigned'),
+    fact('Provider', attr ? attr.provider + (attr.mode ? ' (' + attr.mode + ')' : '') : 'Not dispatched'),
+    fact('Model', attr?.model || '—'),
+  );
+  wrap.append(facts);
+  const deliveries = conv?.deliveries || [];
+  if (deliveries.length) {
+    const list = el('div', 'stack');
+    list.append(el('h3', null, 'Telegram delivery'));
+    for (const d of deliveries.slice(-4)) list.append(deliveryLine(d));
+    wrap.append(list);
+  } else {
+    wrap.append(el('p', 'muted stamp', 'Telegram delivery: no channel bound to this conversation.'));
+  }
+}
+function deliveryLine(d) {
+  const line = el('p', 'state');
+  const retrying = d.status === 'pending' && Number(d.attempts) > 0;
+  const label = d.status === 'delivered' ? 'Delivered' : d.status === 'failed' ? 'Delivery failed (terminal)' : retrying ? 'Retrying delivery' : 'Delivery pending';
+  line.dataset.tone = d.status === 'delivered' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn';
+  line.append(el('span', 'dot'), el('span', null, label + ' · attempts ' + (d.attempts ?? 0) + (retrying && d.next_attempt_at ? ' · next ' + fmtTime(d.next_attempt_at) : '')));
+  return line;
+}
+
+function renderRecentConversations() {
+  const wrap = byId('recentConversations'); wrap.replaceChildren();
+  const seen = new Map();
+  for (const task of store.tasks.filter(taskInActiveWorkspace)) {
+    if (!task.conversation_id || seen.has(task.conversation_id)) continue;
+    seen.set(task.conversation_id, task);
+  }
+  if (!seen.size) { wrap.append(el('p', 'empty', 'No conversations yet.')); return; }
+  for (const [cid, task] of [...seen].slice(0, 6)) {
+    const btn = el('button', 'ghost'); btn.type = 'button'; btn.style.textAlign = 'left';
+    const line = el('span', null, (task.request || 'Conversation').slice(0, 90));
+    const meta = el('span', 'stamp mono', cid + ' · ' + fmtTime(task.created_at));
+    btn.append(line, document.createElement('br'), meta);
+    btn.addEventListener('click', () => { store.taskId = task.id; selectedTaskId = task.id; go('conversation', cid); });
+    wrap.append(btn);
+  }
+}
+
+function renderConversation() {
+  const conv = store.conversation;
+  const firstMessage = conv?.messages?.[0]?.text || '';
+  byId('convTitle').textContent = firstMessage ? 'Conversation · ' + firstMessage.slice(0, 54) : 'Conversation';
+  byId('convId').textContent = store.conversationId || '—';
+  byId('convWorkspace').textContent = conv?.conversation?.workspace_id || '—';
+  byId('convSync').textContent = store.loading ? 'refreshing…' : store.refreshError ? 'stale · reconnecting' : store.lastSync ? 'synced ' + fmtTime(store.lastSync) : '—';
+  const list = byId('messageList'); list.replaceChildren();
+  const messages = conv?.messages || [];
+  byId('messagesEmpty').hidden = messages.length > 0;
+  messages.forEach((m, i) => {
+    const li = el('li'); li.style.setProperty('--i', String(Math.min(i, 8)));
+    const chip = el('span', 'chip', m.channel || 'jarvis'); chip.dataset.ch = m.channel || 'jarvis';
+    li.append(chip);
+    if (m.policy_status === 'denied') { const d = el('span', 'chip', 'denied'); d.dataset.ch = 'denied'; li.append(document.createTextNode(' '), d); }
+    li.append(el('p', null, m.text || ''), el('span', 'stamp', fmtTime(m.created_at)));
+    list.append(li);
+  });
+}
+
+function renderTaskDetail() {
+  const task = currentTask();
+  const set = (id, value) => { byId(id).textContent = (value === undefined || value === null || value === '') ? '—' : String(value); };
+  set('taskIdValue', task?.id);
+  selectedTaskId = task?.id || selectedTaskId;
+  const info = statusInfo(task);
+  byId('taskStatePill').dataset.tone = info.tone;
+  byId('taskStateLabel').textContent = info.label;
+  set('taskWorkspace', task?.workspace_id);
+  set('taskRisk', task?.action_class);
+  set('taskAuthority', task?.authority_class);
+  set('taskStage', task?.current_stage || (task ? 'Not dispatched' : null));
+  set('taskHermesSkill', task?.hermes_skill || (task ? 'Not reported by control plane' : null));
+  set('taskWorker', task?.worker_id || (task ? 'Unassigned' : null));
+  const attr = latestAttribution(task);
+  set('taskProvider', attr ? attr.provider + (attr.model ? ' / ' + attr.model : attr.mode ? ' / ' + attr.mode : '') : null);
+  set('taskBudget', task?.budget_cents != null ? task.budget_cents + '¢' : null);
+  const startedAt = task ? eventTime(task.id, 'task.running') || task.created_at : '';
+  const completedAt = task ? eventTime(task.id, 'task.completed', 'task.failed', 'task.cancelled') : '';
+  set('taskStarted', startedAt ? fmtTime(startedAt) : null);
+  set('taskCompleted', completedAt ? fmtTime(completedAt) : null);
+  set('taskUpdated', task ? fmtTime(task.updated_at) : null);
+  set('taskDuration', task && completedAt ? fmtDuration(startedAt, completedAt) : null);
+  set('taskIdem', task?.idempotency_key);
+  set('taskRequest', task?.request);
+  let outcome = '—';
+  if (task?.error) outcome = String(task.error);
+  else if (task?.summary) { try { const s = JSON.parse(task.summary); outcome = s.result || task.summary; } catch { outcome = String(task.summary); } }
+  set('taskOutcome', outcome);
+  byId('cancelBtn').disabled = !cancellable(task);
+  renderTaskEvidence(task);
+}
+
+function renderTaskEvidence(task) {
+  const wrap = byId('taskEvidence'); wrap.replaceChildren();
+  if (!task) { wrap.append(el('p', 'empty', 'No evidence recorded yet.')); return; }
+  const kinds = (task.evidenceMetadata || []).map((e) => e.kind);
+  if (kinds.length) {
+    const row = el('div', 'row');
+    for (const kind of kinds) row.append(el('span', 'chip', kind));
+    wrap.append(row);
+  } else {
+    wrap.append(el('p', 'muted stamp', 'Evidence summary appears once the control plane records it.'));
+  }
+  const conv = store.conversation;
+  const deliveries = (conv?.deliveries || []);
+  if (deliveries.length) { wrap.append(el('h3', null, 'Delivery / outbox')); for (const d of deliveries.slice(-4)) wrap.append(deliveryLine(d)); }
+  wrap.append(el('p', 'muted stamp', 'Replay protection: idempotency key ' + (task.idempotency_key || '—')));
+}
+
+function renderEvents() {
+  const list = byId('eventList'); list.replaceChildren();
+  const events = store.conversation?.events || [];
+  byId('eventsEmpty').hidden = events.length > 0;
+  events.forEach((event, i) => {
+    const [label, tone] = eventLabel(event.type);
+    const li = el('li'); li.dataset.tone = tone; li.style.setProperty('--i', String(Math.min(i, 8)));
+    li.append(el('span', 'etype', label));
+    const meta = el('span', 'stamp mono', String(event.type) + (event.task_id ? ' · ' + event.task_id : ''));
+    li.append(meta);
+    const payload = event.payload || {};
+    const note = payload.reason || payload.error || payload.summary || payload.currentStage || '';
+    if (note && typeof note === 'string') li.append(el('span', 'stamp', note));
+    li.append(el('time', null, fmtTime(event.created_at)));
+    list.append(li);
+  });
+}
+
+async function renderApprovals() {
+  const wrap = byId('approvalList'); wrap.replaceChildren();
+  const pending = store.tasks.filter(taskInActiveWorkspace).filter((t) => t.status === 'waiting_for_approval');
+  if (!pending.length) { wrap.append(el('p', 'empty', 'No approvals pending.')); return; }
+  for (const task of pending.slice(0, 8)) {
+    const card = el('div', 'panel raised stack');
+    card.append(taskStatePill(task));
+    card.append(el('p', null, task.request || '—'));
+    const facts = el('p', 'stamp mono', 'task ' + task.id + ' · workspace ' + (task.workspace_id || '—') + ' · risk ' + (task.action_class || '—'));
+    card.append(facts);
+    const why = el('p', 'muted stamp', taskExplanation(task));
+    card.append(why);
+    const expiry = el('p', 'stamp mono', '');
+    card.append(expiry);
+    api.taskApprovals(task.id).then(({ body }) => {
+      const open = (body.approvals || []).find((a) => a.status === 'pending');
+      if (open?.expires_at) expiry.textContent = 'expires ' + fmtTime(open.expires_at);
+      if (open?.reason) why.textContent = open.reason;
+    }).catch(() => {});
+    const row = el('div', 'row');
+    const approve = el('button', 'primary', 'Approve'); approve.type = 'button';
+    const reject = el('button', 'danger', 'Reject'); reject.type = 'button';
+    approve.addEventListener('click', () => decideApprovalAction(task.id, 'approve', approve, reject));
+    reject.addEventListener('click', () => decideApprovalAction(task.id, 'reject', approve, reject));
+    row.append(approve, reject);
+    card.append(row);
+    wrap.append(card);
+  }
+}
+function taskExplanation(task) {
+  if (task.summary) { try { return JSON.parse(task.summary).result || String(task.summary); } catch { return String(task.summary); } }
+  return 'The control plane requires administrator approval before execution.';
+}
+async function decideApprovalAction(taskId, action, ...buttons) {
+  buttons.forEach((b) => { b.disabled = true; });
+  const { response, body } = action === 'approve' ? await api.approveTask(taskId) : await api.rejectTask(taskId);
+  if (!response.ok) { toast(body.error || 'The control plane declined this decision.'); buttons.forEach((b) => { b.disabled = false; }); return; }
+  const canonicalStatus = body.task?.status || body.status || 'recorded';
+  toast('Control plane response: ' + canonicalStatus + '. Refreshing canonical state.');
+  await refreshAll();
+}
+
+function renderSystem() {
+  const h = store.health; const r = store.ready;
+  byId('sysApi').textContent = h?.ok ? 'Healthy' : store.offline ? 'Unreachable' : '—';
+  byId('sysLink').textContent = store.offline ? 'Offline — reconnecting with backoff' : 'Connected';
+  byId('sysStop').textContent = h ? (h.emergencyStop ? 'ACTIVE' : 'Inactive') : '—';
+  byId('sysSafeMode').textContent = 'Not reported by control plane';
+  byId('sysTelegram').textContent = h?.telegramMode || '—';
+  byId('sysProviders').textContent = r?.providers && typeof r.providers === 'object'
+    ? Object.entries(r.providers).map(([name, mode]) => name + ': ' + mode).join(' · ')
+    : '—';
+  byId('sysWorkspace').textContent = byId('workspace').value || '—';
+  byId('sysMode').textContent = store.testMode?.enabled ? 'Test fixture (mock-only)' : 'Production contracts';
+  byId('sysPolling').textContent = document.hidden ? 'paused (page hidden)' : 'every ' + Math.round(store.pollMs / 100) / 10 + 's';
+  byId('sysSync').textContent = store.lastSync ? fmtTime(store.lastSync) : '—';
+  byId('sysPwa').textContent = store.swWaiting ? 'Update ready — reload to apply' : 'Current';
+}
+
+function renderEvidenceView() {
+  const wrap = byId('evidenceView'); wrap.replaceChildren();
+  const task = currentTask();
+  if (!task) { wrap.append(el('p', 'empty', 'Select a task to inspect its evidence summary.')); return; }
+  const head = el('p', 'mono', 'task ' + task.id);
+  wrap.append(head, taskStatePill(task));
+  const attr = latestAttribution(task);
+  const facts = el('div', 'facts');
+  const fact = (label, value) => { const f = el('div', 'fact'); f.append(el('span', 'label', label), el('span', 'value mono', value ?? '—')); return f; };
+  facts.append(
+    fact('Provider attribution', attr ? attr.provider + (attr.model ? ' / ' + attr.model : '') : 'Not dispatched'),
+    fact('Worker attribution', task.worker_id || 'Unassigned'),
+    fact('Redaction', 'Sanitized by control plane'),
+    fact('Cost metadata', task.budget_cents != null ? 'budget ' + task.budget_cents + '¢' : '—'),
+  );
+  wrap.append(facts);
+  const kinds = (task.evidenceMetadata || []).map((e) => e.kind);
+  wrap.append(el('h3', null, 'Recorded evidence kinds'));
+  if (kinds.length) { const row = el('div', 'row'); for (const kind of kinds) row.append(el('span', 'chip', kind)); wrap.append(row); }
+  else wrap.append(el('p', 'muted stamp', 'None recorded yet.'));
+  let outcome = null;
+  if (task.summary) { try { outcome = JSON.parse(task.summary); } catch { outcome = { result: String(task.summary) }; } }
+  if (outcome) {
+    wrap.append(el('h3', null, 'Completion summary'));
+    wrap.append(el('p', null, String(outcome.result || '—')));
+    if (Array.isArray(outcome.changedFiles) && outcome.changedFiles.length) wrap.append(el('p', 'stamp mono', 'changed files: ' + outcome.changedFiles.length));
+    if (outcome.validation) wrap.append(el('p', 'stamp mono', 'validation: recorded'));
+  }
+  const note = el('p', 'muted stamp', 'Full sanitized bundle: use the evidence downloads on the Task screen.');
+  wrap.append(note);
+}
+
+function renderApprovalHistoryList(approvals) {
+  const wrap = byId('approvalHistory'); wrap.replaceChildren();
+  if (!approvals.length) { wrap.append(el('p', 'empty', 'No approval history for this task.')); return; }
+  for (const a of approvals) {
+    const line = el('p', 'stamp mono', fmtTime(a.created_at) + ' · ' + (a.action || '—') + ' → ' + (a.status || '—') + (a.decided_by ? ' by ' + a.decided_by : '') + (a.decision_note ? ' · ' + a.decision_note : ''));
+    wrap.append(line);
+  }
+}
+async function loadApprovalHistory() {
+  if (!selectedTaskId) return;
+  const { body } = await api.taskApprovals(selectedTaskId);
+  renderApprovalHistoryList(body.approvals || []);
+}
+
+function render() {
+  renderNav(); renderViews(); renderCore(); renderStatus(store.health);
+  if (!store.authed) return;
+  if (store.view === 'command') { renderCurrentTask(); renderAttribution(); renderRecentConversations(); }
+  if (store.view === 'conversation') renderConversation();
+  if (store.view === 'task') { renderTaskDetail(); loadApprovalHistory(); }
+  if (store.view === 'events') renderEvents();
+  if (store.view === 'approvals') renderApprovals();
+  if (store.view === 'system') renderSystem();
+  if (store.view === 'evidence') renderEvidenceView();
+  const task = currentTask();
+  if (task) {
+    const key = task.id + ':' + task.status;
+    if (store.announcedState && store.announcedState !== key && store.announcedState.startsWith(task.id + ':')) {
+      announce('Task state: ' + statusInfo(task).label);
+    }
+    store.announcedState = key;
+  }
+}
+
+/* ---------- data refresh with bounded backoff + visibility awareness ---------- */
+let pollTimer = 0;
+let refreshController = null;
+async function refreshAll() {
+  if (refreshController) refreshController.abort();
+  const controller = new AbortController(); refreshController = controller;
+  const signal = controller.signal;
+  store.loading = true; store.refreshError = '';
+  render();
+  try {
+    const { body: health } = await api.health(signal);
+    store.health = health; store.offline = false;
+    if (store.authed) {
+      const [tasksRes, wsRes] = await Promise.all([api.tasks(signal), store.workspaces.length ? Promise.resolve(null) : api.workspaces(signal)]);
+      if (tasksRes.body.tasks) store.tasks = tasksRes.body.tasks;
+      if (!store.conversationId && store.taskId) {
+        const known = store.tasks.find((t) => t.id === store.taskId);
+        if (known?.conversation_id) store.conversationId = known.conversation_id;
+      }
+      if (wsRes?.body?.workspaces) { store.workspaces = wsRes.body.workspaces.filter(Boolean); renderWorkspaces(); }
+      if (store.conversationId) {
+        const { response, body } = await api.conversation(store.conversationId, signal);
+        if (response.ok) {
+          store.conversation = body;
+          alignWorkspaceToCanonical(body.conversation?.workspace_id);
+        }
+        else if (response.status === 404) { store.conversation = null; }
+      }
+      if (store.view === 'system' && !store.ready) { const { body } = await api.ready(signal); store.ready = body; }
+    }
+    store.lastSync = new Date().toISOString();
+    store.pollMs = 2500;
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    store.offline = true;
+    store.refreshError = 'Connection unavailable';
+    store.pollMs = Math.min(Math.round(store.pollMs * 1.7), 30000);
+  }
+  store.loading = false;
+  byId('offlineBar').classList.toggle('show', store.offline);
+  render();
+  schedulePoll();
+}
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (document.hidden) return;
+  pollTimer = setTimeout(refreshAll, store.pollMs);
+}
+function refreshSoon() { clearTimeout(pollTimer); pollTimer = setTimeout(refreshAll, 60); }
+document.addEventListener('visibilitychange', () => {
+  document.documentElement.classList.toggle('paused', document.hidden);
+  store.helix?.setPaused(document.hidden);
+  if (document.hidden) { clearTimeout(pollTimer); if (refreshController) refreshController.abort(); }
+  else refreshSoon();
+});
+window.addEventListener('pagehide', () => {
+  clearTimeout(pollTimer);
+  if (refreshController) refreshController.abort();
+  store.helix?.destroy();
+  store.helix = null;
+});
+window.addEventListener('online', refreshSoon);
+window.addEventListener('offline', () => { store.offline = true; byId('offlineBar').classList.add('show'); render(); });
+
+function renderWorkspaces() {
+  const select = byId('workspace'); const previous = select.value;
+  select.replaceChildren();
+  for (const ws of store.workspaces) {
+    const option = el('option', null, ws.name || ws.id); option.value = ws.id;
+    select.append(option);
+  }
+  if (previous) select.value = previous;
+}
+function alignWorkspaceToCanonical(workspaceId) {
+  if (!workspaceId || store.workspaceTouched || !store.workspaces.some((ws) => ws.id === workspaceId)) return;
+  byId('workspace').value = workspaceId;
+}
+
+/* ---------- submission (idempotent, double-submit safe) ---------- */
+async function submitCommand(text, conversationId, noticeId) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) { setNotice(noticeId, 'Enter a command first.'); return; }
+  if (store.inflight) return;
+  store.inflight = true;
+  byId('sendBtn').disabled = true; byId('followBtn').disabled = true;
+  if (!store.idemKey) store.idemKey = 'jarvis-' + crypto.randomUUID();
+  setNotice(noticeId, 'Submitting to Unified Input…');
+  try {
+    const { response, body } = await api.submitInput({ text: trimmed, workspaceId: byId('workspace').value || undefined, conversationId: conversationId || undefined, idempotencyKey: store.idemKey });
+    if (body.taskId) {
+      store.conversationId = body.conversationId || store.conversationId;
+      store.taskId = body.taskId; selectedTaskId = body.taskId;
+      store.idemKey = '';
+      byId('cmd').value = ''; byId('followCmd').value = '';
+      if (body.denied || body.error) {
+        setNotice(noticeId, 'Denied by Blackspire policy: ' + (body.error || 'not permitted.'));
+        announce('Command denied by policy');
+      } else {
+        setNotice(noticeId, body.duplicate ? 'Duplicate submission — existing canonical task returned.' : 'Accepted into canonical state.');
+        announce(body.duplicate ? 'Duplicate prevented' : 'Command accepted');
+      }
+      if (location.hash.indexOf('#/conversation') !== 0) go('conversation', store.conversationId);
+      await refreshAll();
+    } else if (response.status === 429) {
+      setNotice(noticeId, 'Rate limited — retry in ' + (body.retryAfter || 'a few') + 's. Your idempotency key is preserved.');
+    } else {
+      setNotice(noticeId, body.error || 'The control plane rejected this input.');
+    }
+  } catch {
+    setNotice(noticeId, 'Connection failed — command not confirmed. Resubmitting will reuse the same idempotency key.');
+  } finally {
+    store.inflight = false;
+    byId('sendBtn').disabled = false; byId('followBtn').disabled = false;
+  }
+}
+
+/* ---------- evidence export (server-sanitized) ---------- */
+function downloadExport(format) {
+  if (!selectedTaskId) { toast('Select a task before downloading evidence.'); return; }
+  const link = document.createElement('a');
+  link.href = `/api/tasks/${selectedTaskId}/export.${format}`;
+  link.rel = 'noopener'; document.body.appendChild(link); link.click(); link.remove();
+}
+
+/* ---------- auth ---------- */
+async function checkSession() {
+  const { body } = await api.session();
+  store.authed = Boolean(body.authenticated);
+  if (body.csrfToken) store.csrfToken = body.csrfToken;
+  if (!store.authed && store.csrfToken) setNotice('sessionNotice', 'Session expired or not signed in. Enter the admin token to continue.');
+  return store.authed;
+}
+async function login() {
+  const input = byId('token');
+  const { response, body } = await api.login(input.value);
+  input.value = '';
+  if (!response.ok) { setNotice('sessionNotice', response.status === 429 ? 'Too many attempts — wait a minute and retry.' : 'Sign-in failed. Check the admin token.'); return; }
+  store.csrfToken = body.csrfToken || ''; store.authed = true;
+  setNotice('sessionNotice', '');
+  toast('Signed in.');
+  await refreshAll();
+}
+async function logout() {
+  await api.logout();
+  store.authed = false; store.csrfToken = ''; store.conversation = null; store.tasks = [];
+  setNotice('sessionNotice', 'Signed out.');
+  render();
+}
+
+/* ---------- emergency stop (two-step, server-authoritative) ---------- */
+let stopArmed = false;
+async function emergencyStop() {
+  const btn = byId('stopBtn');
+  if (!stopArmed) { stopArmed = true; btn.textContent = 'Confirm emergency stop'; setNotice('stopNotice', 'Press again to confirm. This freezes dispatch immediately.'); setTimeout(() => { stopArmed = false; btn.textContent = 'Emergency stop'; }, 6000); return; }
+  stopArmed = false; btn.textContent = 'Emergency stop';
+  const { response, body } = await api.stop();
+  setNotice('stopNotice', response.ok ? 'Emergency stop is ACTIVE. Dispatch is frozen by the control plane.' : body.error || 'The control plane did not confirm the stop.');
+  announce('Emergency stop ' + (response.ok ? 'active' : 'not confirmed'));
+  await refreshAll();
+}
+let resetArmed = false;
+async function emergencyStopReset() {
+  const btn = byId('stopResetBtn');
+  if (!resetArmed) { resetArmed = true; btn.textContent = 'Confirm reset'; setNotice('stopNotice', 'Press again to confirm reset. Requires a fresh session.'); setTimeout(() => { resetArmed = false; btn.textContent = 'Reset emergency stop'; }, 6000); return; }
+  resetArmed = false; btn.textContent = 'Reset emergency stop';
+  const { response, body } = await api.stopReset();
+  setNotice('stopNotice', response.ok ? 'Emergency stop reset by the control plane.' : body.error || 'Reset declined by the control plane.');
+  await refreshAll();
+}
+
+/* ---------- cancellation ---------- */
+async function cancelCurrentTask() {
+  const task = currentTask();
+  if (!cancellable(task)) return;
+  byId('cancelBtn').disabled = true;
+  const { response, body } = await api.cancelTask(task.id);
+  if (response.ok && body.task) {
+    setNotice('taskNotice', body.task.status === 'cancelled' ? 'Canonical cancellation recorded.' : 'Cancellation requested — state: ' + (STATUS[body.task.status]?.label || body.task.status));
+    announce('Task ' + (body.task.status === 'cancelled' ? 'cancelled' : 'cancellation requested'));
+  } else {
+    setNotice('taskNotice', body.error || 'Cancellation unavailable for this task.');
+  }
+  await refreshAll();
+}
+
+/* ---------- copy controls ---------- */
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-copy]');
+  if (!button) return;
+  const value = byId(button.dataset.copy)?.textContent || '';
+  try { await navigator.clipboard.writeText(value); toast('Copied.'); } catch { toast('Copy unavailable.'); }
+});
+
+/* ---------- service worker: offline shell + explicit update flow ---------- */
+let applyingUpdate = false; // reload only after the operator chose to update — never on first install
+async function initServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    // A first install has no earlier version to update from, and the worker is briefly
+    // "waiting" before it activates — so gate on an existing controller and re-evaluate
+    // on every state change instead of latching the bar on.
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    const trackWaiting = () => {
+      const waiting = hadController ? registration.waiting : null;
+      store.swWaiting = waiting;
+      byId('updateBar').classList.toggle('show', Boolean(waiting));
+      renderSystem();
+    };
+    trackWaiting();
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      if (worker) worker.addEventListener('statechange', trackWaiting);
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (applyingUpdate) location.reload(); });
+  } catch { /* offline shell is optional; the app works without it */ }
+}
+byId('applyUpdate').addEventListener('click', () => { if (store.swWaiting) { applyingUpdate = true; store.swWaiting.postMessage({ type: 'SKIP_WAITING' }); } });
+
+/* ---------- optional Helix enhancement: never awaited by boot ---------- */
+function loadHelixEnhancement() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const start = () => {
+    import('/helix-core.js').then(({ mountHelixCore }) => {
+      store.helix = mountHelixCore({ container: byId('helixMount'), initialState: coreStateFor()[0] });
+      store.helix.setPaused(document.hidden);
+    }).catch(() => {
+      byId('helixMount').dataset.helixFallback = 'svg';
+    });
+  };
+  if ('requestIdleCallback' in window) window.requestIdleCallback(start, { timeout: 1800 });
+  else setTimeout(start, 300);
+}
+
+/* ---------- wire up ---------- */
+byId('loginBtn').addEventListener('click', login);
+byId('logoutBtn').addEventListener('click', logout);
+byId('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+byId('sendBtn').addEventListener('click', () => submitCommand(byId('cmd').value, store.conversationId, 'composerNotice'));
+byId('followBtn').addEventListener('click', () => submitCommand(byId('followCmd').value, store.conversationId, 'followNotice'));
+byId('cmd').addEventListener('input', () => { store.idemKey = ''; });
+byId('followCmd').addEventListener('input', () => { store.idemKey = ''; });
+byId('cmd').addEventListener('focus', renderCore);
+byId('cmd').addEventListener('blur', renderCore);
+byId('followCmd').addEventListener('focus', renderCore);
+byId('followCmd').addEventListener('blur', renderCore);
+byId('cancelBtn').addEventListener('click', cancelCurrentTask);
+byId('stopBtn').addEventListener('click', emergencyStop);
+byId('stopResetBtn').addEventListener('click', emergencyStopReset);
+byId('exportJsonBtn').addEventListener('click', () => downloadExport('json'));
+byId('exportMdBtn').addEventListener('click', () => downloadExport('md'));
+byId('workspace').addEventListener('change', () => {
+  store.workspaceTouched = true;
+  const conversationWorkspace = store.conversation?.conversation?.workspace_id;
+  if (conversationWorkspace && conversationWorkspace !== activeWorkspaceId()) {
+    store.conversationId = ''; store.conversation = null; store.taskId = ''; selectedTaskId = '';
+    if (store.view !== 'command' && store.view !== 'system') go('command');
+  }
+  render();
+});
+byId('micBtn').addEventListener('click', () => { /* disabled: voice state stays '${voice.state}' until a voice service is authorized */ });
+
+/* ---------- boot ---------- */
+(async function boot() {
+  parseHash();
+  document.documentElement.classList.toggle('paused', document.hidden);
+  api.testMode().then(({ body }) => { store.testMode = body; render(); }).catch(() => {});
+  await checkSession();
+  render();
+  await refreshAll();
+  initServiceWorker();
+  loadHelixEnhancement();
+})();
+</script>
+</body>
+</html>
