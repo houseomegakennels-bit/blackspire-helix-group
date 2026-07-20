@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blackspire Jarvis Interface"
+  short_description: "Build and review the Jarvis mobile command UI"
+  default_prompt: "Use $blackspire-jarvis-interface to build or review the Blackspire Jarvis frontend."

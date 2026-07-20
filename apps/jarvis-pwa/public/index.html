@@ -1,23 +1,261 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#050505"><link rel="manifest" href="/manifest.webmanifest"><title>Jarvis Command</title><style>body{margin:0;background:#050505;color:#f6e7b7;font-family:Inter,system-ui,sans-serif}main{max-width:560px;margin:auto;min-height:100vh;padding:18px;display:grid;gap:16px}section,.card{border:1px solid #4b3715;background:linear-gradient(180deg,#13110d,#080807);border-radius:22px;padding:16px;box-shadow:0 20px 60px #0008}input,textarea,button,select{font:inherit;border-radius:14px;border:1px solid #6e5220;background:#0c0b09;color:#fff;padding:14px;min-height:48px}button{background:#c9a227;color:#070707;font-weight:800}.danger{background:#5b0b0b;color:#fff}.ghost{background:#111;color:#f6e7b7}nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grid{display:grid;gap:10px}.task{border-left:4px solid #c9a227}.mic{border-radius:999px;width:84px;height:84px;justify-self:center;font-size:32px}.small{font-size:12px;color:#ccb77b}.status-bar{display:flex;gap:10px;flex-wrap:wrap}.badge{border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;background:#1a1712;border:1px solid #6e5220}.badge.on{background:#5b0b0b;color:#fff;border-color:#5b0b0b}.badge.off{background:#123b1a;color:#bdf7c9;border-color:#1e5c2e}pre{white-space:pre-wrap;overflow-wrap:anywhere}@media(min-width:700px){main{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}</style></head><body><main><header class="wide"><p class="small">BLACKSPIRE COMMAND</p><h1>Jarvis Mobile Console</h1><p>Phone-first control for Hermes tasks, approvals, workspaces, health, and emergency stop.</p><div class="status-bar" id="statusBar" aria-live="polite"></div></header><section id="signin"><h2>Sign in</h2><p id="sessionNotice" class="small" role="alert"></p><input id="token" aria-label="Admin token" placeholder="Admin token"><button onclick="login()">Unlock</button><button class="ghost" onclick="logout()">Logout</button><p class="small">First local token defaults to dev-admin-token-change-me; rotate for production.</p></section><section><h2>Conversation</h2><textarea id="cmd" aria-label="Command request" placeholder="Ask Hermes to do safe workspace work"></textarea><button class="mic" aria-label="Push to talk" onclick="voice()">🎙</button><button onclick="submitTask()">Send task</button><pre id="stream" aria-live="polite"></pre></section><section><h2>Current task</h2><div id="current" class="card">No task selected.</div><nav><button class="ghost" onclick="downloadExport('json')">Download JSON</button><button class="ghost" onclick="downloadExport('md')">Download Markdown</button><button class="ghost" onclick="loadApprovalHistory()">Approval history</button></nav><pre id="approvalHistory"></pre></section><section><h2>Workspace selector</h2><select id="workspace" aria-label="Workspace"></select><button class="ghost" onclick="loadWorkspaces()">Refresh workspaces</button></section><section><h2>Approval center</h2><div id="approvals" class="grid"></div></section><section><h2>System health</h2><button class="ghost" onclick="health()">Check health</button><pre id="health"></pre></section><section><h2>Settings</h2><button class="ghost" onclick="readAloud()">Read last response aloud</button><button class="ghost" onclick="navigator.serviceWorker?.register('/sw.js')">Install PWA support</button></section><section><h2>Emergency controls</h2><button class="danger" onclick="stopAll()">GLOBAL STOP</button></section><section class="wide"><h2>Task history</h2><div id="tasks" class="grid"></div></section><section class="wide"><h2>Task details and logs</h2><pre id="logs"></pre></section></main><script>
-let csrfToken='';let selectedTaskId='';let currentConversationId='';const H={'content-type':'application/json'};
-async function login(){const r=await fetch('/api/auth/login',{method:'POST',headers:H,credentials:'same-origin',body:JSON.stringify({adminToken:document.getElementById('token').value})});if(!r.ok){sessionNotice.textContent='Sign-in failed. Check the admin token.';return}const d=await r.json();csrfToken=d.csrfToken||'';document.getElementById('token').value='';sessionNotice.textContent='';loadAll()}
-async function logout(){await fetch('/api/auth/logout',{method:'POST',headers:{...H,'x-csrf-token':csrfToken},credentials:'same-origin'});csrfToken='';selectedTaskId='';current.textContent='No task selected.';sessionNotice.textContent='Signed out.'}
-async function session(){const d=await (await fetch('/api/auth/session',{credentials:'same-origin'})).json();csrfToken=d.csrfToken||csrfToken;if(!d.authenticated){sessionNotice.textContent='Session expired or not signed in. Enter the admin token to continue.'}return d.authenticated}
-async function api(p,o={}){const method=o.method||'GET';const headers={...H,...(o.headers||{})};if(method!=='GET')headers['x-csrf-token']=csrfToken;const r=await fetch(p,{...o,credentials:'same-origin',headers});if(r.status===401){sessionNotice.textContent='Session expired. Please sign in again.';return{error:'unauthorized'}}return r.json()}
-async function loadWorkspaces(){const d=await api('/api/workspaces');workspace.innerHTML=(d.workspaces||[]).map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
-async function submitTask(){stream.textContent='Hermes acknowledged. Planning...';const field=document.getElementById('conversationId');const d=await api('/api/unified-input',{method:'POST',body:JSON.stringify({text:cmd.value,workspaceId:workspace.value,conversationId:field?.value||currentConversationId||null,idempotencyKey:'jarvis-'+Date.now()})});if(d.taskId){selectedTaskId=d.taskId;currentConversationId=d.conversationId;field.value=d.conversationId;current.textContent=JSON.stringify(d,null,2);await loadConversation()}else current.textContent=JSON.stringify(d,null,2);setTimeout(loadAll,1200)}
-async function loadConversation(){if(!currentConversationId)return;const d=await api('/api/conversations/'+currentConversationId);stream.textContent=JSON.stringify({conversationId:currentConversationId,tasks:d.tasks,events:d.events},null,2)}
-function ensureConversationControls(){if(document.getElementById('conversationId'))return;const field=document.createElement('input');field.id='conversationId';field.setAttribute('aria-label','Conversation ID');field.placeholder='Conversation ID (optional)';field.addEventListener('change',()=>{currentConversationId=field.value.trim();loadConversation()});cmd.before(field)}
-async function loadTasks(){const d=await api('/api/tasks');tasks.innerHTML=(d.tasks||[]).map(t=>`<button class="card task" onclick="details('${t.id}')"><b>${t.status}</b><br>${t.request}<br><span class="small">${t.id}</span></button>`).join('');approvals.innerHTML=(d.tasks||[]).filter(t=>t.status==='waiting_for_approval').map(t=>`<div class="card"><b>${t.request}</b><button onclick="act('${t.id}','approve')">Approve</button><button class="danger" onclick="act('${t.id}','reject')">Reject</button></div>`).join('')||'No approvals pending.'}
-async function details(id){selectedTaskId=id;const d=await api('/api/tasks/'+id);current.textContent=JSON.stringify(d.task,null,2);logs.textContent=JSON.stringify(await api('/api/tasks/'+id+'/logs'),null,2);approvalHistory.textContent=''}
-async function act(id,a){await api('/api/tasks/'+id+'/'+a,{method:'POST',body:'{}'});loadAll()}
-async function loadApprovalHistory(){if(!selectedTaskId){approvalHistory.textContent='Select a task first.';return}const d=await api('/api/tasks/'+selectedTaskId+'/approvals');approvalHistory.textContent=(d.approvals||[]).map(a=>`${a.created_at} ${a.action} -> ${a.status}${a.decided_by?` by ${a.decided_by}`:''}${a.decision_note?`: ${a.decision_note}`:''}`).join('\n')||'No approval history for this task.'}
-function downloadExport(format){if(!selectedTaskId){stream.textContent='Select a task before downloading evidence.';return}const a=document.createElement('a');a.href=`/api/tasks/${selectedTaskId}/export.${format}`;a.rel='noopener';document.body.appendChild(a);a.click();a.remove()}
-async function health(){const d=await api('/health');document.getElementById('health').textContent=JSON.stringify(d,null,2);renderStatus(d)}
-async function stopAll(){const d=await api('/api/stop',{method:'POST',body:'{}'});document.getElementById('health').textContent=JSON.stringify(d,null,2);health()}
-function renderStatus(h){if(!h||h.error){statusBar.innerHTML='';return}statusBar.innerHTML=`<span class="badge ${h.emergencyStop?'on':'off'}">Emergency stop: ${h.emergencyStop?'ACTIVE':'inactive'}</span><span class="badge">Telegram: ${h.telegramMode}</span>`}
-function voice(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){stream.textContent='Speech-to-text adapter unavailable in this browser.';return}const r=new R();r.onresult=e=>cmd.value=e.results[0][0].transcript;r.start()}
-function readAloud(){speechSynthesis.speak(new SpeechSynthesisUtterance(stream.textContent||current.textContent))}
-async function loadAll(){const authed=await session();if(!authed)return;ensureConversationControls();loadWorkspaces();loadTasks();loadConversation();health()}
-ensureConversationControls();loadAll();navigator.serviceWorker?.register('/sw.js');
-</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#04070C">
+<meta name="description" content="Blackspire Jarvis — mobile command interface for the Blackspire Command control plane.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%2304070C'/%3E%3Cg fill='none' stroke='%234FD8FF' stroke-width='5'%3E%3Cellipse cx='90' cy='90' rx='62' ry='24' transform='rotate(-18 90 90)'/%3E%3Cellipse cx='90' cy='90' rx='40' ry='52' transform='rotate(14 90 90)' opacity='.7'/%3E%3C/g%3E%3Ccircle cx='90' cy='90' r='13' fill='%234FD8FF'/%3E%3C/svg%3E">
+<title>Blackspire Jarvis</title>
+<link rel="stylesheet" href="/jarvis.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div id="app">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Blackspire Command</p>
+      <h1>Jarvis</h1>
+    </div>
+    <div class="rail" id="statusBar" role="status" aria-live="polite"></div>
+  </header>
+
+  <div id="offlineBar" role="status">Offline — showing last synced canonical state. Reconnecting…</div>
+  <div id="updateBar" role="status"><span>A new Jarvis version is ready.</span><button id="applyUpdate" type="button">Reload</button></div>
+
+  <nav class="views" aria-label="Screens" id="viewNav">
+    <a href="#/command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-18 12 12)"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>Command</a>
+    <a href="#/conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Conversation</a>
+    <a href="#/task"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Task</a>
+    <a href="#/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 4v16M5 7h9M5 12h13M5 17h7"/></svg>Events</a>
+    <a href="#/approvals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg>Approvals</a>
+    <a href="#/system"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0M12 14l3.5-4"/><path d="M4 19h16"/></svg>System</a>
+    <a href="#/evidence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13h5M10 17h5"/></svg>Evidence</a>
+  </nav>
+
+  <main id="main">
+
+    <!-- Sign in -->
+    <section data-view="signin" hidden>
+      <div class="panel wide">
+        <h2>Sign in</h2>
+        <div class="stack">
+          <p class="muted">Operator authentication for the Blackspire control plane. The token is sent once and never persisted in this browser.</p>
+          <p class="notice" id="sessionNotice" role="alert"></p>
+          <label class="sr-only" for="token">Admin token</label>
+          <input id="token" type="password" autocomplete="current-password" placeholder="Admin token">
+          <div class="row">
+            <button class="primary" id="loginBtn" type="button">Unlock Jarvis</button>
+            <button class="ghost" id="logoutBtn" type="button">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1 · Command Center -->
+    <section data-view="command" hidden>
+      <div class="helix-card wide" data-core="dormant" id="helixCard">
+        <div class="helix-wrap" id="helixMount">
+          <svg class="helix" data-helix-fallback="svg" viewBox="0 0 240 240" aria-hidden="true" focusable="false">
+            <defs>
+              <radialGradient id="halo"><stop offset="0%" stop-color="#4FD8FF" stop-opacity=".5"/><stop offset="70%" stop-color="#4FD8FF" stop-opacity=".08"/><stop offset="100%" stop-color="#4FD8FF" stop-opacity="0"/></radialGradient>
+            </defs>
+            <circle class="listen-ring" cx="120" cy="120" r="104"/>
+            <g class="ga"><path class="arcv" d="M120 22 A98 98 0 0 1 218 120"/><path class="arcv" d="M120 218 A98 98 0 0 1 22 120"/></g>
+            <g class="g1">
+              <ellipse class="ring" cx="120" cy="120" rx="92" ry="30" transform="rotate(-18 120 120)"/>
+              <circle class="node" r="3.4" cx="207.5" cy="91.6"/>
+            </g>
+            <g class="g2">
+              <ellipse class="ring" cx="120" cy="120" rx="68" ry="50" transform="rotate(14 120 120)" opacity=".6"/>
+              <circle class="node" r="3" cx="186" cy="136.5"/>
+            </g>
+            <g class="g3">
+              <ellipse class="ring" cx="120" cy="120" rx="42" ry="72" transform="rotate(-6 120 120)" opacity=".5"/>
+              <circle class="node" r="2.6" cx="161.5" cy="115.6"/>
+            </g>
+            <g class="core-pulse"><circle class="nucleus-halo" cx="120" cy="120" r="34"/><circle class="nucleus" cx="120" cy="120" r="11"/><circle cx="120" cy="120" r="5" fill="#04070C"/></g>
+          </svg>
+        </div>
+        <div class="stack gap-6">
+          <p class="eyebrow ion">Helix Core</p>
+          <p class="state" id="coreState" data-tone="ion"><span class="dot"></span><span id="coreStateLabel">Dormant</span></p>
+          <p class="muted fs-13" id="coreDetail">Awaiting your command.</p>
+          <p class="sr-only" id="coreSr" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="panel wide">
+        <h2 id="composerHeading">Command</h2>
+        <div class="stack">
+          <label class="sr-only" for="workspace">Workspace</label>
+          <select id="workspace" aria-label="Workspace"></select>
+          <label class="sr-only" for="cmd">Command for Hermes</label>
+          <textarea id="cmd" placeholder="Ask Hermes to do safe workspace work" enterkeyhint="send"></textarea>
+          <div class="row row-center">
+            <button class="primary" id="sendBtn" type="button">Send command</button>
+            <button class="mic ghost" id="micBtn" type="button" disabled aria-describedby="micHint" aria-label="Voice input (not yet enabled)">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
+            </button>
+          </div>
+          <p class="muted fs-12" id="micHint">Voice input is staged but not connected. No microphone permission is requested.</p>
+          <p class="notice" id="composerNotice" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Current task</h2>
+        <div class="stack" id="currentTaskCard"><p class="empty">No task yet. Submit a command to create one.</p></div>
+      </div>
+
+      <div class="panel">
+        <h2>Delivery &amp; attribution</h2>
+        <div class="stack" id="attributionCard"><p class="empty">Hermes, provider, and Telegram delivery attribution appear after dispatch.</p></div>
+      </div>
+
+      <div class="panel wide">
+        <h2>Recent conversations</h2>
+        <div class="stack" id="recentConversations"><p class="empty">No conversations yet.</p></div>
+      </div>
+    </section>
+
+    <!-- 2 · Conversation -->
+    <section data-view="conversation" hidden>
+      <div class="panel wide">
+        <h2 id="convTitle">Conversation</h2>
+        <div class="facts">
+          <div class="fact span2"><span class="label">Canonical conversation ID</span><span class="value mono" id="convId">—</span><div class="row mt-8"><button class="copy ghost" data-copy="convId" type="button">Copy ID</button></div></div>
+          <div class="fact"><span class="label">Workspace</span><span class="value mono" id="convWorkspace">—</span></div>
+          <div class="fact"><span class="label">Sync</span><span class="value mono" id="convSync">—</span></div>
+        </div>
+      </div>
+      <div class="panel wide">
+        <h2>Timeline</h2>
+        <ol class="msgs" id="messageList"></ol>
+        <p class="empty" id="messagesEmpty">No messages yet. Canonical Jarvis, web, and Telegram messages share this timeline.</p>
+      </div>
+      <div class="panel wide">
+        <h2>Follow-up</h2>
+        <div class="stack">
+          <label class="sr-only" for="followCmd">Follow-up command</label>
+          <textarea id="followCmd" placeholder="Continue this conversation" enterkeyhint="send"></textarea>
+          <button class="primary" id="followBtn" type="button">Send follow-up</button>
+          <p class="notice" id="followNotice" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 · Task Detail -->
+    <section data-view="task" hidden>
+      <div class="panel wide">
+        <h2>Task detail</h2>
+        <div class="facts" id="taskFacts">
+          <div class="fact span2"><span class="label">Canonical task ID</span><span class="value mono" id="taskIdValue">—</span><div class="row mt-8"><button class="copy ghost" data-copy="taskIdValue" type="button">Copy ID</button></div></div>
+          <div class="fact"><span class="label">State</span><span class="value"><span class="state" id="taskStatePill"><span class="dot"></span><span id="taskStateLabel">—</span></span></span></div>
+          <div class="fact"><span class="label">Workspace</span><span class="value mono" id="taskWorkspace">—</span></div>
+          <div class="fact"><span class="label">Risk / action class</span><span class="value mono" id="taskRisk">—</span></div>
+          <div class="fact"><span class="label">Authority</span><span class="value mono" id="taskAuthority">—</span></div>
+          <div class="fact"><span class="label">Hermes stage</span><span class="value mono" id="taskStage">—</span></div>
+          <div class="fact"><span class="label">Hermes skill</span><span class="value mono" id="taskHermesSkill">—</span></div>
+          <div class="fact"><span class="label">Worker</span><span class="value mono" id="taskWorker">—</span></div>
+          <div class="fact"><span class="label">Provider / model</span><span class="value mono" id="taskProvider">—</span></div>
+          <div class="fact"><span class="label">Budget</span><span class="value mono" id="taskBudget">—</span></div>
+          <div class="fact"><span class="label">Started</span><span class="value mono" id="taskStarted">—</span></div>
+          <div class="fact"><span class="label">Completed</span><span class="value mono" id="taskCompleted">—</span></div>
+          <div class="fact"><span class="label">Updated</span><span class="value mono" id="taskUpdated">—</span></div>
+          <div class="fact"><span class="label">Duration</span><span class="value mono" id="taskDuration">—</span></div>
+          <div class="fact"><span class="label">Idempotency key</span><span class="value mono" id="taskIdem">—</span></div>
+          <div class="fact span2"><span class="label">Request</span><span class="value" id="taskRequest">—</span></div>
+          <div class="fact span2"><span class="label">Outcome</span><span class="value" id="taskOutcome">—</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Controls</h2>
+        <div class="stack">
+          <button class="danger" id="cancelBtn" type="button" disabled>Cancel task</button>
+          <p class="notice" id="taskNotice" role="status" aria-live="polite"></p>
+          <div class="row">
+            <button class="ghost" id="exportJsonBtn" type="button">Download evidence (JSON)</button>
+            <button class="ghost" id="exportMdBtn" type="button">Download evidence (Markdown)</button>
+          </div>
+          <p class="muted fs-12">Exports are sanitized and redacted by the control plane.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Approval history</h2>
+        <div class="stack" id="approvalHistory"><p class="empty">No approval history for this task.</p></div>
+      </div>
+      <div class="panel wide">
+        <h2>Evidence &amp; delivery</h2>
+        <div class="stack" id="taskEvidence"><p class="empty">No evidence recorded yet.</p></div>
+      </div>
+    </section>
+
+    <!-- 4 · Event Timeline -->
+    <section data-view="events" hidden>
+      <div class="panel wide">
+        <h2>Ordered event timeline</h2>
+        <p class="muted fs-13 mb-12">Canonical events for the active conversation, oldest first. Unknown event types render as sanitized system events.</p>
+        <ol class="timeline" id="eventList"></ol>
+        <p class="empty" id="eventsEmpty">No events yet. Open a conversation to follow its canonical event stream.</p>
+      </div>
+    </section>
+
+    <!-- 5 · Approval Center -->
+    <section data-view="approvals" hidden>
+      <div class="panel wide">
+        <h2>Approval center</h2>
+        <p class="muted fs-13 mb-12">Approvals are decided by the control plane. Jarvis only submits your decision; it cannot create or widen approvals.</p>
+        <div class="stack" id="approvalList"><p class="empty">No approvals pending.</p></div>
+      </div>
+    </section>
+
+    <!-- 6 · System Status -->
+    <section data-view="system" hidden>
+      <div class="panel wide">
+        <h2>System status</h2>
+        <div class="facts" id="systemFacts">
+          <div class="fact"><span class="label">Control plane</span><span class="value" id="sysApi">—</span></div>
+          <div class="fact"><span class="label">Connection</span><span class="value" id="sysLink">—</span></div>
+          <div class="fact"><span class="label">Emergency stop</span><span class="value" id="sysStop">—</span></div>
+          <div class="fact"><span class="label">Safe Mode</span><span class="value" id="sysSafeMode">Not reported</span></div>
+          <div class="fact"><span class="label">Telegram adapter</span><span class="value mono" id="sysTelegram">—</span></div>
+          <div class="fact"><span class="label">Providers</span><span class="value mono" id="sysProviders">—</span></div>
+          <div class="fact"><span class="label">Active workspace</span><span class="value mono" id="sysWorkspace">—</span></div>
+          <div class="fact"><span class="label">Mode</span><span class="value" id="sysMode">Production</span></div>
+          <div class="fact"><span class="label">Polling</span><span class="value mono" id="sysPolling">—</span></div>
+          <div class="fact"><span class="label">Last sync</span><span class="value mono" id="sysSync">—</span></div>
+          <div class="fact"><span class="label">PWA update</span><span class="value" id="sysPwa">Current</span></div>
+          <div class="fact"><span class="label">Hermes / workers</span><span class="value" id="sysHermes">Reported per task</span></div>
+        </div>
+      </div>
+      <div class="panel wide">
+        <h2>Emergency controls</h2>
+        <div class="stack">
+          <p class="muted fs-13">Emergency stop halts dispatch before any provider is contacted. It is enforced by the control plane, not this interface.</p>
+          <button class="danger" id="stopBtn" type="button">Emergency stop</button>
+          <button class="ghost" id="stopResetBtn" type="button">Reset emergency stop</button>
+          <p class="notice" id="stopNotice" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 · Evidence View -->
+    <section data-view="evidence" hidden>
+      <div class="panel wide">
+        <h2>Evidence</h2>
+        <p class="muted fs-13 mb-12">Sanitized evidence for the selected task. The control plane redacts secrets, headers, raw output, and internal paths before anything reaches this view.</p>
+        <div class="stack" id="evidenceView"><p class="empty">Select a task to inspect its evidence summary.</p></div>
+      </div>
+    </section>
+
+  </main>
+
+  <p class="sr-only" id="announcer" aria-live="polite"></p>
+  <div id="toast" role="status"></div>
+</div>
+
+<script src="/jarvis.js"></script>
+</body>
+</html>
