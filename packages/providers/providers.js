@@ -4,6 +4,9 @@ import path from 'node:path';
 import { id, redact } from '../shared/util.js';
 
 export function activeModes() {
+  if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && process.env.BLACKSPIRE_PROVIDER_MODE === 'manual') {
+    return { openai: 'disabled-by-profile', anthropic: 'disabled-by-profile', codex: 'disabled-by-profile', claudeCode: 'disabled-by-profile' };
+  }
   return {
     openai: process.env.OPENAI_API_KEY ? 'api' : 'unconfigured',
     anthropic: process.env.ANTHROPIC_API_KEY ? 'api' : 'unconfigured',
@@ -13,6 +16,9 @@ export function activeModes() {
 }
 
 export function selectProvider(policy = {}, { requested = null, model = null } = {}) {
+  if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && process.env.BLACKSPIRE_PROVIDER_MODE === 'manual') {
+    return { provider: 'manual', mode: 'handoff', model };
+  }
   if (process.env.HERMES_TEST_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock', model: 'mock-hermes-status-v1' };
   requested ||= process.env.BLACKSPIRE_PROVIDER_MODE || 'mock';
   const preferred = policy.preferred || ['manual'];
@@ -28,6 +34,9 @@ export function selectProvider(policy = {}, { requested = null, model = null } =
 }
 
 export async function executeProviderRequest({ selected, packet, workspace, deadline = null }) {
+  if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && process.env.BLACKSPIRE_PROVIDER_MODE === 'manual' && selected.provider !== 'manual') {
+    return { ok: false, provider: selected.provider || 'unknown', mode: 'disabled-by-profile', artifacts: [], usage: usage(selected, 0), error: 'external providers are disabled by the production profile', raw: null };
+  }
   const started = Date.now();
   try {
     if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', model: selected.model, started, response: mockResponse(packet) });

@@ -98,3 +98,31 @@
 - Established `docs/BLACKSPIRE_SOURCE_OF_TRUTH.md` and supporting active-context, actions, decisions, session-log, and maintenance documents.
 - Marked real Telegram, live providers, device acceptance, GitHub CI for unpublished commits, current monitoring dashboard delivery, live Command production, and canonical Constitution location `UNVERIFIED`.
 - No credential values were read or recorded. No push, merge, deployment, production access, Telegram connection, or host-security change occurred.
+# 2026-07-21 — VPS-readiness foundation (Codex)
+
+- Added exact-SHA immutable release creation/switch/rollback scripts with persistent shared-state layout; no release was activated on the VPS.
+- Replaced database file-copy backup with WAL-safe SQLite `VACUUM INTO`, SHA-256 sidecar, integrity verification, and disposable-only restore guardrails.
+- Added a fail-closed no-external-provider production profile and signal-forwarding start supervisor; provider credentials, mock modes, and Telegram are rejected for that profile.
+- Added reviewed healthcheck, logrotate, and monitoring templates for operator application. Live services, production data, credentials, DNS, proxy, Vercel, and firewall were untouched.
+- Tightened restore rehearsal to require the generated SHA-256 sidecar before copying any backup; the disposable backup/restore test still passes.
+
+# 2026-07-21 — VPS-readiness draft PR published (Codex)
+
+- Published `feature/unified-input-foundation` as draft PR #26 for independent review only; base remained `origin/main` `405a4166a5ce4d350573bce35dfa9f424a309596`.
+- Before publication, local Node 22.23.1 validation passed: 59 focused readiness/Jarvis/CSP tests, 228 full tests, build, lint, typecheck, secret scan, living-memory, shell syntax, and whitespace checks.
+- Vercel records for PR #26 head `204a98e08827b859022462a33ea9044b6ed9ef14` were canceled for both `frontend` and `blackspire-helix-group`; neither became READY and production remained unchanged.
+- GitHub CI exposed two CI-only test fragilities: the release readiness test assumed the hardcoded base commit was available in the depth-1 PR merge checkout, and the smoke test used a fixed sleep plus `localhost`. `42a0d1f` made the release fixture use the checked-out 40-hex commit while preserving exact-SHA validation; `459db4e` made smoke wait on `127.0.0.1` health with cleanup.
+- No live VPS, production database, service, reverse proxy, firewall, DNS, Telegram, credential, provider, Vercel setting, deployment, merge, or production runtime was changed.
+
+# 2026-07-21 — VPS-readiness CI claim fix (Codex)
+
+- GitHub CI exposed a same-second task-claim readback collision in the worker acceptance path. `8c1010d` keeps the assigned worker id stable across the claim update and readback so a no-op second claim cannot reread the previous worker's task when `claimed_at` timestamps collide.
+- Focused acceptance/orchestration/core validation passed 26/26 under Node 22.23.1 after the fix.
+- No live VPS, production database, service, reverse proxy, firewall, DNS, Telegram, credential, provider, Vercel setting, deployment, merge, or production runtime was changed.
+
+# 2026-07-21 — VPS-readiness hardening corrections applied (Claude Code)
+
+- Recovered the interrupted PR #26 hardening session read-only: reviewed head `7d1330590fbfe6485cf41e673189ffc3b6c6adca`, base main `405a4166a5ce4d350573bce35dfa9f424a309596`, no interrupted merge/rebase/cherry-pick, no stash, and the independent-review worktree `/tmp/blackspire-pr26-review` left clean and untouched.
+- Applied the independent reviewer's non-blocking hardening corrections: shared `packages/shared/path-safety.js` real-path/symlink helpers; backup default now resolves beneath the canonical `shared/backups` (never an immutable release) with partial-artifact cleanup; restore rejects symlink/same-file/live-target escapes and cleans incomplete disposable targets while preserving the backup; a credential-free injectable `verifyVpsRuntime` gate (Node major 22, bounded port/timeouts, non-root ownership, no external providers/mock modes/implicit migrations) enforced by the production supervisor and mirrored in `verify-environment.sh`; and a destination-safe atomic `mv -T` release promotion.
+- Added `tests/vps-readiness-hardening.test.js` covering every reviewed negative path. Validation under a temporary Node 22.23.1 (host stays on v18; no global change): 25/25 new hardening tests, 253/253 full suite, build, lint, typecheck, secret scan, living-memory check, and `git diff --check` all passed.
+- Committed as `dd4b3aa`, `3598f18`, `e2cc29c` without amending reviewed history. PR #26 remains draft; both Vercel projects report "Canceled by Ignored Build Step" for the branch and neither became READY. No live VPS, production database, service, reverse proxy, TLS, firewall, DNS, Telegram, credential, provider, Vercel setting, deployment, merge, or production runtime was changed.
