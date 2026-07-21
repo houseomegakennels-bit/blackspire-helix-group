@@ -5,9 +5,9 @@
 The durable authority is GitHub repository `houseomegakennels-bit/blackspire-helix-group`. Code, commits, tests, deployment evidence, and explicit operator-confirmed results outrank summaries. Unsupported current-state claims are `UNVERIFIED`.
 
 - Last reconciled: 2026-07-21 UTC
-- Base `origin/main`: `405a4166a5ce4d350573bce35dfa9f424a309596`
-- Last verified implementation commit: `8c1010d691513e584c085a1b50ac430dc55affd2`
-- The last verified implementation commit is on draft PR #26 for independent review; `origin/main` remains the deployment target and contains the merged Jarvis feature but not this later readiness tooling.
+- Base `origin/main`: `a9602496c0c0f3f50e62b63aeedfb348fa5da857`
+- Last verified implementation commit: `aa4cc608ccd206e11afb590b278176c0c0caa286` (merged into `main`)
+- PR #26 passed independent review and independent second review (253/253 tests, build, lint, typecheck, secret scan, living-memory, and `git diff --check`; zero confirmed defects, three informational findings) and was merged into `main` with a merge commit (`a9602496`, parents `405a4166` + `aa4cc608`); reviewed history was preserved, not squashed or rebased. The merge covered repository readiness tooling only. Both Vercel projects were canceled by the Ignored Build Step, no application build executed, and no live VPS, production database, service, or production surface changed. `READY_FOR_VPS_PRODUCTION_DEPLOYMENT` remains `no` pending the host-side blockers.
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
 
@@ -32,7 +32,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 | Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
 | Hermes/providers | VERIFIED restricted foundation and subscription Codex worker acceptance | Version 1 restricted contracts and the single-use subscription Codex adapter are locally tested. One final authorized invocation used ChatGPT subscription authentication, passed the exact response contract, completed canonical state, and cleaned disposable state with no API key, retry, fallback, or observed tool call. |
 | Restricted worker publication | PUBLISHED (branch only); no PR | Corrected 2026-07-19 against observed refs: `origin/feature/unified-input-foundation` is at `7dbe07f`, not `2ab3394`, and the remote-ref reflog records two pushes (`2ab3394`, then `7dbe07f`). The published range is `029e38a..7dbe07f` (ahead=25, behind=0). No PR exists and nothing is merged to `main`. GitHub deployment evidence shows both `blackspire-helix-group` and `frontend` create Vercel previews for non-main commits. No authenticated Vercel CLI session or approved Vercel token is available to read back or set a branch-specific Ignored Build Step, so no push was attempted. |
-| VPS production Command | PLANNED, UNVERIFIED live | Immutable release, WAL-safe backup/restore, no-provider profile, production supervisor, monitoring templates, shallow-checkout-safe release tests, CI-hardened smoke startup, and collision-safe worker claim readback are published on draft PR #26 for review. Live supervision, backups, stable HTTPS, and activation remain unverified and untouched. |
+| VPS production Command | READINESS TOOLING MERGED; live UNVERIFIED | Immutable release, WAL-safe backup/restore, no-provider profile, production supervisor, hardened path/runtime verification, monitoring templates, shallow-checkout-safe release tests, CI-hardened smoke startup, and collision-safe worker claim readback merged into `main` via PR #26 (`a9602496`). Live supervision, reverse proxy/TLS, least-privileged runtime ownership, backups, stable HTTPS, and activation remain unverified and untouched; six host-side blockers stay open. |
 | Codespace recovery/test | BLOCKED | Preparation exists; creation returned a usage-budget HTTP 402 and no resource was created or changed. |
 
 ## Important branches and commits
@@ -84,7 +84,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 
 ## Blockers and next safe actions
 
-Current blockers: draft PR #26 requires independent review and must not be marked ready, merged, or deployed without separate approval. Host-side blockers remain: approved reverse proxy/TLS, least-privileged runtime ownership, installed and alert-tested monitoring/log rotation, separately approved production backup/migration, and an exact known-good live release/database rollback target. Codespaces usage credit is exhausted; every new subscription Codex task still requires separate scoped approval; real Telegram, production Command state, and other live providers are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
+Current blockers: PR #26 readiness tooling is merged into `main`, but production deployment is not authorized. Six host-side blockers remain, each requiring separate explicit approval: (1) approved reverse proxy and TLS installation and verification; (2) least-privileged non-root runtime ownership provisioning; (3) installed and alert-tested monitoring and log rotation; (4) separately approved real production backup and migration rehearsal or execution; (5) an exact known-good live release and database rollback target recorded; and (6) readiness tooling incorporated into the deployment artifact. Reverse-proxy/TLS and runtime-ownership plans plus credential-free verification are prepared as reviewed `ops/` templates only; nothing is installed or applied. Codespaces usage credit is exhausted; every new subscription Codex task still requires separate scoped approval; real Telegram, production Command state, and other live providers are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
 Immediate safe actions:
 
@@ -92,7 +92,7 @@ Immediate safe actions:
 2. Preserve the operator-confirmed iPhone acceptance and verified teardown evidence; do not restage unless a new acceptance need is explicitly approved.
 3. Continue credential-free local checks only when they validate new work or reconcile changed state.
 4. Complete production readiness, backup, monitoring, stable HTTPS, and rollback verification before any VPS promotion.
-5. Keep PR #26 draft for independent review. Do not merge or deploy until host-side blockers are closed and a separate bounded production approval is given.
+5. PR #26 readiness tooling is merged; do not deploy or activate any release until the six host-side blockers are closed and a separate bounded production approval is given. Treat the prepared `ops/` proxy/TLS and ownership templates as review artifacts, not installed configuration.
 
 Operator-only actions include spending/budget changes, credential provisioning, GitHub authorization, device acceptance, real Telegram connection, production/DNS/provider/host-security changes, approval-policy changes, emergency-control changes, trading, and funds actions.
 

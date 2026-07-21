@@ -27,18 +27,25 @@ jobs:
   build-and-test:
     name: Install, migrate, test, build, lint, typecheck, scan, audit
     runs-on: ubuntu-latest
+    # Bounded safety ceiling: the full job (install → audit) completes in a couple of minutes.
+    # This is only a backstop so a future runtime hang fails fast instead of burning the 6h default.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # node-version-file reads the "engines.node" field from package.json (>=22.5.0), which is the actual
-      # floor this project requires — packages/task-engine/db.js uses node:sqlite (DatabaseSync), which does
-      # not exist before Node 22.5.0. Keeping the version declared in package.json (not duplicated here)
-      # means this workflow can't silently drift from what the app itself checks at production startup.
+      # node-version-file must read .node-version — the single canonical runtime pin (22.23.1), the same one
+      # the devcontainer image (1-22-bookworm) and scripts/bootstrap-development.sh use. package.json's
+      # "engines" field is a deliberately broad *compatibility* range (>=22.5.0 <25) for consumers, NOT the
+      # runtime to test on: setup-node resolves it to the newest satisfying release (Node 24), which the
+      # production runtime guard in packages/shared/security.js rejects (it pins major 22 exactly, because the
+      # durable-VPS profile is only validated on Node 22). Reading engines here made CI boot the app under
+      # Node 24, the production-mode API aborted at startup, and the test suite hung. Pinning to .node-version
+      # keeps CI on the exact runtime the app is built, reviewed, and deployed for.
       - name: Set up Node.js (project-required version)
         uses: actions/setup-node@v4
         with:
-          node-version-file: package.json
+          node-version-file: .node-version
           cache: npm
 
       - name: Prepare log directory
