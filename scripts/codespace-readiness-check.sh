@@ -8,7 +8,7 @@ test -f package-lock.json
 test -f .node-version
 test -x scripts/migrate.js || test -f scripts/migrate.js
 git diff --check
-for command in build lint typecheck test security:scan db:migrate start:iphone-test stop:iphone-test; do
+for command in build lint typecheck test security:scan start:iphone-test stop:iphone-test; do
   node -e "const p=require('./package.json');if(!p.scripts['$command'])process.exit(1)"
 done
 printf 'BLACKSPIRE CODESPACE READY: state=disposable credentials=not-loaded port=8790-only\n'

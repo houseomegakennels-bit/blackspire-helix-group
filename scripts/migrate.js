@@ -1,4 +1,4 @@
-import { migrate } from '../packages/task-engine/db.js';
+import { runMigration } from './migration-writer.js';
 import { seedWorkspace } from '../packages/workspace-registry/workspaces.js';
 
 if (process.env.BLACKSPIRE_RUN_MIGRATIONS !== 'true') {
@@ -6,6 +6,6 @@ if (process.env.BLACKSPIRE_RUN_MIGRATIONS !== 'true') {
   process.exit(1);
 }
 
-migrate();
+runMigration();
 seedWorkspace();
 console.log('Migrated Blackspire Command SQLite database.');

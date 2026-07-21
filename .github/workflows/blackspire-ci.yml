@@ -51,14 +51,14 @@ jobs:
       - name: Prepare log directory
         run: mkdir -p ci-logs
 
-      - name: npm install
-        run: npm install 2>&1 | tee ci-logs/01-install.log
+      - name: npm ci
+        run: npm ci --ignore-scripts 2>&1 | tee ci-logs/01-install.log
 
       - name: Clean local Blackspire Command state
         run: rm -rf .blackspire-command
 
       - name: Run database migrations
-        run: npm run db:migrate 2>&1 | tee ci-logs/02-db-migrate.log
+        run: BLACKSPIRE_DB_PATH="$RUNNER_TEMP/blackspire-ci/command.sqlite" BLACKSPIRE_RUN_MIGRATIONS=true npm run db:migrate 2>&1 | tee ci-logs/02-db-migrate.log
 
       - name: Run test suite
         run: npm test 2>&1 | tee ci-logs/03-test.log
