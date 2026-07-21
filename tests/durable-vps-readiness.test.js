@@ -27,7 +27,7 @@ test('WAL-safe backup and disposable restore preserve committed state and checks
   const record = JSON.parse(backed.stdout);
   assert.equal(fs.statSync(record.backup).mode & 0o777, 0o600);
   const restored = path.join(root, 'disposable', 'command.sqlite');
-  const restoredResult = run('scripts/restore.js', [record.backup, restored], { BLACKSPIRE_DB_PATH: dbPath, NODE_ENV: 'test' });
+  const restoredResult = run('scripts/restore.js', [record.backup, restored], { BLACKSPIRE_DB_PATH: dbPath, NODE_ENV: 'test', BLACKSPIRE_DISPOSABLE_RESTORE: 'true' });
   assert.equal(restoredResult.status, 0, restoredResult.stderr);
   const check = new DatabaseSync(restored, { readOnly: true });
   assert.equal(check.prepare('SELECT value FROM evidence WHERE id=?').get('one').value, 'redacted');

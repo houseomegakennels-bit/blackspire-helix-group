@@ -11,7 +11,7 @@ if (!source || !target) fail('usage: node scripts/restore.js <backup.sqlite> <di
 const backup = path.resolve(source);
 const live = path.resolve(DB_PATH);
 if (!fs.existsSync(backup)) fail('backup does not exist');
-if (process.env.NODE_ENV === 'production' || target === live) fail('restore target must be disposable and never the configured production database');
+if ((process.env.NODE_ENV === 'production' && process.env.BLACKSPIRE_DISPOSABLE_RESTORE !== 'true') || target === live) fail('restore target must be disposable and never the configured production database');
 if (!target.endsWith('.sqlite') && !target.endsWith('.db')) fail('restore target must be a SQLite database file');
 if (backup === live) fail('source cannot be the live database');
 fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
