@@ -16,11 +16,10 @@ if (!target.endsWith('.sqlite') && !target.endsWith('.db')) fail('restore target
 if (backup === live) fail('source cannot be the live database');
 fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
 const checksumPath = `${backup}.sha256`;
-if (fs.existsSync(checksumPath)) {
-  const expected = fs.readFileSync(checksumPath, 'utf8').trim().split(/\s+/)[0];
-  const actual = crypto.createHash('sha256').update(fs.readFileSync(backup)).digest('hex');
-  if (!expected || expected !== actual) fail('backup checksum mismatch');
-}
+if (!fs.existsSync(checksumPath)) fail('backup checksum sidecar is required');
+const expected = fs.readFileSync(checksumPath, 'utf8').trim().split(/\s+/)[0];
+const actual = crypto.createHash('sha256').update(fs.readFileSync(backup)).digest('hex');
+if (!expected || expected !== actual) fail('backup checksum mismatch');
 fs.copyFileSync(backup, target, fs.constants.COPYFILE_EXCL);
 fs.chmodSync(target, 0o600);
 const db = new DatabaseSync(target, { readOnly: true });
