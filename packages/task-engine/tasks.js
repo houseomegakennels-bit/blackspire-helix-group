@@ -82,15 +82,16 @@ export function deliveryRecords(conversationId) {
 
 export function claimNext({ workerId, staleAfterSeconds = 300 } = {}) {
   const claimedAt = now();
+  const assignedWorkerId = workerId || id('worker');
   execSql(`BEGIN IMMEDIATE;
-UPDATE tasks SET status='planning', worker_id=${esc(workerId || id('worker'))}, claimed_at=${esc(claimedAt)}, heartbeat_at=${esc(claimedAt)}, updated_at=${esc(claimedAt)}, current_stage='claimed'
+UPDATE tasks SET status='planning', worker_id=${esc(assignedWorkerId)}, claimed_at=${esc(claimedAt)}, heartbeat_at=${esc(claimedAt)}, updated_at=${esc(claimedAt)}, current_stage='claimed'
 WHERE id=(
   SELECT id FROM tasks
   WHERE status='queued' OR (status IN ('planning','running','validating') AND (heartbeat_at IS NULL OR datetime(heartbeat_at) < datetime('now','-${Number(staleAfterSeconds)} seconds')))
   ORDER BY created_at LIMIT 1
 );
 COMMIT;`);
-  return query(`SELECT * FROM tasks WHERE claimed_at=${esc(claimedAt)} ORDER BY created_at LIMIT 1;`)[0] || null;
+  return query(`SELECT * FROM tasks WHERE claimed_at=${esc(claimedAt)} AND worker_id=${esc(assignedWorkerId)} ORDER BY created_at LIMIT 1;`)[0] || null;
 }
 
 export function heartbeat(taskId, stage) {
