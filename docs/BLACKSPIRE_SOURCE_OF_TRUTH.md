@@ -6,7 +6,7 @@ The durable authority is GitHub repository `houseomegakennels-bit/blackspire-hel
 
 - Last reconciled: 2026-07-21 UTC
 - Base `origin/main`: `405a4166a5ce4d350573bce35dfa9f424a309596`
-- Last verified implementation commit: `42a0d1fc54f1dfdf4efd977eaa8ffca5df5932eb`
+- Last verified implementation commit: `459db4e62d94081e2a67d4396c2de93b5104bc09`
 - The last verified implementation commit is on draft PR #26 for independent review; `origin/main` remains the deployment target and contains the merged Jarvis feature but not this later readiness tooling.
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
@@ -43,7 +43,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Draft PR #26 publishes the repository-side durable-VPS readiness work from `feature/unified-input-foundation` for independent review. Head after the CI fixture fix is `42a0d1fc54f1dfdf4efd977eaa8ffca5df5932eb`; do not mark ready, merge, or deploy without separate explicit authority.
 - Backup before integration: `backup/unified-input-foundation-9bdfa5f` at `9bdfa5f`.
 - Existing `feature/public-health-route` remains intentionally untouched.
-- Readiness commits include `ac7a0ba` (release/backup/no-provider foundation), `73bf031` (explicit disposable restore rehearsal guard), `302e2f0` (rehearsal docs), `bd90fcf` (checksum-required restore), `204a98e` (verified restore guard docs), and `42a0d1f` (shallow-checkout-safe release test). They are published only on draft PR #26, not merged.
+- Readiness commits include `ac7a0ba` (release/backup/no-provider foundation), `73bf031` (explicit disposable restore rehearsal guard), `302e2f0` (rehearsal docs), `bd90fcf` (checksum-required restore), `204a98e` (verified restore guard docs), `42a0d1f` (shallow-checkout-safe release test), and `459db4e` (CI-hardened smoke startup wait). They are published only on draft PR #26, not merged.
 
 ## Tests and evidence
 
@@ -59,7 +59,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Subscription Codex diagnostic at `aedb9db`: one authorized invocation produced category `nonzero_exit_with_structured_stdout_error`; a confirmed stdout/stderr classification defect was fixed. Forty targeted and 156 full tests passed with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - Final subscription Codex acceptance at `85beabc`: exactly one ChatGPT-subscription-authenticated `codex exec` invocation exited zero, emitted four sanitized structured records with no error event, passed the exact version 1 operational contract, and completed canonical task state. It used no API key, standalone Blackspire Responses API call, retry, fallback, or observed tool call. Forty targeted and 156 full tests passed; build, lint, typecheck, secret scan, living-memory, whitespace, teardown, and scope checks passed.
 - Publication preflight reran 40 targeted and 156 full tests with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. The working tree remained clean and no runtime, deployment, push, PR, merge, production change, or Telegram connection occurred.
-- Durable-VPS readiness publication: local head `204a98e` passed 59 focused readiness/Jarvis/CSP tests and 228 full tests under Node 22.23.1; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. Draft PR #26 initially exposed a CI-only shallow-checkout fixture failure because `405a416` was not present in the depth-1 PR merge checkout; `42a0d1f` fixes the test to use the available checked-out commit while preserving exact-SHA validation. The targeted durable readiness test, build, secret scan, and whitespace checks then passed locally. No live service or database was touched.
+- Durable-VPS readiness publication: local head `204a98e` passed 59 focused readiness/Jarvis/CSP tests and 228 full tests under Node 22.23.1; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. Draft PR #26 exposed CI-only test fragility: `42a0d1f` fixes the release readiness test for depth-1 PR merge checkouts, and `459db4e` makes the smoke test wait on `127.0.0.1` health before asserting. After those fixes, 228 full tests, build, lint, typecheck, secret scan, living-memory, shell syntax, and whitespace checks passed locally under Node 22.23.1. No live service or database was touched.
 
 ## Environments and integrations
 
