@@ -4,9 +4,10 @@
 
 The durable authority is GitHub repository `houseomegakennels-bit/blackspire-helix-group`. Code, commits, tests, deployment evidence, and explicit operator-confirmed results outrank summaries. Unsupported current-state claims are `UNVERIFIED`.
 
-- Last reconciled: 2026-07-18 UTC
-- Base `origin/main`: `029e38add2157d5b7caefb3a6c5d85e9270f80f2`
-- Last verified implementation commit: `ebead48f8e9695b141a5803b580d5f4c3fa86135`
+- Last reconciled: 2026-07-21 UTC
+- Base `origin/main`: `405a4166a5ce4d350573bce35dfa9f424a309596`
+- Last verified implementation commit: `73bf031569847dac07498a72b20ebebac2b8affa`
+- The last verified implementation commit is an unpublished local readiness head; `origin/main` remains the deployment target and contains the merged Jarvis feature but not this later readiness tooling.
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
 
@@ -31,17 +32,18 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 | Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
 | Hermes/providers | VERIFIED restricted foundation and subscription Codex worker acceptance | Version 1 restricted contracts and the single-use subscription Codex adapter are locally tested. One final authorized invocation used ChatGPT subscription authentication, passed the exact response contract, completed canonical state, and cleaned disposable state with no API key, retry, fallback, or observed tool call. |
 | Restricted worker publication | PUBLISHED (branch only); no PR | Corrected 2026-07-19 against observed refs: `origin/feature/unified-input-foundation` is at `7dbe07f`, not `2ab3394`, and the remote-ref reflog records two pushes (`2ab3394`, then `7dbe07f`). The published range is `029e38a..7dbe07f` (ahead=25, behind=0). No PR exists and nothing is merged to `main`. GitHub deployment evidence shows both `blackspire-helix-group` and `frontend` create Vercel previews for non-main commits. No authenticated Vercel CLI session or approved Vercel token is available to read back or set a branch-specific Ignored Build Step, so no push was attempted. |
-| VPS production Command | PLANNED, UNVERIFIED live | Readiness code and runbooks exist; supervision, backups, stable HTTPS, and live production state require verification. No disposable iPhone test process or tunnel was active at the latest local inspection. |
+| VPS production Command | PLANNED, UNVERIFIED live | Immutable release, WAL-safe backup/restore, no-provider profile, production supervisor, and monitoring templates are locally verified on unpublished readiness commits. Live supervision, backups, stable HTTPS, and activation remain unverified and untouched. |
 | Codespace recovery/test | BLOCKED | Preparation exists; creation returned a usage-budget HTTP 402 and no resource was created or changed. |
 
 ## Important branches and commits
 
-- `origin/main`: `029e38a`, including canonical-memory PR #24.
+- `origin/main`: `405a416`, including merged PR #25 and the Jarvis/Unified Input feature.
 - `feature/unified-input-foundation`: preserved commits `70e7f36`, `273a25b`, `43735f6`, and `9bdfa5f`; integration uses a merge commit, never rebase or history rewriting.
 - Restricted subscription Codex milestones on that branch: implementation `c21db48`, diagnostic classification `aedb9db`, exact-contract correction `ebead48`, and sanitized successful acceptance evidence `85beabc`.
 - Local `feature/unified-input-foundation` is 21 commits ahead of `origin/feature/unified-input-foundation`; the remote branch has not received the completed worker foundation.
 - Backup before integration: `backup/unified-input-foundation-9bdfa5f` at `9bdfa5f`.
 - Existing `feature/public-health-route` remains intentionally untouched.
+- Local readiness commits: `ac7a0ba` (release/backup/no-provider foundation) and `73bf031` (explicit disposable restore rehearsal guard). They are not pushed or merged.
 
 ## Tests and evidence
 
@@ -57,6 +59,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Subscription Codex diagnostic at `aedb9db`: one authorized invocation produced category `nonzero_exit_with_structured_stdout_error`; a confirmed stdout/stderr classification defect was fixed. Forty targeted and 156 full tests passed with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - Final subscription Codex acceptance at `85beabc`: exactly one ChatGPT-subscription-authenticated `codex exec` invocation exited zero, emitted four sanitized structured records with no error event, passed the exact version 1 operational contract, and completed canonical task state. It used no API key, standalone Blackspire Responses API call, retry, fallback, or observed tool call. Forty targeted and 156 full tests passed; build, lint, typecheck, secret scan, living-memory, whitespace, teardown, and scope checks passed.
 - Publication preflight reran 40 targeted and 156 full tests with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. The working tree remained clean and no runtime, deployment, push, PR, merge, production change, or Telegram connection occurred.
+- Durable-VPS readiness head `73bf031`: 228 full tests passed under Node 22.23.1; WAL-safe backup/restore, exact-SHA release switching, no-provider fail-closed checks, build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. A disposable release rehearsal completed install, migration, restore, production-wrapper startup, health/Jarvis/CSP/public-asset checks, graceful stop, and rollback. No live service or database was touched.
 
 ## Environments and integrations
 

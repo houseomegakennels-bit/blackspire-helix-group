@@ -1,6 +1,6 @@
 # Blackspire Active Context
 
-Last reconciled: 2026-07-18 UTC. Verified baseline is local `db078a4`; canonical base is `origin/main` at `029e38a`.
+Last reconciled: 2026-07-21 UTC. Verified deployment target is `origin/main` at `405a4166a5ce4d350573bce35dfa9f424a309596`; local readiness head is unpublished at `73bf031569847dac07498a72b20ebebac2b8affa`.
 
 Blackspire currently has two distinct surfaces: the Vercel-hosted Next.js public frontend and the root Node.js Blackspire Command control plane. Command includes Jarvis, Hermes orchestration, Telegram bridge code, deterministic policy/approvals, workspace and budget controls, evidence/audit, emergency controls, workers/providers, and SQLite persistence.
 
