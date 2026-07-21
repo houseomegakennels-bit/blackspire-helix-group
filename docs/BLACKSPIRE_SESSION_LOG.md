@@ -105,3 +105,11 @@
 - Added a fail-closed no-external-provider production profile and signal-forwarding start supervisor; provider credentials, mock modes, and Telegram are rejected for that profile.
 - Added reviewed healthcheck, logrotate, and monitoring templates for operator application. Live services, production data, credentials, DNS, proxy, Vercel, and firewall were untouched.
 - Tightened restore rehearsal to require the generated SHA-256 sidecar before copying any backup; the disposable backup/restore test still passes.
+
+# 2026-07-21 — VPS-readiness draft PR published (Codex)
+
+- Published `feature/unified-input-foundation` as draft PR #26 for independent review only; base remained `origin/main` `405a4166a5ce4d350573bce35dfa9f424a309596`.
+- Before publication, local Node 22.23.1 validation passed: 59 focused readiness/Jarvis/CSP tests, 228 full tests, build, lint, typecheck, secret scan, living-memory, shell syntax, and whitespace checks.
+- Vercel records for PR #26 head `204a98e08827b859022462a33ea9044b6ed9ef14` were canceled for both `frontend` and `blackspire-helix-group`; neither became READY and production remained unchanged.
+- GitHub CI exposed a shallow-checkout-only test fixture failure in the release readiness test because the hardcoded base commit was unavailable in the depth-1 PR merge checkout; `42a0d1f` made the fixture use the checked-out 40-hex commit while preserving exact-SHA release validation.
+- No live VPS, production database, service, reverse proxy, firewall, DNS, Telegram, credential, provider, Vercel setting, deployment, merge, or production runtime was changed.

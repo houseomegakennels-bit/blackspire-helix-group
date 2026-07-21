@@ -6,8 +6,8 @@ The durable authority is GitHub repository `houseomegakennels-bit/blackspire-hel
 
 - Last reconciled: 2026-07-21 UTC
 - Base `origin/main`: `405a4166a5ce4d350573bce35dfa9f424a309596`
-- Last verified implementation commit: `bd90fcfb5ae14d56a9b2e40c04ab366ca8f1c44b`
-- The last verified implementation commit is an unpublished local readiness head; `origin/main` remains the deployment target and contains the merged Jarvis feature but not this later readiness tooling.
+- Last verified implementation commit: `42a0d1fc54f1dfdf4efd977eaa8ffca5df5932eb`
+- The last verified implementation commit is on draft PR #26 for independent review; `origin/main` remains the deployment target and contains the merged Jarvis feature but not this later readiness tooling.
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
 
@@ -32,7 +32,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 | Real Telegram transport | UNVERIFIED / disconnected | Mock transport, allowlisting, attachments, replay protection, and delivery behavior are tested. No real bot connection is authorized or claimed. |
 | Hermes/providers | VERIFIED restricted foundation and subscription Codex worker acceptance | Version 1 restricted contracts and the single-use subscription Codex adapter are locally tested. One final authorized invocation used ChatGPT subscription authentication, passed the exact response contract, completed canonical state, and cleaned disposable state with no API key, retry, fallback, or observed tool call. |
 | Restricted worker publication | PUBLISHED (branch only); no PR | Corrected 2026-07-19 against observed refs: `origin/feature/unified-input-foundation` is at `7dbe07f`, not `2ab3394`, and the remote-ref reflog records two pushes (`2ab3394`, then `7dbe07f`). The published range is `029e38a..7dbe07f` (ahead=25, behind=0). No PR exists and nothing is merged to `main`. GitHub deployment evidence shows both `blackspire-helix-group` and `frontend` create Vercel previews for non-main commits. No authenticated Vercel CLI session or approved Vercel token is available to read back or set a branch-specific Ignored Build Step, so no push was attempted. |
-| VPS production Command | PLANNED, UNVERIFIED live | Immutable release, WAL-safe backup/restore, no-provider profile, production supervisor, and monitoring templates are locally verified on unpublished readiness commits. Live supervision, backups, stable HTTPS, and activation remain unverified and untouched. |
+| VPS production Command | PLANNED, UNVERIFIED live | Immutable release, WAL-safe backup/restore, no-provider profile, production supervisor, monitoring templates, and shallow-checkout-safe release tests are published on draft PR #26 for review. Live supervision, backups, stable HTTPS, and activation remain unverified and untouched. |
 | Codespace recovery/test | BLOCKED | Preparation exists; creation returned a usage-budget HTTP 402 and no resource was created or changed. |
 
 ## Important branches and commits
@@ -40,10 +40,10 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - `origin/main`: `405a416`, including merged PR #25 and the Jarvis/Unified Input feature.
 - `feature/unified-input-foundation`: preserved commits `70e7f36`, `273a25b`, `43735f6`, and `9bdfa5f`; integration uses a merge commit, never rebase or history rewriting.
 - Restricted subscription Codex milestones on that branch: implementation `c21db48`, diagnostic classification `aedb9db`, exact-contract correction `ebead48`, and sanitized successful acceptance evidence `85beabc`.
-- Local `feature/unified-input-foundation` is 21 commits ahead of `origin/feature/unified-input-foundation`; the remote branch has not received the completed worker foundation.
+- Draft PR #26 publishes the repository-side durable-VPS readiness work from `feature/unified-input-foundation` for independent review. Head after the CI fixture fix is `42a0d1fc54f1dfdf4efd977eaa8ffca5df5932eb`; do not mark ready, merge, or deploy without separate explicit authority.
 - Backup before integration: `backup/unified-input-foundation-9bdfa5f` at `9bdfa5f`.
 - Existing `feature/public-health-route` remains intentionally untouched.
-- Local readiness commits: `ac7a0ba` (release/backup/no-provider foundation) and `73bf031` (explicit disposable restore rehearsal guard). They are not pushed or merged.
+- Readiness commits include `ac7a0ba` (release/backup/no-provider foundation), `73bf031` (explicit disposable restore rehearsal guard), `302e2f0` (rehearsal docs), `bd90fcf` (checksum-required restore), `204a98e` (verified restore guard docs), and `42a0d1f` (shallow-checkout-safe release test). They are published only on draft PR #26, not merged.
 
 ## Tests and evidence
 
@@ -59,13 +59,12 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Subscription Codex diagnostic at `aedb9db`: one authorized invocation produced category `nonzero_exit_with_structured_stdout_error`; a confirmed stdout/stderr classification defect was fixed. Forty targeted and 156 full tests passed with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - Final subscription Codex acceptance at `85beabc`: exactly one ChatGPT-subscription-authenticated `codex exec` invocation exited zero, emitted four sanitized structured records with no error event, passed the exact version 1 operational contract, and completed canonical task state. It used no API key, standalone Blackspire Responses API call, retry, fallback, or observed tool call. Forty targeted and 156 full tests passed; build, lint, typecheck, secret scan, living-memory, whitespace, teardown, and scope checks passed.
 - Publication preflight reran 40 targeted and 156 full tests with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. The working tree remained clean and no runtime, deployment, push, PR, merge, production change, or Telegram connection occurred.
-- Durable-VPS readiness head `bd90fcf`: 228 full tests passed under Node 22.23.1; WAL-safe backup/restore, exact-SHA release switching, no-provider fail-closed checks, build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. A disposable release rehearsal completed install, migration, restore, production-wrapper startup, health/Jarvis/CSP/public-asset checks, graceful stop, and rollback. No live service or database was touched.
+- Durable-VPS readiness publication: local head `204a98e` passed 59 focused readiness/Jarvis/CSP tests and 228 full tests under Node 22.23.1; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. Draft PR #26 initially exposed a CI-only shallow-checkout fixture failure because `405a416` was not present in the depth-1 PR merge checkout; `42a0d1f` fixes the test to use the available checked-out commit while preserving exact-SHA validation. The targeted durable readiness test, build, secret scan, and whitespace checks then passed locally. No live service or database was touched.
 
 ## Environments and integrations
 
 - Public frontend production is owned by Vercel; production configuration remains external.
-- GitHub deployment records show two Vercel projects for this repository: `blackspire-helix-group` and `frontend`. Both have created previews for non-main refs. The official Vercel CLI was inspected at version 56.3.2, but this host has no authenticated Vercel session or approved token; current project Git/build settings and Ignored Build Step values therefore remain `UNVERIFIED`.
-- The intended reversible skip command is `[ "$VERCEL_GIT_COMMIT_REF" = "feature/unified-input-foundation" ]`; local shell checks prove exit 0 only for that exact branch and exit 1 for `main` and unrelated branches. It has not been verified as saved on either Vercel project.
+- GitHub deployment records show two Vercel projects for this repository: `blackspire-helix-group` and `frontend`. Both created canceled Vercel records for draft PR #26 head `204a98e`; neither became READY and no production target was assigned. The exact saved Ignored Build Step command remains `UNVERIFIED` because the project reader does not expose it.
 - VPS is the sole planned Command state owner. Actual live ownership and health are `UNVERIFIED`.
 - Codespaces are disposable development/recovery/test environments and are currently limited by exhausted usage credit.
 - Quick Tunnel is temporary, expiring, isolated, and mock-only; it is never production.
@@ -85,7 +84,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 
 ## Blockers and next safe actions
 
-Current blockers: the completed implementation remains unpublished because both Vercel projects must independently read back the exact branch-specific Ignored Build Step before push, and this host lacks Vercel account authentication. Codespaces usage credit is exhausted; every new subscription Codex task still requires separate scoped approval; real Telegram, production Command state, and other live providers are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
+Current blockers: draft PR #26 requires independent review and must not be marked ready, merged, or deployed without separate approval. Host-side blockers remain: approved reverse proxy/TLS, least-privileged runtime ownership, installed and alert-tested monitoring/log rotation, separately approved production backup/migration, and an exact known-good live release/database rollback target. Codespaces usage credit is exhausted; every new subscription Codex task still requires separate scoped approval; real Telegram, production Command state, and other live providers are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 
 Immediate safe actions:
 
@@ -93,7 +92,7 @@ Immediate safe actions:
 2. Preserve the operator-confirmed iPhone acceptance and verified teardown evidence; do not restage unless a new acceptance need is explicitly approved.
 3. Continue credential-free local checks only when they validate new work or reconcile changed state.
 4. Complete production readiness, backup, monitoring, stable HTTPS, and rollback verification before any VPS promotion.
-5. After an authorized operator saves the exact branch-specific Ignored Build Step on both Vercel projects, read back both settings before rerunning publication gates, pushing only the feature branch, monitoring for skipped deployments, and opening an unmerged draft PR.
+5. Keep PR #26 draft for independent review. Do not merge or deploy until host-side blockers are closed and a separate bounded production approval is given.
 
 Operator-only actions include spending/budget changes, credential provisioning, GitHub authorization, device acceptance, real Telegram connection, production/DNS/provider/host-security changes, approval-policy changes, emergency-control changes, trading, and funds actions.
 
