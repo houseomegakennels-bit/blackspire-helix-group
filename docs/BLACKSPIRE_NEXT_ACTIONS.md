@@ -2,7 +2,7 @@
 
 ## Immediate safe actions
 
-1. Independently review the prepared explicit-migration repair before merge: API/worker startup must remain non-mutating, and the dedicated migration command must reject every value except exact `BLACKSPIRE_RUN_MIGRATIONS=true`.
+1. Independently re-review PR #28 before merge: schema-writing code must remain callable only through `scripts/migrate.js`; API/worker/supervisor/tests/fixtures must remain non-mutating; and the dedicated migration command must reject every value except exact `BLACKSPIRE_RUN_MIGRATIONS=true`.
 2. After that repair is merged into a verified immutable staging release, repeat the complete disposable-only Gate 3 backup, restore, WAL-safety, migration, and disabled-backup-routine rehearsal.
 3. Do not request Gate 4 production activation until Gate 3 passes with sanitized evidence.
 4. Preserve the four original commits and backup branch; do not rewrite them or the integration merge.

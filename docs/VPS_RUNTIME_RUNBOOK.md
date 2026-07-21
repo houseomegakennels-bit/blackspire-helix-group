@@ -14,13 +14,13 @@ npm run start:production
 
 The profile requires `NODE_ENV=production`, `BLACKSPIRE_RUNTIME_MODE=production`, state owner `vps-production`, persistent non-`/tmp` storage, authentication configuration, `BLACKSPIRE_PROVIDER_MODE=manual`, restricted Hermes, dry-run Telegram, and no provider or Telegram credentials. It rejects test mode and mock Telegram.
 
-API startup, worker startup, and the production supervisor never run migrations. They open only an existing compatible schema and fail closed with an actionable migration-required error when the schema is missing or outdated. Run migrations only as a separate controlled command during an approved writer outage:
+API startup, worker startup, and the production supervisor never run migrations. They open only an existing compatible schema and fail closed with an actionable migration-required error when the schema is missing or outdated. Schema-writing code is private to `scripts/migration-writer.js` and is invoked only by `scripts/migrate.js`; runtime modules, wrappers, fixtures, and tests do not import or call it. Run migrations only as a separate controlled command during an approved writer outage:
 
 ```sh
 BLACKSPIRE_RUN_MIGRATIONS=true node scripts/migrate.js
 ```
 
-Every other value, including absent, empty, `false`, `0`, and malformed values, is denied. Verify a WAL-safe backup and isolated restore before any future production migration, then run integrity and health checks before resuming writers.
+The command permits only the exact lowercase value `true`. Every other value, including absent, empty, `false`, `FALSE`, `0`, `1`, `yes`, whitespace-padded `true`, and malformed values, is denied before mutation. Disposable tests prepare schemas by launching this dedicated command with the flag scoped to that child process only. CI scopes the same flag to its one disposable migration command, and Codespace readiness never runs a migration as ordinary startup. Verify a WAL-safe backup and isolated restore before any future production migration, then run integrity and health checks before resuming writers.
 
 ## Release and rollback
 

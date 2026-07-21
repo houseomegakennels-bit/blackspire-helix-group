@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-21 — PR #28 migration-boundary review findings repaired
+
+- On unmerged, undeployed `fix/explicit-migration-gate`, moved schema-writing migration implementation behind the dedicated `scripts/migrate.js` boundary. API, worker, supervisor, tests, fixtures, CI helpers, and Codespace readiness no longer import or call the writer directly; ordinary startup remains a read-only compatibility check.
+- Made disposable test fixture setup invoke the dedicated migration command as a child process with exact `BLACKSPIRE_RUN_MIGRATIONS=true` scoped to that process. CI applies the same scope to its disposable database command only, Codespace readiness does not invoke migrations, and a clean-room Node 22.23.1 `npm ci --ignore-scripts && npm test` passed with the parent flag absent.
+- Reconciled the PR history discrepancy: `2f65c17` is valid, retained sanitized known-good-state evidence that pre-existed the first explicit-migration repair report. No host, service, staging or production database, nginx/TLS, DNS, firewall, provider, Telegram, deployment, or cutover action occurred. Gate 3 remains blocked pending independent re-review, merge, a new immutable staging release, and the complete disposable rehearsal.
+
 ## 2026-07-21 — Explicit migration safety repair prepared for review
 
 - On unmerged, undeployed branch `fix/explicit-migration-gate`, removed every module-load `migrate()` call from normal API/worker dependency paths. API and worker now preflight a read-only compatible schema and fail closed before serving or polling when migration is required.
