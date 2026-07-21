@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import net from 'node:net';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-static-'));
 process.env.BLACKSPIRE_DB_PATH = path.join(root, 'static.sqlite');
@@ -245,12 +245,15 @@ test('asset responses carry the unchanged security headers', async () => {
 test('production CSP does not permit inline script or style', async () => {
   // The dev CSP intentionally allows inline; only the production policy must be strict, so
   // assert it against a real production-mode boot rather than this test server.
+  const dbPath = path.join(root, 'prod-csp.sqlite');
+  const migration = spawnSync(process.execPath, ['scripts/migrate.js'], { cwd: process.cwd(), env: { ...process.env, BLACKSPIRE_DB_PATH: dbPath, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, encoding: 'utf8' });
+  assert.equal(migration.status, 0, migration.stderr);
   const child = spawn(process.execPath, ['apps/api/server.js'], {
     env: {
       ...process.env,
       NODE_ENV: 'production',
       PORT: '8901',
-      BLACKSPIRE_DB_PATH: path.join(root, 'prod-csp.sqlite'),
+      BLACKSPIRE_DB_PATH: dbPath,
       COMMAND_ADMIN_TOKEN: crypto.randomBytes(24).toString('hex'),
       SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
       PUBLIC_BASE_URL: 'https://command.example.com',
