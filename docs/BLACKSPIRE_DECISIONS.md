@@ -1,5 +1,11 @@
 # Blackspire Decisions
 
+## 2026-07-21
+
+- PR #26 (repository durable-VPS readiness tooling) merged into `main` at `a9602496c0c0f3f50e62b63aeedfb348fa5da857` using a merge commit after independent review and independent second review (253/253 tests, zero confirmed defects). Reviewed history is preserved; squash and rebase were prohibited. The merge covers repository readiness tooling only and authorizes no host or production change.
+- VPS production deployment stays gated behind six separately approved host-side blockers: reverse proxy/TLS, least-privileged non-root runtime ownership, installed and alert-tested monitoring/log rotation, approved production backup/migration, a recorded exact known-good live release/database rollback target, and readiness tooling incorporated into the deployment artifact.
+- The intended durable production runtime is a non-root systemd service (`User=blackspire`, `Group=blackspire`) running `npm run start:production` from an immutable `/opt/blackspire-command/releases/<sha>` via the `current` symlink, with persistent state under `shared/`. TLS terminates at a reverse proxy that forwards to the private app port 8787 and preserves the application's own strict CSP and security headers rather than overriding them. Proxy/TLS and ownership plans are reviewed `ops/` templates and are never installed or applied by a repository change.
+
 ## 2026-07-18
 
 - GitHub repository `houseomegakennels-bit/blackspire-helix-group` is durable authority; canonical living memory is the `docs/BLACKSPIRE_*.md` set.
