@@ -13,5 +13,9 @@ git -C "$repo" archive "$commit" | tar -x -C "$temp"
 printf '%s\n' "$commit" > "$temp/COMMIT_SHA"
 chmod -R u=rwX,go-rX "$temp"
 touch "$temp/.release-complete"
-mv "$temp" "$target"
+# Atomic, destination-safe promotion. -T (no-target-directory) guarantees the completed staging tree
+# replaces exactly "$target" and is never moved *inside* it if a directory raced into existence. The
+# durable VPS runs GNU coreutils on Linux (matching release-switch.sh's "mv -Tf"); the readiness test
+# exercises this move to catch any platform without -T support.
+mv -T -- "$temp" "$target"
 echo "$target"
