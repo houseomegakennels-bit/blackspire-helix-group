@@ -17,10 +17,10 @@ Canonical state is committed before channel delivery. Delivery attempts live in 
 
 - Runtime baseline: Node.js 22.23.1 from `.node-version`; `package.json` permits verified compatible Node 22–24 releases.
 - Dependencies: `npm ci --ignore-scripts` from the committed lockfile.
-- Schema: `npm run db:migrate` governs every SQLite environment.
+- Schema: `BLACKSPIRE_RUN_MIGRATIONS=true npm run db:migrate` governs every SQLite environment. API and worker startup never migrate; they require a compatible existing schema and fail closed when migration is required. Missing, false, or malformed migration permission values are denied.
 - Development: `npm run bootstrap:development`.
 - Disposable acceptance: `npm run start:iphone-test -- local`, `codespace`, or `quick-tunnel`.
-- Production: `npm run start:production`, which validates an explicit production profile before migration/start.
+- Production: `npm run start:production`, which validates an explicit production profile and starts without migrations. Back up and restore-test first, then run the dedicated migration command during an approved controlled writer outage.
 - Gates: `npm test`, `npm run build`, `npm run lint`, `npm run typecheck`, `npm run security:scan`, and `git diff --check`.
 
 There is no paid-provider fallback. Provider mode is explicit and defaults to credential-free `mock`; restricted test mode also requires `mock`. Production provider selection requires separate explicit configuration and authorization. Real Telegram is never started by the production wrapper and is forbidden in test profiles.

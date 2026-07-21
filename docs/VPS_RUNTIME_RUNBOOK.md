@@ -12,7 +12,15 @@ bash scripts/verify-environment.sh vps-production
 npm run start:production
 ```
 
-The profile requires `NODE_ENV=production`, `BLACKSPIRE_RUNTIME_MODE=production`, state owner `vps-production`, persistent non-`/tmp` storage, authentication configuration, `BLACKSPIRE_PROVIDER_MODE=manual`, restricted Hermes, dry-run Telegram, and no provider or Telegram credentials. It rejects test mode and mock Telegram. Migrations are never implicit; set `BLACKSPIRE_RUN_MIGRATIONS=true` only during a separately approved controlled writer outage.
+The profile requires `NODE_ENV=production`, `BLACKSPIRE_RUNTIME_MODE=production`, state owner `vps-production`, persistent non-`/tmp` storage, authentication configuration, `BLACKSPIRE_PROVIDER_MODE=manual`, restricted Hermes, dry-run Telegram, and no provider or Telegram credentials. It rejects test mode and mock Telegram.
+
+API startup, worker startup, and the production supervisor never run migrations. They open only an existing compatible schema and fail closed with an actionable migration-required error when the schema is missing or outdated. Run migrations only as a separate controlled command during an approved writer outage:
+
+```sh
+BLACKSPIRE_RUN_MIGRATIONS=true node scripts/migrate.js
+```
+
+Every other value, including absent, empty, `false`, `0`, and malformed values, is denied. Verify a WAL-safe backup and isolated restore before any future production migration, then run integrity and health checks before resuming writers.
 
 ## Release and rollback
 

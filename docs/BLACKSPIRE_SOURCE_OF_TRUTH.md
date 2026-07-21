@@ -5,7 +5,7 @@
 The durable authority is GitHub repository `houseomegakennels-bit/blackspire-helix-group`. Code, commits, tests, deployment evidence, and explicit operator-confirmed results outrank summaries. Unsupported current-state claims are `UNVERIFIED`.
 
 - Last reconciled: 2026-07-21 UTC
-- Base `origin/main`: `a9602496c0c0f3f50e62b63aeedfb348fa5da857`
+- Base `origin/main`: `0a9affacaf13dd1b040c5d96eb112d979ab59444`
 - Last verified implementation commit: `aa4cc608ccd206e11afb590b278176c0c0caa286` (merged into `main`)
 - PR #26 passed independent review and independent second review (253/253 tests, build, lint, typecheck, secret scan, living-memory, and `git diff --check`; zero confirmed defects, three informational findings) and was merged into `main` with a merge commit (`a9602496`, parents `405a4166` + `aa4cc608`); reviewed history was preserved, not squashed or rebased. The merge covered repository readiness tooling only. Both Vercel projects were canceled by the Ignored Build Step, no application build executed, and no live VPS, production database, service, or production surface changed. `READY_FOR_VPS_PRODUCTION_DEPLOYMENT` remains `no` pending the host-side blockers.
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
@@ -83,6 +83,8 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - The location/text of a canonical Constitution is `UNVERIFIED`; do not invent one.
 
 ## Blockers and next safe actions
+
+Gate 3 data-protection rehearsal remains BLOCKED as of 2026-07-21 UTC. Verified live staging and public HTTPS health are intact, and the disposable staging SQLite database is WAL-mode with `integrity_check=ok`. The deployed baseline has the explicit-migration defect: `scripts/migrate.js` calls `migrate()` unconditionally and ordinary API/worker imports invoke `migrate()` at module load. Repair branch `fix/explicit-migration-gate` removes those startup migrations, adds a read-only compatibility gate, and requires an exact `BLACKSPIRE_RUN_MIGRATIONS=true` for the dedicated command; it is unmerged and undeployed pending independent review. No Gate 3 backup, restore, WAL rehearsal, timer installation, production-path write, or service restart occurred. `READY_TO_REQUEST_GATE_4_PRODUCTION_ACTIVATION: no` and `READY_FOR_VPS_PRODUCTION_DEPLOYMENT: no`.
 
 Current blockers: PR #26 readiness tooling is merged into `main`, but production deployment is not authorized. Six host-side blockers remain, each requiring separate explicit approval: (1) approved reverse proxy and TLS installation and verification; (2) least-privileged non-root runtime ownership provisioning; (3) installed and alert-tested monitoring and log rotation; (4) separately approved real production backup and migration rehearsal or execution; (5) an exact known-good live release and database rollback target recorded; and (6) readiness tooling incorporated into the deployment artifact. Reverse-proxy/TLS and runtime-ownership plans plus credential-free verification are prepared as reviewed `ops/` templates only; nothing is installed or applied. Codespaces usage credit is exhausted; every new subscription Codex task still requires separate scoped approval; real Telegram, production Command state, and other live providers are unverified; SQLite requires a single-host production design; Constitution authority is unresolved.
 

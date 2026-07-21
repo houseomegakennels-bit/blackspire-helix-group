@@ -1,5 +1,17 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-21 — Explicit migration safety repair prepared for review
+
+- On unmerged, undeployed branch `fix/explicit-migration-gate`, removed every module-load `migrate()` call from normal API/worker dependency paths. API and worker now preflight a read-only compatible schema and fail closed before serving or polling when migration is required.
+- Made the dedicated migration command accept only exact `BLACKSPIRE_RUN_MIGRATIONS=true`; absent, empty, false, zero, and malformed values fail before schema mutation. The production start wrapper no longer invokes or fabricates migration permission.
+- Added focused disposable migration/startup regression coverage and converted affected disposable test fixtures to migrate explicitly. No host service, staging database, backup/restore artifact, nginx/TLS, firewall, DNS, provider, Telegram, production path, deployment, or cutover changed. Gate 3 remains blocked pending independent review, merge, staging release, and rehearsal.
+
+## 2026-07-21 — Gate 3 stopped on explicit-migration defect
+
+- Recovered clean `docs/known-good-state-capture` at `2f65c173` with `origin/main` at `0a9affac`, then verified the actual host state rather than relying on older readiness summaries. Staging was active on `127.0.0.1:8788`; local and public HTTPS health returned 200; the disposable staging database was a canonical non-symlink WAL database with `integrity_check=ok`; production database, environment file, and current symlink remained absent; the production unit stayed disabled/inactive.
+- Stopped before any Gate 3 data mutation after verifying a repository defect: `scripts/migrate.js` calls `migrate()` unconditionally, and normal API/worker dependency imports execute `migrate()` at module load. This cannot satisfy the required negative migration guard or the requirement that ordinary startup never migrate.
+- Created only sanitized failure evidence in the canonical staging evidence directory. No backup, restore, WAL rehearsal, disposable migration, timer installation, database write, service restart, nginx/TLS/firewall/DNS change, provider enablement, Telegram connection, production activation, commit, push, or deployment occurred. The existing API/worker and port-8787 Docker safety net remained healthy and unchanged.
+
 ## 2026-07-19 — Jarvis UI handoff reviewed; core contracts prepared
 
 - Recovered `feature/unified-input-foundation` at `7dbe07f` and verified the Jarvis UI branch `feature/jarvis-pwa-ui` at full SHA `bdbdd49580486dc091d39ece287b9fae13e0d2ab`, clean, sharing merge base `7dbe07f`. The UI branch was not merged, cherry-picked, pushed, or deployed.
