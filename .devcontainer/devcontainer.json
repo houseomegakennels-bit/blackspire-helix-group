@@ -6,6 +6,11 @@
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "postCreateCommand": "bash ${containerWorkspaceFolder}/scripts/bootstrap-codespace.sh",
+  "containerEnv": {
+    "BLACKSPIRE_ENVIRONMENT": "codespace",
+    "BLACKSPIRE_STATE_OWNER": "codespace-disposable",
+    "BLACKSPIRE_PROVIDER_MODE": "manual"
+  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -16,5 +21,15 @@
       ]
     }
   },
-  "forwardPorts": [3000, 5173, 8080]
+  "portsAttributes": {
+    "8790": {
+      "label": "Disposable Unified Jarvis test",
+      "onAutoForward": "notify",
+      "visibility": "private",
+      "protocol": "https"
+    }
+  },
+  "otherPortsAttributes": {
+    "onAutoForward": "ignore"
+  }
 }

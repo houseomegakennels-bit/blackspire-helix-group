@@ -8,4 +8,6 @@
 6. Prefer Codex and safe code automation over manual operator work. Never bypass required operator authority.
 7. Protect approval boundaries, workspace isolation, budgets, evidence integrity, emergency controls, and the prohibition on live trading or funds movement.
 8. Preserve unrelated and unpublished work. Never push, merge, deploy, or change production without explicit authority.
-9. Follow `docs/BLACKSPIRE_MEMORY_MAINTENANCE.md` before committing a milestone.
+9. Use Node.js `22.23.1` and deterministic `npm ci`; keep VPS production startup separate from disposable mock-only Codespace, Quick Tunnel, and iPhone test startup.
+10. Never auto-load production credentials into a development or test environment.
+11. Follow `docs/BLACKSPIRE_MEMORY_MAINTENANCE.md` before committing a milestone.

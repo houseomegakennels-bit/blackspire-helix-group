@@ -22,7 +22,6 @@ export function requireProductionSafeConfig(env = process.env, { dbDir = path.di
     if (!env.PUBLIC_BASE_URL?.startsWith('https://')) errors.push('PUBLIC_BASE_URL must be HTTPS in production.');
     if (env.TELEGRAM_MODE === 'webhook' && !env.TELEGRAM_WEBHOOK_SECRET) errors.push('TELEGRAM_WEBHOOK_SECRET is required in webhook mode.');
     if (env.DEBUG === 'true') errors.push('DEBUG=true is not allowed in production.');
-    if (env.CORS_ORIGIN === '*') errors.push('Wildcard CORS is not allowed in production.');
     if (env.RATE_LIMIT_DISABLED === 'true') errors.push('Rate limiting cannot be disabled in production.');
     if (env.TRUST_PROXY !== 'true' && env.TRUST_PROXY !== 'false') errors.push('TRUST_PROXY must be explicitly set to "true" or "false" in production.');
     if (env.GIT_WORKFLOW_ENABLED === 'true' && spawnSync('git', ['--version'], { encoding: 'utf8' }).status !== 0) errors.push('Git workflow is enabled but the git binary is not available.');

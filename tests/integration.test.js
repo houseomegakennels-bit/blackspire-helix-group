@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 process.env.PORT = '8791';
 process.env.BLACKSPIRE_DB_PATH = '.blackspire-command/integration.sqlite';
 process.env.HERMES_TEST_PROVIDER = 'mock';
+process.env.COMMAND_ADMIN_TOKEN = 'dev-admin-token-change-me';
 
 import fs from 'node:fs';
 fs.rmSync('.blackspire-command/integration.sqlite', { force: true });

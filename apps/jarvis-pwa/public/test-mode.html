@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080705">
+  <title>Unified Jarvis — iPhone Test</title>
+  <style>
+    :root{color-scheme:dark;--ink:#080705;--panel:#12100c;--line:#4d3b1c;--gold:#d7b65a;--muted:#a99b78;--ok:#73d39a;--bad:#ff8e82}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 90% -10%,#34250d 0,transparent 32rem),var(--ink);color:#f7efd7;font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}main{width:min(100%,720px);margin:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));display:grid;gap:14px}.hero,.panel{border:1px solid var(--line);border-radius:20px;background:linear-gradient(145deg,#17130d,#0c0b08);box-shadow:0 18px 55px #0008;padding:18px}.banner{display:flex;justify-content:space-between;gap:12px;align-items:center;background:#d7b65a;color:#100d07;border-radius:13px;padding:10px 12px;font-weight:900;letter-spacing:.12em}.eyebrow,.label{color:var(--gold);font-size:11px;text-transform:uppercase;letter-spacing:.15em;font-weight:800}h1{font-size:clamp(28px,8vw,48px);line-height:1.02;margin:20px 0 8px}h2{font-size:18px;margin:0 0 14px}.muted{color:var(--muted)}.stack{display:grid;gap:10px}.row{display:flex;gap:9px;flex-wrap:wrap}.row>*{flex:1 1 150px}button,textarea,input{font:inherit;border-radius:14px;border:1px solid #705929;min-height:50px}button{padding:12px 14px;background:var(--gold);color:#0c0a06;font-weight:850;cursor:pointer}button.secondary{background:#17140f;color:#f7efd7}button.deny{background:#321513;color:#ffd2cc;border-color:#71332d}button:disabled{opacity:.45;cursor:not-allowed}textarea,input{width:100%;padding:14px;background:#090806;color:#fff}textarea{min-height:110px;resize:vertical}.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.fact{border:1px solid #302817;border-radius:14px;padding:12px;background:#0a0907;min-width:0}.value{display:block;margin-top:5px;font:700 12px/1.4 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere}.copy{min-height:34px;margin-top:8px;padding:6px 9px;font-size:12px}.badge{display:inline-flex;border:1px solid #5e4a24;border-radius:999px;padding:5px 9px;color:var(--gold);font-size:12px}.ok{color:var(--ok)}.bad{color:var(--bad)}.timeline{list-style:none;margin:0;padding:0;display:grid;gap:10px}.event{border-left:2px solid var(--gold);padding:2px 0 2px 13px}.event time{display:block;color:var(--muted);font-size:11px}.empty{color:var(--muted);border:1px dashed #40351f;border-radius:12px;padding:14px}.notice{min-height:22px;color:var(--gold)}@media(min-width:620px){.facts{grid-template-columns:repeat(4,minmax(0,1fr))}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}}@media(max-width:380px){main{padding-left:10px;padding-right:10px}.hero,.panel{padding:15px}.facts{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div class="banner"><span>TEST MODE</span><span id="expiry">Expires —</span></div>
+    <p class="eyebrow">BLACKSPIRE · UNIFIED JARVIS</p>
+    <h1>Command without production risk.</h1>
+    <p class="muted">Private iPhone validation using disposable SQLite, mock Hermes, and mock Telegram delivery.</p>
+    <div class="row"><span class="badge" id="workspaceBadge">Workspace —</span><span class="badge">Privileged actions disabled</span></div>
+  </header>
+
+  <section class="panel" id="signin">
+    <h2>Temporary test login</h2>
+    <p class="muted">Enter the one-time access code shown by the VPS launcher. This test-only session expires with the build.</p>
+    <input id="accessCode" type="password" autocomplete="one-time-code" aria-label="One-time access code" placeholder="One-time access code">
+    <button id="enterButton">Enter test session</button>
+    <p class="notice" id="sessionNotice" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="panel stack" id="console" hidden>
+    <div><span class="label">Mobile command input</span><h2>Unified Input API</h2></div>
+    <textarea id="command" aria-label="Jarvis command">Report the current task status without changing files.</textarea>
+    <div class="row"><button id="sendButton">Submit harmless task</button><button class="secondary" id="followButton" disabled>Submit follow-up</button></div>
+    <div class="row"><button class="secondary" id="replayButton" disabled>Replay last input</button><button class="deny" id="denyButton">Prove Telegram denial</button></div>
+    <p class="notice" id="actionNotice" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="panel" id="identityPanel" hidden>
+    <h2>Canonical identity</h2>
+    <div class="facts">
+      <div class="fact"><span class="label">Conversation ID</span><span class="value" id="conversationId">—</span><button class="secondary copy" data-copy="conversationId">Copy</button></div>
+      <div class="fact"><span class="label">Task ID</span><span class="value" id="taskId">—</span><button class="secondary copy" data-copy="taskId">Copy</button></div>
+      <div class="fact"><span class="label">Task state</span><span class="value" id="taskState">—</span></div>
+      <div class="fact"><span class="label">Provider / model</span><span class="value" id="provider">—</span></div>
+    </div>
+  </section>
+
+  <div class="split" id="details" hidden>
+    <section class="panel"><h2>Ordered event timeline</h2><ol class="timeline" id="events"><li class="empty">No events yet.</li></ol></section>
+    <section class="panel stack"><div><h2>Evidence summary</h2><div id="evidence" class="empty">No evidence yet.</div></div><div><h2>Mock Telegram delivery</h2><div id="deliveries" class="empty">No delivery records yet.</div></div></section>
+  </div>
+
+  <section class="panel stack" id="scenarios" hidden>
+    <h2>Bounded test scenarios</h2>
+    <div class="row"><button class="secondary" id="queuedButton">Create cancellable queued task</button><button class="deny" id="cancelButton" disabled>Cancel eligible task</button></div>
+    <div class="row"><button class="secondary" id="failureButton">Fail next two mock deliveries</button><button class="secondary" id="refreshButton">Refresh canonical state</button></div>
+    <p class="muted">No deployment, merge, credentials, host security, emergency, budget increase, trading, or funds controls exist on this surface.</p>
+  </section>
+</main>
+<script>
+let csrfToken='';let conversation='';let task='';let lastKey='';let heldTask='';
+const byId=(id)=>document.getElementById(id);
+async function request(path,options={}){const method=options.method||'GET';const headers={'content-type':'application/json',...(options.headers||{})};if(method!=='GET'&&csrfToken)headers['x-csrf-token']=csrfToken;const response=await fetch(path,{...options,headers,credentials:'same-origin'});let body={};try{body=await response.json()}catch{body={error:'Unexpected response'}}return{response,body}}
+function showApp(){byId('signin').hidden=true;for(const id of ['console','identityPanel','details','scenarios'])byId(id).hidden=false}
+function notice(text){byId('actionNotice').textContent=text}
+function setText(id,value){byId(id).textContent=value??'—'}
+async function loadMode(){const{body}=await request('/api/test-mode');setText('expiry',`Expires ${new Date(body.expiresAt).toLocaleTimeString()}`);setText('workspaceBadge',`Workspace ${body.workspaceId}`)}
+async function enter(){const accessCode=byId('accessCode').value;const{response,body}=await request('/api/test-mode/session',{method:'POST',body:JSON.stringify({accessCode})});byId('accessCode').value='';if(!response.ok){setText('sessionNotice',body.error||'Test session unavailable');return}csrfToken=body.csrfToken;showApp();notice('Test-only session active.');await refresh()}
+async function submit({follow=false,replay=false}={}){lastKey=replay?lastKey:`iphone-${Date.now()}`;const payload={text:byId('command').value,idempotencyKey:lastKey};if(follow&&conversation)payload.conversationId=conversation;const{body}=await request('/api/unified-input',{method:'POST',body:JSON.stringify(payload)});if(body.taskId){conversation=body.conversationId;task=body.taskId;notice(body.duplicate?'Replay was idempotent; no duplicate task created.':'Task accepted into canonical state.');byId('followButton').disabled=false;byId('replayButton').disabled=false;await refresh()}else notice(body.error||'Input rejected')}
+async function deny(){const{body}=await request('/api/test-mode/telegram-input',{method:'POST',body:JSON.stringify({conversationId:conversation||null,text:'Create a new repository',updateId:`deny-${Date.now()}`})});if(body.taskId){conversation=body.conversationId;task=body.taskId}notice(body.denied?'Deterministic policy denied Telegram before Hermes dispatch.':body.error||'Unexpected result');await refresh()}
+async function createQueued(){const{body}=await request('/api/test-mode/queued-task',{method:'POST',body:JSON.stringify({conversationId:conversation||null})});conversation=body.conversationId;task=body.taskId;heldTask=body.taskId;byId('cancelButton').disabled=false;notice('Eligible queued task created and held for cancellation.');await refresh()}
+async function cancelHeld(){const{body}=await request(`/api/tasks/${heldTask}/cancel`,{method:'POST',body:'{}'});task=heldTask;notice(body.task?.status==='cancelled'?'Canonical cancellation recorded; sanitized Telegram event queued.':body.error||'Cancellation unavailable');byId('cancelButton').disabled=true;await refresh()}
+async function failDelivery(){const{body}=await request('/api/test-mode/delivery-failure',{method:'POST',body:JSON.stringify({attempts:2})});notice(body.ok?'Next two mock Telegram attempts will fail within configured bounds.':body.error);}
+function renderList(container,items,render){container.replaceChildren();if(!items.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='No records yet.';container.append(empty);return}for(const item of items)container.append(render(item))}
+async function refresh(){if(!conversation)return;const{body}=await request(`/api/conversations/${encodeURIComponent(conversation)}`);const current=(body.tasks||[]).find((item)=>item.id===task)||(body.tasks||[]).at(-1);setText('conversationId',conversation);setText('taskId',current?.id);setText('taskState',current?.status);const attribution=current?.providerAttribution?.at(-1);setText('provider',attribution?`${attribution.provider} / ${attribution.model||attribution.mode}`:'Not dispatched');renderList(byId('events'),body.events||[],item=>{const li=document.createElement('li');li.className='event';const strong=document.createElement('strong');strong.textContent=item.type;const time=document.createElement('time');time.textContent=new Date(item.created_at).toLocaleTimeString();li.append(strong,time);return li});renderList(byId('deliveries'),body.deliveries||[],item=>{const div=document.createElement('div');div.className='fact';const retry=item.status==='pending'&&item.attempts>0?' · retry scheduled':'';div.textContent=`${item.status} · attempts ${item.attempts}${retry}`;return div});const kinds=(current?.evidenceMetadata||[]).map((item)=>item.kind);byId('evidence').className=kinds.length?'fact':'empty';byId('evidence').textContent=kinds.length?kinds.join(' · '):'No evidence yet.'}
+document.querySelectorAll('[data-copy]').forEach((button)=>button.addEventListener('click',async()=>{await navigator.clipboard.writeText(byId(button.dataset.copy).textContent);notice('Copied.')}));
+byId('enterButton').addEventListener('click',enter);byId('sendButton').addEventListener('click',()=>submit());byId('followButton').addEventListener('click',()=>submit({follow:true}));byId('replayButton').addEventListener('click',()=>submit({follow:true,replay:true}));byId('denyButton').addEventListener('click',deny);byId('queuedButton').addEventListener('click',createQueued);byId('cancelButton').addEventListener('click',cancelHeld);byId('failureButton').addEventListener('click',failDelivery);byId('refreshButton').addEventListener('click',refresh);setInterval(()=>{if(conversation)refresh()},1500);loadMode();
+</script>
+</body>
+</html>

@@ -1,2 +1,2 @@
 export const TASK_STATES = ['draft','queued','planning','running','waiting_for_approval','validating','completed','failed','cancelled'];
-export const HIGH_RISK_ACTIONS = ['merge_protected_branch','production_deploy','delete_data','change_billing','rotate_or_expose_credentials','disable_security_control','change_approval_policy','outside_allowlist_command','live_trading_or_funds','destructive_infrastructure'];
+export const HIGH_RISK_ACTIONS = ['repository_create','repository_delete','repository_visibility','merge_protected_branch','production_deploy','delete_data','change_billing','rotate_or_expose_credentials','disable_security_control','change_approval_policy','outside_allowlist_command','live_trading_or_funds','destructive_infrastructure'];

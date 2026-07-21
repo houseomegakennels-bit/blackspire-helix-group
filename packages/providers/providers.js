@@ -12,28 +12,32 @@ export function activeModes() {
   };
 }
 
-export function selectProvider(policy = {}) {
-  if (process.env.HERMES_TEST_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock' };
+export function selectProvider(policy = {}, { requested = null, model = null } = {}) {
+  if (process.env.HERMES_TEST_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock', model: 'mock-hermes-status-v1' };
+  requested ||= process.env.BLACKSPIRE_PROVIDER_MODE || 'mock';
+  const preferred = policy.preferred || ['manual'];
+  if (!preferred.includes(requested)) return { provider: requested, mode: 'unconfigured', model };
+  if (requested === 'mock') return { provider: 'mock', mode: 'mock', model: model || 'mock-hermes-status-v1' };
+  if (requested === 'manual') return { provider: 'manual', mode: 'handoff', model };
   const modes = activeModes();
-  for (const provider of policy.preferred || ['codex', 'openai', 'anthropic', 'claudeCode', 'manual']) {
-    if (provider === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex };
-    if (provider === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api' };
-    if (provider === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api' };
-    if (provider === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli' };
-    if (provider === 'manual') return { provider: 'manual', mode: 'handoff' };
-  }
-  return { provider: 'manual', mode: 'handoff' };
+  if (requested === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex };
+  if (requested === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api' };
+  if (requested === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api' };
+  if (requested === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli' };
+  return { provider: requested, mode: 'unconfigured', model };
 }
 
-export async function executeProviderRequest({ selected, packet, workspace }) {
+export async function executeProviderRequest({ selected, packet, workspace, deadline = null }) {
   const started = Date.now();
   try {
-    if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', started, response: mockResponse(packet) });
-    if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, started, response: await callOpenAI({ prompt: JSON.stringify(packet) }) });
-    if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, started, response: await callAnthropic({ prompt: JSON.stringify(packet) }) });
+    if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', model: selected.model, started, response: mockResponse(packet) });
+    const timeoutMs = deadline ? Math.max(1, Date.parse(deadline) - Date.now()) : 30_000;
+    if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, started, response: await callOpenAI({ prompt: JSON.stringify(packet), timeoutMs }) });
+    if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, started, response: await callAnthropic({ prompt: JSON.stringify(packet), timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
     if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', started, response: runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path)) });
-    return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
+    if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
+    return { ok: false, provider: selected.provider || 'unknown', mode: selected.mode || 'unconfigured', artifacts: [], usage: usage(selected, Date.now() - started), error: 'provider is not explicitly configured', raw: null };
   } catch (error) {
     return { ok: false, provider: selected.provider, mode: selected.mode, artifacts: [], usage: usage(selected, Date.now() - started), error: redact(error.message), raw: null };
   }
@@ -93,9 +97,9 @@ function writeTaskPacket(packet, workspaceRoot = '.') {
   return packetPath;
 }
 
-function normalizeProviderResult({ provider, mode, started, response }) {
+function normalizeProviderResult({ provider, mode, model = null, started, response }) {
   return {
-    ok: Boolean(response.ok), provider, mode, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
+    ok: Boolean(response.ok), provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
     usage: { provider, mode, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents || 0 },
     error: response.ok ? null : redact(response.error || 'provider failed'), raw: response,
   };
