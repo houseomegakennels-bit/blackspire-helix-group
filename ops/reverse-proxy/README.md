@@ -25,7 +25,8 @@ it requires separate blocker #1 approval and is an operator action on the host.
 | Approved public hostname | **UNVERIFIED — not recorded in the repo.** Operator must supply it; the template uses `command.EXAMPLE-APPROVED-HOST.invalid` as a placeholder. Do not invent one. |
 | HTTPS-only policy | Port 80 returns `301` to `https://$host$request_uri` (except the ACME challenge path). |
 | HSTS | Set by the **application** in production (`max-age=31536000; includeSubDomains`). The proxy does **not** duplicate it. |
-| Forwarded headers | `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto=https`, `X-Forwarded-Host`. Requires the production profile to set `TRUST_PROXY=true` and `SESSION_COOKIE_SECURE=true`. |
+| Secure cookies | The app marks session/CSRF cookies `Secure` whenever `NODE_ENV=production` (see `packages/shared/security.js`); there is **no** separate `SESSION_COOKIE_SECURE` flag. The proxy asserts `X-Forwarded-Proto=https` so those Secure cookies work end to end. |
+| Forwarded headers | `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto=https`, `X-Forwarded-Host`. Requires the production profile to set `TRUST_PROXY=true`. **Single trusted hop:** `X-Forwarded-For` is set to `$remote_addr` (overwrite), not `$proxy_add_x_forwarded_for` (append), so a client cannot inject a spoofed leftmost value the app would trust for rate-limit/audit identity. |
 | WebSocket / streaming | **Not required** — no WebSocket or SSE in the app (grep-verified). Plain HTTP/1.1 reverse proxy with upstream keepalive. |
 | Health route | `/health` proxied and public (no auth); also scraped internally by `ops/blackspire-command-healthcheck.sh` directly on `127.0.0.1:8787`. |
 | Jarvis route | `/` and `/jarvis` serve the PWA shell; `/sw.js` + `/manifest.webmanifest` proxied unchanged. Service-worker registration requires the HTTPS origin this proxy provides. |

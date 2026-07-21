@@ -17,6 +17,9 @@ import { verifyVpsRuntime } from './packages/shared/security.js';
 
 // Disposable fixture tree mirroring the planned /opt/blackspire-command layout.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-ownership-fixture-'));
+// Everything below runs inside try/finally so the disposable fixture tree is always removed,
+// even if an assertion throws. Body left unindented to keep the correction diff minimal.
+try {
 const releaseRoot = path.join(root, 'opt', 'blackspire-command');
 const shared = path.join(releaseRoot, 'shared');
 const dbDir = path.join(shared, 'database');
@@ -75,6 +78,9 @@ const leaked = JSON.stringify(verifyVpsRuntime({ ...env, COMMAND_ADMIN_TOKEN: 's
 assert.doesNotMatch(leaked, /super-secret/);
 console.log('PASS  no secret value leaked in verifier output');
 
-fs.rmSync(root, { recursive: true, force: true });
 console.log('\nOWNERSHIP MAP VERIFICATION: all checks passed (credential-free, disposable fixture).');
+} finally {
+  // Always clean up the disposable fixture tree; no host/live path is ever touched.
+  fs.rmSync(root, { recursive: true, force: true });
+}
 NODE

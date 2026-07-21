@@ -9,6 +9,11 @@
 Description=Blackspire Command control plane (durable production runtime)
 After=network-online.target
 Wants=network-online.target
+# Restart-storm cap: modern systemd honors StartLimit* only in [Unit] (not [Service]). At
+# five failed starts within ten minutes the unit enters failed state and stops for operator
+# review instead of looping. Paired with Restart=on-failure/RestartSec=5 in [Service].
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -27,10 +32,9 @@ ExecStartPre=/usr/bin/env bash scripts/verify-environment.sh vps-production
 ExecStart=/usr/bin/env node scripts/production-supervisor.js
 
 # --- Restart policy: cap at five attempts in ten minutes, then stop for operator review ---
+# (StartLimitIntervalSec/StartLimitBurst live in [Unit] above — that is where systemd reads them.)
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=600
-StartLimitBurst=5
 
 # --- Sandboxing / hardening ---
 NoNewPrivileges=yes
