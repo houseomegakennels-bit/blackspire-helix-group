@@ -78,3 +78,18 @@ and explicit start/completion fields would remove these fallbacks.
 When `TEST_MODE` is enabled the backend serves `test-mode.html` — preserved
 untouched as operator-accepted evidence. The new `index.html` therefore only
 ever renders against production contracts.
+
+## 9. Bounded mock acceptance path (resolved)
+
+Earlier acceptance runs could not drive a harmless command to `completed`
+credential-free: the production-contract path needs a real provider and mutates
+the workspace, and the read-only test adapter was entered on the bare
+`UNIFIED_IPHONE_TEST_MODE` flag alone (so a task in any workspace could complete
+through it). Entry into the read-only adapter is now gated on a single canonical
+authorization — valid test-mode config + the designated synthetic test
+workspace + mock-only policy + no credentials + non-production runtime — and
+fails closed otherwise. A harmless `status check` through `/api/unified-input`
+now reaches canonical `completed` (mock attribution, read-only) in a
+credential-free TEST_MODE environment. See `MOCK_ACCEPTANCE_AUTHORIZATION.md`
+and `tests/mock-acceptance-authorization.test.js`. No frontend behavior changed;
+production remains deny-by-default.

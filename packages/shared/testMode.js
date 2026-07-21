@@ -40,6 +40,27 @@ export function requireSafeTestMode(env = process.env) {
   return config;
 }
 
+// Canonical authorization for the bounded, read-only mock acceptance path. This
+// is the ONLY sanctioned way a synthetic task may complete against the mock
+// provider without a real credential. Every required condition is derived and
+// verified from canonical backend state here — never from a frontend flag or a
+// request-controlled value alone. Production keeps deny-by-default: outside a
+// fully valid test-mode configuration this returns { ok: false } and the caller
+// must fail closed rather than fall through to the real provider pipeline.
+export function authorizeReadOnlyTestTask(workspace, env = process.env) {
+  const config = testModeConfig(env);
+  if (!config.enabled) return { ok: false, reason: 'test mode not enabled', config };
+  if (!config.ok) return { ok: false, reason: `test mode configuration invalid: ${config.errors.join('; ')}`, config };
+  if (!workspace) return { ok: false, reason: 'workspace missing', config };
+  if (workspace.id !== config.workspaceId) return { ok: false, reason: 'task is not in the designated synthetic test workspace', config };
+  const preferred = workspace.provider_policy?.preferred || [];
+  if (preferred.length !== 1 || preferred[0] !== 'mock') return { ok: false, reason: 'designated test workspace must permit the mock provider only', config };
+  if (env.HERMES_TEST_PROVIDER !== 'mock') return { ok: false, reason: 'mock Hermes provider required', config };
+  if ((env.BLACKSPIRE_HERMES_MODE || 'mock') !== 'mock') return { ok: false, reason: 'mock Hermes mode required', config };
+  if ((env.BLACKSPIRE_RUNTIME_MODE || 'mock') === 'production') return { ok: false, reason: 'production runtime cannot use the mock acceptance path', config };
+  return { ok: true, reason: 'bounded mock acceptance path authorized', config };
+}
+
 export function isSameOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) return false;

@@ -9,6 +9,7 @@ import { query, esc } from '../task-engine/db.js';
 import { createHermesRequest } from './contract.js';
 import { dispatchHermes } from './adapter.js';
 import { guardDispatch } from '../execution/dispatchGuard.js';
+import { authorizeReadOnlyTestTask } from '../shared/testMode.js';
 
 const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider', 'execute_provider', 'apply_edits', 'validate', 'commit', 'pull_request', 'summarize'];
 const MAX_RETRIES = 2;
@@ -34,7 +35,19 @@ export async function processTask(task) {
       return;
     }
 
-    if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true') return processReadOnlyTestTask(task, workspace);
+    // Bounded mock acceptance path. Entering it is gated on the canonical
+    // test-mode authorization (valid config + designated synthetic workspace +
+    // mock-only policy), not on the raw env flag. If test mode is signalled but
+    // the task is not a sanctioned bounded-mock case, fail closed — never let a
+    // non-designated task reach either the mock completion or the real pipeline.
+    if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true') {
+      const testAuth = authorizeReadOnlyTestTask(workspace);
+      if (!testAuth.ok) {
+        recordEvidence(task.id, 'mock_acceptance_denied', { reason: testAuth.reason });
+        return transition(task.id, 'failed', { error: `bounded mock acceptance path denied: ${testAuth.reason}` });
+      }
+      return processReadOnlyTestTask(task, workspace);
+    }
 
     const actorId = taskActor(task);
     const hermesRequest = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: workspace.enabled_tools || ['read','status'], timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 30_000) });
