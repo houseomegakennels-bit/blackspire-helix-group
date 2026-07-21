@@ -1,0 +1,56 @@
+# Blackspire Command — durable production runtime (REVIEW TEMPLATE, NOT INSTALLED)
+#
+# Reviewed systemd unit template. NOT installed or enabled by any repository change. Applying
+# it is an operator action under blocker #2 approval. Runs the production supervisor
+# (which calls verifyVpsRuntime and fails closed before spawning api/worker) as the
+# non-root blackspire user from the immutable current release.
+
+[Unit]
+Description=Blackspire Command control plane (durable production runtime)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# --- Least-privileged identity (blocker #2) ---
+User=blackspire
+Group=blackspire
+
+# --- Release + persistent state layout ---
+WorkingDirectory=/opt/blackspire-command/current
+# Secrets live outside Git in a 0640 root:blackspire file; values never appear in the repo.
+EnvironmentFile=/etc/blackspire/command.env
+
+# Verify the environment profile before starting; the supervisor re-verifies at runtime.
+ExecStartPre=/usr/bin/env bash scripts/verify-environment.sh vps-production
+ExecStart=/usr/bin/env node scripts/production-supervisor.js
+
+# --- Restart policy: cap at five attempts in ten minutes, then stop for operator review ---
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+# --- Sandboxing / hardening ---
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# Only the persistent state tree is writable; releases and everything else stay read-only.
+ReadWritePaths=/opt/blackspire-command/shared
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+# Port 8787 > 1024, so no capabilities are needed to bind it.
+CapabilityBoundingSet=
+AmbientCapabilities=
+# NOTE: MemoryDenyWriteExecute is intentionally NOT set — the Node/V8 JIT requires W^X-exempt
+# executable memory and would crash under it.
+
+[Install]
+WantedBy=multi-user.target
