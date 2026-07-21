@@ -30,6 +30,8 @@ delete process.env.GITHUB_TOKEN;
 delete process.env.GH_TOKEN;
 delete process.env.BLACKSPIRE_RUNTIME_MODE;
 
+const { migrate } = await import('../packages/task-engine/db.js');
+migrate();
 const { authorizeReadOnlyTestTask } = await import('../packages/shared/testMode.js');
 const { processTask } = await import('../packages/hermes/hermes.js');
 const { getTask, taskRecords, createTask } = await import('../packages/task-engine/tasks.js');

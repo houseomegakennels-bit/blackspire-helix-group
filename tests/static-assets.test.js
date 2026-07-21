@@ -13,6 +13,8 @@ process.env.COMMAND_ADMIN_TOKEN = 'static-token';
 process.env.PORT = '8899';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 
+const { migrate } = await import('../packages/task-engine/db.js');
+migrate();
 const { closeDb } = await import('../packages/task-engine/db.js');
 const { start } = await import('../apps/api/server.js');
 

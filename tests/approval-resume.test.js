@@ -11,6 +11,8 @@ process.env.HERMES_TEST_PROVIDER = 'mock';
 process.env.COMMAND_ADMIN_TOKEN = 'approval-token';
 process.env.PORT = '8895';
 
+const { migrate } = await import('../packages/task-engine/db.js');
+migrate();
 const { start } = await import('../apps/api/server.js');
 const { startWorker } = await import('../apps/worker/worker.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');

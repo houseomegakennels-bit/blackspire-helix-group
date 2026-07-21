@@ -10,6 +10,8 @@ process.env.COMMAND_ADMIN_TOKEN = 'jarvis-token';
 process.env.PORT = '8898';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 
+const { migrate } = await import('../packages/task-engine/db.js');
+migrate();
 const { start } = await import('../apps/api/server.js');
 
 let server;

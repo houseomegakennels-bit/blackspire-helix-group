@@ -2,8 +2,15 @@ import { claimNext, getFlag, setFlag } from '../../packages/task-engine/tasks.js
 import { processTask } from '../../packages/hermes/hermes.js';
 import { drainTelegramOutbox } from '../../packages/unified-input/unified.js';
 import { dispatchReply } from '../telegram/bot.js';
+import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
 
 export function startWorker({ intervalMs = Number(process.env.WORKER_POLL_MS || 750), once = false } = {}) {
+  try {
+    assertSchemaCompatible();
+  } catch (error) {
+    console.error(JSON.stringify({ service: 'worker', fatal: true, error: String(error.message || error) }));
+    process.exit(1);
+  }
   let running = false;
   async function tick() {
     if (running || getFlag('emergency_stop') === 'active') return;

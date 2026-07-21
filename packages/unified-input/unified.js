@@ -1,10 +1,8 @@
 import { id, now, redact } from '../shared/util.js';
-import { query, execSql, esc, migrate } from '../task-engine/db.js';
+import { query, execSql, esc } from '../task-engine/db.js';
 import { createTask, getTask, getFlag, transition, recordEvidence, recordTaskEvent, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { evaluateRequestPolicy } from '../policy/policy.js';
-
-migrate();
 
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
 const cancellationTokens = new Map();

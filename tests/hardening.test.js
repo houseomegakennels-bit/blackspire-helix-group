@@ -13,6 +13,8 @@ process.env.TELEGRAM_ALLOWED_USERS = '1001';
 process.env.TELEGRAM_WEBHOOK_SECRET = 'telegram-secret';
 process.env.LOGIN_RATE_LIMIT = '20';
 
+const { migrate } = await import('../packages/task-engine/db.js');
+migrate();
 const { start } = await import('../apps/api/server.js');
 const { createTask, taskRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { handleTelegramUpdate, handleTelegramAttachment } = await import('../apps/telegram/bot.js');

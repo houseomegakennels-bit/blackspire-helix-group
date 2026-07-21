@@ -1,7 +1,5 @@
-import { run, all, migrate } from './db.js';
+import { run, all } from './db.js';
 import { id, now } from '../shared/util.js';
-
-migrate();
 
 export function recordAttachment({ taskId = null, workspaceId = null, chatId, fileId, fileName, mimeType, sizeBytes, kind, storedPath, textExcerpt = null, transcriptionStatus = null }) {
   const attachmentId = id('attach');

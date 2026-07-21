@@ -27,6 +27,8 @@ delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.OPENAI_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 
+const { migrate } = await import('../packages/task-engine/db.js');
+migrate();
 const { start } = await import('../apps/api/server.js');
 const { processTask } = await import('../packages/hermes/hermes.js');
 const { getTask, taskRecords, deliveryRecords } = await import('../packages/task-engine/tasks.js');
