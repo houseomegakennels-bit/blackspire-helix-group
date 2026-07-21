@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-cookies-'));
 
 function migrateDatabase(dbPath) {
-  const result = spawnSync(process.execPath, ['scripts/migrate.js'], { cwd: process.cwd(), env: { ...process.env, BLACKSPIRE_DB_PATH: dbPath, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
+  prepareDisposableDatabase(dbPath);
 }
 
 function bootApi(env, port) {

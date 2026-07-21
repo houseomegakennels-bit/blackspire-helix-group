@@ -71,7 +71,7 @@ test('ordinary API and worker startup refuse an unmigrated database without chan
 });
 
 test('dedicated migration command denies every value except exact true without changing a disposable database', () => {
-  for (const [name, value] of [['absent', undefined], ['empty', ''], ['false', 'false'], ['zero', '0'], ['malformed', 'yes']]) {
+  for (const [name, value] of [['absent', undefined], ['empty', ''], ['false', 'false'], ['upper-false', 'FALSE'], ['zero', '0'], ['one', '1'], ['yes', 'yes'], ['whitespace', ' true '], ['malformed', 'maybe']]) {
     const dbPath = emptyDatabase(`denied-${name}`);
     const env = safeEnv(dbPath);
     if (value !== undefined) env.BLACKSPIRE_RUN_MIGRATIONS = value;
@@ -103,4 +103,24 @@ test('production wrapper never runs or fabricates a migration permission', () =>
   const text = fs.readFileSync('scripts/start-production.sh', 'utf8');
   assert.doesNotMatch(text, /scripts\/migrate\.js/);
   assert.doesNotMatch(text, /BLACKSPIRE_RUN_MIGRATIONS/);
+});
+
+test('schema-writing code and migration permission stay inside the dedicated command boundary', () => {
+  const approvedWriterImport = "import { runMigration } from './migration-writer.js';";
+  const migrationCommand = fs.readFileSync('scripts/migrate.js', 'utf8');
+  assert.match(migrationCommand, new RegExp(approvedWriterImport.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  const roots = ['apps', 'packages', 'tests', '.github', '.devcontainer', 'scripts'];
+  const files = roots.flatMap((root) => fs.existsSync(root) ? fs.readdirSync(root, { recursive: true }).map((entry) => path.join(root, entry)).filter((entry) => fs.statSync(entry).isFile()) : []);
+  for (const file of files) {
+    if (file === 'scripts/migrate.js' || file === 'scripts/migration-writer.js' || file === 'tests/migration-safety.test.js' || file === 'tests/helpers/prepare-disposable-database.js') continue;
+    const text = fs.readFileSync(file, 'utf8');
+    assert.doesNotMatch(text, /migration-writer/ , `${file} must not import the schema writer`);
+    assert.doesNotMatch(text, /\bmigrate\s*\(/, `${file} must not call schema migration directly`);
+  }
+
+  const workflow = fs.readFileSync('.github/workflows/blackspire-ci.yml', 'utf8');
+  assert.match(workflow, /BLACKSPIRE_DB_PATH="\$RUNNER_TEMP\/blackspire-ci\/command\.sqlite" BLACKSPIRE_RUN_MIGRATIONS=true npm run db:migrate/);
+  assert.doesNotMatch(workflow.replace(/BLACKSPIRE_DB_PATH="\$RUNNER_TEMP\/blackspire-ci\/command\.sqlite" BLACKSPIRE_RUN_MIGRATIONS=true npm run db:migrate/, ''), /BLACKSPIRE_RUN_MIGRATIONS/);
+  assert.doesNotMatch(fs.readFileSync('scripts/codespace-readiness-check.sh', 'utf8'), /BLACKSPIRE_RUN_MIGRATIONS|db:migrate/);
 });

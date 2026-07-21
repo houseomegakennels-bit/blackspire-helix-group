@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const port = '8792';
 const dbPath = '.blackspire-command/smoke.sqlite';
-const migration = spawnSync(process.execPath, ['scripts/migrate.js'], { env: { ...process.env, BLACKSPIRE_DB_PATH: dbPath, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, encoding: 'utf8' });
-assert.equal(migration.status, 0, migration.stderr);
+prepareDisposableDatabase(dbPath);
 const child = spawn(process.execPath, ['apps/api/server.js'], {
   env: { ...process.env, PORT: port, COMMAND_ADMIN_TOKEN: 'smoke', BLACKSPIRE_DB_PATH: dbPath },
   stdio: 'ignore',

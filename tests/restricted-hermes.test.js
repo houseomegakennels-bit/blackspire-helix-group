@@ -14,8 +14,8 @@ process.env.HERMES_TEST_PROVIDER = 'mock';
 delete process.env.OPENAI_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 
-const { migrate } = await import('../packages/task-engine/db.js');
-migrate();
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { upsertWorkspace, getWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { createTask, getTask, transition, setFlag, taskRecords, recordProviderAttempt } = await import('../packages/task-engine/tasks.js');
 const { createHermesRequest, mockHermesResponse, validateHermesResponse } = await import('../packages/hermes/contract.js');

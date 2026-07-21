@@ -39,8 +39,8 @@ globalThis.fetch = async (input, init) => {
   return nativeFetch(input, init);
 };
 
-const { migrate } = await import('../packages/task-engine/db.js');
-migrate();
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start } = await import('../apps/api/server.js');
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
 const { createUnifiedInput, getConversation, drainTelegramOutbox, registerCancellationToken } = await import('../packages/unified-input/unified.js');

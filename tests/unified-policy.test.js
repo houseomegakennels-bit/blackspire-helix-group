@@ -12,8 +12,8 @@ process.env.HERMES_TEST_PROVIDER = 'mock';
 process.env.TELEGRAM_MODE = 'mock';
 process.env.PORT = '8930';
 
-const { migrate } = await import('../packages/task-engine/db.js');
-migrate();
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { classifyRequest, evaluateRequestPolicy } = await import('../packages/policy/policy.js');
 const { createUnifiedInput, getConversation } = await import('../packages/unified-input/unified.js');
 const { getTask, taskRecords, deliveryRecords } = await import('../packages/task-engine/tasks.js');

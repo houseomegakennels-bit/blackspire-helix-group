@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-prodstartup-'));
 
 function runApi(env) {
-  const migration = spawnSync(process.execPath, ['scripts/migrate.js'], { cwd: process.cwd(), env: { ...process.env, BLACKSPIRE_DB_PATH: env.BLACKSPIRE_DB_PATH, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, encoding: 'utf8' });
-  assert.equal(migration.status, 0, migration.stderr);
+  prepareDisposableDatabase(env.BLACKSPIRE_DB_PATH);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';

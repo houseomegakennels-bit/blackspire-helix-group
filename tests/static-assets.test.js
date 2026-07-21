@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import net from 'node:net';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-static-'));
 process.env.BLACKSPIRE_DB_PATH = path.join(root, 'static.sqlite');
@@ -13,8 +13,8 @@ process.env.COMMAND_ADMIN_TOKEN = 'static-token';
 process.env.PORT = '8899';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 
-const { migrate } = await import('../packages/task-engine/db.js');
-migrate();
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { closeDb } = await import('../packages/task-engine/db.js');
 const { start } = await import('../apps/api/server.js');
 
@@ -246,8 +246,7 @@ test('production CSP does not permit inline script or style', async () => {
   // The dev CSP intentionally allows inline; only the production policy must be strict, so
   // assert it against a real production-mode boot rather than this test server.
   const dbPath = path.join(root, 'prod-csp.sqlite');
-  const migration = spawnSync(process.execPath, ['scripts/migrate.js'], { cwd: process.cwd(), env: { ...process.env, BLACKSPIRE_DB_PATH: dbPath, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, encoding: 'utf8' });
-  assert.equal(migration.status, 0, migration.stderr);
+  prepareDisposableDatabase(dbPath);
   const child = spawn(process.execPath, ['apps/api/server.js'], {
     env: {
       ...process.env,
