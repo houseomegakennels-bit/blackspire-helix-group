@@ -6,7 +6,7 @@ The durable authority is GitHub repository `houseomegakennels-bit/blackspire-hel
 
 - Last reconciled: 2026-07-21 UTC
 - Base `origin/main`: `405a4166a5ce4d350573bce35dfa9f424a309596`
-- Last verified implementation commit: `73bf031569847dac07498a72b20ebebac2b8affa`
+- Last verified implementation commit: `bd90fcfb5ae14d56a9b2e40c04ab366ca8f1c44b`
 - The last verified implementation commit is an unpublished local readiness head; `origin/main` remains the deployment target and contains the merged Jarvis feature but not this later readiness tooling.
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
@@ -59,7 +59,7 @@ This record supersedes `PROJECT_CONTEXT.md`, `WORKFLOW.md`, `AI_WORKSPACE_SYNC.m
 - Subscription Codex diagnostic at `aedb9db`: one authorized invocation produced category `nonzero_exit_with_structured_stdout_error`; a confirmed stdout/stderr classification defect was fixed. Forty targeted and 156 full tests passed with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed.
 - Final subscription Codex acceptance at `85beabc`: exactly one ChatGPT-subscription-authenticated `codex exec` invocation exited zero, emitted four sanitized structured records with no error event, passed the exact version 1 operational contract, and completed canonical task state. It used no API key, standalone Blackspire Responses API call, retry, fallback, or observed tool call. Forty targeted and 156 full tests passed; build, lint, typecheck, secret scan, living-memory, whitespace, teardown, and scope checks passed.
 - Publication preflight reran 40 targeted and 156 full tests with zero failures/skips; build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. The working tree remained clean and no runtime, deployment, push, PR, merge, production change, or Telegram connection occurred.
-- Durable-VPS readiness head `73bf031`: 228 full tests passed under Node 22.23.1; WAL-safe backup/restore, exact-SHA release switching, no-provider fail-closed checks, build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. A disposable release rehearsal completed install, migration, restore, production-wrapper startup, health/Jarvis/CSP/public-asset checks, graceful stop, and rollback. No live service or database was touched.
+- Durable-VPS readiness head `bd90fcf`: 228 full tests passed under Node 22.23.1; WAL-safe backup/restore, exact-SHA release switching, no-provider fail-closed checks, build, lint, typecheck, secret scan, living-memory, and whitespace checks passed. A disposable release rehearsal completed install, migration, restore, production-wrapper startup, health/Jarvis/CSP/public-asset checks, graceful stop, and rollback. No live service or database was touched.
 
 ## Environments and integrations
 

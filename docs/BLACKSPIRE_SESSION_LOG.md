@@ -104,3 +104,4 @@
 - Replaced database file-copy backup with WAL-safe SQLite `VACUUM INTO`, SHA-256 sidecar, integrity verification, and disposable-only restore guardrails.
 - Added a fail-closed no-external-provider production profile and signal-forwarding start supervisor; provider credentials, mock modes, and Telegram are rejected for that profile.
 - Added reviewed healthcheck, logrotate, and monitoring templates for operator application. Live services, production data, credentials, DNS, proxy, Vercel, and firewall were untouched.
+- Tightened restore rehearsal to require the generated SHA-256 sidecar before copying any backup; the disposable backup/restore test still passes.
