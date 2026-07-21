@@ -1,4 +1,12 @@
 import { spawn } from 'node:child_process';
+import { verifyVpsRuntime } from '../packages/shared/security.js';
+
+// Fail closed before spawning any child if the runtime is unsafe. Messages are sanitized (no env values).
+const runtime = verifyVpsRuntime();
+if (!runtime.ok) {
+  process.stderr.write(`fatal: production runtime verification failed:\n${runtime.errors.map((e) => `  - ${e}`).join('\n')}\n`);
+  process.exit(1);
+}
 
 const children = [
   spawn(process.execPath, ['apps/api/server.js'], { stdio: 'inherit' }),

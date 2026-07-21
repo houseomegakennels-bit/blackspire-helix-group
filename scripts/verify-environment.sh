@@ -52,6 +52,16 @@ case "$mode" in
     done
     [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
     [[ -n "${COMMAND_ADMIN_TOKEN:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production authentication is not configured"
+    [[ "${BLACKSPIRE_RUN_MIGRATIONS:-false}" != "true" ]] || fail "migrations must not run implicitly; approve them separately"
+    port="${PORT:-}"
+    { [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )); } || fail "PORT must be an integer between 1 and 65535"
+    [[ -d "$(dirname -- "${BLACKSPIRE_DB_PATH}")" ]] || fail "persistent database parent directory does not exist"
+    startup="${BLACKSPIRE_STARTUP_TIMEOUT_SECONDS:-}"
+    { [[ "$startup" =~ ^[0-9]+$ ]] && (( startup >= 1 && startup <= 600 )); } || fail "startup timeout must be a positive integer no greater than 600"
+    health="${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-}"
+    { [[ "$health" =~ ^[0-9]+$ ]] && (( health >= 1 && health <= 120 )); } || fail "health timeout must be a positive integer no greater than 120"
+    [[ -n "${BLACKSPIRE_RUNTIME_USER:-}" && "${BLACKSPIRE_RUNTIME_USER}" != "root" ]] || fail "BLACKSPIRE_RUNTIME_USER must be a non-root runtime user"
+    [[ "$(id -u)" -ne 0 ]] || fail "production runtime must not run as root"
     ;;
   *) fail "unknown environment profile" ;;
 esac
