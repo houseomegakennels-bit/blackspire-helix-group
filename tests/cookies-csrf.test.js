@@ -12,9 +12,15 @@ function bootApi(env, port) {
   return child;
 }
 
-async function waitForHealth(port, timeoutMs = 5000) {
+function hasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+async function waitForHealth(child, port, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    // Fail fast (and never hang) if the server process died during startup instead of polling a dead port.
+    if (hasExited(child)) throw new Error(`API process exited during startup (code ${child.exitCode}, signal ${child.signalCode})`);
     try { if ((await fetch(`http://localhost:${port}/health`)).status === 200) return; } catch { /* not up yet */ }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -22,8 +28,30 @@ async function waitForHealth(port, timeoutMs = 5000) {
 }
 
 async function stopApi(child) {
-  child.kill('SIGTERM');
-  await new Promise((resolve) => child.once('exit', resolve));
+  if (!child) return;
+  // A child that already exited (e.g. a boot failure) will never emit another 'exit'; awaiting one would hang
+  // the whole test run. Guard for it, attach the listener before signalling, and escalate to SIGKILL so an
+  // unresponsive child can never block the suite indefinitely.
+  if (hasExited(child)) return;
+  await new Promise((resolve) => {
+    const finish = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => { child.kill('SIGKILL'); }, 2000);
+    child.once('exit', finish);
+    child.kill('SIGTERM');
+  });
+}
+
+// Boot an API child and wait for health, guaranteeing the child is reaped if startup fails so no disposable
+// process is orphaned and no failure can turn into a hang.
+async function bootAndWait(env, port) {
+  const child = bootApi(env, port);
+  try {
+    await waitForHealth(child, port);
+  } catch (err) {
+    await stopApi(child);
+    throw err;
+  }
+  return child;
 }
 
 function parseSetCookies(response) {
@@ -39,8 +67,7 @@ let devApi;
 const devPort = 8901;
 
 test('boot dev-mode API for cookie inspection', async () => {
-  devApi = bootApi({ NODE_ENV: 'development', BLACKSPIRE_DB_PATH: path.join(root, 'dev.sqlite'), COMMAND_ADMIN_TOKEN: 'cookie-token' }, devPort);
-  await waitForHealth(devPort);
+  devApi = await bootAndWait({ NODE_ENV: 'development', BLACKSPIRE_DB_PATH: path.join(root, 'dev.sqlite'), COMMAND_ADMIN_TOKEN: 'cookie-token' }, devPort);
 });
 
 test('session cookie is HttpOnly; CSRF cookie is not, and the two values differ', async () => {
@@ -97,8 +124,7 @@ const prodEnv = {
 };
 
 test('boot production-mode API for Secure-cookie and bearer-restriction checks', async () => {
-  prodApi = bootApi(prodEnv, prodPort);
-  await waitForHealth(prodPort);
+  prodApi = await bootAndWait(prodEnv, prodPort);
 });
 
 test('production sets Secure on both cookies', async () => {
@@ -118,8 +144,7 @@ let prodBearerApi;
 const prodBearerPort = 8903;
 
 test('production allows bearer-token auth only when explicitly opted in', async () => {
-  prodBearerApi = bootApi({ ...prodEnv, ALLOW_BEARER_AUTH: 'true', BLACKSPIRE_DB_PATH: path.join(root, 'prod-bearer', 'command.sqlite'), TELEGRAM_TMP_DIR: path.join(root, 'prod-bearer-attachments') }, prodBearerPort);
-  await waitForHealth(prodBearerPort);
+  prodBearerApi = await bootAndWait({ ...prodEnv, ALLOW_BEARER_AUTH: 'true', BLACKSPIRE_DB_PATH: path.join(root, 'prod-bearer', 'command.sqlite'), TELEGRAM_TMP_DIR: path.join(root, 'prod-bearer-attachments') }, prodBearerPort);
   const response = await fetch(`http://localhost:${prodBearerPort}/api/tasks`, { headers: { authorization: `Bearer ${prodEnv.COMMAND_ADMIN_TOKEN}` } });
   assert.equal(response.status, 200, 'bearer auth must work once explicitly enabled');
   await stopApi(prodBearerApi);
