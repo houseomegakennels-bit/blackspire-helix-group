@@ -37,7 +37,10 @@ test('WAL-safe backup and disposable restore preserve committed state and checks
 
 test('release creation is exact, idempotent, and switching is atomic', () => {
   const releaseRoot = path.join(root, 'releases');
-  const sha = '405a4166a5ce4d350573bce35dfa9f424a309596';
+  const shaResult = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' });
+  assert.equal(shaResult.status, 0, shaResult.stderr);
+  const sha = shaResult.stdout.trim();
+  assert.match(sha, /^[0-9a-f]{40}$/);
   const env = { BLACKSPIRE_RELEASE_ROOT: releaseRoot, BLACKSPIRE_SOURCE_ROOT: process.cwd() };
   const created = run('scripts/release-create.sh', [sha], env);
   assert.equal(created.status, 0, created.stderr);
