@@ -41,10 +41,16 @@ case "$mode" in
     ;;
   vps-production)
     [[ "${NODE_ENV:-}" == "production" ]] || fail "production requires NODE_ENV=production"
+    [[ "${BLACKSPIRE_RUNTIME_MODE:-}" == "production" ]] || fail "production requires BLACKSPIRE_RUNTIME_MODE=production"
     [[ "${BLACKSPIRE_STATE_OWNER:-}" == "vps-production" ]] || fail "production state owner must be vps-production"
     [[ -n "${BLACKSPIRE_DB_PATH:-}" && "${BLACKSPIRE_DB_PATH}" != /tmp/* ]] || fail "production requires persistent database storage"
-    [[ "${UNIFIED_IPHONE_TEST_MODE:-false}" != "true" && "${TELEGRAM_MODE:-}" != "mock" ]] || fail "production cannot enable test mode or mock Telegram"
-    [[ "$provider" != "mock" ]] || fail "production cannot use the mock provider"
+    [[ "${UNIFIED_IPHONE_TEST_MODE:-false}" != "true" && "${TELEGRAM_MODE:-dry-run}" != "mock" ]] || fail "production cannot enable test mode or mock Telegram"
+    [[ "$provider" == "manual" ]] || fail "approved production profile requires manual provider mode"
+    [[ "${BLACKSPIRE_HERMES_MODE:-restricted}" != "mock" ]] || fail "production cannot use mock Hermes"
+    for key in OPENAI_API_KEY ANTHROPIC_API_KEY CODEX_API_KEY CODEX_API_ENDPOINT TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET; do
+      has_value "$key" && fail "production profile forbids $key"
+    done
+    [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
     [[ -n "${COMMAND_ADMIN_TOKEN:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production authentication is not configured"
     ;;
   *) fail "unknown environment profile" ;;

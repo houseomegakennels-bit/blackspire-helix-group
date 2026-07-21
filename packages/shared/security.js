@@ -16,6 +16,15 @@ const MIN_NODE_MINOR_AT_MIN_MAJOR = 5;
 export function requireProductionSafeConfig(env = process.env, { dbDir = path.dirname(DB_PATH), attachmentsDir = ATTACHMENTS_DIR } = {}) {
   const errors = [];
   if (env.NODE_ENV === 'production') {
+    if (env.BLACKSPIRE_RUNTIME_MODE === 'production') {
+      if (env.BLACKSPIRE_PROVIDER_MODE !== 'manual') errors.push('BLACKSPIRE_PROVIDER_MODE must be manual in the approved no-provider production profile.');
+      if (env.BLACKSPIRE_HERMES_MODE === 'mock') errors.push('BLACKSPIRE_HERMES_MODE=mock is not allowed in production.');
+      if (env.UNIFIED_IPHONE_TEST_MODE === 'true') errors.push('UNIFIED_IPHONE_TEST_MODE=true is not allowed in production.');
+      if (!['', 'dry-run', undefined].includes(env.TELEGRAM_MODE)) errors.push('TELEGRAM_MODE must remain dry-run or unset in the no-provider production profile.');
+      for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET']) {
+        if (env[key]) errors.push(`${key} is forbidden in the no-provider production profile.`);
+      }
+    }
     if (!env.COMMAND_ADMIN_TOKEN || env.COMMAND_ADMIN_TOKEN === 'dev-admin-token-change-me' || env.COMMAND_ADMIN_TOKEN.length < 24) errors.push('Set a strong COMMAND_ADMIN_TOKEN before production use.');
     if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) errors.push('Set SESSION_SECRET to at least 32 characters.');
     if (env.SECURE_COOKIES === 'false') errors.push('SECURE_COOKIES=false is not allowed in production.');

@@ -6,7 +6,7 @@
 2. Keep all validation credential-free and mock-only until explicit authority changes.
 3. Preserve the completed operator iPhone acceptance and teardown evidence; restage only for an explicitly approved new acceptance need.
 4. When included Codespaces usage renews, inspect the designated existing Codespace before any creation request; do not enable billing.
-5. Before production Command promotion, verify VPS ownership, supervision, persistent storage, backups/restores, HTTPS, health monitoring, and rollback.
+5. Before production Command promotion, apply and verify the immutable release, WAL-safe backup/restore, no-provider profile, monitoring/log-retention, stable HTTPS, and rollback procedures documented in `docs/VPS_RUNTIME_RUNBOOK.md`; current VPS application remains unpromoted.
 6. Preserve the completed restricted subscription Codex acceptance. Any new live Codex task requires a separately scoped approval; do not switch to API-key billing or another provider.
 
 ## Operator-only actions

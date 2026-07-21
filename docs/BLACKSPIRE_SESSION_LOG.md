@@ -98,3 +98,9 @@
 - Established `docs/BLACKSPIRE_SOURCE_OF_TRUTH.md` and supporting active-context, actions, decisions, session-log, and maintenance documents.
 - Marked real Telegram, live providers, device acceptance, GitHub CI for unpublished commits, current monitoring dashboard delivery, live Command production, and canonical Constitution location `UNVERIFIED`.
 - No credential values were read or recorded. No push, merge, deployment, production access, Telegram connection, or host-security change occurred.
+# 2026-07-21 — VPS-readiness foundation (Codex)
+
+- Added exact-SHA immutable release creation/switch/rollback scripts with persistent shared-state layout; no release was activated on the VPS.
+- Replaced database file-copy backup with WAL-safe SQLite `VACUUM INTO`, SHA-256 sidecar, integrity verification, and disposable-only restore guardrails.
+- Added a fail-closed no-external-provider production profile and signal-forwarding start supervisor; provider credentials, mock modes, and Telegram are rejected for that profile.
+- Added reviewed healthcheck, logrotate, and monitoring templates for operator application. Live services, production data, credentials, DNS, proxy, Vercel, and firewall were untouched.
