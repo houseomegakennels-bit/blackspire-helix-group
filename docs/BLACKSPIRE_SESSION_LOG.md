@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-22 — PR #28 final-review blockers reconciled
+
+- Verified the final reviewer used current PR #28 head `faaa6baeddd4e3b0a7592571c7773b8c935b504c` and confirmed the reported `scripts/start-local.js` side-effect migration import. Removed that ordinary-startup path and strengthened the disposable regression boundary to reject static/dynamic migration imports, `require`, writer calls, and migration-permission handling outside the dedicated command; API and worker are also exercised with an inherited exact-true flag.
+- Read-only host reconciliation found `origin/main` at `0a9affacaf13dd1b040c5d96eb112d979ab59444` and staged host-readiness infrastructure at `/opt/blackspire-command/releases/0a9affacaf13dd1b040c5d96eb112d979ab59444`. No `current` symlink, `/etc/blackspire/command.env`, or production database exists; `blackspire-command.service` remains disabled/inactive. Staging remains active on loopback `127.0.0.1:8788` and public HTTPS health is 200. This is not production activation or a cutover.
+- No Gate 3 rehearsal, backup/restore, staging restart, provider/Telegram connection, nginx/TLS, DNS, firewall, deployment, merge, or production change occurred.
+
 ## 2026-07-21 — PR #28 migration-boundary review findings repaired
 
 - On unmerged, undeployed `fix/explicit-migration-gate`, moved schema-writing migration implementation behind the dedicated `scripts/migrate.js` boundary. API, worker, supervisor, tests, fixtures, CI helpers, and Codespace readiness no longer import or call the writer directly; ordinary startup remains a read-only compatibility check.
