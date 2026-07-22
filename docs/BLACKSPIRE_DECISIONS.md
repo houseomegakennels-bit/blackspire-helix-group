@@ -1,5 +1,11 @@
 # Blackspire Decisions
 
+## 2026-07-22
+
+- Root test-inventory authorization must never be derived from TAP, stdout/stderr marker text, or worker-writable manifests. The trusted contract is one strict versioned parent terminal record, assembled only after child completion from parent IPC evidence and actual child status, written to a unique owner-only report with exclusive no-follow creation, and removed safely after standalone verification.
+- Canonical test-path order is locale-independent UTF-8 byte order. The parent schedules one canonical list once; discovered, started, completed, and per-file terminal status must be exact, duplicate-free, and successful.
+- PR #30 remains OPEN and draft pending fresh independent review. PR #29 remains OPEN/draft and blocked by its required exact-head root Vercel failure. Neither PR is authorized for merge, and neither Gate 3 nor production activation is authorized.
+
 ## 2026-07-21
 
 - PR #26 (repository durable-VPS readiness tooling) merged into `main` at `a9602496c0c0f3f50e62b63aeedfb348fa5da857` using a merge commit after independent review and independent second review (253/253 tests, zero confirmed defects). Reviewed history is preserved; squash and rebase were prohibited. The merge covers repository readiness tooling only and authorizes no host or production change.
