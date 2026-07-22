@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-persistence-'));
 const dbPath = path.join(root, 'command.sqlite');
@@ -15,6 +16,7 @@ const base = `http://localhost:${port}`;
 process.env.BLACKSPIRE_DB_PATH = dbPath;
 process.env.COMMAND_ADMIN_TOKEN = 'persist-token';
 const env = { ...process.env, PORT: String(port), LOGIN_RATE_LIMIT: '3' };
+prepareDisposableDatabase(dbPath);
 
 function bootApi() {
   const child = spawn(process.execPath, ['apps/api/server.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });

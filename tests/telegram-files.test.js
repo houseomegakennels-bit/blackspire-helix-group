@@ -12,6 +12,8 @@ process.env.TELEGRAM_ALLOWED_USERS = '1001';
 process.env.PORT = '8896';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start } = await import('../apps/api/server.js');
 const { handleTelegramAttachment, handleTelegramUpdate, sendTelegramDocument, dispatchReply } = await import('../apps/telegram/bot.js');
 const { attachmentsForTask } = await import('../packages/task-engine/attachments.js');

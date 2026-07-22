@@ -1,8 +1,6 @@
 import crypto from 'node:crypto';
-import { run, all, get, transaction, migrate } from '../task-engine/db.js';
+import { run, all, get, transaction } from '../task-engine/db.js';
 import { ADMIN_TOKEN } from './config.js';
-
-migrate();
 
 const SESSION_TTL_MS = () => Number(process.env.SESSION_TTL_MS || 8 * 60 * 60 * 1000);
 const REVOKED_BEFORE_FLAG = 'sessions_revoked_before';

@@ -1,7 +1,5 @@
-import { execSql, query, esc, migrate } from '../task-engine/db.js';
+import { execSql, query, esc } from '../task-engine/db.js';
 import { now } from '../shared/util.js';
-
-migrate();
 
 export function seedWorkspace() {
   upsertWorkspace({

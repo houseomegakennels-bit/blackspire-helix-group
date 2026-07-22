@@ -1,7 +1,5 @@
 import { id, now, redact } from '../shared/util.js';
-import { query, execSql, esc, migrate } from './db.js';
-
-migrate();
+import { query, execSql, esc } from './db.js';
 
 export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);

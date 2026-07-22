@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-prodstartup-'));
 
 function runApi(env) {
+  prepareDisposableDatabase(env.BLACKSPIRE_DB_PATH);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';

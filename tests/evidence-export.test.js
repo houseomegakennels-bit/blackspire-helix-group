@@ -11,6 +11,8 @@ process.env.HERMES_TEST_PROVIDER = 'mock';
 process.env.COMMAND_ADMIN_TOKEN = 'evidence-token';
 process.env.PORT = '8897';
 
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start } = await import('../apps/api/server.js');
 const { startWorker } = await import('../apps/worker/worker.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');

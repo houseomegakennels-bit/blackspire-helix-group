@@ -4,8 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-cookies-'));
+
+function migrateDatabase(dbPath) {
+  prepareDisposableDatabase(dbPath);
+}
 
 function bootApi(env, port) {
   const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, ...env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -44,6 +49,7 @@ async function stopApi(child) {
 // Boot an API child and wait for health, guaranteeing the child is reaped if startup fails so no disposable
 // process is orphaned and no failure can turn into a hang.
 async function bootAndWait(env, port) {
+  migrateDatabase(env.BLACKSPIRE_DB_PATH);
   const child = bootApi(env, port);
   try {
     await waitForHealth(child, port);

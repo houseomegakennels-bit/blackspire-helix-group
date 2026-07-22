@@ -11,6 +11,8 @@ process.env.TELEGRAM_ALLOWED_USERS = '1001';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 process.env.PORT = '8902';
 
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { createUnifiedInput, getConversation, cancelFromChannel, drainTelegramOutbox } = await import('../packages/unified-input/unified.js');
 const { getTask, taskRecords, deliveryRecords } = await import('../packages/task-engine/tasks.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');

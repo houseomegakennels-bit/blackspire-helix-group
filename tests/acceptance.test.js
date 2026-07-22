@@ -12,6 +12,8 @@ process.env.PORT = '8892';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 process.env.TELEGRAM_ALLOWED_USERS = '1001';
 
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { execSql, query, closeDb } = await import('../packages/task-engine/db.js');
 const { createTask, getTask, transition, claimNext, heartbeat, createSubtasks, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, taskRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { start } = await import('../apps/api/server.js');

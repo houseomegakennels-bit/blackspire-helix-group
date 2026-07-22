@@ -8,6 +8,8 @@ import { PassThrough } from 'node:stream';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'blackspire-codex-worker-tests-'));
 process.env.BLACKSPIRE_DATA_DIR=root; process.env.BLACKSPIRE_DB_PATH=path.join(root,'test.sqlite'); delete process.env.OPENAI_API_KEY;
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { runSubscriptionCodexWorker, validateWorkerRequest, validateWorkerResponse, resetWorkerInvocationForTests }=await import('../packages/codex-worker/adapter.js');
 const { runRestrictedCodexAcceptance }=await import('../packages/codex-worker/acceptance.js');
 const { createTask, getTask, taskRecords, transition, setFlag }=await import('../packages/task-engine/tasks.js');

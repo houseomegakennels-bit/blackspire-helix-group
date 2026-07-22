@@ -1,6 +1,4 @@
-import { run, get, migrate } from '../task-engine/db.js';
-
-migrate();
+import { run, get } from '../task-engine/db.js';
 
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_SAMPLE_RATE = 0.02; // bounded, probabilistic cleanup instead of a full-table scan on every call

@@ -6,5 +6,4 @@ repo_root="${BLACKSPIRE_RELEASE_DIR:-$(git rev-parse --show-toplevel)}"
 cd "$repo_root"
 bash scripts/verify-environment.sh vps-production
 printf 'BLACKSPIRE PRODUCTION MODE: state-owner=vps-production provider=%s telegram=not-auto-started test-auth=disabled\n' "${BLACKSPIRE_PROVIDER_MODE:-manual}"
-if [[ "${BLACKSPIRE_RUN_MIGRATIONS:-false}" == "true" ]]; then node scripts/migrate.js; fi
 exec node scripts/production-supervisor.js

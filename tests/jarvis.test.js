@@ -10,6 +10,8 @@ process.env.COMMAND_ADMIN_TOKEN = 'jarvis-token';
 process.env.PORT = '8898';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start } = await import('../apps/api/server.js');
 
 let server;

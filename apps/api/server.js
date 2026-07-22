@@ -16,6 +16,7 @@ import { createUnifiedInput, getConversation, requestCancellation } from '../../
 import { conversationEvents } from '../../packages/task-engine/tasks.js';
 import { requireSafeTestMode, isSameOrigin, testModeAllowsRequest, publicTestModeStatus } from '../../packages/shared/testMode.js';
 import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
+import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
 
 let emergencyStopMemory = false;
 const TEST_MODE = requireSafeTestMode();
@@ -316,6 +317,12 @@ function serve(res, file, type, cacheControl) {
 }
 
 export function start(port = PORT, host) {
+  try {
+    assertSchemaCompatible();
+  } catch (error) {
+    console.error(JSON.stringify({ service: 'api', fatal: true, error: String(error.message || error) }));
+    process.exit(1);
+  }
   const validation = requireProductionSafeConfig();
   if (process.env.NODE_ENV === 'production' && !validation.ok) {
     console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors }));

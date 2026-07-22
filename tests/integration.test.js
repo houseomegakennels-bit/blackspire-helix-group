@@ -9,6 +9,8 @@ import fs from 'node:fs';
 fs.rmSync('.blackspire-command/integration.sqlite', { force: true });
 fs.rmSync('.blackspire-command/integration.sqlite-wal', { force: true });
 fs.rmSync('.blackspire-command/integration.sqlite-shm', { force: true });
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start } = await import('../apps/api/server.js');
 const { handleTelegramUpdate, sendTelegramMessage, runPolling } = await import('../apps/telegram/bot.js');
 const { callOpenAI, callAnthropic } = await import('../packages/providers/providers.js');
