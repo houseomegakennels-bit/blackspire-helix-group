@@ -59,15 +59,23 @@ const safeEnv = (dbPath) => ({
   UNIFIED_IPHONE_TEST_MODE: 'false',
 });
 
-test('ordinary API and worker startup refuse an unmigrated database without changing its schema', async () => {
+test('ordinary API and worker startup refuse an unmigrated database without changing its schema, even with inherited migration permission', async () => {
   for (const [name, script] of [['api', 'apps/api/server.js'], ['worker', 'apps/worker/worker.js']]) {
     const dbPath = emptyDatabase(name);
-    const result = await runUntilExit(script, safeEnv(dbPath));
+    const result = await runUntilExit(script, { ...safeEnv(dbPath), BLACKSPIRE_RUN_MIGRATIONS: 'true' });
     assert.equal(result.exited, true, `${name} must fail before serving or polling`);
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /migration required/i);
     assert.equal(tableCount(dbPath), 0, `${name} startup must not create schema`);
   }
+});
+
+test('ordinary local startup has no migration import, writer call, or migration-permission handling', () => {
+  const text = fs.readFileSync('scripts/start-local.js', 'utf8');
+  assert.doesNotMatch(text, /(?:import\s+(?:[^;]*?\s+from\s+)?|import\s*\()\s*['"][^'"]*(?:migrate|migration-writer)[^'"]*['"]/);
+  assert.doesNotMatch(text, /\brequire\s*\(\s*['"][^'"]*(?:migrate|migration-writer)[^'"]*['"]/);
+  assert.doesNotMatch(text, /\b(?:migrate|runMigration)\s*\(/);
+  assert.doesNotMatch(text, /BLACKSPIRE_RUN_MIGRATIONS/);
 });
 
 test('dedicated migration command denies every value except exact true without changing a disposable database', () => {
@@ -115,8 +123,9 @@ test('schema-writing code and migration permission stay inside the dedicated com
   for (const file of files) {
     if (file === 'scripts/migrate.js' || file === 'scripts/migration-writer.js' || file === 'tests/migration-safety.test.js' || file === 'tests/helpers/prepare-disposable-database.js') continue;
     const text = fs.readFileSync(file, 'utf8');
-    assert.doesNotMatch(text, /migration-writer/ , `${file} must not import the schema writer`);
-    assert.doesNotMatch(text, /\bmigrate\s*\(/, `${file} must not call schema migration directly`);
+    assert.doesNotMatch(text, /(?:import\s+(?:[^;]*?\s+from\s+)?|import\s*\()\s*['"][^'"]*(?:migrate|migration-writer)[^'"]*['"]/ , `${file} must not statically or dynamically import migration code`);
+    assert.doesNotMatch(text, /\brequire\s*\(\s*['"][^'"]*(?:migrate|migration-writer)[^'"]*['"]/ , `${file} must not require migration code`);
+    assert.doesNotMatch(text, /\b(?:migrate|runMigration)\s*\(/, `${file} must not call schema migration directly`);
   }
 
   const workflow = fs.readFileSync('.github/workflows/blackspire-ci.yml', 'utf8');

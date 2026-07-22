@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import './migrate.js';
 
 const services = [
   ['api', ['apps/api/server.js']],
