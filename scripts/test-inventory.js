@@ -3,319 +3,189 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const testDirectory = path.join(rootDirectory, 'tests');
-const recordFields = [
-  'recordType',
-  'version',
-  'runId',
-  'inventoryDigest',
-  'counts',
-  'discovered',
-  'started',
-  'completed',
-  'fileStatuses',
-  'childStatus',
-  'terminalState',
-];
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function unknownFields(value, allowed, label) {
-  if (!isPlainObject(value)) return [`${label} must be an object`];
-  return Object.keys(value)
-    .filter((field) => !allowed.includes(field))
-    .map((field) => `${label} contains unknown field ${field}`);
-}
-
-function inventoryDigest(files) {
-  return crypto.createHash('sha256').update(JSON.stringify(files)).digest('hex');
-}
-
-function duplicateValues(values) {
-  const seen = new Set();
-  const duplicates = new Set();
-  for (const value of values) {
-    if (seen.has(value)) duplicates.add(value);
-    seen.add(value);
-  }
-  return [...duplicates].sort(canonicalPathComparator);
-}
-
-function listErrors(label, intended, actual) {
-  if (!Array.isArray(actual)) return [`${label} must be an array`];
-  const errors = [];
-  if (actual.some((file) => typeof file !== 'string' || file.length === 0)) {
-    errors.push(`${label} must contain only non-empty file paths`);
-    return errors;
-  }
-  const duplicates = duplicateValues(actual);
-  const intendedSet = new Set(intended);
-  const actualSet = new Set(actual);
-  const missing = intended.filter((file) => !actualSet.has(file));
-  const unexpected = actual.filter((file) => !intendedSet.has(file));
-  if (duplicates.length) errors.push(`duplicate ${label} test files: ${duplicates.join(', ')}`);
-  if (missing.length) errors.push(`${label} inventory missing test files: ${missing.join(', ')}`);
-  if (unexpected.length) errors.push(`${label} inventory has unexpected test files: ${unexpected.join(', ')}`);
-  const canonical = [...actual].sort(canonicalPathComparator);
-  if (actual.length === canonical.length && actual.some((file, index) => file !== canonical[index])) {
-    errors.push(`${label} inventory is not in canonical byte order`);
-  }
-  return errors;
-}
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repositoryTests = path.join(repositoryRoot, 'tests');
+const TERMINAL_STATUSES = new Set(['passed', 'failed', 'skipped', 'canceled', 'interrupted']);
 
 export function canonicalPathComparator(left, right) {
   return Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'));
 }
 
-function collectTestFiles(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true })
-    .sort((left, right) => canonicalPathComparator(left.name, right.name))
-    .flatMap((entry) => {
-      const file = path.join(directory, entry.name);
-      if (entry.isDirectory()) return collectTestFiles(file);
-      return entry.isFile() && entry.name.endsWith('.test.js') ? [file] : [];
-    });
-}
-
-export function testFilesUnder(root, tests) {
-  return collectTestFiles(tests)
-    .map((file) => path.relative(root, file).split(path.sep).join('/'))
-    .sort(canonicalPathComparator);
-}
-
-export function expectedTestFiles() {
-  return testFilesUnder(rootDirectory, testDirectory);
-}
-
-export function verifyTestInventory(expected, executed) {
-  const errors = listErrors('executed', expected, executed);
-  if (errors.length) throw new Error(errors.join('; '));
-  return executed;
-}
-
-export function createTerminalRecord({
-  runId,
-  discovered,
-  started,
-  completed,
-  fileStatuses,
-  childStatus,
-  terminalState,
-}) {
-  const passed = Array.isArray(fileStatuses)
-    ? fileStatuses.filter((entry) => entry?.status === 'passed').length
-    : 0;
-  const failed = Array.isArray(fileStatuses) ? fileStatuses.length - passed : 0;
-  return {
-    recordType: 'blackspire.test-inventory.terminal',
-    version: 1,
-    runId,
-    inventoryDigest: inventoryDigest(discovered),
-    counts: {
-      discovered: discovered.length,
-      started: started.length,
-      completed: completed.length,
-      passed,
-      failed,
-    },
-    discovered,
-    started,
-    completed,
-    fileStatuses,
-    childStatus,
-    terminalState,
-  };
-}
-
-export function validateExecutionEvidence(evidence, { intended, runId }) {
-  const allowed = [
-    'messageType', 'version', 'runId', 'discovered', 'started', 'completed', 'fileStatuses', 'terminalState',
-  ];
-  const errors = unknownFields(evidence, allowed, 'execution evidence');
-  if (!isPlainObject(evidence)) throw new Error(errors.join('; '));
-  if (evidence.messageType !== 'blackspire.test-inventory.execution') {
-    errors.push('execution evidence has an unsupported message type');
+function assertContained(root, candidate, label) {
+  const relative = path.relative(root, candidate);
+  if (relative === '' || relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative)) {
+    throw new Error(`${label} escapes the approved test root`);
   }
-  if (evidence.version !== 1) errors.push(`execution evidence has unsupported version ${String(evidence.version)}`);
-  if (evidence.runId !== runId) errors.push('execution evidence has a stale or foreign runId');
-  errors.push(...listErrors('discovered', intended, evidence.discovered));
-  errors.push(...listErrors('started', intended, evidence.started));
-  errors.push(...listErrors('completed', intended, evidence.completed));
-  if (Array.isArray(evidence.started) && Array.isArray(evidence.completed)) {
-    const startedSet = new Set(evidence.started);
-    const withoutStart = evidence.completed.filter((file) => !startedSet.has(file));
-    if (withoutStart.length) errors.push(`test files completed without being started: ${withoutStart.join(', ')}`);
-  }
-  if (!Array.isArray(evidence.fileStatuses)) {
-    errors.push('execution evidence fileStatuses must be an array');
-  } else {
-    const statusFiles = [];
-    for (const [index, entry] of evidence.fileStatuses.entries()) {
-      errors.push(...unknownFields(entry, ['file', 'status'], `execution evidence fileStatuses[${index}]`));
-      if (!isPlainObject(entry) || typeof entry.file !== 'string') {
-        errors.push(`execution evidence fileStatuses[${index}] must identify a file`);
-        continue;
-      }
-      statusFiles.push(entry.file);
-      if (!['passed', 'failed', 'cancelled'].includes(entry.status)) {
-        errors.push(`execution evidence fileStatuses[${index}] has invalid status ${String(entry.status)}`);
-      }
+}
+
+function descriptorIdentity(root, file) {
+  const before = fs.lstatSync(file);
+  if (before.isSymbolicLink()) throw new Error(`test tree contains a symlink: ${file}`);
+  if (!before.isFile()) throw new Error(`test tree entry is not a regular file: ${file}`);
+  if (before.nlink !== 1) throw new Error(`test tree file has ambiguous hard-link count ${before.nlink}: ${file}`);
+
+  const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+  const descriptor = fs.openSync(file, flags);
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      throw new Error(`test tree file identity changed while opening: ${file}`);
     }
-    errors.push(...listErrors('fileStatuses', intended, statusFiles));
-  }
-  if (evidence.terminalState !== 'workers-complete') {
-    errors.push(`execution evidence terminalState must be workers-complete, got ${String(evidence.terminalState)}`);
-  }
-  if (errors.length) throw new Error(errors.join('; '));
-  return evidence;
-}
-
-export function selectTrustedExecutionEvidence(messages, options) {
-  if (!Array.isArray(messages) || messages.length !== 1) {
-    throw new Error(`expected exactly one trusted execution message, received ${Array.isArray(messages) ? messages.length : 0}`);
-  }
-  return validateExecutionEvidence(messages[0], options);
-}
-
-export function validateTerminalRecord(record, { intended, runId }) {
-  const errors = unknownFields(record, recordFields, 'terminal record');
-  if (!isPlainObject(record)) throw new Error(errors.join('; '));
-  if (record.recordType !== 'blackspire.test-inventory.terminal') {
-    errors.push('terminal record has an unsupported record type');
-  }
-  if (record.version !== 1) errors.push(`terminal record has unsupported version ${String(record.version)}`);
-  if (typeof record.runId !== 'string' || !/^[a-f0-9]{32}$/.test(record.runId)) {
-    errors.push('terminal record runId must be 32 lowercase hexadecimal characters');
-  } else if (record.runId !== runId) {
-    errors.push(`terminal record is stale or foreign: runId ${record.runId} does not match this run`);
-  }
-
-  errors.push(...listErrors('discovered', intended, record.discovered));
-  errors.push(...listErrors('started', intended, record.started));
-  errors.push(...listErrors('completed', intended, record.completed));
-
-  if (Array.isArray(record.started) && Array.isArray(record.completed)) {
-    const startedSet = new Set(record.started);
-    const withoutStart = record.completed.filter((file) => !startedSet.has(file));
-    if (withoutStart.length) {
-      errors.push(`test files completed without being started: ${[...new Set(withoutStart)].join(', ')}`);
+    const openedRealpath = fs.realpathSync(`/proc/self/fd/${descriptor}`);
+    assertContained(root, openedRealpath, 'opened test file');
+    const content = fs.readFileSync(descriptor);
+    const afterRead = fs.fstatSync(descriptor);
+    const afterPath = fs.lstatSync(file);
+    if (afterRead.dev !== opened.dev || afterRead.ino !== opened.ino
+      || afterPath.dev !== opened.dev || afterPath.ino !== opened.ino
+      || afterRead.size !== opened.size || afterPath.size !== opened.size) {
+      throw new Error(`test tree file changed while hashing: ${file}`);
     }
-  }
-
-  if (!Array.isArray(record.fileStatuses)) {
-    errors.push('fileStatuses must be an array');
-  } else {
-    const statusFiles = [];
-    for (const [index, entry] of record.fileStatuses.entries()) {
-      errors.push(...unknownFields(entry, ['file', 'status'], `fileStatuses[${index}]`));
-      if (!isPlainObject(entry) || typeof entry.file !== 'string') {
-        errors.push(`fileStatuses[${index}] must identify a file`);
-        continue;
-      }
-      statusFiles.push(entry.file);
-      if (!['passed', 'failed', 'cancelled'].includes(entry.status)) {
-        errors.push(`fileStatuses[${index}] has invalid terminal status ${String(entry.status)}`);
-      } else if (entry.status !== 'passed') {
-        errors.push(`test file ${entry.file} has unsuccessful terminal status ${entry.status}`);
-      }
-    }
-    errors.push(...listErrors('fileStatuses', intended, statusFiles));
-  }
-
-  errors.push(...unknownFields(record.counts, ['discovered', 'started', 'completed', 'passed', 'failed'], 'counts'));
-  if (isPlainObject(record.counts)) {
-    const expectedCounts = {
-      discovered: Array.isArray(record.discovered) ? record.discovered.length : -1,
-      started: Array.isArray(record.started) ? record.started.length : -1,
-      completed: Array.isArray(record.completed) ? record.completed.length : -1,
-      passed: Array.isArray(record.fileStatuses)
-        ? record.fileStatuses.filter((entry) => entry?.status === 'passed').length
-        : -1,
-      failed: Array.isArray(record.fileStatuses)
-        ? record.fileStatuses.filter((entry) => entry?.status !== 'passed').length
-        : -1,
+    return {
+      type: 'file',
+      dev: opened.dev,
+      ino: opened.ino,
+      mode: opened.mode,
+      nlink: opened.nlink,
+      size: opened.size,
+      mtimeMs: opened.mtimeMs,
+      ctimeMs: opened.ctimeMs,
+      sha256: crypto.createHash('sha256').update(content).digest('hex'),
     };
-    for (const [field, expected] of Object.entries(expectedCounts)) {
-      if (record.counts[field] !== expected) errors.push(`counts.${field} must equal ${expected}`);
-    }
-  }
-
-  if (Array.isArray(record.discovered) && record.inventoryDigest !== inventoryDigest(record.discovered)) {
-    errors.push('terminal record inventory digest does not match discovered files');
-  }
-
-  errors.push(...unknownFields(record.childStatus, ['code', 'signal', 'interrupted'], 'childStatus'));
-  if (isPlainObject(record.childStatus)) {
-    if (record.childStatus.code !== 0) errors.push('childStatus.code must be 0');
-    if (record.childStatus.signal !== null) errors.push(`childStatus signal must be null, got ${String(record.childStatus.signal)}`);
-    if (record.childStatus.interrupted !== false) errors.push('childStatus reports an interrupted child process');
-  }
-  if (record.terminalState !== 'completed') {
-    errors.push(`overall parent terminal state must be completed, got ${String(record.terminalState)}`);
-  }
-
-  if (errors.length) throw new Error(errors.join('; '));
-  return record;
-}
-
-export function parseTrustedInventoryReport(content, options) {
-  if (typeof content !== 'string' || content.length === 0) {
-    throw new Error('trusted report must contain exactly one terminal record');
-  }
-  if (!content.endsWith('\n')) throw new Error('trusted report is truncated or lacks its terminal newline');
-  const lines = content.slice(0, -1).split('\n');
-  if (lines.length !== 1 || lines[0].length === 0) {
-    throw new Error('trusted report must contain exactly one terminal record');
-  }
-  let record;
-  try {
-    record = JSON.parse(lines[0]);
-  } catch (error) {
-    throw new Error(`trusted report contains malformed JSON: ${error.message}`);
-  }
-  return validateTerminalRecord(record, options);
-}
-
-export function writeTrustedInventoryReport(reportPath, record) {
-  const flags = fs.constants.O_WRONLY
-    | fs.constants.O_CREAT
-    | fs.constants.O_EXCL
-    | (fs.constants.O_NOFOLLOW ?? 0);
-  let descriptor;
-  try {
-    descriptor = fs.openSync(reportPath, flags, 0o600);
-    fs.writeFileSync(descriptor, `${JSON.stringify(record)}\n`, 'utf8');
-    fs.fsyncSync(descriptor);
-  } catch (error) {
-    throw new Error(`trusted report target is not safe or already exists: ${error.message}`);
   } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
+    fs.closeSync(descriptor);
   }
 }
 
-export function assertTrustedReportDirectory(directory, expected) {
-  const current = fs.lstatSync(directory);
-  if (!current.isDirectory()
-    || current.isSymbolicLink()
-    || current.dev !== expected.dev
-    || current.ino !== expected.ino
-    || current.uid !== expected.uid
-    || (current.mode & 0o777) !== 0o700) {
-    throw new Error('trusted report directory was substituted or has unsafe ownership or permissions');
+function scanDirectory(root, directory, entries, testFiles) {
+  const directoryLstat = fs.lstatSync(directory);
+  if (!directoryLstat.isDirectory() || directoryLstat.isSymbolicLink()) {
+    throw new Error(`test root contains a substituted directory: ${directory}`);
+  }
+  const directoryRealpath = fs.realpathSync(directory);
+  if (directory !== root) assertContained(root, directoryRealpath, 'test directory');
+  const relativeDirectory = path.relative(root, directory).split(path.sep).join('/') || '.';
+  entries.push({
+    path: relativeDirectory,
+    type: 'directory',
+    dev: directoryLstat.dev,
+    ino: directoryLstat.ino,
+    mode: directoryLstat.mode,
+  });
+
+  const children = fs.readdirSync(directory, { withFileTypes: true })
+    .sort((left, right) => canonicalPathComparator(left.name, right.name));
+  for (const child of children) {
+    const absolute = path.join(directory, child.name);
+    const relative = path.relative(root, absolute).split(path.sep).join('/');
+    if (child.isSymbolicLink()) throw new Error(`test tree contains a symlink: ${relative}`);
+    if (child.isDirectory()) {
+      scanDirectory(root, absolute, entries, testFiles);
+      continue;
+    }
+    if (!child.isFile()) throw new Error(`test tree contains an unsupported entry: ${relative}`);
+    entries.push({ path: relative, ...descriptorIdentity(root, absolute) });
+    if (child.name.endsWith('.test.js')) testFiles.push(relative);
+  }
+}
+
+export function captureTestTree(root, tests) {
+  const canonicalRoot = fs.realpathSync(root);
+  const canonicalTests = fs.realpathSync(tests);
+  assertContained(canonicalRoot, canonicalTests, 'approved tests directory');
+  const entries = [];
+  const testFiles = [];
+  scanDirectory(canonicalRoot, canonicalTests, entries, testFiles);
+  entries.sort((left, right) => canonicalPathComparator(left.path, right.path));
+  testFiles.sort(canonicalPathComparator);
+  if (testFiles.length === 0) throw new Error('test discovery found no test files');
+  return { root: canonicalRoot, tests: canonicalTests, entries, testFiles };
+}
+
+export function verifyTestTreeUnchanged(snapshot) {
+  let current;
+  try {
+    current = captureTestTree(snapshot.root, snapshot.tests);
+  } catch (error) {
+    throw new Error(`test tree changed or was replaced: ${error.message}`);
+  }
+  if (JSON.stringify(current.entries) !== JSON.stringify(snapshot.entries)
+    || JSON.stringify(current.testFiles) !== JSON.stringify(snapshot.testFiles)) {
+    throw new Error('test tree changed, mutated, or had an identity replaced');
   }
   return current;
 }
 
-export function readTrustedInventoryReport(reportPath, options) {
-  const stat = fs.lstatSync(reportPath);
-  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('trusted report path must be a regular non-symlink file');
-  if ((stat.mode & 0o777) !== 0o600) throw new Error('trusted report permissions must be 0600');
-  if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) {
-    throw new Error('trusted report must be owned by the current parent user');
+export function expectedTestFiles() {
+  return captureTestTree(repositoryRoot, repositoryTests).testFiles;
+}
+
+export function testFilesUnder(root, tests) {
+  return captureTestTree(root, tests).testFiles;
+}
+
+function listValues(label, values, expected) {
+  if (!Array.isArray(values) || values.some((value) => typeof value !== 'string' || value.length === 0)) {
+    throw new Error(`${label} must be an array of non-empty paths`);
   }
-  if (stat.size > 1024 * 1024) throw new Error('trusted report exceeds the maximum safe size');
-  return parseTrustedInventoryReport(fs.readFileSync(reportPath, 'utf8'), options);
+  const duplicates = values.filter((value, index) => values.indexOf(value) !== index);
+  if (duplicates.length) throw new Error(`duplicate ${label}: ${[...new Set(duplicates)].join(', ')}`);
+  const actualSet = new Set(values);
+  const missing = expected.filter((value) => !actualSet.has(value));
+  const unexpected = values.filter((value) => !expected.includes(value));
+  if (missing.length) throw new Error(`missing ${label}: ${missing.join(', ')}`);
+  if (unexpected.length) throw new Error(`unexpected ${label}: ${unexpected.join(', ')}`);
+  const ordered = [...values].sort(canonicalPathComparator);
+  if (values.some((value, index) => value !== ordered[index])) throw new Error(`${label} is not in canonical byte order`);
+}
+
+export function validateLifecycleResult(result, { requireSuccess = true } = {}) {
+  if (!result || typeof result !== 'object') throw new Error('lifecycle result must be an object');
+  const discovered = result.discovered ?? [];
+  listValues('discovered file', discovered, discovered);
+  listValues('scheduled file', result.scheduled, discovered);
+  if (!Array.isArray(result.started)) throw new Error('start events must be an array');
+  const duplicateStarts = result.started.filter((file, index) => result.started.indexOf(file) !== index);
+  if (duplicateStarts.length) throw new Error(`duplicate start: ${[...new Set(duplicateStarts)].join(', ')}`);
+  if (!Array.isArray(result.terminal)) throw new Error('terminal events must be an array');
+  const terminalFiles = result.terminal.map((entry) => entry?.file);
+  const terminalDuplicates = terminalFiles.filter((file, index) => terminalFiles.indexOf(file) !== index);
+  if (terminalDuplicates.length) throw new Error(`duplicate completion: ${[...new Set(terminalDuplicates)].join(', ')}`);
+  const started = new Set(result.started);
+  const withoutStart = terminalFiles.filter((file) => !started.has(file));
+  if (withoutStart.length) throw new Error(`completion without start: ${withoutStart.join(', ')}`);
+  try {
+    listValues('start event', result.started, result.scheduled);
+  } catch (error) {
+    if (/missing/.test(error.message)) throw new Error(error.message.replace('missing start event', 'missing start'));
+    throw error;
+  }
+  listValues('completion', terminalFiles, result.scheduled);
+
+  const counts = { passed: 0, failed: 0, skipped: 0, canceled: 0, interrupted: 0 };
+  for (const entry of result.terminal) {
+    if (!entry || typeof entry.file !== 'string' || !TERMINAL_STATUSES.has(entry.status)) {
+      throw new Error(`invalid terminal lifecycle event for ${String(entry?.file)}`);
+    }
+    counts[entry.status] += 1;
+    if (requireSuccess && entry.status !== 'passed') {
+      throw new Error(`test file ${entry.file} ended ${entry.status}`);
+    }
+  }
+  return {
+    ...result,
+    counts: {
+      intended: discovered.length,
+      discovered: discovered.length,
+      scheduled: result.scheduled.length,
+      started: result.started.length,
+      completed: result.terminal.length,
+      ...counts,
+    },
+  };
+}
+
+export function verifyTestInventory(expected, executed) {
+  listValues('executed test file', executed, expected);
+  return executed;
 }
