@@ -8,10 +8,21 @@ import { DatabaseSync } from 'node:sqlite';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-vps-readiness-'));
 const node = process.execPath;
+const fixtureOwner = spawnSync('id', ['-un'], { encoding: 'utf8' }).stdout.trim();
+const fixtureGroup = spawnSync('id', ['-gn'], { encoding: 'utf8' }).stdout.trim();
 
 function run(script, args, env = {}) {
   const command = script.endsWith('.sh') ? 'bash' : node;
   return spawnSync(command, [script, ...args], { cwd: process.cwd(), env: { ...process.env, ...env }, encoding: 'utf8' });
+}
+
+function releaseEnvironment(releaseRoot) {
+  return {
+    BLACKSPIRE_RELEASE_ROOT: releaseRoot,
+    BLACKSPIRE_SOURCE_ROOT: process.cwd(),
+    BLACKSPIRE_RELEASE_OWNER: fixtureOwner,
+    BLACKSPIRE_RELEASE_GROUP: fixtureGroup
+  };
 }
 
 test('WAL-safe backup and disposable restore preserve committed state and checksum', () => {
@@ -41,7 +52,7 @@ test('release creation is exact, idempotent, and switching is atomic', () => {
   assert.equal(shaResult.status, 0, shaResult.stderr);
   const sha = shaResult.stdout.trim();
   assert.match(sha, /^[0-9a-f]{40}$/);
-  const env = { BLACKSPIRE_RELEASE_ROOT: releaseRoot, BLACKSPIRE_SOURCE_ROOT: process.cwd() };
+  const env = releaseEnvironment(releaseRoot);
   const created = run('scripts/release-create.sh', [sha], env);
   assert.equal(created.status, 0, created.stderr);
   const release = created.stdout.trim();
@@ -50,6 +61,50 @@ test('release creation is exact, idempotent, and switching is atomic', () => {
   assert.equal(run('scripts/release-create.sh', [sha], env).stdout.trim(), release);
   assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0);
   assert.equal(fs.realpathSync(path.join(releaseRoot, 'current')), release);
+});
+
+test('immutable release grants runtime read/traverse access without runtime write access', () => {
+  const releaseRoot = path.join(root, 'runtime-access');
+  const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
+  fs.mkdirSync(path.join(releaseRoot, 'shared'), { recursive: true, mode: 0o700 });
+  fs.chmodSync(path.join(releaseRoot, 'shared'), 0o700);
+  const created = run('scripts/release-create.sh', [sha], releaseEnvironment(releaseRoot));
+  assert.equal(created.status, 0, created.stderr);
+  const release = created.stdout.trim();
+  const releaseStat = fs.statSync(release);
+  const serverStat = fs.statSync(path.join(release, 'apps', 'api', 'server.js'));
+  const entryStat = fs.statSync(path.join(release, 'scripts', 'start-production.sh'));
+  assert.equal(releaseStat.mode & 0o777, 0o755, 'runtime must traverse immutable release');
+  assert.equal(serverStat.mode & 0o777, 0o644, 'ordinary application files must be readable but not executable');
+  assert.equal(entryStat.mode & 0o777, 0o755, 'executable entrypoints retain execute bits');
+  for (const entry of fs.readdirSync(release, { recursive: true })) {
+    const stat = fs.lstatSync(path.join(release, entry));
+    if (stat.isSymbolicLink()) continue;
+    assert.equal(stat.mode & 0o022, 0, `${entry} must not be writable by group or other`);
+  }
+  assert.equal(fs.statSync(path.join(releaseRoot, 'shared')).mode & 0o777, 0o700, 'release creation must not loosen shared state');
+});
+
+test('release creation rejects symlink roots and removes incomplete artifacts on ownership failure', () => {
+  const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
+  const realRoot = path.join(root, 'real-release-root');
+  const symlinkRoot = path.join(root, 'symlink-release-root');
+  fs.mkdirSync(realRoot, { recursive: true });
+  fs.symlinkSync(realRoot, symlinkRoot);
+  const linked = run('scripts/release-create.sh', [sha], releaseEnvironment(symlinkRoot));
+  assert.notEqual(linked.status, 0);
+  assert.match(linked.stderr, /must not be a symlink/);
+  assert.equal(fs.existsSync(path.join(realRoot, 'releases')), false, 'a rejected release root must not be populated');
+
+  const failedRoot = path.join(root, 'failed-release-root');
+  const failed = run('scripts/release-create.sh', [sha], {
+    ...releaseEnvironment(failedRoot),
+    BLACKSPIRE_RELEASE_OWNER: '__blackspire_missing_owner__'
+  });
+  assert.notEqual(failed.status, 0);
+  const releases = path.join(failedRoot, 'releases');
+  assert.equal(fs.existsSync(path.join(releases, sha)), false, 'failed ownership application must not promote a release');
+  assert.deepEqual(fs.readdirSync(releases).filter((entry) => entry.includes('.incomplete-')), [], 'failed ownership application must clean incomplete artifacts');
 });
 
 test('production verifier fails closed for provider credentials and test mode', () => {
