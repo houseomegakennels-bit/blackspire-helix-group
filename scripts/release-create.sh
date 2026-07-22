@@ -16,14 +16,23 @@ fail() {
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo 'usage: release-create.sh <full-commit-sha>' >&2; exit 2; }
 [[ "$root" = /* ]] || fail 'release root must be an absolute path'
 git -C "$repo" cat-file -e "$commit^{commit}" || fail 'commit is not available locally'
-getent passwd root >/dev/null || fail 'required release owner root is unavailable'
-getent group blackspire >/dev/null || fail 'required release group blackspire is unavailable'
 
 root="${root%/}"
 [[ -n "$root" ]] || root=/
 releases="$root/releases"
 target="$releases/$commit"
 temp="$releases/.${commit}.incomplete-$$"
+
+assert_clean_release_root() {
+  local candidate="$1" component
+  local -a components
+  [[ "$candidate" = /* && "$candidate" != / ]] || fail 'release root must be a non-root absolute path'
+  [[ "$candidate" != *'//'* ]] || fail 'release path traversal is not allowed'
+  IFS=/ read -r -a components <<< "${candidate#/}"
+  for component in "${components[@]}"; do
+    [[ "$component" != '.' && "$component" != '..' ]] || fail 'release path traversal is not allowed'
+  done
+}
 
 assert_no_symlink_ancestors() {
   local candidate="$1" current=/ component
@@ -72,7 +81,10 @@ cleanup_incomplete() {
   fi
 }
 
+assert_clean_release_root "$root"
 assert_no_symlink_ancestors "$root"
+getent passwd root >/dev/null || fail 'required release owner root is unavailable'
+getent group blackspire >/dev/null || fail 'required release group blackspire is unavailable'
 mkdir -p -- "$root"
 assert_no_symlink_ancestors "$root"
 chown root:blackspire -- "$root"
@@ -106,9 +118,14 @@ find -P "$temp" -type f ! -perm /111 -exec chmod 0644 {} +
 # content has been copied, normalized, and validated against the immutable contract.
 assert_exact_directory_contract "$temp"
 assert_no_special_files "$temp"
-: > "$temp/.release-complete"
-chown root:blackspire -- "$temp/.release-complete"
-chmod 0644 -- "$temp/.release-complete"
+marker="$temp/.release-complete"
+[[ ! -e "$marker" && ! -L "$marker" ]] || fail 'release completion marker already exists or is unsafe'
+set -C
+: > "$marker"
+set +C
+[[ -f "$marker" && ! -L "$marker" ]] || fail 'release completion marker cannot be written safely'
+chown root:blackspire -- "$marker"
+chmod 0644 -- "$marker"
 assert_release_tree_contract "$temp"
 
 [[ ! -e "$target" && ! -L "$target" ]] || fail 'release destination appeared during creation'

@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-22 — PR #29 review-findings repair verified
+
+- Recovered draft PR #29 at `dd266aa0aea6cc9c36068983135a9a6c4078be0f` and reconciled the CI-only defect: its symlink test ran after the unavailable-account check in GitHub Actions. The repair now rejects clean-path traversal and symlinked root ancestors before account/ownership work; completion-marker creation refuses an existing or symlinked marker, and switch/rollback reject unsafe release directories or markers.
+- Node 22.23.1 focused release/rollback tests passed 33/33 and the full suite passed 264/264. Build, lint, typecheck, secret scan, high-severity audit, living-memory verification, shell syntax, and `git diff --check` passed. The disposable host demonstration began from a `0700 root:root` root, produced root and `releases/` parent `root:blackspire:0755`, a `root:blackspire:0644` marker, only compliant release modes, real `blackspire` traverse/read/execute success, and denied create/modify/delete/rename/chmod/chown/symlink insertion. The disposable artifact was removed.
+- No staging rebuild or switch, Gate 3 action, production change, service restart, provider enablement, Telegram connection, nginx/TLS/DNS/firewall change, or production credential access occurred. Gate 3 remains blocked.
+
 ## 2026-07-22 — PR #29 immutable-release ownership findings repaired
 
 - Repaired `release-create.sh` to establish the release root and `releases/` parent as `root:blackspire` mode `0755`, normalize completed trees to the reviewed ownership/mode contract, and create `.release-complete` only after copy and validation succeed.

@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-vps-readiness-'));
 const node = process.execPath;
+const nodeBinDir = path.dirname(node);
 const runtimeAccountAvailable = spawnSync('id', ['blackspire'], { encoding: 'utf8' }).status === 0
   && spawnSync('getent', ['group', 'blackspire'], { encoding: 'utf8' }).status === 0;
 const runtimeSkipReason = 'blackspire account/group is unavailable; real runtime-access assertions skipped';
@@ -20,7 +21,7 @@ const releaseContractSkipReason = 'host filesystem cannot apply root:blackspire 
 
 function run(script, args, env = {}) {
   const command = script.endsWith('.sh') ? 'bash' : node;
-  const childEnv = { ...process.env, ...env };
+  const childEnv = { ...process.env, ...env, PATH: `${nodeBinDir}:${env.PATH ?? process.env.PATH}` };
   delete childEnv.NODE_TEST_CONTEXT;
   return spawnSync(command, [script, ...args], { cwd: process.cwd(), env: childEnv, encoding: 'utf8' });
 }
@@ -46,7 +47,10 @@ function assertImmutableTree(release) {
     assert.equal(stat.uid, 0, `${entry} must be root-owned`);
     assert.equal(stat.gid, runtimeGid, `${entry} must be blackspire-group-owned`);
     if (stat.isDirectory()) assert.equal(stat.mode & 0o777, 0o755, `${entry} directory mode`);
-    if (stat.isFile()) assert.ok([0o644, 0o755].includes(stat.mode & 0o777), `${entry} file mode`);
+    if (stat.isFile()) {
+      const expectedMode = stat.mode & 0o111 ? 0o755 : 0o644;
+      assert.equal(stat.mode & 0o777, expectedMode, `${entry} file mode`);
+    }
   }
 }
 
@@ -149,6 +153,29 @@ test('release creation rejects symlink roots and symlinked ancestors', () => {
 
 });
 
+test('release creation rejects path traversal and checks symlinks before account availability', () => {
+  const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
+  const shimDir = fs.mkdtempSync(path.join(root, 'getent-shim-'));
+  fs.writeFileSync(path.join(shimDir, 'getent'), '#!/usr/bin/env bash\nif [[ "$1" == passwd && "$2" == root ]]; then echo "root:x:0:0:root:/root:/bin/bash"; exit 0; fi\nexit 2\n', { mode: 0o755 });
+
+  const realRoot = path.join(root, 'ordered-real-root');
+  const symlinkRoot = path.join(root, 'ordered-symlink-root');
+  fs.mkdirSync(realRoot);
+  fs.symlinkSync(realRoot, symlinkRoot);
+  const linked = run('scripts/release-create.sh', [sha], {
+    ...releaseEnvironment(symlinkRoot), PATH: `${shimDir}:${process.env.PATH}`
+  });
+  assert.notEqual(linked.status, 0);
+  assert.match(linked.stderr, /contains symlink/);
+  assert.doesNotMatch(linked.stderr, /required release group/);
+
+  const escapedRoot = `${root}/clean-root/../escaped-root`;
+  const traversed = run('scripts/release-create.sh', [sha], releaseEnvironment(escapedRoot));
+  assert.notEqual(traversed.status, 0);
+  assert.match(traversed.stderr, /path traversal/);
+  assert.equal(fs.existsSync(path.join(root, 'escaped-root')), false, 'traversal must not create the resolved destination');
+});
+
 test('release creation rejects a symlinked destination without mutating it', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
   const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
   const destinationRoot = path.join(root, 'destination-root');
@@ -165,6 +192,20 @@ test('release creation rejects a symlinked destination without mutating it', { s
 test('release creation removes only its incomplete artifact after post-copy failure', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
   const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
   const failedRoot = path.join(root, 'failed-release-root');
+  const releases = path.join(failedRoot, 'releases');
+  const protectedRelease = path.join(releases, 'a'.repeat(40));
+  fs.mkdirSync(protectedRelease, { recursive: true, mode: 0o755 });
+  fs.writeFileSync(path.join(protectedRelease, '.release-complete'), '', { mode: 0o644 });
+  fs.chownSync(failedRoot, 0, runtimeGid);
+  fs.chownSync(releases, 0, runtimeGid);
+  fs.chownSync(protectedRelease, 0, runtimeGid);
+  fs.chownSync(path.join(protectedRelease, '.release-complete'), 0, runtimeGid);
+  fs.chmodSync(failedRoot, 0o755);
+  fs.chmodSync(releases, 0o755);
+  fs.chmodSync(protectedRelease, 0o755);
+  fs.chmodSync(path.join(protectedRelease, '.release-complete'), 0o644);
+  fs.symlinkSync(protectedRelease, path.join(failedRoot, 'current'));
+  const protectedMarkerMtime = fs.statSync(path.join(protectedRelease, '.release-complete')).mtimeMs;
   const shimDir = fs.mkdtempSync(path.join(root, 'chown-shim-'));
   const realChown = spawnSync('command', ['-v', 'chown'], { shell: true, encoding: 'utf8' }).stdout.trim() || '/usr/bin/chown';
   fs.writeFileSync(path.join(shimDir, 'chown'), `#!/usr/bin/env bash\nif [[ "$*" == *'.incomplete-'* ]]; then exit 97; fi\nexec ${realChown} "$@"\n`, { mode: 0o755 });
@@ -172,9 +213,10 @@ test('release creation removes only its incomplete artifact after post-copy fail
     ...releaseEnvironment(failedRoot), PATH: `${shimDir}:${process.env.PATH}`
   });
   assert.notEqual(failed.status, 0);
-  const releases = path.join(failedRoot, 'releases');
   assert.equal(fs.existsSync(path.join(releases, sha)), false, 'failed ownership application must not promote a release');
   assert.deepEqual(fs.readdirSync(releases).filter((entry) => entry.includes('.incomplete-')), [], 'only incomplete artifacts are cleaned');
+  assert.equal(fs.realpathSync(path.join(failedRoot, 'current')), protectedRelease, 'current release is not switched');
+  assert.equal(fs.statSync(path.join(protectedRelease, '.release-complete')).mtimeMs, protectedMarkerMtime, 'completed release is not mutated');
 });
 
 test('production verifier fails closed for provider credentials and test mode', () => {

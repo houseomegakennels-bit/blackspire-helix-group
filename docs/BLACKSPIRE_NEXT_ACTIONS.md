@@ -2,7 +2,7 @@
 
 ## Immediate safe actions
 
-1. Independently review the immutable-release ownership repair: `scripts/release-create.sh` must produce the reviewed `root:blackspire` read/execute-only release tree for the `blackspire` runtime while preserving non-writability and safe incomplete-artifact cleanup.
+1. Independently re-review the immutable-release ownership repair: `scripts/release-create.sh` must preserve the reviewed `root:blackspire` read/execute-only tree, completion-marker and clean-path/symlink fail-closed behavior, non-writability, and safe incomplete-artifact cleanup.
 2. After that repair is merged, rebuild the immutable restricted staging release from main without touching production, then repeat the complete disposable-only Gate 3 backup, restore, WAL-safety, migration, and disabled-backup-routine rehearsal.
 3. Do not request Gate 4 production activation until Gate 3 passes with sanitized evidence.
 4. Preserve the four original commits and backup branch; do not rewrite them or the integration merge.
