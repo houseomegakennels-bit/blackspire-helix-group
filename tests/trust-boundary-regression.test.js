@@ -77,8 +77,8 @@ test('test workers receive no parent evidence capability or report path', () => 
   assert.doesNotMatch(`${runner}\n${trusted}`, /mkdtemp|terminal\.jsonl|writeTrustedInventoryReport|verify-test-inventory/);
   assert.doesNotMatch(trusted, /process\.argv|process\.env/);
   assert.match(runner, /--pid.*--fork.*--kill-child=SIGKILL.*--mount-proc/s);
-  assert.match(runner, /delete environment\.BLACKSPIRE_TEST_REPORT_PATH/);
-  assert.match(runner, /delete environment\.BLACKSPIRE_TEST_RUN_ID/);
+  assert.doesNotMatch(runner, /\.\.\.process\.env|BLACKSPIRE_RUN_MIGRATIONS:/);
+  assert.match(runner, /--non-interactive.*\/usr\/bin\/unshare.*\/usr\/bin\/setpriv/s);
 
   const parentCommandLine = fs.readFileSync(`/proc/${process.ppid}/cmdline`, 'utf8');
   const parentEnvironment = fs.readFileSync(`/proc/${process.ppid}/environ`, 'utf8');
