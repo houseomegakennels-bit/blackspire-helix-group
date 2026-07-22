@@ -4,7 +4,8 @@
 
 - Root test-inventory authorization must never be derived from TAP, stdout/stderr, worker-writable artifacts, child IPC, or externally supplied paths. The trusted contract exists only in the parent process and is finalized after real `node:test` lifecycle events, child status, output EOF, process-tree reaping, identity revalidation, and sticky interruption checks.
 - Test execution is Linux PID-namespace isolated with a PID-1 signal-forwarding reaper and a dedicated process group. Canonical test identity uses locale-independent UTF-8 byte order, no-follow descriptors, canonical containment, device/inode/type/link count, size/metadata, SHA-256 content, and full-tree mutation detection before and after execution.
-- PR #30 remains OPEN and draft pending fresh independent review. PR #29 remains OPEN/draft and blocked by its required exact-head root Vercel failure. Neither PR is authorized for merge, and neither Gate 3 nor production activation is authorized.
+- The repository-root Vercel project is not an application deployment target: Blackspire Command is stateful and VPS-owned. Root `vercel.json` therefore always exits the Ignored Build Step successfully; the separate `frontend` Root Directory keeps its Next.js deployment behavior. Do not satisfy root checks by publishing Command files or inventing a static output directory.
+- PR #30 remains OPEN and draft pending an eligible submitted independent exact-head review. PR #29 remains OPEN/draft; its former root Vercel blocker is repaired, but neither PR is authorized for merge, and neither Gate 3 nor production activation is authorized.
 
 ## 2026-07-21
 
