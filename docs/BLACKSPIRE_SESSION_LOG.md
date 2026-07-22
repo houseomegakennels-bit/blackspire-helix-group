@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-22 — PR #29 immutable-release ownership findings repaired
+
+- Repaired `release-create.sh` to establish the release root and `releases/` parent as `root:blackspire` mode `0755`, normalize completed trees to the reviewed ownership/mode contract, and create `.release-complete` only after copy and validation succeed.
+- Added fail-closed path/ancestor/destination checks, completed-tree validation, special-file rejection, and cleanup restricted to the named incomplete temporary artifact. Focused disposable checks include a real `blackspire` read/traverse/execute and write-denial attempt when the account is available.
+- No staging rebuild, release switch, Gate 3 action, production change, provider enablement, Telegram connection, or host configuration change occurred. Live staging/public-health state is `UNVERIFIED` from this workspace.
+
 ## 2026-07-22 — Immutable-release runtime-access repair prepared
 
 - Reproduced the stopped restricted-staging rebuild failure without activating the candidate: `releases/691973870e0048f273fa7e9251d7f78776e3612b` was `0700 root:root`, and its nested directories/files inherited modes that denied `blackspire` traversal, reads, and entrypoint execution. The active prior release remains `root:blackspire` with runtime-readable, non-writable release content.
