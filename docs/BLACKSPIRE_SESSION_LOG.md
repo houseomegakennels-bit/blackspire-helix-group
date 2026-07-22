@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-22 — Immutable-release runtime-access repair prepared
+
+- Reproduced the stopped restricted-staging rebuild failure without activating the candidate: `releases/691973870e0048f273fa7e9251d7f78776e3612b` was `0700 root:root`, and its nested directories/files inherited modes that denied `blackspire` traversal, reads, and entrypoint execution. The active prior release remains `root:blackspire` with runtime-readable, non-writable release content.
+- Prepared a source-only repair so the privileged release creator assigns `root:blackspire`, directories and archived executables `0755`, and ordinary files `0644`; it rejects symlinked release paths and removes incomplete artifacts if ownership or mode application fails. Shared writable state is not touched.
+- PR #28 is merged; staging was not rebuilt or restarted by this repair, Gate 3 did not execute, and production, providers, Telegram, nginx/TLS, DNS, firewall, original API, and worker remain untouched.
+
 ## 2026-07-22 — PR #28 final-review blockers reconciled
 
 - Verified the final reviewer used current PR #28 head `faaa6baeddd4e3b0a7592571c7773b8c935b504c` and confirmed the reported `scripts/start-local.js` side-effect migration import. Removed that ordinary-startup path and strengthened the disposable regression boundary to reject static/dynamic migration imports, `require`, writer calls, and migration-permission handling outside the dedicated command; API and worker are also exercised with an inherited exact-true flag.
