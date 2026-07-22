@@ -2,8 +2,8 @@
 
 ## 2026-07-22
 
-- Root test-inventory authorization must never be derived from TAP, stdout/stderr marker text, or worker-writable manifests. The trusted contract is one strict versioned parent terminal record, assembled only after child completion from parent IPC evidence and actual child status, written to a unique owner-only report with exclusive no-follow creation, and removed safely after standalone verification.
-- Canonical test-path order is locale-independent UTF-8 byte order. The parent schedules one canonical list once; discovered, started, completed, and per-file terminal status must be exact, duplicate-free, and successful.
+- Root test-inventory authorization must never be derived from TAP, stdout/stderr, worker-writable artifacts, child IPC, or externally supplied paths. The trusted contract exists only in the parent process and is finalized after real `node:test` lifecycle events, child status, output EOF, process-tree reaping, identity revalidation, and sticky interruption checks.
+- Test execution is Linux PID-namespace isolated with a PID-1 signal-forwarding reaper and a dedicated process group. Canonical test identity uses locale-independent UTF-8 byte order, no-follow descriptors, canonical containment, device/inode/type/link count, size/metadata, SHA-256 content, and full-tree mutation detection before and after execution.
 - PR #30 remains OPEN and draft pending fresh independent review. PR #29 remains OPEN/draft and blocked by its required exact-head root Vercel failure. Neither PR is authorized for merge, and neither Gate 3 nor production activation is authorized.
 
 ## 2026-07-21
