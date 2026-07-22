@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 
 import {
   captureTestTree,
+  createLifecycleTracker,
   validateLifecycleResult,
   verifyTestTreeUnchanged,
 } from '../scripts/test-inventory.js';
@@ -74,16 +75,38 @@ test('test workers receive no parent evidence capability or report path', () => 
   assert.equal(process.send, undefined);
   const runner = fs.readFileSync(new URL('../scripts/run-tests.js', import.meta.url), 'utf8');
   const trusted = fs.readFileSync(new URL('../scripts/trusted-test-runner.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(`${runner}\n${trusted}`, /mkdtemp|terminal\.jsonl|writeTrustedInventoryReport|verify-test-inventory/);
+  assert.doesNotMatch(`${runner}\n${trusted}`, /terminal\.jsonl|writeTrustedInventoryReport|verify-test-inventory/);
   assert.doesNotMatch(trusted, /process\.argv|process\.env/);
   assert.match(runner, /--pid.*--fork.*--kill-child=SIGKILL.*--mount-proc/s);
   assert.doesNotMatch(runner, /\.\.\.process\.env|BLACKSPIRE_RUN_MIGRATIONS:/);
   assert.match(runner, /--non-interactive.*\/usr\/bin\/unshare.*\/usr\/bin\/setpriv/s);
+  assert.match(runner, /--no-new-privs/);
+  assert.match(runner, /--bounding-set=-all/);
+  assert.match(runner, /--inh-caps=-all/);
+  assert.match(runner, /--ambient-caps=-all/);
+  assert.match(runner, /ptrace_scope/);
 
   const parentCommandLine = fs.readFileSync(`/proc/${process.ppid}/cmdline`, 'utf8');
   const parentEnvironment = fs.readFileSync(`/proc/${process.ppid}/environ`, 'utf8');
   assert.doesNotMatch(parentCommandLine, /runId|terminal\.jsonl|blackspire-test-report/);
   assert.doesNotMatch(parentEnvironment, /BLACKSPIRE_TEST_(?:REPORT_PATH|RUN_ID|MANIFEST_PATH)=/);
+});
+
+test('trusted workers cannot regain privilege or inspect parent memory', () => {
+  if (process.env.BLACKSPIRE_TRUSTED_TEST_CONTEXT !== '1') return;
+
+  assert.notEqual(process.getuid?.(), 0, 'test worker retained root');
+  const status = fs.readFileSync('/proc/self/status', 'utf8');
+  assert.match(status, /^NoNewPrivs:\s+1$/m);
+  for (const field of ['CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb']) {
+    assert.match(status, new RegExp(`^${field}:\\s+0+$`, 'm'), `${field} retained authority`);
+  }
+  assert.throws(
+    () => fs.openSync(`/proc/${process.ppid}/mem`, 'r'),
+    (error) => error?.code === 'EACCES' || error?.code === 'EPERM',
+  );
+  const sudo = spawnSync('/usr/bin/sudo', ['--non-interactive', '/usr/bin/true'], { encoding: 'utf8' });
+  assert.notEqual(sudo.status, 0, 'test worker regained privilege through sudo');
 });
 
 test('PID namespace teardown kills an immediate detached descendant with closed output', async (t) => {
@@ -121,6 +144,20 @@ test('lifecycle validation requires real single start and terminal event per sch
   assert.throws(() => validateLifecycleResult({ ...valid, started: [scheduled[0]], terminal: valid.terminal }), /completion without start/i);
   assert.throws(() => validateLifecycleResult({ ...valid, terminal: [...valid.terminal, valid.terminal[0]] }), /duplicate completion/i);
   assert.throws(() => validateLifecycleResult({ ...valid, terminal: [{ file: scheduled[0], status: 'failed' }, valid.terminal[1]] }), /failed/i);
+});
+
+test('lifecycle tracking rejects illegal transitions in arrival order', () => {
+  const tracker = createLifecycleTracker(['tests/a.test.js']);
+  assert.throws(() => tracker.record('completed', 'tests/a.test.js', 'passed'), /before start/i);
+  assert.throws(() => tracker.record('started', 'tests/a.test.js'), /before scheduling/i);
+
+  tracker.record('scheduled', 'tests/a.test.js');
+  assert.throws(() => tracker.record('completed', 'tests/a.test.js', 'passed'), /before start/i);
+  tracker.record('started', 'tests/a.test.js');
+  assert.throws(() => tracker.record('started', 'tests/a.test.js'), /duplicate start/i);
+  tracker.record('completed', 'tests/a.test.js', 'passed');
+  assert.throws(() => tracker.record('completed', 'tests/a.test.js', 'passed'), /duplicate completion/i);
+  assert.equal(validateLifecycleResult(tracker.result()).counts.passed, 1);
 });
 
 test('contained process drains inherited output and removes lingering descendants', async () => {

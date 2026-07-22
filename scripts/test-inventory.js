@@ -139,6 +139,57 @@ function listValues(label, values, expected) {
   if (values.some((value, index) => value !== ordered[index])) throw new Error(`${label} is not in canonical byte order`);
 }
 
+export function createLifecycleTracker(discovered) {
+  listValues('discovered file', discovered, discovered);
+  const state = new Map(discovered.map((file) => [file, 'discovered']));
+  const scheduled = [];
+  const started = [];
+  const terminal = [];
+
+  function knownState(file, event) {
+    const current = state.get(file);
+    if (!current) throw new Error(`unexpected ${event}: ${file}`);
+    return current;
+  }
+
+  return {
+    record(event, file, status) {
+      const current = knownState(file, event);
+      if (event === 'scheduled') {
+        if (current !== 'discovered') throw new Error(`duplicate scheduling: ${file}`);
+        state.set(file, 'scheduled');
+        scheduled.push(file);
+        return;
+      }
+      if (event === 'started') {
+        if (current === 'discovered') throw new Error(`start before scheduling: ${file}`);
+        if (current === 'started') throw new Error(`duplicate start: ${file}`);
+        if (current === 'completed') throw new Error(`start after completion: ${file}`);
+        state.set(file, 'started');
+        started.push(file);
+        return;
+      }
+      if (event === 'completed') {
+        if (current === 'discovered' || current === 'scheduled') throw new Error(`completion before start: ${file}`);
+        if (current === 'completed') throw new Error(`duplicate completion: ${file}`);
+        if (!TERMINAL_STATUSES.has(status)) throw new Error(`invalid terminal lifecycle event for ${file}`);
+        state.set(file, 'completed');
+        terminal.push({ file, status });
+        return;
+      }
+      throw new Error(`unsupported lifecycle event: ${event}`);
+    },
+    result() {
+      return {
+        discovered: [...discovered],
+        scheduled: [...scheduled].sort(canonicalPathComparator),
+        started: [...started].sort(canonicalPathComparator),
+        terminal: [...terminal].sort((left, right) => canonicalPathComparator(left.file, right.file)),
+      };
+    },
+  };
+}
+
 export function validateLifecycleResult(result, { requireSuccess = true } = {}) {
   if (!result || typeof result !== 'object') throw new Error('lifecycle result must be an object');
   const discovered = result.discovered ?? [];

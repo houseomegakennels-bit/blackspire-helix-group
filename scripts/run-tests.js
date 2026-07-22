@@ -1,11 +1,12 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { runContainedProcess } from './test-process-supervisor.js';
 
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const trustedRunner = path.join(rootDirectory, 'scripts/trusted-test-runner.js');
-const namespaceInit = path.join(rootDirectory, 'scripts/test-namespace-init.sh');
 const namespaceArguments = ['--pid', '--fork', '--kill-child=SIGKILL', '--mount-proc'];
 const environment = Object.fromEntries([
   'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'TMP', 'TEMP',
@@ -21,21 +22,93 @@ Object.assign(environment, {
 });
 
 if (process.platform !== 'linux') throw new Error('trusted test containment requires Linux PID namespaces');
+const ptraceScope = Number.parseInt(fs.readFileSync('/proc/sys/kernel/yama/ptrace_scope', 'utf8').trim(), 10);
+if (!Number.isInteger(ptraceScope) || ptraceScope < 1) {
+  throw new Error('trusted test containment requires kernel.yama.ptrace_scope >= 1');
+}
 const runningAsRoot = process.getuid?.() === 0;
+const targetUid = runningAsRoot ? 65534 : process.getuid();
+const targetGid = runningAsRoot ? 65534 : process.getgid();
+const runtimeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-contained-tests-'));
+const snapshotDirectory = path.join(runtimeDirectory, 'repository');
+try {
+  const inventory = spawnSync('/usr/bin/git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
+    cwd: rootDirectory,
+    encoding: 'buffer',
+  });
+  if (inventory.status !== 0) throw new Error(`failed to inventory trusted test snapshot: ${inventory.stderr.toString().trim()}`);
+  fs.mkdirSync(snapshotDirectory);
+  for (const relative of inventory.stdout.toString('utf8').split('\0').filter(Boolean)) {
+    if (path.isAbsolute(relative) || relative === '..' || relative.startsWith(`..${path.sep}`)) {
+      throw new Error(`snapshot inventory escaped the repository: ${relative}`);
+    }
+    const source = path.join(rootDirectory, relative);
+    const destination = path.join(snapshotDirectory, relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    const sourceType = fs.lstatSync(source);
+    if (sourceType.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(source), destination);
+    else if (sourceType.isFile()) fs.copyFileSync(source, destination);
+    else throw new Error(`snapshot inventory contains an unsupported entry: ${relative}`);
+  }
+  const gitSteps = [
+    ['init', '--quiet'],
+    ['add', '--all'],
+    ['-c', 'user.name=Blackspire Test Snapshot', '-c', 'user.email=blackspire-test.invalid',
+      'commit', '--quiet', '--no-gpg-sign', '-m', 'immutable test snapshot'],
+  ];
+  for (const arguments_ of gitSteps) {
+    const git = spawnSync('/usr/bin/git', arguments_, { cwd: snapshotDirectory, encoding: 'utf8' });
+    if (git.status !== 0) throw new Error(`failed to create trusted test snapshot: ${git.stderr.trim()}`);
+  }
+  if (runningAsRoot) {
+    const ownership = spawnSync('/usr/bin/chown', ['-R', `${targetUid}:${targetGid}`, runtimeDirectory], { encoding: 'utf8' });
+    if (ownership.status !== 0) throw new Error(`failed to isolate trusted test snapshot: ${ownership.stderr.trim()}`);
+  }
+} catch (error) {
+  fs.rmSync(runtimeDirectory, { recursive: true, force: true });
+  throw error;
+}
+fs.chmodSync(runtimeDirectory, 0o700);
+Object.assign(environment, {
+  HOME: runtimeDirectory,
+  TMPDIR: runtimeDirectory,
+  BLACKSPIRE_TRUSTED_TEST_CONTEXT: '1',
+});
+const trustedRunner = path.join(snapshotDirectory, 'scripts/trusted-test-runner.js');
+const namespaceInit = path.join(snapshotDirectory, 'scripts/test-namespace-init.sh');
+const privilegeArguments = [
+  `--reuid=${targetUid}`,
+  `--regid=${targetGid}`,
+  '--clear-groups',
+  '--no-new-privs',
+  '--bounding-set=-all',
+  '--inh-caps=-all',
+  '--ambient-caps=-all',
+];
 const command = runningAsRoot ? '/usr/bin/unshare' : '/usr/bin/sudo';
 const commandArguments = runningAsRoot
-  ? [...namespaceArguments, '/usr/bin/bash', namespaceInit, process.execPath, trustedRunner]
+  ? [
+      ...namespaceArguments,
+      '/usr/bin/setpriv', ...privilegeArguments,
+      '/usr/bin/env', ...Object.entries(environment).map(([name, value]) => `${name}=${value}`),
+      '/usr/bin/bash', namespaceInit, process.execPath, trustedRunner,
+    ]
   : [
       '--non-interactive', '/usr/bin/unshare', ...namespaceArguments,
-      '/usr/bin/setpriv', `--reuid=${process.getuid()}`, `--regid=${process.getgid()}`, '--clear-groups',
+      '/usr/bin/setpriv', ...privilegeArguments,
       '/usr/bin/env', ...Object.entries(environment).map(([name, value]) => `${name}=${value}`),
       '/usr/bin/bash', namespaceInit, process.execPath, trustedRunner,
     ];
-const result = await runContainedProcess(command, commandArguments, {
-  cwd: rootDirectory,
-  env: runningAsRoot ? environment : { PATH: process.env.PATH ?? '/usr/bin:/bin' },
-  forwardParentSignals: true,
-});
+let result;
+try {
+  result = await runContainedProcess(command, commandArguments, {
+    cwd: snapshotDirectory,
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+    forwardParentSignals: true,
+  });
+} finally {
+  fs.rmSync(runtimeDirectory, { recursive: true, force: true });
+}
 
 if (result.spawnError) console.error(`Trusted test runner spawn failed: ${result.spawnError.message}`);
 if (!result.outputDrained) console.error('Trusted test runner failed to drain stdout and stderr to EOF');

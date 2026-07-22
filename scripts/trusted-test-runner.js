@@ -7,8 +7,8 @@ import { run } from 'node:test';
 import { tap } from 'node:test/reporters';
 
 import {
-  canonicalPathComparator,
   captureTestTree,
+  createLifecycleTracker,
   validateLifecycleResult,
   verifyTestTreeUnchanged,
 } from './test-inventory.js';
@@ -47,9 +47,7 @@ const initial = captureTestTree(rootDirectory, testsDirectory);
 const mutations = [];
 const watchers = watchTestTree(initial, mutations);
 const discovered = [...initial.testFiles];
-const scheduled = [];
-const started = [];
-const terminal = [];
+const lifecycleTracker = createLifecycleTracker(discovered);
 
 try {
   verifyTestTreeUnchanged(initial);
@@ -59,9 +57,9 @@ try {
     objectMode: true,
     transform(event, _encoding, callback) {
       const file = canonicalEventFile(event);
-      if (file && event.type === 'test:enqueue') scheduled.push(file);
-      if (file && event.type === 'test:dequeue') started.push(file);
-      if (file && event.type === 'test:complete') terminal.push({ file, status: terminalStatus(event) });
+      if (file && event.type === 'test:enqueue') lifecycleTracker.record('scheduled', file);
+      if (file && event.type === 'test:dequeue') lifecycleTracker.record('started', file);
+      if (file && event.type === 'test:complete') lifecycleTracker.record('completed', file, terminalStatus(event));
       callback(null, event);
     },
   });
@@ -72,12 +70,7 @@ try {
 
   verifyTestTreeUnchanged(initial);
   if (mutations.length !== 0) throw new Error(`test tree emitted ${mutations.length} mutation event(s) during execution`);
-  trustedTerminalResult = validateLifecycleResult({
-    discovered,
-    scheduled: scheduled.sort(canonicalPathComparator),
-    started: started.sort(canonicalPathComparator),
-    terminal: terminal.sort((left, right) => canonicalPathComparator(left.file, right.file)),
-  });
+  trustedTerminalResult = validateLifecycleResult(lifecycleTracker.result());
   exitCode = 0;
 } catch (error) {
   for (const watcher of watchers) watcher.close();
