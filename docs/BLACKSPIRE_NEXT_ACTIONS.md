@@ -2,9 +2,9 @@
 
 ## Immediate safe actions
 
-1. Obtain an eligible submitted independent GitHub review of draft PR #30's current exact pushed head. A review request or advisory Codex review alone does not complete this gate. Keep it draft; do not mark ready or merge until that review passes.
-2. Independently read-only review draft PR #29 before any merge: its shared immutable-release validator must preserve the reviewed runtime ownership/mode contract, reject unsafe links, preserve active state on failure, and remain source-only until separately authorized staging work.
-3. Preserve the verified root-Vercel boundary: the VPS-owned root project must be ignored on every ref while the `frontend` project remains independently deployable. PR #29 and PR #30 exact-head root contexts now pass via repository configuration; no external Vercel setting needs mutation.
+1. PR #30 is merged into `origin/main` (`588ea6e`): deterministic test discovery, the trusted-inventory contract, the PID-namespace trusted runner, and the root-Vercel boundary. No further PR #30 action remains.
+2. Obtain a fresh eligible independent read-only review of draft PR #29 at its reconciliation merge head before any merge: its shared immutable-release validator must preserve the reviewed runtime ownership/mode contract, reject unsafe links, preserve active state on failure, and remain source-only until separately authorized staging work. Keep it draft; do not mark ready or merge until that review passes.
+3. Preserve the verified root-Vercel boundary: the VPS-owned root project must be ignored on every ref while the `frontend` project remains independently deployable. PR #29 and PR #30 exact-head root contexts pass via repository configuration; no external Vercel setting needs mutation.
 4. After PR #29 is merged and a separately authorized immutable staging rebuild occurs, repeat the complete disposable-only Gate 3 backup, restore, WAL-safety, migration, and disabled-backup-routine rehearsal.
 5. Do not request Gate 4 production activation until Gate 3 passes with sanitized evidence.
 6. Preserve the four original commits and backup branch; do not rewrite them or the integration merge.

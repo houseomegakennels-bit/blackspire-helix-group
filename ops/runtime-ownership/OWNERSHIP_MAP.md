@@ -1,20 +1,16 @@
-# Least-privileged runtime ownership map (blocker #2) — REVIEW ONLY, NOT PROVISIONED
+# Least-privileged runtime ownership map
 
-Reviewed plan for the durable production runtime's non-root user and the ownership/permissions
-of the release and persistent-state layout. **Nothing here is created or applied by any
-repository change.** No user/group is created, no `chown`/`chmod` runs on live paths. Applying
-this requires separate blocker #2 approval.
+This map defines the reviewed ownership/permissions contract for the durable production runtime
+and the restricted staging release layout. Repository changes do not provision a production
+runtime, user/group, or persistent production state. The staging infrastructure described below
+does not establish production activation and remains separate from the disabled production unit.
 
-## Verified current host state (read-only, 2026-07-21)
+## Verified current host state (read-only, 2026-07-22)
 
-- No `blackspire` user or group exists (`getent passwd/group blackspire` → absent).
-- No `/opt/blackspire-command` release root exists yet. `/opt/blackspire` is the root-owned
-  git checkout.
-- The current running Command service is exposed on 8787 via `docker-proxy` (container
-  runtime); the durable production runtime planned here is a **non-root systemd service**
-  running `npm run start:production`, distinct from that container.
-- The default release root in code (`packages/shared/security.js`) is `/opt/blackspire-command`
-  (overridable via `BLACKSPIRE_RELEASE_ROOT`).
+- The `blackspire` user and group exist for the restricted staging runtime.
+- `/opt/blackspire-command` exists with completed release `releases/0a9affacaf13dd1b040c5d96eb112d979ab59444` and an unactivated failed candidate `releases/691973870e0048f273fa7e9251d7f78776e3612b`. The latter exposed the release-mode defect and must not be activated.
+- `blackspire-command-staging.service` runs as `blackspire:blackspire` on loopback port 8788. The separate production `blackspire-command.service` is disabled and inactive; its environment file, current symlink, and production database are absent.
+- The original Command surface on 8787 remains distinct and unchanged. The default release root in code is `/opt/blackspire-command` (overridable via `BLACKSPIRE_RELEASE_ROOT`).
 
 ## Intended runtime identity
 
@@ -32,7 +28,7 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 |---|---|---|---|
 | `/opt/blackspire-command` | `root:blackspire` | `0755` | Top dir; runtime traverses/reads, cannot modify. |
 | `/opt/blackspire-command/releases/` | `root:blackspire` | `0755` | Parent of immutable releases; only deploy tooling (root) writes. |
-| `/opt/blackspire-command/releases/<sha>/` | `root:blackspire` | `0755` (files `u=rwX,go-w`) | **Immutable release.** Runtime reads/executes; never writes. Enforces that the running code cannot mutate itself. |
+| `/opt/blackspire-command/releases/<sha>/` | `root:blackspire` | directories `0755`; ordinary files `0644`; archived executables `0755` | **Immutable release.** Runtime traverses directories, reads files, and executes required entrypoints; it never writes. Enforces that running code cannot mutate itself. |
 | `/opt/blackspire-command/current` | `root:blackspire` (symlink) | symlink | Points at the active release. Swapped atomically by deploy tooling as root; runtime only reads. Symlink ownership does not grant target write. |
 | `/opt/blackspire-command/shared/` | `blackspire:blackspire` | `0750` | Persistent-state root; runtime-owned. |
 | `/opt/blackspire-command/shared/database/` | `blackspire:blackspire` | `0700` | SQLite `command.sqlite` + WAL/SHM. Runtime read/write. This is the DB parent `verifyVpsRuntime` checks. |
