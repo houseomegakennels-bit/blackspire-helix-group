@@ -1,9 +1,22 @@
-import fs from 'node:fs';
-import { expectedTestFiles, inventoryRecordFromLog, verifyTestInventory } from './test-inventory.js';
+import { expectedTestFiles, readTrustedInventoryReport } from './test-inventory.js';
 
-const logPath = process.argv[2];
-if (!logPath) throw new Error('Usage: node scripts/verify-test-inventory.js <npm-test-output.log>');
+const [reportPath, runId] = process.argv.slice(2);
+if (!reportPath || !runId) {
+  throw new Error('Usage: node scripts/verify-test-inventory.js <trusted-report.jsonl> <run-id>');
+}
 
-const record = inventoryRecordFromLog(fs.readFileSync(logPath, 'utf8'));
-verifyTestInventory(expectedTestFiles(), record.executed);
-console.log(`Verified ${record.executed.length} executed test files against the current inventory.`);
+try {
+  const record = readTrustedInventoryReport(reportPath, { intended: expectedTestFiles(), runId });
+  console.log([
+    'Trusted test inventory verified:',
+    `intended=${record.counts.discovered}`,
+    `discovered=${record.counts.discovered}`,
+    `started=${record.counts.started}`,
+    `completed=${record.counts.completed}`,
+    `childStatus=${record.childStatus.code}`,
+    `terminalState=${record.terminalState}`,
+  ].join(' '));
+} catch (error) {
+  console.error(`Trusted test inventory verification failed: ${error.message}`);
+  process.exitCode = 1;
+}
