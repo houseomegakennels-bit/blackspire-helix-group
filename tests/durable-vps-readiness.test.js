@@ -54,6 +54,21 @@ function assertImmutableTree(release) {
   }
 }
 
+function createDisposableArchiveSource(name, populate) {
+  const source = fs.mkdtempSync(path.join(root, `${name}-source-`));
+  const git = (args) => spawnSync('git', args, { cwd: source, encoding: 'utf8' });
+  assert.equal(git(['init', '--quiet']).status, 0, `${name}: git init`);
+  assert.equal(git(['config', 'user.email', 'release-test@example.invalid']).status, 0, `${name}: git email`);
+  assert.equal(git(['config', 'user.name', 'release test']).status, 0, `${name}: git name`);
+  fs.writeFileSync(path.join(source, 'required-runtime-file'), 'disposable\n');
+  populate(source);
+  assert.equal(git(['add', '-A']).status, 0, `${name}: git add`);
+  assert.equal(git(['commit', '--quiet', '-m', 'disposable release fixture']).status, 0, `${name}: git commit`);
+  const sha = git(['rev-parse', 'HEAD']);
+  assert.equal(sha.status, 0, `${name}: git rev-parse`);
+  return { source, sha: sha.stdout.trim() };
+}
+
 test('WAL-safe backup and disposable restore preserve committed state and checksum', () => {
   const dbDir = path.join(root, 'state');
   const backupDir = path.join(root, 'backups');
@@ -291,6 +306,50 @@ test('completed releases accept only fully canonical in-tree symlink targets', {
   assert.equal(run('scripts/release-preflight.sh', [sha], env).status, 0, 'explicit preflight accepts canonical in-tree links');
   assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0, 'switch accepts canonical in-tree links');
   assert.equal(run('scripts/release-rollback.sh', [sha], env).status, 0, 'rollback accepts canonical in-tree links');
+});
+
+test('archived unsafe symlinks fail before the completion marker and preserve active and shared state', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
+  const activeSha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
+  const cases = [
+    ['relative-escape', (source) => fs.symlinkSync('../outside', path.join(source, 'escape'))],
+    ['absolute-escape', (source) => fs.symlinkSync('/tmp', path.join(source, 'escape'))],
+    ['nested-escape', (source) => {
+      fs.mkdirSync(path.join(source, 'nested'));
+      fs.symlinkSync('/etc', path.join(source, 'nested', 'escape'));
+    }],
+    ['chained-escape', (source) => {
+      fs.symlinkSync('second', path.join(source, 'first'));
+      fs.symlinkSync('/tmp', path.join(source, 'second'));
+    }],
+    ['dangling', (source) => fs.symlinkSync('missing', path.join(source, 'escape'))],
+    ['loop', (source) => {
+      fs.symlinkSync('loop-b', path.join(source, 'loop-a'));
+      fs.symlinkSync('loop-a', path.join(source, 'loop-b'));
+    }]
+  ];
+
+  for (const [name, populate] of cases) {
+    const releaseRoot = path.join(root, `archived-${name}`);
+    const activeEnv = releaseEnvironment(releaseRoot);
+    const active = run('scripts/release-create.sh', [activeSha], activeEnv);
+    assert.equal(active.status, 0, `${name}: active release setup: ${active.stderr}`);
+    assert.equal(run('scripts/release-switch.sh', [activeSha], activeEnv).status, 0, `${name}: active switch setup`);
+    const currentBefore = fs.readlinkSync(path.join(releaseRoot, 'current'));
+    const shared = path.join(releaseRoot, 'shared');
+    fs.mkdirSync(shared, { recursive: true, mode: 0o700 });
+    const sharedSentinel = path.join(shared, 'sentinel');
+    fs.writeFileSync(sharedSentinel, 'unchanged\n', { mode: 0o600 });
+    const { source, sha } = createDisposableArchiveSource(name, populate);
+    const failed = run('scripts/release-create.sh', [sha], { ...releaseEnvironment(releaseRoot), BLACKSPIRE_SOURCE_ROOT: source });
+
+    assert.notEqual(failed.status, 0, `${name}: archive must be rejected`);
+    assert.match(failed.stderr, /symlink/i, `${name}: failure identifies the unsafe link`);
+    assert.equal(fs.existsSync(path.join(releaseRoot, 'releases', sha, '.release-complete')), false, `${name}: no completion marker remains`);
+    assert.equal(fs.existsSync(path.join(releaseRoot, 'releases', sha)), false, `${name}: unsafe archive is never promoted`);
+    assert.deepEqual(fs.readdirSync(path.join(releaseRoot, 'releases')).filter((entry) => entry.includes('.incomplete-')), [], `${name}: incomplete candidate is cleaned`);
+    assert.equal(fs.readlinkSync(path.join(releaseRoot, 'current')), currentBefore, `${name}: active release remains unchanged`);
+    assert.equal(fs.readFileSync(sharedSentinel, 'utf8'), 'unchanged\n', `${name}: shared state remains unchanged`);
+  }
 });
 
 test('production verifier fails closed for provider credentials and test mode', () => {

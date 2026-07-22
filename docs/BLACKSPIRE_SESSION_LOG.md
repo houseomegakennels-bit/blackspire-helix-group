@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-22 — PR #29 archived-source symlink proof completed
+
+- Recovered clean PR #29 head `a45fa7653bc18e6b72f33f0b7c31a4e429bf78ab` and preserved its shared create/preflight/switch/rollback validator. Added disposable Git-source fixtures for relative, absolute, nested, chained, dangling, and looping archived symlinks. Each fails before release promotion or `.release-complete`; its named incomplete candidate is removed while the active release link and shared sentinel remain unchanged.
+- Node 22.23.1 deterministic `npm ci`, focused readiness tests, full TAP, build, lint, typecheck, secret scan, high-severity audit, living-memory verification, shell syntax, and `git diff --check` passed. Local 8787/8788 and the public PR frontend health endpoint returned 200 before this source-only validation; no service, host, staging, Gate 3, production, provider, Telegram, credential, firewall, DNS, nginx/TLS, or deployment action was performed.
+- PR #29 remains draft and unmerged. Exact-head GitHub CI is passing; frontend Vercel is passing, while root Vercel remains failed with cause `UNVERIFIED` because deployment-log access requires unavailable Vercel credentials. No merge recommendation is made.
+
 ## 2026-07-22 — PR #29 final symlink-containment repair verified
 
 - Recovered clean draft PR #29 head `702848a217582fbea8eec0cd522b11daf2777942`, its existing worktrees, exact-head CI, and read-only local host evidence before editing. Root GitHub CI was passing at that head; the root Vercel deployment was failing while frontend Vercel passed. Deployment logs remain `UNVERIFIED` because this workspace has no Vercel credentials; no login, deployment, host, staging, Gate 3, or production action occurred.
