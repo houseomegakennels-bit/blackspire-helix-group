@@ -99,6 +99,9 @@ test('release creation is exact, idempotent, and switching is atomic', { skip: r
   assert.equal(fs.statSync(path.join(releaseRoot, 'releases')).uid, 0);
   assert.equal(fs.statSync(path.join(releaseRoot, 'releases')).gid, runtimeGid);
   assertImmutableTree(release);
+  for (const excluded of ['.agents', '.claude', '.devcontainer', '.github', '.githooks', '.vscode', 'AGENTS.md', 'tests']) {
+    assert.equal(fs.existsSync(path.join(release, excluded)), false, `${excluded} is review or development metadata, not release content`);
+  }
   assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0);
   assert.equal(fs.realpathSync(path.join(releaseRoot, 'current')), release);
 });
@@ -217,6 +220,77 @@ test('release creation removes only its incomplete artifact after post-copy fail
   assert.deepEqual(fs.readdirSync(releases).filter((entry) => entry.includes('.incomplete-')), [], 'only incomplete artifacts are cleaned');
   assert.equal(fs.realpathSync(path.join(failedRoot, 'current')), protectedRelease, 'current release is not switched');
   assert.equal(fs.statSync(path.join(protectedRelease, '.release-complete')).mtimeMs, protectedMarkerMtime, 'completed release is not mutated');
+});
+
+test('completed releases reject unsafe symlinks before create, preflight, switch, or rollback while preserving current state', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
+  const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
+  const cases = [
+    ['absolute', (release) => fs.symlinkSync('/tmp', path.join(release, 'absolute-outside'))],
+    ['parent-escape', (release) => fs.symlinkSync('../outside', path.join(release, 'parent-escape'))],
+    ['nested', (release) => {
+      fs.mkdirSync(path.join(release, 'nested'));
+      fs.symlinkSync('/tmp', path.join(release, 'nested', 'outside'));
+    }],
+    ['chained', (release) => {
+      fs.symlinkSync('second', path.join(release, 'first'));
+      fs.symlinkSync('/tmp', path.join(release, 'second'));
+    }],
+    ['dangling', (release) => fs.symlinkSync('missing-target', path.join(release, 'dangling'))],
+    ['loop', (release) => {
+      fs.symlinkSync('loop-b', path.join(release, 'loop-a'));
+      fs.symlinkSync('loop-a', path.join(release, 'loop-b'));
+    }]
+  ];
+
+  for (const [name, inject] of cases) {
+    const releaseRoot = path.join(root, `unsafe-link-${name}`);
+    const env = releaseEnvironment(releaseRoot);
+    const created = run('scripts/release-create.sh', [sha], env);
+    assert.equal(created.status, 0, `${name}: ${created.stderr}`);
+    const release = created.stdout.trim();
+    assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0, `${name}: setup switch`);
+    const currentBefore = fs.readlinkSync(path.join(releaseRoot, 'current'));
+    inject(release);
+
+    for (const script of ['scripts/release-create.sh', 'scripts/release-preflight.sh', 'scripts/release-switch.sh', 'scripts/release-rollback.sh']) {
+      const result = run(script, [sha], env);
+      assert.notEqual(result.status, 0, `${name}: ${script} must reject unsafe symlink`);
+      assert.match(result.stderr, /symlink|containment/i, `${name}: ${script} explains containment rejection`);
+      assert.equal(fs.readlinkSync(path.join(releaseRoot, 'current')), currentBefore, `${name}: ${script} preserves active release`);
+    }
+  }
+
+  const releaseRoot = path.join(root, 'unsafe-ancestor-link');
+  const env = releaseEnvironment(releaseRoot);
+  const created = run('scripts/release-create.sh', [sha], env);
+  assert.equal(created.status, 0, created.stderr);
+  assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0, 'ancestor setup switch');
+  const currentBefore = fs.readlinkSync(path.join(releaseRoot, 'current'));
+  const alias = `${releaseRoot}-alias`;
+  fs.symlinkSync(releaseRoot, alias);
+  const aliasedEnv = releaseEnvironment(alias);
+  for (const script of ['scripts/release-create.sh', 'scripts/release-preflight.sh', 'scripts/release-switch.sh', 'scripts/release-rollback.sh']) {
+    const result = run(script, [sha], aliasedEnv);
+    assert.notEqual(result.status, 0, `ancestor link: ${script} must reject unsafe release path`);
+    assert.match(result.stderr, /contains symlink/i, `ancestor link: ${script} explains path rejection`);
+    assert.equal(fs.readlinkSync(path.join(releaseRoot, 'current')), currentBefore, `ancestor link: ${script} preserves active release`);
+  }
+});
+
+test('completed releases accept only fully canonical in-tree symlink targets', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
+  const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
+  const releaseRoot = path.join(root, 'safe-in-tree-link');
+  const env = releaseEnvironment(releaseRoot);
+  const created = run('scripts/release-create.sh', [sha], env);
+  assert.equal(created.status, 0, created.stderr);
+  const release = created.stdout.trim();
+  fs.symlinkSync('scripts/start-production.sh', path.join(release, 'canonical-link'));
+  fs.symlinkSync('canonical-link', path.join(release, 'canonical-link-chain'));
+
+  assert.equal(run('scripts/release-create.sh', [sha], env).status, 0, 'create preflight accepts canonical in-tree links');
+  assert.equal(run('scripts/release-preflight.sh', [sha], env).status, 0, 'explicit preflight accepts canonical in-tree links');
+  assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0, 'switch accepts canonical in-tree links');
+  assert.equal(run('scripts/release-rollback.sh', [sha], env).status, 0, 'rollback accepts canonical in-tree links');
 });
 
 test('production verifier fails closed for provider credentials and test mode', () => {

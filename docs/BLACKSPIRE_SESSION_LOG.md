@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-22 — PR #29 final symlink-containment repair verified
+
+- Recovered clean draft PR #29 head `702848a217582fbea8eec0cd522b11daf2777942`, its existing worktrees, exact-head CI, and read-only local host evidence before editing. Root GitHub CI was passing at that head; the root Vercel deployment was failing while frontend Vercel passed. Deployment logs remain `UNVERIFIED` because this workspace has no Vercel credentials; no login, deployment, host, staging, Gate 3, or production action occurred.
+- Added one shared release-tree validator used by create, explicit preflight, switch, and rollback. Completed releases now fail closed for absolute/out-of-tree, `..` escape, nested, chained, dangling, looping, and ancestor-linked symlinks; only an existing fully canonical in-tree target is accepted. The completion marker follows containment/type/ownership/mode validation, and rejected validation preserves the active `current` link. Safe review/development metadata is excluded from immutable release artifacts.
+- Node 22.23.1 `npm ci`, focused release tests (including real `blackspire` read/traverse/execute and write denial), full TAP, build, lint, typecheck, secret scan, high-severity audit, living-memory check, shell syntax, and `git diff --check` passed. All release fixtures were disposable and cleaned by the test suite. The PR remains draft pending independent read-only review and an exact-new-head CI run with Vercel passing before any merge recommendation.
+
 ## 2026-07-22 — PR #29 review-findings repair verified
 
 - Recovered draft PR #29 at `dd266aa0aea6cc9c36068983135a9a6c4078be0f` and reconciled the CI-only defect: its symlink test ran after the unavailable-account check in GitHub Actions. The repair now rejects clean-path traversal and symlinked root ancestors before account/ownership work; completion-marker creation refuses an existing or symlinked marker, and switch/rollback reject unsafe release directories or markers.
