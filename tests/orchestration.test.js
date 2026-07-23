@@ -45,7 +45,7 @@ let repo;
 test('setup temporary workspace and API', async () => {
   repo = createRepo();
   upsertWorkspace({ id: 'temp-coding', name: 'Temp Coding Workspace', githubRepository: 'local/temp-coding', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: ['npm test'], providerPolicy: { preferred: ['mock'] }, rootPath: repo, enabledTools: ['write_branch', 'test', 'draft_pr'] });
-  server = start(8891);
+  server = start(8891, undefined, { exitOnListenError: false });
   await fetch('http://localhost:8891/api/stop/reset', { method: 'POST', headers: { authorization: 'Bearer test-token' } });
   assert.ok(server);
 });

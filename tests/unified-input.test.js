@@ -100,7 +100,7 @@ test('Telegram cannot attach itself to another channel conversation', async () =
 
 let server;
 test('authenticated Jarvis API reuses a Telegram conversation and exposes canonical events', async () => {
-  server = start(8902);
+  server = start(8902, undefined, { exitOnListenError: false });
   const telegram = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-api', text: 'telegram API bridge', idempotencyKey: 'api-telegram' });
   const response = await fetch('http://localhost:8902/api/unified-input', { method: 'POST', headers: { authorization: 'Bearer unified-test-token', 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Jarvis continuation', conversationId: telegram.conversationId, workspaceId: 'blackspire-command', idempotencyKey: 'api-jarvis' }) });
   assert.equal(response.status, 202);

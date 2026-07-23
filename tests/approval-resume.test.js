@@ -43,7 +43,7 @@ let server;
 test('setup approval workspace and API', () => {
   const dir = repo();
   upsertWorkspace({ id: 'approval-ws', name: 'Approval Workspace', githubRepository: 'local/approval-ws', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: ['npm test'], providerPolicy: { preferred: ['mock'] }, rootPath: dir, enabledTools: ['write_branch', 'test', 'draft_pr'] });
-  server = start(8895);
+  server = start(8895, undefined, { exitOnListenError: false });
   assert.ok(server);
 });
 

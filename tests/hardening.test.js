@@ -25,7 +25,7 @@ let server;
 let cookie = '';
 let csrf = '';
 
-test('start hardening API', () => { server = start(8893); assert.ok(server); });
+test('start hardening API', () => { server = start(8893, undefined, { exitOnListenError: false }); assert.ok(server); });
 
 test('secure session login, status, csrf, logout, revocation, and no browser secret echo', async () => {
   let response = await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'wrong' }) });

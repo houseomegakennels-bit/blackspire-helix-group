@@ -56,7 +56,7 @@ let server;
 const evidence = {};
 
 test('credential-free loopback Unified Jarvis and mock Telegram flow', async () => {
-  server = start(8910, '127.0.0.1');
+  server = start(8910, '127.0.0.1', { exitOnListenError: false });
   await handleTelegramUpdate({ update_id: 8099, message: { from: { id: 9001 }, chat: { id: 9100 }, text: '/use e2e' } });
   const telegramReply = await handleTelegramUpdate({ update_id: 8100, message: { from: { id: 9001 }, chat: { id: 9100 }, text: '/task create `docs/e2e.md`' } });
   assert.match(telegramReply.text[0], /Queued/);

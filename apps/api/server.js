@@ -319,7 +319,12 @@ function serve(res, file, type, cacheControl) {
 
 const IS_ENTRY_POINT = import.meta.url === `file://${process.argv[1]}`;
 
-export function start(port, host) {
+// exitOnListenError defaults to true so every real startup path — the entry point and the
+// restricted staging launcher, which imports start() — terminates on a listen failure instead of
+// logging it and staying alive with no listener. Only in-process tests that deliberately keep the
+// runner alive pass false, and a production profile always exits regardless of the argument, so
+// this can never become a bypass. It is an argument, never an environment variable.
+export function start(port, host, { exitOnListenError = true } = {}) {
   try {
     assertSchemaCompatible();
   } catch (error) {
@@ -357,7 +362,7 @@ export function start(port, host) {
       error: occupied ? `port ${boundPort} is already in use; refusing to start without a fallback` : String(error.message || error),
       code: error.code || null,
     }));
-    if (IS_ENTRY_POINT || bind.production) process.exit(1);
+    if (exitOnListenError || bind.production) process.exit(1);
   });
   server.listen(boundPort, boundHost, () => console.log(JSON.stringify({ service: 'api', port: boundPort, host: boundHost || 'default' })));
   const cleanupTimer = setInterval(() => { cleanupExpiredSessions(); cleanupRateLimits(); }, Number(process.env.CLEANUP_INTERVAL_MS || 15 * 60 * 1000));
