@@ -457,20 +457,90 @@ test('the production supervisor and the API server agree on host and port', asyn
   assert.doesNotMatch(server, /listen\(port, host/, 'the server must not bind unresolved arguments');
 });
 
-test('the production supervisor refuses an occupied port without touching the listener', async () => {
-  const listener = net.createServer();
-  await new Promise((resolve) => listener.listen({ host: '127.0.0.1', port: 0, exclusive: true }, resolve));
-  const { port } = listener.address();
-  try {
-    const r = spawnSync(node, ['scripts/production-supervisor.js'], {
-      cwd: process.cwd(), encoding: 'utf8',
-      env: { ...process.env, ...productionEnv({ PORT: String(port) }) },
-    });
-    assert.notEqual(r.status, 0, 'the supervisor must fail closed');
-    assert.equal(listener.listening, true, 'the existing listener must remain healthy');
-  } finally {
-    await new Promise((resolve) => listener.close(resolve));
+// The supervisor verifies the whole runtime before it ever probes the port, and reports every
+// failed requirement together. A fixture that trips an earlier requirement would therefore exit
+// nonzero without reaching the check under test, so each supervisor test below states which
+// documented reason it expects and rejects the others by name.
+function runSupervisor(env, spawnOptions = {}) {
+  return spawnSync(node, ['scripts/production-supervisor.js'], {
+    cwd: process.cwd(), encoding: 'utf8', timeout: 20000, env, ...spawnOptions,
+  });
+}
+
+const SUPERVISOR_REASONS = {
+  root: 'The production runtime must not run as root.',
+  dbParent: 'The persistent database parent directory does not exist.',
+  conflict: 'refusing to start without a fallback port',
+};
+
+function assertOnlyReason(stderr, expected, context) {
+  assert.match(stderr, new RegExp(escapeForRegExp(SUPERVISOR_REASONS[expected])), `${context}: ${stderr}`);
+  for (const [name, reason] of Object.entries(SUPERVISOR_REASONS)) {
+    if (name === expected) continue;
+    assert.doesNotMatch(stderr, new RegExp(escapeForRegExp(reason)), `${context} must not also fail for ${name}: ${stderr}`);
   }
+}
+
+function escapeForRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+test('the production supervisor refuses to run as root with the exact documented reason', (t) => {
+  if (process.getuid() !== 0) {
+    t.skip('this host does not run the suite as root, so the root refusal cannot be exercised here');
+    return;
+  }
+  // Deliberately not dropping privilege: root is the condition under test. Every other
+  // requirement is satisfied so the root refusal is the only reason the supervisor can give.
+  const r = runSupervisor(productionChildEnv({ BLACKSPIRE_RUNTIME_USER: os.userInfo().username }));
+  assert.equal(r.status, 1, `the supervisor must fail closed as root: ${r.stderr}`);
+  assert.match(r.stderr, /fatal: production runtime verification failed/);
+  assertOnlyReason(r.stderr, 'root', 'the root refusal');
+});
+
+test('the production supervisor refuses a missing persistent database parent directory', () => {
+  const identity = productionChildIdentity();
+  grantDisposableRootTo(identity.uid);
+  // The absent parent is inside the disposable root, so the refusal is provoked without any
+  // real host path being read or created.
+  const absentParent = path.join(root, 'absent-database-parent');
+  assert.equal(fs.existsSync(absentParent), false, 'the fixture must start from a genuinely absent directory');
+  const r = runSupervisor(productionChildEnv({
+    BLACKSPIRE_RUNTIME_USER: identity.username,
+    BLACKSPIRE_DB_PATH: path.join(absentParent, 'command.sqlite'),
+  }), identity.spawnOptions);
+  assert.equal(r.status, 1, `the supervisor must fail closed: ${r.stderr}`);
+  assert.match(r.stderr, /fatal: production runtime verification failed/);
+  assertOnlyReason(r.stderr, 'dbParent', 'the missing database parent refusal');
+  assert.ok(absentParent.startsWith(`${root}${path.sep}`), 'the provoked path must be disposable');
+});
+
+test('the production supervisor refuses an occupied port without touching the listener', async (t) => {
+  const identity = productionChildIdentity();
+  grantDisposableRootTo(identity.uid);
+  const { listener, port } = await occupyDisposablePort();
+  t.after(() => closeListener(listener));
+
+  const r = runSupervisor(productionChildEnv({
+    BLACKSPIRE_RUNTIME_USER: identity.username,
+    PORT: String(port),
+  }), identity.spawnOptions);
+
+  // Everything before the port preflight is expected to pass, so the supervisor must have
+  // reached the conflict itself rather than exiting for an unrelated reason.
+  assert.doesNotMatch(r.stderr, /production runtime verification failed/, `runtime verification should have passed: ${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /production bind verification failed/, `bind verification should have passed: ${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /Cannot find module|SQLITE|ENOENT|EACCES/, `the failure must be the port conflict, not a broken fixture: ${r.stderr}`);
+  assert.equal(r.status, 1, `the supervisor must fail closed: ${r.stderr}`);
+  assert.match(r.stderr, /fatal: production port conflict/);
+  assert.match(r.stderr, new RegExp(`127\\.0\\.0\\.1:${port} is already in use`));
+  assertOnlyReason(r.stderr, 'conflict', 'the port conflict refusal');
+
+  // The listener the test owns is the one still holding the port, untouched and unsignalled.
+  assert.equal(listener.listening, true, 'the existing listener must remain healthy');
+  const stillBusy = await probePortAvailable('127.0.0.1', port);
+  assert.equal(stillBusy.free, false, 'the original test listener must still hold the port');
+  assert.equal(stillBusy.code, 'EADDRINUSE');
 });
 
 // ---------------------------------------------------------------------------
