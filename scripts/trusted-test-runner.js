@@ -16,6 +16,18 @@ import {
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testsDirectory = path.join(rootDirectory, 'tests');
 
+// Bounded execution. Without this, one hung test file stalls the trusted runner forever: the
+// stream never ends, the lifecycle result is never validated, and CI blocks until an external
+// timeout kills it with no trusted verdict. Node 22 enforces this per test and fails the test
+// rather than hanging, for both an unresolved promise and a test that blocks the event loop.
+//
+// The bound is deliberately generous: the slowest file in this suite finishes in seconds, so it
+// can only fire for a genuine hang, and a slow CI runner cannot trip it. It is a constant on
+// purpose - no environment variable may relax it, because ordinary CI callers could then silently
+// restore the unbounded behavior this exists to prevent. scripts/run-tests.js applies a second,
+// outer bound around the whole contained run for the case where this in-process timer cannot fire.
+const TRUSTED_TEST_TIMEOUT_MS = 120_000;
+
 function canonicalEventFile(event) {
   if (event?.data?.nesting !== 0 || typeof event.data.file !== 'string') return null;
   if (typeof event.data.name !== 'string' || path.resolve(event.data.name) !== path.resolve(event.data.file)) return null;
@@ -52,7 +64,7 @@ const lifecycleTracker = createLifecycleTracker(discovered);
 try {
   verifyTestTreeUnchanged(initial);
   const absoluteFiles = discovered.map((file) => path.join(rootDirectory, file));
-  const testStream = run({ files: absoluteFiles, concurrency: 1 });
+  const testStream = run({ files: absoluteFiles, concurrency: 1, timeout: TRUSTED_TEST_TIMEOUT_MS });
   const lifecycle = new Transform({
     objectMode: true,
     transform(event, _encoding, callback) {

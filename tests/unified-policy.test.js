@@ -123,7 +123,7 @@ test('legitimate low-risk repository status requests remain allowed', () => {
 
 let server;
 test('HTTP returns 403 and task controls cannot elevate a denied Telegram task', async () => {
-  server = start(8930, '127.0.0.1');
+  server = start(8930, '127.0.0.1', { exitOnListenError: false });
   const denied = submit('Create a new repository', 'approval-escalation');
   for (const action of ['approve', 'pause', 'resume']) {
     const response = await fetch(`http://127.0.0.1:8930/api/tasks/${denied.taskId}/${action}`, { method: 'POST', headers: { authorization: 'Bearer policy-test-token', 'content-type': 'application/json' }, body: '{}' });

@@ -15,7 +15,7 @@ prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start } = await import('../apps/api/server.js');
 
 let server;
-test('boot API for jarvis tests', () => { server = start(8898); assert.ok(server); });
+test('boot API for jarvis tests', () => { server = start(8898, undefined, { exitOnListenError: false }); assert.ok(server); });
 
 test('Jarvis markup exposes evidence download, approval history, and status badge wiring', async () => {
   const html = await (await fetch('http://localhost:8898/jarvis')).text();

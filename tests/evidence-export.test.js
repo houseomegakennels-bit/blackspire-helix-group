@@ -44,7 +44,7 @@ let taskId;
 test('setup evidence workspace, run task to completion', async () => {
   const dir = repo();
   upsertWorkspace({ id: 'evidence-ws', name: 'Evidence Workspace', githubRepository: 'local/evidence-ws', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: ['npm test'], providerPolicy: { preferred: ['mock'] }, rootPath: dir, enabledTools: ['write_branch', 'test', 'draft_pr'] });
-  server = start(8897);
+  server = start(8897, undefined, { exitOnListenError: false });
   const response = await fetch('http://localhost:8897/api/tasks', { method: 'POST', headers: { authorization: 'Bearer evidence-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'evidence-ws', request: 'Create `docs/evidence.md` sk-redact-test123', idempotencyKey: 'evidence-flow' }) });
   taskId = (await response.json()).task.id;
   for (let i = 0; i < 8 && getTask(taskId).status === 'queued'; i += 1) await startWorker({ once: true });

@@ -91,7 +91,7 @@ test('backup and restore preserves SQLite data', () => {
 });
 
 test('API auth, invalid payloads, oversized payloads, health/readiness/task endpoints, controls, and security headers', async () => {
-  server = start(8892);
+  server = start(8892, undefined, { exitOnListenError: false });
   let response = await fetch('http://localhost:8892/api/tasks');
   assert.equal(response.status, 401);
   response = await fetch('http://localhost:8892/health');

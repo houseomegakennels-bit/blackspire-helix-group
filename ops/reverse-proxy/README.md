@@ -21,14 +21,14 @@ it requires separate blocker #1 approval and is an operator action on the host.
 | Item | Decision |
 |---|---|
 | Proxy software | **nginx** (explicit, auditable config; Caddy is an acceptable alternative if the operator prefers automatic HTTPS, but the reviewed template is nginx). |
-| Private application port | **8787**, bound on loopback for the durable runtime (`127.0.0.1:8787`). |
+| Private application port | **8789** (reviewed preference), bound loopback-only for the durable runtime (`127.0.0.1:8789`). Set explicitly via `BIND_HOST`/`PORT`; 8787 (existing API/worker) and 8788 (restricted staging) are reserved and rejected. |
 | Approved public hostname | **UNVERIFIED — not recorded in the repo.** Operator must supply it; the template uses `command.EXAMPLE-APPROVED-HOST.invalid` as a placeholder. Do not invent one. |
 | HTTPS-only policy | Port 80 returns `301` to `https://$host$request_uri` (except the ACME challenge path). |
 | HSTS | Set by the **application** in production (`max-age=31536000; includeSubDomains`). The proxy does **not** duplicate it. |
 | Secure cookies | The app marks session/CSRF cookies `Secure` whenever `NODE_ENV=production` (see `packages/shared/security.js`); there is **no** separate `SESSION_COOKIE_SECURE` flag. The proxy asserts `X-Forwarded-Proto=https` so those Secure cookies work end to end. |
 | Forwarded headers | `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto=https`, `X-Forwarded-Host`. Requires the production profile to set `TRUST_PROXY=true`. **Single trusted hop:** `X-Forwarded-For` is set to `$remote_addr` (overwrite), not `$proxy_add_x_forwarded_for` (append), so a client cannot inject a spoofed leftmost value the app would trust for rate-limit/audit identity. |
 | WebSocket / streaming | **Not required** — no WebSocket or SSE in the app (grep-verified). Plain HTTP/1.1 reverse proxy with upstream keepalive. |
-| Health route | `/health` proxied and public (no auth); also scraped internally by `ops/blackspire-command-healthcheck.sh` directly on `127.0.0.1:8787`. |
+| Health route | `/health` proxied and public (no auth); also scraped internally by `ops/blackspire-command-healthcheck.sh` directly on the configured `127.0.0.1:$PORT`. |
 | Jarvis route | `/` and `/jarvis` serve the PWA shell; `/sw.js` + `/manifest.webmanifest` proxied unchanged. Service-worker registration requires the HTTPS origin this proxy provides. |
 | Strict CSP preservation | The proxy adds **no** `add_header` and hides no headers, so the app's `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:` passes through byte-for-byte. |
 
@@ -52,7 +52,7 @@ it requires separate blocker #1 approval and is an operator action on the host.
 - Keep the previous nginx site config; `nginx -t` must pass before any `reload`. To roll back,
   restore the prior config (or `unlink` the site from `sites-enabled`) and reload.
 - TLS termination is stateless: disabling the proxy returns the host to its current state
-  (app reachable only on 8787). No application data is involved.
+  (app reachable only on its private loopback port). No application data is involved.
 - Certificates persist under `/etc/letsencrypt`; rolling back the proxy does not revoke them.
 
 ## Explicitly NOT done here

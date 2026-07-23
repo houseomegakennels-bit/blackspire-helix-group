@@ -49,7 +49,7 @@ test('test mode starts fail-closed and creates a short-lived test session', asyn
   assert.equal(testModeConfig({ ...process.env, HERMES_TEST_PROVIDER: 'openai' }).ok, false);
   assert.equal(testModeConfig({ ...process.env, TELEGRAM_BOT_TOKEN: 'forbidden-fixture' }).ok, false);
   assert.equal(testModeConfig({ ...process.env, UNIFIED_TEST_EXPIRES_AT: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString() }).ok, false);
-  server = start(8920, '127.0.0.1');
+  server = start(8920, '127.0.0.1', { exitOnListenError: false });
   const status = await (await fetch('http://127.0.0.1:8920/api/test-mode')).json();
   assert.equal(status.enabled, true);
   assert.equal(status.workspaceId, 'iphone-test');

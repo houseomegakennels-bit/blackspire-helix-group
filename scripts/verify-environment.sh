@@ -53,8 +53,30 @@ case "$mode" in
     [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
     [[ -n "${COMMAND_ADMIN_TOKEN:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production authentication is not configured"
     [[ "${BLACKSPIRE_RUN_MIGRATIONS:-false}" != "true" ]] || fail "migrations must not run implicitly; approve them separately"
+    # Loopback-only bind boundary. The production application port is private; the reverse
+    # proxy is the only public surface, so a wildcard or non-loopback host is rejected here
+    # before systemd starts the supervisor.
+    bind_host="${BIND_HOST:-}"
+    [[ -n "$bind_host" ]] || fail "BIND_HOST must be set to 127.0.0.1 for production"
+    case "$bind_host" in
+      127.0.0.1) ;;
+      0.0.0.0|::|'*') fail "BIND_HOST must not be a wildcard address; production binds loopback only" ;;
+      *) fail "BIND_HOST must be exactly 127.0.0.1; non-loopback addresses are rejected" ;;
+    esac
+    # Explicit port only — no default and no fallback to 8787.
     port="${PORT:-}"
-    { [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )); } || fail "PORT must be an integer between 1 and 65535"
+    [[ -n "$port" ]] || fail "PORT must be set explicitly for production; there is no default"
+    [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || fail "PORT must be an explicit decimal integer"
+    (( port <= 65535 )) || fail "PORT must be no greater than 65535"
+    (( port >= 1024 )) || fail "PORT must be an unprivileged port (>= 1024)"
+    (( port != 8787 )) || fail "PORT 8787 is reserved by the existing API/worker listener"
+    (( port != 8788 )) || fail "PORT 8788 is reserved by restricted staging"
+    # Read-only conflict detection: refuse an occupied port without touching its owner.
+    if command -v ss >/dev/null 2>&1; then
+      if ss -lnt 2>/dev/null | awk -v p=":$port" 'NR>1 && $4 ~ (p "$") { found=1 } END { exit found ? 0 : 1 }'; then
+        fail "PORT $port is already in use; refusing to start"
+      fi
+    fi
     [[ -d "$(dirname -- "${BLACKSPIRE_DB_PATH}")" ]] || fail "persistent database parent directory does not exist"
     startup="${BLACKSPIRE_STARTUP_TIMEOUT_SECONDS:-}"
     { [[ "$startup" =~ ^[0-9]+$ ]] && (( startup >= 1 && startup <= 600 )); } || fail "startup timeout must be a positive integer no greater than 600"

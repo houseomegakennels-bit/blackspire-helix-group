@@ -59,7 +59,7 @@ function uninstallTelegramMock() {
 }
 
 let server;
-test('boot API for telegram file tests', () => { server = start(8896); assert.ok(server); });
+test('boot API for telegram file tests', () => { server = start(8896, undefined, { exitOnListenError: false }); assert.ok(server); });
 
 test('document attachment: getFile + download + MIME/size checks + text extraction + task association + cleanup', async () => {
   installTelegramMock();

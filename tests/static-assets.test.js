@@ -19,7 +19,7 @@ const { closeDb } = await import('../packages/task-engine/db.js');
 const { start } = await import('../apps/api/server.js');
 
 const base = 'http://localhost:8899';
-const server = start(8899);
+const server = start(8899, undefined, { exitOnListenError: false });
 
 // Every public asset route, with the exact content type each must answer. The Jarvis shell
 // assets ship on the Jarvis UI branch, so tests that need their bytes stage a fixture.

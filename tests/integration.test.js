@@ -18,7 +18,7 @@ const { createPullRequest } = await import('../packages/github/github.js');
 
 let server;
 test('start api', async () => {
-  server = start(8791);
+  server = start(8791, undefined, { exitOnListenError: false });
   await fetch('http://localhost:8791/api/stop/reset', { method: 'POST', headers: { authorization: 'Bearer dev-admin-token-change-me' } });
   assert.ok(server);
 });

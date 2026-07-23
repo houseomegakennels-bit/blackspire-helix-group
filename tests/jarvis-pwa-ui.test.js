@@ -28,7 +28,7 @@ const source = [html, css, appScript].join('\n');
 const bearer = { authorization: 'Bearer jarvis-ui-token', 'content-type': 'application/json' };
 
 let server;
-test('boot API for jarvis UI tests', () => { server = start(8899); assert.ok(server); });
+test('boot API for jarvis UI tests', () => { server = start(8899, undefined, { exitOnListenError: false }); assert.ok(server); });
 
 /* ---------- security boundary of the shipped markup ---------- */
 
