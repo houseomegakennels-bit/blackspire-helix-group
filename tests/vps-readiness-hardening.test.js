@@ -12,6 +12,51 @@ import { executeProviderRequest, selectProvider } from '../packages/providers/pr
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-vps-hardening-'));
 const node = process.execPath;
 
+// The production profile fixtures below reach scripts/verify-environment.sh and verifyVpsRuntime,
+// which stat and (via writable()) mkdir whatever paths they are handed. Pointing them at the real
+// /opt/blackspire-command therefore created real production directories on any host where the test
+// user could write there - and on CI that is exactly what made the "rejects a root runtime" case
+// pass or fail depending on whether an earlier test had already created the parent. Every
+// production-profile path below is disposable and owned by this suite instead.
+//
+// verify-environment.sh rejects a /tmp database as non-persistent, so the production fixture root
+// lives outside /tmp while staying entirely throwaway.
+const disposableProductionBase = ['/var/tmp', process.env.RUNNER_TEMP, os.tmpdir()]
+  .filter((base) => typeof base === 'string' && base.length > 0)
+  .find((base) => {
+    try {
+      fs.accessSync(base, fs.constants.W_OK);
+      return !`${path.resolve(base)}${path.sep}`.startsWith(`${path.sep}tmp${path.sep}`);
+    } catch {
+      return false;
+    }
+  });
+assert.ok(disposableProductionBase, 'no writable disposable base directory outside /tmp is available');
+
+const productionRoot = fs.mkdtempSync(path.join(disposableProductionBase, 'blackspire-vps-production-'));
+const disposableProductionDbDir = path.join(productionRoot, 'shared', 'database');
+const disposableProductionDbPath = path.join(disposableProductionDbDir, 'command.sqlite');
+fs.mkdirSync(disposableProductionDbDir, { recursive: true });
+
+test.after(() => fs.rmSync(productionRoot, { recursive: true, force: true }));
+
+// A free loopback port, so the preflight's read-only conflict probe can never be decided by an
+// unrelated listener that happens to hold a fixed port on the host.
+function freeProductionPort() {
+  const probe = spawnSync(node, ['-e', `
+    const net = require('node:net');
+    const server = net.createServer();
+    server.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => {
+      const { port } = server.address();
+      server.close(() => process.stdout.write(String(port)));
+    });
+  `], { encoding: 'utf8' });
+  assert.equal(probe.status, 0, `unable to reserve a disposable port: ${probe.stderr}`);
+  const port = Number(probe.stdout.trim());
+  assert.ok(port >= 1024 && port <= 65535 && ![8787, 8788].includes(port), `unusable disposable port ${port}`);
+  return port;
+}
+
 function run(script, args, env = {}) {
   const command = script.endsWith('.sh') ? 'bash' : node;
   return spawnSync(command, [script, ...args], { cwd: process.cwd(), env: { ...process.env, ...env }, encoding: 'utf8' });
@@ -171,7 +216,8 @@ function runtimeEnv(overrides = {}) {
     NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PROVIDER_MODE: 'manual',
     BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run', UNIFIED_IPHONE_TEST_MODE: 'false',
     BIND_HOST: '127.0.0.1', PORT: '8789', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
-    BLACKSPIRE_RUNTIME_USER: 'blackspire', BLACKSPIRE_DB_PATH: '/opt/blackspire-command/shared/database/command.sqlite',
+    BLACKSPIRE_RUNTIME_USER: 'blackspire', BLACKSPIRE_DB_PATH: disposableProductionDbPath,
+    BLACKSPIRE_RELEASE_ROOT: productionRoot,
     ...overrides,
   };
 }
@@ -242,32 +288,55 @@ test('verifyVpsRuntime keeps external providers and test mode fail-closed', () =
 // Shell verifier: root rejection
 // ---------------------------------------------------------------------------
 
-test('verify-environment.sh vps-production rejects a root runtime', () => {
-  const env = {
+// The shell preflight fixture. Every requirement other than the one under test is satisfied
+// deliberately, and all paths are disposable, so each case can only fail for its own reason.
+function preflightEnv(overrides = {}) {
+  return {
     NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production',
     BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run',
-    BLACKSPIRE_DB_PATH: '/opt/blackspire-command/shared/database/command.sqlite',
+    BLACKSPIRE_DB_PATH: disposableProductionDbPath, BLACKSPIRE_RELEASE_ROOT: productionRoot,
     COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40),
-    BIND_HOST: '127.0.0.1', PORT: '8789', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BIND_HOST: '127.0.0.1', PORT: String(freeProductionPort()),
+    BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_RUNTIME_USER: 'blackspire',
+    ...overrides,
   };
-  const r = run('scripts/verify-environment.sh', ['vps-production'], env);
-  // Running as root in CI, the runtime must be refused (db parent may also be absent — either way it fails closed).
-  assert.notEqual(r.status, 0);
+}
+
+test('verify-environment.sh vps-production rejects a root runtime', (t) => {
+  if (process.getuid() !== 0) {
+    // The root refusal is the last check in the profile and cannot be simulated from an
+    // unprivileged process. Accepting any nonzero exit here previously let an unrelated
+    // refusal - typically the absent database parent - stand in for the root check.
+    t.skip('this host does not run the suite as root, so the root refusal cannot be exercised here');
+    return;
+  }
+  const r = run('scripts/verify-environment.sh', ['vps-production'], preflightEnv());
+  assert.notEqual(r.status, 0, `the root runtime must be refused: ${r.stderr}`);
+  assert.match(r.stderr, /production runtime must not run as root/);
+  assert.doesNotMatch(r.stderr, /persistent database parent directory does not exist/, `the fixture must not fail for the database parent instead: ${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /PORT|BIND_HOST/, `the fixture must not fail on the bind contract instead: ${r.stderr}`);
+});
+
+test('verify-environment.sh vps-production rejects a missing persistent database parent', () => {
+  const absentParent = path.join(productionRoot, 'absent-database-parent');
+  assert.equal(fs.existsSync(absentParent), false, 'the fixture must start from a genuinely absent directory');
+  const r = run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({
+    BLACKSPIRE_DB_PATH: path.join(absentParent, 'command.sqlite'),
+  }));
+  assert.notEqual(r.status, 0, `an absent database parent must be refused: ${r.stderr}`);
+  assert.match(r.stderr, /persistent database parent directory does not exist/);
+  assert.ok(absentParent.startsWith(`${productionRoot}${path.sep}`), 'the provoked path must be disposable');
 });
 
 test('verify-environment.sh vps-production rejects an invalid port before the root check', () => {
-  const env = {
-    NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production',
-    BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run',
-    BLACKSPIRE_DB_PATH: '/opt/blackspire-command/shared/database/command.sqlite',
-    COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40),
-    // A valid loopback BIND_HOST so this case still exercises the port check specifically.
-    BIND_HOST: '127.0.0.1', PORT: '70000',
-  };
-  const r = run('scripts/verify-environment.sh', ['vps-production'], env);
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /PORT/);
+  // A valid loopback BIND_HOST and disposable paths, so this case exercises the port check
+  // specifically and reports the port as its exact reason.
+  const r = run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ PORT: '70000' }));
+  assert.notEqual(r.status, 0, `an out-of-range port must be refused: ${r.stderr}`);
+  assert.match(r.stderr, /PORT must be no greater than 65535/);
+  assert.doesNotMatch(r.stderr, /persistent database parent directory does not exist/, `the port must be refused before the database parent: ${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /production runtime must not run as root/, 'the port must be refused before the root check');
 });
 
 // ---------------------------------------------------------------------------
