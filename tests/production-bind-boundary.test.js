@@ -948,10 +948,18 @@ test('the resolver refuses any interpreter substitution under vps-production', (
   // there could make the ExecStartPre helpers validate one binary while ExecStart runs another.
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-resolver-prod-'));
   try {
+    // The rule engages where the reviewed interpreter is installed, so the test provides one. This
+    // exercises the invariant deterministically on any host, including CI runners with no /opt/nodejs.
+    const reviewed = stubInterpreter(directory, 'reviewed', 'echo v22.23.1');
     const impostor = stubInterpreter(directory, 'impostor', 'echo v22.23.9');
-    const substituted = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_NODE_BIN: impostor });
+    const onReviewedHost = { BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: reviewed };
+
+    const substituted = resolveNode({ ...onReviewedHost, BLACKSPIRE_NODE_BIN: impostor });
     assert.equal(substituted.status, 1, 'a foreign BLACKSPIRE_NODE_BIN must be refused under vps-production');
     assert.match(substituted.stderr, /may not substitute/);
+
+    const matching = resolveNode({ ...onReviewedHost, BLACKSPIRE_NODE_BIN: reviewed });
+    assert.equal(matching.status, 0, 'the reviewed interpreter itself must be accepted');
 
     const wrongVersion = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: impostor });
     assert.equal(wrongVersion.status, 1, 'production must require the exact reviewed version');
