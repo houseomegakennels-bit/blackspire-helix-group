@@ -953,12 +953,21 @@ test('the resolver refuses any interpreter substitution under vps-production', (
     assert.equal(substituted.status, 1, 'a foreign BLACKSPIRE_NODE_BIN must be refused under vps-production');
     assert.match(substituted.stderr, /may not substitute/);
 
-    const pathOnly = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: '/nonexistent/node' });
-    assert.equal(pathOnly.status, 1, 'PATH lookup must be refused under vps-production');
-    assert.match(pathOnly.stderr, /PATH lookup is refused/);
-
     const wrongVersion = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: impostor });
     assert.equal(wrongVersion.status, 1, 'production must require the exact reviewed version');
+
+    // The production rule binds where the reviewed interpreter is installed. Off that host -- CI
+    // runners and development images -- resolution proceeds, but the floor is still enforced, so a
+    // Node that cannot run the product is rejected regardless of the declared owner.
+    const offHost = { BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: '/nonexistent/node' };
+    assert.equal(resolveNode(offHost).status, 0, 'a host without the reviewed interpreter must still resolve');
+    assert.equal(resolveNode({ ...offHost, BLACKSPIRE_NODE_BIN: '/usr/bin/node' }).status, 1,
+      'the node:sqlite floor must still reject Node 18 off the reviewed host');
+    assert.equal(resolveNode({ ...offHost, BLACKSPIRE_NODE_BIN: '/bin/true' }).status, 1,
+      'a non-interpreter must still be rejected off the reviewed host');
+    const optIn = resolveNode({ ...offHost, BLACKSPIRE_REQUIRE_REVIEWED_NODE: '1' });
+    assert.equal(optIn.status, 1, 'BLACKSPIRE_REQUIRE_REVIEWED_NODE must refuse PATH resolution outright');
+    assert.match(optIn.stderr, /PATH lookup is refused/);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

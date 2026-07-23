@@ -39,16 +39,27 @@ blackspire_resolve_node() {
   local candidate="" owner="${BLACKSPIRE_STATE_OWNER:-}" reported="" major minor
   owner="${owner//[[:space:]]/}"
 
+  # The production rule binds wherever the reviewed interpreter is actually installed, which is the
+  # durable VPS. There, it must be used: no substitution and no PATH lookup. Where it is genuinely
+  # absent -- CI runners and development images, which are not production hosts -- the ordinary
+  # resolution applies, and the floor check below still rejects an interpreter that cannot run the
+  # product. Binding the rule to the interpreter's presence rather than to the mode argument alone
+  # keeps the guarantee exactly where it matters without breaking environments that never had it.
+  local reviewed_present=0
+  [[ -x "$BLACKSPIRE_REVIEWED_NODE_BIN" ]] && reviewed_present=1
+  local enforce_reviewed=0
+  [[ "$owner" == "vps-production" && "$reviewed_present" -eq 1 ]] && enforce_reviewed=1
+
   if [[ -n "${BLACKSPIRE_NODE_BIN:-}" ]]; then
-    if [[ "$owner" == "vps-production" && "$BLACKSPIRE_NODE_BIN" != "$BLACKSPIRE_REVIEWED_NODE_BIN" ]]; then
+    if [[ "$enforce_reviewed" -eq 1 && "$BLACKSPIRE_NODE_BIN" != "$BLACKSPIRE_REVIEWED_NODE_BIN" ]]; then
       echo 'BLACKSPIRE_NODE_BIN may not substitute a different interpreter under vps-production' >&2
       return 1
     fi
     candidate="$BLACKSPIRE_NODE_BIN"
-  elif [[ -x "$BLACKSPIRE_REVIEWED_NODE_BIN" ]]; then
+  elif [[ "$reviewed_present" -eq 1 ]]; then
     candidate="$BLACKSPIRE_REVIEWED_NODE_BIN"
-  elif [[ "$owner" == "vps-production" ]]; then
-    echo 'the reviewed production interpreter is unavailable; PATH lookup is refused under vps-production' >&2
+  elif [[ "$owner" == "vps-production" && -n "${BLACKSPIRE_REQUIRE_REVIEWED_NODE:-}" ]]; then
+    echo 'the reviewed production interpreter is unavailable; PATH lookup is refused' >&2
     return 1
   else
     candidate="$(command -v node 2>/dev/null || true)"
@@ -69,7 +80,9 @@ blackspire_resolve_node() {
     return 1
   fi
 
-  if [[ "$owner" == "vps-production" && "${reported#v}" != "$BLACKSPIRE_EXPECTED_NODE_VERSION" ]]; then
+  # The exact-version requirement applies where the reviewed interpreter is installed, for the same
+  # reason: off the durable VPS there is no reviewed build to match against.
+  if [[ "$enforce_reviewed" -eq 1 && "${reported#v}" != "$BLACKSPIRE_EXPECTED_NODE_VERSION" ]]; then
     echo "production requires Node ${BLACKSPIRE_EXPECTED_NODE_VERSION}; resolved ${reported}" >&2
     return 1
   fi
