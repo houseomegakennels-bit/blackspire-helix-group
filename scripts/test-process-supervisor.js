@@ -99,6 +99,7 @@ export async function runContainedProcess(command, args, {
   gracefulShutdownMs = 500,
   forceShutdownMs = 2000,
   forwardParentSignals = false,
+  executionTimeoutMs = null,
 } = {}) {
   const child = spawn(command, args, {
     cwd,
@@ -115,6 +116,8 @@ export async function runContainedProcess(command, args, {
   let cleanupRequired = false;
   let spawnError = null;
   let interruptionTimer = null;
+  let executionTimer = null;
+  let timedOut = false;
 
   child.stdout.on('data', onStdout);
   child.stderr.on('data', onStderr);
@@ -153,6 +156,28 @@ export async function runContainedProcess(command, args, {
     }
   }
 
+  // Outer execution bound. The in-process per-test timeout is the primary defense; this covers the
+  // residue it cannot - a file that hangs at module load before any test registers, or a detached
+  // descendant that keeps the output pipe open after the child exits. On expiry it terminates the
+  // whole process group and every known descendant, so the child exits and the normal reaping path
+  // below runs. It fires at most once, emits a single non-secret diagnostic, and never touches a
+  // process outside this run's group or tracked descendants.
+  if (executionTimeoutMs !== null) {
+    executionTimer = setTimeout(() => {
+      if (timedOut) return;
+      timedOut = true;
+      console.error(`Trusted test runner exceeded ${executionTimeoutMs}ms execution budget; terminating the contained process tree`);
+      signalGroup(group, 'SIGTERM');
+      for (const identity of known.values()) if (identityAlive(identity)) signalProcess(identity.pid, 'SIGTERM');
+      setTimeout(() => {
+        forced = true;
+        signalGroup(group, 'SIGKILL');
+        for (const identity of known.values()) if (identityAlive(identity)) signalProcess(identity.pid, 'SIGKILL');
+      }, gracefulShutdownMs).unref();
+    }, executionTimeoutMs);
+    executionTimer.unref();
+  }
+
   const exit = await new Promise((resolve) => {
     let settled = false;
     const settle = (value) => {
@@ -166,6 +191,7 @@ export async function runContainedProcess(command, args, {
     });
     child.once('exit', (code, signal) => settle({ code, signal }));
   });
+  if (executionTimer !== null) clearTimeout(executionTimer);
   rememberDescendants(child.pid, known, outputTargets, true);
 
   const liveBeforeCleanup = () => {
@@ -193,7 +219,9 @@ export async function runContainedProcess(command, args, {
   const remainingDescendants = [...known.values()].filter(identityAlive).length;
   const containmentFailure = !processGroupTerminated || remainingDescendants !== 0 || !outputDrained;
   let code = exit.code;
-  if (code === 0 && (cleanupRequired || containmentFailure || interruptedSignal !== null)) code = 1;
+  // A timeout is always a failure, even if the child managed to exit 0 while being torn down, so a
+  // hung run can never present a passing status.
+  if (code === 0 && (cleanupRequired || containmentFailure || interruptedSignal !== null || timedOut)) code = 1;
   if (code === null && interruptedSignal !== null) {
     code = 128 + ({ SIGHUP: 1, SIGINT: 2, SIGTERM: 15 }[interruptedSignal] ?? 1);
   }
@@ -211,6 +239,7 @@ export async function runContainedProcess(command, args, {
     outputDrained,
     forced,
     cleanupRequired,
+    timedOut,
     spawnError,
   };
 }

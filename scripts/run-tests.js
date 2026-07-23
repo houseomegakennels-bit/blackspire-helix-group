@@ -105,6 +105,10 @@ try {
     cwd: snapshotDirectory,
     env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
     forwardParentSignals: true,
+    // Outer bound around the whole contained run, larger than the runner's per-test budget so the
+    // inner timeout fails the individual test first and this only fires if the runner itself cannot
+    // make progress. A constant, never an environment variable, so no CI caller can relax it.
+    executionTimeoutMs: 600_000,
   });
 } finally {
   fs.rmSync(runtimeDirectory, { recursive: true, force: true });
@@ -116,12 +120,14 @@ if (!result.processGroupTerminated || result.remainingDescendants !== 0) {
   console.error(`Trusted test runner cleanup failed: groupTerminated=${result.processGroupTerminated} remainingDescendants=${result.remainingDescendants}`);
 }
 if (result.interruptedSignal) console.error(`Trusted test runner remained interrupted by ${result.interruptedSignal}`);
+if (result.timedOut) console.error('Trusted test runner exceeded its execution budget and was terminated');
 
 console.log([
   'Trusted process containment:',
   `childCode=${String(result.childCode)}`,
   `childSignal=${String(result.childSignal)}`,
   `interrupted=${String(result.interruptedSignal)}`,
+  `timedOut=${result.timedOut}`,
   `outputDrained=${result.outputDrained}`,
   `processGroupTerminated=${result.processGroupTerminated}`,
   `remainingDescendants=${result.remainingDescendants}`,
