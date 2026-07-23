@@ -839,6 +839,27 @@ test('the systemd unit runs the preflight and the supervisor, and documents the 
   assert.match(unit, /8788/, 'the unit must document that restricted staging keeps 8788');
 });
 
+test('the systemd unit pins an absolute Node interpreter that satisfies the node:sqlite requirement', () => {
+  // systemd's manager PATH does not include /opt/nodejs, so `/usr/bin/env node` resolves to the
+  // distribution node (18.x on the durable VPS). The control plane imports node:sqlite, which does
+  // not exist before Node 22.5, so an unpinned ExecStart fails every start and exhausts
+  // StartLimitBurst. This asserts the unit names the interpreter absolutely and that the pinned
+  // version still matches the repository's own Node pin.
+  const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const execStart = unit.match(/^ExecStart=(\S+)/m);
+  assert.ok(execStart, 'the unit must declare ExecStart');
+  const interpreter = execStart[1];
+  assert.ok(interpreter.startsWith('/'), 'ExecStart must name the interpreter by absolute path');
+  assert.doesNotMatch(unit, /^ExecStart=\/usr\/bin\/env\s+node\b/m, 'ExecStart must not resolve node through PATH');
+  assert.doesNotMatch(interpreter, /^\/usr\/bin\/node$/, 'ExecStart must not use the distribution node');
+
+  const pinned = fs.readFileSync('.node-version', 'utf8').trim();
+  assert.ok(interpreter.includes(pinned), `ExecStart must run the pinned Node ${pinned}, got ${interpreter}`);
+
+  const [major, minor] = pinned.split('.').map(Number);
+  assert.ok(major > 22 || (major === 22 && minor >= 5), `the pinned Node ${pinned} must provide node:sqlite`);
+});
+
 test('the approved production profile pins loopback and an explicit non-conflicting port', () => {
   const profile = fs.readFileSync('scripts/production-profile.env.example', 'utf8');
   assert.match(profile, /^BIND_HOST=127\.0\.0\.1$/m);
