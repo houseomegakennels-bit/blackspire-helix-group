@@ -880,6 +880,7 @@ test('every production startup-path script resolves Node deterministically, neve
     'scripts/verify-environment.sh',
     'scripts/start-production.sh',
     'scripts/health-check.sh',
+    'scripts/with-node.sh',
     'ops/blackspire-command-healthcheck.sh',
     'ops/runtime-ownership/verify-ownership.sh',
   ];
@@ -888,17 +889,101 @@ test('every production startup-path script resolves Node deterministically, neve
     assert.match(body, /node-bin\.sh/, `${relative} must source the shared Node resolver`);
     body.split('\n').forEach((line, index) => {
       if (/^\s*#/.test(line)) return;
-      assert.doesNotMatch(line, /(^|[^\w./$"'-])node\s+(-|--|<|scripts\/|apps\/)/,
-        `${relative}:${index + 1} must not resolve node through PATH`);
+      for (const pattern of [/(^|[^\w./$"'-])node\s+(-|--|<|scripts\/|apps\/)/, /\benv\s+node\b/, /command\s+-v\s+node/, /\bwhich\s+node\b/]) {
+        assert.doesNotMatch(line, pattern, `${relative}:${index + 1} must not resolve node through PATH`);
+      }
     });
   }
 });
 
-test('the shared Node resolver fails closed below the node:sqlite floor', () => {
-  const resolver = fs.readFileSync('scripts/lib/node-bin.sh', 'utf8');
-  assert.match(resolver, /BLACKSPIRE_NODE_BIN/, 'an explicit override must exist for tests and CI');
-  assert.match(resolver, /a<22\|\|\(a===22&&b<5\)/, 'the resolver must enforce the node:sqlite floor');
-  assert.match(resolver, /return 1/, 'the resolver must fail closed rather than continue');
+// The resolver is exercised as a program rather than asserted as source text, so a cosmetic
+// reformat cannot false-fail and a real behavioural regression cannot pass unnoticed.
+function resolveNode(environment) {
+  return spawnSync('bash', ['-c', '. scripts/lib/node-bin.sh; blackspire_resolve_node'], {
+    encoding: 'utf8',
+    env: { ...process.env, ...environment },
+  });
+}
+
+function stubInterpreter(directory, name, output) {
+  const file = path.join(directory, name);
+  fs.writeFileSync(file, `#!/bin/sh\n${output}\n`);
+  fs.chmodSync(file, 0o755);
+  return file;
+}
+
+test('the shared Node resolver accepts only a real interpreter at or above the node:sqlite floor', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-resolver-'));
+  try {
+    const ok = resolveNode({ BLACKSPIRE_STATE_OWNER: '' });
+    assert.equal(ok.status, 0, 'the reviewed interpreter must resolve');
+    assert.match(ok.stdout.trim(), /node$/, 'the resolver must print the interpreter path');
+
+    // Exit status alone is not evidence: /bin/true exits 0 and is not an interpreter.
+    const nonInterpreter = resolveNode({ BLACKSPIRE_NODE_BIN: '/bin/true', BLACKSPIRE_STATE_OWNER: '' });
+    assert.equal(nonInterpreter.status, 1, '/bin/true must be rejected');
+
+    const malformed = stubInterpreter(directory, 'garbage', 'echo not-a-version');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: malformed, BLACKSPIRE_STATE_OWNER: '' }).status, 1,
+      'malformed version output must be rejected');
+
+    const silent = stubInterpreter(directory, 'silent', 'exit 0');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: silent, BLACKSPIRE_STATE_OWNER: '' }).status, 1,
+      'empty version output must be rejected');
+
+    const belowFloor = stubInterpreter(directory, 'old', 'echo v22.4.0');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: belowFloor, BLACKSPIRE_STATE_OWNER: '' }).status, 1,
+      'an interpreter below 22.5 must be rejected');
+
+    const atFloor = stubInterpreter(directory, 'floor', 'echo v22.5.0');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: atFloor, BLACKSPIRE_STATE_OWNER: '' }).status, 0,
+      'the floor itself must be accepted outside production');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('the resolver refuses any interpreter substitution under vps-production', () => {
+  // /etc/blackspire/command.env is operator-managed and outside git. Without this rule an entry
+  // there could make the ExecStartPre helpers validate one binary while ExecStart runs another.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-resolver-prod-'));
+  try {
+    const impostor = stubInterpreter(directory, 'impostor', 'echo v22.23.9');
+    const substituted = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_NODE_BIN: impostor });
+    assert.equal(substituted.status, 1, 'a foreign BLACKSPIRE_NODE_BIN must be refused under vps-production');
+    assert.match(substituted.stderr, /may not substitute/);
+
+    const pathOnly = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: '/nonexistent/node' });
+    assert.equal(pathOnly.status, 1, 'PATH lookup must be refused under vps-production');
+    assert.match(pathOnly.stderr, /PATH lookup is refused/);
+
+    const wrongVersion = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: impostor });
+    assert.equal(wrongVersion.status, 1, 'production must require the exact reviewed version');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('the unit pins the same interpreter the helpers resolve, after the operator EnvironmentFile', () => {
+  const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const execStart = unit.match(/^ExecStart=(\S+)/m);
+  const pinned = unit.match(/^Environment=BLACKSPIRE_NODE_BIN=(\S+)$/m);
+  assert.ok(execStart, 'the unit must declare ExecStart');
+  assert.ok(pinned, 'the unit must pin BLACKSPIRE_NODE_BIN so ExecStartPre validates what ExecStart runs');
+  assert.equal(pinned[1], execStart[1], 'the pinned interpreter and ExecStart must be the same binary');
+  // systemd applies Environment= and EnvironmentFile= in file order, so the reviewed value must be
+  // declared after the operator-managed file to take precedence over it.
+  assert.ok(unit.indexOf('Environment=BLACKSPIRE_NODE_BIN=') > unit.indexOf('EnvironmentFile='),
+    'the pinned interpreter must be declared after EnvironmentFile to override it');
+});
+
+test('activation package scripts never resolve Node through PATH', () => {
+  const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  for (const name of ['db:migrate', 'db:backup', 'db:restore', 'start:production']) {
+    const command = manifest.scripts[name];
+    assert.ok(command, `${name} must exist`);
+    assert.doesNotMatch(command, /(^|[^\w./$"'-])node\s/, `${name} must not invoke a PATH-resolved node`);
+  }
 });
 
 test('the approved production profile pins loopback and an explicit non-conflicting port', () => {
@@ -927,6 +1012,29 @@ test('the production preflight is read-only and exposes no secret values', () =>
   }
   const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js'], { encoding: 'utf8' });
   assert.doesNotMatch(result.stdout, /SESSION_SECRET=|COMMAND_ADMIN_TOKEN=\S/, 'the preflight must never print secret values');
+});
+
+test('the production preflight discovers scripts rather than trusting a hardcoded list', () => {
+  const body = fs.readFileSync('scripts/production-preflight-check.js', 'utf8');
+  assert.match(body, /readdirSync/, 'the preflight must discover shell scripts on disk');
+  assert.match(body, /DEVELOPMENT_ONLY_SCRIPTS/, 'exclusions must be explicit and documented');
+  // Indirect lookups must be detected, not just a bare `node` invocation.
+  for (const indirect of ['command\\s+-v\\s+node', 'which\\s+node', 'env\\s+node']) {
+    assert.ok(body.includes(indirect.replace(/\\\\s\+/g, '\\s+')) || new RegExp(indirect).test(body),
+      `the preflight must detect the indirect pattern ${indirect}`);
+  }
+});
+
+test('the production preflight checks the pinned interpreter exists on the host', () => {
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js', '--json'], { encoding: 'utf8' });
+  const report = JSON.parse(result.stdout);
+  const interpreter = report.findings.find((finding) => finding.id === 'host-interpreter');
+  assert.ok(interpreter, 'the preflight must verify the pinned interpreter on the host');
+  assert.equal(interpreter.class, 'deployment', 'host interpreter presence is host state, not a source defect');
+  const tooling = report.findings.find((finding) => finding.id === 'activation-tooling');
+  assert.match(tooling.detail, /non-empty/, 'zero-byte tooling must be treated as missing');
+  const packageScripts = report.findings.find((finding) => finding.id === 'package-scripts-pinned');
+  assert.ok(packageScripts, 'activation package scripts must be covered');
 });
 
 test('the production preflight detects a stale installed unit as a deployment finding', () => {

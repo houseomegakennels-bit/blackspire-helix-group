@@ -35,6 +35,14 @@ EnvironmentFile=/etc/blackspire/command.env
 # rather than the only guard.
 Environment=PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
 
+# Pin the interpreter the helpers resolve, so ExecStartPre validates exactly the binary ExecStart
+# runs. This is declared AFTER EnvironmentFile on purpose: systemd applies these in file order, so
+# the reviewed value overrides anything the operator-managed /etc/blackspire/command.env sets.
+# Without it, a BLACKSPIRE_NODE_BIN entry in that file would make the preflight verify one
+# interpreter while the supervisor ran another. scripts/lib/node-bin.sh additionally refuses any
+# substitution under BLACKSPIRE_STATE_OWNER=vps-production, so this is enforced on both sides.
+Environment=BLACKSPIRE_NODE_BIN=/opt/nodejs/node-v22.23.1-linux-x64/bin/node
+
 # Verify the environment profile before starting; this also enforces the loopback-only
 # BIND_HOST, the explicit non-conflicting PORT, and read-only port-conflict detection. The
 # supervisor re-verifies both at runtime and fails closed on an occupied port.
