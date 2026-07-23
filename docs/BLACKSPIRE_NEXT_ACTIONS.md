@@ -15,6 +15,9 @@
 11. Preserve the completed restricted subscription Codex acceptance. Any new live Codex task requires a separately scoped approval; do not switch to API-key billing or another provider.
 12. PR #26 readiness tooling is merged into `main` (`a9602496`). Do not deploy or activate any release until the six host-side blockers are closed and a separate bounded production approval is given. The prepared `ops/` proxy/TLS and runtime-ownership plans are review artifacts only — do not install or apply them.
 
+13. Obtain a fresh independent read-only review of the draft production loopback-bind PR at its exact remote head before any merge: it must confirm `BIND_HOST` reaches `server.listen`, that public/wildcard production binds and implicit port fallback are rejected, that ports 8787 and 8788 stay protected, and that no running service changed. Keep it draft; do not mark ready or merge until that review passes.
+14. Do not activate production on the selected port `8789` until that review passes, Gate 3 passes, and a separate bounded production approval is given. `BIND_HOST=127.0.0.1` and an explicit `PORT` must be present in the operator-supplied environment file; there is no default.
+
 ## Operator-only actions
 
 Push/merge authorization, budgets/spend, credentials, GitHub authorization, device acceptance, production and DNS changes, real Telegram, paid/live providers, host security, emergency controls, constitutional changes, trading, and funds movement.

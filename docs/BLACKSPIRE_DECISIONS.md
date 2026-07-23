@@ -1,5 +1,13 @@
 # Blackspire Decisions
 
+## 2026-07-23
+
+- The production listener binds loopback only. `vps-production` requires `BIND_HOST=127.0.0.1` and rejects wildcard (`0.0.0.0`, `::`, `*`), unspecified, and non-loopback addresses. The production application port is private and is never opened publicly; the reverse proxy is the only public surface.
+- Production requires an explicit `PORT`. There is no default and no fallback to 8787. Malformed, privileged (< 1024), out-of-range, and the reserved `8787` (existing API/worker) and `8788` (restricted staging) ports are rejected.
+- One canonical contract (`packages/shared/bind.js`) is the sole source of the host and port for the supervisor, the real `server.listen` call, `verifyVpsRuntime`, the shell preflight, the systemd unit, the nginx upstream, monitoring, and rollback. Divergent listener arguments fail closed in production.
+- An occupied production port fails closed. The supervisor preflights with a read-only probe and the server exits on `EADDRINUSE`; neither ever terminates, signals, or modifies the existing listener, and neither retries or selects a fallback port at runtime.
+- `8789` is the selected future production port, confirmed free by read-only inspection on 2026-07-23; `8790`-`8799` are the only reviewed fallbacks, chosen by `scripts/select-production-port.js` before activation and then set explicitly. This supersedes the earlier statement that the reverse proxy forwards to private app port 8787.
+
 ## 2026-07-22
 
 - Root test-inventory authorization must never be derived from TAP, stdout/stderr, worker-writable artifacts, child IPC, or externally supplied paths. The trusted contract exists only in the parent process and is finalized after real `node:test` lifecycle events, child status, output EOF, process-tree reaping, identity revalidation, and sticky interruption checks.

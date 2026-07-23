@@ -4,9 +4,9 @@
 
 The durable authority is GitHub repository `houseomegakennels-bit/blackspire-helix-group`. Code, commits, tests, deployment evidence, and explicit operator-confirmed results outrank summaries. Unsupported current-state claims are `UNVERIFIED`.
 
-- Last reconciled: 2026-07-22 UTC
-- Base `origin/main`: `588ea6e1156d7d39e7f8a5a7bde44f8c4e519807` (merge commit for independently reviewed PR #30); prior PR #28 merge remains `691973870e0048f273fa7e9251d7f78776e3612b`
-- Last verified implementation commit: `7863a64c6c34160031a93f650b8f9c7a1f29e68f` (trust-boundary hardening, merged into `main` via PR #30 `588ea6e`); the prior merged implementation was `03708c49e4772534992fbcc2fcdcabdfb40e6f1d`, merged by `691973870e0048f273fa7e9251d7f78776e3612b`.
+- Last reconciled: 2026-07-23 UTC
+- Base `origin/main`: `f0a7b66853b4c983d6930c1b70d1d94cb5f26f36` (merge commit for independently reviewed PR #29); the prior PR #30 merge remains `588ea6e1156d7d39e7f8a5a7bde44f8c4e519807` and the PR #28 merge remains `691973870e0048f273fa7e9251d7f78776e3612b`
+- Last verified implementation commit: `cd018b00f0bf23bc64e2f645dd833fc7d699cbf1` (production loopback bind and explicit-port boundary, unmerged on `fix/production-loopback-bind-boundary`); the last merged implementation remains `7863a64c6c34160031a93f650b8f9c7a1f29e68f`, merged into `main` via PR #30 `588ea6e`.
 - PR #26 passed independent review and independent second review (253/253 tests, build, lint, typecheck, secret scan, living-memory, and `git diff --check`; zero confirmed defects, three informational findings) and was merged into `main` with a merge commit (`a9602496`, parents `405a4166` + `aa4cc608`); reviewed history was preserved, not squashed or rebased. PR #28 then independently reviewed and merged as `691973870e0048f273fa7e9251d7f78776e3612b`, preserving the explicit-migration boundary. PR #30 (deterministic test discovery, trusted-inventory contract, PID-namespace trusted runner, root-Vercel boundary) then independently reviewed and merged as `588ea6e`. None of these merges authorized a production cutover. `READY_FOR_VPS_PRODUCTION_DEPLOYMENT` remains `no`.
 - Canonical memory merged by PR #24; this feature branch preserves the canonical structure
 - Canonical current state: this file plus the other `docs/BLACKSPIRE_*.md` memory files
