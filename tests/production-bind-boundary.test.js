@@ -558,6 +558,102 @@ test('monitoring health check has no 8787 default and fails closed without a por
   assert.doesNotMatch(script, /127\.0\.0\.1:8787/, 'the health check must not default to the existing 8787 listener');
 });
 
+// scripts/health-check.sh runs the same contract: an explicit target or a clean refusal. Its
+// former ${PORT:-8790} fallback would have contacted a production-candidate port nobody asked for.
+function runHealthCheck(overrides = {}, args = []) {
+  const env = { ...process.env, PATH: `${path.dirname(node)}${path.delimiter}${process.env.PATH}` };
+  delete env.PORT;
+  delete env.BLACKSPIRE_HEALTH_URL;
+  delete env.BIND_HOST;
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[key]; else env[key] = value;
+  }
+  return spawnSync('bash', ['scripts/health-check.sh', ...args], { cwd: process.cwd(), encoding: 'utf8', env, timeout: 20000 });
+}
+
+// The health listener runs in its own process: spawnSync blocks this process's event loop, so an
+// in-process server could never answer the very request under test.
+const HEALTH_STUB = `
+  const http = require('node:http');
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, service: 'blackspire-command-api' }));
+  });
+  server.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => process.stdout.write(String(server.address().port) + '\\n'));
+`;
+
+function serveDisposableHealth() {
+  return new Promise((resolve, reject) => {
+    const child = spawn(node, ['-e', HEALTH_STUB], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('the disposable health listener never reported a port')); }, 10000);
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+      if (!out.includes('\n')) return;
+      clearTimeout(timer);
+      resolve({ child, port: Number(out.trim()) });
+    });
+  });
+}
+
+function stopDisposableHealth(child) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode) return resolve();
+    child.once('exit', () => resolve());
+    child.kill('SIGKILL');
+  });
+}
+
+test('health-check.sh has no implicit port fallback and fails closed without a target', () => {
+  const script = fs.readFileSync('scripts/health-check.sh', 'utf8');
+  const executable = script.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n');
+  // ${PORT:-} is the explicit "no default" form; ${PORT:-8790} is the fallback that was removed.
+  assert.doesNotMatch(executable, /\$\{PORT:-[^}]/, 'PORT must never carry a default value');
+  assert.doesNotMatch(executable, /8790/, 'the removed production-candidate fallback must not return');
+  for (const protectedPort of PROTECTED_PORTS) {
+    assert.doesNotMatch(executable, new RegExp(String(protectedPort)), `${protectedPort} must never be reachable implicitly`);
+  }
+
+  const missing = runHealthCheck();
+  assert.equal(missing.status, 2, `a missing target must fail closed: ${missing.stderr}`);
+  assert.match(missing.stderr, /health-check requires PORT \(or an explicit health URL\); there is no default/);
+  assert.equal(missing.stdout, '', 'no health result may be reported without a target');
+});
+
+test('health-check.sh rejects a malformed port without leaking values', () => {
+  for (const value of ['abc', '0', '08790', ' 8790', '8790 ', '-1', '87.90', '999999']) {
+    const r = runHealthCheck({ PORT: value, COMMAND_ADMIN_TOKEN: 'super-secret-value' });
+    assert.equal(r.status, 2, `${JSON.stringify(value)} must be rejected: ${r.stderr}`);
+    assert.match(r.stderr, /health-check PORT must be an explicit decimal integer|health-check requires PORT/);
+    assert.doesNotMatch(r.stderr, /super-secret-value/, 'errors must never contain secrets');
+    assert.doesNotMatch(r.stderr, new RegExp(escapeForRegExp(value.trim() || 'unset')), 'errors must not echo the rejected value');
+  }
+});
+
+test('health-check.sh succeeds against an explicit disposable loopback port', async (t) => {
+  const { child, port } = await serveDisposableHealth();
+  t.after(() => stopDisposableHealth(child));
+  assert.equal(PROTECTED_PORTS.includes(port), false, 'the disposable health listener must not hold a protected port');
+
+  const r = runHealthCheck({ PORT: String(port), BIND_HOST: '127.0.0.1' });
+  assert.equal(r.status, 0, `an explicit loopback port must succeed: ${r.stderr}`);
+  assert.match(r.stdout, /BLACKSPIRE HEALTH OK: mode=health/);
+
+  // The same target given as an explicit URL is accepted too, matching the monitoring contract.
+  const viaUrl = runHealthCheck({ BLACKSPIRE_HEALTH_URL: `http://127.0.0.1:${port}` });
+  assert.equal(viaUrl.status, 0, `an explicit health URL must succeed: ${viaUrl.stderr}`);
+  assert.match(viaUrl.stdout, /BLACKSPIRE HEALTH OK: mode=health/);
+});
+
+test('the shared config exposes no second port source of truth', () => {
+  const config = fs.readFileSync('packages/shared/config.js', 'utf8');
+  const executable = config.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(executable, /export const PORT/, 'the unused PORT export must not return');
+  assert.doesNotMatch(executable, /process\.env\.PORT/, 'the port must come from the canonical bind contract only');
+  assert.doesNotMatch(executable, /8787/, 'no second 8787 default may exist outside packages/shared/bind.js');
+  assert.match(executable, /resolveBindTarget/, 'the base URL must derive from the canonical contract');
+});
+
 test('the reverse-proxy template targets the loopback production port and never 8787 or 8788', () => {
   const conf = fs.readFileSync('ops/reverse-proxy/blackspire-command.nginx.conf', 'utf8');
   const upstream = conf.match(/^\s*server\s+(\S+);/m);
