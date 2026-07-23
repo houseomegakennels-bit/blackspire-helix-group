@@ -12,6 +12,7 @@ import {
   probePortAvailable,
   selectProductionPort,
   isProductionProfile,
+  isStagingProfile,
   PRODUCTION_BIND_HOST,
   PROTECTED_PORTS,
   PRODUCTION_PORT_CANDIDATES,
@@ -239,13 +240,98 @@ test('a partially populated production environment is still treated as productio
   assert.equal(isProductionProfile({ NODE_ENV: 'production' }), false);
 });
 
-test('restricted staging keeps its loopback host and port 8788', () => {
-  // Staging is not the production profile, so 8788 stays available to it unchanged.
-  const staging = resolveBindTarget({ BIND_HOST: '127.0.0.1', PORT: '8788' });
-  assert.equal(staging.ok, true);
+// The markers the deployed restricted-staging unit actually sets, from its EnvironmentFile:
+// NODE_ENV and BLACKSPIRE_RUNTIME_MODE are production for hardened behavior, the state owner is
+// vps-staging, the port is 8788, and BIND_HOST is absent. The previous fixture supplied only
+// BIND_HOST and PORT, which is not a profile any deployment uses - that is why a classifier that
+// let the runtime mode outrank the state owner passed its tests while breaking staging startup.
+function deployedStagingEnv(overrides = {}) {
+  return {
+    NODE_ENV: 'production',
+    BLACKSPIRE_RUNTIME_MODE: 'production',
+    BLACKSPIRE_STATE_OWNER: 'vps-staging',
+    BLACKSPIRE_PROVIDER_MODE: 'manual',
+    BLACKSPIRE_HERMES_MODE: 'restricted',
+    TELEGRAM_MODE: 'dry-run',
+    UNIFIED_IPHONE_TEST_MODE: 'false',
+    PORT: '8788',
+    ...overrides,
+  };
+}
+
+test('the deployed restricted-staging profile resolves loopback 8788 and is never production', () => {
+  const env = deployedStagingEnv();
+  assert.equal(Object.hasOwn(env, 'BIND_HOST'), false, 'the deployed staging profile sets no BIND_HOST');
+
+  assert.equal(isProductionProfile(env), false, 'an explicit vps-staging owner is never the production profile');
+  assert.equal(isStagingProfile(env), true);
+
+  const staging = resolveBindTarget(env);
+  assert.equal(staging.ok, true, staging.errors.join('; '));
   assert.equal(staging.production, false);
-  assert.equal(staging.host, '127.0.0.1');
-  assert.equal(staging.port, 8788);
+  assert.equal(staging.staging, true);
+  assert.equal(staging.host, '127.0.0.1', 'restricted staging resolves the private loopback host without one being passed');
+  assert.equal(staging.port, 8788, 'staging keeps its own port');
+  assert.deepEqual(staging.errors, [], 'the production reserved-port rule must not apply to vps-staging');
+
+  // An explicit loopback host is still honored, matching the launcher that passes one today.
+  const explicit = resolveBindTarget(deployedStagingEnv({ BIND_HOST: '127.0.0.1' }));
+  assert.equal(explicit.ok, true);
+  assert.equal(explicit.host, '127.0.0.1');
+  assert.equal(explicit.port, 8788);
+});
+
+test('vps-production with the same missing BIND_HOST and port 8788 still fails closed', () => {
+  const production = resolveBindTarget(deployedStagingEnv({ BLACKSPIRE_STATE_OWNER: 'vps-production' }));
+  assert.equal(production.ok, false, 'production must not inherit the staging relaxation');
+  assert.equal(production.production, true);
+  assert.equal(production.host, null);
+  assert.equal(production.port, null);
+  assert.match(production.errors.join('; '), /BIND_HOST must be set/);
+  assert.match(production.errors.join('; '), /8788 is reserved/);
+});
+
+test('an explicit state owner outranks the runtime mode when classifying the profile', () => {
+  // vps-production + runtime production: production.
+  assert.equal(isProductionProfile({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_RUNTIME_MODE: 'production' }), true);
+  // vps-staging + runtime production: not production. This is the deployed staging case.
+  assert.equal(isProductionProfile({ BLACKSPIRE_STATE_OWNER: 'vps-staging', BLACKSPIRE_RUNTIME_MODE: 'production' }), false);
+  // Any other explicit owner + runtime production: not production here, and never silently
+  // authorized either - the runtime requires the owner to be exactly vps-production, asserted below.
+  for (const owner of ['codespace-disposable', 'development', 'vps-prod', 'VPS-PRODUCTION', 'vps-production-2']) {
+    assert.equal(isProductionProfile({ BLACKSPIRE_STATE_OWNER: owner, BLACKSPIRE_RUNTIME_MODE: 'production' }), false, `${owner} must not be the production profile`);
+  }
+  // Absent or blank owner + runtime production: the runtime mode decides, so a partially
+  // populated production environment stays fail-closed.
+  assert.equal(isProductionProfile({ BLACKSPIRE_RUNTIME_MODE: 'production' }), true);
+  assert.equal(isProductionProfile({ BLACKSPIRE_STATE_OWNER: '', BLACKSPIRE_RUNTIME_MODE: 'production' }), true);
+  assert.equal(isProductionProfile({ BLACKSPIRE_STATE_OWNER: '   ', BLACKSPIRE_RUNTIME_MODE: 'production' }), true);
+  // Missing owner + non-production runtime: not production.
+  assert.equal(isProductionProfile({}), false);
+  assert.equal(isProductionProfile({ NODE_ENV: 'production' }), false);
+  assert.equal(isProductionProfile({ BLACKSPIRE_RUNTIME_MODE: 'development' }), false);
+});
+
+test('an unrecognized state owner cannot obtain the production runtime', () => {
+  // The classifier alone would treat these as non-production and skip the bind contract, so the
+  // runtime itself refuses them: an unknown owner never reaches a listener.
+  const opts = {
+    uid: 1001, username: 'blackspire', nodeVersion: '22.23.1',
+    isWritable: () => true, dirOwnerUid: () => 1001, dirExists: () => true,
+  };
+  for (const owner of ['vps-staging', 'vps-prod', 'VPS-PRODUCTION', 'codespace-disposable', '']) {
+    const r = verifyVpsRuntime(productionEnv({ BLACKSPIRE_STATE_OWNER: owner }), opts);
+    assert.equal(r.ok, false, `owner ${JSON.stringify(owner)} must be refused by the production runtime`);
+    assert.match(r.errors.join('; '), /BLACKSPIRE_STATE_OWNER must be exactly vps-production/);
+  }
+  assert.equal(verifyVpsRuntime(productionEnv(), opts).ok, true, 'the approved owner still passes');
+
+  // The shell preflight enforces the same value as the systemd ExecStartPre.
+  const preflight = spawnSync('bash', ['scripts/verify-environment.sh', 'vps-production'], {
+    cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...productionShellEnv({ BLACKSPIRE_STATE_OWNER: 'vps-prod' }) },
+  });
+  assert.notEqual(preflight.status, 0, `an unrecognized owner must fail the preflight: ${preflight.stderr}`);
+  assert.match(preflight.stderr, /production state owner must be vps-production/);
 });
 
 test('development behavior is preserved', () => {
@@ -409,6 +495,86 @@ function devEnv(name, overrides = {}) {
     ...overrides,
   };
 }
+
+// The restricted staging unit does not run apps/api/server.js as an entry point: it imports the
+// module and calls start(port, '127.0.0.1'). Exiting only for an entry point therefore left an
+// imported startup logging a listen failure and staying alive with no listener. This boots the
+// server exactly the way that unit does.
+function bootImportedApi(env, port, host = '127.0.0.1') {
+  prepareDisposableDatabase(env.BLACKSPIRE_DB_PATH);
+  const moduleUrl = new URL('../apps/api/server.js', import.meta.url).href;
+  const launcher = `import(${JSON.stringify(moduleUrl)})`
+    + `.then((m) => m.start(Number(process.env.PORT), ${JSON.stringify(host)}))`
+    + `.catch((e) => { console.error(String((e && e.stack) || e)); process.exit(1); });`;
+  return new Promise((resolve) => {
+    const child = spawn(node, ['-e', launcher], {
+      env: { ...process.env, ...env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let killed = false;
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const timer = setTimeout(() => { killed = true; child.kill('SIGKILL'); }, 8000);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      resolve({ exited: !killed, code, stdout, stderr, child });
+    });
+  });
+}
+
+test('an imported non-production startup exits on an occupied port', async (t) => {
+  const { listener, port } = await occupyDisposablePort();
+  t.after(() => closeListener(listener));
+
+  const env = devEnv('imported-occupied');
+  const result = await bootImportedApi(env, port);
+  t.after(() => { if (result.child.exitCode === null) result.child.kill('SIGKILL'); });
+
+  // The profile under test really is non-production: this proves the exit does not come from the
+  // production branch, which is exactly the gap the entry-point-only condition left open.
+  assert.equal(resolveBindTarget(env).production, false, 'this fixture must exercise the non-production path');
+  assert.equal(result.exited, true, `an imported startup must exit rather than linger: ${result.stderr}`);
+  assert.equal(result.code, 1, `the exit must be nonzero: ${result.stderr}`);
+  assert.match(result.stderr, new RegExp(`port ${port} is already in use; refusing to start without a fallback`));
+  assert.doesNotMatch(result.stdout, /"service":"api"/, 'no listener may be announced after a conflict');
+
+  // The listener the test owns is untouched and still holds the port.
+  assert.equal(listener.listening, true, 'the existing listener must remain healthy');
+  const stillBusy = await probePortAvailable('127.0.0.1', port);
+  assert.equal(stillBusy.free, false);
+  assert.equal(stillBusy.code, 'EADDRINUSE');
+});
+
+test('the imported staging launcher starts and stops cleanly on a free port', async (t) => {
+  // The same import path must still work, so the exit-on-error default cannot be mistaken for
+  // "imported startup always dies".
+  const port = await reserveFreePort();
+  const result = await new Promise((resolve) => {
+    const env = devEnv('imported-free');
+    prepareDisposableDatabase(env.BLACKSPIRE_DB_PATH);
+    const moduleUrl = new URL('../apps/api/server.js', import.meta.url).href;
+    const child = spawn(node, ['-e', `import(${JSON.stringify(moduleUrl)}).then((m) => m.start(Number(process.env.PORT), '127.0.0.1'));`], {
+      env: { ...process.env, ...env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      if (stdout.includes('"service":"api"')) resolve({ stdout, child });
+    });
+    setTimeout(() => resolve({ stdout, child }), 6000);
+  });
+  t.after(() => new Promise((resolve) => {
+    if (result.child.exitCode !== null) return resolve();
+    result.child.once('exit', () => resolve());
+    result.child.kill('SIGKILL');
+  }));
+  const line = result.stdout.split('\n').find((entry) => entry.includes('"service":"api"'));
+  assert.ok(line, `the imported startup must announce its listener: ${result.stdout}`);
+  const startup = JSON.parse(line);
+  assert.equal(startup.host, '127.0.0.1');
+  assert.equal(startup.port, port);
+});
 
 test('BIND_HOST reaches the real server.listen call', async (t) => {
   // The port is allocated by the kernel and verified free rather than hardcoded, so this test

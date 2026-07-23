@@ -214,6 +214,8 @@ test('restore refuses a symlinked target that escapes to the live database', () 
 function runtimeEnv(overrides = {}) {
   return {
     NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PROVIDER_MODE: 'manual',
+    // The state owner decides the bind profile, so the production runtime requires it explicitly.
+    BLACKSPIRE_STATE_OWNER: 'vps-production',
     BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run', UNIFIED_IPHONE_TEST_MODE: 'false',
     BIND_HOST: '127.0.0.1', PORT: '8789', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_RUNTIME_USER: 'blackspire', BLACKSPIRE_DB_PATH: disposableProductionDbPath,
