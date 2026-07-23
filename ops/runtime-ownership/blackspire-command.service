@@ -27,7 +27,9 @@ WorkingDirectory=/opt/blackspire-command/current
 # Secrets live outside Git in a 0640 root:blackspire file; values never appear in the repo.
 EnvironmentFile=/etc/blackspire/command.env
 
-# Verify the environment profile before starting; the supervisor re-verifies at runtime.
+# Verify the environment profile before starting; this also enforces the loopback-only
+# BIND_HOST, the explicit non-conflicting PORT, and read-only port-conflict detection. The
+# supervisor re-verifies both at runtime and fails closed on an occupied port.
 ExecStartPre=/usr/bin/env bash scripts/verify-environment.sh vps-production
 ExecStart=/usr/bin/env node scripts/production-supervisor.js
 
@@ -50,7 +52,9 @@ RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
 RestrictNamespaces=yes
-# Port 8787 > 1024, so no capabilities are needed to bind it.
+# The production port is unprivileged (>= 1024) and loopback-only, so no capabilities are
+# needed to bind it. BIND_HOST=127.0.0.1 and the explicit PORT come from the EnvironmentFile;
+# ports 8787 (existing API/worker) and 8788 (restricted staging) are rejected by the preflight.
 CapabilityBoundingSet=
 AmbientCapabilities=
 # NOTE: MemoryDenyWriteExecute is intentionally NOT set — the Node/V8 JIT requires W^X-exempt

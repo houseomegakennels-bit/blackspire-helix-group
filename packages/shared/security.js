@@ -6,6 +6,7 @@ import { DB_PATH, ATTACHMENTS_DIR } from './config.js';
 import { redact } from './util.js';
 import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions } from './sessions.js';
 import { rateLimit } from './rateLimits.js';
+import { validateProductionHost, validateProductionPort } from './bind.js';
 
 export { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
@@ -86,8 +87,10 @@ export function verifyVpsRuntime(env = process.env, {
     errors.push(`Node.js major ${MIN_NODE_MAJOR} (>= ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR_AT_MIN_MAJOR}) is required for the production runtime.`);
   }
 
-  const port = Number(env.PORT);
-  if (!(Number.isInteger(port) && port >= 1 && port <= 65535)) errors.push('PORT must be an integer between 1 and 65535.');
+  // Loopback-only host and an explicit, non-conflicting port come from the one canonical
+  // contract shared with the supervisor, the API listener, and the shell preflight.
+  for (const error of validateProductionHost(env.BIND_HOST).errors) errors.push(error);
+  for (const error of validateProductionPort(env.PORT).errors) errors.push(error);
 
   if (!boundedTimeout(env.BLACKSPIRE_STARTUP_TIMEOUT_SECONDS, STARTUP_TIMEOUT_MAX_SECONDS)) {
     errors.push(`BLACKSPIRE_STARTUP_TIMEOUT_SECONDS must be a positive integer no greater than ${STARTUP_TIMEOUT_MAX_SECONDS}.`);
