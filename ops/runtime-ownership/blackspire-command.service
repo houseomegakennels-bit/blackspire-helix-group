@@ -27,6 +27,14 @@ WorkingDirectory=/opt/blackspire-command/current
 # Secrets live outside Git in a 0640 root:blackspire file; values never appear in the repo.
 EnvironmentFile=/etc/blackspire/command.env
 
+# Pinned PATH. systemd's manager PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+# and excludes /opt/nodejs, so any helper resolving `node` through PATH would silently get the
+# distribution's Node 18, which lacks node:sqlite. The reviewed interpreter directory is placed
+# first so no PATH-resolved lookup inside ExecStartPre can reach /usr/bin/node. The helpers also
+# resolve the interpreter themselves via scripts/lib/node-bin.sh, so this is defense in depth
+# rather than the only guard.
+Environment=PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
+
 # Verify the environment profile before starting; this also enforces the loopback-only
 # BIND_HOST, the explicit non-conflicting PORT, and read-only port-conflict detection. The
 # supervisor re-verifies both at runtime and fails closed on an occupied port.

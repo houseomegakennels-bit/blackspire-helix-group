@@ -860,6 +860,47 @@ test('the systemd unit pins an absolute Node interpreter that satisfies the node
   assert.ok(major > 22 || (major === 22 && minor >= 5), `the pinned Node ${pinned} must provide node:sqlite`);
 });
 
+test('the systemd unit pins PATH so no startup helper can resolve the distribution node', () => {
+  // ExecStartPre runs bash, which resolves `node` through PATH. systemd's manager PATH excludes
+  // /opt/nodejs, so without a pinned PATH the preflight would validate /usr/bin/node (18.x) while
+  // ExecStart runs the pinned 22.x interpreter -- validating a different binary than it runs.
+  const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const pathLine = unit.match(/^Environment=PATH=(\S+)/m);
+  assert.ok(pathLine, 'the unit must pin PATH for its startup helpers');
+  const execStart = unit.match(/^ExecStart=(\S+)/m);
+  assert.ok(execStart, 'the unit must declare ExecStart');
+  const nodeDirectory = path.dirname(execStart[1]);
+  assert.equal(pathLine[1].split(':')[0], nodeDirectory, 'the pinned interpreter directory must come first on PATH');
+  assert.equal(pathLine[1].split(':').includes('/usr/sbin'), false, 'the pinned PATH must stay minimal');
+});
+
+test('every production startup-path script resolves Node deterministically, never through PATH', () => {
+  // A bare `node` in any of these silently becomes the distribution's Node 18 under systemd.
+  const scripts = [
+    'scripts/verify-environment.sh',
+    'scripts/start-production.sh',
+    'scripts/health-check.sh',
+    'ops/blackspire-command-healthcheck.sh',
+    'ops/runtime-ownership/verify-ownership.sh',
+  ];
+  for (const relative of scripts) {
+    const body = fs.readFileSync(relative, 'utf8');
+    assert.match(body, /node-bin\.sh/, `${relative} must source the shared Node resolver`);
+    body.split('\n').forEach((line, index) => {
+      if (/^\s*#/.test(line)) return;
+      assert.doesNotMatch(line, /(^|[^\w./$"'-])node\s+(-|--|<|scripts\/|apps\/)/,
+        `${relative}:${index + 1} must not resolve node through PATH`);
+    });
+  }
+});
+
+test('the shared Node resolver fails closed below the node:sqlite floor', () => {
+  const resolver = fs.readFileSync('scripts/lib/node-bin.sh', 'utf8');
+  assert.match(resolver, /BLACKSPIRE_NODE_BIN/, 'an explicit override must exist for tests and CI');
+  assert.match(resolver, /a<22\|\|\(a===22&&b<5\)/, 'the resolver must enforce the node:sqlite floor');
+  assert.match(resolver, /return 1/, 'the resolver must fail closed rather than continue');
+});
+
 test('the approved production profile pins loopback and an explicit non-conflicting port', () => {
   const profile = fs.readFileSync('scripts/production-profile.env.example', 'utf8');
   assert.match(profile, /^BIND_HOST=127\.0\.0\.1$/m);
@@ -867,6 +908,33 @@ test('the approved production profile pins loopback and an explicit non-conflict
   assert.ok(port, 'the profile must set an explicit port');
   assert.equal(PROTECTED_PORTS.includes(Number(port[1])), false, 'the profile must not use a protected port');
   assert.equal(port[1], '8789');
+});
+
+test('the production preflight passes the source contract and is machine-readable', () => {
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js', '--json'], { encoding: 'utf8' });
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.sourceFailed, 0, `source contract must hold: ${JSON.stringify(report.findings.filter((f) => !f.ok && f.class === 'source'))}`);
+  assert.ok(report.checked >= 15, 'the preflight must cover the whole source contract');
+  assert.equal(result.status, 0, 'the preflight must exit zero when the source contract holds');
+  // The installed-unit drift check is deployment-class, so host state never fails the source run.
+  assert.ok(report.findings.some((finding) => finding.id === 'installed-unit' && finding.class === 'deployment'));
+});
+
+test('the production preflight is read-only and exposes no secret values', () => {
+  const body = fs.readFileSync('scripts/production-preflight-check.js', 'utf8');
+  for (const forbidden of ['execSync', 'spawnSync', 'spawn(', 'writeFileSync', 'mkdirSync', 'rmSync', 'unlinkSync', 'symlinkSync', 'chmodSync', 'chownSync']) {
+    assert.equal(body.includes(forbidden), false, `the preflight must never call ${forbidden}`);
+  }
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js'], { encoding: 'utf8' });
+  assert.doesNotMatch(result.stdout, /SESSION_SECRET=|COMMAND_ADMIN_TOKEN=\S/, 'the preflight must never print secret values');
+});
+
+test('the production preflight detects a stale installed unit as a deployment finding', () => {
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js', '--json'], { encoding: 'utf8' });
+  const report = JSON.parse(result.stdout);
+  const installed = report.findings.find((finding) => finding.id === 'installed-unit');
+  assert.ok(installed, 'the preflight must report installed-unit drift');
+  assert.equal(installed.class, 'deployment', 'installed-unit drift is a deployment follow-up, not a source defect');
 });
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));

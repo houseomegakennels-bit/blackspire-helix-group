@@ -7,9 +7,14 @@ minimum_node="22.5.0"
 fail() { printf 'environment verification failed: %s\n' "$1" >&2; exit 1; }
 has_value() { [[ -n "${!1:-}" ]]; }
 
-node_version="$(node --version 2>/dev/null | sed 's/^v//' || true)"
+# Resolve the interpreter deterministically rather than through PATH. This runs as the systemd
+# ExecStartPre, where PATH would otherwise resolve the distribution's Node 18 and this check would
+# validate a different interpreter than ExecStart actually runs.
+# shellcheck source=scripts/lib/node-bin.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/node-bin.sh"
+node_bin="$(blackspire_resolve_node)" || fail "Node.js ${minimum_node} or newer is required"
+node_version="$("$node_bin" --version 2>/dev/null | sed 's/^v//' || true)"
 [[ -n "$node_version" ]] || fail "Node.js is unavailable"
-node -e "const [a,b]=process.versions.node.split('.').map(Number);if(a<22||(a===22&&b<5))process.exit(1)" || fail "Node.js ${minimum_node} or newer is required"
 
 provider="${BLACKSPIRE_PROVIDER_MODE:-manual}"
 case "$provider" in manual|mock|codex|openai|anthropic|claudeCode) ;; *) fail "provider mode is invalid" ;; esac
