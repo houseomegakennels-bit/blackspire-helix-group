@@ -170,7 +170,7 @@ function runtimeEnv(overrides = {}) {
   return {
     NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PROVIDER_MODE: 'manual',
     BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run', UNIFIED_IPHONE_TEST_MODE: 'false',
-    PORT: '8787', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BIND_HOST: '127.0.0.1', PORT: '8789', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_RUNTIME_USER: 'blackspire', BLACKSPIRE_DB_PATH: '/opt/blackspire-command/shared/database/command.sqlite',
     ...overrides,
   };
@@ -248,7 +248,7 @@ test('verify-environment.sh vps-production rejects a root runtime', () => {
     BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run',
     BLACKSPIRE_DB_PATH: '/opt/blackspire-command/shared/database/command.sqlite',
     COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40),
-    PORT: '8787', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BIND_HOST: '127.0.0.1', PORT: '8789', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_RUNTIME_USER: 'blackspire',
   };
   const r = run('scripts/verify-environment.sh', ['vps-production'], env);
@@ -261,7 +261,9 @@ test('verify-environment.sh vps-production rejects an invalid port before the ro
     NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production',
     BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run',
     BLACKSPIRE_DB_PATH: '/opt/blackspire-command/shared/database/command.sqlite',
-    COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40), PORT: '70000',
+    COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40),
+    // A valid loopback BIND_HOST so this case still exercises the port check specifically.
+    BIND_HOST: '127.0.0.1', PORT: '70000',
   };
   const r = run('scripts/verify-environment.sh', ['vps-production'], env);
   assert.notEqual(r.status, 0);
