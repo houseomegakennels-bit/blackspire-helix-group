@@ -6,7 +6,7 @@ import { DB_PATH, ATTACHMENTS_DIR } from './config.js';
 import { redact } from './util.js';
 import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions } from './sessions.js';
 import { rateLimit } from './rateLimits.js';
-import { validateProductionHost, validateProductionPort } from './bind.js';
+import { validateProductionHost, validateProductionPort, PRODUCTION_STATE_OWNER } from './bind.js';
 
 export { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
@@ -121,6 +121,13 @@ export function verifyVpsRuntime(env = process.env, {
 
   if (env.NODE_ENV !== 'production') errors.push('NODE_ENV must be production.');
   if (env.BLACKSPIRE_RUNTIME_MODE !== 'production') errors.push('BLACKSPIRE_RUNTIME_MODE must be production.');
+  // The state owner is what decides the bind profile, so the production runtime requires it to be
+  // exactly vps-production. Without this an unrecognized or misspelled owner would classify as
+  // non-production and skip the loopback/explicit-port contract entirely. scripts/verify-environment.sh
+  // already enforces the same value as the systemd ExecStartPre; this is the supervisor's own check.
+  if (env.BLACKSPIRE_STATE_OWNER !== PRODUCTION_STATE_OWNER) {
+    errors.push(`BLACKSPIRE_STATE_OWNER must be exactly ${PRODUCTION_STATE_OWNER} for the production runtime.`);
+  }
   if (env.UNIFIED_IPHONE_TEST_MODE === 'true') errors.push('Test mode is not allowed in the production runtime.');
   if (env.BLACKSPIRE_PROVIDER_MODE !== 'manual') errors.push('BLACKSPIRE_PROVIDER_MODE must be manual.');
   if (env.BLACKSPIRE_HERMES_MODE === 'mock') errors.push('Mock Hermes is not allowed in the production runtime.');

@@ -10,6 +10,16 @@ import net from 'node:net';
 
 export const PRODUCTION_BIND_HOST = '127.0.0.1';
 
+// The state owner names which environment owns the persisted state. It is the authoritative
+// profile marker: the restricted staging profile deliberately runs with NODE_ENV=production and
+// BLACKSPIRE_RUNTIME_MODE=production for hardened behavior, while owning staging state on 8788.
+export const PRODUCTION_STATE_OWNER = 'vps-production';
+export const STAGING_STATE_OWNER = 'vps-staging';
+
+// Restricted staging is loopback-only by design, so it resolves the same private host as
+// production rather than depending on its launcher passing one.
+export const STAGING_BIND_HOST = '127.0.0.1';
+
 // Ports owned by listeners this repository must never take over or shut down.
 export const PROTECTED_PORTS = Object.freeze([8787, 8788]);
 
@@ -27,11 +37,39 @@ export const DEVELOPMENT_DEFAULT_PORT = 8787;
 const EXPLICIT_PORT = /^[1-9][0-9]{0,4}$/;
 
 /**
- * The durable VPS production profile. Either marker is sufficient: the systemd unit sets both,
- * and treating a partially-populated production environment as production keeps it fail-closed.
+ * Read the declared state owner, trimmed. Returns '' when it is absent or blank.
+ */
+export function stateOwner(env = process.env) {
+  return typeof env.BLACKSPIRE_STATE_OWNER === 'string' ? env.BLACKSPIRE_STATE_OWNER.trim() : '';
+}
+
+/**
+ * The durable VPS production profile.
+ *
+ * An explicit state owner is authoritative and outranks the runtime mode. Restricted staging runs
+ * with NODE_ENV=production and BLACKSPIRE_RUNTIME_MODE=production on purpose while declaring
+ * BLACKSPIRE_STATE_OWNER=vps-staging, so treating the runtime mode as decisive misclassified
+ * staging as production and rejected both its absent BIND_HOST and its own port 8788.
+ *
+ * Only an absent or blank owner lets BLACKSPIRE_RUNTIME_MODE=production decide, which keeps a
+ * partially-populated production environment fail-closed.
+ *
+ * An unrecognized owner is not production here, and it is never silently authorized either: the
+ * production runtime independently requires the owner to be exactly vps-production, in
+ * scripts/verify-environment.sh (the systemd ExecStartPre) and in verifyVpsRuntime (the
+ * supervisor's own precondition), so an unknown owner fails closed before any listener is created.
  */
 export function isProductionProfile(env = process.env) {
-  return env.BLACKSPIRE_RUNTIME_MODE === 'production' || env.BLACKSPIRE_STATE_OWNER === 'vps-production';
+  const owner = stateOwner(env);
+  if (owner !== '') return owner === PRODUCTION_STATE_OWNER;
+  return env.BLACKSPIRE_RUNTIME_MODE === 'production';
+}
+
+/**
+ * The restricted staging profile: loopback-only on its own reserved port, never production.
+ */
+export function isStagingProfile(env = process.env) {
+  return stateOwner(env) === STAGING_STATE_OWNER;
 }
 
 /**
@@ -93,13 +131,18 @@ export function validateProductionHost(value) {
 export function resolveBindTarget(env = process.env) {
   const production = isProductionProfile(env);
   if (!production) {
-    const host = env.BIND_HOST === undefined || env.BIND_HOST === '' ? undefined : String(env.BIND_HOST);
-    return { ok: true, production: false, host, port: Number(env.PORT || DEVELOPMENT_DEFAULT_PORT), errors: [] };
+    const explicitHost = env.BIND_HOST === undefined || env.BIND_HOST === '' ? undefined : String(env.BIND_HOST);
+    // Restricted staging resolves the private loopback host itself when none is given, so its
+    // boundary no longer depends on the launcher remembering to pass one. Development keeps its
+    // historical undefined host. Neither profile is subject to the production reserved-port rule:
+    // 8788 belongs to staging.
+    const host = explicitHost === undefined && isStagingProfile(env) ? STAGING_BIND_HOST : explicitHost;
+    return { ok: true, production: false, staging: isStagingProfile(env), host, port: Number(env.PORT || DEVELOPMENT_DEFAULT_PORT), errors: [] };
   }
   const hostResult = validateProductionHost(env.BIND_HOST);
   const portResult = validateProductionPort(env.PORT);
   const errors = [...hostResult.errors, ...portResult.errors];
-  return { ok: errors.length === 0, production: true, host: hostResult.host, port: portResult.port, errors };
+  return { ok: errors.length === 0, production: true, staging: false, host: hostResult.host, port: portResult.port, errors };
 }
 
 /**
