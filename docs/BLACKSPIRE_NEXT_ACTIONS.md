@@ -2,8 +2,9 @@
 
 ## Immediate safe actions
 
-1. PR #30 is merged into `origin/main` (`588ea6e`): deterministic test discovery, the trusted-inventory contract, the PID-namespace trusted runner, and the root-Vercel boundary. No further PR #30 action remains.
-2. Obtain a fresh eligible independent read-only review of draft PR #29 at its reconciliation merge head before any merge: its shared immutable-release validator must preserve the reviewed runtime ownership/mode contract, reject unsafe links, preserve active state on failure, and remain source-only until separately authorized staging work. Keep it draft; do not mark ready or merge until that review passes.
+1. PR #35 is MERGED into `origin/main` (`693fb03e4596d26e990f87a40508307810cc5e5d`): absolute Node interpreter pinning across production startup, systemd unit Environment=BLACKSPIRE_NODE_BIN, host-interpreter verification, and strict production preflight.
+2. Obtain a fresh independent read-only review of the draft living-memory ancestry PR before merging: it upgrades `scripts/check-living-memory.sh` to use fail-closed `git merge-base --is-ancestor` ancestry containment so valid reviewed merge ancestry passes while unreviewed divergence fails closed.
+3. Obtain a fresh eligible independent read-only review of draft PR #29 at its reconciliation merge head before any merge: its shared immutable-release validator must preserve the reviewed runtime ownership/mode contract, reject unsafe links, preserve active state on failure, and remain source-only until separately authorized staging work. Keep it draft; do not mark ready or merge until that review passes.
 3. Preserve the verified root-Vercel boundary: the VPS-owned root project must be ignored on every ref while the `frontend` project remains independently deployable. PR #29 and PR #30 exact-head root contexts pass via repository configuration; no external Vercel setting needs mutation.
 4. After PR #29 is merged and a separately authorized immutable staging rebuild occurs, repeat the complete disposable-only Gate 3 backup, restore, WAL-safety, migration, and disabled-backup-routine rehearsal.
 5. Do not request Gate 4 production activation until Gate 3 passes with sanitized evidence.

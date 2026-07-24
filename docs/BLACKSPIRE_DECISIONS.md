@@ -1,5 +1,10 @@
 # Blackspire Decisions
 
+## 2026-07-24
+
+- PR #35 is merged into `main` (`693fb03e4596d26e990f87a40508307810cc5e5d`): Node interpreter pinning is enforced across all production startup paths, systemd unit Environment=BLACKSPIRE_NODE_BIN, host-interpreter verification, and strict production preflight.
+- Living memory validation (`scripts/check-living-memory.sh`) uses durable fail-closed ancestry containment (`git merge-base --is-ancestor`) rather than exact SHA equality. Valid reviewed merge ancestry passes, while unreviewed divergence, missing commits, and rewritten history fail closed.
+
 ## 2026-07-23
 
 - The production listener binds loopback only. `vps-production` requires `BIND_HOST=127.0.0.1` and rejects wildcard (`0.0.0.0`, `::`, `*`), unspecified, and non-loopback addresses. The production application port is private and is never opened publicly; the reverse proxy is the only public surface.

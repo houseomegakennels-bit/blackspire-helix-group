@@ -42,9 +42,19 @@ echo "last verified commit recorded: $last_verified"
 
 recorded_base=$(sed -n 's/^- Base `origin\/main`: `\([^`]*\)`.*/\1/p' "$source_doc" 2>/dev/null | head -1)
 stale="YES"
+target_ref="HEAD"
 if [[ "$last_verified" != "UNAVAILABLE" ]] && git cat-file -e "$last_verified^{commit}" 2>/dev/null \
-  && [[ -n "$recorded_base" ]] && [[ "$recorded_base" == "$origin_main" ]]; then
-  stale="NO"
+  && [[ -n "$recorded_base" ]] && git cat-file -e "$recorded_base^{commit}" 2>/dev/null; then
+  if git merge-base --is-ancestor "$last_verified" "$target_ref" 2>/dev/null; then
+    if git merge-base --is-ancestor "$recorded_base" "$target_ref" 2>/dev/null \
+       || git merge-base --is-ancestor "$target_ref" "$recorded_base" 2>/dev/null; then
+      if [[ -z "$origin_main" ]] \
+         || git merge-base --is-ancestor "$recorded_base" "$origin_main" 2>/dev/null \
+         || git merge-base --is-ancestor "$origin_main" "$recorded_base" 2>/dev/null; then
+        stale="NO"
+      fi
+    fi
+  fi
 fi
 echo "canonical memory appears stale: $stale"
 

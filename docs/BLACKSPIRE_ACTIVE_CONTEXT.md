@@ -1,6 +1,6 @@
 # Blackspire Active Context
 
-Last reconciled: 2026-07-22 UTC. Current `origin/main` is `588ea6e1156d7d39e7f8a5a7bde44f8c4e519807`, the merge commit for independently reviewed PR #30 (deterministic test discovery, trusted-inventory contract, root-Vercel boundary); the prior PR #28 merge remains `691973870e0048f273fa7e9251d7f78776e3612b` and historical PR #26 merge evidence remains `a9602496c0c0f3f50e62b63aeedfb348fa5da857`. All three merges cover repository readiness only. `READY_FOR_HOST_SIDE_READINESS_WORK: yes`; `READY_FOR_VPS_PRODUCTION_DEPLOYMENT: no`.
+Last reconciled: 2026-07-24 UTC. Current `origin/main` is `693fb03e4596d26e990f87a40508307810cc5e5d`, the merge commit for independently reviewed PR #35 (absolute Node interpreter pinning across production startup, systemd unit Environment=BLACKSPIRE_NODE_BIN, host-interpreter verification, and strict production preflight); the prior PR #34 merge remains `14509f22f07a761bbd7314416287faf6710cfc39`, the PR #32 merge remains `2428f06769c34990f333c95da9937e6b9c936339`, and the PR #30 merge remains `588ea6e1156d7d39e7f8a5a7bde44f8c4e519807`. `READY_FOR_HOST_SIDE_READINESS_WORK: yes`; `READY_FOR_VPS_PRODUCTION_DEPLOYMENT: no`.
 
 Blackspire currently has two distinct surfaces: the Vercel-hosted Next.js public frontend and the root Node.js Blackspire Command control plane. Command includes Jarvis, Hermes orchestration, Telegram bridge code, deterministic policy/approvals, workspace and budget controls, evidence/audit, emergency controls, workers/providers, and SQLite persistence.
 

@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-24 — PR #35 merged into main and durable living memory ancestry containment implemented
+
+- Reviewed PR #35 was independently verified (0 Critical, 0 High, 0 Medium) and merged into `main` with a true history-preserving merge commit `693fb03e4596d26e990f87a40508307810cc5e5d` (parents `14509f22f07a761bbd7314416287faf6710cfc39` base and `aa2a9cb132d34d45f9453d914f121afb61475b41` head). Absolute Node 22.23.1 interpreter pinning is enforced across all production startup paths, systemd unit Environment=BLACKSPIRE_NODE_BIN, host-interpreter verification, and strict production preflight.
+- Living memory validation (`scripts/check-living-memory.sh`) was upgraded from exact SHA equality to durable fail-closed ancestry containment (`git merge-base --is-ancestor`), resolving the recurring exact-SHA drift mechanism where merging a reviewed PR caused living-memory checks to fail. Valid reviewed merge ancestry passes, while unreviewed history divergence, missing commits, and rewritten history fail closed.
+- Added comprehensive regression tests in `tests/living-memory-ancestry.test.js` covering clean reviewed repository ancestry, missing commit failure, and unreviewed history divergence failure.
+- Full validation under Node 22.23.1 passed: complete test suite, build, lint, typecheck, secret scan, audit, living memory check, strict production preflight, and git diff check all clean.
+- Host state was read-only and unchanged throughout: ports 8787 and 8788, API/worker/staging PIDs and uptimes, staging health (HTTP 200), public preview health (HTTP 200), production service disabled/inactive, no production current symlink, environment file, or database. Providers remain manual, Hermes disabled, Telegram dry-run, no funds moved. Production changed: no.
+
 ## 2026-07-23 — PR #35 closed the complete review set: three Medium and six Low findings together
 
 - The independent exact-head review of `b5ff382` returned 0 Critical, 0 High, 3 Medium, 6 Low with `SAFE_TO_MARK_PR_35_READY: yes`, confirming the ExecStartPre blocker and the systemd startup-path class were genuinely closed. Rather than merge with known Mediums outstanding, all three Mediums and all six Lows were corrected together so Gate 4 is not retried against a partially closed contract.
