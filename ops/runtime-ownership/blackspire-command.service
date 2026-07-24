@@ -27,11 +27,34 @@ WorkingDirectory=/opt/blackspire-command/current
 # Secrets live outside Git in a 0640 root:blackspire file; values never appear in the repo.
 EnvironmentFile=/etc/blackspire/command.env
 
+# Pinned PATH. systemd's manager PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+# and excludes /opt/nodejs, so any helper resolving `node` through PATH would silently get the
+# distribution's Node 18, which lacks node:sqlite. The reviewed interpreter directory is placed
+# first so no PATH-resolved lookup inside ExecStartPre can reach /usr/bin/node. The helpers also
+# resolve the interpreter themselves via scripts/lib/node-bin.sh, so this is defense in depth
+# rather than the only guard.
+Environment=PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
+
+# Pin the interpreter the helpers resolve, so ExecStartPre validates exactly the binary ExecStart
+# runs. This is declared AFTER EnvironmentFile on purpose: systemd applies these in file order, so
+# the reviewed value overrides anything the operator-managed /etc/blackspire/command.env sets.
+# Without it, a BLACKSPIRE_NODE_BIN entry in that file would make the preflight verify one
+# interpreter while the supervisor ran another. scripts/lib/node-bin.sh additionally refuses any
+# substitution under BLACKSPIRE_STATE_OWNER=vps-production, so this is enforced on both sides.
+Environment=BLACKSPIRE_NODE_BIN=/opt/nodejs/node-v22.23.1-linux-x64/bin/node
+
 # Verify the environment profile before starting; this also enforces the loopback-only
 # BIND_HOST, the explicit non-conflicting PORT, and read-only port-conflict detection. The
 # supervisor re-verifies both at runtime and fails closed on an occupied port.
 ExecStartPre=/usr/bin/env bash scripts/verify-environment.sh vps-production
-ExecStart=/usr/bin/env node scripts/production-supervisor.js
+# The interpreter is pinned to an absolute path on purpose. systemd's manager PATH is
+# /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin and does NOT include /opt/nodejs,
+# so `/usr/bin/env node` resolves to the distribution's /usr/bin/node (18.x on this host). The
+# control plane requires node:sqlite (packages/task-engine/db.js, scripts/backup.js,
+# scripts/restore.js), which does not exist before Node 22.5, so an unpinned unit fails every
+# start, exhausts StartLimitBurst, and leaves the unit failed. The restricted staging unit
+# already pins this same absolute path; production must match it.
+ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node scripts/production-supervisor.js
 
 # --- Restart policy: cap at five attempts in ten minutes, then stop for operator review ---
 # (StartLimitIntervalSec/StartLimitBurst live in [Unit] above — that is where systemd reads them.)

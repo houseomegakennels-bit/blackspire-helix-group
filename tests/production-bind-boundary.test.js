@@ -839,6 +839,170 @@ test('the systemd unit runs the preflight and the supervisor, and documents the 
   assert.match(unit, /8788/, 'the unit must document that restricted staging keeps 8788');
 });
 
+test('the systemd unit pins an absolute Node interpreter that satisfies the node:sqlite requirement', () => {
+  // systemd's manager PATH does not include /opt/nodejs, so `/usr/bin/env node` resolves to the
+  // distribution node (18.x on the durable VPS). The control plane imports node:sqlite, which does
+  // not exist before Node 22.5, so an unpinned ExecStart fails every start and exhausts
+  // StartLimitBurst. This asserts the unit names the interpreter absolutely and that the pinned
+  // version still matches the repository's own Node pin.
+  const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const execStart = unit.match(/^ExecStart=(\S+)/m);
+  assert.ok(execStart, 'the unit must declare ExecStart');
+  const interpreter = execStart[1];
+  assert.ok(interpreter.startsWith('/'), 'ExecStart must name the interpreter by absolute path');
+  assert.doesNotMatch(unit, /^ExecStart=\/usr\/bin\/env\s+node\b/m, 'ExecStart must not resolve node through PATH');
+  assert.doesNotMatch(interpreter, /^\/usr\/bin\/node$/, 'ExecStart must not use the distribution node');
+
+  const pinned = fs.readFileSync('.node-version', 'utf8').trim();
+  assert.ok(interpreter.includes(pinned), `ExecStart must run the pinned Node ${pinned}, got ${interpreter}`);
+
+  const [major, minor] = pinned.split('.').map(Number);
+  assert.ok(major > 22 || (major === 22 && minor >= 5), `the pinned Node ${pinned} must provide node:sqlite`);
+});
+
+test('the systemd unit pins PATH so no startup helper can resolve the distribution node', () => {
+  // ExecStartPre runs bash, which resolves `node` through PATH. systemd's manager PATH excludes
+  // /opt/nodejs, so without a pinned PATH the preflight would validate /usr/bin/node (18.x) while
+  // ExecStart runs the pinned 22.x interpreter -- validating a different binary than it runs.
+  const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const pathLine = unit.match(/^Environment=PATH=(\S+)/m);
+  assert.ok(pathLine, 'the unit must pin PATH for its startup helpers');
+  const execStart = unit.match(/^ExecStart=(\S+)/m);
+  assert.ok(execStart, 'the unit must declare ExecStart');
+  const nodeDirectory = path.dirname(execStart[1]);
+  assert.equal(pathLine[1].split(':')[0], nodeDirectory, 'the pinned interpreter directory must come first on PATH');
+  assert.equal(pathLine[1].split(':').includes('/usr/sbin'), false, 'the pinned PATH must stay minimal');
+});
+
+test('every production startup-path script resolves Node deterministically, never through PATH', () => {
+  // A bare `node` in any of these silently becomes the distribution's Node 18 under systemd.
+  const scripts = [
+    'scripts/verify-environment.sh',
+    'scripts/start-production.sh',
+    'scripts/health-check.sh',
+    'scripts/with-node.sh',
+    'ops/blackspire-command-healthcheck.sh',
+    'ops/runtime-ownership/verify-ownership.sh',
+  ];
+  for (const relative of scripts) {
+    const body = fs.readFileSync(relative, 'utf8');
+    assert.match(body, /node-bin\.sh/, `${relative} must source the shared Node resolver`);
+    body.split('\n').forEach((line, index) => {
+      if (/^\s*#/.test(line)) return;
+      for (const pattern of [/(^|[^\w./$"'-])node\s+(-|--|<|scripts\/|apps\/)/, /\benv\s+node\b/, /command\s+-v\s+node/, /\bwhich\s+node\b/]) {
+        assert.doesNotMatch(line, pattern, `${relative}:${index + 1} must not resolve node through PATH`);
+      }
+    });
+  }
+});
+
+// The resolver is exercised as a program rather than asserted as source text, so a cosmetic
+// reformat cannot false-fail and a real behavioural regression cannot pass unnoticed.
+function resolveNode(environment) {
+  return spawnSync('bash', ['-c', '. scripts/lib/node-bin.sh; blackspire_resolve_node'], {
+    encoding: 'utf8',
+    env: { ...process.env, ...environment },
+  });
+}
+
+function stubInterpreter(directory, name, output) {
+  const file = path.join(directory, name);
+  fs.writeFileSync(file, `#!/bin/sh\n${output}\n`);
+  fs.chmodSync(file, 0o755);
+  return file;
+}
+
+test('the shared Node resolver accepts only a real interpreter at or above the node:sqlite floor', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-resolver-'));
+  try {
+    const ok = resolveNode({ BLACKSPIRE_STATE_OWNER: '' });
+    assert.equal(ok.status, 0, 'the reviewed interpreter must resolve');
+    assert.match(ok.stdout.trim(), /node$/, 'the resolver must print the interpreter path');
+
+    // Exit status alone is not evidence: /bin/true exits 0 and is not an interpreter.
+    const nonInterpreter = resolveNode({ BLACKSPIRE_NODE_BIN: '/bin/true', BLACKSPIRE_STATE_OWNER: '' });
+    assert.equal(nonInterpreter.status, 1, '/bin/true must be rejected');
+
+    const malformed = stubInterpreter(directory, 'garbage', 'echo not-a-version');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: malformed, BLACKSPIRE_STATE_OWNER: '' }).status, 1,
+      'malformed version output must be rejected');
+
+    const silent = stubInterpreter(directory, 'silent', 'exit 0');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: silent, BLACKSPIRE_STATE_OWNER: '' }).status, 1,
+      'empty version output must be rejected');
+
+    const belowFloor = stubInterpreter(directory, 'old', 'echo v22.4.0');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: belowFloor, BLACKSPIRE_STATE_OWNER: '' }).status, 1,
+      'an interpreter below 22.5 must be rejected');
+
+    const atFloor = stubInterpreter(directory, 'floor', 'echo v22.5.0');
+    assert.equal(resolveNode({ BLACKSPIRE_NODE_BIN: atFloor, BLACKSPIRE_STATE_OWNER: '' }).status, 0,
+      'the floor itself must be accepted outside production');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('the resolver refuses any interpreter substitution under vps-production', () => {
+  // /etc/blackspire/command.env is operator-managed and outside git. Without this rule an entry
+  // there could make the ExecStartPre helpers validate one binary while ExecStart runs another.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-resolver-prod-'));
+  try {
+    // The rule engages where the reviewed interpreter is installed, so the test provides one. This
+    // exercises the invariant deterministically on any host, including CI runners with no /opt/nodejs.
+    const reviewed = stubInterpreter(directory, 'reviewed', 'echo v22.23.1');
+    const impostor = stubInterpreter(directory, 'impostor', 'echo v22.23.9');
+    const onReviewedHost = { BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: reviewed };
+
+    const substituted = resolveNode({ ...onReviewedHost, BLACKSPIRE_NODE_BIN: impostor });
+    assert.equal(substituted.status, 1, 'a foreign BLACKSPIRE_NODE_BIN must be refused under vps-production');
+    assert.match(substituted.stderr, /may not substitute/);
+
+    const matching = resolveNode({ ...onReviewedHost, BLACKSPIRE_NODE_BIN: reviewed });
+    assert.equal(matching.status, 0, 'the reviewed interpreter itself must be accepted');
+
+    const wrongVersion = resolveNode({ BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: impostor });
+    assert.equal(wrongVersion.status, 1, 'production must require the exact reviewed version');
+
+    // The production rule binds where the reviewed interpreter is installed. Off that host -- CI
+    // runners and development images -- resolution proceeds, but the floor is still enforced, so a
+    // Node that cannot run the product is rejected regardless of the declared owner.
+    const offHost = { BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: '/nonexistent/node' };
+    assert.equal(resolveNode(offHost).status, 0, 'a host without the reviewed interpreter must still resolve');
+    assert.equal(resolveNode({ ...offHost, BLACKSPIRE_NODE_BIN: '/usr/bin/node' }).status, 1,
+      'the node:sqlite floor must still reject Node 18 off the reviewed host');
+    assert.equal(resolveNode({ ...offHost, BLACKSPIRE_NODE_BIN: '/bin/true' }).status, 1,
+      'a non-interpreter must still be rejected off the reviewed host');
+    const optIn = resolveNode({ ...offHost, BLACKSPIRE_REQUIRE_REVIEWED_NODE: '1' });
+    assert.equal(optIn.status, 1, 'BLACKSPIRE_REQUIRE_REVIEWED_NODE must refuse PATH resolution outright');
+    assert.match(optIn.stderr, /PATH lookup is refused/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('the unit pins the same interpreter the helpers resolve, after the operator EnvironmentFile', () => {
+  const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const execStart = unit.match(/^ExecStart=(\S+)/m);
+  const pinned = unit.match(/^Environment=BLACKSPIRE_NODE_BIN=(\S+)$/m);
+  assert.ok(execStart, 'the unit must declare ExecStart');
+  assert.ok(pinned, 'the unit must pin BLACKSPIRE_NODE_BIN so ExecStartPre validates what ExecStart runs');
+  assert.equal(pinned[1], execStart[1], 'the pinned interpreter and ExecStart must be the same binary');
+  // systemd applies Environment= and EnvironmentFile= in file order, so the reviewed value must be
+  // declared after the operator-managed file to take precedence over it.
+  assert.ok(unit.indexOf('Environment=BLACKSPIRE_NODE_BIN=') > unit.indexOf('EnvironmentFile='),
+    'the pinned interpreter must be declared after EnvironmentFile to override it');
+});
+
+test('activation package scripts never resolve Node through PATH', () => {
+  const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  for (const name of ['db:migrate', 'db:backup', 'db:restore', 'start:production']) {
+    const command = manifest.scripts[name];
+    assert.ok(command, `${name} must exist`);
+    assert.doesNotMatch(command, /(^|[^\w./$"'-])node\s/, `${name} must not invoke a PATH-resolved node`);
+  }
+});
+
 test('the approved production profile pins loopback and an explicit non-conflicting port', () => {
   const profile = fs.readFileSync('scripts/production-profile.env.example', 'utf8');
   assert.match(profile, /^BIND_HOST=127\.0\.0\.1$/m);
@@ -846,6 +1010,56 @@ test('the approved production profile pins loopback and an explicit non-conflict
   assert.ok(port, 'the profile must set an explicit port');
   assert.equal(PROTECTED_PORTS.includes(Number(port[1])), false, 'the profile must not use a protected port');
   assert.equal(port[1], '8789');
+});
+
+test('the production preflight passes the source contract and is machine-readable', () => {
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js', '--json'], { encoding: 'utf8' });
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.sourceFailed, 0, `source contract must hold: ${JSON.stringify(report.findings.filter((f) => !f.ok && f.class === 'source'))}`);
+  assert.ok(report.checked >= 15, 'the preflight must cover the whole source contract');
+  assert.equal(result.status, 0, 'the preflight must exit zero when the source contract holds');
+  // The installed-unit drift check is deployment-class, so host state never fails the source run.
+  assert.ok(report.findings.some((finding) => finding.id === 'installed-unit' && finding.class === 'deployment'));
+});
+
+test('the production preflight is read-only and exposes no secret values', () => {
+  const body = fs.readFileSync('scripts/production-preflight-check.js', 'utf8');
+  for (const forbidden of ['execSync', 'spawnSync', 'spawn(', 'writeFileSync', 'mkdirSync', 'rmSync', 'unlinkSync', 'symlinkSync', 'chmodSync', 'chownSync']) {
+    assert.equal(body.includes(forbidden), false, `the preflight must never call ${forbidden}`);
+  }
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js'], { encoding: 'utf8' });
+  assert.doesNotMatch(result.stdout, /SESSION_SECRET=|COMMAND_ADMIN_TOKEN=\S/, 'the preflight must never print secret values');
+});
+
+test('the production preflight discovers scripts rather than trusting a hardcoded list', () => {
+  const body = fs.readFileSync('scripts/production-preflight-check.js', 'utf8');
+  assert.match(body, /readdirSync/, 'the preflight must discover shell scripts on disk');
+  assert.match(body, /DEVELOPMENT_ONLY_SCRIPTS/, 'exclusions must be explicit and documented');
+  // Indirect lookups must be detected, not just a bare `node` invocation.
+  for (const indirect of ['command\\s+-v\\s+node', 'which\\s+node', 'env\\s+node']) {
+    assert.ok(body.includes(indirect.replace(/\\\\s\+/g, '\\s+')) || new RegExp(indirect).test(body),
+      `the preflight must detect the indirect pattern ${indirect}`);
+  }
+});
+
+test('the production preflight checks the pinned interpreter exists on the host', () => {
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js', '--json'], { encoding: 'utf8' });
+  const report = JSON.parse(result.stdout);
+  const interpreter = report.findings.find((finding) => finding.id === 'host-interpreter');
+  assert.ok(interpreter, 'the preflight must verify the pinned interpreter on the host');
+  assert.equal(interpreter.class, 'deployment', 'host interpreter presence is host state, not a source defect');
+  const tooling = report.findings.find((finding) => finding.id === 'activation-tooling');
+  assert.match(tooling.detail, /non-empty/, 'zero-byte tooling must be treated as missing');
+  const packageScripts = report.findings.find((finding) => finding.id === 'package-scripts-pinned');
+  assert.ok(packageScripts, 'activation package scripts must be covered');
+});
+
+test('the production preflight detects a stale installed unit as a deployment finding', () => {
+  const result = spawnSync(process.execPath, ['scripts/production-preflight-check.js', '--json'], { encoding: 'utf8' });
+  const report = JSON.parse(result.stdout);
+  const installed = report.findings.find((finding) => finding.id === 'installed-unit');
+  assert.ok(installed, 'the preflight must report installed-unit drift');
+  assert.equal(installed.class, 'deployment', 'installed-unit drift is a deployment follow-up, not a source defect');
 });
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));

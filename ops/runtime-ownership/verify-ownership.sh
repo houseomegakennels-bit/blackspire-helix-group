@@ -8,7 +8,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-node --input-type=module <<'NODE'
+# shellcheck source=../../scripts/lib/node-bin.sh
+. scripts/lib/node-bin.sh
+node_bin="$(blackspire_resolve_node)" || { echo 'ownership verification requires Node 22.5 or newer' >&2; exit 1; }
+
+"$node_bin" --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

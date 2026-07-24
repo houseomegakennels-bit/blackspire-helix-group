@@ -11,4 +11,9 @@ else
   [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || { echo 'healthcheck PORT must be an explicit decimal integer' >&2; exit 2; }
   base_url="http://${host}:${port}"
 fi
-curl --fail --silent --show-error --max-time "${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-5}" "$base_url/health" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const b=JSON.parse(s);if(b.ok!==true||b.service!=='blackspire-command-api'||b.telegramMode==='polling')process.exit(1)})"
+# The interpreter is resolved deterministically: this runs from monitoring and timer contexts whose
+# PATH does not include /opt/nodejs, where a bare `node` would be the distribution's Node 18.
+# shellcheck source=../scripts/lib/node-bin.sh
+. "$(dirname "${BASH_SOURCE[0]}")/../scripts/lib/node-bin.sh"
+node_bin="$(blackspire_resolve_node)" || { echo 'healthcheck requires Node 22.5 or newer' >&2; exit 2; }
+curl --fail --silent --show-error --max-time "${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-5}" "$base_url/health" | "$node_bin" -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const b=JSON.parse(s);if(b.ok!==true||b.service!=='blackspire-command-api'||b.telegramMode==='polling')process.exit(1)})"
