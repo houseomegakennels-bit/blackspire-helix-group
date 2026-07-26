@@ -1,5 +1,11 @@
 # Blackspire Decisions
 
+## 2026-07-26
+
+- PR #36 (`fix/durable-living-memory-ancestry`) is merged into `main` as `6f40a4443f498e77a8a2ee1e17be6da4a4837e67` (parents: base `693fb03e4596d26e990f87a40508307810cc5e5d`, reviewed head `bb727976c47eb430af1587c3f361864aaa7d15f4`), merged 2026-07-26T00:36:23Z. An independent exact-head review approved the fail-closed living-memory ancestry containment checker and its adversarial test coverage with zero findings; GitHub CI and Vercel checks passed at the exact reviewed head. The living-memory implementation is now on trusted `origin/main`.
+- Immutable-release creation was intentionally stopped after the PR #36 merge because canonical memory (`docs/BLACKSPIRE_*.md`) had not yet been refreshed to record the new trusted `origin/main`; building a release from stale canonical memory would ship an inaccurate record inside the immutable artifact. No release was created. This refresh corrects that gap; it is a documentation-only change and authorizes no release build, PR ready-marking, merge, or production action.
+- Staging and nginx recovered from the outage root-caused to the 2026-07-24 10:03 UTC mass service-kill: both are healthy again as of 2026-07-26, with staging and public preview returning HTTP 200. Production remained disabled/inactive and unchanged throughout, and port 8787 was untouched. The nginx restart-policy and staging clean-exit resilience gap this outage exposed is recorded as a separate future reliability task, not folded into PR #36. Issue #33 remains separate.
+
 ## 2026-07-24
 
 - PR #35 is merged into `main` (`693fb03e4596d26e990f87a40508307810cc5e5d`): Node interpreter pinning is enforced across all production startup paths, systemd unit Environment=BLACKSPIRE_NODE_BIN, host-interpreter verification, and strict production preflight.
