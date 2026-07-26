@@ -128,21 +128,36 @@ for alternates_path in "$git_dir/objects/info/alternates" "$common_dir/objects/i
   fi
 done
 
+# The canonical-memory Markdown allowlist. These are the ONLY paths a commit descending from the
+# verified implementation anchor may touch without invalidating the anchor. This list is
+# intentionally narrow: it names exact files, never a directory wildcard such as docs/**.
+readonly -a CANONICAL_MEMORY_NAMES=(
+  BLACKSPIRE_SOURCE_OF_TRUTH.md
+  BLACKSPIRE_ACTIVE_CONTEXT.md
+  BLACKSPIRE_NEXT_ACTIONS.md
+  BLACKSPIRE_DECISIONS.md
+  BLACKSPIRE_SESSION_LOG.md
+  BLACKSPIRE_MEMORY_MAINTENANCE.md
+)
+declare -A CANONICAL_MEMORY_ALLOWLIST=()
+for memory_name in "${CANONICAL_MEMORY_NAMES[@]}"; do
+  CANONICAL_MEMORY_ALLOWLIST["docs/$memory_name"]=1
+done
+
 source_doc="$repo_root/docs/BLACKSPIRE_SOURCE_OF_TRUTH.md"
 [[ -f "$source_doc" && ! -L "$source_doc" ]] \
   || fail SOURCE_DOCUMENT_UNAVAILABLE 'canonical source document is missing, non-regular, or symlinked'
 
-mapfile -t recorded_base_lines < <(
-  /usr/bin/sed -n 's/^- Base `origin\/main`: `\([^`]*\)`.*/\1/p' "$source_doc"
-)
+# The recorded value is the VERIFIED IMPLEMENTATION ANCHOR: the most recently independently
+# reviewed implementation-bearing commit. It is deliberately NOT required to equal current trusted
+# origin/main -- a documentation commit that advances main would otherwise make its own recorded
+# value stale the instant it merges, producing an endless self-invalidating loop. Containment of
+# everything between the anchor and current trusted main is instead proven below.
 mapfile -t reviewed_commit_lines < <(
   /usr/bin/sed -n 's/^- Last verified implementation commit: `\([^`]*\)`.*/\1/p' "$source_doc"
 )
-(( ${#recorded_base_lines[@]} == 1 )) \
-  || fail INVALID_RECORDED_BASE 'exactly one Base origin/main value is required'
 (( ${#reviewed_commit_lines[@]} == 1 )) \
   || fail INVALID_RECORDED_COMMIT 'exactly one last verified implementation commit is required'
-recorded_base="${recorded_base_lines[0]}"
 reviewed_commit="${reviewed_commit_lines[0]}"
 
 git_capture object_format 'read repository object format' rev-parse --show-object-format
@@ -153,8 +168,6 @@ case "$object_format" in
 esac
 
 # SECURITY_CHECK: canonical-object-id
-[[ "$recorded_base" =~ $object_id_pattern ]] \
-  || fail INVALID_RECORDED_BASE "value is not a canonical full $object_format object ID"
 [[ "$reviewed_commit" =~ $object_id_pattern ]] \
   || fail INVALID_RECORDED_COMMIT "value is not a canonical full $object_format object ID"
 
@@ -167,9 +180,6 @@ if (( trusted_main_status == 1 || trusted_main_status == 128 )); then
 elif (( trusted_main_status != 0 )); then
   fail GIT_OPERATION_FAILED "resolve $TRUSTED_MAIN_REF exited $trusted_main_status"
 fi
-# SECURITY_CHECK: trusted-main-equality
-[[ "$trusted_main_commit" == "$recorded_base" ]] \
-  || fail TRUSTED_MAIN_MISMATCH 'recorded Base origin/main does not equal the trusted remote-tracking ref'
 
 verify_commit_object() {
   local object_id="$1"
@@ -212,6 +222,56 @@ elif (( ancestry_status != 0 )); then
   fail GIT_OPERATION_FAILED "ancestry verification exited $ancestry_status"
 fi
 
+# Everything from the verified implementation anchor to current trusted origin/main must either be
+# nothing (exact match) or must touch only the canonical-memory allowlist. This is a direct
+# two-tree comparison (anchor tree vs. trusted-main tree), not a per-commit or first-parent log
+# walk, so it reflects the true net content difference regardless of how many commits, merges, or
+# merge parents produced it -- a merge cannot hide a source change behind a docs-only first parent,
+# because the comparison is against the final tree, not any one parent's history.
+if [[ "$reviewed_commit" == "$trusted_main_commit" ]]; then
+  descendant_reason='EXACT_ANCHOR_MATCH'
+else
+  # NUL-delimited output cannot survive a $(...) command substitution (bash truncates/mangles it
+  # as a C string), so it is routed through a bounded temporary file instead.
+  diff_tmp=$(/usr/bin/mktemp) || fail GIT_OPERATION_FAILED 'failed to create temporary diff file'
+  "${git_command[@]}" diff --no-renames --name-status -z "$reviewed_commit" "$trusted_main_commit" \
+    > "$diff_tmp"
+  diff_status=$?
+  if (( diff_status != 0 )); then
+    /usr/bin/rm -f "$diff_tmp"
+    fail GIT_OPERATION_FAILED "compute anchor-to-main containment diff exited $diff_status"
+  fi
+
+  non_allowlisted=''
+  if [[ -s "$diff_tmp" ]]; then
+    mapfile -d '' -t diff_fields < "$diff_tmp"
+    diff_field_count=${#diff_fields[@]}
+    if (( diff_field_count % 2 != 0 )); then
+      /usr/bin/rm -f "$diff_tmp"
+      fail GIT_OPERATION_FAILED 'anchor-to-main containment diff produced malformed output'
+    fi
+    diff_index=0
+    while (( diff_index < diff_field_count )); do
+      diff_status_code="${diff_fields[diff_index]}"
+      diff_path="${diff_fields[diff_index + 1]}"
+      diff_index=$(( diff_index + 2 ))
+      # SECURITY_CHECK: docs-only-descendant
+      if [[ -z "${CANONICAL_MEMORY_ALLOWLIST[$diff_path]+set}" ]]; then
+        non_allowlisted+="${diff_status_code} ${diff_path}"$'\n'
+      fi
+    done
+  fi
+  /usr/bin/rm -f "$diff_tmp"
+
+  if [[ -n "$non_allowlisted" ]]; then
+    printf 'non-allowlisted changes since the verified implementation anchor:\n' >&2
+    printf '%s' "$non_allowlisted" | /usr/bin/sed 's/^/  /' >&2
+    fail UNREVIEWED_NON_DOCUMENTATION_CHANGE \
+      'trusted origin/main contains changes outside the canonical-memory allowlist since the verified implementation anchor; a new reviewed implementation anchor is required'
+  fi
+  descendant_reason='CANONICAL_MEMORY_ONLY_DESCENDANT'
+fi
+
 git_capture branch 'read branch name' branch --show-current
 git_capture head_commit 'read HEAD' rev-parse --verify HEAD
 git_capture dirty 'read working-tree status' status --porcelain=v1
@@ -221,6 +281,7 @@ printf 'branch: %s\n' "${branch:-DETACHED}"
 printf 'HEAD: %s\n' "$head_commit"
 printf 'trusted origin/main: %s\n' "$trusted_main_commit"
 printf 'recorded reviewed ancestor: %s\n' "$reviewed_commit"
+printf 'anchor-to-main containment: %s\n' "$descendant_reason"
 if [[ -n "$dirty" ]]; then
   printf 'working tree: DIRTY\n'
 else
@@ -243,14 +304,7 @@ fi
 printf 'protected credential paths tracked: NO\n'
 
 memory_files=()
-for memory_name in \
-  BLACKSPIRE_SOURCE_OF_TRUTH.md \
-  BLACKSPIRE_ACTIVE_CONTEXT.md \
-  BLACKSPIRE_NEXT_ACTIONS.md \
-  BLACKSPIRE_DECISIONS.md \
-  BLACKSPIRE_SESSION_LOG.md \
-  BLACKSPIRE_MEMORY_MAINTENANCE.md
-do
+for memory_name in "${CANONICAL_MEMORY_NAMES[@]}"; do
   memory_path="$repo_root/docs/$memory_name"
   [[ -f "$memory_path" && ! -L "$memory_path" ]] \
     || fail SOURCE_DOCUMENT_UNAVAILABLE "$memory_name is missing, non-regular, or symlinked"
