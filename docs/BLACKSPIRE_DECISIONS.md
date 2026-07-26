@@ -1,5 +1,10 @@
 # Blackspire Decisions
 
+## 2026-07-24
+
+- PR #35 is merged into `main` (`693fb03e4596d26e990f87a40508307810cc5e5d`): Node interpreter pinning is enforced across all production startup paths, systemd unit Environment=BLACKSPIRE_NODE_BIN, host-interpreter verification, and strict production preflight.
+- Living memory validation (`scripts/check-living-memory.sh`) proves one exact direction only: the canonical full object ID recorded as the reviewed ancestor must be contained by the canonical full object ID at trusted `refs/remotes/origin/main`. The checker binds to its physical repository, the exact Blackspire origin URL and conventional fetch refspec, the exact remote-tracking ref, `/usr/bin/git`, a sanitized Git environment/configuration, complete non-shallow/non-partial history, and replacement/graft/alternate-free object storage. Missing refs/objects, Git operational errors, reverse/divergent/unrelated/orphaned/rewritten history, symbolic or expression revisions, and hostile repository/PATH/Git/config inputs fail with named diagnostics. These corrected local behaviors are proven by 47 disposable tests. A later correction session reran every gate a prior launcher had left unverified (focused production-bind-boundary, full suite, build/lint/typecheck/security-scan/audit, source preflight, `git diff --check`) and all passed; strict-host preflight's real-host `installed-unit` deployment check remains separately out of scope for this sandbox. PR #36 has a local correction commit on `pr36-final-corrections-7a4fbc81`; it remains draft and is not yet pushed.
+
 ## 2026-07-23
 
 - The production listener binds loopback only. `vps-production` requires `BIND_HOST=127.0.0.1` and rejects wildcard (`0.0.0.0`, `::`, `*`), unspecified, and non-loopback addresses. The production application port is private and is never opened publicly; the reverse proxy is the only public surface.
