@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-26 — Implementation-anchor refresh after PR #38 merge
+
+- Recovered exact state on branch `docs/refresh-implementation-anchor-after-pr38` at HEAD `ce6dcecf5335233656392248a67326a2524521ea`, matching `origin/main`; working tree clean; no competing branch, draft PR, or duplicate work found for this branch name. `gh pr view 38` confirmed PR #38 `MERGED` with `headRefOid` `bc5a817231c1a325f31a112e256425140bbbf073` and `mergeCommit.oid` `ce6dcecf5335233656392248a67326a2524521ea`. `git diff --name-status bc5a817231c1a325f31a112e256425140bbbf073 ce6dcecf5335233656392248a67326a2524521ea` produced no changed paths, confirming the reviewed head's tree is identical to the merge commit's tree.
+- Ran `bash scripts/check-living-memory.sh` before editing and reproduced the expected failure: `UNREVIEWED_NON_DOCUMENTATION_CHANGE`, listing `scripts/check-living-memory.sh` and `tests/living-memory-ancestry.test.js` as non-allowlisted changes since the then-recorded anchor (PR #36's `bb727976c47eb430af1587c3f361864aaa7d15f4`). This confirmed the refresh was required and is not the former self-invalidating main-equality design.
+- Updated the verified implementation anchor in `docs/BLACKSPIRE_SOURCE_OF_TRUTH.md`, `docs/BLACKSPIRE_ACTIVE_CONTEXT.md`, `docs/BLACKSPIRE_NEXT_ACTIONS.md`, and `docs/BLACKSPIRE_DECISIONS.md` to PR #38's independently reviewed head `bc5a817231c1a325f31a112e256425140bbbf073`, contained by PR #38's merge/current trusted-main snapshot `ce6dcecf5335233656392248a67326a2524521ea`. Historical PR #35/#36/#37 identities were preserved unchanged as historical record, not globally replaced.
+- No release was built, no PR was marked ready or merged, and no service, staging, or production state was touched as part of this refresh.
+
 ## 2026-07-26 — Interrupted session recovered; docs-only descendant policy independently re-validated
 
 - Resumed after an interruption. Recovery inspection (`git rev-parse HEAD`, `git status --short`, `git log`, `git diff --stat`, `gh pr list`) found the prior session's work already complete and pushed: commit `d39c0f61ad29654f95ab45fa5cc819d3240a4196` on `fix/living-memory-docs-descendant-policy`, working tree clean, and draft PR #38 already open against `main` (`headRefOid` matching local HEAD, `mergeable: MERGEABLE`). No reset, rebase, or duplicate branch/PR was created; no work was redone.
