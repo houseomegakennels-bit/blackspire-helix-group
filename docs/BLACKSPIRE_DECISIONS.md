@@ -1,5 +1,15 @@
 # Blackspire Decisions
 
+## 2026-07-27 (production unit reinstall)
+
+- The installed production systemd unit is repaired by a **host-only** correction. No code or template change was needed: the reviewed `ops/runtime-ownership/blackspire-command.service` was already correct, and the installed copy was simply a stale 2026-07-21 snapshot predating PR #32's bind/port contract and PR #35's interpreter pinning.
+- "Installed unit differs from the reviewed template" understated the severity and should not be read as cosmetic drift. The stale unit declared `ExecStart=/usr/bin/env node`; systemd's manager PATH excludes `/opt/nodejs`, so it resolved `/usr/bin/node`, verified here as v18.19.1 without `node:sqlite`. Production would have failed every start and parked in failed state after five attempts. A preflight finding that reports only "differs" for a start-breaking defect is worth treating as high-signal.
+- The unit must be installed **verbatim**. `scripts/production-preflight-check.js` compares installed against template with exact string equality, so any local edit — including correcting the template's own "REVIEW TEMPLATE, NOT INSTALLED" header, which becomes inaccurate once installed — would keep the check failing. The header inaccuracy is accepted as cosmetic in exchange for a meaningful byte-exact contract.
+- Interpreter integrity is enforced on both sides and was verified by invoking the resolver, not by reading its source: `ExecStart` pins the absolute reviewed interpreter, and `ExecStartPre` → `scripts/verify-environment.sh` → `blackspire_resolve_node()` refuses any `BLACKSPIRE_NODE_BIN` substitution under `BLACKSPIRE_STATE_OWNER=vps-production`. An initial probe appeared to contradict this; the probe was invalid (sourcing the library only defines the function), and the claim held once the function was actually called.
+- Reviewed `Environment=` lines are declared **after** `EnvironmentFile=` on purpose, so the pinned `PATH` and `BLACKSPIRE_NODE_BIN` outrank the operator-managed `/etc/blackspire/command.env`. This ordering is part of the contract, not incidental.
+- Repairing the unit does not advance activation. The service stays `disabled`/`inactive`; `daemon-reload` was run and nothing was started, restarted, or enabled. Gate 4 remains unauthorized, and the production `current` symlink, environment file, and database remain absent.
+- Tracked, deliberately not repaired in this scope: `scripts/verify-environment.sh` does not validate `BLACKSPIRE_WORKSPACE_ROOT`, and `scripts/production-supervisor.js` does not import `packages/shared/config.js`. An invalid workspace root therefore passes `ExecStartPre` and fails only when the API/worker children load config — fail-closed, but as a restart loop instead of a clean preflight refusal. Fixing it changes the production preflight contract and needs its own scoped review.
+
 ## 2026-07-27 (workspace root)
 
 - PR #47 (`feat/configurable-workspace-root`) is merged into `origin/main` as `e55de773fe3e10e7b1352fd8b2b2b10b40063e87` (reviewed head `d11ac82f62e1bf44e716af7d58b6cd3d77115c30`), which becomes the verified implementation anchor.
