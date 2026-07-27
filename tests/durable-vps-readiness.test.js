@@ -73,9 +73,12 @@ test('WAL-safe backup and disposable restore preserve committed state and checks
   const dbDir = path.join(root, 'state');
   const backupDir = path.join(root, 'backups');
   const dbPath = path.join(dbDir, 'command.sqlite');
-  fs.mkdirSync(dbDir, { recursive: true });
+  // The restore contract now requires a genuine Blackspire schema (not just any openable SQLite
+  // file), so this fixture is migrated with the reviewed migration tooling rather than an ad-hoc table.
+  const migrated = run('scripts/migrate.js', [], { BLACKSPIRE_DB_PATH: dbPath, BLACKSPIRE_RUN_MIGRATIONS: 'true' });
+  assert.equal(migrated.status, 0, migrated.stderr);
   const db = new DatabaseSync(dbPath);
-  db.exec('PRAGMA journal_mode=WAL; CREATE TABLE evidence(id TEXT PRIMARY KEY, value TEXT); INSERT INTO evidence VALUES (\'one\', \'redacted\');');
+  db.exec("INSERT INTO system_flags(key, value, updated_at) VALUES ('one', 'redacted', '2026-01-01T00:00:00Z');");
   db.close();
   const backed = run('scripts/backup.js', [backupDir], { BLACKSPIRE_DB_PATH: dbPath });
   assert.equal(backed.status, 0, backed.stderr);
@@ -85,7 +88,7 @@ test('WAL-safe backup and disposable restore preserve committed state and checks
   const restoredResult = run('scripts/restore.js', [record.backup, restored], { BLACKSPIRE_DB_PATH: dbPath, NODE_ENV: 'test', BLACKSPIRE_DISPOSABLE_RESTORE: 'true' });
   assert.equal(restoredResult.status, 0, restoredResult.stderr);
   const check = new DatabaseSync(restored, { readOnly: true });
-  assert.equal(check.prepare('SELECT value FROM evidence WHERE id=?').get('one').value, 'redacted');
+  assert.equal(check.prepare('SELECT value FROM system_flags WHERE key=?').get('one').value, 'redacted');
   check.close();
   assert.match(fs.readFileSync(record.checksum, 'utf8'), /^[a-f0-9]{64}/);
 });
