@@ -34,7 +34,27 @@ Creation fails closed for symlinked root ancestors or destinations, path travers
 
 ## SQLite backup and restore
 
-Stop all database writers before production backup. Run `node scripts/backup.js <shared-backup-directory>`; it uses SQLite `VACUUM INTO` for a consistent WAL-aware snapshot, applies mode 0600, writes a SHA-256 sidecar, and runs `PRAGMA integrity_check`. Rehearse with `node scripts/restore.js <backup.sqlite> <disposable-target.sqlite>` only. The restore script refuses production mode and the configured live database path. Never copy only `command.sqlite` while WAL files may exist.
+Stop all database writers before production backup, so the snapshot is a deliberate, quiesced restore point. Run `node scripts/backup.js <shared-backup-directory>`; it uses SQLite `VACUUM INTO` for a consistent WAL-aware snapshot, applies mode 0600, writes a SHA-256 sidecar, and runs `PRAGMA integrity_check`. The snapshot is WAL-safe even when a writer connection is open and the WAL has not been checkpointed — Gate 3 proves a row committed into an uncheckpointed WAL is present after backup and restore — but that is a safety property, not a licence to skip the writer stop. Rehearse with `node scripts/restore.js <backup.sqlite> <disposable-target.sqlite>` only. Never copy only `command.sqlite` while WAL files may exist.
+
+`PRAGMA integrity_check` alone is **not** sufficient evidence that a file is a usable backup. SQLite treats an empty or zero-byte file as a valid, newly-created database with zero tables, so integrity passes on a snapshot that contains nothing. Both scripts therefore prove content independently of integrity, and both fail closed.
+
+Backup refuses to record a snapshot that could never be restored:
+
+- A source database containing no tables is refused before any artifact is written. A zero-byte or empty `command.sqlite` is never snapshotted.
+- After `VACUUM INTO`, the snapshot's table set is re-derived and compared against the source's, rather than trusting that `VACUUM INTO` reported success. A snapshot missing tables the source had is refused.
+- The source is deliberately **not** held to the current application schema. A backup taken immediately before a migration legitimately carries an older schema and must still be taken; enforcing the current Blackspire schema is the restore side's responsibility. Do not "fix" a pre-migration backup refusal by migrating first — take the backup, then migrate.
+- A refused backup leaves no artifact and no checksum sidecar behind.
+
+Restore proves the backup is a real Blackspire database before it publishes anything:
+
+- A zero-byte backup is rejected before SQLite is allowed to open it.
+- The backup is validated read-only against the required Blackspire schema (table and column completeness, via `packages/shared/schema-validation.js`) **before** any byte is written to the destination, and the copy is independently re-validated afterwards rather than trusting that the copy succeeded.
+- Publication is atomic: the copy is written to a uniquely named temporary file in the destination directory, fsynced, validated, then linked into place. An existing destination causes a refusal, never a silent overwrite, and is left byte-identical.
+- A missing or mismatched checksum sidecar, a symlinked backup or destination, a directory supplied as either, a truncated or corrupted file, and a partial/incomplete schema are all refused.
+- Every refusal leaves no restored target and no temporary artifact, and never modifies the source backup.
+- Restore additionally refuses production mode (absent an explicit disposable flag) and the configured live database path.
+
+The single required-schema contract lives in `packages/shared/schema-validation.js` and is shared by application startup (`packages/task-engine/db.js`) and restore validation. Do not duplicate it.
 
 ## Monitoring templates
 
