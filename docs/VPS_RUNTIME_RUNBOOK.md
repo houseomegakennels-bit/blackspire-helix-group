@@ -14,6 +14,16 @@ npm run start:production
 
 The profile requires `NODE_ENV=production`, `BLACKSPIRE_RUNTIME_MODE=production`, state owner `vps-production`, persistent non-`/tmp` storage, authentication configuration, `BLACKSPIRE_PROVIDER_MODE=manual`, restricted Hermes, dry-run Telegram, and no provider or Telegram credentials. It rejects test mode and mock Telegram.
 
+### Hermes workspace root
+
+`BLACKSPIRE_WORKSPACE_ROOT` names the git checkout Hermes uses as the cwd for its git and build operations (the seeded workspace's `root_path`). It is read from the server's own environment only — never from a request, a frontend value, or a task payload — and `/api/workspaces` remains read-only.
+
+Set it on a durable host. The systemd unit runs with `WorkingDirectory=/opt/blackspire-command/current` under `ProtectSystem=strict` with only `/opt/blackspire-command/shared` writable, so the process cwd is an immutable release that the `blackspire` account cannot modify. Left unset, the workspace root stays at the historical `.`, which points Hermes at exactly that read-only tree; the operations then fail rather than corrupt anything, but they fail late, mid-task. Point it at a real writable checkout instead — never inside `releases/`, and never at the release root.
+
+When the variable is set it is validated at startup and **fails closed**: it must be absolute (a relative value would resolve against the immutable release), must exist, must be a directory, must not be a symlink, and must be a git checkout (`.git` as a directory or a linked-worktree pointer file; a symlinked `.git` is refused). An unusable value is always a refusal — it never silently degrades back to `.`. Leaving the variable unset is the only supported way to select the default.
+
+This setting does not change binding or ports: the production listener remains loopback-only on its explicit port, and 8787/8788 stay reserved.
+
 API startup, worker startup, and the production supervisor never run migrations. They open only an existing compatible schema and fail closed with an actionable migration-required error when the schema is missing or outdated. Schema-writing code is private to `scripts/migration-writer.js` and is invoked only by `scripts/migrate.js`; runtime modules, wrappers, fixtures, and tests do not import or call it. Run migrations only as a separate controlled command during an approved writer outage:
 
 ```sh
