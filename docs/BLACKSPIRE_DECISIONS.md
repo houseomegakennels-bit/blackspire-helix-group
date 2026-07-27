@@ -1,5 +1,16 @@
 # Blackspire Decisions
 
+## 2026-07-27 (later)
+
+- PR #41 (`fix/restore-reject-empty-invalid-backup`) is merged into `origin/main` as `d800d283b11b03d88c519e18abbed0870d9fa750` (reviewed head `40e6d6a873e1579b91004736ba55e2ab87f2e462`), which becomes the verified implementation anchor.
+- A backup or restore is never trusted on the strength of `PRAGMA integrity_check` alone. SQLite treats an empty or zero-byte file as a valid, newly-created database with zero tables, so integrity alone cannot prove a file is a real Blackspire database. This was reproduced directly against the pre-fix `scripts/restore.js`, which printed `{"ok":true}` and exited `0` for a 0-byte backup carrying a matching checksum sidecar.
+- Restore proves schema completeness independently of integrity: it refuses a zero-byte backup before opening it, validates the backup against the required Blackspire schema before copying, re-validates the copy rather than trusting that the copy succeeded, and publishes atomically through a uniquely named temp file plus a link that refuses `EEXIST` instead of silently replacing a destination. A refused restore leaves no target and no temp artifact, and never touches the source backup or a pre-existing destination.
+- The 19-table required-schema contract is single-sourced in `packages/shared/schema-validation.js` and shared by the application startup gate (`packages/task-engine/db.js`) and restore validation. Duplicating it is prohibited.
+- Backup fails closed at snapshot time rather than deferring the failure to recovery time. `scripts/backup.js` refuses a source database containing no tables, and independently re-proves the snapshot reproduced the source's table set instead of trusting that `VACUUM INTO` reported success. This closes the confirmed defect in which backup emitted `{"ok":true}`, a 4096-byte snapshot, and a matching SHA-256 sidecar for a 0-byte source.
+- The backup side is deliberately **not** pinned to the current application schema. A backup taken immediately before a migration legitimately carries an older schema, and refusing to snapshot it would remove data protection exactly when it matters most. Backup therefore compares source to snapshot; enforcing the current Blackspire schema is the restore side's responsibility.
+- `docs/VPS_RUNTIME_RUNBOOK.md` is not in the canonical-memory Markdown allowlist, so documentation of these new backup-side checks cannot ride along in a docs-only anchor refresh and is tracked as a separate reviewed change.
+- This merge and refresh build no immutable release by themselves, run no Gate 3 or Gate 4, install or replace no systemd unit, and create no production environment, database, or `current` symlink. Production activation remains unauthorized.
+
 ## 2026-07-27
 
 - PR #39 (`docs/refresh-implementation-anchor-after-pr38`) is merged into `origin/main` as `1a28343f7d3ea3c2968799bc57fb13555fc73787` (reviewed head `a4feeeb2d693f66f85b6fb5814032124bfe47fe5`), a canonical-memory-only next-actions numbering fix; `scripts/check-living-memory.sh` passed `CANONICAL_MEMORY_ONLY_DESCENDANT` against the unchanged verified implementation anchor `bc5a817231c1a325f31a112e256425140bbbf073`.
