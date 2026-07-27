@@ -29,3 +29,12 @@ export function findMissingSchemaObjects(db) {
   }
   return missing;
 }
+
+// Sorted names of every ordinary table on `db` (an already-open connection), excluding SQLite's own
+// internal `sqlite_%` objects. Used to prove a snapshot faithfully reproduced its source's table set
+// without pinning the source to the current application schema - a backup taken immediately before a
+// migration legitimately has an older schema and must still be snapshottable. Never opens or closes
+// the connection itself - callers own that lifecycle.
+export function listTableNames(db) {
+  return db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map((row) => row.name);
+}

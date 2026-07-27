@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_PATH } from '../packages/shared/config.js';
 import { realResolve, within, assertNotSymlink, safeUnlink } from '../packages/shared/path-safety.js';
+import { listTableNames } from '../packages/shared/schema-validation.js';
 
 const usage = 'Usage: node scripts/backup.js [backup-directory]';
 const source = path.resolve(DB_PATH);
@@ -60,14 +61,28 @@ assertNotSymlink(checksumPath, fail);
 if (realResolve(target) === realDb) fail('backup target cannot resolve to the source database');
 
 try {
+  let sourceTables;
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
+    // `PRAGMA integrity_check` alone cannot distinguish a real database from an empty or zero-byte
+    // file: SQLite treats an empty file as a valid, newly-created database with no tables. Backing
+    // one up would emit an `ok:true` record plus a matching checksum for a snapshot that can never
+    // be restored, so the failure would only surface during an actual recovery. Refuse at snapshot
+    // time instead. The source is deliberately NOT held to the current application schema - a backup
+    // taken immediately before a migration legitimately has an older schema and must still be taken.
+    sourceTables = listTableNames(db);
+    if (!sourceTables.length) fail('configured database contains no tables; refusing to record an unrestorable backup');
     db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
   } finally { db.close(); }
   const verify = new DatabaseSync(target, { readOnly: true });
   try {
     const result = verify.prepare('PRAGMA integrity_check').get();
     if (result.integrity_check !== 'ok') fail('backup integrity check failed');
+    // Independently re-prove the snapshot reproduced the source rather than trusting that VACUUM
+    // INTO reported success: a snapshot missing tables the source had is not a usable backup.
+    const snapshotTables = listTableNames(verify);
+    const lost = sourceTables.filter((name) => !snapshotTables.includes(name));
+    if (lost.length) fail(`backup snapshot is missing tables present in the source: ${lost.join(', ')}`);
   } finally { verify.close(); }
   fs.chmodSync(target, 0o600);
   const digest = crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex');

@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
-import { findMissingSchemaObjects, REQUIRED_SCHEMA } from '../packages/shared/schema-validation.js';
+import { findMissingSchemaObjects, listTableNames, REQUIRED_SCHEMA } from '../packages/shared/schema-validation.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-restore-schema-'));
 const node = process.execPath;
@@ -313,8 +313,119 @@ test('restore refuses a missing checksum sidecar', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Backup side of the same contract: a snapshot that can never be restored must be refused when it
+// is taken, not silently blessed with `ok:true` and a matching checksum and only discovered to be
+// worthless during an actual recovery.
+// ---------------------------------------------------------------------------
+
+function assertBackupRefused(r, backupDir) {
+  assert.notEqual(r.status, 0, 'backup must exit nonzero');
+  assert.doesNotMatch(r.stdout, /"ok":true/, 'no success object may be printed');
+  assert.match(r.stderr, /backup refused/i, 'a stable named failure must be reported');
+  const leftovers = fs.existsSync(backupDir) ? fs.readdirSync(backupDir) : [];
+  assert.deepEqual(leftovers, [], `no artifact or checksum sidecar may remain, found: ${leftovers.join(',')}`);
+}
+
+test('REGRESSION: backup refuses a zero-byte source instead of recording a checksummed unrestorable snapshot', () => {
+  const dir = freshCase('backup-zero-byte-source');
+  const dbPath = path.join(dir, 'state', 'command.sqlite');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.writeFileSync(dbPath, Buffer.alloc(0));
+  const backupDir = path.join(dir, 'backups');
+  const r = run('scripts/backup.js', [backupDir], { BLACKSPIRE_DB_PATH: dbPath });
+
+  assertBackupRefused(r, backupDir);
+  assert.match(r.stderr, /contains no tables/);
+  assert.equal(fs.statSync(dbPath).size, 0, 'the source database is never modified');
+});
+
+test('REGRESSION: backup refuses an empty-but-valid SQLite source (zero tables)', () => {
+  const dir = freshCase('backup-empty-source');
+  const dbPath = path.join(dir, 'state', 'command.sqlite');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  new DatabaseSync(dbPath).close(); // A file SQLite is perfectly willing to open, with no schema.
+  const backupDir = path.join(dir, 'backups');
+  const r = run('scripts/backup.js', [backupDir], { BLACKSPIRE_DB_PATH: dbPath });
+
+  assertBackupRefused(r, backupDir);
+  assert.match(r.stderr, /contains no tables/);
+});
+
+test('REGRESSION: a refused backup produces nothing that restore could later be handed', () => {
+  const dir = freshCase('backup-refusal-end-to-end');
+  const dbPath = path.join(dir, 'state', 'command.sqlite');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.writeFileSync(dbPath, Buffer.alloc(0));
+  const backupDir = path.join(dir, 'backups');
+  assertBackupRefused(run('scripts/backup.js', [backupDir], { BLACKSPIRE_DB_PATH: dbPath }), backupDir);
+
+  // The pre-fix pair produced a checksummed 4096-byte snapshot here that restore then had to catch.
+  // With the backup side failing closed there is no artifact for a later recovery to mistake as valid.
+  assert.equal(fs.existsSync(backupDir) ? fs.readdirSync(backupDir).length : 0, 0);
+});
+
+test('backup still succeeds for a legitimate pre-migration source with an older, non-current schema', () => {
+  // The backup side must not be pinned to the current application schema: refusing to snapshot a
+  // database immediately before migrating it would remove data protection exactly when it matters.
+  const dir = freshCase('backup-older-schema');
+  const dbPath = path.join(dir, 'state', 'command.sqlite');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const db = new DatabaseSync(dbPath);
+  db.exec("CREATE TABLE legacy_only(id INTEGER PRIMARY KEY, v TEXT); INSERT INTO legacy_only VALUES (1, 'kept');");
+  db.close();
+  const backupDir = path.join(dir, 'backups');
+  const r = run('scripts/backup.js', [backupDir], { BLACKSPIRE_DB_PATH: dbPath });
+  assert.equal(r.status, 0, r.stderr);
+
+  const record = JSON.parse(r.stdout);
+  const snapshot = new DatabaseSync(record.backup, { readOnly: true });
+  try {
+    assert.equal(snapshot.prepare('SELECT v FROM legacy_only WHERE id=1').get().v, 'kept');
+  } finally { snapshot.close(); }
+});
+
+test('backup of a full-schema database records every source table in the snapshot', () => {
+  const dir = freshCase('backup-faithful-snapshot');
+  const dbPath = path.join(dir, 'state', 'command.sqlite');
+  prepareDisposableDatabase(dbPath);
+  const source = new DatabaseSync(dbPath, { readOnly: true });
+  const sourceTables = listTableNames(source);
+  source.close();
+
+  const r = run('scripts/backup.js', [path.join(dir, 'backups')], { BLACKSPIRE_DB_PATH: dbPath });
+  assert.equal(r.status, 0, r.stderr);
+  const snapshot = new DatabaseSync(JSON.parse(r.stdout).backup, { readOnly: true });
+  try {
+    assert.deepEqual(listTableNames(snapshot), sourceTables, 'the snapshot must reproduce the source table set');
+  } finally { snapshot.close(); }
+});
+
+// ---------------------------------------------------------------------------
 // Shared schema-validation helper (used by both restore.js and packages/task-engine/db.js)
 // ---------------------------------------------------------------------------
+
+test('listTableNames returns sorted ordinary tables and excludes SQLite internal objects', () => {
+  const dir = freshCase('helper-list-tables');
+  const dbPath = path.join(dir, 'command.sqlite');
+  const db = new DatabaseSync(dbPath);
+  // An AUTOINCREMENT column forces SQLite to create the internal `sqlite_sequence` table.
+  db.exec('CREATE TABLE zeta(id INTEGER PRIMARY KEY AUTOINCREMENT); CREATE TABLE alpha(id INTEGER);');
+  db.close();
+  const check = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    assert.deepEqual(listTableNames(check), ['alpha', 'zeta']);
+  } finally { check.close(); }
+});
+
+test('listTableNames returns an empty list for a schema-less database', () => {
+  const dir = freshCase('helper-list-tables-empty');
+  const dbPath = path.join(dir, 'command.sqlite');
+  new DatabaseSync(dbPath).close();
+  const check = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    assert.deepEqual(listTableNames(check), []);
+  } finally { check.close(); }
+});
 
 test('findMissingSchemaObjects reports nothing missing for a fully migrated database', () => {
   const dir = freshCase('helper-full-schema');
