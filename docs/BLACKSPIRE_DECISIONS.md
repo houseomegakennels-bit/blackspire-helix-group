@@ -1,5 +1,14 @@
 # Blackspire Decisions
 
+## 2026-07-27 (runbook contract)
+
+- PR #44 (`docs/runbook-backup-restore-contract`) is merged into `origin/main` as `a78b6395c6176b1dc02d97b7d70807938a3d1beb` (reviewed head `5fa024ec02a7c8677172dd54d9d60579b561da1d`), which becomes the verified implementation anchor. It closes tracked next-action item 22.
+- Operator documentation must state the contract the code actually enforces, not a weaker one. The runbook previously presented `PRAGMA integrity_check` as the backup content check, which is exactly the check Gate 3 Finding #1 disproved; an operator following it would have believed a zero-byte snapshot was validated.
+- The runbook now records the fail-closed behaviour of both scripts, including the deliberate asymmetry: restore enforces the current Blackspire schema, backup does not. It carries an explicit warning not to resolve a pre-migration backup refusal by migrating first — take the backup, then migrate — because the opposite instinct would destroy the restore point precisely when it is most needed.
+- Runbook claims are recorded only when verified empirically against the built release artifact. Every behaviour documented here was exercised during the Gate 3 rehearsal rather than inferred from reading source.
+- `docs/VPS_RUNTIME_RUNBOOK.md` is confirmed to sit outside the six-file canonical-memory Markdown allowlist, so changing it requires its own reviewed implementation anchor and a follow-on docs-only refresh. The allowlist names exact files and never a `docs/**` wildcard; this is working as designed and is not to be "fixed" by widening the allowlist.
+- PR #44 changed documentation only and does not invalidate the Gate 3 PASS rehearsed at `73856891c5f6f35f14c09d1ce5acef39f20c4b25`. No release was built, no Gate was run, and no production state was touched.
+
 ## 2026-07-27 (Gate 3)
 
 - Gate 3 data-protection rehearsal PASSED, disposable-only, at trusted `origin/main` `73856891c5f6f35f14c09d1ce5acef39f20c4b25`: 36 checks, 0 failures. `GATE_3_DATA_PROTECTION: PASSED`.
