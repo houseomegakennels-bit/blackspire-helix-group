@@ -1,5 +1,15 @@
 # Blackspire Decisions
 
+## 2026-07-27 (Gate 3)
+
+- Gate 3 data-protection rehearsal PASSED, disposable-only, at trusted `origin/main` `73856891c5f6f35f14c09d1ce5acef39f20c4b25`: 36 checks, 0 failures. `GATE_3_DATA_PROTECTION: PASSED`.
+- The rehearsal executed the immutable release artifact at `/opt/blackspire-command/releases/73856891c5f6f35f14c09d1ce5acef39f20c4b25`, not a working tree. A gate that validates a working tree does not validate what would actually be deployed, so Gate 3 is defined as exercising the built artifact.
+- The release was verified before use: `COMMIT_SHA` identical to the built SHA, an ordinary directory rather than a symlink, `root:blackspire` `0755` with a `0644` `.release-complete`, review/development metadata excluded, `scripts/release-preflight.sh` exit `0`, and the changed files SHA-256-identical to their Git blobs at that commit.
+- WAL safety is proven against a genuinely uncheckpointed WAL (8272 bytes) with the writer connection still open, and the row committed into that WAL is proven present after backup and restore. A backup taken against a quiesced database would not exercise the property being claimed.
+- The rollback rehearsal runs against a **disposable** release root. Exercising `release-rollback.sh` against `/opt/blackspire-command` would create a production `current` symlink, which is prohibited without separate production authority.
+- The `root:blackspire` release ownership contract is genuinely enforced, proven negatively: a `root:root` release directory is refused by rollback and `current` is left unchanged. An initial rehearsal fixture built as `root:root` was correctly rejected by the tooling; that was a fixture defect, not a product defect, and the corrected fixture then passed.
+- Gate 3 passing authorizes nothing further by itself. Gate 4, production activation, the production `current` symlink, environment file, database, systemd unit replacement, DNS, TLS, nginx, firewall, real Telegram, and live providers all remain unauthorized and untouched. `READY_TO_REQUEST_GATE_4_PRODUCTION_ACTIVATION: no`.
+
 ## 2026-07-27 (later)
 
 - PR #41 (`fix/restore-reject-empty-invalid-backup`) is merged into `origin/main` as `d800d283b11b03d88c519e18abbed0870d9fa750` (reviewed head `40e6d6a873e1579b91004736ba55e2ab87f2e462`), which becomes the verified implementation anchor.
