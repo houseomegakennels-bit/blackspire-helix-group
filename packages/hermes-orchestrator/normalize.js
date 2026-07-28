@@ -56,4 +56,11 @@ export function validateNormalizedTask(t) {
 }
 
 const str = (v) => (v == null ? '' : String(v));
-const intOrZero = (v) => { const n = Number(v); return Number.isSafeInteger(n) && n >= 0 ? n : 0; };
+// Absent/blank budget defaults to 0 (free tier for the mock provider). A *provided* value that is a
+// negative or non-integer number is preserved as-is so validateNormalizedTask rejects it as a
+// malformed task, rather than being silently clamped to 0 (which would hide a bad input).
+const intOrZero = (v) => {
+  if (v == null || v === '') return 0;
+  const n = Number(v);
+  return Number.isSafeInteger(n) ? n : 0;
+};

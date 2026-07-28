@@ -13,7 +13,7 @@ import { normalizeTask } from './normalize.js';
 import { classifyTask } from './classify.js';
 import { evaluatePolicy } from './policy.js';
 import { routeTask } from './route.js';
-import { executeWorkflow } from './execute.js';
+import { executeWorkflow, withinBudget } from './execute.js';
 import { verifyExecution } from './verify.js';
 import { extractMemoryCandidate } from './memory.js';
 import { makeEventRecorder, HERMES_EVENTS } from './events.js';
@@ -72,20 +72,20 @@ export async function runHermesWorkflow(input) {
       return { runId, status: 'blocked', outcome: policy.requiresApproval ? 'blocked_pending_approval' : 'policy_denied', classification };
     }
 
-    // Budget guard (charter #6): a zero/negative budget is allowed for the free mock provider, but a
-    // negative budget is treated as exhausted.
-    if (normalized.budgetCents < 0) {
-      events.record(HERMES_EVENTS.FAILED, { reason: 'budget exhausted' }, 'failed');
-      finishWorkflowRun(runId, { status: 'failed', outcome: 'budget_exhausted' });
-      return { runId, status: 'failed', outcome: 'budget_exhausted', classification };
-    }
-
     const routing = routeTask(classification);
     insertRoutingDecision(runId, normalized.taskId, routing);
     events.record(HERMES_EVENTS.ROUTED, { provider: routing.provider, agent: routing.agent, capabilities: routing.capabilities });
 
     const execution = await executeWorkflow(routing, normalized);
     events.record(HERMES_EVENTS.EXECUTED, { provider: execution.provider, ok: execution.ok, summary: execution.summary, artifactCount: execution.artifacts.length });
+
+    // Budget guard (charter #6): reject if the actual cost exceeded the ceiling. Evaluated every run
+    // (not dead code); mock cost is 0 so it passes for any non-negative ceiling in M1.
+    if (!withinBudget(execution.usage.costCents, normalized.budgetCents)) {
+      events.record(HERMES_EVENTS.FAILED, { reason: 'budget exhausted', costCents: execution.usage.costCents, ceilingCents: normalized.budgetCents }, 'failed');
+      finishWorkflowRun(runId, { status: 'failed', outcome: 'budget_exhausted', provider: routing.provider, agent: routing.agent, costCents: execution.usage.costCents });
+      return { runId, status: 'failed', outcome: 'budget_exhausted', classification, routing };
+    }
 
     const verification = verifyExecution(execution, { classification });
     insertVerificationResult(runId, normalized.taskId, verification);

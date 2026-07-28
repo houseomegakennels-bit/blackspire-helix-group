@@ -42,3 +42,17 @@ export async function executeWorkflow(routing, normalized) {
 }
 
 const zeroUsage = () => ({ inputTokens: 0, outputTokens: 0, costCents: 0 });
+
+/**
+ * Budget predicate: a run stays within budget when the actual cost does not exceed the ceiling.
+ * The mock provider always reports costCents=0, so in M1 this passes for any ceiling >= 0; it becomes
+ * a real cap in Milestone 2 when a provider can report a non-zero cost. Exported so it is unit-tested
+ * directly rather than being unreachable code inside the orchestrator.
+ * @param {number} costCents actual cost incurred
+ * @param {number} ceilingCents budget ceiling from the normalized task
+ */
+export function withinBudget(costCents, ceilingCents) {
+  const cost = Number(costCents) || 0;
+  const ceiling = Number(ceilingCents) || 0;
+  return cost <= ceiling;
+}
