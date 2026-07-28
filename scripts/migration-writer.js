@@ -43,6 +43,16 @@ CREATE INDEX IF NOT EXISTS idx_conversation_bindings_conversation ON conversatio
 CREATE INDEX IF NOT EXISTS idx_unified_inputs_conversation ON unified_inputs(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_task_events_conversation ON task_events(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_channel_deliveries_status ON channel_deliveries(status, next_attempt_at);`);
+  // Canonical authorization foundation: no implicit grants or identity backfill.
+  db.exec(`CREATE TABLE IF NOT EXISTS auth_principals(id TEXT PRIMARY KEY,type TEXT NOT NULL CHECK(type IN ('admin','service')),actor_id TEXT NOT NULL,authentication_method TEXT NOT NULL,credential_reference TEXT,status TEXT NOT NULL CHECK(status IN ('active','revoked','disabled','expired')),issued_at INTEGER NOT NULL,expires_at INTEGER,revoked_at INTEGER,disabled_at INTEGER,security_version INTEGER NOT NULL CHECK(security_version>0),created_at INTEGER NOT NULL,UNIQUE(type,actor_id));
+CREATE TABLE IF NOT EXISTS auth_workspace_grants(id TEXT PRIMARY KEY,principal_id TEXT NOT NULL,workspace_id TEXT NOT NULL,role TEXT NOT NULL,permissions TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('active','revoked','expired','superseded')),version INTEGER NOT NULL CHECK(version>0),supersedes_grant_id TEXT,issued_at INTEGER NOT NULL,expires_at INTEGER,revoked_at INTEGER,issued_by TEXT,security_version INTEGER NOT NULL CHECK(security_version>0),created_at INTEGER NOT NULL,UNIQUE(principal_id,workspace_id,version));
+CREATE TABLE IF NOT EXISTS auth_decisions(id TEXT PRIMARY KEY,principal_id TEXT,principal_type TEXT,workspace_id TEXT,permission TEXT,resource_type TEXT,resource_id TEXT,allowed INTEGER NOT NULL CHECK(allowed IN (0,1)),reason_code TEXT NOT NULL,policy_version TEXT NOT NULL,created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_auth_principals_lookup ON auth_principals(type,actor_id,status);
+CREATE INDEX IF NOT EXISTS idx_auth_grants_active ON auth_workspace_grants(principal_id,workspace_id,status,version);
+CREATE INDEX IF NOT EXISTS idx_auth_grants_supersedes ON auth_workspace_grants(supersedes_grant_id);
+CREATE INDEX IF NOT EXISTS idx_auth_decisions_lookup ON auth_decisions(principal_id,workspace_id,permission,allowed,created_at);`);
+  ensureColumn('sessions', 'principal_id', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_principal ON sessions(principal_id);`);
   // --- Hermes Intelligence Layer (Milestone 1) ---
   // Additive, mock-only orchestration + learning foundation. These tables record structured
   // workflow runs/steps, routing/policy/verification decisions, and *unpromoted* memory
