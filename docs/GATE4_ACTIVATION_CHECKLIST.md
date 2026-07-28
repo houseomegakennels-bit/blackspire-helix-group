@@ -114,6 +114,18 @@ systemctl show blackspire-command.service -p ActiveState -p UnitFileState -p Mai
 Source the environment file rather than passing values as arguments; arguments are visible in the
 process table.
 
+Run the test suite through the reviewed interpreter, not the host's PATH Node:
+
+```sh
+PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:$PATH bash scripts/with-node.sh scripts/run-tests.js
+```
+
+Plain `npm test` resolves this host's PATH Node (v18.19.1, no `node:sqlite`). The contained run then
+aborts and reports ~31 failures — one real assertion plus a cascade of "missing completion" file
+failures. That is an interpreter artifact, not a regression. The same cause makes
+`tests/production-bind-boundary.test.js` fail one case off the pinned interpreter; it is 46/46 with
+the interpreter above, and fails identically on `origin/main`.
+
 ## Rollback of preparation
 
 Preparation never started production, so undoing it is just removing what it created. Releases are
