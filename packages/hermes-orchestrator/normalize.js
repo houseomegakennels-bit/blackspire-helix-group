@@ -48,6 +48,8 @@ export function normalizeTask(input) {
       || ((str(input.channel ?? input.source_channel) || 'api') === 'telegram' ? 'telegram' : 'authenticated_admin'),
     // A denial already recorded by canonical intake (tasks.policy_decision / unified_inputs.policy_status).
     priorPolicyDecision: str(input.priorPolicyDecision ?? input.policy_decision ?? input.policy_status) || null,
+    // A task must explicitly opt into the development real-provider path; default null -> mock.
+    requestedProvider: str(input.requestedProvider ?? input.hermes_provider) || null,
   };
   validateNormalizedTask(normalized);
   return normalized;

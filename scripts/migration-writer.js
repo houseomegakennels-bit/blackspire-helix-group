@@ -58,6 +58,16 @@ CREATE TABLE IF NOT EXISTS hermes_memory_candidates(id TEXT PRIMARY KEY,run_id T
 CREATE INDEX IF NOT EXISTS idx_hermes_steps_run ON hermes_workflow_steps(run_id, seq);
 CREATE INDEX IF NOT EXISTS idx_hermes_runs_task ON hermes_workflow_runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_hermes_memory_status ON hermes_memory_candidates(status, created_at);`);
+  // --- Hermes Runtime & Provider Framework (Milestone 2) ---
+  // Additive. Records real/mock provider invocations (with null-safe usage/cost), per-provider
+  // health, and task-scoped single-use approvals. No secrets are stored: every text field is
+  // redacted by packages/hermes-orchestrator before insert. Separate from the raw audit stream and
+  // from any future promoted memory.
+  db.exec(`CREATE TABLE IF NOT EXISTS hermes_provider_invocations(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,provider TEXT,adapter_type TEXT,model TEXT,mode TEXT,status TEXT,attempt INTEGER,input_bytes INTEGER,output_bytes INTEGER,input_tokens INTEGER,output_tokens INTEGER,cost_cents INTEGER,duration_ms INTEGER,timed_out INTEGER,cancelled INTEGER,error TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS hermes_provider_health(provider TEXT PRIMARY KEY,status TEXT,last_success_at TEXT,last_failure_at TEXT,failure_count INTEGER,cooldown_until TEXT,disabled INTEGER,updated_at TEXT);
+CREATE TABLE IF NOT EXISTS hermes_approvals(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,scope TEXT,action_class TEXT,status TEXT,granted_by TEXT,reason TEXT,single_use INTEGER,consumed_at TEXT,expires_at TEXT,created_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_hermes_invocations_run ON hermes_provider_invocations(run_id);
+CREATE INDEX IF NOT EXISTS idx_hermes_approvals_task ON hermes_approvals(task_id, status);`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
 }

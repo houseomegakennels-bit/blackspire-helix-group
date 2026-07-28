@@ -19,6 +19,10 @@ export const REQUIRED_SCHEMA = {
   hermes_policy_decisions: ['id', 'run_id', 'task_id', 'action_class', 'decision', 'requires_approval', 'reason', 'created_at'],
   hermes_verification_results: ['id', 'run_id', 'task_id', 'verifier', 'passed', 'checks', 'detail', 'created_at'],
   hermes_memory_candidates: ['id', 'run_id', 'task_id', 'workspace_id', 'kind', 'scope', 'lesson', 'evidence_ref', 'status', 'promoted_at', 'created_at'],
+  // Hermes Runtime & Provider Framework (Milestone 2). Additive; kept in sync with the schema-writer.
+  hermes_provider_invocations: ['id', 'run_id', 'task_id', 'provider', 'adapter_type', 'model', 'mode', 'status', 'attempt', 'input_bytes', 'output_bytes', 'input_tokens', 'output_tokens', 'cost_cents', 'duration_ms', 'timed_out', 'cancelled', 'error', 'created_at'],
+  hermes_provider_health: ['provider', 'status', 'last_success_at', 'last_failure_at', 'failure_count', 'cooldown_until', 'disabled', 'updated_at'],
+  hermes_approvals: ['id', 'run_id', 'task_id', 'scope', 'action_class', 'status', 'granted_by', 'reason', 'single_use', 'consumed_at', 'expires_at', 'created_at'],
 };
 
 // Returns a list of human-readable descriptions of missing schema objects (empty when the database
