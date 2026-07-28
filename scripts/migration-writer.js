@@ -43,6 +43,21 @@ CREATE INDEX IF NOT EXISTS idx_conversation_bindings_conversation ON conversatio
 CREATE INDEX IF NOT EXISTS idx_unified_inputs_conversation ON unified_inputs(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_task_events_conversation ON task_events(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_channel_deliveries_status ON channel_deliveries(status, next_attempt_at);`);
+  // --- Hermes Intelligence Layer (Milestone 1) ---
+  // Additive, mock-only orchestration + learning foundation. These tables record structured
+  // workflow runs/steps, routing/policy/verification decisions, and *unpromoted* memory
+  // candidates. They are deliberately separate from the raw audit stream (audit_events/
+  // task_events) and from any future promoted long-term memory table. No secrets are ever stored
+  // here: every persisted payload is redacted before insert by packages/hermes-orchestrator.
+  db.exec(`CREATE TABLE IF NOT EXISTS hermes_workflow_runs(id TEXT PRIMARY KEY,task_id TEXT,conversation_id TEXT,workspace_id TEXT,actor_id TEXT,channel TEXT,objective TEXT,classification TEXT,status TEXT,outcome TEXT,provider TEXT,agent TEXT,cost_cents INTEGER,started_at TEXT,finished_at TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS hermes_workflow_steps(id TEXT PRIMARY KEY,run_id TEXT,seq INTEGER,name TEXT,status TEXT,detail TEXT,started_at TEXT,finished_at TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS hermes_routing_decisions(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,classification TEXT,candidates TEXT,selected_provider TEXT,selected_agent TEXT,capabilities TEXT,rationale TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS hermes_policy_decisions(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,action_class TEXT,decision TEXT,requires_approval INTEGER,reason TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS hermes_verification_results(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,verifier TEXT,passed INTEGER,checks TEXT,detail TEXT,created_at TEXT);
+CREATE TABLE IF NOT EXISTS hermes_memory_candidates(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,workspace_id TEXT,kind TEXT,scope TEXT,lesson TEXT,evidence_ref TEXT,status TEXT,promoted_at TEXT,created_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_hermes_steps_run ON hermes_workflow_steps(run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_hermes_runs_task ON hermes_workflow_runs(task_id);
+CREATE INDEX IF NOT EXISTS idx_hermes_memory_status ON hermes_memory_candidates(status, created_at);`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
 }
