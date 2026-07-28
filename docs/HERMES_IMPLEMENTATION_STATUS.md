@@ -1,15 +1,15 @@
 # Hermes Intelligence Layer — Implementation Status
 
-## Milestone 2 — Runtime & Provider Framework (branch `feature/hermes-runtime-provider-framework-m2`, PR open, NOT merged)
+## Milestone 2 — Runtime & Provider Framework (MERGED via [PR #56](https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/56))
 
 Development-only real-provider runtime, additive on M1. Mock remains the default; real execution is
 disabled by default and refused under the production profile. First real adapter: **Anthropic
 Messages API (non-agentic Claude)** — chosen over the agentic Claude Code CLI as materially safer
 (pure text I/O, no shell/agent surface), approved by the operator.
 
-- **Implemented + tested:** runtime-profile gate, typed provider/capability registries, Anthropic dev adapter, deterministic fake provider, real/mock execution flow (timeout, cancellation, retry ceiling, concurrency limit, size limits, budget/cost ceiling, no silent real→mock fallback), scoped single-use approvals, provider health/cooldown, usage/cost recording (null-safe), read-only `/api/hermes/runtime` + `/hermes-runtime` PWA page. 3 new additive tables (`hermes_provider_invocations`, `hermes_provider_health`, `hermes_approvals`).
+- **Implemented + tested:** runtime-profile gate, typed provider/capability registries, Anthropic dev adapter, deterministic fake provider, real/mock execution flow (timeout, cancellation, retry ceiling, concurrency limit, size limits, budget/cost ceiling, no silent real→mock fallback), scoped single-use approvals, provider health/cooldown, usage/cost recording (null-safe), read-only `/api/hermes/runtime` + `/hermes-runtime` PWA page. Real dispatch additionally requires the development feature flag, provider allowlist, registered/allowlisted workspace root, positive bounded task spend reservation, and a valid approval. 3 new additive tables (`hermes_provider_invocations`, `hermes_provider_health`, `hermes_approvals`).
 - **Tested with fixtures only:** the real adapter is exercised via the fake provider; no paid call in the suite.
-- **Awaiting live smoke test:** `scripts/hermes-dev-smoke.js` prepared but disabled (requires explicit operator opt-in).
+- **Awaiting live smoke test:** `scripts/hermes-dev-smoke.js` is prepared but disabled; a bounded development-only live call requires separate explicit operator opt-in and was not run for this merge.
 - **Deferred to M3:** learned/multi-provider routing, scorecards, approval-gated memory promotion, cross-host limits, pricing→cost.
 - **Prohibited in production:** all real (and even mock) Hermes-runtime execution is refused under the production profile.
 
