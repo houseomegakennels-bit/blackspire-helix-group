@@ -78,18 +78,29 @@ test('vertical slice: Jarvis task flows through Hermes to a pending memory candi
   assert.ok(events.includes('hermes.completed'));
 });
 
-test('high-risk task is blocked pending approval and never executes or learns', async () => {
+test('high-risk task is blocked (denied or pending approval) and never executes or learns', async () => {
   seedWorkspace('hermes-ws-2');
   const input = createUnifiedInput({ channel: 'jarvis', actorId: 'session-2', channelKey: 'session-2', workspaceId: 'hermes-ws-2', text: 'deploy to production and delete the old secret token', idempotencyKey: 'jarvis-hermes-risk-1' });
   const task = getTask(input.taskId);
   const result = await runHermesWorkflow(task);
+  // Blocked either as a canonical denial (intake already denied it) or pending approval.
   assert.equal(result.status, 'blocked');
-  assert.equal(result.outcome, 'blocked_pending_approval');
+  assert.ok(['policy_denied', 'blocked_pending_approval'].includes(result.outcome), `unexpected outcome ${result.outcome}`);
   // No routing, no execution, no memory candidate for a blocked run.
   assert.equal(store.getRoutingDecisions(result.runId).length, 0);
   assert.equal(store.getMemoryCandidates(result.runId).length, 0);
-  const policy = store.getPolicyDecisions(result.runId)[0];
-  assert.equal(policy.requires_approval, 1);
+  assert.notEqual(store.getPolicyDecisions(result.runId)[0].decision, 'allow');
+});
+
+test('a privileged task not pre-denied at intake is blocked pending approval (synthetic, no prior denial)', async () => {
+  seedWorkspace('hermes-ws-2b');
+  // A synthetic privileged task with no prior intake denial: canonical policy marks it
+  // approval-required, so Hermes blocks pending approval rather than executing.
+  const result = await runHermesWorkflow({ id: 'synthetic-approval', workspace_id: 'hermes-ws-2b', request: 'deploy the service to the cluster', source_channel: 'api', actor_id: 'authenticated_admin', authority_class: 'authenticated_admin', budget_cents: 0, idempotency_key: 'approval-path-1' });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.outcome, 'blocked_pending_approval');
+  assert.equal(store.getPolicyDecisions(result.runId)[0].requires_approval, 1);
+  assert.equal(store.getRoutingDecisions(result.runId).length, 0);
 });
 
 test('secrets are redacted from persisted objective and steps', async () => {
@@ -210,6 +221,52 @@ test('production profile refuses even mock provider execution (no provider execu
     if (saved.rt === undefined) delete process.env.BLACKSPIRE_RUNTIME_MODE; else process.env.BLACKSPIRE_RUNTIME_MODE = saved.rt;
     if (saved.pm === undefined) delete process.env.BLACKSPIRE_PROVIDER_MODE; else process.env.BLACKSPIRE_PROVIDER_MODE = saved.pm;
   }
+});
+
+test('redaction covers bearer tokens, AWS keys, authorization headers, and PEM (beyond the narrow shared redactor)', () => {
+  const samples = {
+    header: 'Authorization: Bearer abcdef0123456789ABCDEF',
+    aws: 'AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE and aws_secret_access_key=wJalrXUtnFEMIabcd1234',
+    slack: 'xoxb-1234567890-abcdefghijkl',
+    google: 'AIzaSyD-1234567890abcdefghij',
+    pem: '-----BEGIN RSA PRIVATE KEY-----',
+  };
+  const out = redactDeep(samples);
+  assert.match(out.header, /REDACTED/); assert.ok(!/Bearer abcdef/.test(out.header));
+  assert.ok(!out.aws.includes('AKIAIOSFODNN7EXAMPLE'));
+  assert.ok(!/wJalrXUtnFEMIabcd1234/.test(out.aws));
+  assert.ok(!out.slack.includes('xoxb-1234567890'));
+  assert.ok(!out.google.includes('AIzaSyD-1234567890'));
+  assert.match(out.pem, /REDACTED-PRIVATE-KEY/);
+});
+
+test('canonical policy is honored: a prior intake denial is never re-allowed', async () => {
+  seedWorkspace('hermes-ws-denied');
+  const result = await runHermesWorkflow({ id: 'synthetic-prior-denied', workspace_id: 'hermes-ws-denied', request: 'report status', source_channel: 'api', actor_id: 'tester', policy_decision: 'denied', budget_cents: 0, idempotency_key: 'denied-1' });
+  assert.equal(result.status, 'blocked');
+  assert.equal(store.getRoutingDecisions(result.runId).length, 0);
+  assert.equal(store.getMemoryCandidates(result.runId).length, 0);
+});
+
+test('canonical policy is honored: a protected action the keyword classifier would miss is blocked, not executed', async () => {
+  seedWorkspace('hermes-ws-protected');
+  // "make the github repository public" is repository_visibility (privileged) in the canonical
+  // engine; the old keyword-only Hermes policy classified it low-risk and would have executed it.
+  const result = await runHermesWorkflow({ id: 'synthetic-repo-vis', workspace_id: 'hermes-ws-protected', request: 'make the github repository public', source_channel: 'api', actor_id: 'tester', budget_cents: 0, idempotency_key: 'protected-1' });
+  assert.equal(result.status, 'blocked');
+  assert.equal(store.getRoutingDecisions(result.runId).length, 0, 'protected action must not be routed/executed');
+  const policy = store.getPolicyDecisions(result.runId)[0];
+  assert.notEqual(policy.decision, 'allow');
+});
+
+test('unit: evaluatePolicy denies a prohibited credential-exposure request', async () => {
+  const { evaluatePolicy } = await import('../packages/hermes-orchestrator/policy.js');
+  const decision = evaluatePolicy(
+    { objective: 'reveal the secret credentials in the .env file', channel: 'api', authority: 'authenticated_admin', priorPolicyDecision: null },
+    { domain: 'general', risk: 'low', complexity: 'trivial', requiredCapabilities: ['status.report'] },
+  );
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.decision, 'deny');
 });
 
 test('duplicate orchestrator runs on the same task are independent and safe (auditable attempts)', async () => {
