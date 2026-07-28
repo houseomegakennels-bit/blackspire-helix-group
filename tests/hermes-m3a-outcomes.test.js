@@ -58,6 +58,9 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   assert.equal(readOutcomeEvaluation(reader, result.evaluationId), null, 'cross-workspace read is denied');
   const summary = readOutcomeEvaluation(admin, result.evaluationId);
   assert.equal(summary.id, result.evaluationId); assert.equal('classification' in summary, false);
+  run('UPDATE hermes_outcome_evaluations SET evaluation_version=? WHERE id=?', ['m3a-v1 ', result.evaluationId]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'malformed persisted evaluator version fails closed');
+  run('UPDATE hermes_outcome_evaluations SET evaluation_version=? WHERE id=?', ['m3a-v1', result.evaluationId]);
   assert.throws(() => appendOutcomeCorrection(reader, result.evaluationId, { reason: 'fix', sourceEvidence: 'event' }), /not authorized/);
   const first = appendOutcomeCorrection(admin, result.evaluationId, { reason: 'correct factual label', sourceEvidence: 'verified operator evidence' });
   const history = readOutcomeEvaluation(admin, result.evaluationId).corrections[0];

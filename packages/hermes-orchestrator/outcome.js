@@ -64,7 +64,9 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
 // decides scope; caller input never chooses the authority or filters an unscoped list.
 export function readOutcomeEvaluation(principal, evaluationId) {
   const evaluation = getOutcomeEvaluation(evaluationId);
-  if (!evaluation) return null;
+  // Persisted rows are evidence only when they still identify the one reviewed Phase 3A
+  // evaluator contract.  A malformed/tampered version is never surfaced as a valid evaluation.
+  if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION) return null;
   const decision = canReadEvaluation(principal, evaluation.workspace_id);
   if (!decision.allowed) return null;
   return { id: evaluation.id, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
