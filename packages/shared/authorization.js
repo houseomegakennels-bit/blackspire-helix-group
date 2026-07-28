@@ -47,11 +47,11 @@ export function validateGrantChain(head) {
   return false;
 }
 export function requireWorkspacePermission(principal, workspaceId, permission, resource = {}) {
-  if (!principal || !resolvedPrincipals.has(principal) || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, workspaceId, permission, resource, deny('invalid_scope'));
-  const grant = activeGrant(principal.principalId, workspaceId); if (!grant) return decision(principal, workspaceId, permission, resource, deny('grant_missing'));
+  if (!principal || !resolvedPrincipals.has(principal) || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, null, permission, deny('invalid_scope'));
+  const grant = activeGrant(principal.principalId, workspaceId); if (!grant) return decision(principal, null, permission, deny('grant_missing'));
   const permissions = JSON.parse(canonicalPermissions(grant.permissions));
   const allowedPermission = permissions.includes(permission) || (principal.principalType !== 'service' && grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));
-  return decision(principal, workspaceId, permission, resource, allowedPermission ? allow('granted') : deny('permission_denied'));
+  return decision(principal, grant.workspace_id, permission, allowedPermission ? allow('granted') : deny('permission_denied'));
 }
 export const canReadTask = (p,w) => requireWorkspacePermission(p,w,'task.read');
 export const canCreateTask = (p,w) => requireWorkspacePermission(p,w,'task.create');
@@ -63,4 +63,4 @@ export const canReadEvaluation = (p,w) => requireWorkspacePermission(p,w,'evalua
 export const canCorrectEvaluation = (p,w) => requireWorkspacePermission(p,w,'evaluation.correct');
 function allow(reasonCode) { return { allowed: true, reasonCode }; } function deny(reasonCode) { return { allowed: false, reasonCode }; }
 function auditValue(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value) && !/(?:secret|token|credential|bearer|authorization|cookie|session|csrf|pem|aws|private-key|api[-_:]?key|^(?:sk|pk|rk|ghp|github_pat|xox|akia)[_-])/i.test(value) ? value : null; }
-function decision(p,w,permission,resource,result) { try { run('INSERT INTO auth_decisions(id,principal_id,principal_type,workspace_id,permission,resource_type,resource_id,allowed,reason_code,policy_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[id('authd'),auditValue(p?.principalId),auditValue(p?.principalType),auditValue(w),auditValue(permission),auditValue(resource?.type),auditValue(resource?.id),result.allowed?1:0,result.reasonCode,AUTHZ_POLICY_VERSION,Date.now()]); } catch { return deny('audit_unavailable'); } return result; }
+function decision(p,w,permission,result) { try { run('INSERT INTO auth_decisions(id,principal_id,principal_type,workspace_id,permission,resource_type,resource_id,allowed,reason_code,policy_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[id('authd'),auditValue(p?.principalId),auditValue(p?.principalType),auditValue(w),auditValue(permission),null,null,result.allowed?1:0,result.reasonCode,AUTHZ_POLICY_VERSION,Date.now()]); } catch { return deny('audit_unavailable'); } return result; }
