@@ -83,6 +83,45 @@ case "$mode" in
       fi
     fi
     [[ -d "$(dirname -- "${BLACKSPIRE_DB_PATH}")" ]] || fail "persistent database parent directory does not exist"
+    # Hermes performs git and build work with workspace.root_path as its cwd. Under the immutable
+    # release the process cwd is /opt/blackspire-command/current, which is read-only to the runtime
+    # account, so production must name a real writable checkout. packages/shared/workspace-root.js
+    # applies the same path rules at runtime (absolute, not a symlink, existing, a directory, a git
+    # checkout with a non-symlinked .git), so validating them here means ExecStartPre cannot pass a
+    # configuration the supervisor's children would then refuse, which would otherwise surface as a
+    # Restart=on-failure loop up to StartLimitBurst instead of a clean refusal. The production rules
+    # here are deliberately stricter than the resolver's, never looser: the resolver treats an absent
+    # variable as the historical "." development default, while production requires it explicitly
+    # because "." is the read-only release; and production additionally requires the workspace to be
+    # writable and to carry the application files a task actually needs.
+    workspace_root="${BLACKSPIRE_WORKSPACE_ROOT-}"
+    workspace_root="${workspace_root#"${workspace_root%%[![:space:]]*}"}"
+    workspace_root="${workspace_root%"${workspace_root##*[![:space:]]}"}"
+    [[ -n "$workspace_root" ]] || fail "BLACKSPIRE_WORKSPACE_ROOT must be set for production; there is no default"
+    [[ "$workspace_root" = /* ]] || fail "BLACKSPIRE_WORKSPACE_ROOT must be an absolute path"
+    # Symlink before existence/type: a symlinked root is refused rather than followed, so the
+    # effective working directory cannot be repointed outside the reviewed configuration.
+    [[ ! -L "$workspace_root" ]] || fail "BLACKSPIRE_WORKSPACE_ROOT must not be a symlink"
+    [[ -e "$workspace_root" ]] || fail "BLACKSPIRE_WORKSPACE_ROOT does not exist"
+    [[ -d "$workspace_root" ]] || fail "BLACKSPIRE_WORKSPACE_ROOT is not a directory"
+    # Read and traverse are both required: the runtime user must be able to list and enter the tree.
+    { [[ -r "$workspace_root" ]] && [[ -x "$workspace_root" ]]; } || fail "BLACKSPIRE_WORKSPACE_ROOT is not readable and traversable by the runtime user"
+    # Writable too, and this is the check that catches the sandbox rather than the permission bits.
+    # ExecStartPre runs inside the same ProtectSystem=strict namespace as ExecStart, where only
+    # ReadWritePaths=/opt/blackspire-command/shared is writable; access(2) reports EROFS for a
+    # read-only mount, so a root outside that tree is refused here instead of failing mid-task when
+    # Hermes first tries to branch or commit.
+    [[ -w "$workspace_root" ]] || fail "BLACKSPIRE_WORKSPACE_ROOT is not writable by the runtime user"
+    # A checkout, not just any directory: Hermes branches, applies edits, inspects, and commits here.
+    # .git is a directory in an ordinary clone and a pointer file in a linked worktree; both are valid.
+    [[ -e "$workspace_root/.git" && ! -L "$workspace_root/.git" ]] || fail "BLACKSPIRE_WORKSPACE_ROOT is not a git checkout"
+    # The seeded workspace's build commands are npm scripts and its allowed paths include apps and
+    # packages, so a checkout missing them cannot execute a task even though it is a valid git tree.
+    missing_workspace_entries=""
+    for required_entry in package.json apps packages; do
+      [[ -e "$workspace_root/$required_entry" ]] || missing_workspace_entries+="${missing_workspace_entries:+, }$required_entry"
+    done
+    [[ -z "$missing_workspace_entries" ]] || fail "BLACKSPIRE_WORKSPACE_ROOT is missing required application files: $missing_workspace_entries"
     startup="${BLACKSPIRE_STARTUP_TIMEOUT_SECONDS:-}"
     { [[ "$startup" =~ ^[0-9]+$ ]] && (( startup >= 1 && startup <= 600 )); } || fail "startup timeout must be a positive integer no greater than 600"
     health="${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-}"

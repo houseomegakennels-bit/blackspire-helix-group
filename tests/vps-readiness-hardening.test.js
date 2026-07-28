@@ -290,6 +290,20 @@ test('verifyVpsRuntime keeps external providers and test mode fail-closed', () =
 // Shell verifier: root rejection
 // ---------------------------------------------------------------------------
 
+// A directory shaped like a real Blackspire checkout: a git entry plus the application files the
+// seeded workspace's build commands and allowed paths depend on.
+function makeWorkspaceRoot(name, { git = true, entries = ['package.json', 'apps', 'packages'] } = {}) {
+  const dir = fs.mkdtempSync(path.join(root, `${name}-`));
+  if (git) fs.mkdirSync(path.join(dir, '.git'));
+  for (const entry of entries) {
+    if (entry === 'package.json') fs.writeFileSync(path.join(dir, entry), '{"name":"fixture"}\n');
+    else fs.mkdirSync(path.join(dir, entry), { recursive: true });
+  }
+  return dir;
+}
+
+const workspaceRootFixture = makeWorkspaceRoot('workspace-root-valid');
+
 // The shell preflight fixture. Every requirement other than the one under test is satisfied
 // deliberately, and all paths are disposable, so each case can only fail for its own reason.
 function preflightEnv(overrides = {}) {
@@ -301,6 +315,7 @@ function preflightEnv(overrides = {}) {
     BIND_HOST: '127.0.0.1', PORT: String(freeProductionPort()),
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_RUNTIME_USER: 'blackspire',
+    BLACKSPIRE_WORKSPACE_ROOT: workspaceRootFixture,
     ...overrides,
   };
 }
@@ -339,6 +354,171 @@ test('verify-environment.sh vps-production rejects an invalid port before the ro
   assert.match(r.stderr, /PORT must be no greater than 65535/);
   assert.doesNotMatch(r.stderr, /persistent database parent directory does not exist/, `the port must be refused before the database parent: ${r.stderr}`);
   assert.doesNotMatch(r.stderr, /production runtime must not run as root/, 'the port must be refused before the root check');
+});
+
+// ---------------------------------------------------------------------------
+// BLACKSPIRE_WORKSPACE_ROOT preflight contract
+//
+// Hermes uses workspace.root_path as the cwd for its git and build work. Under the immutable
+// release the process cwd is read-only to the runtime account, so production must name a real
+// writable checkout. packages/shared/workspace-root.js enforces the same rules at runtime; without
+// the preflight equivalent an unusable value passed ExecStartPre and failed only once the
+// supervisor's children loaded config, as a Restart=on-failure loop rather than a clean refusal.
+// ---------------------------------------------------------------------------
+
+// Each case must be refused for its own stated reason, never as a side effect of the root check.
+function assertWorkspaceRootRefused(r, pattern) {
+  assert.notEqual(r.status, 0, `the workspace root must be refused: ${r.stderr}`);
+  assert.match(r.stderr, pattern, r.stderr);
+  assert.doesNotMatch(r.stderr, /production runtime must not run as root/, `the workspace root must be refused before the root check: ${r.stderr}`);
+}
+
+test('verify-environment.sh vps-production accepts a valid workspace root', (t) => {
+  const r = run('scripts/verify-environment.sh', ['vps-production'], preflightEnv());
+  assert.doesNotMatch(r.stderr, /BLACKSPIRE_WORKSPACE_ROOT/, `a valid workspace root must raise no workspace-root failure: ${r.stderr}`);
+  if (process.getuid() === 0) {
+    // The profile's final check refuses a root runtime, so a full pass cannot be observed as root.
+    assert.match(r.stderr, /production runtime must not run as root/, r.stderr);
+    t.skip('running as root, so only the absence of a workspace-root refusal can be asserted here');
+    return;
+  }
+  assert.equal(r.status, 0, `a fully valid production profile must pass: ${r.stderr}`);
+  assert.match(r.stdout, /BLACKSPIRE ENVIRONMENT OK/);
+});
+
+test('verify-environment.sh vps-production refuses a missing workspace root variable', () => {
+  const env = preflightEnv();
+  delete env.BLACKSPIRE_WORKSPACE_ROOT;
+  // Production requires it explicitly: the runtime's "." default would point Hermes back at the
+  // read-only immutable release.
+  assertWorkspaceRootRefused(run('scripts/verify-environment.sh', ['vps-production'], env), /BLACKSPIRE_WORKSPACE_ROOT must be set for production; there is no default/);
+});
+
+test('verify-environment.sh vps-production refuses an empty or whitespace-only workspace root', () => {
+  for (const value of ['', '   ', '\t']) {
+    assertWorkspaceRootRefused(
+      run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: value })),
+      /BLACKSPIRE_WORKSPACE_ROOT must be set for production; there is no default/,
+    );
+  }
+});
+
+test('verify-environment.sh vps-production refuses a relative workspace root', () => {
+  // Under systemd the cwd is the immutable release, so a relative value resolves against exactly
+  // the read-only tree this contract exists to avoid.
+  assertWorkspaceRootRefused(
+    run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: './workspace' })),
+    /BLACKSPIRE_WORKSPACE_ROOT must be an absolute path/,
+  );
+});
+
+test('verify-environment.sh vps-production refuses a nonexistent workspace root directory', () => {
+  assertWorkspaceRootRefused(
+    run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: path.join(root, 'workspace-root-absent') })),
+    /BLACKSPIRE_WORKSPACE_ROOT does not exist/,
+  );
+});
+
+test('verify-environment.sh vps-production refuses a file supplied as the workspace root', () => {
+  const file = path.join(fs.mkdtempSync(path.join(root, 'workspace-root-file-')), 'not-a-directory');
+  fs.writeFileSync(file, 'x');
+  assertWorkspaceRootRefused(
+    run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: file })),
+    /BLACKSPIRE_WORKSPACE_ROOT is not a directory/,
+  );
+});
+
+test('verify-environment.sh vps-production refuses a symlinked workspace root', () => {
+  const target = makeWorkspaceRoot('workspace-root-symlink-target');
+  const link = path.join(root, `workspace-root-symlink-${process.pid}`);
+  fs.symlinkSync(target, link);
+  assertWorkspaceRootRefused(
+    run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: link })),
+    /BLACKSPIRE_WORKSPACE_ROOT must not be a symlink/,
+  );
+});
+
+test('verify-environment.sh vps-production refuses an unreadable workspace root', (t) => {
+  if (process.getuid() === 0) {
+    // Directory permission bits are bypassed for root (DAC override), so this cannot be exercised
+    // as root - the same documented limitation as the other permission-dependent cases here.
+    t.skip('running as root bypasses directory permission bits');
+    return;
+  }
+  const dir = makeWorkspaceRoot('workspace-root-unreadable');
+  fs.chmodSync(dir, 0o000);
+  try {
+    assertWorkspaceRootRefused(
+      run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: dir })),
+      /BLACKSPIRE_WORKSPACE_ROOT is not readable and traversable by the runtime user/,
+    );
+  } finally { fs.chmodSync(dir, 0o700); }
+});
+
+test('verify-environment.sh vps-production refuses a workspace root the runtime cannot write', (t) => {
+  if (process.getuid() === 0) {
+    t.skip('running as root bypasses directory permission bits');
+    return;
+  }
+  // Readable and traversable but not writable. Under the unit this is what a root outside
+  // ReadWritePaths=/opt/blackspire-command/shared looks like: ProtectSystem=strict mounts it
+  // read-only, access(2) reports EROFS, and Hermes could not branch or commit there.
+  const dir = makeWorkspaceRoot('workspace-root-unwritable');
+  fs.chmodSync(dir, 0o500);
+  try {
+    assertWorkspaceRootRefused(
+      run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: dir })),
+      /BLACKSPIRE_WORKSPACE_ROOT is not writable by the runtime user/,
+    );
+  } finally { fs.chmodSync(dir, 0o700); }
+});
+
+test('verify-environment.sh vps-production refuses a workspace root that is not a git checkout', () => {
+  assertWorkspaceRootRefused(
+    run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: makeWorkspaceRoot('workspace-root-no-git', { git: false }) })),
+    /BLACKSPIRE_WORKSPACE_ROOT is not a git checkout/,
+  );
+});
+
+test('verify-environment.sh vps-production refuses a workspace root missing required application files', () => {
+  // A valid git tree is not sufficient: the seeded workspace's build commands are npm scripts and
+  // its allowed paths include apps and packages.
+  const cases = [
+    [['apps', 'packages'], /missing required application files: package\.json/],
+    [['package.json', 'packages'], /missing required application files: apps/],
+    [['package.json'], /missing required application files: apps, packages/],
+    [[], /missing required application files: package\.json, apps, packages/],
+  ];
+  for (const [entries, expected] of cases) {
+    const dir = makeWorkspaceRoot(`workspace-root-partial-${entries.length}`, { entries });
+    assertWorkspaceRootRefused(run('scripts/verify-environment.sh', ['vps-production'], preflightEnv({ BLACKSPIRE_WORKSPACE_ROOT: dir })), expected);
+  }
+});
+
+test('the workspace-root preflight matches the runtime resolver contract', async () => {
+  // ExecStartPre and the runtime must not disagree about which roots are usable, or the preflight
+  // would pass a value the supervisor's children then refuse.
+  const { resolveWorkspaceRoot } = await import('../packages/shared/workspace-root.js');
+  const valid = makeWorkspaceRoot('workspace-root-parity-valid');
+  assert.equal(resolveWorkspaceRoot({ BLACKSPIRE_WORKSPACE_ROOT: valid }), valid, 'the resolver accepts what the preflight accepts');
+  for (const bad of [path.join(root, 'workspace-root-parity-absent'), './relative', '']) {
+    assert.throws(() => resolveWorkspaceRoot({ BLACKSPIRE_WORKSPACE_ROOT: bad }), /refusing to start/, `the resolver must also refuse ${JSON.stringify(bad)}`);
+  }
+  // The one deliberate asymmetry, pinned so it cannot invert: an absent variable is the historical
+  // "." development default at runtime, while production refuses it, because under the unit "." is
+  // the read-only release. The preflight may be stricter than the resolver; it must never be looser.
+  assert.equal(resolveWorkspaceRoot({}), '.', 'an absent variable keeps the development default');
+});
+
+test('the reviewed production profile documents a workspace root the unit can actually write', () => {
+  // The preflight now requires the variable, so a profile that omitted it - or pointed outside
+  // ReadWritePaths=/opt/blackspire-command/shared - would fail every production start.
+  const profile = fs.readFileSync('scripts/production-profile.env.example', 'utf8');
+  const documented = profile.match(/^BLACKSPIRE_WORKSPACE_ROOT=(.+)$/m);
+  assert.ok(documented, 'the production profile must document BLACKSPIRE_WORKSPACE_ROOT');
+  const value = documented[1].trim();
+  assert.ok(path.isAbsolute(value), `the documented workspace root must be absolute: ${value}`);
+  assert.ok(value.startsWith('/opt/blackspire-command/shared/'), `the documented workspace root must sit under the unit's only writable tree: ${value}`);
 });
 
 // ---------------------------------------------------------------------------

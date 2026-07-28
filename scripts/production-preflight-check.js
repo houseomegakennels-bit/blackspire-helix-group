@@ -251,7 +251,10 @@ if (unit === null) {
       : `production profile must pin an explicit reviewed port outside ${PROTECTED_PORTS.join('/')}`);
 
   const requiredKeys = ['NODE_ENV', 'BLACKSPIRE_RUNTIME_MODE', 'BLACKSPIRE_STATE_OWNER', 'BIND_HOST', 'PORT',
-    'PUBLIC_BASE_URL', 'SECURE_COOKIES', 'BLACKSPIRE_DB_PATH', 'BLACKSPIRE_BACKUP_DIR'];
+    'PUBLIC_BASE_URL', 'SECURE_COOKIES', 'BLACKSPIRE_DB_PATH', 'BLACKSPIRE_BACKUP_DIR',
+    // Required since the workspace-root preflight: ExecStartPre now refuses a production profile
+    // that omits it, so a profile not documenting it would fail every start.
+    'BLACKSPIRE_WORKSPACE_ROOT'];
   const missingKeys = requiredKeys.filter((key) => !new RegExp(`^${key}=`, 'm').test(profile));
   record('profile-required-keys', missingKeys.length === 0, 'source',
     missingKeys.length === 0 ? 'production profile documents every required key'
