@@ -26,7 +26,7 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
     const policy = latest(getPolicyDecisions(runId));
     const invocations = getProviderInvocations(runId);
     const invocation = invocations.length ? invocations[invocations.length - 1] : null;
-    validateLinks({ run, routing, policy, verification, invocation });
+    validateLinks({ run, routing, policy, verification, invocations });
     const verified = verification?.passed === 1 || verification?.passed === true;
     const terminalCompleted = run.status === 'completed' && run.outcome === 'verified';
     const positive = terminalCompleted && verified;
@@ -34,7 +34,8 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
     const duration = durationMs(run.started_at, run.finished_at);
     if (duration === null) throw new Error('outcome evaluation refuses malformed or negative duration');
     const retryCount = invocation ? Math.max(0, Number(invocation.attempt || 1) - 1) : null;
-    const components = componentRows({ positive, verified, retryCount, duration, invocation, run });
+    const usage = aggregateUsage(invocations);
+    const components = componentRows({ positive, verified, retryCount, duration, invocation, usage, run });
     const payload = {
       evaluationVersion, userId: run.actor_id || null,
       // Projects do not yet have a canonical ID. In Phase 3A the workspace is the project boundary.
@@ -45,7 +46,7 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
       verificationStatus: verification ? (verified ? 'passed' : 'failed') : 'unavailable',
       verifierConfidence: verification ? (verified ? 'deterministic_pass' : 'deterministic_fail') : 'unknown',
       acceptanceStatus: 'unavailable', retryCount, durationMs: duration,
-      inputTokens: numOrNull(invocation?.input_tokens), outputTokens: numOrNull(invocation?.output_tokens), costCents: numOrNull(invocation?.cost_cents),
+      inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, costCents: usage.costCents,
       timedOut: Boolean(invocation?.timed_out), cancelled: Boolean(invocation?.cancelled) || run.status === 'cancelled',
       rollbackEvidence: null, stabilityEvidence: null,
       failureCategory: positive ? null : failureCategory(run, verification, invocation),
@@ -109,7 +110,7 @@ export function recordOutcomeEvaluationFailure(runId, error) {
   try { insertOutcomeEvaluationFailure({ id: id('hefail'), runId, workspaceId: run.workspace_id, category, remediationState: 'open', detail: category, createdAt: now() }); } catch { return null; }
   return category;
 }
-function safeRequired(value) { return typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value); }
+function safeRequired(value) { return typeof value === 'string' && value.trim().length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value); }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
 // Corrections are immutable evidence, but their free-text reason/evidence can contain sensitive
 // operational context.  Read APIs expose only the chain metadata; the original record stays in
@@ -117,7 +118,7 @@ function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1
 function safeCorrection(row) { return { id: row.id, version: row.version, supersedesCorrectionId: row.supersedes_correction_id ?? row.supersedesCorrectionId ?? null, createdAt: row.created_at ?? row.createdAt }; }
 function safeEvent(row) { return { id: row.id, eventType: row.event_type ?? row.eventType, createdAt: row.created_at ?? row.createdAt }; }
 
-function componentRows({ positive, verified, retryCount, duration, invocation, run }) {
+function componentRows({ positive, verified, retryCount, duration, invocation, usage, run }) {
   const known = (name, value, detail) => ({ name, value: String(value), status: 'known', detail });
   const unknown = (name) => ({ name, value: null, status: 'unknown', detail: 'not available from immutable Phase 3A evidence' });
   return [
@@ -128,21 +129,28 @@ function componentRows({ positive, verified, retryCount, duration, invocation, r
     duration === null ? unknown('duration_ms') : known('duration_ms', duration, 'finished_at minus started_at'),
     invocation ? known('timeout', Boolean(invocation.timed_out), 'provider invocation evidence') : unknown('timeout'),
     invocation ? known('cancellation', Boolean(invocation.cancelled) || run.status === 'cancelled', 'provider/run evidence') : known('cancellation', run.status === 'cancelled', 'terminal run evidence'),
-    invocation?.cost_cents == null ? unknown('cost_cents') : known('cost_cents', invocation.cost_cents, 'provider-reported cost only'),
+    usage.costCents == null ? unknown('cost_cents') : known('cost_cents', usage.costCents, 'sum across provider attempts'),
     unknown('user_acceptance'), unknown('rollback_evidence'), unknown('stability_evidence'),
     known('learning_eligibility', positive ? 'positive_eligible' : 'not_positive', 'does not affect routing in Phase 3A'),
   ];
 }
 function ordered(steps) { return steps.every((s, i) => Number.isInteger(s.seq) && s.seq === i + 1 && s.created_at); }
 function terminalEventsPresent(steps, status) { const names = new Set(steps.map((s) => s.name)); return names.has('hermes.received') && (status === 'completed' ? names.has('hermes.completed') : names.has('hermes.failed')); }
-function validateLinks({ run, routing, policy, verification, invocation }) {
-  for (const row of [routing, policy, verification, invocation]) {
+function validateLinks({ run, routing, policy, verification, invocations }) {
+  for (const row of [routing, policy, verification, ...invocations]) {
     if (!row) continue;
     if (row.run_id !== run.id || (row.task_id && row.task_id !== run.task_id)) throw new Error('outcome evaluation refuses mismatched provenance references');
   }
-  if (invocation && !['mock', 'real'].includes(invocation.mode)) throw new Error('outcome evaluation refuses invalid execution mode');
-  if (invocation && (!Number.isSafeInteger(Number(invocation.attempt)) || Number(invocation.attempt) < 1)) throw new Error('outcome evaluation refuses impossible retry count');
-  for (const value of [invocation?.input_tokens, invocation?.output_tokens, invocation?.cost_cents]) if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) throw new Error('outcome evaluation refuses malformed usage or cost');
+  for (const invocation of invocations) {
+    if (!['mock', 'real'].includes(invocation.mode)) throw new Error('outcome evaluation refuses invalid execution mode');
+    if (!Number.isSafeInteger(Number(invocation.attempt)) || Number(invocation.attempt) < 1) throw new Error('outcome evaluation refuses impossible retry count');
+    for (const value of [invocation.input_tokens, invocation.output_tokens, invocation.cost_cents]) if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) throw new Error('outcome evaluation refuses malformed usage or cost');
+  }
+}
+function aggregateUsage(invocations) {
+  const total = (column) => invocations.length && invocations.every((row) => row[column] != null)
+    ? invocations.reduce((sum, row) => sum + Number(row[column]), 0) : null;
+  return { inputTokens: total('input_tokens'), outputTokens: total('output_tokens'), costCents: total('cost_cents') };
 }
 function latest(rows) { return rows.length ? rows[rows.length - 1] : null; }
 function durationMs(start, end) { const n = Date.parse(end) - Date.parse(start); return Number.isFinite(n) && n >= 0 ? n : null; }
