@@ -16,9 +16,29 @@ const SENSITIVE_KEY_PATTERN = /(secret|token|password|passwd|api[_-]?key|private
 // truncated at a shallow depth.
 const MAX_DEPTH = 32;
 
-/** Redact a single string value using the shared reviewed redactor. */
+// Supplementary secret shapes that the shared narrow redactor does not cover, applied on top of it
+// so credentials embedded in free-text objectives/steps are never persisted verbatim. Ordered
+// specific-before-generic. Each entry redacts the sensitive span while keeping surrounding context.
+const EXTRA_SECRET_PATTERNS = [
+  // Authorization/Proxy-Authorization header VALUE (Bearer, Basic, Digest, or any scheme+token)
+  [/\b(proxy-)?authorization(\s*[:=]\s*)("?)[^\s,"'}]+/gi, '$1authorization$2$3[REDACTED]'],
+  // Bearer / Basic <token> appearing without an explicit "authorization" label
+  [/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 [REDACTED]'],
+  // AWS access key id / secret access key
+  [/\bAKIA[0-9A-Z]{16}\b/g, '[REDACTED]'],
+  [/\b(aws_secret_access_key|aws_access_key_id|aws_session_token)(\s*[:=]\s*)("?)[^\s,"'}]+/gi, '$1$2$3[REDACTED]'],
+  // Slack tokens and Google API keys
+  [/\bxox[baprs]-[A-Za-z0-9-]{8,}/gi, '[REDACTED]'],
+  [/\bAIza[0-9A-Za-z_-]{10,}\b/g, '[REDACTED]'],
+  // Private key PEM headers
+  [/-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/g, '[REDACTED-PRIVATE-KEY]'],
+];
+
+/** Redact a single string value: shared reviewed redactor first, then the supplementary shapes. */
 export function redactString(value) {
-  return redact(String(value ?? ''));
+  let s = redact(String(value ?? ''));
+  for (const [pattern, replacement] of EXTRA_SECRET_PATTERNS) s = s.replace(pattern, replacement);
+  return s;
 }
 
 /**
