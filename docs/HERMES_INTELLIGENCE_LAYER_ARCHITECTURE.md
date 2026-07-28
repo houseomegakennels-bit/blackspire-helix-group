@@ -107,8 +107,6 @@ promotion code path** in M1 — promotion requires explicit policy/human approva
 
 ## 7b. Milestone 2 — Runtime & Provider Framework (development-only)
 
-Milestone 2 is merged through PR #56 (reviewed implementation head `148a82cde1105a8917be2e38018c6e8ff4a7e1d4`; merge `a4a0407e5d72019b4a99cf61568598434e7e136d`). Its real-provider path remains development-only and disabled by default; no live credentialed smoke test has occurred.
-
 Adds a gated real-provider runtime beside the mock default. New modules: `runtime-profile.js`
 (fail-closed dev gate), extended `registries.js` (typed provider/capability definitions),
 `adapters/` (`base`, `mock`, `fake-provider`, `anthropic-dev`, `index` resolver), `health.js`,
