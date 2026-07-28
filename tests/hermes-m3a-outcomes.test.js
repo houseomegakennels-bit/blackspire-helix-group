@@ -59,6 +59,8 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   assert.equal(summary.id, result.evaluationId); assert.equal('classification' in summary, false);
   assert.throws(() => appendOutcomeCorrection(reader, result.evaluationId, { reason: 'fix', sourceEvidence: 'event' }), /not authorized/);
   const first = appendOutcomeCorrection(admin, result.evaluationId, { reason: 'correct factual label', sourceEvidence: 'verified operator evidence' });
+  const history = readOutcomeEvaluation(admin, result.evaluationId).corrections[0];
+  assert.equal('reason' in history, false); assert.equal('sourceEvidence' in history, false, 'read history never returns raw correction evidence');
   assert.equal(store.getOutcomeEvaluation(result.evaluationId).id, result.evaluationId, 'original remains immutable');
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { reason: 'branch', sourceEvidence: 'evidence' }), /sole current/);
   const second = appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: first.id, reason: 'new evidence', sourceEvidence: 'explicit evidence' });

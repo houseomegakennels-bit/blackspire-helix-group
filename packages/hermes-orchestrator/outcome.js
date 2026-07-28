@@ -108,7 +108,10 @@ export function recordOutcomeEvaluationFailure(runId, error) {
 }
 function safeRequired(value) { return typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value); }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
-function safeCorrection(row) { return { id: row.id, version: row.version, supersedesCorrectionId: row.supersedes_correction_id ?? row.supersedesCorrectionId ?? null, reason: row.reason, sourceEvidence: row.source_evidence ?? row.sourceEvidence, createdAt: row.created_at ?? row.createdAt }; }
+// Corrections are immutable evidence, but their free-text reason/evidence can contain sensitive
+// operational context.  Read APIs expose only the chain metadata; the original record stays in
+// the append-only evidence store for separately authorized operator handling.
+function safeCorrection(row) { return { id: row.id, version: row.version, supersedesCorrectionId: row.supersedes_correction_id ?? row.supersedesCorrectionId ?? null, createdAt: row.created_at ?? row.createdAt }; }
 function safeEvent(row) { return { id: row.id, eventType: row.event_type ?? row.eventType, createdAt: row.created_at ?? row.createdAt }; }
 
 function componentRows({ positive, verified, retryCount, duration, invocation, run }) {
