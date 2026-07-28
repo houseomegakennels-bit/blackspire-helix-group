@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ADMIN_TOKEN, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
+import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
 import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords } from '../../packages/task-engine/tasks.js';
@@ -41,7 +42,7 @@ const PUBLIC_ASSETS = {
 // (/jarvis.css?v=2) resolve before login. Every other public route keeps its existing
 // whole-URL comparison, so this widens nothing beyond the asset allowlist itself.
 function isPublicAsset(url = '', pathname = '') {
-  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || Object.hasOwn(PUBLIC_ASSETS, pathname) || url === '/api/auth/login' || url === '/api/auth/session';
+  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || url === '/hermes-runtime' || Object.hasOwn(PUBLIC_ASSETS, pathname) || url === '/api/auth/login' || url === '/api/auth/session';
 }
 
 function authContext(req) {
@@ -93,6 +94,7 @@ async function route(req, res) {
     if (u.pathname === '/api/test-mode/telegram-input' && req.method === 'POST') return testTelegramInput(req, res);
     if (u.pathname === '/api/test-mode/queued-task' && req.method === 'POST') return testQueuedTask(req, res);
     if (u.pathname === '/api/test-mode/delivery-failure' && req.method === 'POST') return testDeliveryFailure(req, res);
+    if (u.pathname === '/api/hermes/runtime' && req.method === 'GET') return json(res, 200, buildHermesRuntimeStatus());
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: TEST_MODE.enabled ? [getWorkspace(TEST_MODE.workspaceId)] : listWorkspaces() });
     if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => !TEST_MODE.enabled || task.workspace_id === TEST_MODE.workspaceId) });
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
@@ -130,6 +132,7 @@ async function route(req, res) {
     }
 
     if (u.pathname === '/' || u.pathname === '/jarvis') return serve(res, TEST_MODE.enabled ? 'apps/jarvis-pwa/public/test-mode.html' : 'apps/jarvis-pwa/public/index.html', 'text/html');
+    if (u.pathname === '/hermes-runtime') return serve(res, 'apps/jarvis-pwa/public/hermes-runtime.html', 'text/html');
     if (Object.hasOwn(PUBLIC_ASSETS, u.pathname)) {
       const asset = PUBLIC_ASSETS[u.pathname];
       return serve(res, asset.file, asset.type, asset.immutable ? 'public, max-age=31536000, immutable' : undefined);
