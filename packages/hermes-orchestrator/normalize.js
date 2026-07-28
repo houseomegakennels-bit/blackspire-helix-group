@@ -16,6 +16,8 @@ import { redactString } from './redaction.js';
  * @property {string} objective        redacted, trimmed, length-capped request text
  * @property {number} budgetCents
  * @property {string} idempotencyKey
+ * @property {string} authority         authority class for canonical policy (e.g. 'telegram', 'authenticated_admin')
+ * @property {string|null} priorPolicyDecision  a denial already recorded by canonical intake, if any
  */
 
 const MAX_OBJECTIVE_CHARS = 4000;
@@ -42,13 +44,17 @@ export function normalizeTask(input) {
     objective: redactString(objectiveRaw).slice(0, MAX_OBJECTIVE_CHARS),
     budgetCents: intOrZero(input.budgetCents ?? input.budget_cents),
     idempotencyKey: str(input.idempotencyKey ?? input.idempotency_key) || `task:${taskId}`,
+    authority: str(input.authority ?? input.authority_class)
+      || ((str(input.channel ?? input.source_channel) || 'api') === 'telegram' ? 'telegram' : 'authenticated_admin'),
+    // A denial already recorded by canonical intake (tasks.policy_decision / unified_inputs.policy_status).
+    priorPolicyDecision: str(input.priorPolicyDecision ?? input.policy_decision ?? input.policy_status) || null,
   };
   validateNormalizedTask(normalized);
   return normalized;
 }
 
 export function validateNormalizedTask(t) {
-  for (const key of ['taskId', 'conversationId', 'workspaceId', 'actorId', 'channel', 'objective', 'idempotencyKey']) {
+  for (const key of ['taskId', 'conversationId', 'workspaceId', 'actorId', 'channel', 'objective', 'idempotencyKey', 'authority']) {
     if (typeof t[key] !== 'string' || !t[key]) throw new Error(`NormalizedTask.${key} must be a non-empty string`);
   }
   if (!Number.isSafeInteger(t.budgetCents) || t.budgetCents < 0) throw new Error('NormalizedTask.budgetCents must be a non-negative integer');
