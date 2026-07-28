@@ -42,7 +42,9 @@ Verified automatically by the checker:
 3. **Installed unit** — `/etc/systemd/system/blackspire-command.service` is byte-identical to
    `ops/runtime-ownership/blackspire-command.service`.
 4. **Environment file** — exists as a regular file, `root:blackspire` mode `0640`, declaring every
-   required key and carrying no provider or Telegram credentials. Values are never read or printed.
+   required key and carrying no provider or Telegram credentials. The reviewed profile pins
+   `BLACKSPIRE_RUNTIME_USER=blackspire`, startup timeout `30`, and health timeout `5`, matching the
+   requirements enforced by both `ExecStartPre` and `verifyVpsRuntime`. Values are never printed.
 5. **Workspace checkout** — `BLACKSPIRE_WORKSPACE_ROOT` is absolute, a non-symlinked directory, a git
    checkout with `package.json`, `apps/`, and `packages/`, readable, traversable, and writable by the
    runtime account, and outside `releases/` and `current`. The checker applies exactly the rules
