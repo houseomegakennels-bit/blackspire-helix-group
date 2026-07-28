@@ -18,17 +18,19 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
     const run = getWorkflowRun(runId);
     if (!run || !TERMINAL.has(run.status) || !run.finished_at) throw new Error('outcome evaluation requires a finished terminal workflow run');
     const steps = getWorkflowSteps(runId);
-    if (!steps.length || !ordered(steps)) throw new Error('outcome evaluation requires ordered workflow evidence');
+    if (!steps.length || !ordered(steps) || !terminalEventsPresent(steps, run.status)) throw new Error('outcome evaluation requires complete ordered terminal workflow evidence');
     const verification = latest(getVerificationResults(runId));
     const routing = latest(getRoutingDecisions(runId));
     const policy = latest(getPolicyDecisions(runId));
     const invocations = getProviderInvocations(runId);
     const invocation = invocations.length ? invocations[invocations.length - 1] : null;
+    validateLinks({ run, routing, policy, verification, invocation });
     const verified = verification?.passed === 1 || verification?.passed === true;
     const terminalCompleted = run.status === 'completed' && run.outcome === 'verified';
     const positive = terminalCompleted && verified;
     const mode = invocation?.mode || (run.provider === 'mock' ? 'mock' : null);
     const duration = durationMs(run.started_at, run.finished_at);
+    if (duration === null) throw new Error('outcome evaluation refuses malformed or negative duration');
     const retryCount = invocation ? Math.max(0, Number(invocation.attempt || 1) - 1) : null;
     const components = componentRows({ positive, verified, retryCount, duration, invocation, run });
     const payload = {
@@ -73,9 +75,20 @@ function componentRows({ positive, verified, retryCount, duration, invocation, r
   ];
 }
 function ordered(steps) { return steps.every((s, i) => Number.isInteger(s.seq) && s.seq === i + 1 && s.created_at); }
+function terminalEventsPresent(steps, status) { const names = new Set(steps.map((s) => s.name)); return names.has('hermes.received') && (status === 'completed' ? names.has('hermes.completed') : names.has('hermes.failed')); }
+function validateLinks({ run, routing, policy, verification, invocation }) {
+  for (const row of [routing, policy, verification, invocation]) {
+    if (!row) continue;
+    if (row.run_id !== run.id || (row.task_id && row.task_id !== run.task_id)) throw new Error('outcome evaluation refuses mismatched provenance references');
+  }
+  if (invocation && !['mock', 'real'].includes(invocation.mode)) throw new Error('outcome evaluation refuses invalid execution mode');
+  if (invocation && (!Number.isSafeInteger(Number(invocation.attempt)) || Number(invocation.attempt) < 1)) throw new Error('outcome evaluation refuses impossible retry count');
+  for (const value of [invocation?.input_tokens, invocation?.output_tokens, invocation?.cost_cents]) if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) throw new Error('outcome evaluation refuses malformed usage or cost');
+}
 function latest(rows) { return rows.length ? rows[rows.length - 1] : null; }
 function durationMs(start, end) { const n = Date.parse(end) - Date.parse(start); return Number.isFinite(n) && n >= 0 ? n : null; }
 function numOrNull(v) { return v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null); }
 function failureCategory(run, verification, invocation) { if (run.status === 'blocked') return 'blocked'; if (run.status === 'cancelled' || invocation?.cancelled) return 'cancelled'; if (invocation?.timed_out) return 'timeout'; if (verification && !(verification.passed === 1 || verification.passed === true)) return 'verification_failed'; return run.outcome || 'unknown'; }
 function safeJson(value) { try { return JSON.stringify(redactDeep(JSON.parse(value || 'null'))); } catch { return JSON.stringify(redactDeep(value)); } }
-function digest(value) { return crypto.createHash('sha256').update(JSON.stringify(redactDeep(value))).digest('hex'); }
+function digest(value) { return crypto.createHash('sha256').update(canonicalJson(redactDeep(value))).digest('hex'); }
+function canonicalJson(value) { if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`; return JSON.stringify(value); }

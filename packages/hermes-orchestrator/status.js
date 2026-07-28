@@ -44,7 +44,9 @@ export function buildRuntimeStatus(env = process.env) {
     // A redacted, already-redacted-at-write error string only.
     error: i.error ? redactString(i.error) : null,
   }));
-  const recentEvaluations = recentOutcomeEvaluations(10).map((e) => ({
+  // Evaluations are not globally enumerated: this status page has no workspace selector/actor
+  // authorization model yet. Phase 3A therefore exposes only aggregate-safe local metadata.
+  const recentEvaluations = recentOutcomeEvaluations(0).map((e) => ({
     id: e.id, workspaceId: e.workspace_id, taskId: e.task_id, runId: e.run_id,
     executionMode: e.execution_mode, provider: e.provider_id, terminalStatus: e.terminal_status,
     verificationStatus: e.verification_status, learningEligibility: e.learning_eligibility,
