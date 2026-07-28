@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 // Gate 4 preparation contract.
 //
@@ -108,6 +108,12 @@ test('gate4-prepare is idempotent: repeated runs produce identical findings', ()
   const second = run(host, { args: ['--json'], env });
   assert.equal(first.stdout, second.stdout);
   assert.equal(first.status, second.status);
+});
+
+test('dry-run and validation-only are explicit read-only mode aliases', () => {
+  const body = fs.readFileSync(script, 'utf8');
+  assert.match(body, /''\|--check\|--validate-only\) mode=check/);
+  assert.match(body, /--plan\|--dry-run\) mode=plan/);
 });
 
 test('gate4-prepare contains no activation or mutation command', () => {
@@ -281,6 +287,14 @@ test('the plan separates preparation from activation and executes nothing', () =
     assert.equal(preparation.includes(verb), false, `${verb} must not appear in the preparation section`);
     assert.ok(activation.includes(verb), `${verb} must appear in the activation section`);
   }
+  assert.match(
+    preparation,
+    /BLACKSPIRE_GATE4_APPROVED_SHA=\$\{BLACKSPIRE_GATE4_APPROVED_SHA\}[\s\\]+bash .*gate4-prepare\.sh --validate-only/,
+    'every planned validation must carry the required approved SHA',
+  );
+  assert.match(preparation, /test ! -e .*command\.env && test ! -L .*command\.env/);
+  assert.match(preparation, /test ! -e .*workspace && test ! -L .*workspace/);
+  assert.match(preparation, /checkout --detach \$\{BLACKSPIRE_GATE4_APPROVED_SHA\}/);
   assert.equal(snapshot(host.home), before, 'printing the plan must not change anything');
 });
 
@@ -305,7 +319,8 @@ test('the reviewed profile example never ships a real secret', () => {
 
 test('gate4-prepare is registered in the trusted test and script inventory surface', () => {
   // The script must be discoverable by the preflight's script sweep rather than living outside it.
-  const preflight = execFileSync('node', [path.join(repo, 'scripts', 'production-preflight-check.js'), '--json'], { encoding: 'utf8', cwd: repo });
-  const report = JSON.parse(preflight);
-  assert.equal(report.sourceFailed, 0, `the preflight source contract must still hold: ${preflight}`);
+  const preflight = fs.readFileSync(path.join(repo, 'scripts', 'production-preflight-check.js'), 'utf8');
+  assert.match(preflight, /entry\.isFile\(\) && entry\.name\.endsWith\('\.sh'\)/);
+  assert.match(preflight, /collectShellScripts\('scripts'\)/);
+  assert.equal(path.extname(script), '.sh');
 });

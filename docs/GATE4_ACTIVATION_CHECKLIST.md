@@ -13,6 +13,8 @@ mutating mode, and is safe to rerun at any time:
 BLACKSPIRE_GATE4_APPROVED_SHA=<full-40-char-sha> bash scripts/gate4-prepare.sh          # validate
 BLACKSPIRE_GATE4_APPROVED_SHA=<full-40-char-sha> bash scripts/gate4-prepare.sh --plan   # command plan
 BLACKSPIRE_GATE4_APPROVED_SHA=<full-40-char-sha> bash scripts/gate4-prepare.sh --json   # machine-readable
+BLACKSPIRE_GATE4_APPROVED_SHA=<full-40-char-sha> bash scripts/gate4-prepare.sh --validate-only
+BLACKSPIRE_GATE4_APPROVED_SHA=<full-40-char-sha> bash scripts/gate4-prepare.sh --dry-run
 ```
 
 It exits non-zero while anything is outstanding. A `MANUAL` finding is not a pass — it is a
@@ -65,15 +67,18 @@ paths already substituted.
 
 ```sh
 # 1. Environment file, created with its final ownership and mode in one step
+test ! -e /etc/blackspire/command.env && test ! -L /etc/blackspire/command.env
 install -o root -g blackspire -m 0640 \
   scripts/production-profile.env.example /etc/blackspire/command.env
 # then edit it and supply PUBLIC_BASE_URL, COMMAND_ADMIN_TOKEN, SESSION_SECRET
 bash scripts/with-node.sh scripts/select-production-port.js   # confirm PORT is free
 
 # 2. Workspace checkout — never inside releases/, never the release root
+test ! -e /opt/blackspire-command/shared/workspace && \
+  test ! -L /opt/blackspire-command/shared/workspace
 install -d -o blackspire -g blackspire -m 0750 /opt/blackspire-command/shared/workspace
 git clone --no-hardlinks <approved-repository-url> /opt/blackspire-command/shared/workspace
-git -C /opt/blackspire-command/shared/workspace checkout <approved-sha>
+git -C /opt/blackspire-command/shared/workspace checkout --detach <approved-sha>
 chown -R blackspire:blackspire /opt/blackspire-command/shared/workspace
 
 # 3. Immutable release for the approved SHA (builds it; does not activate it)
@@ -94,7 +99,7 @@ what its file permissions say.
 sudo -u blackspire bash -c \
   'set -a; . /etc/blackspire/command.env; set +a; exec bash scripts/verify-environment.sh vps-production'
 npm run production:preflight:host
-BLACKSPIRE_GATE4_APPROVED_SHA=<sha> bash scripts/gate4-prepare.sh
+BLACKSPIRE_GATE4_APPROVED_SHA=<sha> bash scripts/gate4-prepare.sh --validate-only
 systemctl show blackspire-command.service -p ActiveState -p UnitFileState -p MainPID
 ```
 

@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-27 — Gate 4 preparation workflow recovered and completed (Codex)
+
+- Recovered the interrupted work at clean, pushed branch `ops/gate4-preparation`: commit `5eb269090d634ceb551d29b79ccdcdf112dee1f8` and open PR #51, stacked on open PR #50 because the workflow depends on its `BLACKSPIRE_WORKSPACE_ROOT` preflight contract. No prior work was reset, overwritten, duplicated, or discarded.
+- Audited the read-only `scripts/gate4-prepare.sh`, its focused tests, and `docs/GATE4_ACTIVATION_CHECKLIST.md` against the canonical Gate 4 blockers, runtime ownership map, systemd unit, release contract, runbook, environment profile, workspace requirements, and authorization boundary. Completed the interrupted interface by adding explicit `--dry-run` and `--validate-only` aliases, carrying the required approved SHA into every planned validation, making the environment/workspace preparation commands fail closed rather than overwrite existing paths, and pinning the workspace checkout to detached exact-SHA state.
+- Current read-only host evidence: production preflight and strict host preflight both report `ok=true source=21/21 deployment=2/2`; staging remains active on `127.0.0.1:8788` with PID `2909886` and HTTP 200 health; nginx remains active with PID `2909804`; production remains `disabled`/`inactive`/`dead`, `MainPID=0`; `/etc/blackspire/command.env`, `/opt/blackspire-command/shared/workspace`, and `/opt/blackspire-command/current` remain absent. Gate 4 is not authorized.
+- Validation under Node 22.23.1: focused Gate 4 tests 23/23; full trusted suite 486 tests with 477 passed, 0 failed, and 9 host-conditional skips, trusted inventory `38/38/38/38/38`, zero mutations, and clean process containment. One first full run hit the already tracked `trust-boundary-regression.test.js` flake; the isolated suite passed 14/14 and the complete clean rerun passed with zero failures. Lint, typecheck, build, secret scan, living-memory, shell syntax, dry-run, validation-only, production preflight, and whitespace checks passed or failed closed exactly as expected.
+- No live environment file, workspace, release, symlink, service, nginx, TLS, DNS, firewall, Telegram, database, credential, or production state was changed. The command plan remains operator-only preparation above a hard boundary; switching `current` is the first activation action below it and requires separate explicit bounded authorization.
+
 ## 2026-07-27 — Critical R-1 closed: production systemd unit reinstalled (Claude Code)
 
 - Narrowly scoped repair of the Critical blocker raised by the production readiness audit. Host-only correction; **no code, template, or test change was required or made**, and no PR was needed for source.

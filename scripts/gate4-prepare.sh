@@ -22,11 +22,11 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-usage: gate4-prepare.sh [--check|--plan|--json]
+usage: gate4-prepare.sh [--check|--validate-only|--plan|--dry-run|--json]
 
-  --check   (default) validate Gate 4 prerequisites on this host, read-only
-  --plan    print the exact operator command sequence, read-only, runs nothing
-  --json    machine-readable findings
+  --check, --validate-only   (default) validate prerequisites, read-only
+  --plan, --dry-run          print the operator command sequence, run nothing
+  --json                     machine-readable findings
 
 Required operator input:
   BLACKSPIRE_GATE4_APPROVED_SHA   the full 40-character commit SHA approved for production
@@ -37,8 +37,8 @@ USAGE
 
 mode=check
 case "${1:-}" in
-  ''|--check) mode=check ;;
-  --plan) mode=plan ;;
+  ''|--check|--validate-only) mode=check ;;
+  --plan|--dry-run) mode=plan ;;
   --json) mode=json ;;
   -h|--help) usage; exit 0 ;;
   *) usage; exit 2 ;;
@@ -312,6 +312,7 @@ BLACKSPIRE GATE 4 — OPERATOR COMMAND PLAN (nothing below is executed by this s
 PREPARATION (safe, reversible, no activation)
   1. Create the environment file from the reviewed example, then supply the operator values. The
      file is created root:$runtime_user 0640 in one step, so it is never briefly world-readable:
+       test ! -e $env_file && test ! -L $env_file
        install -o root -g $runtime_user -m 0640 \\
          $repo_root/scripts/production-profile.env.example $env_file
        # then edit $env_file and set, at minimum:
@@ -320,9 +321,10 @@ PREPARATION (safe, reversible, no activation)
        # confirm PORT is still free first:
        #   bash scripts/with-node.sh scripts/select-production-port.js
   2. Seed the workspace checkout (never inside releases/, never the release root):
+       test ! -e $workspace_root && test ! -L $workspace_root
        install -d -o $runtime_user -g $runtime_user -m 0750 $workspace_root
        git clone --no-hardlinks <approved-repository-url> $workspace_root
-       git -C $workspace_root checkout \${BLACKSPIRE_GATE4_APPROVED_SHA}
+       git -C $workspace_root checkout --detach \${BLACKSPIRE_GATE4_APPROVED_SHA}
        chown -R $runtime_user:$runtime_user $workspace_root
   3. Build the immutable release for the approved SHA (does not activate it):
        bash scripts/release-create.sh \${BLACKSPIRE_GATE4_APPROVED_SHA}
@@ -330,8 +332,10 @@ PREPARATION (safe, reversible, no activation)
      pinned interpreter: scripts/backup.js imports node:sqlite, which this host's PATH node (18.x)
      does not have.
        npm run db:backup -- $release_root/shared/backups
-  5. Re-run this checker until every prerequisite is READY:
-       BLACKSPIRE_GATE4_APPROVED_SHA=<sha> bash scripts/gate4-prepare.sh
+  5. Re-run this checker to review the remaining prerequisites. It deliberately stays nonzero
+     while authorization and activation remain beyond the boundary:
+       BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \\
+         bash scripts/gate4-prepare.sh --validate-only
 
 VALIDATION (read-only, proves preparation is correct)
   # Runs the same profile ExecStartPre will, as the runtime account. Sourcing keeps the values out
@@ -339,7 +343,8 @@ VALIDATION (read-only, proves preparation is correct)
   sudo -u $runtime_user bash -c \\
     'set -a; . $env_file; set +a; exec bash $repo_root/scripts/verify-environment.sh vps-production'
   npm run production:preflight:host
-  bash $repo_root/scripts/gate4-prepare.sh
+  BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \\
+    bash $repo_root/scripts/gate4-prepare.sh --validate-only
   systemctl show $unit_name -p ActiveState -p UnitFileState -p MainPID
 
 ROLLBACK OF PREPARATION (safe; production was never started)
