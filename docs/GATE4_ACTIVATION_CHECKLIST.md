@@ -122,6 +122,7 @@ immutable and are never deleted as part of a rollback.
 ```sh
 rm -f /etc/blackspire/command.env
 rm -rf /opt/blackspire-command/shared/workspace
+rm -f /etc/logrotate.d/blackspire-command
 ```
 
 ## Authorization boundary

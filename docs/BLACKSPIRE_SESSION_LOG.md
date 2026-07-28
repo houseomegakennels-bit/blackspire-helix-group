@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-28 — Gate 4 preparation resumption revalidated (Codex)
+
+- Recovered the existing clean, pushed `ops/gate4-preparation` worktree at `fc68734a4c1933856565c59dd03bb8731b6eac0a`; PR #51 remains open, mergeable, and stacked on open PR #50. No interrupted or uncommitted work was present, and nothing was reset, discarded, overwritten, or duplicated.
+- Fresh read-only validation found no host drift: production preflight and strict host preflight remain `ok=true source=21/21 deployment=2/2`; staging remains active and healthy at PID `2909886`; nginx retains PID `2909804`; production remains `disabled`/`inactive`/`dead`, `MainPID=0`; the production environment file, workspace checkout, and `current` symlink remain absent; Gate 4 remains unauthorized.
+- Re-ran the 23 focused Gate 4 tests and the full trusted suite (486 tests, 477 passed, 0 failed, 9 conditional skips; inventory `38/38/38/38/38`, zero mutations, clean containment), plus lint, typecheck, build, secret scan, living-memory, shell syntax, dry-run, validation-only, JSON, preflight, and whitespace checks. The only source review finding was a documentation consistency gap: the generated plan rolled back its installed log-rotation policy, but the checklist rollback block omitted that command. Added the exact removal command and pinned script/checklist agreement in the focused test; no host file was installed or removed.
+
 ## 2026-07-27 — Gate 4 preparation workflow recovered and completed (Codex)
 
 - Recovered the interrupted work at clean, pushed branch `ops/gate4-preparation`: commit `5eb269090d634ceb551d29b79ccdcdf112dee1f8` and open PR #51, stacked on open PR #50 because the workflow depends on its `BLACKSPIRE_WORKSPACE_ROOT` preflight contract. No prior work was reset, overwritten, duplicated, or discarded.

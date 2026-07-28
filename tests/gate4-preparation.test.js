@@ -309,6 +309,11 @@ test('the checklist and the script agree on the authorization boundary', () => {
   const boundary = checklist.indexOf('## Authorization boundary');
   assert.ok(boundary > 0, 'the checklist must define the boundary');
   const before = checklist.slice(0, boundary);
+  assert.match(
+    before,
+    /rm -f \/etc\/logrotate\.d\/blackspire-command/,
+    'the checklist must roll back the log-rotation policy created by preparation',
+  );
   for (const verb of ['systemctl start', 'systemctl enable', 'release-switch.sh']) {
     assert.equal(before.includes(verb), false, `${verb} must not be documented as preparation`);
   }
