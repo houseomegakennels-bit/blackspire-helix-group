@@ -37,3 +37,24 @@
   Redis/Postgres-backed alternative in this codebase yet.
 - **TLS termination and reverse-proxy configuration are out of scope** for this repository; `TRUST_PROXY`
   only controls whether `X-Forwarded-For` is honored, it does not configure a proxy itself.
+
+## Hermes Intelligence Layer (Milestone 1)
+
+- **The Hermes orchestration + learning layer is at Milestone 1: foundation only, mock-only.** A new
+  additive module `packages/hermes-orchestrator/` implements the vertical slice *task → normalize →
+  classify → policy → mock route → mock execute → deterministic verify → event recording → memory
+  candidate*. It is entirely separate from, and does not modify, the existing
+  `packages/hermes/hermes.js` task pipeline. It performs no real provider execution, no shell, no
+  network, and no Telegram/voice.
+- **Only the credential-free mock provider can execute under Hermes M1.** Real providers (Codex,
+  Claude Code, OpenAI-compatible) are declared-but-disabled in the registry and are refused by the
+  executor; they arrive behind a development-only, allowlisted, budgeted profile in Milestone 2 —
+  never in production and never with real keys at this stage.
+- **Hermes "learning" is candidate extraction only — nothing is promoted.** Verified runs may
+  produce a `hermes_memory_candidates` row with `status='pending'`; there is no promotion code path
+  yet. Promotion is approval-gated and lands in Milestone 3. Candidates are never extracted from
+  unverified or failed runs (anti–memory-poisoning), and raw audit history is kept separate from any
+  future promoted long-term memory.
+- **High-risk tasks are blocked, not queued.** Hermes M1 blocks a high-risk task pending approval but
+  does not yet persist a live approval request through the `approvals` table; that wiring is
+  Milestone 3.

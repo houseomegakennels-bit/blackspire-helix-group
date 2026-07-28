@@ -11,6 +11,14 @@ export const REQUIRED_SCHEMA = {
   subtasks: ['id', 'task_id', 'title', 'status', 'stage', 'details', 'created_at', 'updated_at'], changed_files: ['id', 'task_id', 'path', 'status', 'additions', 'deletions', 'created_at'], command_results: ['id', 'task_id', 'command', 'cwd', 'ok', 'code', 'stdout', 'stderr', 'duration_ms', 'created_at'], task_evidence: ['id', 'task_id', 'kind', 'details', 'created_at'], system_flags: ['key', 'value', 'updated_at'],
   sessions: ['id', 'csrf_token', 'created_at', 'expires_at', 'rotated_at', 'user_agent', 'ip', 'revoked_at'], rate_limits: ['bucket_key', 'count', 'window_started_at', 'reset_at', 'window_ms', 'updated_at'], telegram_attachments: ['id', 'task_id', 'workspace_id', 'chat_id', 'file_id', 'file_name', 'mime_type', 'size_bytes', 'kind', 'stored_path', 'text_excerpt', 'transcription_status', 'created_at'],
   conversations: ['id', 'workspace_id', 'status', 'created_at', 'updated_at'], conversation_bindings: ['id', 'conversation_id', 'channel', 'channel_key', 'metadata', 'created_at'], unified_inputs: ['id', 'conversation_id', 'channel', 'actor_id', 'text', 'idempotency_key', 'policy_status', 'created_at'], task_events: ['id', 'conversation_id', 'task_id', 'type', 'payload', 'created_at'], channel_deliveries: ['id', 'event_id', 'conversation_id', 'channel', 'channel_key', 'status', 'attempts', 'last_error', 'next_attempt_at', 'created_at', 'updated_at'],
+  // Hermes Intelligence Layer (Milestone 1). Additive orchestration/learning tables; kept in sync
+  // with the schema-writer in scripts/migration-writer.js so a migrated database validates cleanly.
+  hermes_workflow_runs: ['id', 'task_id', 'conversation_id', 'workspace_id', 'actor_id', 'channel', 'objective', 'classification', 'status', 'outcome', 'provider', 'agent', 'cost_cents', 'started_at', 'finished_at', 'created_at'],
+  hermes_workflow_steps: ['id', 'run_id', 'seq', 'name', 'status', 'detail', 'started_at', 'finished_at', 'created_at'],
+  hermes_routing_decisions: ['id', 'run_id', 'task_id', 'classification', 'candidates', 'selected_provider', 'selected_agent', 'capabilities', 'rationale', 'created_at'],
+  hermes_policy_decisions: ['id', 'run_id', 'task_id', 'action_class', 'decision', 'requires_approval', 'reason', 'created_at'],
+  hermes_verification_results: ['id', 'run_id', 'task_id', 'verifier', 'passed', 'checks', 'detail', 'created_at'],
+  hermes_memory_candidates: ['id', 'run_id', 'task_id', 'workspace_id', 'kind', 'scope', 'lesson', 'evidence_ref', 'status', 'promoted_at', 'created_at'],
 };
 
 // Returns a list of human-readable descriptions of missing schema objects (empty when the database
