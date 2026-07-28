@@ -141,11 +141,15 @@ function validateLinks({ run, routing, policy, verification, invocations }) {
     if (!row) continue;
     if (row.run_id !== run.id || (row.task_id && row.task_id !== run.task_id)) throw new Error('outcome evaluation refuses mismatched provenance references');
   }
+  const attempts = new Set();
   for (const invocation of invocations) {
     if (!['mock', 'real'].includes(invocation.mode)) throw new Error('outcome evaluation refuses invalid execution mode');
     if (!Number.isSafeInteger(Number(invocation.attempt)) || Number(invocation.attempt) < 1) throw new Error('outcome evaluation refuses impossible retry count');
+    if (attempts.has(Number(invocation.attempt))) throw new Error('outcome evaluation refuses duplicate provider attempts');
+    attempts.add(Number(invocation.attempt));
     for (const value of [invocation.input_tokens, invocation.output_tokens, invocation.cost_cents]) if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) throw new Error('outcome evaluation refuses malformed usage or cost');
   }
+  if ([...attempts].some((attempt, index) => attempt !== index + 1)) throw new Error('outcome evaluation refuses non-contiguous provider attempts');
 }
 function aggregateUsage(invocations) {
   const total = (column) => invocations.length && invocations.every((row) => row[column] != null)

@@ -39,6 +39,10 @@ test('verified mock workflow creates one immutable positive factual evaluation w
   assert.ok(store.getOutcomeComponents(e.id).some((c) => c.name === 'stability_evidence' && c.status === 'unknown'));
   assert.throws(() => evaluateTerminalOutcome(r.runId), /already exists/);
   assert.throws(() => evaluateTerminalOutcome(r.runId, { evaluationVersion: 'unreviewed-v2' }), /canonical evaluation version/);
+  run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
+       SELECT 'duplicate-attempt',run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
+  run('DELETE FROM hermes_outcome_evaluation_components WHERE evaluation_id=?', [e.id]); run('DELETE FROM hermes_outcome_evaluations WHERE id=?', [e.id]);
+  assert.throws(() => evaluateTerminalOutcome(r.runId), /duplicate provider attempts/, 'duplicate attempts cannot double-count an evaluation');
 });
 
 test('blocked workflow is factual but ineligible; no verification can become positive evidence', async () => {

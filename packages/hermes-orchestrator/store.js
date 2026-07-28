@@ -130,7 +130,7 @@ export function consumeApprovalIfGranted(approvalId, at = now()) {
   const result = run(`UPDATE hermes_approvals SET status='consumed', consumed_at=? WHERE id=? AND status='granted' AND (expires_at IS NULL OR expires_at > ?)`, [at, approvalId, at]);
   return result.changes === 1;
 }
-export const getProviderInvocations = (runId) => all(`SELECT * FROM hermes_provider_invocations WHERE run_id=?`, [runId]);
+export const getProviderInvocations = (runId) => all(`SELECT * FROM hermes_provider_invocations WHERE run_id=? ORDER BY attempt,created_at,id`, [runId]);
 export const recentProviderInvocations = (limit = 20) => all(`SELECT * FROM hermes_provider_invocations ORDER BY created_at DESC LIMIT ?`, [limit]);
 
 const numOrNull = (v) => (Number.isFinite(Number(v)) && v !== null && v !== undefined ? Number(v) : null);
