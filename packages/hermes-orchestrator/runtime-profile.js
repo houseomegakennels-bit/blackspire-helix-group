@@ -14,6 +14,10 @@
 //   system_flags.emergency_stop=active        -> kill switch (handled by the orchestrator)
 
 const csv = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+const positiveInteger = (v) => {
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+};
 
 /**
  * @typedef {Object} RuntimeProfile
@@ -41,12 +45,13 @@ export function resolveRuntimeProfile(env = process.env) {
   const realProviderFlag = env.HERMES_DEV_REAL_PROVIDER === 'true';
   const providerAllowlist = csv(env.HERMES_DEV_PROVIDER_ALLOWLIST);
   const workspaceAllowlist = csv(env.HERMES_DEV_WORKSPACE_ALLOWLIST);
+  const realProviderMaxCostCents = env.HERMES_DEV_ANTHROPIC_MAX_COST_CENTS;
 
   // Real execution is ONLY ever enabled in the development profile. Production and test never enable
   // it, regardless of flags or credentials.
   const realProviderEnabled = profile === 'development' && realProviderFlag && providerAllowlist.length > 0;
 
-  return { profile, isProduction: production, realProviderFlag, providerAllowlist, workspaceAllowlist, realProviderEnabled };
+  return { profile, isProduction: production, realProviderFlag, providerAllowlist, workspaceAllowlist, realProviderMaxCostCents, realProviderEnabled };
 }
 
 /**
@@ -68,4 +73,23 @@ export function workspacePermitted(workspaceRoot, rp = resolveRuntimeProfile()) 
   return rp.workspaceAllowlist.includes(workspaceRoot)
     ? { allowed: true }
     : { allowed: false, reason: 'workspace root is not on HERMES_DEV_WORKSPACE_ALLOWLIST' };
+}
+
+/**
+ * A real API call has an operator-declared worst-case spend reservation.  We deliberately do not
+ * invent a price from token counts: the provider reports usage but not an invoice-grade cost.
+ * Until M3 adds reviewed pricing derivation, an API call is refused unless the operator supplied a
+ * positive, bounded reservation that fits both the task and provider caps.  This is not required
+ * for mock or injected fake adapters.
+ */
+export function realProviderSpendPermitted(providerId, taskBudgetCents, providerCapCents, rp = resolveRuntimeProfile()) {
+  if (providerId !== 'anthropic') return { allowed: false, reason: `no spend policy is registered for provider ${providerId}` };
+  const reserved = positiveInteger(rp.realProviderMaxCostCents);
+  if (reserved === null) return { allowed: false, reason: 'HERMES_DEV_ANTHROPIC_MAX_COST_CENTS must be a positive integer before a real API call' };
+  const taskBudget = positiveInteger(taskBudgetCents);
+  const providerCap = positiveInteger(providerCapCents);
+  if (taskBudget === null) return { allowed: false, reason: 'real API calls require a positive task budget' };
+  if (providerCap === null) return { allowed: false, reason: 'provider has no positive real-call cost cap' };
+  if (reserved > taskBudget || reserved > providerCap) return { allowed: false, reason: 'real-call spend reservation exceeds the task or provider cost cap' };
+  return { allowed: true, reservedCostCents: reserved };
 }

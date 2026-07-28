@@ -126,8 +126,9 @@ export function insertApproval(a) {
 }
 export const getApproval = (approvalId) => get(`SELECT * FROM hermes_approvals WHERE id=?`, [approvalId]);
 export const latestApprovalForTask = (taskId, actionClass) => get(`SELECT * FROM hermes_approvals WHERE task_id=? AND action_class=? ORDER BY created_at DESC LIMIT 1`, [taskId, actionClass]);
-export function consumeApproval(approvalId) {
-  run(`UPDATE hermes_approvals SET status='consumed', consumed_at=? WHERE id=? AND status='granted'`, [now(), approvalId]);
+export function consumeApprovalIfGranted(approvalId, at = now()) {
+  const result = run(`UPDATE hermes_approvals SET status='consumed', consumed_at=? WHERE id=? AND status='granted' AND (expires_at IS NULL OR expires_at > ?)`, [at, approvalId, at]);
+  return result.changes === 1;
 }
 export const getProviderInvocations = (runId) => all(`SELECT * FROM hermes_provider_invocations WHERE run_id=?`, [runId]);
 export const recentProviderInvocations = (limit = 20) => all(`SELECT * FROM hermes_provider_invocations ORDER BY created_at DESC LIMIT ?`, [limit]);

@@ -17,12 +17,12 @@ No provider is production-eligible. No automatic memory promotion. No Telegram/v
 
 ## What this milestone adds
 
-- **Runtime profile gate** (`runtime-profile.js`) — resolves `development`/`test`/`production`; real execution requires development profile **and** `HERMES_DEV_REAL_PROVIDER=true` **and** the provider on `HERMES_DEV_PROVIDER_ALLOWLIST`. *Implemented.*
+- **Runtime profile gate** (`runtime-profile.js`) — resolves `development`/`test`/`production`; real execution requires development profile **and** `HERMES_DEV_REAL_PROVIDER=true` **and** the provider on `HERMES_DEV_PROVIDER_ALLOWLIST`, a registered workspace root on `HERMES_DEV_WORKSPACE_ALLOWLIST`, and a bounded operator-declared real-call spend reservation. *Implemented.*
 - **Typed provider/capability registries** (`registries.js`) — full provider fields (adapter type, enabled, allowed environments, capabilities, health, auth state, concurrency/timeout/retry, usage/cost limits, production eligibility). Capability resolution is registry-driven, not hardcoded. *Implemented.*
 - **Anthropic (non-agentic Claude) adapter** (`adapters/anthropic-dev.js`) — pure Messages-API text-in/JSON-out. No shell/file/agentic surface. Disabled by default; dev-only; refused in production even with a key. *Implemented; tested with fixtures; awaiting live smoke test.*
 - **Deterministic fake provider** (`adapters/fake-provider.js`) — the test substrate; no paid calls. *Implemented.*
-- **Execution flow** (`execute.js`, `orchestrator.js`) — mock default; gated real path; timeout, cancellation, retry ceiling, concurrency limit, size limits, budget/cost ceiling; **no silent real→mock fallback**; execution mode reported as `real | mock | blocked | cancelled | failed`. *Implemented.*
-- **Scoped approvals** (`approvals.js`) — task-scoped, single-use, expiring; medium-risk tasks require one; high-risk/protected remain blocked. *Implemented.*
+- **Execution flow** (`execute.js`, `orchestrator.js`) — mock default; gated real path; timeout, cancellation, retry ceiling, concurrency limit, size limits, budget/cost ceiling, and kill-switch recheck before every dispatch; **no silent real→mock fallback**; execution mode reported as `real | mock | blocked | cancelled | failed`. *Implemented.*
+- **Scoped approvals** (`approvals.js`) — task-scoped, single-use, expiring, and atomically consumed immediately before dispatch; medium-risk tasks require one; high-risk/protected remain blocked. *Implemented.*
 - **Provider health + cooldown** (`health.js`) — success/failure/cooldown transitions; a requested real provider in cooldown is blocked (never silently mocked). *Implemented.*
 - **Usage/cost recording** (`store.js`, `hermes_provider_invocations`) — provider/model/mode/timing/attempts/tokens/cost/timeout/cancel/verification; **null when the provider doesn't report** (no invented numbers). *Implemented.*
 - **Read-only status surface** — `GET /api/hermes/runtime` (authenticated) and `/hermes-runtime` PWA page: profile, providers, enabled/health/capabilities, auth **configured/not** (boolean only), recent runs/invocations, kill switch. Never exposes credentials, prompts, or unredacted output. *Implemented.*
@@ -36,15 +36,17 @@ No provider is production-eligible. No automatic memory promotion. No Telegram/v
    export HERMES_DEV_REAL_PROVIDER=true
    export HERMES_DEV_PROVIDER_ALLOWLIST=anthropic
    export HERMES_DEV_WORKSPACE_ALLOWLIST=/abs/path/to/dev/checkout
+   export HERMES_DEV_ANTHROPIC_MAX_COST_CENTS=<positive-integer-within-task-and-provider-cap>
    ```
 3. Submit a task with `requestedProvider: 'anthropic'`. Without the request, tasks stay on the mock path.
 
 ## Development runtime guide
 
 - Mock is the default execution path; existing tests/workflows are unaffected.
-- A task reaches the real path only when it explicitly requests a real provider **and** every gate passes; otherwise it is **blocked** (never silently mocked).
+- A task reaches the real path only when it explicitly requests a real provider **and** every gate passes; otherwise it is **blocked** (never silently mocked). The workspace is resolved from the registered workspace record, never from a task-supplied path.
+- Anthropic does not return invoice-grade cost in this adapter. Before any real dispatch, `HERMES_DEV_ANTHROPIC_MAX_COST_CENTS` must reserve a positive worst-case amount no greater than both the task budget and provider cap. The actual recorded cost remains `null` when the provider does not report it; no number is invented.
 - Medium-risk tasks require a scoped, single-use approval (`grantApproval`); high-risk/protected/deploy/secret/destructive/financial/identity actions remain blocked before any provider call.
-- Kill switch: `system_flags.emergency_stop=active` refuses all new orchestration.
+- Kill switch: `system_flags.emergency_stop=active` refuses all new orchestration and is rechecked before every provider attempt/retry.
 
 ## Security model (summary)
 

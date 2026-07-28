@@ -23,13 +23,13 @@ import { redactString } from './redaction.js';
 /**
  * @returns {{created:boolean, id?:string, reason?:string}}
  */
-export function extractMemoryCandidate({ runId, normalized, classification, verification }) {
+export function extractMemoryCandidate({ runId, normalized, classification, verification, provider = 'mock', executionMode = 'mock' }) {
   if (!verification || verification.passed !== true) {
     return { created: false, reason: 'verification did not pass; no lesson extracted (prevents learning from unverified outcomes)' };
   }
   const lesson = redactString(
     `For a ${classification.complexity} ${classification.domain} task at ${classification.risk} risk on workspace ${normalized.workspaceId}, `
-    + `the mock ${classification.requiredCapabilities.join('/')} route completed and passed deterministic verification.`,
+    + `the ${provider} (${executionMode}) ${classification.requiredCapabilities.join('/')} route completed and passed deterministic verification.`,
   );
   const id = insertMemoryCandidate(runId, normalized.taskId, {
     workspaceId: normalized.workspaceId,

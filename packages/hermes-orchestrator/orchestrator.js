@@ -16,9 +16,10 @@ import { executeWorkflow, withinBudget } from './execute.js';
 import { verifyExecution } from './verify.js';
 import { extractMemoryCandidate } from './memory.js';
 import { makeEventRecorder, HERMES_EVENTS } from './events.js';
-import { resolveRuntimeProfile, realProviderPermitted } from './runtime-profile.js';
-import { checkApproval, consume } from './approvals.js';
+import { resolveRuntimeProfile, realProviderPermitted, workspacePermitted, realProviderSpendPermitted } from './runtime-profile.js';
+import { checkApproval, reserve } from './approvals.js';
 import { providerRegistry } from './registries.js';
+import { getWorkspace } from '../workspace-registry/workspaces.js';
 import {
   insertWorkflowRun, finishWorkflowRun, insertRoutingDecision,
   insertPolicyDecision, insertVerificationResult,
@@ -74,6 +75,22 @@ export async function runHermesWorkflow(input, options = {}) {
         finishWorkflowRun(runId, { status: 'blocked', outcome: 'real_provider_blocked', provider: requested });
         return done(runId, 'blocked', 'real_provider_blocked', { executionMode: 'blocked', classification });
       }
+      // A real provider is text-only, but it must still be bound to an explicitly allowlisted
+      // development checkout.  Never trust a task-supplied path; resolve the registered workspace.
+      const workspace = getWorkspace(normalized.workspaceId);
+      const workspaceGate = workspacePermitted(workspace?.root_path, rp);
+      if (!workspaceGate.allowed) {
+        events.record(HERMES_EVENTS.FAILED, { reason: `real provider workspace blocked: ${workspaceGate.reason}`, requested }, 'failed');
+        finishWorkflowRun(runId, { status: 'blocked', outcome: 'real_provider_blocked', provider: requested });
+        return done(runId, 'blocked', 'real_provider_blocked', { executionMode: 'blocked', classification, reason: workspaceGate.reason });
+      }
+      const provider = providerRegistry.get(requested);
+      const spendGate = realProviderSpendPermitted(requested, normalized.budgetCents, provider?.usageLimits?.maxCostCents, rp);
+      if (!spendGate.allowed) {
+        events.record(HERMES_EVENTS.FAILED, { reason: `real provider budget blocked: ${spendGate.reason}`, requested }, 'failed');
+        finishWorkflowRun(runId, { status: 'blocked', outcome: 'real_provider_blocked', provider: requested });
+        return done(runId, 'blocked', 'real_provider_blocked', { executionMode: 'blocked', classification, reason: spendGate.reason });
+      }
       preferredProvider = requested;
     }
 
@@ -91,6 +108,11 @@ export async function runHermesWorkflow(input, options = {}) {
         return done(runId, 'blocked', 'approval_required', { executionMode: 'blocked', classification, routing });
       }
       approvalToConsume = appr.approvalId;
+      if (!reserve(approvalToConsume)) {
+        events.record(HERMES_EVENTS.FAILED, { reason: 'approval was already consumed, expired, or could not be reserved' }, 'failed');
+        finishWorkflowRun(runId, { status: 'blocked', outcome: 'approval_required', provider: routing.provider });
+        return done(runId, 'blocked', 'approval_required', { executionMode: 'blocked', classification, routing });
+      }
     }
 
     // --- Execute (mock default or gated real) ---
@@ -128,9 +150,9 @@ export async function runHermesWorkflow(input, options = {}) {
       return done(runId, 'failed', 'verification_failed', { executionMode: execution.executionMode, classification, routing, verification, execution });
     }
 
-    // Verified: consume the single-use approval (if any) and extract a PENDING memory candidate.
-    if (approvalToConsume) consume(approvalToConsume);
-    const memoryCandidate = extractMemoryCandidate({ runId, normalized, classification, verification });
+    // Verified runs create a PENDING memory candidate only.  Approval was atomically reserved
+    // before dispatch so it cannot be re-used by a concurrent run.
+    const memoryCandidate = extractMemoryCandidate({ runId, normalized, classification, verification, provider: routing.provider, executionMode: execution.executionMode });
     if (memoryCandidate.created) events.record(HERMES_EVENTS.MEMORY_CANDIDATE, { id: memoryCandidate.id, status: 'pending' });
 
     finishWorkflowRun(runId, { status: 'completed', outcome: 'verified', provider: execution.provider, agent: routing.agent, costCents: execution.usage.costCents });

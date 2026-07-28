@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-28 — Hermes Milestone 2 review hardening on PR #56 (Codex)
+
+- Recovered the clean feature branch `feature/hermes-runtime-provider-framework-m2` at `f2209e19cfe6c0917765ae474ba6c772f2976970` and reviewed open PR #56. All reported CI/Vercel checks were green and mergeability was clean; the automated review had six unresolved actionable findings.
+- Addressed all six on the same branch: real Anthropic dispatch now resolves the registered workspace and requires its root on the explicit development allowlist; it requires a positive bounded operator-declared real-call spend reservation before dispatch (without inventing invoice cost); single-use approvals are conditionally consumed atomically before dispatch; the emergency stop is rechecked before every retry; deadline-triggered aborts are recorded as timeouts rather than caller cancellations; and pending-only memory candidates record the routed provider/mode rather than false mock provenance.
+- Added deterministic fixture coverage for the new spend/workspace/approval race/kill-switch/deadline/provenance paths. Focused Hermes M2/API tests passed 34/34. No live credentialed or paid API call was made, no secret value was read or recorded, and the prepared smoke script remains disabled pending explicit approval.
+- No production, Gate 4, release, symlink, environment-file, nginx, TLS, DNS, firewall, systemd, Telegram, voice, deployment, or merge action occurred. Production remains `disabled/inactive/dead`; Gate 4 remains unauthorized.
+
 ## 2026-07-28 — Hermes Milestone 2 (Runtime & Provider Framework) implemented on a branch; PR opened, not merged (Claude)
 
 - Flagged the provider-choice safety decision before implementing: the only reviewed "Claude Code" interface is an unbounded agentic `claude --print` shell wrapper, at odds with M2's no-shell/allowlist requirements. Recommended and got operator approval for the **non-agentic Anthropic Messages API (Claude)** as the first real adapter — pure text I/O, no shell/agent surface, materially safer.

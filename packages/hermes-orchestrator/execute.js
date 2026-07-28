@@ -12,6 +12,7 @@ import { resolveRuntimeProfile, realProviderPermitted } from './runtime-profile.
 import { inCooldown, recordSuccess, recordFailure } from './health.js';
 import { acquire } from './concurrency.js';
 import { insertProviderInvocation } from './store.js';
+import { getFlag } from '../task-engine/tasks.js';
 
 /**
  * @typedef {Object} ExecutionResult
@@ -64,11 +65,15 @@ export async function executeWorkflow(routing, normalized, ctx = {}) {
   let last = null;
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      // Recheck immediately before every dispatch/retry. A stop raised while a prior attempt was
+      // pending must prevent a subsequent (possibly paid) call.
+      if (getFlag('emergency_stop') === 'active') return blocked(providerId, def.adapterType, 'emergency_stop', 'emergency stop active before provider dispatch');
       if (ctx.signal?.aborted) { last = cancelledResult(providerId, def, attempt); recordInvocation(ctx, providerId, def, last); break; }
       const controller = new AbortController();
       const onParentAbort = () => controller.abort();
       ctx.signal?.addEventListener?.('abort', onParentAbort, { once: true });
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let deadlineElapsed = false;
+      const timer = setTimeout(() => { deadlineElapsed = true; controller.abort(); }, timeoutMs);
       const started = Date.now();
       let result;
       try {
@@ -79,11 +84,14 @@ export async function executeWorkflow(routing, normalized, ctx = {}) {
         clearTimeout(timer);
         ctx.signal?.removeEventListener?.('abort', onParentAbort);
       }
+      // Adapters see only an AbortSignal.  Attribute a local deadline abort to timeout rather than
+      // caller cancellation so it is auditable and eligible for the bounded retry policy.
+      if (deadlineElapsed && result?.cancelled) result = { ...result, timedOut: true, cancelled: false, error: 'provider timed out' };
       const durationMs = Date.now() - started;
       last = { ...result, attempts: attempt, durationMs };
       recordInvocation(ctx, providerId, def, last);
       if (isReal) { result.ok ? recordSuccess(providerId) : recordFailure(providerId); }
-      if (result.ok || result.cancelled) break; // never retry a cancellation; stop on success
+      if (result.ok || result.cancelled) break; // never retry a caller cancellation; stop on success
     }
   } finally {
     slot.release();

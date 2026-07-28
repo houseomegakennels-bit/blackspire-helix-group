@@ -26,18 +26,19 @@ const { validateProviderDefinition, providerRegistry } = await import('../packag
 const { resolveRuntimeProfile, realProviderPermitted, workspacePermitted } = await import('../packages/hermes-orchestrator/runtime-profile.js');
 const { acquire } = await import('../packages/hermes-orchestrator/concurrency.js');
 const { grantApproval } = await import('../packages/hermes-orchestrator/approvals.js');
+const { setFlag } = await import('../packages/task-engine/tasks.js');
 const health = await import('../packages/hermes-orchestrator/health.js');
 const { buildRuntimeStatus } = await import('../packages/hermes-orchestrator/status.js');
 
 // Reset provider health before each test so cooldown accumulated by failure-path tests does not
 // bleed into later tests (each test asserts a clean provider unless it deliberately trips cooldown).
-beforeEach(() => { try { health.recordSuccess('anthropic'); } catch { /* db not ready */ } });
+beforeEach(() => { try { health.recordSuccess('anthropic'); setFlag('emergency_stop', 'inactive'); } catch { /* db not ready */ } });
 
-function ws(id) {
-  upsertWorkspace({ id, name: id, description: 'm2', githubRepository: 'local/m2', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: ['true'], providerPolicy: { preferred: ['mock'] }, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['status', 'read'], lastHealthStatus: 'ok', rootPath: root });
+function ws(id, rootPath = root) {
+  upsertWorkspace({ id, name: id, description: 'm2', githubRepository: 'local/m2', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: ['true'], providerPolicy: { preferred: ['mock'] }, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['status', 'read'], lastHealthStatus: 'ok', rootPath });
 }
 // Development profile with the real path enabled and anthropic allowlisted.
-const DEV = { ...process.env, HERMES_RUNTIME_PROFILE: 'development', HERMES_DEV_REAL_PROVIDER: 'true', HERMES_DEV_PROVIDER_ALLOWLIST: 'anthropic', HERMES_DEV_WORKSPACE_ALLOWLIST: root };
+const DEV = { ...process.env, HERMES_RUNTIME_PROFILE: 'development', HERMES_DEV_REAL_PROVIDER: 'true', HERMES_DEV_PROVIDER_ALLOWLIST: 'anthropic', HERMES_DEV_WORKSPACE_ALLOWLIST: root, HERMES_DEV_ANTHROPIC_MAX_COST_CENTS: '25' };
 const fake = (behavior, opts = {}) => ({ adapterOverrides: { anthropic: createFakeAdapter({ behavior, ...opts }) }, env: DEV });
 const realTask = (id, extra = {}) => ({ id, workspace_id: extra.ws || 'm2', request: extra.request || 'report the current status', source_channel: 'api', actor_id: 'tester', budget_cents: extra.budget ?? 100, idempotency_key: id, requestedProvider: 'anthropic', ...extra.raw });
 
@@ -62,6 +63,21 @@ test('provider allowlist refusal: anthropic not on allowlist blocks', async () =
   const env = { ...process.env, HERMES_RUNTIME_PROFILE: 'development', HERMES_DEV_REAL_PROVIDER: 'true', HERMES_DEV_PROVIDER_ALLOWLIST: 'somethingelse' };
   const r = await runHermesWorkflow(realTask('m2-allowlist'), { env });
   assert.equal(r.outcome, 'real_provider_blocked');
+});
+
+test('real API path fails closed without a positive bounded spend reservation', async () => {
+  ws('m2-spend-off');
+  const env = { ...DEV, HERMES_DEV_ANTHROPIC_MAX_COST_CENTS: '' };
+  const r = await runHermesWorkflow(realTask('m2-spend-off', { ws: 'm2-spend-off' }), { ...fake('ok'), env });
+  assert.equal(r.outcome, 'real_provider_blocked');
+  assert.equal(store.getProviderInvocations(r.runId).length, 0, 'no provider call occurs before the spend gate');
+});
+
+test('real API path refuses a spend reservation above the task budget before dispatch', async () => {
+  ws('m2-spend-cap');
+  const r = await runHermesWorkflow(realTask('m2-spend-cap', { ws: 'm2-spend-cap', budget: 24 }), fake('ok'));
+  assert.equal(r.outcome, 'real_provider_blocked');
+  assert.equal(store.getProviderInvocations(r.runId).length, 0);
 });
 
 test('production profile refuses real execution even with a credential present', async () => {
@@ -110,6 +126,20 @@ test('medium-risk task requires approval; blocked without, proceeds with a scope
   assert.equal(again.outcome, 'approval_required');
 });
 
+test('single-use approval is atomically reserved before dispatch so concurrent runs cannot both invoke', async () => {
+  ws('m2-appr-race');
+  const base = { ws: 'm2-appr-race', request: 'refactor the parser module' };
+  const blocked = await runHermesWorkflow(realTask('m2-appr-race', base), fake('ok'));
+  const policyRow = store.getPolicyDecisions(blocked.runId)[0];
+  grantApproval({ taskId: 'm2-appr-race', actionClass: policyRow.action_class, reason: 'test' });
+  const results = await Promise.all([
+    runHermesWorkflow(realTask('m2-appr-race', base), fake('ok')),
+    runHermesWorkflow(realTask('m2-appr-race', base), fake('ok')),
+  ]);
+  assert.equal(results.filter((r) => r.status === 'completed').length, 1);
+  assert.equal(results.filter((r) => r.outcome === 'approval_required').length, 1);
+});
+
 test('high-risk task is blocked before any provider call', async () => {
   ws('m2-hr');
   const r = await runHermesWorkflow(realTask('m2-hr-1', { ws: 'm2-hr', request: 'deploy to production immediately' }), fake('ok'));
@@ -123,6 +153,22 @@ test('timeout is reported as failed with timedOut, learns nothing', async () => 
   assert.equal(r.outcome, 'execution_failed');
   assert.equal(store.getMemoryCandidates(r.runId).length, 0);
   assert.equal(store.getProviderInvocations(r.runId)[0].timed_out, 1);
+});
+
+test('executor classifies a local deadline AbortError as timeout, not caller cancellation', async () => {
+  const adapter = {
+    id: 'fake', adapterType: 'fake',
+    async execute({ signal }) {
+      await new Promise((_, reject) => signal.addEventListener('abort', () => {
+        const error = new Error('fixture abort'); error.name = 'AbortError'; reject(error);
+      }, { once: true }));
+    },
+  };
+  const r = await runHermesWorkflow(realTask('m2-local-deadline'), { adapterOverrides: { anthropic: adapter }, env: DEV, deadlineMs: 1 });
+  assert.equal(r.executionMode, 'failed');
+  assert.equal(r.execution.cancelled, false);
+  assert.equal(r.execution.timedOut, true);
+  assert.equal(store.getProviderInvocations(r.runId).length, 2, 'timeout follows the bounded retry policy');
 });
 
 test('cancellation via aborted signal is reported as cancelled', async () => {
@@ -140,6 +186,22 @@ test('retry ceiling: a failing real provider is retried up to the policy ceiling
   assert.equal(store.getProviderInvocations(r.runId).length, 2);
 });
 
+test('emergency stop raised after one failed attempt prevents the retry dispatch', async () => {
+  let calls = 0;
+  const adapter = {
+    id: 'fake', adapterType: 'fake',
+    async execute() {
+      calls += 1;
+      setFlag('emergency_stop', 'active');
+      return { ok: false, provider: 'fake', adapterType: 'fake', model: 'fake-v1', mode: 'real', summary: '', artifacts: [], usage: { inputTokens: null, outputTokens: null, costCents: null }, inputBytes: 0, outputBytes: 0, timedOut: false, cancelled: false, error: 'fixture failure' };
+    },
+  };
+  const r = await runHermesWorkflow(realTask('m2-stop-retry'), { adapterOverrides: { anthropic: adapter }, env: DEV });
+  assert.equal(calls, 1);
+  assert.equal(r.executionMode, 'blocked');
+  assert.equal(r.outcome, 'execution_blocked');
+});
+
 test('concurrency ceiling: acquire returns null at capacity (fail closed)', () => {
   const a = acquire('unit-prov', 1);
   assert.ok(a);
@@ -149,7 +211,9 @@ test('concurrency ceiling: acquire returns null at capacity (fail closed)', () =
 });
 
 test('budget/cost ceiling: a reported cost above the ceiling fails the run', async () => {
-  const r = await runHermesWorkflow(realTask('m2-budget', { budget: 1 }), fake('ok', { costCents: 999 }));
+  // The pre-dispatch reservation fits the task; an adapter-reported overage still fails after
+  // execution rather than being treated as a successful real run.
+  const r = await runHermesWorkflow(realTask('m2-budget', { budget: 25 }), fake('ok', { costCents: 999 }));
   assert.equal(r.outcome, 'budget_exhausted');
 });
 
@@ -178,6 +242,13 @@ test('workspace escape: a workspace not on the dev allowlist is refused', () => 
   const rp = resolveRuntimeProfile(DEV);
   assert.equal(workspacePermitted('/etc', rp).allowed, false);
   assert.equal(workspacePermitted(root, rp).allowed, true);
+});
+
+test('registered workspace root must be on the allowlist before a real provider dispatches', async () => {
+  ws('m2-workspace-off', '/not-an-allowlisted-development-checkout');
+  const r = await runHermesWorkflow(realTask('m2-workspace-off', { ws: 'm2-workspace-off' }), fake('ok'));
+  assert.equal(r.outcome, 'real_provider_blocked');
+  assert.equal(store.getProviderInvocations(r.runId).length, 0);
 });
 
 test('provider health transitions to cooldown after repeated failures and then blocks', async () => {
@@ -211,6 +282,7 @@ test('verified real run creates only a pending memory candidate (never promoted)
   assert.equal(c.length, 1);
   assert.equal(c[0].status, 'pending');
   assert.equal(c[0].promoted_at, null);
+  assert.match(c[0].lesson, /anthropic \(real\)/, 'candidate records the routed provider, not mock provenance');
 });
 
 test('duplicate real invocations are independent auditable runs', async () => {

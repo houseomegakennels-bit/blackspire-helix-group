@@ -3,7 +3,7 @@
 // Task/workflow-scoped, single-use, expiring approvals for medium-risk development tasks. There is
 // NO reusable blanket approval: a grant is bound to one task_id + action_class, is consumed on use,
 // and fails closed once expired. This does not implement live *production* approval execution.
-import { insertApproval, latestApprovalForTask, consumeApproval } from './store.js';
+import { insertApproval, latestApprovalForTask, consumeApprovalIfGranted } from './store.js';
 
 const DEFAULT_TTL_MS = 15 * 60 * 1000;
 
@@ -31,5 +31,12 @@ export function checkApproval(taskId, actionClass, at = Date.now()) {
   return { ok: true, approvalId: row.id };
 }
 
-/** Consume a granted approval (single-use). Safe to call only after checkApproval succeeds. */
-export function consume(approvalId) { consumeApproval(approvalId); }
+/**
+ * Atomically consume a granted approval immediately before provider dispatch.  A successful
+ * reservation is intentionally final: allowing a failed dispatched call to re-use the approval
+ * could permit repeated paid calls under one approval.  An operator may issue a fresh approval for
+ * a retry.
+ */
+export function reserve(approvalId, at = new Date().toISOString()) {
+  return consumeApprovalIfGranted(approvalId, at);
+}
