@@ -1,0 +1,8 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import { canonicalPermissions, AUTHZ_ROLES } from '../packages/shared/authz-schema.js';
+const a=process.argv.slice(2), i=a.indexOf('--config'), file=i<0?null:a[i+1];
+const fail=(x)=>{process.stderr.write(`${x}\n`);process.exitCode=1;};
+if(!file||!a.some(x=>x==='--validate-only'||x==='--dry-run')||process.env.BLACKSPIRE_RUNTIME_MODE==='production') fail('AUTHZ_PROVISIONING_REFUSED');
+else try { const c=JSON.parse(fs.readFileSync(file,'utf8')); validate(c); process.stdout.write(JSON.stringify({ok:true,mode:a.includes('--dry-run')?'dry-run':'validate-only',principal_ids:c.principals.map(p=>p.principal_id),grant_ids:c.workspace_grants.map(g=>g.grant_id)})+'\n'); } catch { fail('AUTHZ_CONFIG_INVALID'); }
+function validate(c){const keys=['version','principals','workspace_grants','admin_bearer_principal_id','service_mappings'];if(!c||c.version!==1||Object.keys(c).some(k=>!keys.includes(k))||!Array.isArray(c.principals)||!Array.isArray(c.workspace_grants))throw Error();const ps=new Map(), gs=new Set();for(const p of c.principals){if(!p||ps.has(p.principal_id)||!['admin','service'].includes(p.principal_type)||!p.actor_id||!Number.isInteger(p.security_version)||p.security_version<1)throw Error();ps.set(p.principal_id,p);}for(const g of c.workspace_grants){if(!g||gs.has(g.grant_id)||!ps.has(g.principal_id)||!AUTHZ_ROLES.includes(g.role)||!Number.isInteger(g.version)||g.version<1)throw Error();canonicalPermissions(g.permissions);gs.add(g.grant_id);}if(c.admin_bearer_principal_id!==null&&ps.get(c.admin_bearer_principal_id)?.principal_type!=='admin')throw Error();for(const v of Object.values(c.service_mappings||{}))if(ps.get(v)?.principal_type!=='service')throw Error();}
