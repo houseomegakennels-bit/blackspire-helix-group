@@ -28,6 +28,9 @@ const { normalizeTask } = await import('../packages/hermes-orchestrator/normaliz
 const { classifyTask } = await import('../packages/hermes-orchestrator/classify.js');
 const { routeTask } = await import('../packages/hermes-orchestrator/route.js');
 const { redactDeep } = await import('../packages/hermes-orchestrator/redaction.js');
+const { withinBudget, executeWorkflow } = await import('../packages/hermes-orchestrator/execute.js');
+const { verifyExecution } = await import('../packages/hermes-orchestrator/verify.js');
+const { extractMemoryCandidate } = await import('../packages/hermes-orchestrator/memory.js');
 const { all } = await import('../packages/task-engine/db.js');
 
 function seedWorkspace(id) {
@@ -136,4 +139,87 @@ test('unit: deep redaction drops sensitive keys and patterns', () => {
   assert.equal(out.token, '[REDACTED]');
   assert.match(out.nested.note, /REDACTED/);
   assert.equal(out.nested.ok, 'plain text');
+});
+
+test('unit: redaction handles nested arrays, Error objects, bigint, and cyclic input', () => {
+  const secret = 'sk-' + 'z'.repeat(24);
+  // nested arrays + objects
+  const nested = redactDeep({ items: [{ apiKey: 'x' }, { note: `key=${secret}` }], deep: [[[`token ${secret}`]]] });
+  assert.equal(nested.items[0].apiKey, '[REDACTED]');
+  assert.match(nested.items[1].note, /REDACTED/);
+  assert.match(nested.deep[0][0][0], /REDACTED/);
+  assert.ok(!JSON.stringify(nested).includes(secret));
+  // Error objects are reduced to a redacted {name,message}, not silently dropped
+  const err = redactDeep(new Error(`boom ${secret}`));
+  assert.equal(err.name, 'Error');
+  assert.match(err.message, /REDACTED/);
+  assert.ok(!err.message.includes(secret));
+  // bigint
+  assert.equal(typeof redactDeep(10n), 'string');
+  // cyclic input does not throw and yields a cycle marker
+  const cyc = { a: 1 }; cyc.self = cyc;
+  const red = redactDeep(cyc);
+  assert.equal(red.a, 1);
+  assert.equal(red.self, '[REDACTED:cycle]');
+  // a shared (non-cyclic) sibling reference is NOT falsely marked as a cycle
+  const shared = { k: 'v' };
+  const both = redactDeep({ a: shared, b: shared });
+  assert.deepEqual(both, { a: { k: 'v' }, b: { k: 'v' } });
+});
+
+test('unit: normalize rejects malformed tasks and caps oversized objectives', () => {
+  assert.throws(() => normalizeTask({ id: 't', request: 'x' }), /workspaceId is required/);
+  assert.throws(() => normalizeTask({ id: 't', workspace_id: 'w' }), /objective\/request is required/);
+  assert.throws(() => normalizeTask({ id: 't', workspace_id: 'w', request: 'x', budget_cents: -5 }), /budgetCents/);
+  const big = normalizeTask({ id: 't', workspace_id: 'w', request: 'a'.repeat(9000) });
+  assert.equal(big.objective.length, 4000, 'objective is capped at 4000 chars');
+});
+
+test('unit: withinBudget compares actual cost to ceiling', () => {
+  assert.equal(withinBudget(0, 0), true);
+  assert.equal(withinBudget(0, 100), true);
+  assert.equal(withinBudget(50, 100), true);
+  assert.equal(withinBudget(150, 100), false);
+});
+
+test('unit: verifier fails a bad execution and the extractor refuses to learn from it', () => {
+  const bad = { ok: false, provider: 'mock', summary: '', artifacts: [], usage: { costCents: 0 }, error: 'x' };
+  const v = verifyExecution(bad, { classification: { requiredCapabilities: ['status.report'] } });
+  assert.equal(v.passed, false);
+  const refusal = extractMemoryCandidate({ runId: 'r', normalized: { taskId: 't', workspaceId: 'w' }, classification: { domain: 'status', risk: 'low', complexity: 'trivial', requiredCapabilities: ['status.report'] }, verification: v });
+  assert.equal(refusal.created, false, 'no memory candidate may be created from an unverified run');
+});
+
+test('verifier rejects an artifact path traversal; the run fails and learns nothing', async () => {
+  seedWorkspace('hermes-ws-trav');
+  const result = await runHermesWorkflow({ id: 'synthetic-traversal', workspace_id: 'hermes-ws-trav', request: 'refactor the parser and save output to `../../escape.txt`', source_channel: 'api', actor_id: 'tester', budget_cents: 0, idempotency_key: 'trav-1' });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.outcome, 'verification_failed');
+  assert.equal(store.getMemoryCandidates(result.runId).length, 0);
+});
+
+test('production profile refuses even mock provider execution (no provider execution reaches production)', async () => {
+  const saved = { rt: process.env.BLACKSPIRE_RUNTIME_MODE, pm: process.env.BLACKSPIRE_PROVIDER_MODE };
+  process.env.BLACKSPIRE_RUNTIME_MODE = 'production';
+  process.env.BLACKSPIRE_PROVIDER_MODE = 'manual';
+  try {
+    const execution = await executeWorkflow({ provider: 'mock' }, { taskId: 't', objective: 'report status', idempotencyKey: 'k' });
+    assert.equal(execution.ok, false, 'mock execution must be refused under the production profile');
+    assert.match(String(execution.error), /disabled by the production profile|disabled-by-profile/i);
+  } finally {
+    if (saved.rt === undefined) delete process.env.BLACKSPIRE_RUNTIME_MODE; else process.env.BLACKSPIRE_RUNTIME_MODE = saved.rt;
+    if (saved.pm === undefined) delete process.env.BLACKSPIRE_PROVIDER_MODE; else process.env.BLACKSPIRE_PROVIDER_MODE = saved.pm;
+  }
+});
+
+test('duplicate orchestrator runs on the same task are independent and safe (auditable attempts)', async () => {
+  seedWorkspace('hermes-ws-dup');
+  const task = { id: 'synthetic-dup', workspace_id: 'hermes-ws-dup', request: 'report status', source_channel: 'api', actor_id: 'tester', budget_cents: 0, idempotency_key: 'dup-run-1' };
+  const a = await runHermesWorkflow(task);
+  const b = await runHermesWorkflow(task);
+  assert.notEqual(a.runId, b.runId, 'each invocation is a distinct auditable run');
+  assert.equal(a.status, 'completed');
+  assert.equal(b.status, 'completed');
+  // Candidates from both runs remain pending; nothing auto-promotes across re-runs.
+  assert.ok([...store.getMemoryCandidates(a.runId), ...store.getMemoryCandidates(b.runId)].every((c) => c.status === 'pending'));
 });
