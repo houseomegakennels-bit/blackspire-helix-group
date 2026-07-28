@@ -1,6 +1,6 @@
 # Blackspire Next Actions
 
-0. Review and merge the canonical authorization-foundation prerequisite before integrating any protected route. Keep PR #57 draft and blocked until then. Do not add human identities, route protection, real provisioning, or production/Gate 4 activity in that review.
+0. PR #58 authorization foundation is merged. PR #57 may now rebase and resume its own draft work; do not integrate protected routes, create human identities, provision real state, or perform production/Gate 4 activity without separately scoped approval and review.
 
 ## Immediate safe actions
 

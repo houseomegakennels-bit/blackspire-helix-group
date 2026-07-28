@@ -4,7 +4,7 @@ This is a server-side, route-unintegrated foundation for Blackspire Command. It 
 
 ## Model and decisions
 
-Principals carry lifecycle state and a monotonically positive security version. Resolution returns an immutable, credential-free summary, and only summaries created by the resolver can be authorized. Callers cannot inject an identity, role, permission, or workspace claim. Authorization is deny-by-default and writes sanitized allow/deny decision records; audit failure denies.
+Principals carry lifecycle state and a monotonically positive security version. Resolution returns an immutable, credential-free summary, and only summaries created by the resolver can be authorized. Callers cannot inject an identity, role, permission, or workspace claim. Authorization is deny-by-default and writes sanitized allow/deny decision records; audit failure denies. Audit records a workspace only after an active grant validates it, never records arbitrary resource type/ID input, and uses server-owned permission and reason values.
 
 Workspace is the current project boundary. Roles are `admin`, `operator`, `viewer`, and `service`; all permissions are the fixed, sorted, duplicate-free `AUTHZ_PERMISSIONS` set. There are no wildcard permissions. Admin/operator/viewer may receive their role matrix; service receives only explicitly listed permissions.
 
@@ -18,4 +18,4 @@ No startup invokes provisioning, no public endpoint exists, no automatic princip
 
 ## Compatibility and limitations
 
-No HTTP route is protected in this pass. No evaluation-read API exists. No human identity, session binding, or automatic authorization exists. PR #57 remains draft and blocked until this foundation merges. No production, Gate 4, routing, memory, or live-provider behavior changed.
+No HTTP route is protected in this pass. No evaluation-read API exists. No human identity, session binding, or automatic authorization exists. PR #57 remains draft and may resume only after its own rebase, completion, and review. No production, Gate 4, routing, memory, or live-provider behavior changed.

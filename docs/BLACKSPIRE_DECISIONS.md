@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-07-28 — Authorization foundation merged
+
+PR #58 merged as `99c5434115821a912fc5c932919c150b3cc7430e`. The merged foundation remains server-side only: route integration, verified human identity, and real provisioning require separate review. PR #57's foundation dependency is removed, but its own draft/rebase/review requirements remain.
+
 ## 2026-07-28 — Canonical authorization foundation
 
 Authorization uses only server-resolved, credential-free admin/service principal summaries. Workspace grants are immutable versioned records; invalid chains or multiple active heads deny. Provisioning is an explicit disposable-only development/test operator action and never a startup action. Route integration and verified human identity remain separate future work.

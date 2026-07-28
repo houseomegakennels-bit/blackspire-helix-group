@@ -1,5 +1,10 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-28 — Canonical authorization foundation merged (Codex)
+
+- PR #58 merged by reviewed merge commit as `99c5434115821a912fc5c932919c150b3cc7430e` from approved head `c87c9ce3e76618a490206ba86d6891abf787478a`. Admin/service principals, immutable workspace grants, deny-by-default resolution, sanitized auditing, and development/test-only transactional provisioning are now on `main`.
+- No HTTP route integration, verified human identity, automatic grant, real database provisioning, routing/memory change, provider call, production action, or Gate 4 action occurred. PR #57 remains draft; only its authorization-foundation blocker is removed, and it needs its own rebase, completion, and review.
+
 ## 2026-07-28 — Canonical authorization foundation completed (Codex)
 
 - Added and independently reviewed server-side admin/service authorization schema, immutable workspace grant versioning, deny-by-default decision auditing, and explicit development/test provisioning. Resolved principal summaries no longer expose credential references and are non-forgeable by callers. Provisioning rejects unsafe paths and validates prior to its single transaction.
