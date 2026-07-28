@@ -14,6 +14,7 @@ const TERMINAL = new Set(['completed', 'failed', 'blocked', 'cancelled']);
 
 export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVALUATION_VERSION } = {}) {
   if (typeof runId !== 'string' || !runId) throw new Error('outcome evaluation requires a run id');
+  if (evaluationVersion !== OUTCOME_EVALUATION_VERSION) throw new Error('outcome evaluation requires the canonical evaluation version');
   return transaction(() => {
     if (getOutcomeEvaluationForRun(runId, evaluationVersion)) throw new Error('outcome evaluation already exists for this run and version');
     const run = getWorkflowRun(runId);

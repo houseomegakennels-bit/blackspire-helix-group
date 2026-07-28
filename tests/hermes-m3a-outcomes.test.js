@@ -38,6 +38,7 @@ test('verified mock workflow creates one immutable positive factual evaluation w
   assert.match(e.provenance_digest, /^[a-f0-9]{64}$/); assert.equal(e.cost_cents, 0, 'mock cost is an actually known zero');
   assert.ok(store.getOutcomeComponents(e.id).some((c) => c.name === 'stability_evidence' && c.status === 'unknown'));
   assert.throws(() => evaluateTerminalOutcome(r.runId), /already exists/);
+  assert.throws(() => evaluateTerminalOutcome(r.runId, { evaluationVersion: 'unreviewed-v2' }), /canonical evaluation version/);
 });
 
 test('blocked workflow is factual but ineligible; no verification can become positive evidence', async () => {
