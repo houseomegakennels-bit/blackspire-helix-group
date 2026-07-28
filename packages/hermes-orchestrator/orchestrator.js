@@ -20,6 +20,7 @@ import { resolveRuntimeProfile, realProviderPermitted, workspacePermitted, realP
 import { checkApproval, reserve } from './approvals.js';
 import { providerRegistry } from './registries.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
+import { evaluateTerminalOutcome } from './outcome.js';
 import {
   insertWorkflowRun, finishWorkflowRun, insertRoutingDecision,
   insertPolicyDecision, insertVerificationResult,
@@ -162,5 +163,9 @@ export async function runHermesWorkflow(input, options = {}) {
 }
 
 function done(runId, status, outcome, extra = {}) {
-  return { runId, status, outcome, ...extra };
+  // Trusted internal post-terminal evaluation only. It is append-only factual provenance and never
+  // changes this workflow's result; malformed/incomplete evidence simply remains unevaluated.
+  let evaluation = null;
+  try { evaluation = evaluateTerminalOutcome(runId); } catch { /* fail closed: no partial evaluation */ }
+  return { runId, status, outcome, ...(evaluation ? { evaluationId: evaluation.evaluation.id } : {}), ...extra };
 }

@@ -143,3 +143,14 @@ export const getPolicyDecisions = (runId) => all(`SELECT * FROM hermes_policy_de
 export const getVerificationResults = (runId) => all(`SELECT * FROM hermes_verification_results WHERE run_id=?`, [runId]);
 export const getMemoryCandidates = (runId) => all(`SELECT * FROM hermes_memory_candidates WHERE run_id=?`, [runId]);
 export const getPendingMemoryCandidates = () => all(`SELECT * FROM hermes_memory_candidates WHERE status='pending' ORDER BY created_at`);
+
+// Milestone 3A outcome records are append-only. No update/delete helper is deliberately exposed.
+export function insertOutcomeEvaluation(row, components) {
+  run(`INSERT INTO hermes_outcome_evaluations(id,evaluation_version,user_id,project_id,workspace_id,task_id,run_id,routing_decision_id,policy_decision_id,verification_result_id,provider_invocation_id,execution_mode,provider_id,classification,terminal_status,terminal_outcome,verification_status,verifier_confidence,acceptance_status,retry_count,duration_ms,input_tokens,output_tokens,cost_cents,timed_out,cancelled,rollback_evidence,stability_evidence,failure_category,learning_eligibility,source_event_start_seq,source_event_end_seq,evaluator_version,provenance_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  [row.id,row.evaluationVersion,row.userId,row.projectId,row.workspaceId,row.taskId,row.runId,row.routingDecisionId,row.policyDecisionId,row.verificationResultId,row.providerInvocationId,row.executionMode,row.providerId,row.classification,row.terminalStatus,row.terminalOutcome,row.verificationStatus,row.verifierConfidence,row.acceptanceStatus,row.retryCount,row.durationMs,row.inputTokens,row.outputTokens,row.costCents,row.timedOut ? 1 : 0,row.cancelled ? 1 : 0,row.rollbackEvidence,row.stabilityEvidence,row.failureCategory,row.learningEligibility,row.sourceEventStartSeq,row.sourceEventEndSeq,row.evaluatorVersion,row.provenanceDigest,row.createdAt]);
+  for (const c of components) run(`INSERT INTO hermes_outcome_evaluation_components(id,evaluation_id,name,value,status,detail,created_at) VALUES(?,?,?,?,?,?,?)`, [c.id,row.id,c.name,c.value,c.status,redactString(c.detail || ''),row.createdAt]);
+}
+export const getOutcomeEvaluationForRun = (runId, evaluationVersion) => get(`SELECT * FROM hermes_outcome_evaluations WHERE run_id=? AND evaluation_version=?`, [runId,evaluationVersion]);
+export const getOutcomeEvaluation = (id) => get(`SELECT * FROM hermes_outcome_evaluations WHERE id=?`, [id]);
+export const getOutcomeComponents = (evaluationId) => all(`SELECT * FROM hermes_outcome_evaluation_components WHERE evaluation_id=? ORDER BY name`, [evaluationId]);
+export const recentOutcomeEvaluations = (limit = 20) => all(`SELECT * FROM hermes_outcome_evaluations ORDER BY created_at DESC LIMIT ?`, [limit]);

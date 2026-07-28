@@ -23,6 +23,8 @@ export const REQUIRED_SCHEMA = {
   hermes_provider_invocations: ['id', 'run_id', 'task_id', 'provider', 'adapter_type', 'model', 'mode', 'status', 'attempt', 'input_bytes', 'output_bytes', 'input_tokens', 'output_tokens', 'cost_cents', 'duration_ms', 'timed_out', 'cancelled', 'error', 'created_at'],
   hermes_provider_health: ['provider', 'status', 'last_success_at', 'last_failure_at', 'failure_count', 'cooldown_until', 'disabled', 'updated_at'],
   hermes_approvals: ['id', 'run_id', 'task_id', 'scope', 'action_class', 'status', 'granted_by', 'reason', 'single_use', 'consumed_at', 'expires_at', 'created_at'],
+  hermes_outcome_evaluations: ['id', 'evaluation_version', 'user_id', 'project_id', 'workspace_id', 'task_id', 'run_id', 'routing_decision_id', 'policy_decision_id', 'verification_result_id', 'provider_invocation_id', 'execution_mode', 'provider_id', 'classification', 'terminal_status', 'terminal_outcome', 'verification_status', 'verifier_confidence', 'acceptance_status', 'retry_count', 'duration_ms', 'input_tokens', 'output_tokens', 'cost_cents', 'timed_out', 'cancelled', 'rollback_evidence', 'stability_evidence', 'failure_category', 'learning_eligibility', 'source_event_start_seq', 'source_event_end_seq', 'evaluator_version', 'provenance_digest', 'created_at'],
+  hermes_outcome_evaluation_components: ['id', 'evaluation_id', 'name', 'value', 'status', 'detail', 'created_at'],
 };
 
 // Returns a list of human-readable descriptions of missing schema objects (empty when the database

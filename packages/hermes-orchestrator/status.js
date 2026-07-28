@@ -8,7 +8,7 @@ import { getFlag } from '../task-engine/tasks.js';
 import { providerRegistry, capabilityRegistry } from './registries.js';
 import { resolveRuntimeProfile } from './runtime-profile.js';
 import { currentHealth } from './health.js';
-import { recentProviderInvocations } from './store.js';
+import { recentProviderInvocations, recentOutcomeEvaluations, getOutcomeComponents } from './store.js';
 import { all } from '../task-engine/db.js';
 import { redactString } from './redaction.js';
 
@@ -44,6 +44,14 @@ export function buildRuntimeStatus(env = process.env) {
     // A redacted, already-redacted-at-write error string only.
     error: i.error ? redactString(i.error) : null,
   }));
+  const recentEvaluations = recentOutcomeEvaluations(10).map((e) => ({
+    id: e.id, workspaceId: e.workspace_id, taskId: e.task_id, runId: e.run_id,
+    executionMode: e.execution_mode, provider: e.provider_id, terminalStatus: e.terminal_status,
+    verificationStatus: e.verification_status, learningEligibility: e.learning_eligibility,
+    retryCount: e.retry_count, durationMs: e.duration_ms, costCents: e.cost_cents,
+    timedOut: Boolean(e.timed_out), cancelled: Boolean(e.cancelled), evaluatorVersion: e.evaluator_version,
+    provenanceDigest: e.provenance_digest, components: getOutcomeComponents(e.id).map((c) => ({ name: c.name, value: c.value, status: c.status })),
+  }));
 
   return {
     runtime: { profile: rp.profile, realProviderEnabled: rp.realProviderEnabled, providerAllowlist: rp.providerAllowlist, killSwitch },
@@ -52,6 +60,7 @@ export function buildRuntimeStatus(env = process.env) {
     capabilities: capabilityRegistry.list().map((c) => ({ id: c.id, description: c.description, riskLevel: c.riskLevel, verificationRequired: c.verificationRequired, environmentRestrictions: c.environmentRestrictions })),
     recentRuns,
     recentInvocations,
+    recentEvaluations,
   };
 }
 

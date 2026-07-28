@@ -68,6 +68,13 @@ CREATE TABLE IF NOT EXISTS hermes_provider_health(provider TEXT PRIMARY KEY,stat
 CREATE TABLE IF NOT EXISTS hermes_approvals(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,scope TEXT,action_class TEXT,status TEXT,granted_by TEXT,reason TEXT,single_use INTEGER,consumed_at TEXT,expires_at TEXT,created_at TEXT);
 CREATE INDEX IF NOT EXISTS idx_hermes_invocations_run ON hermes_provider_invocations(run_id);
 CREATE INDEX IF NOT EXISTS idx_hermes_approvals_task ON hermes_approvals(task_id, status);`);
+  // --- Hermes Verified Outcome Scoring (Milestone 3A) ---
+  // Append-only factual evaluations. They are evidence records only: no routing, scorecard,
+  // memory-promotion, or background-job behavior is introduced here.
+  db.exec(`CREATE TABLE IF NOT EXISTS hermes_outcome_evaluations(id TEXT PRIMARY KEY,evaluation_version TEXT NOT NULL,user_id TEXT,project_id TEXT,workspace_id TEXT NOT NULL,task_id TEXT,run_id TEXT NOT NULL,routing_decision_id TEXT,policy_decision_id TEXT,verification_result_id TEXT,provider_invocation_id TEXT,execution_mode TEXT,provider_id TEXT,classification TEXT,terminal_status TEXT NOT NULL,terminal_outcome TEXT,verification_status TEXT NOT NULL,verifier_confidence TEXT NOT NULL,acceptance_status TEXT NOT NULL,retry_count INTEGER,duration_ms INTEGER,input_tokens INTEGER,output_tokens INTEGER,cost_cents INTEGER,timed_out INTEGER NOT NULL,cancelled INTEGER NOT NULL,rollback_evidence TEXT,stability_evidence TEXT,failure_category TEXT,learning_eligibility TEXT NOT NULL,source_event_start_seq INTEGER,source_event_end_seq INTEGER,evaluator_version TEXT NOT NULL,provenance_digest TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(run_id,evaluation_version));
+CREATE TABLE IF NOT EXISTS hermes_outcome_evaluation_components(id TEXT PRIMARY KEY,evaluation_id TEXT NOT NULL,name TEXT NOT NULL,value TEXT,status TEXT NOT NULL,detail TEXT,created_at TEXT NOT NULL,UNIQUE(evaluation_id,name));
+CREATE INDEX IF NOT EXISTS idx_hermes_outcome_workspace_created ON hermes_outcome_evaluations(workspace_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_hermes_outcome_run ON hermes_outcome_evaluations(run_id);`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
 }
