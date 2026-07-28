@@ -27,8 +27,21 @@ export function activeGrant(principalId, workspaceId) {
   if (rows.length !== 1) return null;
   const g = rows[0];
   try { validateGrant({ ...g, supersedesGrantId: g.supersedes_grant_id }); } catch { return null; }
-  if (g.supersedes_grant_id) { const prior = get('SELECT * FROM auth_workspace_grants WHERE id=?', [g.supersedes_grant_id]); if (!prior || prior.principal_id !== g.principal_id || prior.workspace_id !== g.workspace_id) return null; }
+  if (!validateGrantChain(g)) return null;
   return g;
+}
+// Versions are strictly increasing, but need not be contiguous: a revoked version may be retained
+// without an active successor. Cycles/cross-scope links are refused before a grant is usable.
+export function validateGrantChain(head) {
+  const seen = new Set(); let current = head; let priorVersion = Infinity;
+  while (current) {
+    if (seen.has(current.id) || !Number.isInteger(Number(current.version)) || Number(current.version) < 1 || Number(current.version) >= priorVersion) return false;
+    seen.add(current.id); priorVersion = Number(current.version);
+    if (!current.supersedes_grant_id) return true;
+    current = get('SELECT * FROM auth_workspace_grants WHERE id=?', [current.supersedes_grant_id]);
+    if (!current || current.principal_id !== head.principal_id || current.workspace_id !== head.workspace_id) return false;
+  }
+  return false;
 }
 export function requireWorkspacePermission(principal, workspaceId, permission, resource = {}) {
   if (!principal || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(principal, workspaceId, permission, resource, deny('invalid_scope'));
