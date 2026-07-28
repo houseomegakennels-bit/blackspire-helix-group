@@ -50,7 +50,7 @@ export function requireWorkspacePermission(principal, workspaceId, permission, r
   if (!principal || !resolvedPrincipals.has(principal) || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, workspaceId, permission, resource, deny('invalid_scope'));
   const grant = activeGrant(principal.principalId, workspaceId); if (!grant) return decision(principal, workspaceId, permission, resource, deny('grant_missing'));
   const permissions = JSON.parse(canonicalPermissions(grant.permissions));
-  const allowedPermission = permissions.includes(permission) || (grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));
+  const allowedPermission = permissions.includes(permission) || (principal.principalType !== 'service' && grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));
   return decision(principal, workspaceId, permission, resource, allowedPermission ? allow('granted') : deny('permission_denied'));
 }
 export const canReadTask = (p,w) => requireWorkspacePermission(p,w,'task.read');
