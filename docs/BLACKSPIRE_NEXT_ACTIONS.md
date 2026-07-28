@@ -1,5 +1,7 @@
 # Blackspire Next Actions
 
+0. Review and merge the canonical authorization-foundation prerequisite before integrating any protected route. Keep PR #57 draft and blocked until then. Do not add human identities, route protection, real provisioning, or production/Gate 4 activity in that review.
+
 ## Immediate safe actions
 
 0. **Hermes Milestone 2 (Runtime & Provider Framework) is MERGED** via [PR #56](https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/56) (reviewed implementation head `148a82cde1105a8917be2e38018c6e8ff4a7e1d4`; merge `a4a0407e5d72019b4a99cf61568598434e7e136d`). It adds a development-only real-provider runtime (first adapter: non-agentic Anthropic Messages API), disabled by default and refused in production. Real dispatch requires the development profile, explicit feature flag, provider allowlist, registered/allowlisted workspace root, bounded positive spend reservation, and a valid scoped approval. **Only with separate explicit operator approval**, the prepared-but-disabled `scripts/hermes-dev-smoke.js` may make one bounded development call; it was not run for M2. **Deferred to Milestone 3:** multi-provider learned routing, scorecards, approval-gated memory promotion, cross-host limits. Do not enable multi-provider autonomous routing or automatic memory promotion. Production stays `disabled/inactive/dead` and Gate 4 stays unauthorized regardless of Hermes milestones.

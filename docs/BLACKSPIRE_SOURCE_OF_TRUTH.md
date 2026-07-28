@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Authorization foundation branch status (2026-07-28 UTC)
+
+The unmerged `feature/canonical-authz-foundation` branch provides only server-side authorization foundations: configured admin/service principals, versioned workspace grants, fixed canonical permissions, sanitized decision auditing, and explicit disposable development/test provisioning. It does not establish human identities, route protection, evaluation-read API, automatic grants, a real database, production behavior, provider behavior, or Gate 4 authority. PR #57 remains draft and blocked until this prerequisite is merged.
+
 ## Authority
 
 The durable authority is GitHub repository `houseomegakennels-bit/blackspire-helix-group`. Code, commits, tests, deployment evidence, and explicit operator-confirmed results outrank summaries. Unsupported current-state claims are `UNVERIFIED`.
