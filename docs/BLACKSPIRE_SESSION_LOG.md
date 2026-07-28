@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-28 — Hermes Milestone 2 merged and merged-main baseline refreshed (Codex)
+
+- PR #56 merged through GitHub's reviewed merge method as `a4a0407e5d72019b4a99cf61568598434e7e136d`, with approved reviewed head `148a82cde1105a8917be2e38018c6e8ff4a7e1d4` as its second parent. The source branch was removed locally and from origin under the repository's established post-merge policy.
+- Canonical memory now records M2 as merged and anchors the independently reviewed implementation at `148a82cde1105a8917be2e38018c6e8ff4a7e1d4`. The Anthropic Messages API adapter is non-agentic, development-only, and disabled by default; mock remains default. Real dispatch requires the development profile, explicit feature flag, provider allowlist, registered/allowlisted workspace root, positive bounded spend reservation, and scoped approval; production profiles refuse execution. No automatic memory promotion exists, and multi-provider learned routing remains deferred to M3.
+- Final merged-main validation: Hermes M2/API plus Hermes/unified/PWA/migration integration 126/126 passed; the full repository acceptance suite passed; lint, typecheck, build, secret scan, production preflight (`source=21/21`, `deployment=2/2`), whitespace, and living-memory consistency all passed. No GitHub-linked M2 issue exists; the merge evidence and deferrals were posted to PR #56.
+- No live provider call or credential use occurred. No deployment, production configuration, release/current-symlink, service, nginx, TLS, DNS, firewall, Telegram, voice, or Gate 4 action occurred. Production remains `disabled/inactive/dead` with `MainPID=0` and no `current` symlink; Gate 4 remains unauthorized.
+
 ## 2026-07-28 — Hermes Milestone 2 review hardening on PR #56 (Codex)
 
 - Recovered the clean feature branch `feature/hermes-runtime-provider-framework-m2` at `f2209e19cfe6c0917765ae474ba6c772f2976970` and reviewed open PR #56. All reported CI/Vercel checks were green and mergeability was clean; the automated review had six unresolved actionable findings.
