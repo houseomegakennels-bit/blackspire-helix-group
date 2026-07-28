@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-28 — Hermes Milestone 3A resumed on merged authorization foundation (Codex)
+
+- Safely merged `origin/main` (including authorization PR #58) into the preserved PR #57 branch; source-of-truth and schema conflicts were resolved deliberately without discarding Phase 3A history.
+- Added only Phase 3A additive evidence records: immutable correction history, explicit source-evidence events, and sanitized evaluator-failure observability. Evaluation reads are derived from stored workspace scope and require a trusted canonical admin principal with `evaluation.read`; corrections/events require `evaluation.correct`.
+- No route beyond the narrowly scoped read endpoint was integrated. No human principal/session mapping, real provisioning, live provider call, routing/scorecard change, memory behavior, historical backfill, production action, or Gate 4 action occurred.
+
 ## 2026-07-28 — Canonical authorization foundation merged (Codex)
 
 - PR #58 merged by reviewed merge commit as `99c5434115821a912fc5c932919c150b3cc7430e` from approved head `c87c9ce3e76618a490206ba86d6891abf787478a`. Admin/service principals, immutable workspace grants, deny-by-default resolution, sanitized auditing, and development/test-only transactional provisioning are now on `main`.

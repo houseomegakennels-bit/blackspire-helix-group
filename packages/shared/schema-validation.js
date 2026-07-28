@@ -28,6 +28,9 @@ export const REQUIRED_SCHEMA = {
   auth_decisions: ['id','principal_id','principal_type','workspace_id','permission','resource_type','resource_id','allowed','reason_code','policy_version','created_at'],
   hermes_outcome_evaluations: ['id', 'evaluation_version', 'user_id', 'project_id', 'workspace_id', 'task_id', 'run_id', 'routing_decision_id', 'policy_decision_id', 'verification_result_id', 'provider_invocation_id', 'execution_mode', 'provider_id', 'classification', 'terminal_status', 'terminal_outcome', 'verification_status', 'verifier_confidence', 'acceptance_status', 'retry_count', 'duration_ms', 'input_tokens', 'output_tokens', 'cost_cents', 'timed_out', 'cancelled', 'rollback_evidence', 'stability_evidence', 'failure_category', 'learning_eligibility', 'source_event_start_seq', 'source_event_end_seq', 'evaluator_version', 'provenance_digest', 'created_at'],
   hermes_outcome_evaluation_components: ['id', 'evaluation_id', 'name', 'value', 'status', 'detail', 'created_at'],
+  hermes_outcome_corrections: ['id', 'evaluation_id', 'workspace_id', 'run_id', 'version', 'supersedes_correction_id', 'reason', 'source_evidence', 'actor_principal_id', 'created_at'],
+  hermes_outcome_source_events: ['id', 'evaluation_id', 'workspace_id', 'run_id', 'event_type', 'evidence', 'actor_principal_id', 'idempotency_key', 'created_at'],
+  hermes_outcome_evaluation_failures: ['id', 'run_id', 'workspace_id', 'category', 'remediation_state', 'detail', 'created_at'],
 };
 
 // Returns a list of human-readable descriptions of missing schema objects (empty when the database

@@ -19,6 +19,8 @@ import { conversationEvents } from '../../packages/task-engine/tasks.js';
 import { requireSafeTestMode, isSameOrigin, testModeAllowsRequest, publicTestModeStatus } from '../../packages/shared/testMode.js';
 import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
 import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
+import { resolveAdminBearer } from '../../packages/shared/authorization.js';
+import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 
 let emergencyStopMemory = false;
 const TEST_MODE = requireSafeTestMode();
@@ -95,6 +97,8 @@ async function route(req, res) {
     if (u.pathname === '/api/test-mode/queued-task' && req.method === 'POST') return testQueuedTask(req, res);
     if (u.pathname === '/api/test-mode/delivery-failure' && req.method === 'POST') return testDeliveryFailure(req, res);
     if (u.pathname === '/api/hermes/runtime' && req.method === 'GET') return json(res, 200, buildHermesRuntimeStatus());
+    const evaluationMatch = u.pathname.match(/^\/api\/hermes\/evaluations\/([A-Za-z0-9._:-]{1,128})$/);
+    if (evaluationMatch && req.method === 'GET') return outcomeEvaluationRoute(res, auth, evaluationMatch[1]);
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: TEST_MODE.enabled ? [getWorkspace(TEST_MODE.workspaceId)] : listWorkspaces() });
     if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => !TEST_MODE.enabled || task.workspace_id === TEST_MODE.workspaceId) });
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
@@ -141,6 +145,19 @@ async function route(req, res) {
   } catch (error) {
     return json(res, 500, { error: safeError(error) });
   }
+}
+
+// This is intentionally narrower than the legacy API authentication: a session is not a
+// canonical principal, and a request cannot nominate one.  A deployment must explicitly map its
+// already-authenticated administrator bearer path to an existing canonical admin principal.
+function outcomeEvaluationRoute(res, auth, evaluationId) {
+  if (auth.mode !== 'bearer') return json(res, 403, { error: 'canonical administrator bearer authentication required' });
+  const configuredPrincipalId = process.env.BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID;
+  if (typeof configuredPrincipalId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(configuredPrincipalId)) return json(res, 403, { error: 'evaluation authorization unavailable' });
+  const principal = resolveAdminBearer(configuredPrincipalId);
+  const evaluation = principal && readOutcomeEvaluation(principal, evaluationId);
+  // Do not distinguish a guessed identifier from a cross-workspace object.
+  return evaluation ? json(res, 200, { evaluation }) : json(res, 404, { error: 'evaluation not found' });
 }
 
 async function login(req, res) {

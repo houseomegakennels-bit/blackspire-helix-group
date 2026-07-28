@@ -15,7 +15,17 @@ const { createUnifiedInput } = await import('../packages/unified-input/unified.j
 const { getTask } = await import('../packages/task-engine/tasks.js');
 const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
 const store = await import('../packages/hermes-orchestrator/store.js');
-const { evaluateTerminalOutcome } = await import('../packages/hermes-orchestrator/outcome.js');
+const { run } = await import('../packages/task-engine/db.js');
+const authz = await import('../packages/shared/authorization.js');
+const { evaluateTerminalOutcome, readOutcomeEvaluation, appendOutcomeCorrection, appendOutcomeSourceEvent, recordOutcomeEvaluationFailure } = await import('../packages/hermes-orchestrator/outcome.js');
+const authzNow = Date.now();
+function principal(workspaceId, permissions = ['evaluation.read','evaluation.correct']) {
+  const suffix = `${workspaceId}-${permissions.join('-')}`;
+  const principalId = `m3a-admin-${suffix}`; const grantId = `m3a-grant-${suffix}`;
+  run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[principalId,'admin',principalId,'bearer',null,'active',authzNow,null,null,null,1,authzNow]);
+  run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[grantId,principalId,workspaceId,'viewer',JSON.stringify([...permissions].sort()),'active',1,null,authzNow,null,null,'test',1,authzNow]);
+  return authz.resolveAdminBearer(principalId);
+}
 
 function workspace(id) { upsertWorkspace({ id, name: id, githubRepository: 'local/m3a', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root }); }
 function task(id, text = 'report current status') { const i = createUnifiedInput({ channel: 'jarvis', actorId: 'm3a-user', channelKey: 'm3a-user', workspaceId: id, text, idempotencyKey: `m3a-${id}-${text}` }); return getTask(i.taskId); }
@@ -38,4 +48,32 @@ test('blocked workflow is factual but ineligible; no verification can become pos
 
 test('evaluation rejects incomplete/reordered evidence and does not write a partial row', () => {
   assert.throws(() => evaluateTerminalOutcome('missing-run'), /finished terminal workflow run/);
+});
+
+test('workspace-scoped trusted reads and additive corrections refuse injection, branches, and cross-scope access', async () => {
+  workspace('m3a-correct'); const result = await runHermesWorkflow(task('m3a-correct'));
+  const admin = principal('m3a-correct'); const reader = principal('m3a-reader', ['evaluation.read']);
+  assert.equal(readOutcomeEvaluation({ principalId: admin.principalId }, result.evaluationId), null, 'forged principal is not trusted');
+  assert.equal(readOutcomeEvaluation(reader, result.evaluationId), null, 'cross-workspace read is denied');
+  const summary = readOutcomeEvaluation(admin, result.evaluationId);
+  assert.equal(summary.id, result.evaluationId); assert.equal('classification' in summary, false);
+  assert.throws(() => appendOutcomeCorrection(reader, result.evaluationId, { reason: 'fix', sourceEvidence: 'event' }), /not authorized/);
+  const first = appendOutcomeCorrection(admin, result.evaluationId, { reason: 'correct factual label', sourceEvidence: 'verified operator evidence' });
+  assert.equal(store.getOutcomeEvaluation(result.evaluationId).id, result.evaluationId, 'original remains immutable');
+  assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { reason: 'branch', sourceEvidence: 'evidence' }), /sole current/);
+  const second = appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: first.id, reason: 'new evidence', sourceEvidence: 'explicit evidence' });
+  assert.equal(second.version, 2);
+  assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: first.id, reason: 'cycle', sourceEvidence: 'evidence' }), /sole current/);
+});
+
+test('explicit source events are idempotent, evidence-required, and evaluator failures are observable', async () => {
+  workspace('m3a-events'); const result = await runHermesWorkflow(task('m3a-events'));
+  const admin = principal('m3a-events');
+  const event = appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-1', eventType: 'accepted', evidence: 'signed verification record' });
+  assert.equal(event.eventType, 'accepted');
+  assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-1', eventType: 'accepted', evidence: 'again' }), /already recorded/);
+  assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-2', eventType: 'unknown', evidence: 'evidence' }), /allowed type/);
+  assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-3', eventType: 'rollback', evidence: '' }), /allowed type/);
+  assert.equal(recordOutcomeEvaluationFailure(result.runId, new Error('malformed terminal evidence')), 'invalid_evidence');
+  assert.equal(store.getOutcomeEvaluationFailure(result.runId).remediation_state, 'open');
 });

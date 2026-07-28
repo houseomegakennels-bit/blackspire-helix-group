@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 import { id, now } from '../shared/util.js';
 import { transaction } from '../task-engine/db.js';
 import { redactDeep, redactString } from './redaction.js';
-import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation } from './store.js';
+import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
+import { canReadEvaluation, canCorrectEvaluation } from '../shared/authorization.js';
 
 export const OUTCOME_EVALUATION_VERSION = 'm3a-v1';
 export const OUTCOME_EVALUATOR_VERSION = 'hermes-outcome-evaluator-v1';
@@ -57,6 +58,58 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
     return { evaluation: payload, components };
   });
 }
+
+// Authorization-facing reads return only bounded factual summaries.  The DB-derived workspace
+// decides scope; caller input never chooses the authority or filters an unscoped list.
+export function readOutcomeEvaluation(principal, evaluationId) {
+  const evaluation = getOutcomeEvaluation(evaluationId);
+  if (!evaluation) return null;
+  const decision = canReadEvaluation(principal, evaluation.workspace_id);
+  if (!decision.allowed) return null;
+  return { id: evaluation.id, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
+    evaluationVersion: evaluation.evaluation_version, terminalStatus: evaluation.terminal_status,
+    terminalOutcome: evaluation.terminal_outcome, verificationStatus: evaluation.verification_status,
+    acceptanceStatus: evaluation.acceptance_status, failureCategory: evaluation.failure_category,
+    learningEligibility: evaluation.learning_eligibility, createdAt: evaluation.created_at,
+    corrections: getOutcomeCorrections(evaluation.id).map(safeCorrection), sourceEvents: getOutcomeSourceEvents(evaluation.id).map(safeEvent) };
+}
+
+export function appendOutcomeCorrection(principal, evaluationId, { reason, sourceEvidence, supersedesCorrectionId = null } = {}) {
+  const evaluation = getOutcomeEvaluation(evaluationId);
+  if (!evaluation) throw new Error('outcome correction requires an existing evaluation');
+  if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
+  if (!safeRequired(reason) || !safeRequired(sourceEvidence)) throw new Error('outcome correction requires reason and source evidence');
+  const prior = getOutcomeCorrections(evaluationId);
+  const head = prior.at(-1) || null;
+  if (head && supersedesCorrectionId !== head.id) throw new Error('outcome correction must supersede the sole current correction head');
+  if (!head && supersedesCorrectionId) throw new Error('outcome correction cannot supersede an absent correction');
+  const row = { id: id('hecorr'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
+    version: prior.length + 1, supersedesCorrectionId: head?.id || null, reason, sourceEvidence,
+    actorPrincipalId: principal.principalId, createdAt: now() };
+  insertOutcomeCorrection(row); return safeCorrection(row);
+}
+
+const EVENT_TYPES = new Set(['accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked']);
+export function appendOutcomeSourceEvent(principal, evaluationId, { idempotencyKey, eventType, evidence } = {}) {
+  const evaluation = getOutcomeEvaluation(evaluationId);
+  if (!evaluation) throw new Error('outcome source event requires an existing evaluation');
+  if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
+  if (!EVENT_TYPES.has(eventType) || !safeRequired(evidence) || !safeId(idempotencyKey)) throw new Error('outcome source event requires an allowed type, evidence, and idempotency key');
+  const row = { id: id('heevt'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id, eventType, evidence, actorPrincipalId: principal.principalId, idempotencyKey, createdAt: now() };
+  try { insertOutcomeSourceEvent(row); } catch { throw new Error('outcome source event already recorded'); }
+  return safeEvent(row);
+}
+
+export function recordOutcomeEvaluationFailure(runId, error) {
+  const run = getWorkflowRun(runId); if (!run) return null;
+  const category = error instanceof Error && /terminal|evidence|provenance|duration|usage|retry/i.test(error.message) ? 'invalid_evidence' : 'evaluation_failed';
+  try { insertOutcomeEvaluationFailure({ id: id('hefail'), runId, workspaceId: run.workspace_id, category, remediationState: 'open', detail: category, createdAt: now() }); } catch { return null; }
+  return category;
+}
+function safeRequired(value) { return typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value); }
+function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
+function safeCorrection(row) { return { id: row.id, version: row.version, supersedesCorrectionId: row.supersedes_correction_id ?? row.supersedesCorrectionId ?? null, reason: row.reason, sourceEvidence: row.source_evidence ?? row.sourceEvidence, createdAt: row.created_at ?? row.createdAt }; }
+function safeEvent(row) { return { id: row.id, eventType: row.event_type ?? row.eventType, createdAt: row.created_at ?? row.createdAt }; }
 
 function componentRows({ positive, verified, retryCount, duration, invocation, run }) {
   const known = (name, value, detail) => ({ name, value: String(value), status: 'known', detail });

@@ -55,7 +55,15 @@ async function load() {
       <h2>Recent invocations</h2>
       <table><thead><tr><th>Provider</th><th>Mode</th><th>Status</th><th>Duration</th><th>Input tokens</th></tr></thead><tbody>${invs || '<tr><td colspan="5" class="muted">none</td></tr>'}</tbody></table>
       <h2>Outcome evaluations</h2><p class="muted">Immutable evidence only; evaluations do not alter routing or promote memory.</p>
-      <table><thead><tr><th>Run</th><th>Provider</th><th>Terminal</th><th>Verification</th><th>Learning status</th><th>Evaluator</th></tr></thead><tbody>${evals || '<tr><td colspan="6" class="muted">none</td></tr>'}</tbody></table>`;
+      <table><thead><tr><th>Run</th><th>Provider</th><th>Terminal</th><th>Verification</th><th>Learning status</th><th>Evaluator</th></tr></thead><tbody>${evals || '<tr><td colspan="6" class="muted">none</td></tr>'}</tbody></table>
+      <div id="evaluation-detail" class="muted"></div>`;
+    const evaluationId = new URLSearchParams(location.search).get('evaluation');
+    if (evaluationId && /^[A-Za-z0-9._:-]{1,128}$/.test(evaluationId)) {
+      const detail = document.getElementById('evaluation-detail');
+      const response = await fetch('/api/hermes/evaluations/' + encodeURIComponent(evaluationId), { credentials: 'include', headers: { accept: 'application/json' } });
+      if (response.ok) { const value = await response.json(); detail.textContent = 'Authorized evaluation: ' + value.evaluation.id + ' · ' + value.evaluation.terminalStatus + ' · ' + value.evaluation.verificationStatus; }
+      else detail.textContent = 'Evaluation unavailable.';
+    }
   } catch (e) {
     root.innerHTML = '<p class="err">Failed to load status.</p>';
   }

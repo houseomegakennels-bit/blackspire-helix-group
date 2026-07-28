@@ -154,3 +154,20 @@ export const getOutcomeEvaluationForRun = (runId, evaluationVersion) => get(`SEL
 export const getOutcomeEvaluation = (id) => get(`SELECT * FROM hermes_outcome_evaluations WHERE id=?`, [id]);
 export const getOutcomeComponents = (evaluationId) => all(`SELECT * FROM hermes_outcome_evaluation_components WHERE evaluation_id=? ORDER BY name`, [evaluationId]);
 export const recentOutcomeEvaluations = (limit = 20) => all(`SELECT * FROM hermes_outcome_evaluations ORDER BY created_at DESC LIMIT ?`, [limit]);
+
+// Phase 3A additions remain append-only.  There are deliberately no update/delete paths.
+export function insertOutcomeCorrection(row) {
+  run(`INSERT INTO hermes_outcome_corrections(id,evaluation_id,workspace_id,run_id,version,supersedes_correction_id,reason,source_evidence,actor_principal_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+    [row.id,row.evaluationId,row.workspaceId,row.runId,row.version,row.supersedesCorrectionId || null,redactString(row.reason),redactString(row.sourceEvidence),row.actorPrincipalId,row.createdAt]);
+}
+export const getOutcomeCorrections = (evaluationId) => all(`SELECT * FROM hermes_outcome_corrections WHERE evaluation_id=? ORDER BY version`, [evaluationId]);
+export function insertOutcomeSourceEvent(row) {
+  run(`INSERT INTO hermes_outcome_source_events(id,evaluation_id,workspace_id,run_id,event_type,evidence,actor_principal_id,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+    [row.id,row.evaluationId,row.workspaceId,row.runId,row.eventType,redactString(row.evidence),row.actorPrincipalId,row.idempotencyKey,row.createdAt]);
+}
+export const getOutcomeSourceEvents = (evaluationId) => all(`SELECT * FROM hermes_outcome_source_events WHERE evaluation_id=? ORDER BY created_at,id`, [evaluationId]);
+export function insertOutcomeEvaluationFailure(row) {
+  run(`INSERT INTO hermes_outcome_evaluation_failures(id,run_id,workspace_id,category,remediation_state,detail,created_at) VALUES(?,?,?,?,?,?,?)`,
+    [row.id,row.runId,row.workspaceId || null,row.category,row.remediationState || 'open',redactString(row.detail || ''),row.createdAt]);
+}
+export const getOutcomeEvaluationFailure = (runId) => get(`SELECT * FROM hermes_outcome_evaluation_failures WHERE run_id=?`, [runId]);
