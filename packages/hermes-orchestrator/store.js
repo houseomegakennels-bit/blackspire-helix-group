@@ -91,6 +91,49 @@ export function insertMemoryCandidate(runId, taskId, candidate) {
   return rowId;
 }
 
+// --- Milestone 2: provider invocations, health, approvals ---
+export function insertProviderInvocation(runId, taskId, inv) {
+  const rowId = id('hinv');
+  run(
+    `INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [rowId, runId, taskId || null, inv.provider || null, inv.adapterType || null, inv.model || null, inv.mode || null, inv.status || null, Number.isFinite(inv.attempt) ? inv.attempt : 1,
+      numOrNull(inv.inputBytes), numOrNull(inv.outputBytes), numOrNull(inv.inputTokens), numOrNull(inv.outputTokens), numOrNull(inv.costCents), numOrNull(inv.durationMs),
+      inv.timedOut ? 1 : 0, inv.cancelled ? 1 : 0, inv.error ? redactString(inv.error) : null, now()],
+  );
+  return rowId;
+}
+
+export function upsertProviderHealth(provider, h) {
+  run(
+    `INSERT INTO hermes_provider_health(provider,status,last_success_at,last_failure_at,failure_count,cooldown_until,disabled,updated_at)
+     VALUES(?,?,?,?,?,?,?,?)
+     ON CONFLICT(provider) DO UPDATE SET status=excluded.status,last_success_at=excluded.last_success_at,last_failure_at=excluded.last_failure_at,failure_count=excluded.failure_count,cooldown_until=excluded.cooldown_until,disabled=excluded.disabled,updated_at=excluded.updated_at`,
+    [provider, h.status || 'unknown', h.lastSuccessAt || null, h.lastFailureAt || null, Number.isFinite(h.failureCount) ? h.failureCount : 0, h.cooldownUntil || null, h.disabled ? 1 : 0, now()],
+  );
+}
+export const getProviderHealth = (provider) => get(`SELECT * FROM hermes_provider_health WHERE provider=?`, [provider]);
+export const listProviderHealth = () => all(`SELECT * FROM hermes_provider_health`);
+
+export function insertApproval(a) {
+  const rowId = a.id || id('happr');
+  run(
+    `INSERT INTO hermes_approvals(id,run_id,task_id,scope,action_class,status,granted_by,reason,single_use,consumed_at,expires_at,created_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [rowId, a.runId || null, a.taskId || null, a.scope || 'task', a.actionClass || null, a.status || 'granted', a.grantedBy || null, redactString(a.reason || ''), a.singleUse === false ? 0 : 1, null, a.expiresAt || null, now()],
+  );
+  return rowId;
+}
+export const getApproval = (approvalId) => get(`SELECT * FROM hermes_approvals WHERE id=?`, [approvalId]);
+export const latestApprovalForTask = (taskId, actionClass) => get(`SELECT * FROM hermes_approvals WHERE task_id=? AND action_class=? ORDER BY created_at DESC LIMIT 1`, [taskId, actionClass]);
+export function consumeApproval(approvalId) {
+  run(`UPDATE hermes_approvals SET status='consumed', consumed_at=? WHERE id=? AND status='granted'`, [now(), approvalId]);
+}
+export const getProviderInvocations = (runId) => all(`SELECT * FROM hermes_provider_invocations WHERE run_id=?`, [runId]);
+export const recentProviderInvocations = (limit = 20) => all(`SELECT * FROM hermes_provider_invocations ORDER BY created_at DESC LIMIT ?`, [limit]);
+
+const numOrNull = (v) => (Number.isFinite(Number(v)) && v !== null && v !== undefined ? Number(v) : null);
+
 // --- Reads (tests + future retrieval service) ---
 export const getWorkflowRun = (runId) => get(`SELECT * FROM hermes_workflow_runs WHERE id=?`, [runId]);
 export const getWorkflowSteps = (runId) => all(`SELECT * FROM hermes_workflow_steps WHERE run_id=? ORDER BY seq`, [runId]);

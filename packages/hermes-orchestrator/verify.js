@@ -27,10 +27,12 @@ export function verifyExecution(execution, { classification } = {}) {
   const check = (name, passed, detail) => checks.push({ name, passed: Boolean(passed), detail });
 
   check('execution_ok', execution && execution.ok === true, execution?.error ? `execution error: ${execution.error}` : 'execution reported ok');
-  check('provider_is_mock', execution?.provider === 'mock', `provider=${execution?.provider}`);
+  check('provider_present', typeof execution?.provider === 'string' && execution.provider.length > 0, `provider=${execution?.provider}`);
   check('artifacts_is_array', Array.isArray(execution?.artifacts), `artifacts type=${typeof execution?.artifacts}`);
   check('has_summary', typeof execution?.summary === 'string' && execution.summary.length > 0, 'summary present');
-  check('cost_within_zero_for_mock', (execution?.usage?.costCents || 0) === 0, `costCents=${execution?.usage?.costCents || 0}`);
+  // The mock provider is always free; a real provider may report a (bounded, budget-checked) cost or
+  // null. Only enforce zero-cost for the mock.
+  if (execution?.mode === 'mock') check('mock_is_free', (execution?.usage?.costCents || 0) === 0, `costCents=${execution?.usage?.costCents || 0}`);
   // Artifact paths must be relative (no absolute paths / traversal) even for a mock proposal.
   const badPath = (execution?.artifacts || []).find((a) => typeof a?.path !== 'string' || a.path.startsWith('/') || a.path.includes('..'));
   check('artifact_paths_safe', !badPath, badPath ? `unsafe artifact path: ${badPath.path}` : 'all artifact paths relative and traversal-free');
