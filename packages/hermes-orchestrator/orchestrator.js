@@ -108,17 +108,13 @@ export async function runHermesWorkflow(input, options = {}) {
         return done(runId, 'blocked', 'approval_required', { executionMode: 'blocked', classification, routing });
       }
       approvalToConsume = appr.approvalId;
-      if (!reserve(approvalToConsume)) {
-        events.record(HERMES_EVENTS.FAILED, { reason: 'approval was already consumed, expired, or could not be reserved' }, 'failed');
-        finishWorkflowRun(runId, { status: 'blocked', outcome: 'approval_required', provider: routing.provider });
-        return done(runId, 'blocked', 'approval_required', { executionMode: 'blocked', classification, routing });
-      }
     }
 
     // --- Execute (mock default or gated real) ---
     const execution = await executeWorkflow(routing, normalized, {
       runId, taskId: normalized.taskId, adapterOverrides: options.adapterOverrides, deps: options.deps, env,
       signal: options.signal, deadlineMs: options.deadlineMs,
+      beforeDispatch: approvalToConsume ? () => reserve(approvalToConsume) : null,
     });
     events.record(HERMES_EVENTS.EXECUTED, { provider: execution.provider, executionMode: execution.executionMode, ok: execution.ok, attempts: execution.attempts, durationMs: execution.durationMs, timedOut: execution.timedOut, cancelled: execution.cancelled, artifactCount: execution.artifacts.length });
 

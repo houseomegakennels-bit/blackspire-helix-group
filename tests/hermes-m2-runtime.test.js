@@ -105,9 +105,21 @@ test('allowed low-risk real development task completes, verifies, and records a 
 
 test('missing credential refusal (real adapter, dev-enabled, no key)', async () => {
   const adapter = createAnthropicDevAdapter({ env: { ...DEV } }); // no ANTHROPIC_API_KEY
-  const res = await adapter.execute({ objective: 'status', limits: { maxInputBytes: 1000, maxOutputBytes: 1000 } });
+  const res = await adapter.execute({ objective: 'status', limits: { maxInputBytes: 1000, maxOutputBytes: 1000, maxCostCents: 25, maxSpendCents: 25 } });
   assert.equal(res.ok, false);
   assert.equal(res.structuredError.code, 'missing_credential');
+});
+
+test('direct adapter use cannot bypass the task-derived spend envelope', async () => {
+  let called = false;
+  const adapter = createAnthropicDevAdapter({
+    env: { ...DEV, ANTHROPIC_API_KEY: 'fixture-key-not-live' },
+    fetchImpl: async () => { called = true; throw new Error('must not fetch'); },
+  });
+  const res = await adapter.execute({ objective: 'status', limits: { maxInputBytes: 1000, maxOutputBytes: 1000, maxCostCents: 25 } });
+  assert.equal(res.ok, false);
+  assert.equal(res.structuredError.code, 'spend_not_permitted');
+  assert.equal(called, false);
 });
 
 test('medium-risk task requires approval; blocked without, proceeds with a scoped single-use approval', async () => {
@@ -138,6 +150,21 @@ test('single-use approval is atomically reserved before dispatch so concurrent r
   ]);
   assert.equal(results.filter((r) => r.status === 'completed').length, 1);
   assert.equal(results.filter((r) => r.outcome === 'approval_required').length, 1);
+});
+
+test('approval is not consumed when concurrency refuses before dispatch', async () => {
+  ws('m2-appr-concurrency');
+  const base = { ws: 'm2-appr-concurrency', request: 'refactor the parser module' };
+  const blocked = await runHermesWorkflow(realTask('m2-appr-concurrency', base), fake('ok'));
+  const policyRow = store.getPolicyDecisions(blocked.runId)[0];
+  const approval = grantApproval({ taskId: 'm2-appr-concurrency', actionClass: policyRow.action_class, reason: 'test' });
+  const limit = providerRegistry.get('anthropic').concurrencyLimit;
+  const held = Array.from({ length: limit }, () => acquire('anthropic', limit));
+  try {
+    const refused = await runHermesWorkflow(realTask('m2-appr-concurrency', base), fake('ok'));
+    assert.equal(refused.outcome, 'execution_blocked');
+    assert.equal(store.getApproval(approval.id).status, 'granted');
+  } finally { held.forEach((slot) => slot.release()); }
 });
 
 test('high-risk task is blocked before any provider call', async () => {

@@ -6,7 +6,7 @@
 // runtime-profile.js (development profile + explicit flag + provider allowlist); it refuses under
 // the production profile even if a credential is present. The credential is read from the
 // environment and sent only as an HTTP header — never in argv, logs, DB records, or task payloads.
-import { resolveRuntimeProfile, realProviderPermitted } from '../runtime-profile.js';
+import { resolveRuntimeProfile, realProviderPermitted, realProviderSpendPermitted } from '../runtime-profile.js';
 import { redactString, redactDeep } from '../redaction.js';
 import { adapterFailure, enforceInputLimit, clampOutput } from './base.js';
 
@@ -32,6 +32,11 @@ export function createAnthropicDevAdapter(deps = {}) {
       // 1. Fail closed on the runtime gate. Production is refused here regardless of credentials.
       const gate = realProviderPermitted('anthropic', rp);
       if (!gate.allowed) return adapterFailure('anthropic', 'api', 'provider_disabled', gate.reason, { model });
+      // Keep the adapter boundary fail-closed as well as the orchestrator boundary.  A caller that
+      // imports this adapter directly cannot omit the task-derived spend envelope and issue a real
+      // request merely because a credential and development flag happen to exist.
+      const spendGate = realProviderSpendPermitted('anthropic', limits?.maxSpendCents, limits?.maxCostCents, rp);
+      if (!spendGate.allowed) return adapterFailure('anthropic', 'api', 'spend_not_permitted', spendGate.reason, { model });
       // 2. Credential must be present — but never printed or returned.
       if (!env[AUTH_ENV_VAR]) return adapterFailure('anthropic', 'api', 'missing_credential', `${AUTH_ENV_VAR} is not configured`, { model });
       // 3. Input-size ceiling.

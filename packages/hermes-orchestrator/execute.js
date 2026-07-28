@@ -59,16 +59,25 @@ export async function executeWorkflow(routing, normalized, ctx = {}) {
   const slot = acquire(providerId, def.concurrencyLimit);
   if (!slot) return blocked(providerId, def.adapterType, 'concurrency_limit', `concurrency limit (${def.concurrencyLimit}) reached for ${providerId}`);
 
-  const limits = def.usageLimits;
+  const limits = { ...def.usageLimits, maxSpendCents: Math.min(normalized.budgetCents, def.usageLimits.maxCostCents) };
   const timeoutMs = Math.max(1, Math.min(def.timeoutMs, ctx.deadlineMs || def.timeoutMs));
   const maxAttempts = 1 + Math.max(0, def.retryPolicy?.maxRetries || 0);
   let last = null;
   try {
+    let dispatchAuthorized = false;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       // Recheck immediately before every dispatch/retry. A stop raised while a prior attempt was
       // pending must prevent a subsequent (possibly paid) call.
       if (getFlag('emergency_stop') === 'active') return blocked(providerId, def.adapterType, 'emergency_stop', 'emergency stop active before provider dispatch');
       if (ctx.signal?.aborted) { last = cancelledResult(providerId, def, attempt); recordInvocation(ctx, providerId, def, last); break; }
+      // A single-use approval is reserved after all non-dispatch refusals above (health,
+      // concurrency, cancellation) but immediately before the first provider call.  This avoids
+      // consuming an approval for a request that never reached an adapter while still preventing
+      // two parallel workflows from dispatching under the same approval.
+      if (!dispatchAuthorized && ctx.beforeDispatch && !ctx.beforeDispatch()) {
+        return blocked(providerId, def.adapterType, 'approval_unavailable', 'approval was already consumed, expired, or could not be reserved');
+      }
+      dispatchAuthorized = true;
       const controller = new AbortController();
       const onParentAbort = () => controller.abort();
       ctx.signal?.addEventListener?.('abort', onParentAbort, { once: true });
