@@ -88,6 +88,12 @@ bash scripts/release-create.sh <approved-sha>
 
 # 4. Production backup, through the pinned interpreter
 npm run db:backup -- /opt/blackspire-command/shared/backups
+
+# 5. Reviewed log rotation, installed without replacing an existing policy
+test ! -e /etc/logrotate.d/blackspire-command && \
+  test ! -L /etc/logrotate.d/blackspire-command
+install -o root -g root -m 0644 \
+  ops/blackspire-command-logrotate.conf /etc/logrotate.d/blackspire-command
 ```
 
 `/opt/blackspire-command/shared/workspace` is the reviewed location because the unit runs under

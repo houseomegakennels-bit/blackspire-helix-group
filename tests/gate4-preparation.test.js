@@ -296,6 +296,8 @@ test('the plan separates preparation from activation and executes nothing', () =
   );
   assert.match(preparation, /test ! -e .*command\.env && test ! -L .*command\.env/);
   assert.match(preparation, /test ! -e .*workspace && test ! -L .*workspace/);
+  assert.match(preparation, /test ! -e .*logrotate\.conf && test ! -L .*logrotate\.conf/);
+  assert.match(preparation, /install -o root -g root -m 0644[\s\\]+.*blackspire-command-logrotate\.conf/);
   assert.match(preparation, /checkout --detach \$\{BLACKSPIRE_GATE4_APPROVED_SHA\}/);
   assert.equal(snapshot(host.home), before, 'printing the plan must not change anything');
 });

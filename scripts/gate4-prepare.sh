@@ -333,7 +333,11 @@ PREPARATION (safe, reversible, no activation)
      pinned interpreter: scripts/backup.js imports node:sqlite, which this host's PATH node (18.x)
      does not have.
        npm run db:backup -- $release_root/shared/backups
-  5. Re-run this checker to review the remaining prerequisites. It deliberately stays nonzero
+  5. Install the reviewed log-rotation policy without replacing an existing policy:
+       test ! -e $logrotate_file && test ! -L $logrotate_file
+       install -o root -g root -m 0644 \\
+         $repo_root/ops/blackspire-command-logrotate.conf $logrotate_file
+  6. Re-run this checker to review the remaining prerequisites. It deliberately stays nonzero
      while authorization and activation remain beyond the boundary:
        BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \\
          bash scripts/gate4-prepare.sh --validate-only
@@ -351,6 +355,7 @@ VALIDATION (read-only, proves preparation is correct)
 ROLLBACK OF PREPARATION (safe; production was never started)
   rm -f $env_file
   rm -rf $workspace_root
+  rm -f $logrotate_file
   # releases are immutable and are never deleted as part of a rollback
 
 --- AUTHORIZATION BOUNDARY -------------------------------------------------------------------
