@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-28 — Hermes Milestone 2 (Runtime & Provider Framework) implemented on a branch; PR opened, not merged (Claude)
+
+- Flagged the provider-choice safety decision before implementing: the only reviewed "Claude Code" interface is an unbounded agentic `claude --print` shell wrapper, at odds with M2's no-shell/allowlist requirements. Recommended and got operator approval for the **non-agentic Anthropic Messages API (Claude)** as the first real adapter — pure text I/O, no shell/agent surface, materially safer.
+- Branched `feature/hermes-runtime-provider-framework-m2` from clean `main` `efe186c`. Added a development-only real-provider runtime, additive on M1: `runtime-profile.js` (fail-closed dev gate), typed provider/capability registries, `adapters/` (base/mock/fake/anthropic-dev/resolver), execution flow with timeout/cancel/retry/concurrency/size/budget guards and **no silent real→mock fallback**, scoped single-use approvals, provider health/cooldown, usage/cost recording (null-safe), read-only `/api/hermes/runtime` + `/hermes-runtime` PWA page, and 3 additive tables (`hermes_provider_invocations`, `hermes_provider_health`, `hermes_approvals`). Prepared but disabled `scripts/hermes-dev-smoke.js`.
+- **Mock remains the default. No real provider is enabled, no credentials were added, and no live/paid call was made.** The real adapter is fixture-tested via a deterministic fake provider. Production refuses all Hermes-runtime execution.
+- Branch validation: Hermes 47/47 (M1 19 + M2 25 + API 3); migration-safety + unified-input + unified-policy 23/23; lint/typecheck/build/secret-scan clean; `production:preflight ok=true 21/21 2/2`; living-memory PASS (anchor unchanged at `a419c3e`; it advances when M2 merges).
+- **PR opened; NOT merged, NOT deployed. No production, nginx, TLS, DNS, firewall, systemd, `/etc/blackspire/command.env`, `current` symlink, Telegram, voice, or Gate 4 change. Production stayed `disabled/inactive/dead`; Gate 4 unauthorized; nginx kept serving the 503 maintenance page. No secrets exposed.**
+
 ## 2026-07-28 — Hermes Intelligence Layer Milestone 1 built, reviewed, merged (PR #55); anchor refreshed (Claude)
 
 - Built Hermes Milestone 1 on `feature/hermes-intelligence-layer-m1` from clean `main` `85753ff`: additive, **mock-only** `packages/hermes-orchestrator/` (orchestrator, normalize, classify, canonical-policy delegation, mock route, mock execute, deterministic verify, structured event recorder, pending-only memory-candidate extractor) plus six additive `hermes_*` tables registered in `REQUIRED_SCHEMA`. The existing `packages/hermes/hermes.js` pipeline was left unchanged. Opened PR #55; linked it to issue #54.

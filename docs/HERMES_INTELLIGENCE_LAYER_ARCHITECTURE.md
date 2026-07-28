@@ -105,6 +105,28 @@ promotion code path** in M1 — promotion requires explicit policy/human approva
 | Runaway cost / recursive loops | Budget + deadline guards; single-pass, no re-entrant execution |
 | Cross-user data leakage | Workspace/actor scoping carried through every record |
 
+## 7b. Milestone 2 — Runtime & Provider Framework (development-only)
+
+Adds a gated real-provider runtime beside the mock default. New modules: `runtime-profile.js`
+(fail-closed dev gate), extended `registries.js` (typed provider/capability definitions),
+`adapters/` (`base`, `mock`, `fake-provider`, `anthropic-dev`, `index` resolver), `health.js`,
+`approvals.js`, `concurrency.js`, `status.js`. New additive tables: `hermes_provider_invocations`,
+`hermes_provider_health`, `hermes_approvals`.
+
+First real adapter: **Anthropic Messages API (non-agentic Claude)** — pure text-in/JSON-out, no
+shell/file/agentic surface, chosen over the agentic Claude Code CLI as materially safer.
+
+Flow (development): task → normalize → classify → policy → capability resolution → provider selection
+(mock default; real only when explicitly requested and gated) → approval check (medium-risk) →
+budget/deadline → real|mock execute (timeout/cancel/retry/concurrency/size limits) → verify → events
+→ usage/cost → pending memory candidate. **No silent real→mock fallback; production refuses all
+Hermes-runtime execution.** Threat controls per §7 extend to: production-profile bypass (structural
+refusal), unauthorized provider selection (allowlist + registry), approval replay/staleness
+(single-use + expiry), runaway retries (retry ceiling), concurrency (in-process limiter), timeout
+evasion (AbortController), cancellation (signal), cost bypass (per-provider + task ceiling),
+health/cooldown, and credential exposure (env-only, header-only, boolean status). Full guide:
+`HERMES_M2_RUNTIME_AND_PROVIDERS.md`.
+
 ## 8. Non-goals for Milestone 1
 
 No real providers, no Telegram, no voice, no production activation, no changes to

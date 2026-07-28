@@ -38,6 +38,15 @@
 - **TLS termination and reverse-proxy configuration are out of scope** for this repository; `TRUST_PROXY`
   only controls whether `X-Forwarded-For` is honored, it does not configure a proxy itself.
 
+## Hermes Intelligence Layer (Milestone 2 — in review, not merged)
+
+- **A development-only real-provider runtime exists on branch `feature/hermes-runtime-provider-framework-m2` (PR open, not merged).** Real execution is **disabled by default**, requires the development profile plus an explicit flag and provider allowlist, and is **refused under the production profile even if a credential is present**. The first real adapter is the **non-agentic Anthropic Messages API (Claude)** — pure text I/O, no shell/agentic surface.
+- **The real adapter is fixture-tested only; no live/paid call has been run.** `scripts/hermes-dev-smoke.js` is prepared but disabled and requires explicit operator opt-in; it is not wired into CI.
+- **No silent fallback:** a requested real provider that cannot run is reported blocked/failed, never quietly downgraded to mock.
+- **Concurrency limiting is single-process.** The in-process limiter does not coordinate across hosts; cross-host limiting is deferred (consistent with the single-host SQLite runtime).
+- **Cost is often `unavailable`.** The Anthropic adapter records token usage when reported but leaves cost `null` unless pricing is configured; no token/cost values are invented.
+- **No automatic memory promotion and no multi-provider learned routing** — deferred to Milestone 3. Memory candidates remain `pending`.
+
 ## Hermes Intelligence Layer (Milestone 1)
 
 - **The Hermes orchestration + learning layer is at Milestone 1: foundation only, mock-only.** A new
