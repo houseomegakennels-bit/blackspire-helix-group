@@ -13,7 +13,7 @@ const resolvedPrincipals = new WeakSet();
 
 export function resolvePrincipal({ principalId = null, authenticationMethod, credentialReference = null } = {}) {
   const p = principalId && get('SELECT * FROM auth_principals WHERE id=?', [principalId]);
-  if (!p || !['admin','service'].includes(p.type) || p.status !== 'active' || (p.expires_at && Number(p.expires_at) <= Date.now()) || p.revoked_at || p.disabled_at) return null;
+  if (!p || !['admin','service'].includes(p.type) || p.authentication_method !== (p.type === 'admin' ? 'bearer' : 'service') || p.status !== 'active' || (p.expires_at && Number(p.expires_at) <= Date.now()) || p.revoked_at || p.disabled_at) return null;
   if (authenticationMethod && p.authentication_method !== authenticationMethod) return null;
   if (credentialReference && p.credential_reference !== credentialReference) return null;
   const principal = Object.freeze({ principalId: p.id, principalType: p.type, actorId: p.actor_id, authenticationMethod: p.authentication_method, securityVersion: p.security_version });
