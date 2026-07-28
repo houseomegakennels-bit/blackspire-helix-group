@@ -1,5 +1,10 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-28 — Canonical authorization foundation completed (Codex)
+
+- Added and independently reviewed server-side admin/service authorization schema, immutable workspace grant versioning, deny-by-default decision auditing, and explicit development/test provisioning. Resolved principal summaries no longer expose credential references and are non-forgeable by callers. Provisioning rejects unsafe paths and validates prior to its single transaction.
+- No human identity, automatic grant, route integration, real database, provider call, routing/memory change, production action, or Gate 4 action occurred. PR #57 remains draft and blocked pending this prerequisite.
+
 ## 2026-07-28 — Hermes Milestone 2 merged and merged-main baseline refreshed (Codex)
 
 - PR #56 merged through GitHub's reviewed merge method as `a4a0407e5d72019b4a99cf61568598434e7e136d`, with approved reviewed head `148a82cde1105a8917be2e38018c6e8ff4a7e1d4` as its second parent. The source branch was removed locally and from origin under the repository's established post-merge policy.

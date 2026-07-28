@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-07-28 — Canonical authorization foundation
+
+Authorization uses only server-resolved, credential-free admin/service principal summaries. Workspace grants are immutable versioned records; invalid chains or multiple active heads deny. Provisioning is an explicit disposable-only development/test operator action and never a startup action. Route integration and verified human identity remain separate future work.
+
 ## 2026-07-28 (Hermes Milestone 1 merged as PR #55; anchor refreshed)
 
 - **Hermes Milestone 1 is additive and mock-only by construction, not merely by documentation.** The new `packages/hermes-orchestrator/` module is separate from the existing `packages/hermes/hermes.js` pipeline (which is unchanged), real providers are registry-disabled and the executor refuses any non-mock provider, and the production profile independently disables provider execution. Enforcement is structural and test-pinned, so "mock-only" cannot silently regress.

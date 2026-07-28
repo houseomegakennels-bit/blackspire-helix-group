@@ -9,13 +9,16 @@ const ROLE_PERMISSIONS = Object.freeze({
   viewer: ['workspace.read','task.read','runtime.read'], service: [],
 });
 export const AUTHZ_POLICY_VERSION = 'authz-v1';
+const resolvedPrincipals = new WeakSet();
 
 export function resolvePrincipal({ principalId = null, authenticationMethod, credentialReference = null } = {}) {
   const p = principalId && get('SELECT * FROM auth_principals WHERE id=?', [principalId]);
   if (!p || !['admin','service'].includes(p.type) || p.status !== 'active' || (p.expires_at && Number(p.expires_at) <= Date.now()) || p.revoked_at || p.disabled_at) return null;
   if (authenticationMethod && p.authentication_method !== authenticationMethod) return null;
   if (credentialReference && p.credential_reference !== credentialReference) return null;
-  return Object.freeze({ principalId: p.id, principalType: p.type, actorId: p.actor_id, authenticationMethod: p.authentication_method, credentialReference: p.credential_reference || null, securityVersion: p.security_version });
+  const principal = Object.freeze({ principalId: p.id, principalType: p.type, actorId: p.actor_id, authenticationMethod: p.authentication_method, securityVersion: p.security_version });
+  resolvedPrincipals.add(principal);
+  return principal;
 }
 export const resolveAdminBearer = (principalId) => resolvePrincipal({ principalId, authenticationMethod: 'bearer' });
 export const resolveServiceContext = (principalId, credentialReference) => resolvePrincipal({ principalId, authenticationMethod: 'service', credentialReference });
@@ -44,7 +47,7 @@ export function validateGrantChain(head) {
   return false;
 }
 export function requireWorkspacePermission(principal, workspaceId, permission, resource = {}) {
-  if (!principal || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(principal, workspaceId, permission, resource, deny('invalid_scope'));
+  if (!principal || !resolvedPrincipals.has(principal) || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, workspaceId, permission, resource, deny('invalid_scope'));
   const grant = activeGrant(principal.principalId, workspaceId); if (!grant) return decision(principal, workspaceId, permission, resource, deny('grant_missing'));
   const permissions = JSON.parse(canonicalPermissions(grant.permissions));
   const allowedPermission = permissions.includes(permission) || (grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));

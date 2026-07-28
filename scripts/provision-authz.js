@@ -21,9 +21,10 @@ try {
   else apply(config, requireSafeDatabase(databasePath));
 } catch (error) { fail(error?.message === 'AUTHZ_CONFIG_INVALID' ? error.message : error?.message?.startsWith('AUTHZ_') ? error.message : 'AUTHZ_PROVISIONING_REFUSED'); }
 
-function readConfig(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new Error('AUTHZ_CONFIG_INVALID'); } }
+function readConfig(file) { try { if (fs.statSync(file).size > 65536) bad(); return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new Error('AUTHZ_CONFIG_INVALID'); } }
 function requireSafeDatabase(file) {
   if (!file) throw new Error('AUTHZ_DATABASE_REQUIRED');
+  if (!path.isAbsolute(file)) throw new Error('AUTHZ_DATABASE_REFUSED');
   const resolved = path.resolve(file); const parts = resolved.toLowerCase().split(path.sep);
   if (parts.some((part) => ['shared', 'staging', 'production'].includes(part))) throw new Error('AUTHZ_DATABASE_REFUSED');
   if (!fs.existsSync(resolved)) throw new Error('AUTHZ_DATABASE_REFUSED');
@@ -69,7 +70,7 @@ function apply(c, database) {
 }
 function samePrincipal(r,p) { return r.id===p.principal_id && r.type===p.principal_type && r.actor_id===p.actor_id && r.authentication_method===p.authentication_method && (r.credential_reference??null)===(p.credential_reference??null) && r.status===p.status && r.issued_at===p.issued_at && (r.expires_at??null)===(p.expires_at??null) && (r.revoked_at??null)===(p.revoked_at??null) && (r.disabled_at??null)===(p.disabled_at??null) && r.security_version===p.security_version; }
 function sameGrant(r,g) { return r.id===g.grant_id && r.principal_id===g.principal_id && r.workspace_id===g.workspace_id && r.role===g.role && r.permissions===canonicalPermissions(g.permissions) && r.status===(g.status ?? 'active') && r.version===g.version && (r.supersedes_grant_id??null)===(g.supersedes_grant_id??null) && r.issued_at===g.issued_at && (r.expires_at??null)===(g.expires_at??null) && (r.revoked_at??null)===(g.revoked_at??null) && r.issued_by===g.issued_by && r.security_version===g.security_version; }
-function text(v) { return typeof v === 'string' && v.length > 0; }
+function text(v) { return typeof v === 'string' && v.length > 0 && v.length <= 256 && !/[\u0000-\u001f\u007f]/.test(v); }
 function nullableText(v) { return v === null || v === undefined || text(v); }
 function integer(v) { return Number.isInteger(v); }
 function nullableInteger(v) { return v === null || v === undefined || integer(v); }
