@@ -19,7 +19,7 @@ import { conversationEvents } from '../../packages/task-engine/tasks.js';
 import { requireSafeTestMode, isSameOrigin, testModeAllowsRequest, publicTestModeStatus } from '../../packages/shared/testMode.js';
 import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
 import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
-import { resolveAdminBearer } from '../../packages/shared/authorization.js';
+import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/authorization.js';
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 
 let emergencyStopMemory = false;
@@ -150,11 +150,18 @@ async function route(req, res) {
 // This is intentionally narrower than the legacy API authentication: a session is not a
 // canonical principal, and a request cannot nominate one.  A deployment must explicitly map its
 // already-authenticated administrator bearer path to an existing canonical admin principal.
-function outcomeEvaluationRoute(res, auth, evaluationId) {
-  if (auth.mode !== 'bearer') return json(res, 403, { error: 'canonical administrator bearer authentication required' });
+function configuredEvaluationAdminPrincipal() {
   const configuredPrincipalId = process.env.BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID;
-  if (typeof configuredPrincipalId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(configuredPrincipalId)) return json(res, 403, { error: 'evaluation authorization unavailable' });
-  const principal = resolveAdminBearer(configuredPrincipalId);
+  return typeof configuredPrincipalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(configuredPrincipalId)
+    ? resolveAdminBearer(configuredPrincipalId) : null;
+}
+
+function outcomeEvaluationRoute(res, auth, evaluationId) {
+  const configuredPrincipal = configuredEvaluationAdminPrincipal();
+  const principal = auth.mode === 'bearer' ? configuredPrincipal : auth.mode === 'session' ? resolveBoundSession(auth.session) : null;
+  // A session can use this read surface only when the server bound it to the configured admin
+  // principal at login.  A browser cannot nominate a different principal or workspace.
+  if (!configuredPrincipal || !principal || principal.principalId !== configuredPrincipal.principalId) return json(res, 403, { error: 'evaluation authorization unavailable' });
   const evaluation = principal && readOutcomeEvaluation(principal, evaluationId);
   // Do not distinguish a guessed identifier from a cross-workspace object.
   return evaluation ? json(res, 200, { evaluation }) : json(res, 404, { error: 'evaluation not found' });
@@ -163,7 +170,7 @@ function outcomeEvaluationRoute(res, auth, evaluationId) {
 async function login(req, res) {
   const limit = checkLimit(req, 'login', Number(process.env.LOGIN_RATE_LIMIT || 5), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
-  const session = createSession(body.adminToken, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '' });
+  const session = createSession(body.adminToken, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null });
   if (!session) { audit(null, 'auth', 'login.failed', { ip: clientIp(req) }); return json(res, 401, { error: 'invalid credentials' }); }
   audit(null, 'auth', 'login.succeeded', { ip: clientIp(req) });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: session.expiresAt }, { 'set-cookie': sessionCookie(session) });
@@ -179,7 +186,7 @@ async function testModeLogin(req, res) {
     audit(null, 'test-mode', 'session.denied', { actor: TEST_MODE.testActor });
     return json(res, 404, { error: 'test session unavailable' });
   }
-  const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '' });
+  const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null });
   if (!session) return json(res, 503, { error: 'test session unavailable' });
   audit(null, 'test-mode', 'session.created', { actor: TEST_MODE.testActor });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: Math.min(session.expiresAt, Date.parse(TEST_MODE.expiresAt)) }, { 'set-cookie': sessionCookie(session, { secure: true }) });

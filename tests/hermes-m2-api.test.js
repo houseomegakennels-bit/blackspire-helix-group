@@ -15,9 +15,22 @@ process.env.TELEGRAM_ALLOWED_USERS = '1001';
 process.env.ANTHROPIC_API_KEY = 'super-secret-should-never-appear';
 process.env.ALLOW_BEARER_AUTH = 'true';
 process.env.PORT = '8906';
+process.env.BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID = 'm2-evaluation-admin';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { run } = await import('../packages/task-engine/db.js');
+const outcomeStore = await import('../packages/hermes-orchestrator/store.js');
+const authNow = Date.now();
+run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-evaluation-admin','admin','m2-evaluation-admin','bearer',null,'active',authNow,null,null,null,1,authNow]);
+run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-evaluation-grant','m2-evaluation-admin','m2-api-workspace','viewer','["evaluation.read"]','active',1,null,authNow,null,null,'test',1,authNow]);
+outcomeStore.insertOutcomeEvaluation({
+  id: 'm2-evaluation', evaluationVersion: 'm3a-v1', userId: null, projectId: 'm2-api-workspace', workspaceId: 'm2-api-workspace', taskId: null, runId: 'm2-evaluation-run',
+  routingDecisionId: null, policyDecisionId: null, verificationResultId: null, providerInvocationId: null, executionMode: 'mock', providerId: 'mock', classification: null,
+  terminalStatus: 'completed', terminalOutcome: 'verified', verificationStatus: 'passed', verifierConfidence: 'deterministic_pass', acceptanceStatus: 'unavailable', retryCount: 0,
+  durationMs: 1, inputTokens: 0, outputTokens: 0, costCents: 0, timedOut: false, cancelled: false, rollbackEvidence: null, stabilityEvidence: null,
+  failureCategory: null, learningEligibility: 'positive_eligible', sourceEventStartSeq: 1, sourceEventEndSeq: 2, evaluatorVersion: 'hermes-outcome-evaluator-v1', provenanceDigest: 'a'.repeat(64), createdAt: new Date().toISOString(),
+}, []);
 const { start } = await import('../apps/api/server.js');
 
 const server = start(8906, '127.0.0.1', { exitOnListenError: false });
@@ -49,4 +62,16 @@ test('the read-only hermes-runtime page is served', async () => {
   assert.equal(res.status, 200);
   const html = await res.text();
   assert.match(html, /Hermes Runtime Status/);
+});
+
+test('a verified admin login session can read its configured, workspace-authorized evaluation without exposing a bearer', async () => {
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'm2-api-token' }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie);
+  const res = await fetch(`${base}/api/hermes/evaluations/m2-evaluation`, { headers: { cookie } });
+  assert.equal(res.status, 200);
+  const body = await res.text();
+  assert.ok(!body.includes('m2-api-token'));
+  assert.equal(JSON.parse(body).evaluation.id, 'm2-evaluation');
 });

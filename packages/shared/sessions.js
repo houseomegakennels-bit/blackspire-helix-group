@@ -19,6 +19,8 @@ function row(session) {
     rotatedAt: session.rotated_at,
     userAgent: session.user_agent,
     ip: session.ip,
+    // This is an opaque server-side canonical-principal reference, never a token or credential.
+    principalId: session.principal_id || null,
   };
 }
 
@@ -27,15 +29,19 @@ function revokedBefore() {
   return flag ? Number(flag.value) : 0;
 }
 
-export function createSession(adminToken, { userAgent = '', ip = 'local' } = {}) {
+export function createSession(adminToken, { userAgent = '', ip = 'local', principalId = null } = {}) {
   if (adminToken !== ADMIN_TOKEN) return null;
+  // Binding is opt-in and performed only by a server-side caller after it has resolved a
+  // configured canonical principal.  Invalid input becomes an unbound session; it never
+  // selects an identity through a request field.
+  const boundPrincipalId = typeof principalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(principalId) ? principalId : null;
   const sessionId = crypto.randomBytes(24).toString('hex');
   const csrfToken = crypto.randomBytes(24).toString('hex');
   const createdAt = now();
   const expiresAt = createdAt + SESSION_TTL_MS();
   run(
-    `INSERT INTO sessions (id, csrf_token, created_at, expires_at, rotated_at, user_agent, ip, revoked_at) VALUES (?,?,?,?,?,?,?,NULL);`,
-    [sessionId, csrfToken, createdAt, expiresAt, createdAt, userAgent, ip],
+    `INSERT INTO sessions (id, csrf_token, created_at, expires_at, rotated_at, user_agent, ip, revoked_at, principal_id) VALUES (?,?,?,?,?,?,?,NULL,?);`,
+    [sessionId, csrfToken, createdAt, expiresAt, createdAt, userAgent, ip, boundPrincipalId],
   );
   return row(get('SELECT * FROM sessions WHERE id=?;', [sessionId]));
 }
@@ -62,8 +68,8 @@ export function rotateSession(sessionId) {
     const createdAt = now();
     const expiresAt = createdAt + SESSION_TTL_MS();
     run(
-      `INSERT INTO sessions (id, csrf_token, created_at, expires_at, rotated_at, user_agent, ip, revoked_at) VALUES (?,?,?,?,?,?,?,NULL);`,
-      [sessionIdNext, csrfToken, createdAt, expiresAt, createdAt, existing.user_agent, existing.ip],
+      `INSERT INTO sessions (id, csrf_token, created_at, expires_at, rotated_at, user_agent, ip, revoked_at, principal_id) VALUES (?,?,?,?,?,?,?,NULL,?);`,
+      [sessionIdNext, csrfToken, createdAt, expiresAt, createdAt, existing.user_agent, existing.ip, existing.principal_id || null],
     );
     return row(get('SELECT * FROM sessions WHERE id=?;', [sessionIdNext]));
   });

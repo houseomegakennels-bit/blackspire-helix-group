@@ -40,8 +40,14 @@ test('verified mock workflow creates one immutable positive factual evaluation w
   assert.throws(() => evaluateTerminalOutcome(r.runId), /already exists/);
   assert.throws(() => evaluateTerminalOutcome(r.runId, { evaluationVersion: 'unreviewed-v2' }), /canonical evaluation version/);
   run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
-       SELECT 'duplicate-attempt',run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
+       SELECT 'retry-attempt',run_id,task_id,provider,adapter_type,model,mode,status,2,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
   run('DELETE FROM hermes_outcome_evaluation_components WHERE evaluation_id=?', [e.id]); run('DELETE FROM hermes_outcome_evaluations WHERE id=?', [e.id]);
+  const retried = evaluateTerminalOutcome(r.runId).evaluation;
+  assert.notEqual(retried.provenanceDigest, e.provenance_digest, 'the digest covers every retry attempt');
+  assert.equal(retried.retryCount, 1);
+  run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
+       SELECT 'duplicate-attempt',run_id,task_id,provider,adapter_type,model,mode,status,2,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
+  run('DELETE FROM hermes_outcome_evaluation_components WHERE evaluation_id=?', [retried.id]); run('DELETE FROM hermes_outcome_evaluations WHERE id=?', [retried.id]);
   assert.throws(() => evaluateTerminalOutcome(r.runId), /duplicate provider attempts/, 'duplicate attempts cannot double-count an evaluation');
 });
 

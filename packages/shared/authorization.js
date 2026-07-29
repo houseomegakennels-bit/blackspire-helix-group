@@ -22,7 +22,14 @@ export function resolvePrincipal({ principalId = null, authenticationMethod, cre
 }
 export const resolveAdminBearer = (principalId) => resolvePrincipal({ principalId, authenticationMethod: 'bearer' });
 export const resolveServiceContext = (principalId, credentialReference) => resolvePrincipal({ principalId, authenticationMethod: 'service', credentialReference });
-export const resolveBoundSession = (session) => session?.principal_id ? resolvePrincipal({ principalId: session.principal_id, authenticationMethod: 'session' }) : null;
+// Sessions are bound only by server-side code after credential verification.  Their stored
+// principal remains an admin/service principal authenticated by its configured method; `session`
+// is a transport, not a new principal type or an impersonation input.
+export function resolveBoundSession(session) {
+  const principalId = session?.principalId ?? session?.principal_id;
+  const principal = typeof principalId === 'string' ? resolvePrincipal({ principalId }) : null;
+  return principal?.principalType === 'admin' ? principal : null;
+}
 export const requireAuthenticatedPrincipal = (p) => p ? allow('authenticated') : deny('unauthenticated');
 
 export function activeGrant(principalId, workspaceId) {

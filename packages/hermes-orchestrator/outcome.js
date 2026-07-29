@@ -55,7 +55,9 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
       evaluatorVersion: OUTCOME_EVALUATOR_VERSION, createdAt: now(),
     };
     payload.id = id('heval');
-    payload.provenanceDigest = digest({ run, steps, routing, policy, verification, invocation, payload: { ...payload, id: undefined, createdAt: undefined } });
+    // The evaluation aggregates every attempt, so its tamper-evident provenance must cover the
+    // complete canonical sequence rather than only the final attempt.
+    payload.provenanceDigest = digest({ run, steps, routing, policy, verification, invocations, payload: { ...payload, id: undefined, createdAt: undefined } });
     insertOutcomeEvaluation(payload, components.map((c) => ({ ...c, id: id('hecomp') })));
     return { evaluation: payload, components };
   });
