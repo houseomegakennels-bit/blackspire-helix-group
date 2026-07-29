@@ -69,7 +69,7 @@ export function readOutcomeEvaluation(principal, evaluationId) {
   const evaluation = getOutcomeEvaluation(evaluationId);
   // Persisted rows are evidence only when they still identify the one reviewed Phase 3A
   // evaluator contract.  A malformed/tampered version is never surfaced as a valid evaluation.
-  if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION) return null;
+  if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION || !provenanceMatches(evaluation)) return null;
   const decision = canReadEvaluation(principal, evaluation.workspace_id);
   if (!decision.allowed) return null;
   return { id: evaluation.id, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
@@ -112,7 +112,7 @@ export function recordOutcomeEvaluationFailure(runId, error) {
   try { insertOutcomeEvaluationFailure({ id: id('hefail'), runId, workspaceId: run.workspace_id, category, remediationState: 'open', detail: category, createdAt: now() }); } catch { return null; }
   return category;
 }
-function safeRequired(value) { return typeof value === 'string' && value.trim().length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value); }
+function safeRequired(value) { return typeof value === 'string' && /[^\p{White_Space}\p{Cf}]/u.test(value) && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value); }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
 // Corrections are immutable evidence, but their free-text reason/evidence can contain sensitive
 // operational context.  Read APIs expose only the chain metadata; the original record stays in
@@ -157,6 +157,31 @@ function aggregateUsage(invocations) {
   const total = (column) => invocations.length && invocations.every((row) => row[column] != null)
     ? invocations.reduce((sum, row) => sum + Number(row[column]), 0) : null;
   return { inputTokens: total('input_tokens'), outputTokens: total('output_tokens'), costCents: total('cost_cents') };
+}
+function provenanceMatches(evaluation) {
+  try {
+    const run = getWorkflowRun(evaluation.run_id);
+    if (!run) return false;
+    const steps = getWorkflowSteps(run.id);
+    const routing = latest(getRoutingDecisions(run.id));
+    const policy = latest(getPolicyDecisions(run.id));
+    const verification = latest(getVerificationResults(run.id));
+    const invocations = getProviderInvocations(run.id);
+    const payload = {
+      id: undefined, evaluationVersion: evaluation.evaluation_version, userId: evaluation.user_id,
+      projectId: evaluation.project_id, workspaceId: evaluation.workspace_id, taskId: evaluation.task_id, runId: evaluation.run_id,
+      routingDecisionId: evaluation.routing_decision_id, policyDecisionId: evaluation.policy_decision_id, verificationResultId: evaluation.verification_result_id,
+      providerInvocationId: evaluation.provider_invocation_id, executionMode: evaluation.execution_mode, providerId: evaluation.provider_id,
+      classification: evaluation.classification, terminalStatus: evaluation.terminal_status, terminalOutcome: evaluation.terminal_outcome,
+      verificationStatus: evaluation.verification_status, verifierConfidence: evaluation.verifier_confidence, acceptanceStatus: evaluation.acceptance_status,
+      retryCount: evaluation.retry_count, durationMs: evaluation.duration_ms, inputTokens: evaluation.input_tokens, outputTokens: evaluation.output_tokens,
+      costCents: evaluation.cost_cents, timedOut: Boolean(evaluation.timed_out), cancelled: Boolean(evaluation.cancelled),
+      rollbackEvidence: evaluation.rollback_evidence, stabilityEvidence: evaluation.stability_evidence, failureCategory: evaluation.failure_category,
+      learningEligibility: evaluation.learning_eligibility, sourceEventStartSeq: evaluation.source_event_start_seq, sourceEventEndSeq: evaluation.source_event_end_seq,
+      evaluatorVersion: evaluation.evaluator_version, createdAt: undefined,
+    };
+    return typeof evaluation.provenance_digest === 'string' && evaluation.provenance_digest === digest({ run, steps, routing, policy, verification, invocations, payload });
+  } catch { return false; }
 }
 function latest(rows) { return rows.length ? rows[rows.length - 1] : null; }
 function durationMs(start, end) { const n = Date.parse(end) - Date.parse(start); return Number.isFinite(n) && n >= 0 ? n : null; }

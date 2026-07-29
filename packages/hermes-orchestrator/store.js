@@ -138,9 +138,11 @@ const numOrNull = (v) => (Number.isFinite(Number(v)) && v !== null && v !== unde
 // --- Reads (tests + future retrieval service) ---
 export const getWorkflowRun = (runId) => get(`SELECT * FROM hermes_workflow_runs WHERE id=?`, [runId]);
 export const getWorkflowSteps = (runId) => all(`SELECT * FROM hermes_workflow_steps WHERE run_id=? ORDER BY seq`, [runId]);
-export const getRoutingDecisions = (runId) => all(`SELECT * FROM hermes_routing_decisions WHERE run_id=?`, [runId]);
-export const getPolicyDecisions = (runId) => all(`SELECT * FROM hermes_policy_decisions WHERE run_id=?`, [runId]);
-export const getVerificationResults = (runId) => all(`SELECT * FROM hermes_verification_results WHERE run_id=?`, [runId]);
+// Source records participate in the Phase 3A provenance digest.  Their selection order must be
+// explicit so SQLite planner/order changes cannot alter an evaluation or its verification.
+export const getRoutingDecisions = (runId) => all(`SELECT * FROM hermes_routing_decisions WHERE run_id=? ORDER BY created_at,id`, [runId]);
+export const getPolicyDecisions = (runId) => all(`SELECT * FROM hermes_policy_decisions WHERE run_id=? ORDER BY created_at,id`, [runId]);
+export const getVerificationResults = (runId) => all(`SELECT * FROM hermes_verification_results WHERE run_id=? ORDER BY created_at,id`, [runId]);
 export const getMemoryCandidates = (runId) => all(`SELECT * FROM hermes_memory_candidates WHERE run_id=?`, [runId]);
 export const getPendingMemoryCandidates = () => all(`SELECT * FROM hermes_memory_candidates WHERE status='pending' ORDER BY created_at`);
 
