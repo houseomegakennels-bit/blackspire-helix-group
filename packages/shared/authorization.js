@@ -75,11 +75,16 @@ export function activeGrant(principalId, workspaceId) {
 // Versions are strictly increasing, but need not be contiguous: a revoked version may be retained
 // without an active successor. Cycles/cross-scope links are refused before a grant is usable.
 export function validateGrantChain(head) {
-  const seen = new Set(); let current = head; let priorVersion = Infinity;
+  const seen = new Set(); let current = head; let child = null; let priorVersion = Infinity;
   while (current) {
     if (!validGrantRow(current) || seen.has(current.id) || !Number.isInteger(current.version) || current.version < 1 || current.version >= priorVersion) return false;
+    const successors = all('SELECT * FROM auth_workspace_grants WHERE supersedes_grant_id=?', [current.id]);
+    // A head has no successor. Every ancestor has exactly the child already traversed;
+    // extra, cross-scope, or malformed children make the chain ambiguous.
+    if ((!child && successors.length) || (child && (successors.length !== 1 || successors[0].id !== child.id || !validGrantRow(successors[0])))) return false;
     seen.add(current.id); priorVersion = Number(current.version);
     if (!current.supersedes_grant_id) return true;
+    child = current;
     current = get('SELECT * FROM auth_workspace_grants WHERE id=?', [current.supersedes_grant_id]);
     if (!current || current.principal_id !== head.principal_id || current.workspace_id !== head.workspace_id) return false;
   }
