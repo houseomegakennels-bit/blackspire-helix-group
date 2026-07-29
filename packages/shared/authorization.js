@@ -66,6 +66,9 @@ export function activeGrant(principalId, workspaceId) {
   if (rows.length !== 1) return null;
   const g = rows[0];
   if (!validGrantRow(g)) return null;
+  // An immutable successor makes this row stale regardless of the successor's lifecycle.
+  // Otherwise a corrupted successor marked non-active could leave its older parent authorized.
+  if (get('SELECT id FROM auth_workspace_grants WHERE supersedes_grant_id=? LIMIT 1', [g.id])) return null;
   if (!validateGrantChain(g)) return null;
   return g;
 }
