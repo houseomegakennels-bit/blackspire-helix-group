@@ -91,6 +91,9 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   run('UPDATE auth_principals SET status=?,disabled_at=? WHERE id=?', ['disabled', Date.now(), admin.principalId]);
   assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a disabled evidence actor fails closed');
   run('UPDATE auth_principals SET status=?,disabled_at=? WHERE id=?', ['active', null, admin.principalId]);
+  run('UPDATE auth_workspace_grants SET permissions=? WHERE principal_id=? AND workspace_id=?', ['["evaluation.read"]', admin.principalId, 'm3a-correct']);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'an evidence actor without evaluation.correct fails closed');
+  run('UPDATE auth_workspace_grants SET permissions=? WHERE principal_id=? AND workspace_id=?', ['["evaluation.correct","evaluation.read"]', admin.principalId, 'm3a-correct']);
   run('UPDATE hermes_outcome_corrections SET created_at=? WHERE id=?', ['1970-01-01T00:00:00.000Z', second.id]);
   assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a correction timestamp regression fails closed');
   run('UPDATE hermes_outcome_corrections SET created_at=?,actor_principal_id=? WHERE id=?', [new Date(Date.now() + 1).toISOString(), 'forged-actor', second.id]);

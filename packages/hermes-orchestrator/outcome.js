@@ -6,7 +6,7 @@ import { id, now } from '../shared/util.js';
 import { transaction, get } from '../task-engine/db.js';
 import { redactDeep, redactString } from './redaction.js';
 import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
-import { canReadEvaluation, canCorrectEvaluation, activeGrant } from '../shared/authorization.js';
+import { canReadEvaluation, canCorrectEvaluation, activeGrant, resolvePrincipal } from '../shared/authorization.js';
 
 export const OUTCOME_EVALUATION_VERSION = 'm3a-v1';
 export const OUTCOME_EVALUATOR_VERSION = 'hermes-outcome-evaluator-v1';
@@ -181,9 +181,13 @@ function validTimestamp(value) { return typeof value === 'string' && Number.isFi
 function recordedActorValid(actorPrincipalId, workspaceId) {
   if (!safeId(actorPrincipalId)) return false;
   const actor = get('SELECT id,type,authentication_method,status,issued_at,expires_at,revoked_at,disabled_at,security_version FROM auth_principals WHERE id=?', [actorPrincipalId]);
-  return Boolean(actor && ['admin','service'].includes(actor.type) && actor.authentication_method === (actor.type === 'admin' ? 'bearer' : 'service') && actor.status === 'active' &&
+  if (!(actor && ['admin','service'].includes(actor.type) && actor.authentication_method === (actor.type === 'admin' ? 'bearer' : 'service') && actor.status === 'active' &&
     (actor.expires_at === null || Number(actor.expires_at) > Date.now()) && actor.revoked_at === null && actor.disabled_at === null &&
-    Number.isSafeInteger(Number(actor.security_version)) && Number(actor.security_version) > 0 && Number.isFinite(Number(actor.issued_at)) && activeGrant(actor.id, workspaceId));
+    Number.isSafeInteger(Number(actor.security_version)) && Number(actor.security_version) > 0 && Number.isFinite(Number(actor.issued_at)) && activeGrant(actor.id, workspaceId))) return false;
+  // Subordinate evidence remains trusted only while its actor is still an authorized corrector.
+  // The resolver-created principal prevents a persisted ID from acting as a client-created shape.
+  const principal = resolvePrincipal({ principalId: actor.id });
+  return Boolean(principal && canCorrectEvaluation(principal, workspaceId).allowed);
 }
 function provenanceMatches(evaluation) {
   try {
