@@ -84,6 +84,10 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   const second = appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: first.id, reason: 'new evidence', sourceEvidence: 'explicit evidence' });
   assert.equal(second.version, 2);
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: first.id, reason: 'cycle', sourceEvidence: 'evidence' }), /sole current/);
+  run('UPDATE hermes_outcome_corrections SET workspace_id=? WHERE id=?', ['m3a-reader', first.id]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a cross-workspace correction row fails closed on read');
+  assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: second.id, reason: 'tampered', sourceEvidence: 'evidence' }), /intact evaluation/);
+  run('UPDATE hermes_outcome_corrections SET workspace_id=? WHERE id=?', ['m3a-correct', first.id]);
 });
 
 test('explicit source events are idempotent, evidence-required, and evaluator failures are observable', async () => {
@@ -96,6 +100,8 @@ test('explicit source events are idempotent, evidence-required, and evaluator fa
   assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-3', eventType: 'rollback', evidence: '' }), /allowed type/);
   assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-4', eventType: 'rollback', evidence: '   ' }), /allowed type/);
   assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-5', eventType: 'rollback', evidence: '\u200b' }), /allowed type/, 'Unicode-only invisible evidence is not meaningful');
+  run('UPDATE hermes_outcome_source_events SET workspace_id=? WHERE id=?', ['m3a-events-other', event.id]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a cross-workspace source event fails closed on read');
   assert.equal(recordOutcomeEvaluationFailure(result.runId, new Error('malformed terminal evidence')), 'invalid_evidence');
   assert.equal(store.getOutcomeEvaluationFailure(result.runId).remediation_state, 'open');
 });

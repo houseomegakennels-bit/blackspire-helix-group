@@ -69,20 +69,22 @@ export function readOutcomeEvaluation(principal, evaluationId) {
   const evaluation = getOutcomeEvaluation(evaluationId);
   // Persisted rows are evidence only when they still identify the one reviewed Phase 3A
   // evaluator contract.  A malformed/tampered version is never surfaced as a valid evaluation.
-  if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION || !provenanceMatches(evaluation)) return null;
+  if (!readableEvaluation(evaluation)) return null;
   const decision = canReadEvaluation(principal, evaluation.workspace_id);
   if (!decision.allowed) return null;
+  const corrections = getOutcomeCorrections(evaluation.id);
+  const sourceEvents = getOutcomeSourceEvents(evaluation.id);
   return { id: evaluation.id, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
     evaluationVersion: evaluation.evaluation_version, terminalStatus: evaluation.terminal_status,
     terminalOutcome: evaluation.terminal_outcome, verificationStatus: evaluation.verification_status,
     acceptanceStatus: evaluation.acceptance_status, failureCategory: evaluation.failure_category,
     learningEligibility: evaluation.learning_eligibility, createdAt: evaluation.created_at,
-    corrections: getOutcomeCorrections(evaluation.id).map(safeCorrection), sourceEvents: getOutcomeSourceEvents(evaluation.id).map(safeEvent) };
+    corrections: corrections.map(safeCorrection), sourceEvents: sourceEvents.map(safeEvent) };
 }
 
 export function appendOutcomeCorrection(principal, evaluationId, { reason, sourceEvidence, supersedesCorrectionId = null } = {}) {
   const evaluation = getOutcomeEvaluation(evaluationId);
-  if (!evaluation) throw new Error('outcome correction requires an existing evaluation');
+  if (!readableEvaluation(evaluation)) throw new Error('outcome correction requires an intact evaluation');
   if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
   if (!safeRequired(reason) || !safeRequired(sourceEvidence)) throw new Error('outcome correction requires reason and source evidence');
   const prior = getOutcomeCorrections(evaluationId);
@@ -98,7 +100,7 @@ export function appendOutcomeCorrection(principal, evaluationId, { reason, sourc
 const EVENT_TYPES = new Set(['accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked']);
 export function appendOutcomeSourceEvent(principal, evaluationId, { idempotencyKey, eventType, evidence } = {}) {
   const evaluation = getOutcomeEvaluation(evaluationId);
-  if (!evaluation) throw new Error('outcome source event requires an existing evaluation');
+  if (!readableEvaluation(evaluation)) throw new Error('outcome source event requires an intact evaluation');
   if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
   if (!EVENT_TYPES.has(eventType) || !safeRequired(evidence) || !safeId(idempotencyKey)) throw new Error('outcome source event requires an allowed type, evidence, and idempotency key');
   const row = { id: id('heevt'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id, eventType, evidence, actorPrincipalId: principal.principalId, idempotencyKey, createdAt: now() };
@@ -158,6 +160,23 @@ function aggregateUsage(invocations) {
     ? invocations.reduce((sum, row) => sum + Number(row[column]), 0) : null;
   return { inputTokens: total('input_tokens'), outputTokens: total('output_tokens'), costCents: total('cost_cents') };
 }
+function readableEvaluation(evaluation) {
+  if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION || !provenanceMatches(evaluation)) return false;
+  return correctionChainValid(evaluation, getOutcomeCorrections(evaluation.id)) && sourceEventsValid(evaluation, getOutcomeSourceEvents(evaluation.id));
+}
+function correctionChainValid(evaluation, corrections) {
+  return corrections.every((row, index) => row.evaluation_id === evaluation.id && row.workspace_id === evaluation.workspace_id && row.run_id === evaluation.run_id &&
+    safeId(row.id) && Number(row.version) === index + 1 && row.supersedes_correction_id === (index ? corrections[index - 1].id : null) &&
+    safeRequired(row.reason) && safeRequired(row.source_evidence) && validTimestamp(row.created_at));
+}
+function sourceEventsValid(evaluation, events) {
+  const idempotencyKeys = new Set();
+  return events.every((row) => {
+    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !safeId(row.actor_principal_id) || !safeId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || !validTimestamp(row.created_at)) return false;
+    idempotencyKeys.add(row.idempotency_key); return true;
+  });
+}
+function validTimestamp(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
 function provenanceMatches(evaluation) {
   try {
     const run = getWorkflowRun(evaluation.run_id);
