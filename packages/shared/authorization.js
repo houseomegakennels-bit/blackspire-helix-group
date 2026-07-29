@@ -11,9 +11,29 @@ const ROLE_PERMISSIONS = Object.freeze({
 export const AUTHZ_POLICY_VERSION = 'authz-v1';
 const resolvedPrincipals = new WeakSet();
 
+function validEpoch(value, { nullable = false } = {}) {
+  return (nullable && value === null) || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
+}
+
+function validLifecycle(row) {
+  const disabledAt = Object.hasOwn(row, 'disabled_at') ? row.disabled_at : null;
+  if (!validEpoch(row.issued_at) || !validEpoch(row.created_at) || !validEpoch(row.expires_at, { nullable: true }) ||
+    !validEpoch(row.revoked_at, { nullable: true }) || !validEpoch(disabledAt, { nullable: true }) ||
+    !Number.isSafeInteger(row.security_version) || row.security_version < 1) return false;
+  return (row.expires_at === null || row.expires_at >= row.issued_at) &&
+    (row.revoked_at === null || row.revoked_at >= row.issued_at) &&
+    (disabledAt === null || disabledAt >= row.issued_at);
+}
+
+function validGrantRow(grant) {
+  if (!validLifecycle(grant) || !['active', 'revoked', 'expired', 'superseded'].includes(grant.status)) return false;
+  try { validateGrant({ ...grant, supersedesGrantId: grant.supersedes_grant_id }); } catch { return false; }
+  return true;
+}
+
 export function resolvePrincipal({ principalId = null, authenticationMethod, credentialReference = null } = {}) {
   const p = principalId && get('SELECT * FROM auth_principals WHERE id=?', [principalId]);
-  if (!p || !['admin','service'].includes(p.type) || p.authentication_method !== (p.type === 'admin' ? 'bearer' : 'service') || p.status !== 'active' || (p.expires_at !== null && Number(p.expires_at) <= Date.now()) || p.revoked_at !== null || p.disabled_at !== null) return null;
+  if (!p || !validLifecycle(p) || !['admin','service'].includes(p.type) || p.authentication_method !== (p.type === 'admin' ? 'bearer' : 'service') || p.status !== 'active' || (p.expires_at !== null && p.expires_at <= Date.now()) || p.revoked_at !== null || p.disabled_at !== null) return null;
   if (authenticationMethod && p.authentication_method !== authenticationMethod) return null;
   if (credentialReference && p.credential_reference !== credentialReference) return null;
   const principal = Object.freeze({ principalId: p.id, principalType: p.type, actorId: p.actor_id, authenticationMethod: p.authentication_method, securityVersion: p.security_version });
@@ -36,7 +56,7 @@ export function activeGrant(principalId, workspaceId) {
   const rows = all(`SELECT * FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=? AND status='active' AND (expires_at IS NULL OR expires_at>?) AND revoked_at IS NULL ORDER BY version DESC`, [principalId, workspaceId, Date.now()]);
   if (rows.length !== 1) return null;
   const g = rows[0];
-  try { validateGrant({ ...g, supersedesGrantId: g.supersedes_grant_id }); } catch { return null; }
+  if (!validGrantRow(g)) return null;
   if (!validateGrantChain(g)) return null;
   return g;
 }
@@ -45,7 +65,7 @@ export function activeGrant(principalId, workspaceId) {
 export function validateGrantChain(head) {
   const seen = new Set(); let current = head; let priorVersion = Infinity;
   while (current) {
-    if (seen.has(current.id) || !Number.isInteger(Number(current.version)) || Number(current.version) < 1 || Number(current.version) >= priorVersion) return false;
+    if (!validGrantRow(current) || seen.has(current.id) || !Number.isInteger(current.version) || current.version < 1 || current.version >= priorVersion) return false;
     seen.add(current.id); priorVersion = Number(current.version);
     if (!current.supersedes_grant_id) return true;
     current = get('SELECT * FROM auth_workspace_grants WHERE id=?', [current.supersedes_grant_id]);
