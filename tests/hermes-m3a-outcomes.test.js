@@ -88,6 +88,10 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a cross-workspace correction row fails closed on read');
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: second.id, reason: 'tampered', sourceEvidence: 'evidence' }), /intact evaluation/);
   run('UPDATE hermes_outcome_corrections SET workspace_id=? WHERE id=?', ['m3a-correct', first.id]);
+  run('UPDATE hermes_outcome_corrections SET created_at=? WHERE id=?', ['1970-01-01T00:00:00.000Z', second.id]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a correction timestamp regression fails closed');
+  run('UPDATE hermes_outcome_corrections SET created_at=?,actor_principal_id=? WHERE id=?', [new Date(Date.now() + 1).toISOString(), 'forged-actor', second.id]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a forged correction actor fails closed');
 });
 
 test('explicit source events are idempotent, evidence-required, and evaluator failures are observable', async () => {

@@ -3,7 +3,7 @@
 // run; it never changes routing, policy, memory, provider state, or task state.
 import crypto from 'node:crypto';
 import { id, now } from '../shared/util.js';
-import { transaction } from '../task-engine/db.js';
+import { transaction, get } from '../task-engine/db.js';
 import { redactDeep, redactString } from './redaction.js';
 import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
 import { canReadEvaluation, canCorrectEvaluation } from '../shared/authorization.js';
@@ -167,16 +167,22 @@ function readableEvaluation(evaluation) {
 function correctionChainValid(evaluation, corrections) {
   return corrections.every((row, index) => row.evaluation_id === evaluation.id && row.workspace_id === evaluation.workspace_id && row.run_id === evaluation.run_id &&
     safeId(row.id) && Number(row.version) === index + 1 && row.supersedes_correction_id === (index ? corrections[index - 1].id : null) &&
-    safeRequired(row.reason) && safeRequired(row.source_evidence) && validTimestamp(row.created_at));
+    safeRequired(row.reason) && safeRequired(row.source_evidence) && recordedActorValid(row.actor_principal_id) && validTimestamp(row.created_at) &&
+    (!index || Date.parse(row.created_at) >= Date.parse(corrections[index - 1].created_at)));
 }
 function sourceEventsValid(evaluation, events) {
   const idempotencyKeys = new Set();
   return events.every((row) => {
-    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !safeId(row.actor_principal_id) || !safeId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || !validTimestamp(row.created_at)) return false;
+    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !recordedActorValid(row.actor_principal_id) || !safeId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || !validTimestamp(row.created_at)) return false;
     idempotencyKeys.add(row.idempotency_key); return true;
   });
 }
 function validTimestamp(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
+function recordedActorValid(actorPrincipalId) {
+  if (!safeId(actorPrincipalId)) return false;
+  const actor = get('SELECT id,type,security_version,issued_at FROM auth_principals WHERE id=?', [actorPrincipalId]);
+  return Boolean(actor && ['admin','service'].includes(actor.type) && Number.isSafeInteger(Number(actor.security_version)) && Number(actor.security_version) > 0 && Number.isFinite(Number(actor.issued_at)));
+}
 function provenanceMatches(evaluation) {
   try {
     const run = getWorkflowRun(evaluation.run_id);
