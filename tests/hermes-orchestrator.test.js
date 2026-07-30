@@ -78,6 +78,36 @@ test('vertical slice: Jarvis task flows through Hermes to a pending memory candi
   assert.ok(events.includes('hermes.completed'));
 });
 
+test('requested provider opt-in rejects unknown or secret-shaped values before persistence', async () => {
+  const secretShapedProvider = 'credential=hunter2-not-redacted';
+  const before = all('SELECT id FROM hermes_workflow_runs').length;
+  await assert.rejects(
+    runHermesWorkflow({
+      id: 'hermes-provider-input-refusal',
+      workspace_id: 'hermes-provider-input-refusal',
+      request: 'report current status',
+      requestedProvider: secretShapedProvider,
+    }),
+    /registered provider id/,
+  );
+  assert.equal(all('SELECT id FROM hermes_workflow_runs').length, before, 'normalization refusal writes no run');
+  assert.throws(
+    () => store.insertWorkflowRun({
+      id: 'hermes-provider-store-refusal',
+      workspaceId: 'hermes-provider-input-refusal',
+      objective: 'report current status',
+      requestedProvider: secretShapedProvider,
+    }),
+    /registered provider id/,
+    'the persistence boundary independently refuses an unregistered provider',
+  );
+  assert.equal(
+    all('SELECT id FROM hermes_workflow_runs WHERE requested_provider=?', [secretShapedProvider]).length,
+    0,
+    'secret-shaped provider input never reaches SQLite',
+  );
+});
+
 test('high-risk task is blocked (denied or pending approval) and never executes or learns', async () => {
   seedWorkspace('hermes-ws-2');
   const input = createUnifiedInput({ channel: 'jarvis', actorId: 'session-2', channelKey: 'session-2', workspaceId: 'hermes-ws-2', text: 'deploy to production and delete the old secret token', idempotencyKey: 'jarvis-hermes-risk-1' });

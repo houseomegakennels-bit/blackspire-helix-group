@@ -5,6 +5,7 @@
 // execute/verify) sees the same fields regardless of source channel. It reuses the canonical task /
 // conversation ids already produced by unified-input rather than minting new identifiers.
 import { redactString } from './redaction.js';
+import { providerRegistry } from './registries.js';
 
 /**
  * @typedef {Object} NormalizedTask
@@ -60,6 +61,10 @@ export function validateNormalizedTask(t) {
     if (typeof t[key] !== 'string' || !t[key]) throw new Error(`NormalizedTask.${key} must be a non-empty string`);
   }
   if (!Number.isSafeInteger(t.budgetCents) || t.budgetCents < 0) throw new Error('NormalizedTask.budgetCents must be a non-negative integer');
+  if (t.requestedProvider !== null &&
+    (typeof t.requestedProvider !== 'string' || !providerRegistry.get(t.requestedProvider))) {
+    throw new Error('NormalizedTask.requestedProvider must be a registered provider id or null');
+  }
   return t;
 }
 

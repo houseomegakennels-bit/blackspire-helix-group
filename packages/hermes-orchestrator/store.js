@@ -8,8 +8,13 @@
 import { run, all, get } from '../task-engine/db.js';
 import { id, now } from '../shared/util.js';
 import { redactedJson, redactString } from './redaction.js';
+import { providerRegistry } from './registries.js';
 
 export function insertWorkflowRun(runRow) {
+  const requestedProvider = runRow.requestedProvider || null;
+  if (requestedProvider !== null && !providerRegistry.get(requestedProvider)) {
+    throw new Error('workflow run requestedProvider must be a registered provider id or null');
+  }
   const record = {
     id: runRow.id || id('hrun'),
     task_id: runRow.taskId || null,
@@ -27,7 +32,7 @@ export function insertWorkflowRun(runRow) {
     started_at: runRow.startedAt || now(),
     finished_at: runRow.finishedAt || null,
     created_at: now(),
-    requested_provider: runRow.requestedProvider || null,
+    requested_provider: requestedProvider,
   };
   run(
     `INSERT INTO hermes_workflow_runs(id,task_id,conversation_id,workspace_id,actor_id,channel,objective,classification,status,outcome,provider,agent,cost_cents,started_at,finished_at,created_at,requested_provider)
