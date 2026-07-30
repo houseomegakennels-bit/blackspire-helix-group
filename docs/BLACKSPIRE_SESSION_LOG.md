@@ -1,5 +1,10 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-30 — Hermes Milestone 3A merged and anchor refreshed (Codex)
+
+- Exact head `80726cd3e034afc3e72921de9e426bd28dbe717e` passed the 596-test full suite (587 passed, 0 failed, 9 host skips), trusted inventory 46/46, all quality/audit/preflight gates, GitHub CI, all Vercel checks, mergeability, four resolved threads, and fresh correctness/security reviews with zero findings. PR #57 merged by exact-head-guarded merge commit as `763e74e6332b51fdacd30b29d9f836d5de6c2001`; local `main` was fast-forwarded to the identical trusted `origin/main`.
+- Canonical memory now advances the verified implementation anchor to the reviewed PR head and marks Phase 3B deterministic non-operative scorecards as current. No live provider, real database, deployment, production activation, memory promotion, learned routing, or Gate 4 action occurred.
+
 ## 2026-07-30 — Hermes Milestone 3A timeout recovery and final blocker repair (Codex)
 
 - A fresh exact-head correctness review passed with no findings. Security correctly blocked on one new medium introduced by independent provider persistence: normalization accepted arbitrary requested-provider strings and the store wrote them before later evaluation could reject a secret-shaped value. `1285a62` now requires an exact registered provider ID during normalization and independently at the store boundary; the regression proves `credential=hunter2-not-redacted` creates no workflow run and never reaches SQLite. Focused Hermes passes 74/74; the exact-head full repository passes 596 total with 587 passed, 0 failed and 9 host skips, plus trusted inventory 46/46 and all quality/audit/preflight/shell/whitespace/living-memory gates.
