@@ -1,8 +1,12 @@
 # Blackspire Decisions
 
+## 2026-07-30 — Phase 3A evidence is complete, immutable, and non-operative
+
+An outcome evaluation is trustworthy only when its digest binds the evaluation ID/time, persisted components, and every ordered workflow, routing, policy, verification, and provider-attempt row after canonical scope, timestamp, domain, retry, usage, provider, and exact-redaction validation. Evaluations, components, corrections, source events, and failure records are database-enforced append-only; corrections and source events combine current authorization and insertion in one transaction. These records remain factual inputs only. Verified scorecards are a separate Phase 3B milestone; approval-gated memory promotion and learned routing remain later and cannot be inferred from `positive_eligible`.
+
 ## 2026-07-28 — Phase 3A evaluation authority is canonical and read-only
 
-PR #57 may use the merged authorization foundation only for the evaluation-specific read surface. The server-owned canonical admin-principal mapping plus existing bearer authentication is required; sessions and request-supplied identities are not authority. Evaluation workspace scope comes from the stored evaluation, not a client filter. Corrections and source events are immutable append-only evidence records, never routing or memory inputs. This leaves verified human identity, broader route protection, and Phase 3B deferred.
+PR #57 may use the merged authorization foundation only for the evaluation-specific read surface. The server-owned canonical admin-principal mapping plus existing bearer authentication is required; a cookie session may reach the same surface only after server-side login binds it to that configured canonical admin principal. Request-supplied identities and unbound sessions are not authority. Evaluation workspace scope comes from the stored evaluation, not a client filter. Corrections and source events are immutable append-only evidence records, never routing or memory inputs. This leaves verified human identity, broader route protection, and Phase 3B deferred.
 
 ## 2026-07-28 — Authorization foundation merged
 

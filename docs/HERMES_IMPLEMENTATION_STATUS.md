@@ -1,6 +1,15 @@
 # Hermes Intelligence Layer — Implementation Status
 
-## Milestone 2 — Runtime & Provider Framework (branch `feature/hermes-runtime-provider-framework-m2`, PR open, NOT merged)
+## Milestone 3A — Verified outcome evidence (PR #57, final validation)
+
+- **Implemented:** one immutable factual evaluation per terminal run/version; complete canonical provenance digest over all routing, policy, verification, provider-attempt, workflow-step, evaluation, and component evidence; deterministic retry/usage aggregation; database-enforced append-only evaluations, components, corrections, source events, and failure records.
+- **Authorization:** evaluation reads derive stored workspace scope and require current `evaluation.read`; corrections/events require current `evaluation.correct`. Server-bound canonical admin sessions and bearer auth can use the narrow read path; forged, stale, cross-workspace, and unbound contexts fail closed.
+- **Operational guarantees:** additive atomic migration, required integrity indexes/triggers, disposable-only provisioning/tests, strict production CSP, no routing or scorecard effect, no memory promotion/retrieval, no live provider, no production activation.
+- **Next:** Milestone 3B verified scorecards and learning-quality evidence, still non-operative. Approval-gated memory promotion and learned routing remain later milestones.
+
+Details: `HERMES_M3A_OUTCOME_SCORING.md`.
+
+## Milestone 2 — Runtime & Provider Framework (merged via PR #56)
 
 Development-only real-provider runtime, additive on M1. Mock remains the default; real execution is
 disabled by default and refused under the production profile. First real adapter: **Anthropic
@@ -10,7 +19,7 @@ Messages API (non-agentic Claude)** — chosen over the agentic Claude Code CLI 
 - **Implemented + tested:** runtime-profile gate, typed provider/capability registries, Anthropic dev adapter, deterministic fake provider, real/mock execution flow (timeout, cancellation, retry ceiling, concurrency limit, size limits, budget/cost ceiling, no silent real→mock fallback), scoped single-use approvals, provider health/cooldown, usage/cost recording (null-safe), read-only `/api/hermes/runtime` + `/hermes-runtime` PWA page. 3 new additive tables (`hermes_provider_invocations`, `hermes_provider_health`, `hermes_approvals`).
 - **Tested with fixtures only:** the real adapter is exercised via the fake provider; no paid call in the suite.
 - **Awaiting live smoke test:** `scripts/hermes-dev-smoke.js` prepared but disabled (requires explicit operator opt-in).
-- **Deferred to M3:** learned/multi-provider routing, scorecards, approval-gated memory promotion, cross-host limits, pricing→cost.
+- **Deferred beyond M2:** verified scorecards, learned/multi-provider routing, approval-gated memory promotion, cross-host limits, pricing→cost.
 - **Prohibited in production:** all real (and even mock) Hermes-runtime execution is refused under the production profile.
 
 Details: `HERMES_M2_RUNTIME_AND_PROVIDERS.md`.

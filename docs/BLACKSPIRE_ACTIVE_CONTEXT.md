@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Hermes Milestone 3A final stabilization (2026-07-30 UTC)
+
+PR #57 is open on `feature/hermes-verified-outcome-scoring-m3a` and has not been merged. Six complete read-only audits found and the lead independently reproduced a coordinated set of authorization, provenance, append-only, migration, transaction, session-expiry, CSP, test, and documentation defects. The stabilization batch now revalidates persisted principals and complete grant graphs on every decision; digests the full canonical outcome-evidence packet; rejects malformed, hidden, cross-scope, temporally invalid, or unsanitized evidence; enforces append-only evidence and integrity-critical schema objects in SQLite; makes migration publication and correction/source-event authorization atomic; expires test-mode sessions at the operator deadline; and serves the Hermes PWA without production-CSP exceptions. Focused disposable tests are green, but full exact-head validation, CI/Vercel, review-thread completion, and two fresh final reviews remain required before merge. No scorecard/routing/memory behavior, provider call, real database, deployment, production activation, or Gate 4 authority exists.
+
 ## Authorization foundation merged (2026-07-28 UTC)
 
 PR #58 merged as `99c5434115821a912fc5c932919c150b3cc7430e`. `main` now contains the server-side canonical authorization foundation: admin/service-only principals, immutable versioned workspace grants, fixed role/permission validation, fail-closed resolution and auditing, and an explicit disposable-only provisioning CLI. Human identities, session binding, protected HTTP routes, evaluation-read API, automatic principals/grants, and real-database provisioning remain deferred. PR #57 remains draft and may resume only after its own rebase, completion, and review. No routing, memory, provider, production, or Gate 4 behavior changed.

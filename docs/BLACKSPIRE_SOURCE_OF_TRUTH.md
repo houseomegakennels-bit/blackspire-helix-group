@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Hermes Phase 3A stabilization (2026-07-30 UTC)
+
+PR #57 is preserved at or ahead of externally observed head `f6e4332fe4d93b0b446da2a06f773b55dffa60c0` and is undergoing final exact-head validation. The coordinated stabilization closes confirmed authorization-currentness, service-credential, grant-graph, full-provenance, append-only, schema-atomicity, correction/event transaction, test-mode expiry, and production-CSP defects with disposable regression coverage. Phase 3A remains factual and non-operative: it does not update scorecards, affect routing, promote/retrieve memory, run a live provider, provision a real database, deploy, activate production, or authorize Gate 4. Merge and a new implementation anchor remain contingent on green exact-head CI/Vercel, resolved review threads, full validation, and two fresh independent final reviews.
+
 ## Hermes Phase 3A authorization integration (2026-07-28 UTC)
 
 PR #58 merged as `99c5434115821a912fc5c932919c150b3cc7430e` from reviewed head `c87c9ce3e76618a490206ba86d6891abf787478a`. `main` now includes configured admin/service principal schema, immutable versioned workspace grants, fixed canonical permissions, deny-by-default authorization services, sanitized decision auditing, and explicit disposable development/test provisioning. PR #57 uses those primitives only for a Phase 3A evaluation-specific read boundary: server-owned canonical admin bearer identity and stored workspace scope determine access. It does not establish human identities, general route protection, automatic grants, a real database, production behavior, provider behavior, or Gate 4 authority.
