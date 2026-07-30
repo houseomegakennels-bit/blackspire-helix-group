@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Hermes Milestone 3B implemented, in review (2026-07-30 UTC)
+
+PR #60 head `126c3b0aa244816e6de62afb0b63a0b4ae1de62e` implements deterministic, append-only, workspace-isolated verified scorecards derived only from intact Phase 3A evidence. Exact-head Node 22.23.1 validation passed the full repository at 610 total with 601 passed, 0 failed, 9 host skips, trusted inventory 47/47, plus every quality, zero-vulnerability audit, migration, secret, whitespace, and living-memory gate; GitHub CI and all Vercel checks are green. Two fresh independent reviews reported zero Critical findings and all confirmed findings are fixed. The PR is an OPEN DRAFT and is not merged; merging requires explicit operator authority. Scorecards are a read model only: no learned routing, memory promotion or retrieval, provider call, real database, deployment, production activation, or Gate 4 authority exists.
+
 ## Hermes Milestone 3A merged (2026-07-30 UTC)
 
 PR #57 merged as `763e74e6332b51fdacd30b29d9f836d5de6c2001` from exact reviewed head `80726cd3e034afc3e72921de9e426bd28dbe717e`. Final correctness and security reviews reported zero findings; GitHub CI, all Vercel checks, mergeability, and all four resolved review threads were green. Exact-head Node 22.23.1 validation passed focused Hermes 74/74, production-bind 46/46, and the full repository at 596 total with 587 passed, 0 failed, 9 host skips, trusted inventory 46/46, plus every quality, zero-vulnerability audit, preflight (`source=21/21 deployment=2/2`), shell, whitespace, secret, and living-memory gate. Phase 3A is complete, immutable, factual, and non-operative. The next dependency-safe work is Phase 3B deterministic verified scorecards with zero routing or memory side effects. No provider call, real database, deployment, production activation, or Gate 4 authority exists.
