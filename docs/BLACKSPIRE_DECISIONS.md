@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-07-30 — Phase 3A merged; Phase 3B is the next non-operative slice
+
+PR #57 merged as `763e74e6332b51fdacd30b29d9f836d5de6c2001` from exact reviewed head `80726cd3e034afc3e72921de9e426bd28dbe717e` only after local, remote, thread, mergeability, and two fresh independent review gates were green. Phase 3B may derive deterministic, append-only verified scorecards from intact Phase 3A evidence, but those scorecards cannot affect routing, provider selection, task execution, or memory. Approval-gated memory promotion and learned routing remain later milestones.
+
 ## 2026-07-30 — Phase 3A evidence is complete, immutable, and non-operative
 
 An outcome evaluation is trustworthy only when its digest binds the evaluation ID/time, persisted components, and every ordered workflow, routing, policy, verification, and provider-attempt row after canonical scope, timestamp, domain, retry, usage, provider, and exact-redaction validation. Evaluations, components, corrections, source events, and failure records are database-enforced append-only; corrections and source events combine current authorization and insertion in one transaction. These records remain factual inputs only. Verified scorecards are a separate Phase 3B milestone; approval-gated memory promotion and learned routing remain later and cannot be inferred from `positive_eligible`.
