@@ -140,6 +140,17 @@ test('non-success outcomes require their exact causal evidence matrix', async ()
   run(`UPDATE hermes_workflow_steps SET detail='{"reason":"real provider blocked","requested":"forged-provider"}'
     WHERE run_id=? AND name='hermes.failed'`, [requested.runId]);
   assert.throws(() => evaluateTerminalOutcome(requested.runId), /canonical step detail/, 'provider refusal is bound to the canonical requested provider');
+
+  run(`UPDATE hermes_workflow_steps SET detail='{"channel":"api","profile":"test","requestedProvider":"forged-provider"}'
+    WHERE run_id=? AND name='hermes.received'`, [requested.runId]);
+  run(`UPDATE hermes_workflow_steps SET detail='{"reason":"real provider blocked","requested":"forged-provider"}'
+    WHERE run_id=? AND name='hermes.failed'`, [requested.runId]);
+  run("UPDATE hermes_workflow_runs SET provider='forged-provider' WHERE id=?", [requested.runId]);
+  assert.throws(
+    () => evaluateTerminalOutcome(requested.runId),
+    /canonical intake/,
+    'consistent provider claim forgery cannot replace the independently persisted request',
+  );
 });
 
 test('canonical step details and registry-derived routing identity reject forged claims', async () => {
@@ -259,7 +270,7 @@ test('retry-stop and budget-overage terminal paths create canonical factual eval
   const received = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received'", [overage.runId]).detail);
   run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.received'",
     [JSON.stringify({ ...received, requestedProvider: null }), overage.runId]);
-  assert.throws(() => evaluateTerminalOutcome(overage.runId), /routing.*registry/, 'a real route cannot be relabelled as a default-provider request');
+  assert.throws(() => evaluateTerminalOutcome(overage.runId), /canonical intake/, 'a real route cannot be relabelled as a default-provider request');
 });
 
 test('free-form canonical channel actors remain readable without being treated as authority IDs', async () => {

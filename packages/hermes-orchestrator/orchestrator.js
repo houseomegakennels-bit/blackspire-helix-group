@@ -35,6 +35,7 @@ export async function runHermesWorkflow(input, options = {}) {
   const runId = insertWorkflowRun({
     taskId: normalized.taskId, conversationId: normalized.conversationId, workspaceId: normalized.workspaceId,
     actorId: normalized.actorId, channel: normalized.channel, objective: normalized.objective, status: 'running',
+    requestedProvider: normalized.requestedProvider,
   });
   const events = makeEventRecorder({ taskId: normalized.taskId, runId });
   events.record(HERMES_EVENTS.RECEIVED, {

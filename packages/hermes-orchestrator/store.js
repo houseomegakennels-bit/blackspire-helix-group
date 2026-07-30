@@ -27,11 +27,12 @@ export function insertWorkflowRun(runRow) {
     started_at: runRow.startedAt || now(),
     finished_at: runRow.finishedAt || null,
     created_at: now(),
+    requested_provider: runRow.requestedProvider || null,
   };
   run(
-    `INSERT INTO hermes_workflow_runs(id,task_id,conversation_id,workspace_id,actor_id,channel,objective,classification,status,outcome,provider,agent,cost_cents,started_at,finished_at,created_at)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [record.id, record.task_id, record.conversation_id, record.workspace_id, record.actor_id, record.channel, record.objective, record.classification, record.status, record.outcome, record.provider, record.agent, record.cost_cents, record.started_at, record.finished_at, record.created_at],
+    `INSERT INTO hermes_workflow_runs(id,task_id,conversation_id,workspace_id,actor_id,channel,objective,classification,status,outcome,provider,agent,cost_cents,started_at,finished_at,created_at,requested_provider)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [record.id, record.task_id, record.conversation_id, record.workspace_id, record.actor_id, record.channel, record.objective, record.classification, record.status, record.outcome, record.provider, record.agent, record.cost_cents, record.started_at, record.finished_at, record.created_at, record.requested_provider],
   );
   return record.id;
 }

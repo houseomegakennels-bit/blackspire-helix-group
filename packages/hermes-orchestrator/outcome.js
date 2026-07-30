@@ -184,7 +184,9 @@ function loadEvidence(runId) {
 }
 function validateEvidence(evidence) {
   const { run, task, steps, routings, policies, verifications, invocations } = evidence;
-  if (!run || !TERMINAL.has(run.status) || !sanitizedJson(run.classification) || !canonicalTimestamp(run.created_at) || !canonicalTimestamp(run.started_at) || !canonicalTimestamp(run.finished_at)) throw new Error('outcome evaluation requires a finished terminal workflow run with canonical timestamps');
+  if (!run || !TERMINAL.has(run.status) || !sanitizedJson(run.classification) ||
+    (run.requested_provider !== null && !safeId(run.requested_provider)) ||
+    !canonicalTimestamp(run.created_at) || !canonicalTimestamp(run.started_at) || !canonicalTimestamp(run.finished_at)) throw new Error('outcome evaluation requires a finished terminal workflow run with canonical timestamps');
   if (Date.parse(run.started_at) > Date.parse(run.finished_at) || Date.parse(run.created_at) > Date.parse(run.finished_at)) throw new Error('outcome evaluation refuses invalid run timestamp order');
   const canonicalTask = task ? taskIdentity(task) : null;
   if (!canonicalTask || canonicalTask.id !== run.task_id || canonicalTask.workspaceId !== run.workspace_id || canonicalTask.conversationId !== run.conversation_id ||
@@ -283,6 +285,7 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   const normalizedStep = detail('hermes.normalized');
   if (!exactKeys(receivedStep, ['channel','profile','requestedProvider']) || receivedStep.channel !== run.channel ||
     (receivedStep.requestedProvider !== null && !safeId(receivedStep.requestedProvider)) ||
+    receivedStep.requestedProvider !== run.requested_provider ||
     !['development','test','production'].includes(receivedStep.profile) ||
     canonicalJson(normalizedStep) !== canonicalJson({ objective: run.objective })) {
     throw new Error('outcome evaluation refuses contradictory canonical intake or runtime profile evidence');

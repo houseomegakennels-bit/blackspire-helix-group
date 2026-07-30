@@ -64,7 +64,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_grants_scope_version_unique ON auth_w
   // candidates. They are deliberately separate from the raw audit stream (audit_events/
   // task_events) and from any future promoted long-term memory table. No secrets are ever stored
   // here: every persisted payload is redacted before insert by packages/hermes-orchestrator.
-  db.exec(`CREATE TABLE IF NOT EXISTS hermes_workflow_runs(id TEXT PRIMARY KEY,task_id TEXT,conversation_id TEXT,workspace_id TEXT,actor_id TEXT,channel TEXT,objective TEXT,classification TEXT,status TEXT,outcome TEXT,provider TEXT,agent TEXT,cost_cents INTEGER,started_at TEXT,finished_at TEXT,created_at TEXT);
+  db.exec(`CREATE TABLE IF NOT EXISTS hermes_workflow_runs(id TEXT PRIMARY KEY,task_id TEXT,conversation_id TEXT,workspace_id TEXT,actor_id TEXT,channel TEXT,objective TEXT,classification TEXT,status TEXT,outcome TEXT,provider TEXT,agent TEXT,cost_cents INTEGER,started_at TEXT,finished_at TEXT,created_at TEXT,requested_provider TEXT);
 CREATE TABLE IF NOT EXISTS hermes_workflow_steps(id TEXT PRIMARY KEY,run_id TEXT,seq INTEGER,name TEXT,status TEXT,detail TEXT,started_at TEXT,finished_at TEXT,created_at TEXT);
 CREATE TABLE IF NOT EXISTS hermes_routing_decisions(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,classification TEXT,candidates TEXT,selected_provider TEXT,selected_agent TEXT,capabilities TEXT,rationale TEXT,created_at TEXT);
 CREATE TABLE IF NOT EXISTS hermes_policy_decisions(id TEXT PRIMARY KEY,run_id TEXT,task_id TEXT,action_class TEXT,decision TEXT,requires_approval INTEGER,reason TEXT,created_at TEXT);
@@ -113,6 +113,7 @@ CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_failures_immutable_update BEFORE
 CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_failures_immutable_delete BEFORE DELETE ON hermes_outcome_evaluation_failures BEGIN SELECT RAISE(ABORT,'immutable outcome failure'); END;`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
+  ensureColumn('hermes_workflow_runs', 'requested_provider', 'TEXT');
   const missing = findMissingSchemaObjects(db);
   if (missing.length) throw new Error(`migration produced incompatible schema: ${missing.join('; ')}`);
   db.exec('COMMIT;');
