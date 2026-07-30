@@ -12,7 +12,7 @@ const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { createUnifiedInput } = await import('../packages/unified-input/unified.js');
-const { getTask } = await import('../packages/task-engine/tasks.js');
+const { getTask, setFlag } = await import('../packages/task-engine/tasks.js');
 const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
 const store = await import('../packages/hermes-orchestrator/store.js');
 const { run, get, all, execSql } = await import('../packages/task-engine/db.js');
@@ -25,6 +25,15 @@ function principal(workspaceId, permissions = ['evaluation.read','evaluation.cor
   run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[principalId,'admin',principalId,'bearer',null,'active',authzNow,null,null,null,1,authzNow]);
   run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[grantId,principalId,workspaceId,'viewer',JSON.stringify([...permissions].sort()),'active',1,null,authzNow,null,null,'test',1,authzNow]);
   return authz.resolveAdminBearer(principalId);
+}
+function servicePrincipal(workspaceId, permissions = ['evaluation.read','evaluation.correct']) {
+  const principalId = `m3a-service-${workspaceId}`;
+  const credentialReference = `m3a-service-ref-${workspaceId}`;
+  run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+    [principalId,'service',principalId,'service',credentialReference,'active',authzNow,null,null,null,1,authzNow]);
+  run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    [`${principalId}-grant`,principalId,workspaceId,'service',JSON.stringify([...permissions].sort()),'active',1,null,authzNow,null,null,'test',1,authzNow]);
+  return { principal: authz.resolveServiceContext(principalId, credentialReference), principalId };
 }
 
 function workspace(id) { upsertWorkspace({ id, name: id, githubRepository: 'local/m3a', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root }); }
@@ -100,6 +109,37 @@ test('non-success outcomes require their exact causal evidence matrix', async ()
   deleteEvaluationForTest(denied.evaluationId);
   run("UPDATE hermes_workflow_runs SET outcome='approval_required' WHERE id=?", [denied.runId]);
   assert.throws(() => evaluateTerminalOutcome(denied.runId), /terminal evidence matrix/);
+
+  workspace('m3a-approval-risk'); const approval = await runHermesWorkflow(task('m3a-approval-risk', 'refactor the parser module'));
+  assert.equal(approval.outcome, 'approval_required');
+  deleteEvaluationForTest(approval.evaluationId);
+  const classified = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.classified'", [approval.runId]).detail);
+  const routing = get('SELECT classification,rationale FROM hermes_routing_decisions WHERE run_id=?', [approval.runId]);
+  run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.classified'",
+    [JSON.stringify({ ...classified, risk: 'low' }), approval.runId]);
+  run('UPDATE hermes_routing_decisions SET classification=?,rationale=? WHERE run_id=?',
+    [JSON.stringify({ ...JSON.parse(routing.classification), risk: 'low' }), routing.rationale.replace('risk medium', 'risk low'), approval.runId]);
+  assert.throws(() => evaluateTerminalOutcome(approval.runId), /terminal evidence matrix/, 'approval-required evidence needs canonical medium risk');
+
+  workspace('m3a-budget-cause'); const budget = await runHermesWorkflow(task('m3a-budget-cause'));
+  deleteEvaluationForTest(budget.evaluationId);
+  run("DELETE FROM hermes_verification_results WHERE run_id=?", [budget.runId]);
+  run("DELETE FROM hermes_workflow_steps WHERE run_id=? AND name IN ('hermes.verified','hermes.memory_candidate_recorded')", [budget.runId]);
+  all('SELECT id FROM hermes_workflow_steps WHERE run_id=? ORDER BY seq', [budget.runId])
+    .forEach((step, index) => run('UPDATE hermes_workflow_steps SET seq=? WHERE id=?', [index + 1, step.id]));
+  run("UPDATE hermes_workflow_runs SET status='failed',outcome='budget_exhausted' WHERE id=?", [budget.runId]);
+  run(`UPDATE hermes_workflow_steps SET name='hermes.failed',status='failed',
+    detail='{"reason":"budget exhausted","costCents":0,"ceilingCents":0}' WHERE run_id=? AND name='hermes.completed'`, [budget.runId]);
+  assert.throws(() => evaluateTerminalOutcome(budget.runId), /canonical step detail/, 'budget exhaustion needs cost above the canonical ceiling');
+
+  workspace('m3a-requested-provider');
+  const requestedTask = { ...task('m3a-requested-provider'), requestedProvider: 'anthropic' };
+  const requested = await runHermesWorkflow(requestedTask);
+  assert.equal(requested.outcome, 'real_provider_blocked');
+  deleteEvaluationForTest(requested.evaluationId);
+  run(`UPDATE hermes_workflow_steps SET detail='{"reason":"real provider blocked","requested":"forged-provider"}'
+    WHERE run_id=? AND name='hermes.failed'`, [requested.runId]);
+  assert.throws(() => evaluateTerminalOutcome(requested.runId), /canonical step detail/, 'provider refusal is bound to the canonical requested provider');
 });
 
 test('canonical step details and registry-derived routing identity reject forged claims', async () => {
@@ -116,6 +156,9 @@ test('canonical step details and registry-derived routing identity reject forged
       const executed = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [runId]).detail);
       run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...executed, userAccepted: true }), runId]);
     }, 'execution evidence'],
+    ['memory-null', (runId) => {
+      run("UPDATE hermes_workflow_steps SET detail='null' WHERE run_id=? AND name='hermes.memory_candidate_recorded'", [runId]);
+    }, 'canonical step detail'],
     ['agent', (runId) => {
       run("UPDATE hermes_routing_decisions SET selected_agent='forged-agent' WHERE run_id=?", [runId]);
       run("UPDATE hermes_workflow_runs SET agent='forged-agent' WHERE id=?", [runId]);
@@ -125,6 +168,9 @@ test('canonical step details and registry-derived routing identity reject forged
     ['candidates', (runId) => {
       const candidates = JSON.parse(get('SELECT candidates FROM hermes_routing_decisions WHERE run_id=?', [runId]).candidates);
       run('UPDATE hermes_routing_decisions SET candidates=? WHERE run_id=?', [JSON.stringify(candidates.filter(({ provider }) => provider === 'mock')), runId]);
+    }, 'routing.*registry'],
+    ['rationale', (runId) => {
+      run("UPDATE hermes_routing_decisions SET rationale=rationale || ' forged' WHERE run_id=?", [runId]);
     }, 'routing.*registry'],
   ]) {
     const workspaceId = `m3a-canonical-${suffix}`;
@@ -137,6 +183,11 @@ test('canonical step details and registry-derived routing identity reject forged
   deleteEvaluationForTest(denied.evaluationId);
   run("UPDATE hermes_workflow_steps SET detail='null' WHERE run_id=? AND name='hermes.classified'", [denied.runId]);
   assert.throws(() => evaluateTerminalOutcome(denied.runId), /classification evidence/);
+
+  workspace('m3a-null-failed'); const failed = await runHermesWorkflow(task('m3a-null-failed', 'deploy to production'));
+  deleteEvaluationForTest(failed.evaluationId);
+  run("UPDATE hermes_workflow_steps SET detail='null' WHERE run_id=? AND name='hermes.failed'", [failed.runId]);
+  assert.throws(() => evaluateTerminalOutcome(failed.runId), /canonical step detail/);
 });
 
 test('retry timeout and cancellation facts aggregate across every provider attempt', async () => {
@@ -152,6 +203,58 @@ test('retry timeout and cancellation facts aggregate across every provider attem
   assert.equal(evaluation.timedOut, true);
   const timeout = store.getOutcomeComponents(evaluation.id).find(({ name }) => name === 'timeout');
   assert.equal(timeout.value, 'true');
+});
+
+test('retry-stop and budget-overage terminal paths create canonical factual evaluations', async () => {
+  const devEnv = {
+    ...process.env,
+    HERMES_RUNTIME_PROFILE: 'development',
+    HERMES_DEV_REAL_PROVIDER: 'true',
+    HERMES_DEV_PROVIDER_ALLOWLIST: 'anthropic',
+    HERMES_DEV_WORKSPACE_ALLOWLIST: root,
+    HERMES_DEV_ANTHROPIC_MAX_COST_CENTS: '25',
+  };
+  workspace('m3a-retry-stop');
+  let calls = 0;
+  const stopAdapter = {
+    async execute() {
+      calls += 1;
+      setFlag('emergency_stop', 'active');
+      return {
+        ok: false, provider: 'anthropic', adapterType: 'api', model: 'claude-sonnet-4-5', mode: 'real',
+        summary: '', artifacts: [], usage: { inputTokens: null, outputTokens: null, costCents: null },
+        inputBytes: 0, outputBytes: 0, timedOut: false, cancelled: false, error: 'fixture failure',
+      };
+    },
+  };
+  try {
+    setFlag('emergency_stop', 'inactive');
+    const stopped = await runHermesWorkflow({ ...task('m3a-retry-stop'), requestedProvider: 'anthropic' }, {
+      adapterOverrides: { anthropic: stopAdapter }, env: devEnv,
+    });
+    assert.equal(calls, 1);
+    assert.equal(stopped.outcome, 'execution_blocked');
+    assert.ok(stopped.evaluationId, 'a stop before retry remains canonically evaluable');
+    assert.equal(store.getProviderInvocations(stopped.runId).length, 1);
+  } finally {
+    setFlag('emergency_stop', 'inactive');
+  }
+
+  workspace('m3a-budget-overage');
+  const overageAdapter = {
+    async execute() {
+      return {
+        ok: true, provider: 'anthropic', adapterType: 'api', model: 'claude-sonnet-4-5', mode: 'real',
+        summary: 'bounded fixture', artifacts: [], usage: { inputTokens: 1, outputTokens: 1, costCents: 999 },
+        inputBytes: 10, outputBytes: 10, timedOut: false, cancelled: false, error: null,
+      };
+    },
+  };
+  const overage = await runHermesWorkflow({ ...task('m3a-budget-overage'), requestedProvider: 'anthropic' }, {
+    adapterOverrides: { anthropic: overageAdapter }, env: devEnv,
+  });
+  assert.equal(overage.outcome, 'budget_exhausted');
+  assert.ok(overage.evaluationId, 'an actual cost above the canonical ceiling remains evaluable');
 });
 
 test('free-form canonical channel actors remain readable without being treated as authority IDs', async () => {
@@ -176,6 +279,18 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   run('UPDATE tasks SET actor_id=? WHERE id=?', ['forged-task-actor', store.getWorkflowRun(result.runId).task_id]);
   assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'canonical task identity is provenance-bound after evaluation');
   run('UPDATE tasks SET actor_id=? WHERE id=?', ['m3a-user', store.getWorkflowRun(result.runId).task_id]);
+  const taskId = store.getWorkflowRun(result.runId).task_id;
+  const taskRow = get('SELECT budget_cents,idempotency_key,authority_class,policy_decision FROM tasks WHERE id=?', [taskId]);
+  for (const [column, forged] of [
+    ['budget_cents', taskRow.budget_cents + 1],
+    ['idempotency_key', 'forged-idempotency'],
+    ['authority_class', 'forged-authority'],
+    ['policy_decision', 'forged-policy'],
+  ]) {
+    run(`UPDATE tasks SET ${column}=? WHERE id=?`, [forged, taskId]);
+    assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, `${column} is bound into canonical normalized task provenance`);
+    run(`UPDATE tasks SET ${column}=? WHERE id=?`, [taskRow[column], taskId]);
+  }
   const stored = store.getOutcomeEvaluation(result.evaluationId);
   withoutImmutability(['hermes_outcome_evaluations'], () => {
     run('UPDATE hermes_outcome_evaluations SET provenance_digest=? WHERE id=?', ['0'.repeat(64), result.evaluationId]);
@@ -236,6 +351,19 @@ test('explicit source events are idempotent, evidence-required, and evaluator fa
   });
   assert.equal(recordOutcomeEvaluationFailure(result.runId, new Error('malformed terminal evidence')), 'invalid_evidence');
   assert.equal(store.getOutcomeEvaluationFailure(result.runId).remediation_state, 'open');
+});
+
+test('persisted service evidence requires a canonical current service credential record', async () => {
+  workspace('m3a-service-evidence');
+  const result = await runHermesWorkflow(task('m3a-service-evidence'));
+  const service = servicePrincipal('m3a-service-evidence');
+  appendOutcomeSourceEvent(service.principal, result.evaluationId, {
+    idempotencyKey: 'service-evidence-event', eventType: 'accepted', evidence: 'verified service evidence',
+  });
+  const admin = principal('m3a-service-evidence');
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId).id, result.evaluationId);
+  run('UPDATE auth_principals SET credential_reference=NULL WHERE id=?', [service.principalId]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'malformed current service credential state fails evidence reads closed');
 });
 
 test('complete canonical provenance rejects hidden evidence, raw-secret equivalence, scope drift, malformed provider rows, and invalid time', async () => {
@@ -352,6 +480,8 @@ test('execution-blocked terminal runs produce factual evidence and reject forged
   assert.equal(store.getOutcomeEvaluation(result.evaluationId).learning_eligibility, 'negative_factual');
   assert.equal(store.getOutcomeEvaluation(result.evaluationId).execution_mode, 'blocked');
   deleteEvaluationForTest(result.evaluationId);
+  run("UPDATE hermes_workflow_steps SET detail='null' WHERE run_id=? AND name='hermes.executed'", [result.runId]);
+  assert.throws(() => evaluateTerminalOutcome(result.runId), /blocked execution evidence/);
   run(`UPDATE hermes_workflow_steps SET detail='{"provider":"totally-forged","executionMode":"real","ok":true,"attempts":999,"durationMs":0,"timedOut":true,"cancelled":true,"artifactCount":0}'
     WHERE run_id=? AND name='hermes.executed'`, [result.runId]);
   assert.throws(() => evaluateTerminalOutcome(result.runId), /blocked execution evidence/);

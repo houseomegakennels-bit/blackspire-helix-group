@@ -237,6 +237,7 @@ test('emergency stop raised after one failed attempt prevents the retry dispatch
   assert.equal(calls, 1);
   assert.equal(r.executionMode, 'blocked');
   assert.equal(r.outcome, 'execution_blocked');
+  assert.equal(store.getProviderInvocations(r.runId).length, 1);
 });
 
 test('concurrency ceiling: acquire returns null at capacity (fail closed)', () => {

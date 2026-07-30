@@ -44,9 +44,18 @@ function validGrantRow(grant) {
   return true;
 }
 
+export function isCanonicalActivePrincipalRecord(p) {
+  return Boolean(p && validAuthorityId(p.id) && validAuthorityId(p.actor_id) &&
+    validAuthorityId(p.credential_reference, { nullable: p.type !== 'service' }) &&
+    validLifecycle(p) && ['admin','service'].includes(p.type) &&
+    p.authentication_method === (p.type === 'admin' ? 'bearer' : 'service') &&
+    p.status === 'active' && (p.expires_at === null || p.expires_at > Date.now()) &&
+    p.revoked_at === null && p.disabled_at === null);
+}
+
 export function resolvePrincipal({ principalId = null, authenticationMethod, credentialReference = null } = {}) {
   const p = principalId && get('SELECT * FROM auth_principals WHERE id=?', [principalId]);
-  if (!p || !validAuthorityId(p.id) || !validAuthorityId(p.actor_id) || !validAuthorityId(p.credential_reference, { nullable: true }) || !validLifecycle(p) || !['admin','service'].includes(p.type) || p.authentication_method !== (p.type === 'admin' ? 'bearer' : 'service') || p.status !== 'active' || (p.expires_at !== null && p.expires_at <= Date.now()) || p.revoked_at !== null || p.disabled_at !== null) return null;
+  if (!isCanonicalActivePrincipalRecord(p)) return null;
   // This is an authentication boundary, not a persisted-row lookup. Callers must select the
   // canonical method explicitly, and service principals must prove the exact configured reference.
   if (!['bearer', 'service'].includes(authenticationMethod) || p.authentication_method !== authenticationMethod) return null;

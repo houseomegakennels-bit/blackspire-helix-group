@@ -37,7 +37,9 @@ export async function runHermesWorkflow(input, options = {}) {
     actorId: normalized.actorId, channel: normalized.channel, objective: normalized.objective, status: 'running',
   });
   const events = makeEventRecorder({ taskId: normalized.taskId, runId });
-  events.record(HERMES_EVENTS.RECEIVED, { channel: normalized.channel, profile: rp.profile });
+  events.record(HERMES_EVENTS.RECEIVED, {
+    channel: normalized.channel, profile: rp.profile, requestedProvider: normalized.requestedProvider,
+  });
   events.record(HERMES_EVENTS.NORMALIZED, { objective: normalized.objective });
 
   if (getFlag('emergency_stop') === 'active') {

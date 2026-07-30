@@ -68,7 +68,9 @@ export async function executeWorkflow(routing, normalized, ctx = {}) {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       // Recheck immediately before every dispatch/retry. A stop raised while a prior attempt was
       // pending must prevent a subsequent (possibly paid) call.
-      if (getFlag('emergency_stop') === 'active') return blocked(providerId, def.adapterType, 'emergency_stop', 'emergency stop active before provider dispatch');
+      if (getFlag('emergency_stop') === 'active') {
+        return blocked(providerId, def.adapterType, 'emergency_stop', 'emergency stop active before provider dispatch', last?.attempts || 0);
+      }
       if (ctx.signal?.aborted) { last = cancelledResult(providerId, def, attempt); recordInvocation(ctx, providerId, def, last); break; }
       // A single-use approval is reserved after all non-dispatch refusals above (health,
       // concurrency, cancellation) but immediately before the first provider call.  This avoids
@@ -115,8 +117,8 @@ export async function executeWorkflow(routing, normalized, ctx = {}) {
   };
 }
 
-function blocked(provider, adapterType, code, reason) {
-  return { executionMode: 'blocked', ok: false, provider, adapterType, model: null, summary: '', artifacts: [], usage: { inputTokens: null, outputTokens: null, costCents: null }, attempts: 0, durationMs: 0, timedOut: false, cancelled: false, error: reason, blockCode: code };
+function blocked(provider, adapterType, code, reason, attempts = 0) {
+  return { executionMode: 'blocked', ok: false, provider, adapterType, model: null, summary: '', artifacts: [], usage: { inputTokens: null, outputTokens: null, costCents: null }, attempts, durationMs: 0, timedOut: false, cancelled: false, error: reason, blockCode: code };
 }
 function cancelledResult(provider, def, attempt) {
   return { ok: false, provider, adapterType: def.adapterType, model: def.modelIdentifiers[0], mode: def.adapterType === 'mock' ? 'mock' : 'real', summary: '', artifacts: [], usage: { inputTokens: null, outputTokens: null, costCents: null }, inputBytes: 0, outputBytes: 0, timedOut: false, cancelled: true, error: 'cancelled', attempts: attempt, durationMs: 0 };
