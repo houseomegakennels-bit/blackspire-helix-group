@@ -1,9 +1,12 @@
 // Canonical serialization and content digests.
 //
 // This is the single implementation used by every Blackspire evidence digest. Milestone 3A pinned
-// its provenance digests with exactly this algorithm, so the function bodies here are byte-for-byte
-// the ones that produced every stored `hermes_outcome_evaluations.provenance_digest`. Changing
-// either function retroactively invalidates persisted evidence and must never be done casually.
+// its provenance digests with exactly this algorithm, so the bodies of `canonicalJson` and `digest`
+// here are byte-for-byte the ones that produced every stored
+// `hermes_outcome_evaluations.provenance_digest`. Changing either retroactively invalidates
+// persisted evidence and must never be done casually. `canonicalTimestamp` below is the one
+// exception to the byte-for-byte claim: it is a validator that no digest is computed over, and it
+// was deliberately tightened with a four-digit-year anchor when 3A's and 3B's copies were merged.
 //
 // Object keys are sorted so key insertion order cannot change a digest. Array order is deliberately
 // preserved and therefore load-bearing: any caller that hashes a collection must sort it explicitly

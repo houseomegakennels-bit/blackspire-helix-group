@@ -15,7 +15,7 @@ The first implementation slice is workspace-scoped and explicit:
 3. Group only by canonical workspace, provider, agent, capability, and classification dimensions.
 4. Derive integer counts and known totals without averages that silently discard unknown values.
 5. Persist a new immutable snapshot and its ordered source lineage in one transaction.
-14. Return the stored snapshot; never call the router, executor, provider registry mutation surface,
+6. Return the stored snapshot; never call the router, executor, provider registry mutation surface,
    or memory service.
 
 There is no background job, startup hook, workflow-completion hook, historical backfill, HTTP
@@ -80,7 +80,9 @@ below for the full rules.
 ## Acceptance gates
 
 - Same sources in any input order produce byte-identical metrics and lineage digest.
-- Cutoff boundaries, equal timestamps, replay, successor lineage, and integer overflow are pinned.
+- Cutoff boundaries, equal timestamps, replay, and successor lineage are pinned. Integer overflow is
+  guarded but structurally unreachable and therefore not pinned by a test that exercises the throw -
+  see Status and limitations.
 - Fewer than 5, exactly 5, exactly 19, and exactly 20 sources produce the documented confidence.
 - Unknown acceptance/rollback/stability cannot become false zero or positive evidence.
 - Cross-workspace, malformed, missing, duplicated, corrected, and contradictory evidence fails
