@@ -34,8 +34,8 @@ development/test service call against disposable state.
 - Replay of an identical scope, cutoff, version, and ordered lineage returns the existing snapshot.
   The same identity with different derived content is an integrity error.
 - The lineage digest covers the scorecard version, exact scope/dimensions, cutoff, every ordered
-  evaluation ID and provenance digest, the selected correction head, ordered source-event IDs, and
-  every persisted metric.
+  evaluation ID and provenance digest, the selected correction head (reserved; see below), ordered
+  source-event IDs, and every persisted metric.
 - Snapshot and lineage rows are database-enforced append-only. Recalculation creates a successor;
   it never updates a prior snapshot.
 
@@ -111,8 +111,8 @@ Two additive tables carry the model:
   `supersedes_scorecard_id` forming a linear successor chain, plus `lineage_digest` and
   `content_digest`.
 - `hermes_verified_scorecard_sources` — the ordered lineage, one row per source evaluation, keyed by
-  an explicit gap-free `seq` and carrying that source's provenance digest, selected correction head,
-  and ordered source-event ids.
+  an explicit gap-free `seq` and carrying that source's provenance digest, selected correction head
+  (reserved; see below), and ordered source-event ids.
 
 Both tables are database-enforced append-only through `trg_hermes_scorecards_immutable_*` and
 `trg_hermes_scorecard_sources_immutable_*`. All four dimension columns are `NOT NULL` and use the
@@ -153,8 +153,9 @@ than two that can drift.
    a zero denominator means the ratio is not derivable, not that it is zero.
 9. Confidence is sample size only: `insufficient` under 5, `limited` 5–19, `established` 20 or more.
 10. The lineage digest covers the version, exact scope and dimensions, cutoff, every ordered
-   evaluation id and provenance digest, each correction head, ordered source-event ids, and every
-   persisted metric. Neither the snapshot id nor its wall-clock creation time is hashed.
+   evaluation id and provenance digest, each correction head (reserved; see below), ordered
+   source-event ids, and every persisted metric. Neither the snapshot id nor its wall-clock creation
+   time is hashed.
 11. Replay over an identical identity returns the stored snapshot without writing. An identical
    identity whose derived content differs never overwrites. It refuses with one of two distinct
    errors: appended Milestone 3A source evidence (routine, resolved by deriving a later cutoff) when
@@ -255,6 +256,12 @@ Implemented and validated at the exact head. Known limitations, all deliberate:
   only, so `known_input_tokens`, `known_output_tokens`, and `known_cost_cents` aggregate across every
   model served by one provider and are not attributable to a model. Adding the dimension is an
   `m3b-v2` decision because it changes the stored identity.
+- **The correction-head lineage columns are reserved and always NULL.** `correction_head_id` and
+  `correction_head_version` are carried by the lineage row and covered by the lineage digest, but a
+  corrected source fails the snapshot closed (rule 4), so no source that reaches persistence can have
+  a correction head. They exist so a later milestone that decides to aggregate corrected evidence can
+  record which correction it selected without a schema migration; in `m3b-v1` they are structurally
+  always NULL.
 - No `follow_up_verification` semantics beyond a raw count; it is stored but not interpreted.
 
 Nothing here activates learned routing, memory promotion or retrieval, provider execution,
