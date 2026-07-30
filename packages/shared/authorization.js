@@ -9,7 +9,7 @@ const ROLE_PERMISSIONS = Object.freeze({
   viewer: ['workspace.read','task.read','runtime.read'], service: [],
 });
 export const AUTHZ_POLICY_VERSION = 'authz-v1';
-const resolvedPrincipals = new WeakSet();
+const resolvedPrincipals = new WeakMap();
 const AUTHORITY_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const SENSITIVE_AUTHORITY_VALUE = /(?:secret|token|credential|bearer|authorization|cookie|session|csrf|pem|aws|private-key|api[-_:]?key|^(?:sk|pk|rk|ghp|github_pat|xox|akia)[_-])/i;
 
@@ -28,7 +28,8 @@ function validLifecycle(row) {
     !Number.isSafeInteger(row.security_version) || row.security_version < 1) return false;
   if (row.issued_at > Date.now() || row.created_at > Date.now() || (row.revoked_at !== null && row.revoked_at > Date.now()) ||
     (disabledAt !== null && disabledAt > Date.now())) return false;
-  return (row.expires_at === null || row.expires_at >= row.issued_at) &&
+  return row.created_at >= row.issued_at &&
+    (row.expires_at === null || row.expires_at >= row.issued_at) &&
     (row.revoked_at === null || row.revoked_at >= row.issued_at) &&
     (disabledAt === null || disabledAt >= row.issued_at);
 }
@@ -49,11 +50,12 @@ export function resolvePrincipal({ principalId = null, authenticationMethod, cre
   if (authenticationMethod && p.authentication_method !== authenticationMethod) return null;
   if (credentialReference && p.credential_reference !== credentialReference) return null;
   const principal = Object.freeze({ principalId: p.id, principalType: p.type, actorId: p.actor_id, authenticationMethod: p.authentication_method, securityVersion: p.security_version });
-  resolvedPrincipals.add(principal);
+  resolvedPrincipals.set(principal, p.credential_reference);
   return principal;
 }
 export const resolveAdminBearer = (principalId) => resolvePrincipal({ principalId, authenticationMethod: 'bearer' });
-export const resolveServiceContext = (principalId, credentialReference) => resolvePrincipal({ principalId, authenticationMethod: 'service', credentialReference });
+export const resolveServiceContext = (principalId, credentialReference) => validAuthorityId(credentialReference)
+  ? resolvePrincipal({ principalId, authenticationMethod: 'service', credentialReference }) : null;
 // Sessions are bound only by server-side code after credential verification.  Their stored
 // principal remains an admin/service principal authenticated by its configured method; `session`
 // is a transport, not a new principal type or an impersonation input.
@@ -62,7 +64,7 @@ export function resolveBoundSession(session) {
   const principal = typeof principalId === 'string' ? resolvePrincipal({ principalId }) : null;
   return principal?.principalType === 'admin' ? principal : null;
 }
-export const requireAuthenticatedPrincipal = (p) => p ? allow('authenticated') : deny('unauthenticated');
+export const requireAuthenticatedPrincipal = (principal) => currentPrincipal(principal) ? allow('authenticated') : deny('unauthenticated');
 
 export function activeGrant(principalId, workspaceId) {
   const rows = all(`SELECT * FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=? AND status='active' AND (expires_at IS NULL OR expires_at>?) AND revoked_at IS NULL ORDER BY version DESC`, [principalId, workspaceId, Date.now()]);
@@ -78,12 +80,15 @@ export function validateGrantChain(head) {
   if (!head || !validGrantRow(head)) return false;
   const rows = all('SELECT * FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=?', [head.principal_id, head.workspace_id]);
   const byId = new Map(rows.map((row) => [row.id, row]));
-  if (!rows.length || byId.size !== rows.length || !byId.has(head.id) || rows.some((row) => !validGrantRow(row))) return false;
+  const persistedHead = byId.get(head.id);
+  if (!rows.length || byId.size !== rows.length || !persistedHead ||
+    Object.keys(persistedHead).some((key) => persistedHead[key] !== head[key]) ||
+    rows.some((row) => !validGrantRow(row))) return false;
   const children = new Map(rows.map((row) => [row.id, []]));
   for (const row of rows) {
     if (!row.supersedes_grant_id) continue;
     const parent = byId.get(row.supersedes_grant_id);
-    if (!parent || row.version !== parent.version + 1) return false;
+    if (!parent || row.version !== parent.version + 1 || row.issued_at < parent.issued_at || row.created_at < parent.created_at) return false;
     children.get(parent.id).push(row);
   }
   // Check globally, so a cross-principal/workspace sibling cannot be ignored.
@@ -100,11 +105,12 @@ export function validateGrantChain(head) {
   return seen.size === rows.length;
 }
 export function requireWorkspacePermission(principal, workspaceId, permission, resource = {}) {
-  if (!principal || !resolvedPrincipals.has(principal) || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, null, permission, deny('invalid_scope'));
-  const grant = activeGrant(principal.principalId, workspaceId); if (!grant) return decision(principal, null, permission, deny('grant_missing'));
+  const current = currentPrincipal(principal);
+  if (!current || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, null, permission, deny('invalid_scope'));
+  const grant = activeGrant(current.principalId, workspaceId); if (!grant) return decision(current, null, permission, deny('grant_missing'));
   const permissions = JSON.parse(canonicalPermissions(grant.permissions));
-  const allowedPermission = permissions.includes(permission) || (principal.principalType !== 'service' && grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));
-  return decision(principal, grant.workspace_id, permission, allowedPermission ? allow('granted') : deny('permission_denied'));
+  const allowedPermission = permissions.includes(permission) || (current.principalType !== 'service' && grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));
+  return decision(current, grant.workspace_id, permission, allowedPermission ? allow('granted') : deny('permission_denied'));
 }
 export const canReadTask = (p,w) => requireWorkspacePermission(p,w,'task.read');
 export const canCreateTask = (p,w) => requireWorkspacePermission(p,w,'task.create');
@@ -115,5 +121,12 @@ export const canGrantApproval = (p,w) => requireWorkspacePermission(p,w,'approva
 export const canReadEvaluation = (p,w) => requireWorkspacePermission(p,w,'evaluation.read');
 export const canCorrectEvaluation = (p,w) => requireWorkspacePermission(p,w,'evaluation.correct');
 function allow(reasonCode) { return { allowed: true, reasonCode }; } function deny(reasonCode) { return { allowed: false, reasonCode }; }
+function currentPrincipal(principal) {
+  if (!principal || !resolvedPrincipals.has(principal)) return null;
+  const credentialReference = resolvedPrincipals.get(principal);
+  const current = resolvePrincipal({ principalId: principal.principalId, authenticationMethod: principal.authenticationMethod, credentialReference });
+  if (!current) return null;
+  return ['principalId','principalType','actorId','authenticationMethod','securityVersion'].every((key) => current[key] === principal[key]) ? current : null;
+}
 function auditValue(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value) && !/(?:secret|token|credential|bearer|authorization|cookie|session|csrf|pem|aws|private-key|api[-_:]?key|^(?:sk|pk|rk|ghp|github_pat|xox|akia)[_-])/i.test(value) ? value : null; }
 function decision(p,w,permission,result) { try { run('INSERT INTO auth_decisions(id,principal_id,principal_type,workspace_id,permission,resource_type,resource_id,allowed,reason_code,policy_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[id('authd'),auditValue(p?.principalId),auditValue(p?.principalType),auditValue(w),auditValue(permission),null,null,result.allowed?1:0,result.reasonCode,AUTHZ_POLICY_VERSION,Date.now()]); } catch { return deny('audit_unavailable'); } return result; }
