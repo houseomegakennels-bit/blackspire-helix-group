@@ -296,7 +296,7 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   if (Boolean(routing) !== Boolean(routedStep) || (routing && canonicalJson(routedStep) !== canonicalJson({
     provider: routing.selected_provider, agent: routing.selected_agent, capabilities: parsedJson(routing.capabilities),
   }))) throw new Error('outcome evaluation refuses contradictory routing evidence');
-  if (routing) validateRegistryRouting(routing, receivedStep.profile);
+  if (routing) validateRegistryRouting(routing, receivedStep.profile, receivedStep.requestedProvider);
   const verifiedStep = detail('hermes.verified');
   if (Boolean(verification) !== Boolean(verifiedStep) || (verification && canonicalJson(verifiedStep) !== canonicalJson({
     passed: Boolean(verification.passed), detail: verification.detail,
@@ -483,7 +483,7 @@ function validateCanonicalStepDetails({ task, run, steps, policies, routings, ve
 function exactKeys(value, keys) {
   return Boolean(value && !Array.isArray(value) && Object.keys(value).sort().join(',') === [...keys].sort().join(','));
 }
-function validateRegistryRouting(routing, profile) {
+function validateRegistryRouting(routing, profile, requestedProvider) {
   const classification = parsedJson(routing.classification);
   const capabilities = parsedJson(routing.capabilities);
   const candidates = parsedJson(routing.candidates);
@@ -494,7 +494,7 @@ function validateRegistryRouting(routing, profile) {
     .map((candidate) => ({ provider: candidate.id, enabled: candidate.enabled }));
   const expectedRoute = routeTask(classification, {
     environment: profile,
-    preferredProvider: routing.selected_provider === 'mock' ? null : routing.selected_provider,
+    preferredProvider: requestedProvider && requestedProvider !== 'mock' ? requestedProvider : null,
   });
   if (!provider || !provider.allowedEnvironments.includes(profile) ||
     capabilities.some((capability) => !capabilityRegistry.allowedInEnvironment(capability, profile)) ||

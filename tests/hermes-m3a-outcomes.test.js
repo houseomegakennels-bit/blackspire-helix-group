@@ -255,6 +255,11 @@ test('retry-stop and budget-overage terminal paths create canonical factual eval
   });
   assert.equal(overage.outcome, 'budget_exhausted');
   assert.ok(overage.evaluationId, 'an actual cost above the canonical ceiling remains evaluable');
+  deleteEvaluationForTest(overage.evaluationId);
+  const received = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received'", [overage.runId]).detail);
+  run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.received'",
+    [JSON.stringify({ ...received, requestedProvider: null }), overage.runId]);
+  assert.throws(() => evaluateTerminalOutcome(overage.runId), /routing.*registry/, 'a real route cannot be relabelled as a default-provider request');
 });
 
 test('free-form canonical channel actors remain readable without being treated as authority IDs', async () => {
