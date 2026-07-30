@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { id, now } from '../shared/util.js';
 import { transaction, get } from '../task-engine/db.js';
 import { getTask } from '../task-engine/tasks.js';
+import { normalizeTask } from './normalize.js';
 import { redactDeep, redactString } from './redaction.js';
 import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeComponents, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
 import { canReadEvaluation, canCorrectEvaluation, hasCurrentWorkspacePermission, activeGrant, resolvePrincipal } from '../shared/authorization.js';
@@ -177,7 +178,9 @@ function validateEvidence(evidence) {
   const { run, task, steps, routings, policies, verifications, invocations } = evidence;
   if (!run || !TERMINAL.has(run.status) || !sanitizedJson(run.classification) || !canonicalTimestamp(run.created_at) || !canonicalTimestamp(run.started_at) || !canonicalTimestamp(run.finished_at)) throw new Error('outcome evaluation requires a finished terminal workflow run with canonical timestamps');
   if (Date.parse(run.started_at) > Date.parse(run.finished_at) || Date.parse(run.created_at) > Date.parse(run.finished_at)) throw new Error('outcome evaluation refuses invalid run timestamp order');
-  if (!task || task.id !== run.task_id || task.workspace_id !== run.workspace_id || (task.conversation_id ?? null) !== (run.conversation_id ?? null)) throw new Error('outcome evaluation refuses mismatched canonical task scope');
+  const canonicalTask = task ? taskIdentity(task) : null;
+  if (!canonicalTask || canonicalTask.id !== run.task_id || canonicalTask.workspaceId !== run.workspace_id || canonicalTask.conversationId !== run.conversation_id ||
+    canonicalTask.actorId !== run.actor_id || canonicalTask.sourceChannel !== run.channel || canonicalTask.request !== run.objective) throw new Error('outcome evaluation refuses mismatched canonical task scope');
   if (!steps.length || !ordered(steps) || !terminalEventsPresent(steps, run.status)) throw new Error('outcome evaluation requires complete ordered terminal workflow evidence');
   const stepNames = new Set();
   for (const step of steps) {
@@ -258,7 +261,7 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   const terminalOutcomes = {
     completed: new Set(['verified']),
     blocked: new Set(['emergency_stop','policy_denied','blocked_pending_approval','real_provider_blocked','approval_required','execution_blocked']),
-    failed: new Set(['execution_failed','budget_exhausted','verification_failed','error']),
+    failed: new Set(['execution_blocked','execution_failed','budget_exhausted','verification_failed','error']),
     cancelled: new Set(['cancelled']),
   };
   if (!terminalOutcomes[run.status]?.has(run.outcome)) throw new Error('outcome evaluation refuses contradictory terminal evidence');
@@ -268,6 +271,10 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   const routing = latest(routings);
   const verification = latest(verifications);
   const invocation = invocations.at(-1);
+  const receivedStep = detail('hermes.received');
+  const normalizedStep = detail('hermes.normalized');
+  if (!receivedStep || receivedStep.channel !== run.channel || !safeRequired(receivedStep.profile) ||
+    canonicalJson(normalizedStep) !== canonicalJson({ objective: run.objective })) throw new Error('outcome evaluation refuses contradictory canonical intake evidence');
   const policyStep = detail('hermes.policy_evaluated');
   if (Boolean(policy) !== Boolean(policyStep) || (policy && canonicalJson(policyStep) !== canonicalJson({
     actionClass: policy.action_class, allowed: policy.decision === 'allow', requiresApproval: Boolean(policy.requires_approval),
@@ -292,6 +299,11 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
       executedStep.cancelled !== Boolean(invocation.cancelled) || !Number.isSafeInteger(executedStep.artifactCount) || executedStep.artifactCount < 0) {
       throw new Error('outcome evaluation refuses contradictory execution evidence');
     }
+  } else if (executedStep && (!routing || canonicalJson(executedStep) !== canonicalJson({
+    provider: routing.selected_provider, executionMode: 'blocked', ok: false, attempts: 0, durationMs: 0,
+    timedOut: false, cancelled: false, artifactCount: 0,
+  }))) {
+    throw new Error('outcome evaluation refuses contradictory blocked execution evidence');
   }
   const completedStep = detail('hermes.completed');
   if (run.status === 'completed' && canonicalJson(completedStep) !== canonicalJson({ outcome: run.outcome, executionMode: invocation?.mode || null })) throw new Error('outcome evaluation refuses contradictory completion evidence');
@@ -299,10 +311,10 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   const routingTime = routing ? Date.parse(routing.created_at) : null;
   const invocationTime = invocation ? Date.parse(invocation.created_at) : null;
   const verificationTime = verification ? Date.parse(verification.created_at) : null;
-  if ((policy && policyTime > Date.parse(step('hermes.policy_evaluated').created_at)) ||
-    (routing && (routingTime < policyTime || routingTime > Date.parse(step('hermes.routed').created_at))) ||
-    (invocation && (invocationTime < routingTime || invocationTime > Date.parse(step('hermes.executed').created_at))) ||
-    (verification && (verificationTime < invocationTime || verificationTime > Date.parse(step('hermes.verified').created_at)))) {
+  if ((policy && (policyTime < Date.parse(step('hermes.classified').created_at) || policyTime > Date.parse(step('hermes.policy_evaluated').created_at))) ||
+    (routing && (routingTime < Date.parse(step('hermes.policy_evaluated').created_at) || routingTime > Date.parse(step('hermes.routed').created_at))) ||
+    (invocation && (invocationTime < Date.parse(step('hermes.routed').created_at) || invocationTime > Date.parse(step('hermes.executed').created_at))) ||
+    (verification && (verificationTime < Date.parse(step('hermes.executed').created_at) || verificationTime > Date.parse(step('hermes.verified').created_at)))) {
     throw new Error('outcome evaluation refuses contradictory evidence chronology');
   }
 }
@@ -322,23 +334,27 @@ function readableEvaluation(evaluation) {
 function correctionChainValid(evaluation, corrections) {
   return corrections.every((row, index) => row.evaluation_id === evaluation.id && row.workspace_id === evaluation.workspace_id && row.run_id === evaluation.run_id &&
     safeId(row.id) && Number(row.version) === index + 1 && row.supersedes_correction_id === (index ? corrections[index - 1].id : null) &&
-    safeRequired(row.reason) && row.reason === redactString(row.reason) && safeRequired(row.source_evidence) && row.source_evidence === redactString(row.source_evidence) && recordedActorValid(row.actor_principal_id, evaluation.workspace_id) && validTimestamp(row.created_at) &&
+    safeRequired(row.reason) && row.reason === redactString(row.reason) && safeRequired(row.source_evidence) && row.source_evidence === redactString(row.source_evidence) && recordedActorValid(row.actor_principal_id, evaluation.workspace_id, row.created_at) && validTimestamp(row.created_at) &&
     Date.parse(row.created_at) >= Date.parse(evaluation.created_at) && (!index || Date.parse(row.created_at) >= Date.parse(corrections[index - 1].created_at)));
 }
 function sourceEventsValid(evaluation, events) {
   const idempotencyKeys = new Set();
   return events.every((row, index) => {
-    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !recordedActorValid(row.actor_principal_id, evaluation.workspace_id) || !safeEvidenceId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || row.evidence !== redactString(row.evidence) || !validTimestamp(row.created_at) || Date.parse(row.created_at) < Date.parse(evaluation.created_at) || (index && Date.parse(row.created_at) < Date.parse(events[index - 1].created_at))) return false;
+    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !recordedActorValid(row.actor_principal_id, evaluation.workspace_id, row.created_at) || !safeEvidenceId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || row.evidence !== redactString(row.evidence) || !validTimestamp(row.created_at) || Date.parse(row.created_at) < Date.parse(evaluation.created_at) || (index && Date.parse(row.created_at) < Date.parse(events[index - 1].created_at))) return false;
     idempotencyKeys.add(row.idempotency_key); return true;
   });
 }
 function validTimestamp(value) { return canonicalTimestamp(value); }
-function recordedActorValid(actorPrincipalId, workspaceId) {
+function recordedActorValid(actorPrincipalId, workspaceId, evidenceTime) {
   if (!safeId(actorPrincipalId)) return false;
-  const actor = get('SELECT id,type,authentication_method,status,issued_at,expires_at,revoked_at,disabled_at,security_version FROM auth_principals WHERE id=?', [actorPrincipalId]);
+  const actor = get('SELECT id,type,authentication_method,status,issued_at,created_at,expires_at,revoked_at,disabled_at,security_version FROM auth_principals WHERE id=?', [actorPrincipalId]);
+  const evidenceEpoch = Date.parse(evidenceTime);
+  const historicalGrant = get(`SELECT id FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=? AND issued_at<=? AND created_at<=?
+    AND (role='admin' OR permissions LIKE '%"evaluation.correct"%') ORDER BY version DESC LIMIT 1`, [actorPrincipalId, workspaceId, evidenceEpoch, evidenceEpoch]);
   if (!(actor && ['admin','service'].includes(actor.type) && actor.authentication_method === (actor.type === 'admin' ? 'bearer' : 'service') && actor.status === 'active' &&
     (actor.expires_at === null || Number(actor.expires_at) > Date.now()) && actor.revoked_at === null && actor.disabled_at === null &&
-    Number.isSafeInteger(Number(actor.security_version)) && Number(actor.security_version) > 0 && Number.isFinite(Number(actor.issued_at)) && activeGrant(actor.id, workspaceId))) return false;
+    Number.isSafeInteger(Number(actor.security_version)) && Number(actor.security_version) > 0 && Number.isFinite(Number(actor.issued_at)) &&
+    actor.issued_at <= evidenceEpoch && actor.created_at <= evidenceEpoch && historicalGrant && activeGrant(actor.id, workspaceId))) return false;
   // Subordinate evidence remains trusted only while its actor is still an authorized corrector.
   // The resolver-created principal prevents a persisted ID from acting as a client-created shape.
   const principal = resolvePrincipal({ principalId: actor.id });
@@ -407,6 +423,7 @@ function stringsAreSanitized(value) {
 }
 function provenancePacket(evidence, payload, components) {
   return {
+    task: taskIdentity(evidence.task),
     run: evidence.run,
     steps: evidence.steps,
     routings: evidence.routings,
@@ -415,6 +432,13 @@ function provenancePacket(evidence, payload, components) {
     invocations: evidence.invocations,
     payload,
     components,
+  };
+}
+function taskIdentity(task) {
+  const normalized = normalizeTask(task);
+  return {
+    id: normalized.taskId, workspaceId: normalized.workspaceId, conversationId: normalized.conversationId,
+    actorId: normalized.actorId, sourceChannel: normalized.channel, request: normalized.objective,
   };
 }
 function evaluationPayload(evaluation) {

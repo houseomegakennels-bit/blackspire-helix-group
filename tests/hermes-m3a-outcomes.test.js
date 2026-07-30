@@ -107,6 +107,9 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   assert.equal(readOutcomeEvaluation(reader, result.evaluationId), null, 'cross-workspace read is denied');
   const summary = readOutcomeEvaluation(admin, result.evaluationId);
   assert.equal(summary.id, result.evaluationId); assert.equal('classification' in summary, false);
+  run('UPDATE tasks SET actor_id=? WHERE id=?', ['forged-task-actor', store.getWorkflowRun(result.runId).task_id]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'canonical task identity is provenance-bound after evaluation');
+  run('UPDATE tasks SET actor_id=? WHERE id=?', ['m3a-user', store.getWorkflowRun(result.runId).task_id]);
   const stored = store.getOutcomeEvaluation(result.evaluationId);
   withoutImmutability(['hermes_outcome_evaluations'], () => {
     run('UPDATE hermes_outcome_evaluations SET provenance_digest=? WHERE id=?', ['0'.repeat(64), result.evaluationId]);
@@ -238,7 +241,13 @@ test('completed verified outcomes reject contradictory routing, policy, invocati
     }, 'retry evidence'],
     ['run-agent', (runId) => run("UPDATE hermes_workflow_runs SET agent='forged-agent' WHERE id=?", [runId]), 'run routing evidence'],
     ['run-cost', (runId) => run('UPDATE hermes_workflow_runs SET cost_cents=99 WHERE id=?', [runId]), 'run cost evidence'],
+    ['run-actor', (runId) => run("UPDATE hermes_workflow_runs SET actor_id='forged-actor' WHERE id=?", [runId]), 'task scope'],
+    ['run-channel', (runId) => run("UPDATE hermes_workflow_runs SET channel='telegram' WHERE id=?", [runId]), 'task scope'],
+    ['run-objective', (runId) => run("UPDATE hermes_workflow_runs SET objective='different sanitized objective' WHERE id=?", [runId]), 'task scope'],
     ['policy-step', (runId) => run("UPDATE hermes_policy_decisions SET action_class='forged.action' WHERE run_id=?", [runId]), 'policy evidence'],
+    ['policy-chronology', (runId) => run(`UPDATE hermes_policy_decisions SET created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?`, [runId, runId]), 'chronology'],
+    ['routing-chronology', (runId) => run(`UPDATE hermes_routing_decisions SET created_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.classified') WHERE run_id=?`, [runId, runId]), 'chronology'],
+    ['invocation-chronology', (runId) => run(`UPDATE hermes_provider_invocations SET created_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.policy_evaluated') WHERE run_id=?`, [runId, runId]), 'chronology'],
     ['verification-chronology', (runId) => run(`UPDATE hermes_verification_results SET created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?`, [runId, runId]), 'chronology'],
     ['terminal-outcome', (runId) => {
       run("UPDATE hermes_workflow_runs SET status='failed',outcome='verified' WHERE id=?", [runId]);
@@ -252,6 +261,19 @@ test('completed verified outcomes reject contradictory routing, policy, invocati
     mutate(result.runId);
     assert.throws(() => evaluateTerminalOutcome(result.runId), new RegExp(message), suffix);
   }
+});
+
+test('execution-blocked terminal runs produce factual evidence and reject forged no-invocation execution steps', async () => {
+  workspace('m3a-execution-blocked');
+  const result = await runHermesWorkflow(task('m3a-execution-blocked'), { env: { ...process.env, BLACKSPIRE_RUNTIME_MODE: 'production' } });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.outcome, 'execution_blocked');
+  assert.ok(result.evaluationId);
+  assert.equal(store.getOutcomeEvaluation(result.evaluationId).learning_eligibility, 'negative_factual');
+  deleteEvaluationForTest(result.evaluationId);
+  run(`UPDATE hermes_workflow_steps SET detail='{"provider":"totally-forged","executionMode":"real","ok":true,"attempts":999,"durationMs":0,"timedOut":true,"cancelled":true,"artifactCount":0}'
+    WHERE run_id=? AND name='hermes.executed'`, [result.runId]);
+  assert.throws(() => evaluateTerminalOutcome(result.runId), /blocked execution evidence/);
 });
 
 test('correction authorization and insertion are atomic against authority changes', async () => {
@@ -301,4 +323,10 @@ test('denied evidence mutations retain their authorization audits and reads do n
   assert.equal(readOutcomeEvaluation(admin, result.evaluationId).id, result.evaluationId);
   assert.equal(all("SELECT * FROM auth_decisions WHERE principal_id=? AND permission='evaluation.correct'", [admin.principalId]).length, correctBefore);
   assert.equal(all("SELECT * FROM auth_decisions WHERE principal_id=? AND permission='evaluation.read'", [admin.principalId]).length, 1);
+  const correction = store.getOutcomeCorrections(result.evaluationId)[0];
+  const evaluationCreatedAt = store.getOutcomeEvaluation(result.evaluationId).created_at;
+  withoutImmutability(['hermes_outcome_corrections'], () => run('UPDATE hermes_outcome_corrections SET created_at=? WHERE id=?', [evaluationCreatedAt, correction.id]));
+  const afterEvidence = Date.parse(evaluationCreatedAt) + 1;
+  run('UPDATE auth_principals SET issued_at=?,created_at=? WHERE id=?', [afterEvidence, afterEvidence, admin.principalId]);
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'evidence cannot predate its persisted actor');
 });
