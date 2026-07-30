@@ -15,7 +15,7 @@ const { createUnifiedInput } = await import('../packages/unified-input/unified.j
 const { getTask } = await import('../packages/task-engine/tasks.js');
 const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
 const store = await import('../packages/hermes-orchestrator/store.js');
-const { run, all, execSql } = await import('../packages/task-engine/db.js');
+const { run, get, all, execSql } = await import('../packages/task-engine/db.js');
 const authz = await import('../packages/shared/authorization.js');
 const { evaluateTerminalOutcome, readOutcomeEvaluation, appendOutcomeCorrection, appendOutcomeSourceEvent, recordOutcomeEvaluationFailure } = await import('../packages/hermes-orchestrator/outcome.js');
 const authzNow = Date.now();
@@ -215,6 +215,26 @@ test('complete canonical provenance rejects hidden evidence, raw-secret equivale
   assert.throws(() => evaluateTerminalOutcome(timeResult.runId), /timestamp/);
 });
 
+test('completed verified outcomes reject contradictory routing, policy, invocation, or missing verification evidence', async () => {
+  for (const [suffix, mutate, message] of [
+    ['timeout-completed', (runId) => run("UPDATE hermes_provider_invocations SET status='completed',timed_out=1,cancelled=0 WHERE run_id=?", [runId]), 'provider evidence'],
+    ['disabled-selected', (runId) => {
+      const routing = all('SELECT candidates,selected_provider FROM hermes_routing_decisions WHERE run_id=?', [runId])[0];
+      const candidates = JSON.parse(routing.candidates).map((candidate) => candidate.provider === routing.selected_provider ? { ...candidate, enabled: false } : candidate);
+      run('UPDATE hermes_routing_decisions SET candidates=? WHERE run_id=?', [JSON.stringify(candidates), runId]);
+    }, 'routing evidence'],
+    ['approval-allow', (runId) => run("UPDATE hermes_policy_decisions SET decision='allow',requires_approval=1 WHERE run_id=?", [runId]), 'policy evidence'],
+    ['missing-verification', (runId) => run('DELETE FROM hermes_verification_results WHERE run_id=?', [runId]), 'complete verified evidence'],
+  ]) {
+    const workspaceId = `m3a-contradictory-${suffix}`;
+    workspace(workspaceId);
+    const result = await runHermesWorkflow(task(workspaceId));
+    deleteEvaluationForTest(result.evaluationId);
+    mutate(result.runId);
+    assert.throws(() => evaluateTerminalOutcome(result.runId), new RegExp(message), suffix);
+  }
+});
+
 test('correction authorization and insertion are atomic against authority changes', async () => {
   workspace('m3a-auth-race'); const result = await runHermesWorkflow(task('m3a-auth-race'));
   const admin = principal('m3a-auth-race');
@@ -224,4 +244,24 @@ test('correction authorization and insertion are atomic against authority change
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { reason: 'race', sourceEvidence: 'evidence' }), /not authorized/);
   assert.equal(all('SELECT * FROM hermes_outcome_corrections WHERE evaluation_id=?', [result.evaluationId]).length, 0);
   assert.equal(store.getOutcomeEvaluation(result.evaluationId).id, result.evaluationId);
+});
+
+test('correction and source-event insertion audit once and revalidate authority without a second decision write', async () => {
+  for (const [suffix, append, table] of [
+    ['correction', (admin, result) => appendOutcomeCorrection(admin, result.evaluationId, { reason: 'race', sourceEvidence: 'evidence' }), 'hermes_outcome_corrections'],
+    ['source-event', (admin, result) => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'second-audit-race', eventType: 'accepted', evidence: 'evidence' }), 'hermes_outcome_source_events'],
+  ]) {
+    const workspaceId = `m3a-second-audit-${suffix}`;
+    workspace(workspaceId);
+    const result = await runHermesWorkflow(task(workspaceId));
+    const admin = principal(workspaceId);
+    execSql(`CREATE TRIGGER disable_on_second_allowed_${suffix.replace('-', '_')} AFTER INSERT ON auth_decisions
+      WHEN NEW.allowed=1 AND NEW.principal_id='${admin.principalId}' AND
+        (SELECT COUNT(*) FROM auth_decisions WHERE allowed=1 AND principal_id=NEW.principal_id)=2
+      BEGIN UPDATE auth_principals SET status='disabled',disabled_at=${Date.now()} WHERE id=NEW.principal_id; END`);
+    append(admin, result);
+    assert.equal(all(`SELECT * FROM ${table} WHERE evaluation_id=?`, [result.evaluationId]).length, 1);
+    assert.equal(all('SELECT * FROM auth_decisions WHERE allowed=1 AND principal_id=?', [admin.principalId]).length, 1);
+    assert.equal(get('SELECT status FROM auth_principals WHERE id=?', [admin.principalId]).status, 'active');
+  }
 });

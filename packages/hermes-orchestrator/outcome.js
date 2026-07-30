@@ -7,7 +7,7 @@ import { transaction, get } from '../task-engine/db.js';
 import { getTask } from '../task-engine/tasks.js';
 import { redactDeep, redactString } from './redaction.js';
 import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeComponents, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
-import { canReadEvaluation, canCorrectEvaluation, activeGrant, resolvePrincipal } from '../shared/authorization.js';
+import { canReadEvaluation, canCorrectEvaluation, hasCurrentWorkspacePermission, activeGrant, resolvePrincipal } from '../shared/authorization.js';
 
 export const OUTCOME_EVALUATION_VERSION = 'm3a-v1';
 export const OUTCOME_EVALUATOR_VERSION = 'hermes-outcome-evaluator-v1';
@@ -89,7 +89,7 @@ export function appendOutcomeCorrection(principal, evaluationId, { reason, sourc
   return transaction(() => {
     const evaluation = getOutcomeEvaluation(evaluationId);
     if (!readableEvaluation(evaluation)) throw new Error('outcome correction requires an intact evaluation');
-    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed || !canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
+    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
     if (!safeRequired(reason) || !safeRequired(sourceEvidence)) throw new Error('outcome correction requires reason and source evidence');
     const prior = getOutcomeCorrections(evaluationId);
     const head = prior.at(-1) || null;
@@ -100,6 +100,7 @@ export function appendOutcomeCorrection(principal, evaluationId, { reason, sourc
     const row = { id: id('hecorr'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
       version: prior.length + 1, supersedesCorrectionId: head?.id || null, reason, sourceEvidence,
       actorPrincipalId: principal.principalId, createdAt };
+    if (!hasCurrentWorkspacePermission(principal, evaluation.workspace_id, 'evaluation.correct')) throw new Error('outcome correction is not authorized');
     insertOutcomeCorrection(row); return safeCorrection(row);
   });
 }
@@ -109,12 +110,13 @@ export function appendOutcomeSourceEvent(principal, evaluationId, { idempotencyK
   return transaction(() => {
     const evaluation = getOutcomeEvaluation(evaluationId);
     if (!readableEvaluation(evaluation)) throw new Error('outcome source event requires an intact evaluation');
-    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed || !canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
+    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
     if (!EVENT_TYPES.has(eventType) || !safeRequired(evidence) || !safeEvidenceId(idempotencyKey)) throw new Error('outcome source event requires an allowed type, evidence, and idempotency key');
     if (getOutcomeSourceEvents(evaluationId).some((event) => event.idempotency_key === idempotencyKey)) throw new Error('outcome source event already recorded');
     const createdAt = now();
     if (Date.parse(createdAt) < Date.parse(evaluation.created_at)) throw new Error('outcome source event requires a valid timestamp');
     const row = { id: id('heevt'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id, eventType, evidence, actorPrincipalId: principal.principalId, idempotencyKey, createdAt };
+    if (!hasCurrentWorkspacePermission(principal, evaluation.workspace_id, 'evaluation.correct')) throw new Error('outcome source event is not authorized');
     insertOutcomeSourceEvent(row);
     return safeEvent(row);
   });
@@ -183,6 +185,15 @@ function validateEvidence(evidence) {
   }
   if (steps[0].name !== 'hermes.received' || steps[1]?.name !== 'hermes.normalized' || steps.at(-1).name !== (run.status === 'completed' ? 'hermes.completed' : 'hermes.failed')) throw new Error('outcome evaluation refuses invalid workflow step order');
   validateLinks({ run, routings, policies, verifications, invocations });
+  if (run.status === 'completed' && run.outcome === 'verified') {
+    const requiredSteps = ['hermes.classified','hermes.policy_evaluated','hermes.routed','hermes.executed','hermes.verified','hermes.completed'];
+    const finalInvocation = invocations.at(-1);
+    if (routings.length !== 1 || policies.length !== 1 || verifications.length !== 1 || !invocations.length ||
+      requiredSteps.some((name) => !stepNames.has(name)) || policies[0].decision !== 'allow' || policies[0].requires_approval !== 0 ||
+      verifications[0].passed !== 1 || finalInvocation.status !== 'completed' || finalInvocation.timed_out !== 0 || finalInvocation.cancelled !== 0) {
+      throw new Error('outcome evaluation requires complete verified evidence');
+    }
+  }
   canonicalClassification(evidence);
   assertSanitized({ run, steps, routings, policies, verifications, invocations });
 }
@@ -201,12 +212,13 @@ function validateLinks({ run, routings, policies, verifications, invocations }) 
         Object.keys(candidate).sort().join(',') !== 'enabled,provider' || !safeId(candidate.provider) || typeof candidate.enabled !== 'boolean') ||
       new Set(candidates.map((candidate) => candidate.provider)).size !== candidates.length ||
       !Array.isArray(capabilities) || !sameStrings(capabilities, classification.requiredCapabilities) ||
-      !capabilities.every(safeId) || !candidates.some((candidate) => candidate.provider === routing.selected_provider) ||
+      !capabilities.every(safeId) || !candidates.some((candidate) => candidate.provider === routing.selected_provider && candidate.enabled) ||
       !safeId(routing.selected_provider) || !safeId(routing.selected_agent) || !safeRequired(routing.rationale)) throw new Error('outcome evaluation refuses malformed routing evidence');
   }
   for (const policy of policies) {
     if (!safeId(policy.action_class) || !['allow','deny','requires_approval'].includes(policy.decision) ||
-      ![0,1].includes(policy.requires_approval) || !safeRequired(policy.reason)) throw new Error('outcome evaluation refuses malformed policy evidence');
+      ![0,1].includes(policy.requires_approval) || policy.requires_approval !== (policy.decision === 'requires_approval' ? 1 : 0) ||
+      !safeRequired(policy.reason)) throw new Error('outcome evaluation refuses malformed policy evidence');
   }
   for (const verification of verifications) {
     const checks = parsedJson(verification.checks);
@@ -220,7 +232,9 @@ function validateLinks({ run, routings, policies, verifications, invocations }) 
   const attempts = new Set();
   for (const invocation of invocations) {
     if (!safeId(invocation.provider) || !['mock', 'real'].includes(invocation.mode) || !['completed','failed','timeout','cancelled'].includes(invocation.status) ||
-      ![invocation.timed_out, invocation.cancelled].every((value) => value === 0 || value === 1)) throw new Error('outcome evaluation refuses malformed provider evidence');
+      ![invocation.timed_out, invocation.cancelled].every((value) => value === 0 || value === 1) ||
+      invocation.timed_out !== (invocation.status === 'timeout' ? 1 : 0) ||
+      invocation.cancelled !== (invocation.status === 'cancelled' ? 1 : 0)) throw new Error('outcome evaluation refuses malformed provider evidence');
     if (!Number.isSafeInteger(Number(invocation.attempt)) || Number(invocation.attempt) < 1) throw new Error('outcome evaluation refuses impossible retry count');
     if (attempts.has(Number(invocation.attempt))) throw new Error('outcome evaluation refuses duplicate provider attempts');
     attempts.add(Number(invocation.attempt));

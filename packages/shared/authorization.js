@@ -105,12 +105,22 @@ export function validateGrantChain(head) {
   return seen.size === rows.length;
 }
 export function requireWorkspacePermission(principal, workspaceId, permission, resource = {}) {
+  const resolved = resolveWorkspacePermission(principal, workspaceId, permission);
+  return decision(resolved.principal, resolved.workspaceId, permission, resolved.result);
+}
+
+export function hasCurrentWorkspacePermission(principal, workspaceId, permission) {
+  return resolveWorkspacePermission(principal, workspaceId, permission).result.allowed;
+}
+
+function resolveWorkspacePermission(principal, workspaceId, permission) {
   const current = currentPrincipal(principal);
-  if (!current || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, null, permission, deny('invalid_scope'));
-  const grant = activeGrant(current.principalId, workspaceId); if (!grant) return decision(current, null, permission, deny('grant_missing'));
+  if (!current || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return { principal: null, workspaceId: null, result: deny('invalid_scope') };
+  const grant = activeGrant(current.principalId, workspaceId);
+  if (!grant) return { principal: current, workspaceId: null, result: deny('grant_missing') };
   const permissions = JSON.parse(canonicalPermissions(grant.permissions));
   const allowedPermission = permissions.includes(permission) || (current.principalType !== 'service' && grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));
-  return decision(current, grant.workspace_id, permission, allowedPermission ? allow('granted') : deny('permission_denied'));
+  return { principal: current, workspaceId: grant.workspace_id, result: allowedPermission ? allow('granted') : deny('permission_denied') };
 }
 export const canReadTask = (p,w) => requireWorkspacePermission(p,w,'task.read');
 export const canCreateTask = (p,w) => requireWorkspacePermission(p,w,'task.create');
