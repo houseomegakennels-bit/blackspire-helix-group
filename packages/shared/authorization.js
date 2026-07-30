@@ -36,6 +36,9 @@ function validLifecycle(row) {
 function validGrantRow(grant) {
   if (!validAuthorityId(grant.id) || !validAuthorityId(grant.principal_id) || !validAuthorityId(grant.workspace_id) ||
     !validAuthorityId(grant.issued_by, { nullable: true }) || !validLifecycle(grant) || !['active', 'revoked', 'expired', 'superseded'].includes(grant.status)) return false;
+  if ((grant.status === 'active' && (grant.revoked_at !== null || (grant.expires_at !== null && grant.expires_at <= Date.now()))) ||
+    (grant.status === 'revoked' && grant.revoked_at === null) ||
+    (grant.status === 'expired' && (grant.expires_at === null || grant.expires_at > Date.now()))) return false;
   try { validateGrant({ ...grant, supersedesGrantId: grant.supersedes_grant_id }); } catch { return false; }
   return true;
 }
@@ -66,29 +69,35 @@ export function activeGrant(principalId, workspaceId) {
   if (rows.length !== 1) return null;
   const g = rows[0];
   if (!validGrantRow(g)) return null;
-  // An immutable successor makes this row stale regardless of the successor's lifecycle.
-  // Otherwise a corrupted successor marked non-active could leave its older parent authorized.
-  if (get('SELECT id FROM auth_workspace_grants WHERE supersedes_grant_id=? LIMIT 1', [g.id])) return null;
   if (!validateGrantChain(g)) return null;
   return g;
 }
-// Versions are strictly increasing, but need not be contiguous: a revoked version may be retained
-// without an active successor. Cycles/cross-scope links are refused before a grant is usable.
+// Authority requires one complete, linear, contiguous graph for the principal/workspace. Every
+// persisted row (including non-active siblings and detached rows) is checked before permission use.
 export function validateGrantChain(head) {
-  const seen = new Set(); let current = head; let child = null; let priorVersion = Infinity;
-  while (current) {
-    if (!validGrantRow(current) || seen.has(current.id) || !Number.isInteger(current.version) || current.version < 1 || current.version >= priorVersion) return false;
-    const successors = all('SELECT * FROM auth_workspace_grants WHERE supersedes_grant_id=?', [current.id]);
-    // A head has no successor. Every ancestor has exactly the child already traversed;
-    // extra, cross-scope, or malformed children make the chain ambiguous.
-    if ((!child && successors.length) || (child && (successors.length !== 1 || successors[0].id !== child.id || !validGrantRow(successors[0])))) return false;
-    seen.add(current.id); priorVersion = Number(current.version);
-    if (!current.supersedes_grant_id) return true;
-    child = current;
-    current = get('SELECT * FROM auth_workspace_grants WHERE id=?', [current.supersedes_grant_id]);
-    if (!current || current.principal_id !== head.principal_id || current.workspace_id !== head.workspace_id) return false;
+  if (!head || !validGrantRow(head)) return false;
+  const rows = all('SELECT * FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=?', [head.principal_id, head.workspace_id]);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  if (!rows.length || byId.size !== rows.length || !byId.has(head.id) || rows.some((row) => !validGrantRow(row))) return false;
+  const children = new Map(rows.map((row) => [row.id, []]));
+  for (const row of rows) {
+    if (!row.supersedes_grant_id) continue;
+    const parent = byId.get(row.supersedes_grant_id);
+    if (!parent || row.version !== parent.version + 1) return false;
+    children.get(parent.id).push(row);
   }
-  return false;
+  // Check globally, so a cross-principal/workspace sibling cannot be ignored.
+  for (const row of rows) {
+    const allChildren = all('SELECT * FROM auth_workspace_grants WHERE supersedes_grant_id=?', [row.id]);
+    if (allChildren.some((child) => child.principal_id !== head.principal_id || child.workspace_id !== head.workspace_id || !validGrantRow(child))) return false;
+    if (allChildren.length !== children.get(row.id).length || allChildren.length > 1) return false;
+  }
+  const roots = rows.filter((row) => !row.supersedes_grant_id);
+  const terminals = rows.filter((row) => children.get(row.id).length === 0);
+  if (roots.length !== 1 || terminals.length !== 1 || roots[0].version !== 1 || terminals[0].id !== head.id || head.status !== 'active') return false;
+  const seen = new Set(); let current = roots[0];
+  while (current) { if (seen.has(current.id)) return false; seen.add(current.id); current = children.get(current.id)[0] || null; }
+  return seen.size === rows.length;
 }
 export function requireWorkspacePermission(principal, workspaceId, permission, resource = {}) {
   if (!principal || !resolvedPrincipals.has(principal) || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return decision(null, null, permission, deny('invalid_scope'));

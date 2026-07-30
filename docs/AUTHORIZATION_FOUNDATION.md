@@ -8,7 +8,7 @@ Principals carry lifecycle state and a monotonically positive security version. 
 
 Workspace is the current project boundary. Roles are `admin`, `operator`, `viewer`, and `service`; all permissions are the fixed, sorted, duplicate-free `AUTHZ_PERMISSIONS` set. There are no wildcard permissions. Admin/operator/viewer may receive their role matrix; service receives only explicitly listed permissions.
 
-Grants are immutable versions scoped to one principal and workspace. A superseding version must reference an older grant in the same scope; missing parents, cycles, cross-scope links, duplicate versions, and multiple active heads fail closed. Revoked/expired grants are unusable; a later correctly chained version is the explicit re-grant flow.
+Grants are immutable, contiguous versions scoped to one principal and workspace. Authorization validates the entire persisted scope graph: it must have one root, one active terminal head, and exactly one same-scope successor at every nonterminal node. Missing parents, detached components, cycles, branches, cross-scope links, duplicate versions, and multiple active heads fail closed. Revoked/expired grants are unusable; a later correctly chained version is the explicit re-grant flow.
 
 ## Provisioning
 
