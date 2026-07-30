@@ -1,0 +1,351 @@
+// Hermes M3B: deterministic, append-only verified scorecards derived only from intact M3A evidence.
+// No routing, provider execution, approval, memory-promotion, or production behavior is tested
+// because none is permitted in this phase - and several tests below exist specifically to prove
+// that deriving a scorecard changes none of those tables.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-hermes-m3b-'));
+process.env.BLACKSPIRE_DB_PATH = path.join(root, 'm3b.sqlite');
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
+const { createUnifiedInput } = await import('../packages/unified-input/unified.js');
+const { getTask } = await import('../packages/task-engine/tasks.js');
+const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
+const store = await import('../packages/hermes-orchestrator/store.js');
+const { run, get, all, execSql } = await import('../packages/task-engine/db.js');
+const authz = await import('../packages/shared/authorization.js');
+const { appendOutcomeCorrection, appendOutcomeSourceEvent } = await import('../packages/hermes-orchestrator/outcome.js');
+const { canonicalJson, digest } = await import('../packages/shared/canonical.js');
+const { deriveVerifiedScorecards, readVerifiedScorecard, confidenceBand, SCORECARD_VERSION, SCORECARD_DERIVATION_VERSION, UNKNOWN_DIMENSION } = await import('../packages/hermes-orchestrator/scorecard.js');
+
+const authzNow = Date.now();
+function principal(workspaceId, permissions = ['evaluation.read', 'evaluation.correct']) {
+  const suffix = `${workspaceId}-${permissions.join('-')}`;
+  const principalId = `m3b-admin-${suffix}`; const grantId = `m3b-grant-${suffix}`;
+  run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', [principalId, 'admin', principalId, 'bearer', null, 'active', authzNow, null, null, null, 1, authzNow]);
+  run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [grantId, principalId, workspaceId, 'viewer', JSON.stringify([...permissions].sort()), 'active', 1, null, authzNow, null, null, 'test', 1, authzNow]);
+  return authz.resolveAdminBearer(principalId);
+}
+function workspace(id) { upsertWorkspace({ id, name: id, githubRepository: 'local/m3b', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root }); }
+function task(id, text = 'report current status', nonce = '') { const i = createUnifiedInput({ channel: 'jarvis', actorId: 'm3b-user', channelKey: 'm3b-user', workspaceId: id, text, idempotencyKey: `m3b-${id}-${text}-${nonce}` }); return getTask(i.taskId); }
+function withoutImmutability(tables, callback) {
+  const placeholders = tables.map(() => '?').join(',');
+  const triggers = all(`SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name IN (${placeholders}) ORDER BY name`, tables);
+  for (const trigger of triggers) execSql(`DROP TRIGGER ${trigger.name}`);
+  try { return callback(); } finally { for (const trigger of triggers) execSql(trigger.sql); }
+}
+// Mints `count` verified mock evaluations in one workspace, all sharing a dimension group, and
+// returns them in the canonical (created_at, id) selection order.
+async function seedSources(workspaceId, count, text = 'report current status') {
+  workspace(workspaceId);
+  const evaluations = [];
+  for (let index = 0; index < count; index += 1) {
+    const result = await runHermesWorkflow(task(workspaceId, text, String(index)));
+    evaluations.push(store.getOutcomeEvaluation(result.evaluationId));
+  }
+  return evaluations.sort((left, right) => (`${left.created_at} ${left.id}` < `${right.created_at} ${right.id}` ? -1 : 1));
+}
+const cutoffAt = (evaluation) => ({ createdAt: evaluation.created_at, id: evaluation.id });
+const lastCutoff = (evaluations) => cutoffAt(evaluations.at(-1));
+
+// Tables whose byte-identical state proves derivation had no execution, approval, or memory effect.
+const SIDE_EFFECT_TABLES = [['hermes_routing_decisions', 'id'], ['hermes_policy_decisions', 'id'], ['hermes_provider_invocations', 'id'], ['hermes_provider_health', 'provider'], ['hermes_approvals', 'id'], ['approvals', 'id'], ['hermes_workflow_runs', 'id'], ['hermes_workflow_steps', 'id'], ['hermes_memory_candidates', 'id'], ['hermes_verification_results', 'id'], ['hermes_outcome_evaluations', 'id'], ['hermes_outcome_evaluation_components', 'id'], ['hermes_outcome_corrections', 'id'], ['hermes_outcome_source_events', 'id'], ['tasks', 'id']];
+function sideEffectSnapshot() {
+  const snapshot = Object.fromEntries(SIDE_EFFECT_TABLES.map(([table, key]) => [table, digest(all(`SELECT * FROM ${table} ORDER BY ${key}`))]));
+  // Promoted memory has no table yet, so "promoted memory is untouched" is proven by pinning the
+  // memory-candidate rows above (including status and promoted_at) and by proving derivation
+  // creates no new table, index, or trigger anywhere in the schema.
+  snapshot.__schema = digest(all('SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name,tbl_name'));
+  return snapshot;
+}
+
+test('derivation is deterministic: identical evidence reproduces byte-identical metrics and lineage digest', async () => {
+  const sources = await seedSources('m3b-deterministic', 6);
+  const reader = principal('m3b-deterministic');
+  const cutoff = lastCutoff(sources);
+  const [first] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-deterministic', cutoff });
+  assert.equal(first.source_evaluation_count, 6);
+  assert.equal(first.scorecard_version, SCORECARD_VERSION);
+  assert.equal(first.derivation_version, SCORECARD_DERIVATION_VERSION);
+  assert.match(first.lineage_digest, /^[a-f0-9]{64}$/);
+  // Replay over the same scope, cutoff, and version returns the stored snapshot and writes nothing.
+  const before = all('SELECT id FROM hermes_verified_scorecards').length;
+  const [replayed] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-deterministic', cutoff });
+  assert.equal(replayed.id, first.id, 'replay returns the existing snapshot');
+  assert.deepEqual(replayed, first, 'replay returns byte-identical content');
+  assert.equal(all('SELECT id FROM hermes_verified_scorecards').length, before, 'replay appends no second snapshot');
+  // Lineage is persisted in an explicit, gap-free seq order, and its digest covers that order.
+  const lineage = store.getVerifiedScorecardSources(first.id);
+  assert.deepEqual(lineage.map((row) => row.seq), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(lineage.map((row) => row.evaluation_id), sources.map((row) => row.id), 'lineage follows the canonical (created_at, id) order');
+  assert.deepEqual(lineage.map((row) => row.provenance_digest), sources.map((row) => row.provenance_digest));
+});
+
+test('source input order cannot change a scorecard: SQL selection order is the only authority', async () => {
+  const sources = await seedSources('m3b-order', 5);
+  const reader = principal('m3b-order');
+  const [derived] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-order', cutoff: lastCutoff(sources) });
+  // The service never accepts a caller-ordered source list; ordering comes from an explicit ORDER BY
+  // plus an explicit sort before hashing. Recomputing the lineage packet from the shuffled rows in
+  // canonical order must reproduce exactly the stored digest.
+  const shuffled = [...sources].reverse();
+  const reordered = [...shuffled].sort((left, right) => (`${left.created_at} ${left.id}` < `${right.created_at} ${right.id}` ? -1 : 1));
+  assert.deepEqual(reordered.map((row) => row.id), store.getVerifiedScorecardSources(derived.id).map((row) => row.evaluation_id));
+  assert.notDeepEqual(shuffled.map((row) => row.id), reordered.map((row) => row.id), 'the fixture really was shuffled');
+  assert.equal(digest(reordered.map((row) => row.id)), digest(store.getVerifiedScorecardSources(derived.id).map((row) => row.evaluation_id)));
+});
+
+test('confidence bands are exact at 4, 5, 19, and 20 intact sources and authorize nothing', async () => {
+  const sources = await seedSources('m3b-bands', 20);
+  const reader = principal('m3b-bands');
+  for (const [count, expected] of [[4, 'insufficient'], [5, 'limited'], [19, 'limited'], [20, 'established']]) {
+    const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-bands', cutoff: cutoffAt(sources[count - 1]) });
+    assert.equal(card.source_evaluation_count, count, `cutoff selects exactly ${count} sources`);
+    assert.equal(card.confidence_band, expected, `${count} sources is ${expected}`);
+  }
+  assert.equal(confidenceBand(0), 'insufficient', 'no evidence is an explicit insufficient state, never a zero score');
+  assert.throws(() => confidenceBand(-1), /malformed source count/);
+  assert.throws(() => confidenceBand(1.5), /malformed source count/);
+  // Successive cutoffs over one scope append successors and never touch a predecessor.
+  const chain = all("SELECT id,scope_version,supersedes_scorecard_id FROM hermes_verified_scorecards WHERE workspace_id='m3b-bands' ORDER BY scope_version");
+  assert.deepEqual(chain.map((row) => row.scope_version), [1, 2, 3, 4]);
+  assert.equal(chain[0].supersedes_scorecard_id, null);
+  assert.deepEqual(chain.slice(1).map((row) => row.supersedes_scorecard_id), chain.slice(0, -1).map((row) => row.id));
+});
+
+test('the cutoff tuple is inclusive at its boundary and deterministic when timestamps are equal', async () => {
+  const sources = await seedSources('m3b-cutoff', 4);
+  const reader = principal('m3b-cutoff');
+  const [inclusive] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-cutoff', cutoff: cutoffAt(sources[2]) });
+  assert.equal(inclusive.source_evaluation_count, 3, 'the boundary evaluation is included');
+  assert.deepEqual(store.getVerifiedScorecardSources(inclusive.id).map((row) => row.evaluation_id), sources.slice(0, 3).map((row) => row.id));
+  assert.ok(!store.getVerifiedScorecardSources(inclusive.id).some((row) => row.evaluation_id === sources[3].id), 'the next evaluation is excluded');
+  // Force every source onto one timestamp so only the id tiebreak can order and cut them. Rewriting
+  // created_at breaks each evaluation's provenance digest, so this must fail closed rather than
+  // silently derive from tampered evidence.
+  withoutImmutability(['hermes_outcome_evaluations'], () => {
+    for (const source of sources) run('UPDATE hermes_outcome_evaluations SET created_at=? WHERE id=?', ['2026-01-01T00:00:00.000Z', source.id]);
+  });
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-cutoff', cutoff: { createdAt: '2026-01-01T00:00:00.000Z', id: sources[3].id } }), /does not revalidate/);
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-cutoff', cutoff: { createdAt: '2999-01-01T00:00:00.000Z', id: sources[0].id } }), /future cutoff/);
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-cutoff', cutoff: { createdAt: 'not-a-timestamp', id: sources[0].id } }), /canonical cutoff tuple/);
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-cutoff', cutoff: cutoffAt(sources[0]), scorecardVersion: 'unreviewed-v2' }), /canonical scorecard version/);
+});
+
+test('unknown acceptance, rollback, and stability are first-class counts, never zero and never success', async () => {
+  const sources = await seedSources('m3b-unknown', 5);
+  const reader = principal('m3b-unknown');
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-unknown', cutoff: lastCutoff(sources) });
+  // Milestone 3A records no acceptance, rollback, or stability determination, so every source is
+  // unknown on all three axes. Unknown must not be readable as a zero rate or as a success.
+  assert.equal(card.unknown_acceptance_count, 5);
+  assert.equal(card.unknown_rollback_count, 5);
+  assert.equal(card.unknown_stability_count, 5);
+  assert.equal(card.accepted_count, 0);
+  assert.equal(card.rollback_count, 0);
+  assert.equal(card.acceptance_denominator, 0, 'an unknown acceptance yields no derivable ratio');
+  assert.equal(card.acceptance_numerator, 0);
+  assert.equal(card.positive_eligible_count, 5);
+  assert.equal(card.verified_success_numerator, 5);
+  assert.equal(card.verified_success_denominator, 5);
+  // Every stored metric is an exact integer; no ratio is stored as a float.
+  for (const [column, value] of Object.entries(card)) {
+    if (/_count$|_total$|_numerator$|_denominator$|^known_/.test(column)) assert.ok(Number.isInteger(value), `${column} is an exact integer`);
+  }
+});
+
+test('recorded acceptance evidence is counted exactly and changes the derived content at the same identity', async () => {
+  const sources = await seedSources('m3b-acceptance', 5);
+  const reader = principal('m3b-acceptance');
+  const cutoff = lastCutoff(sources);
+  const [before] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-acceptance', cutoff });
+  assert.equal(before.acceptance_denominator, 0);
+  appendOutcomeSourceEvent(reader, sources[0].id, { idempotencyKey: 'm3b-accept-1', eventType: 'accepted', evidence: 'operator confirmed the change' });
+  appendOutcomeSourceEvent(reader, sources[1].id, { idempotencyKey: 'm3b-accept-2', eventType: 'rejected', evidence: 'operator rejected the change' });
+  appendOutcomeSourceEvent(reader, sources[2].id, { idempotencyKey: 'm3b-accept-3', eventType: 'stability_confirmed', evidence: 'stable after follow up' });
+  // The identity (scope, cutoff, version) is unchanged but the underlying evidence is not, so the
+  // stored snapshot and current evidence now disagree. That is an integrity error, never a silent
+  // overwrite of an immutable snapshot and never a silently stale read.
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-acceptance', cutoff }), /identity conflicts with stored derived content/);
+  // A later cutoff is a different identity, so it derives cleanly as a successor and shows the
+  // newly recorded evidence with unknown counts reduced by exactly the sources now determined.
+  const extra = await seedSources('m3b-acceptance', 1, 'write documentation summary');
+  const [after] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-acceptance', cutoff: cutoffAt(extra.at(-1)) }).filter((card) => card.source_evaluation_count === 5);
+  assert.equal(after.accepted_count, 1);
+  assert.equal(after.rejected_count, 1);
+  assert.equal(after.stability_confirmed_count, 1);
+  assert.equal(after.acceptance_denominator, 2, 'only sources with acceptance evidence enter the denominator');
+  assert.equal(after.acceptance_numerator, 1);
+  assert.equal(after.unknown_acceptance_count, 3, 'the three undetermined sources stay unknown');
+  assert.equal(after.unknown_stability_count, 4);
+  assert.equal(after.supersedes_scorecard_id, before.id, 'the successor links to its predecessor');
+  assert.deepEqual(store.getVerifiedScorecard(before.id), before, 'the predecessor is byte-identical after a successor exists');
+});
+
+test('scorecards are grouped only by canonical workspace, provider, agent, capability, and classification', async () => {
+  const verified = await seedSources('m3b-groups', 3, 'report current status');
+  const documented = await seedSources('m3b-groups', 2, 'write documentation summary');
+  const reader = principal('m3b-groups');
+  const ordered = [...verified, ...documented].sort((left, right) => (`${left.created_at} ${left.id}` < `${right.created_at} ${right.id}` ? -1 : 1));
+  const cards = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-groups', cutoff: cutoffAt(ordered.at(-1)) });
+  assert.ok(cards.length >= 2, 'distinct classifications derive distinct scorecards');
+  assert.equal(cards.reduce((sum, card) => sum + card.source_evaluation_count, 0), 5, 'every intact source lands in exactly one group');
+  for (const card of cards) {
+    assert.equal(card.workspace_id, 'm3b-groups');
+    for (const column of ['dimension_provider_id', 'dimension_agent_id', 'dimension_capability', 'dimension_classification']) {
+      assert.equal(typeof card[column], 'string');
+      assert.notEqual(card[column], '', `${column} is never an empty string`);
+      assert.notEqual(card[column], null, `${column} is never NULL, so a UNIQUE identity cannot be defeated`);
+    }
+    assert.doesNotMatch(card.dimension_classification, /requiredCapabilities/, 'capabilities are their own dimension');
+  }
+  // Group output order is a total order over the canonical dimension key, not source arrival order.
+  const keys = cards.map((card) => canonicalJson({ providerId: card.dimension_provider_id, agentId: card.dimension_agent_id, capability: card.dimension_capability, classification: card.dimension_classification }));
+  assert.deepEqual(keys, [...keys].sort(), 'groups are emitted in canonical order');
+});
+
+test('workspace isolation: sources, reads, and authorization all derive scope from stored evidence', async () => {
+  const alpha = await seedSources('m3b-scope-a', 5);
+  await seedSources('m3b-scope-b', 5);
+  const alphaReader = principal('m3b-scope-a');
+  const betaReader = principal('m3b-scope-b');
+  const decisionsBefore = all("SELECT id FROM auth_decisions WHERE workspace_id='m3b-scope-a'").length;
+  const [card] = deriveVerifiedScorecards(alphaReader, { workspaceId: 'm3b-scope-a', cutoff: lastCutoff(alpha) });
+  assert.equal(card.source_evaluation_count, 5, 'another workspace\'s evidence never enters the snapshot');
+  assert.ok(store.getVerifiedScorecardSources(card.id).every((row) => row.workspace_id === 'm3b-scope-a'));
+  // One authorization decision per derivation, scoped to the derived workspace - not one per source.
+  assert.equal(all("SELECT id FROM auth_decisions WHERE workspace_id='m3b-scope-a'").length, decisionsBefore + 1);
+  // A caller cannot derive, or read, outside a workspace they hold `evaluation.read` in.
+  assert.throws(() => deriveVerifiedScorecards(betaReader, { workspaceId: 'm3b-scope-a', cutoff: lastCutoff(alpha) }), /not authorized/);
+  assert.throws(() => deriveVerifiedScorecards({ principalId: alphaReader.principalId }, { workspaceId: 'm3b-scope-a', cutoff: lastCutoff(alpha) }), /not authorized/, 'a forged principal object is not trusted');
+  assert.equal(readVerifiedScorecard(betaReader, card.id), null, 'a cross-workspace read is refused');
+  assert.equal(readVerifiedScorecard({ principalId: alphaReader.principalId }, card.id), null, 'a forged principal cannot read');
+  assert.equal(readVerifiedScorecard(alphaReader, 'unknown-scorecard'), null, 'an unknown id is indistinguishable from a cross-workspace object');
+  const readable = readVerifiedScorecard(alphaReader, card.id);
+  assert.equal(readable.workspaceId, 'm3b-scope-a');
+  assert.equal(readable.confidenceBand, 'limited');
+  assert.equal(readable.sources.length, 5);
+  assert.equal(readable.metrics.source_evaluation_count, 5);
+});
+
+test('malformed, missing, corrected, and contradictory evidence fails the whole snapshot closed', async () => {
+  const reader = principal('m3b-closed');
+  const cases = [
+    ['a tampered provenance digest', (source) => run('UPDATE hermes_outcome_evaluations SET provenance_digest=? WHERE id=?', ['0'.repeat(64), source.id]), /does not revalidate/],
+    ['a whitespace-padded evaluation version', (source) => run('UPDATE hermes_outcome_evaluations SET evaluation_version=? WHERE id=?', ['m3a-v1 ', source.id]), /mixed source evaluation version/],
+    ['an unreviewed evaluation version', (source) => run('UPDATE hermes_outcome_evaluations SET evaluation_version=? WHERE id=?', ['m3a-v2', source.id]), /mixed source evaluation version/],
+    // A plausible, in-enum forgery must fail on the provenance digest, not merely on shape checks.
+    ['a forged learning eligibility', (source) => run('UPDATE hermes_outcome_evaluations SET learning_eligibility=? WHERE id=?', ['negative_factual', source.id]), /does not revalidate/],
+    ['an out-of-enum learning eligibility', (source) => run('UPDATE hermes_outcome_evaluations SET learning_eligibility=? WHERE id=?', ['fabricated_positive', source.id]), /does not revalidate/],
+    ['a malformed classification dimension', (source) => run('UPDATE hermes_outcome_evaluations SET classification=? WHERE id=?', ['{}', source.id]), /does not revalidate/],
+    // Planted child evidence belonging to another workspace must fail the whole snapshot rather
+    // than contribute a count. (Reassigning the parent row's own workspace_id is not tested here:
+    // that removes it from the query scope entirely, the same undetectable class as deletion below.)
+    ['cross-workspace planted source-event evidence', (source) => run('INSERT INTO hermes_outcome_source_events(id,evaluation_id,workspace_id,run_id,event_type,evidence,actor_principal_id,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)', [`planted-${source.id}`, source.id, 'm3b-elsewhere', source.run_id, 'accepted', 'planted evidence', 'm3b-planted-actor', `planted-key-${source.id}`, source.created_at]), /does not revalidate/],
+    ['a deleted source', (source) => { run('DELETE FROM hermes_outcome_evaluation_components WHERE evaluation_id=?', [source.id]); run('DELETE FROM hermes_outcome_evaluations WHERE id=?', [source.id]); }, /does not revalidate|refuses/],
+  ];
+  for (const [index, [label, mutate, message]] of cases.entries()) {
+    const workspaceId = `m3b-closed-${index}`;
+    const sources = await seedSources(workspaceId, 3);
+    const scoped = principal(workspaceId);
+    const target = sources[1];
+    withoutImmutability(['hermes_outcome_evaluations', 'hermes_outcome_evaluation_components'], () => mutate(target));
+    const cutoff = lastCutoff(sources);
+    if (label === 'a deleted source') {
+      // Pinned limitation, not a silent skip we endorse: selection is "every evaluation in scope",
+      // so with no independent manifest of what should exist, a row physically removed from the
+      // database is indistinguishable from one that was never written. Deletion is impossible
+      // through the application - it requires dropping the immutability triggers, as this fixture
+      // does - and the snapshot never claims a source count including evidence that is gone.
+      const [card] = deriveVerifiedScorecards(scoped, { workspaceId, cutoff });
+      assert.equal(card.source_evaluation_count, 2, `${label} is never counted`);
+      assert.ok(!store.getVerifiedScorecardSources(card.id).some((row) => row.evaluation_id === target.id), `${label} is absent from lineage`);
+      continue;
+    }
+    assert.throws(() => deriveVerifiedScorecards(scoped, { workspaceId, cutoff }), message, label);
+    assert.equal(all('SELECT id FROM hermes_verified_scorecards WHERE workspace_id=?', [workspaceId]).length, 0, `${label} writes no partial snapshot`);
+  }
+  // A corrected evaluation is disputed evidence and fails closed rather than being aggregated.
+  const corrected = await seedSources('m3b-corrected', 3);
+  const correctedReader = principal('m3b-corrected');
+  appendOutcomeCorrection(correctedReader, corrected[1].id, { reason: 'operator disputed the recorded outcome', sourceEvidence: 'follow-up review' });
+  assert.throws(() => deriveVerifiedScorecards(correctedReader, { workspaceId: 'm3b-corrected', cutoff: lastCutoff(corrected) }), /corrected source evaluation/);
+  assert.equal(all("SELECT id FROM hermes_verified_scorecards WHERE workspace_id='m3b-corrected'").length, 0, 'a corrected source writes no partial snapshot');
+  assert.ok(reader, 'the closed-path fixture principal resolved');
+});
+
+test('canonical Phase 3B snapshot and lineage tables reject update and delete', async () => {
+  const sources = await seedSources('m3b-immutable', 5);
+  const reader = principal('m3b-immutable');
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-immutable', cutoff: lastCutoff(sources) });
+  const lineage = store.getVerifiedScorecardSources(card.id);
+  assert.throws(() => run('UPDATE hermes_verified_scorecards SET confidence_band=? WHERE id=?', ['established', card.id]), /immutable verified scorecard/);
+  assert.throws(() => run('DELETE FROM hermes_verified_scorecards WHERE id=?', [card.id]), /immutable verified scorecard/);
+  assert.throws(() => run('UPDATE hermes_verified_scorecard_sources SET seq=? WHERE id=?', [99, lineage[0].id]), /immutable verified scorecard source/);
+  assert.throws(() => run('DELETE FROM hermes_verified_scorecard_sources WHERE id=?', [lineage[0].id]), /immutable verified scorecard source/);
+});
+
+test('a stored snapshot whose persisted content no longer matches its digest is unreadable', async () => {
+  const sources = await seedSources('m3b-tamper', 5);
+  const reader = principal('m3b-tamper');
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tamper', cutoff: lastCutoff(sources) });
+  assert.ok(readVerifiedScorecard(reader, card.id), 'the intact snapshot reads');
+  for (const [label, mutate] of [
+    ['an inflated positive count', () => run('UPDATE hermes_verified_scorecards SET positive_eligible_count=? WHERE id=?', [99, card.id])],
+    ['a promoted confidence band', () => run('UPDATE hermes_verified_scorecards SET confidence_band=? WHERE id=?', ['established', card.id])],
+    ['a truncated lineage', () => run('DELETE FROM hermes_verified_scorecard_sources WHERE scorecard_id=? AND seq=?', [card.id, 5])],
+    ['a reordered lineage', () => run('UPDATE hermes_verified_scorecard_sources SET seq=? WHERE scorecard_id=? AND seq=?', [7, card.id, 1])],
+  ]) {
+    const original = { card: get('SELECT * FROM hermes_verified_scorecards WHERE id=?', [card.id]), sources: store.getVerifiedScorecardSources(card.id) };
+    withoutImmutability(['hermes_verified_scorecards', 'hermes_verified_scorecard_sources'], () => {
+      mutate();
+      assert.equal(readVerifiedScorecard(reader, card.id), null, `${label} makes the snapshot unreadable`);
+      run('DELETE FROM hermes_verified_scorecards WHERE id=?', [card.id]);
+      run('DELETE FROM hermes_verified_scorecard_sources WHERE scorecard_id=?', [card.id]);
+      const columns = Object.keys(original.card);
+      run(`INSERT INTO hermes_verified_scorecards(${columns.join(',')}) VALUES(${columns.map(() => '?').join(',')})`, columns.map((column) => original.card[column]));
+      for (const source of original.sources) {
+        const sourceColumns = Object.keys(source);
+        run(`INSERT INTO hermes_verified_scorecard_sources(${sourceColumns.join(',')}) VALUES(${sourceColumns.map(() => '?').join(',')})`, sourceColumns.map((column) => source[column]));
+      }
+    });
+    assert.ok(readVerifiedScorecard(reader, card.id), `${label} fixture restored`);
+  }
+});
+
+test('deriving a scorecard leaves every routing, provider, approval, workflow, and memory table byte-identical', async () => {
+  const sources = await seedSources('m3b-inert', 6);
+  const reader = principal('m3b-inert');
+  const before = sideEffectSnapshot();
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-inert', cutoff: lastCutoff(sources) });
+  const afterDerive = sideEffectSnapshot();
+  assert.deepEqual(afterDerive, before, 'a successful derivation changes no execution, approval, or memory state');
+  readVerifiedScorecard(reader, card.id);
+  assert.deepEqual(sideEffectSnapshot(), before, 'a read changes nothing either');
+  // A refused derivation must also leave everything untouched, including the scorecard tables.
+  const scorecardsBefore = digest(all('SELECT * FROM hermes_verified_scorecards ORDER BY id'));
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-inert', cutoff: { createdAt: '2999-01-01T00:00:00.000Z', id: sources[0].id } }), /future cutoff/);
+  assert.deepEqual(sideEffectSnapshot(), before, 'a refused derivation changes no execution, approval, or memory state');
+  assert.equal(digest(all('SELECT * FROM hermes_verified_scorecards ORDER BY id')), scorecardsBefore, 'a refused derivation writes no snapshot');
+  // Memory candidates specifically remain pending and unpromoted: 3B promotes nothing.
+  for (const candidate of all('SELECT status,promoted_at FROM hermes_memory_candidates')) {
+    assert.equal(candidate.status, 'pending');
+    assert.equal(candidate.promoted_at, null);
+  }
+});
+
+test('the scorecard module imports no router, executor, provider, health, or memory surface', () => {
+  const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/scorecard.js', import.meta.url), 'utf8');
+  const imports = source.split('\n').filter((line) => line.startsWith('import '));
+  for (const forbidden of ['./route.js', './execute.js', './memory.js', './registries.js', './health.js', './orchestrator.js', './approvals.js', './adapters/']) {
+    assert.ok(!imports.some((line) => line.includes(forbidden)), `scorecard.js must not import ${forbidden}`);
+  }
+  assert.doesNotMatch(source, /routeTask|runHermesWorkflow|upsertProviderHealth|insertMemoryCandidate|promote/i, 'no routing, execution, provider-health, or memory-promotion call exists');
+  assert.doesNotMatch(source, /BLACKSPIRE_RUNTIME_MODE|BLACKSPIRE_GATE4|process\.env/, 'the derivation reads no environment flag and cannot be switched into another mode');
+  assert.equal(UNKNOWN_DIMENSION, '*', 'the unknown sentinel stays outside the safe-id character set');
+});

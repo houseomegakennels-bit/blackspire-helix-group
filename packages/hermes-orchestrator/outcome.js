@@ -1,7 +1,7 @@
 // Hermes Milestone 3A: verified outcome scoring and immutable provenance.
 // This service is internal-only. It produces factual, append-only evaluations after a terminal
 // run; it never changes routing, policy, memory, provider state, or task state.
-import crypto from 'node:crypto';
+import { canonicalJson, digest } from '../shared/canonical.js';
 import { id, now } from '../shared/util.js';
 import { transaction, get, all } from '../task-engine/db.js';
 import { getTask } from '../task-engine/tasks.js';
@@ -531,6 +531,12 @@ function aggregateUsage(invocations) {
     }, 0) : null;
   return { inputTokens: total('input_tokens'), outputTokens: total('output_tokens'), costCents: total('cost_cents') };
 }
+// Milestone 3B derives scorecards only from intact evidence, and "intact" must have exactly one
+// definition in this codebase. This is that definition, exported unchanged: full shape, provenance
+// digest, correction-chain, and source-event revalidation against live evidence. It deliberately
+// performs no authorization - callers scope on the returned row's workspace, never on their own
+// input - and it never writes.
+export function evaluationIsIntact(evaluation) { return readableEvaluation(evaluation); }
 function readableEvaluation(evaluation) {
   if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION || !evaluationShapeValid(evaluation) || !provenanceMatches(evaluation)) return false;
   const validationEpoch = Date.now();
@@ -599,8 +605,6 @@ function latest(rows) { return rows.length ? rows[rows.length - 1] : null; }
 function durationMs(start, end) { const duration = Date.parse(end) - Date.parse(start); return canonicalTimestamp(start) && canonicalTimestamp(end) && Number.isSafeInteger(duration) && duration >= 0 ? duration : null; }
 function failureCategory(run, verification, invocations) { if (run.status === 'blocked') return 'blocked'; if (run.status === 'cancelled' || invocations.some((row) => row.cancelled)) return 'cancelled'; if (invocations.some((row) => row.timed_out)) return 'timeout'; if (verification && !(verification.passed === 1 || verification.passed === true)) return 'verification_failed'; return run.outcome || 'unknown'; }
 function safeJson(value) { try { return JSON.stringify(redactDeep(JSON.parse(value || 'null'))); } catch { return JSON.stringify(redactDeep(value)); } }
-function digest(value) { return crypto.createHash('sha256').update(canonicalJson(value)).digest('hex'); }
-function canonicalJson(value) { if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`; return JSON.stringify(value); }
 function canonicalTimestamp(value) {
   if (typeof value !== 'string') return false;
   const parsed = Date.parse(value);

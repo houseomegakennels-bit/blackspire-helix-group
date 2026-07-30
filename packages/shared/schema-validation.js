@@ -31,6 +31,10 @@ export const REQUIRED_SCHEMA = {
   hermes_outcome_corrections: ['id', 'evaluation_id', 'workspace_id', 'run_id', 'version', 'supersedes_correction_id', 'reason', 'source_evidence', 'actor_principal_id', 'created_at'],
   hermes_outcome_source_events: ['id', 'evaluation_id', 'workspace_id', 'run_id', 'event_type', 'evidence', 'actor_principal_id', 'idempotency_key', 'created_at'],
   hermes_outcome_evaluation_failures: ['id', 'run_id', 'workspace_id', 'category', 'remediation_state', 'detail', 'created_at'],
+  // Hermes Verified Scorecards (Milestone 3B). Additive append-only read model over intact 3A
+  // evidence; kept in sync with the schema-writer in scripts/migration-writer.js.
+  hermes_verified_scorecards: ['id', 'scorecard_version', 'derivation_version', 'workspace_id', 'dimension_provider_id', 'dimension_agent_id', 'dimension_capability', 'dimension_classification', 'cutoff_created_at', 'cutoff_evaluation_id', 'scope_version', 'supersedes_scorecard_id', 'source_evaluation_count', 'confidence_band', 'positive_eligible_count', 'negative_terminal_count', 'blocked_ineligible_count', 'accepted_count', 'rejected_count', 'partially_accepted_count', 'rollback_count', 'follow_up_verification_count', 'stability_confirmed_count', 'regression_linked_count', 'unknown_acceptance_count', 'unknown_rollback_count', 'unknown_stability_count', 'retry_total', 'timeout_count', 'cancellation_count', 'known_input_tokens', 'known_input_token_evaluations', 'known_output_tokens', 'known_output_token_evaluations', 'known_cost_cents', 'known_cost_evaluations', 'verified_success_numerator', 'verified_success_denominator', 'acceptance_numerator', 'acceptance_denominator', 'lineage_digest', 'content_digest', 'created_at'],
+  hermes_verified_scorecard_sources: ['id', 'scorecard_id', 'seq', 'evaluation_id', 'workspace_id', 'evaluation_created_at', 'provenance_digest', 'correction_head_id', 'correction_head_version', 'source_event_ids', 'created_at'],
 };
 
 export const REQUIRED_SCHEMA_OBJECTS = {
@@ -43,6 +47,11 @@ export const REQUIRED_SCHEMA_OBJECTS = {
     idx_hermes_outcome_corrections_parent_unique: { table: 'hermes_outcome_corrections', columns: ['supersedes_correction_id'] },
     idx_hermes_outcome_source_events_idempotency_unique: { table: 'hermes_outcome_source_events', columns: ['idempotency_key'] },
     idx_hermes_outcome_failures_run_unique: { table: 'hermes_outcome_evaluation_failures', columns: ['run_id'] },
+    idx_hermes_scorecards_identity_unique: { table: 'hermes_verified_scorecards', columns: ['workspace_id','scorecard_version','dimension_provider_id','dimension_agent_id','dimension_capability','dimension_classification','cutoff_created_at','cutoff_evaluation_id'] },
+    idx_hermes_scorecards_scope_version_unique: { table: 'hermes_verified_scorecards', columns: ['workspace_id','scorecard_version','dimension_provider_id','dimension_agent_id','dimension_capability','dimension_classification','scope_version'] },
+    idx_hermes_scorecards_parent_unique: { table: 'hermes_verified_scorecards', columns: ['supersedes_scorecard_id'] },
+    idx_hermes_scorecard_sources_seq_unique: { table: 'hermes_verified_scorecard_sources', columns: ['scorecard_id','seq'] },
+    idx_hermes_scorecard_sources_evaluation_unique: { table: 'hermes_verified_scorecard_sources', columns: ['scorecard_id','evaluation_id'] },
   },
   trigger: Object.fromEntries([
     ['trg_hermes_outcome_evaluations_immutable_update','hermes_outcome_evaluations','UPDATE','immutable outcome evaluation'],
@@ -55,6 +64,10 @@ export const REQUIRED_SCHEMA_OBJECTS = {
     ['trg_hermes_outcome_source_events_immutable_delete','hermes_outcome_source_events','DELETE','immutable outcome source event'],
     ['trg_hermes_outcome_failures_immutable_update','hermes_outcome_evaluation_failures','UPDATE','immutable outcome failure'],
     ['trg_hermes_outcome_failures_immutable_delete','hermes_outcome_evaluation_failures','DELETE','immutable outcome failure'],
+    ['trg_hermes_scorecards_immutable_update','hermes_verified_scorecards','UPDATE','immutable verified scorecard'],
+    ['trg_hermes_scorecards_immutable_delete','hermes_verified_scorecards','DELETE','immutable verified scorecard'],
+    ['trg_hermes_scorecard_sources_immutable_update','hermes_verified_scorecard_sources','UPDATE','immutable verified scorecard source'],
+    ['trg_hermes_scorecard_sources_immutable_delete','hermes_verified_scorecard_sources','DELETE','immutable verified scorecard source'],
   ].map(([name, table, operation, message]) => [name, {
     table,
     sql: `CREATE TRIGGER ${name} BEFORE ${operation} ON ${table} BEGIN SELECT RAISE(ABORT,'${message}'); END`,

@@ -179,3 +179,33 @@ export function insertOutcomeEvaluationFailure(row) {
     [row.id,row.runId,row.workspaceId || null,row.category,row.remediationState || 'open',redactString(row.detail || ''),row.createdAt]);
 }
 export const getOutcomeEvaluationFailure = (runId) => get(`SELECT * FROM hermes_outcome_evaluation_failures WHERE run_id=?`, [runId]);
+// Milestone 3B joins the agent dimension through the evaluation's own routing decision id, so the
+// dimension comes from the same immutable evidence the provenance digest already covers.
+export const getRoutingDecision = (routingDecisionId) => get(`SELECT * FROM hermes_routing_decisions WHERE id=?`, [routingDecisionId]);
+
+// --- Milestone 3B: verified scorecards ---
+// Snapshots and their lineage are append-only and database-enforced immutable. There are
+// deliberately no update or delete helpers: recalculation appends a successor instead.
+const SCORECARD_COLUMNS = ['id','scorecard_version','derivation_version','workspace_id','dimension_provider_id','dimension_agent_id','dimension_capability','dimension_classification','cutoff_created_at','cutoff_evaluation_id','scope_version','supersedes_scorecard_id','source_evaluation_count','confidence_band','positive_eligible_count','negative_terminal_count','blocked_ineligible_count','accepted_count','rejected_count','partially_accepted_count','rollback_count','follow_up_verification_count','stability_confirmed_count','regression_linked_count','unknown_acceptance_count','unknown_rollback_count','unknown_stability_count','retry_total','timeout_count','cancellation_count','known_input_tokens','known_input_token_evaluations','known_output_tokens','known_output_token_evaluations','known_cost_cents','known_cost_evaluations','verified_success_numerator','verified_success_denominator','acceptance_numerator','acceptance_denominator','lineage_digest','content_digest','created_at'];
+const SCORECARD_SOURCE_COLUMNS = ['id','scorecard_id','seq','evaluation_id','workspace_id','evaluation_created_at','provenance_digest','correction_head_id','correction_head_version','source_event_ids','created_at'];
+// The scope key selects one dimension series. It is the identity key minus the cutoff, so a later
+// cutoff over the same scope produces a successor rather than a conflicting row.
+const SCOPE_COLUMNS = ['workspace_id','scorecard_version','dimension_provider_id','dimension_agent_id','dimension_capability','dimension_classification'];
+const placeholders = (columns) => columns.map(() => '?').join(',');
+const scopeFilter = SCOPE_COLUMNS.map((column) => `${column}=?`).join(' AND ');
+const scopeValues = (scope) => SCOPE_COLUMNS.map((column) => scope[column]);
+
+// The caller owns the surrounding transaction so the snapshot and its complete ordered lineage
+// either both exist or neither does.
+export function insertVerifiedScorecard(row, sources) {
+  run(`INSERT INTO hermes_verified_scorecards(${SCORECARD_COLUMNS.join(',')}) VALUES(${placeholders(SCORECARD_COLUMNS)})`, SCORECARD_COLUMNS.map((column) => row[column]));
+  for (const source of sources) run(`INSERT INTO hermes_verified_scorecard_sources(${SCORECARD_SOURCE_COLUMNS.join(',')}) VALUES(${placeholders(SCORECARD_SOURCE_COLUMNS)})`, SCORECARD_SOURCE_COLUMNS.map((column) => source[column]));
+}
+export const getVerifiedScorecard = (scorecardId) => get(`SELECT * FROM hermes_verified_scorecards WHERE id=?`, [scorecardId]);
+// Lineage order is the persisted seq, never the insertion or planner order, so a replayed digest is
+// reproduced from storage exactly as it was derived.
+export const getVerifiedScorecardSources = (scorecardId) => all(`SELECT * FROM hermes_verified_scorecard_sources WHERE scorecard_id=? ORDER BY seq`, [scorecardId]);
+export const getVerifiedScorecardByIdentity = (scope, cutoffCreatedAt, cutoffEvaluationId) =>
+  get(`SELECT * FROM hermes_verified_scorecards WHERE ${scopeFilter} AND cutoff_created_at=? AND cutoff_evaluation_id=?`, [...scopeValues(scope), cutoffCreatedAt, cutoffEvaluationId]);
+export const getVerifiedScorecardScopeHead = (scope) =>
+  get(`SELECT * FROM hermes_verified_scorecards WHERE ${scopeFilter} ORDER BY scope_version DESC LIMIT 1`, scopeValues(scope));

@@ -21,6 +21,7 @@ import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
 import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
 import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/authorization.js';
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
+import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
 
 let emergencyStopMemory = false;
 const TEST_MODE = requireSafeTestMode();
@@ -102,6 +103,8 @@ async function route(req, res) {
     if (u.pathname === '/api/hermes/runtime' && req.method === 'GET') return json(res, 200, buildHermesRuntimeStatus());
     const evaluationMatch = u.pathname.match(/^\/api\/hermes\/evaluations\/([A-Za-z0-9._:-]{1,128})$/);
     if (evaluationMatch && req.method === 'GET') return outcomeEvaluationRoute(res, auth, evaluationMatch[1]);
+    const scorecardMatch = u.pathname.match(/^\/api\/hermes\/scorecards\/([A-Za-z0-9._:-]{1,128})$/);
+    if (scorecardMatch && req.method === 'GET') return verifiedScorecardRoute(res, auth, scorecardMatch[1]);
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: TEST_MODE.enabled ? [getWorkspace(TEST_MODE.workspaceId)] : listWorkspaces() });
     if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => !TEST_MODE.enabled || task.workspace_id === TEST_MODE.workspaceId) });
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
@@ -168,6 +171,18 @@ function outcomeEvaluationRoute(res, auth, evaluationId) {
   const evaluation = principal && readOutcomeEvaluation(principal, evaluationId);
   // Do not distinguish a guessed identifier from a cross-workspace object.
   return evaluation ? json(res, 200, { evaluation }) : json(res, 404, { error: 'evaluation not found' });
+}
+
+// Milestone 3B read surface. It is GET-only and reuses the evaluation principal binding and the
+// canonical `evaluation.read` permission unchanged: there is no scorecard-specific permission, no
+// caller-supplied workspace, and deliberately no route that derives or mutates a scorecard.
+function verifiedScorecardRoute(res, auth, scorecardId) {
+  const configuredPrincipal = configuredEvaluationAdminPrincipal();
+  const principal = auth.mode === 'bearer' ? configuredPrincipal : auth.mode === 'session' ? resolveBoundSession(auth.session) : null;
+  if (!configuredPrincipal || !principal || principal.principalId !== configuredPrincipal.principalId) return json(res, 403, { error: 'evaluation authorization unavailable' });
+  const scorecard = principal && readVerifiedScorecard(principal, scorecardId);
+  // Do not distinguish a guessed identifier from a cross-workspace object.
+  return scorecard ? json(res, 200, { scorecard }) : json(res, 404, { error: 'scorecard not found' });
 }
 
 async function login(req, res) {
