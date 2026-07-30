@@ -46,6 +46,16 @@ test('registry: every provider definition is valid and none is production-eligib
   for (const p of providerRegistry.list()) assert.ok(validateProviderDefinition(p));
 });
 
+test('registry: definitions and all nested policy arrays are immutable', () => {
+  const mock = providerRegistry.get('mock');
+  assert.equal(Object.isFrozen(mock), true);
+  assert.equal(Object.isFrozen(mock.modelIdentifiers), true);
+  assert.equal(Object.isFrozen(mock.retryPolicy), true);
+  assert.equal(Object.isFrozen(mock.usageLimits), true);
+  assert.throws(() => mock.modelIdentifiers.push('forged-model'));
+  assert.throws(() => { mock.usageLimits.maxCostCents = 99; });
+});
+
 test('provider disabled by default: requesting anthropic with no dev flags is BLOCKED (no mock fallback)', async () => {
   ws('m2'); const r = await runHermesWorkflow(realTask('m2-default-off'), { env: { ...process.env } });
   assert.equal(r.status, 'blocked');

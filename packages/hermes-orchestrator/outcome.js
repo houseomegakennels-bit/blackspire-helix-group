@@ -8,9 +8,9 @@ import { getTask } from '../task-engine/tasks.js';
 import { normalizeTask } from './normalize.js';
 import { redactDeep, redactString } from './redaction.js';
 import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeComponents, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
-import { canReadEvaluation, canCorrectEvaluation, hasCurrentWorkspacePermission, activeGrant, resolvePrincipal } from '../shared/authorization.js';
+import { canReadEvaluation, canCorrectEvaluation, activeGrant, hasCurrentWorkspacePermission } from '../shared/authorization.js';
 import { canonicalPermissions } from '../shared/authz-schema.js';
-import { providerRegistry } from './registries.js';
+import { capabilityRegistry, providerRegistry, agentRegistry } from './registries.js';
 
 export const OUTCOME_EVALUATION_VERSION = 'm3a-v1';
 export const OUTCOME_EVALUATOR_VERSION = 'hermes-outcome-evaluator-v1';
@@ -38,6 +38,8 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
     if (duration === null) throw new Error('outcome evaluation refuses malformed or negative duration');
     const retryCount = invocation ? Math.max(0, Number(invocation.attempt || 1) - 1) : null;
     const usage = aggregateUsage(invocations);
+    const runTimedOut = invocations.some((row) => row.timed_out === 1);
+    const runCancelled = run.status === 'cancelled' || invocations.some((row) => row.cancelled === 1);
     const payload = {
       evaluationVersion, userId: run.actor_id || null,
       // Projects do not yet have a canonical ID. In Phase 3A the workspace is the project boundary.
@@ -49,16 +51,16 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
       verifierConfidence: verification ? (verified ? 'deterministic_pass' : 'deterministic_fail') : 'unknown',
       acceptanceStatus: 'unavailable', retryCount, durationMs: duration,
       inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, costCents: usage.costCents,
-      timedOut: Boolean(invocation?.timed_out), cancelled: Boolean(invocation?.cancelled) || run.status === 'cancelled',
+      timedOut: runTimedOut, cancelled: runCancelled,
       rollbackEvidence: null, stabilityEvidence: null,
-      failureCategory: positive ? null : failureCategory(run, verification, invocation),
+      failureCategory: positive ? null : failureCategory(run, verification, invocations),
       learningEligibility: positive ? 'positive_eligible' : run.status === 'blocked' ? 'ineligible_blocked' : 'negative_factual',
       sourceEventStartSeq: steps[0].seq, sourceEventEndSeq: steps.at(-1).seq,
       evaluatorVersion: OUTCOME_EVALUATOR_VERSION, createdAt: now(),
     };
     payload.id = id('heval');
     if (!canonicalTimestamp(payload.createdAt) || Date.parse(payload.createdAt) < Date.parse(run.finished_at)) throw new Error('outcome evaluation refuses invalid evaluation timestamp');
-    const components = componentRows({ positive, verified, retryCount, duration, invocation, usage, run })
+    const components = componentRows({ positive, verified, retryCount, duration, hasInvocation: Boolean(invocation), runTimedOut, runCancelled, usage, run })
       .map((component) => ({ ...component, id: id('hecomp'), evaluationId: payload.id, createdAt: payload.createdAt }))
       .sort((left, right) => left.name.localeCompare(right.name));
     const packet = provenancePacket(evidence, payload, components);
@@ -145,7 +147,7 @@ function safeActor(value) { return typeof value === 'string' && value.length <= 
 function safeCorrection(row) { return { id: row.id, version: row.version, supersedesCorrectionId: row.supersedes_correction_id ?? row.supersedesCorrectionId ?? null, createdAt: row.created_at ?? row.createdAt }; }
 function safeEvent(row) { return { id: row.id, eventType: row.event_type ?? row.eventType, createdAt: row.created_at ?? row.createdAt }; }
 
-function componentRows({ positive, verified, retryCount, duration, invocation, usage, run }) {
+function componentRows({ positive, verified, retryCount, duration, hasInvocation, runTimedOut, runCancelled, usage, run }) {
   const known = (name, value, detail) => ({ name, value: String(value), status: 'known', detail });
   const unknown = (name) => ({ name, value: null, status: 'unknown', detail: 'not available from immutable Phase 3A evidence' });
   return [
@@ -154,8 +156,8 @@ function componentRows({ positive, verified, retryCount, duration, invocation, u
     known('verifier_confidence', verified ? 'deterministic_pass' : 'deterministic_fail', 'confidence class, not a probability'),
     retryCount === null ? unknown('retry_count') : known('retry_count', retryCount, 'provider invocation attempts minus one'),
     duration === null ? unknown('duration_ms') : known('duration_ms', duration, 'finished_at minus started_at'),
-    invocation ? known('timeout', Boolean(invocation.timed_out), 'provider invocation evidence') : unknown('timeout'),
-    invocation ? known('cancellation', Boolean(invocation.cancelled) || run.status === 'cancelled', 'provider/run evidence') : known('cancellation', run.status === 'cancelled', 'terminal run evidence'),
+    hasInvocation ? known('timeout', runTimedOut, 'all provider invocation evidence') : unknown('timeout'),
+    hasInvocation ? known('cancellation', runCancelled, 'all provider invocation and terminal run evidence') : known('cancellation', runCancelled, 'terminal run evidence'),
     usage.costCents == null ? unknown('cost_cents') : known('cost_cents', usage.costCents, 'sum across provider attempts'),
     unknown('user_acceptance'), unknown('rollback_evidence'), unknown('stability_evidence'),
     known('learning_eligibility', positive ? 'positive_eligible' : 'not_positive', 'does not affect routing in Phase 3A'),
@@ -199,15 +201,7 @@ function validateEvidence(evidence) {
   if (steps[0].name !== 'hermes.received' || steps[1]?.name !== 'hermes.normalized' || steps.at(-1).name !== (run.status === 'completed' ? 'hermes.completed' : 'hermes.failed')) throw new Error('outcome evaluation refuses invalid workflow step order');
   validateLinks({ run, routings, policies, verifications, invocations });
   validateCrossSourceEvidence({ run, steps, routings, policies, verifications, invocations });
-  if (run.status === 'completed' && run.outcome === 'verified') {
-    const requiredSteps = ['hermes.classified','hermes.policy_evaluated','hermes.routed','hermes.executed','hermes.verified','hermes.completed'];
-    const finalInvocation = invocations.at(-1);
-    if (routings.length !== 1 || policies.length !== 1 || verifications.length !== 1 || !invocations.length ||
-      requiredSteps.some((name) => !stepNames.has(name)) || policies[0].decision !== 'allow' || policies[0].requires_approval !== 0 ||
-      verifications[0].passed !== 1 || finalInvocation.status !== 'completed' || finalInvocation.timed_out !== 0 || finalInvocation.cancelled !== 0) {
-      throw new Error('outcome evaluation requires complete verified evidence');
-    }
-  }
+  validateTerminalMatrix({ run, steps, routings, policies, verifications, invocations });
   canonicalClassification(evidence);
   assertSanitized({ run, steps, routings, policies, verifications, invocations });
 }
@@ -226,7 +220,7 @@ function validateLinks({ run, routings, policies, verifications, invocations }) 
         Object.keys(candidate).sort().join(',') !== 'enabled,provider' || !safeId(candidate.provider) || typeof candidate.enabled !== 'boolean') ||
       new Set(candidates.map((candidate) => candidate.provider)).size !== candidates.length ||
       !Array.isArray(capabilities) || !sameStrings(capabilities, classification.requiredCapabilities) ||
-      !capabilities.every(safeId) || !candidates.some((candidate) => candidate.provider === routing.selected_provider && candidate.enabled) ||
+      !capabilities.every(safeId) || !candidates.some((candidate) => candidate.provider === routing.selected_provider) ||
       !safeId(routing.selected_provider) || !safeId(routing.selected_agent) || !safeRequired(routing.rationale)) throw new Error('outcome evaluation refuses malformed routing evidence');
   }
   for (const policy of policies) {
@@ -286,8 +280,11 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   const invocation = invocations.at(-1);
   const receivedStep = detail('hermes.received');
   const normalizedStep = detail('hermes.normalized');
-  if (!receivedStep || receivedStep.channel !== run.channel || !safeRequired(receivedStep.profile) ||
-    canonicalJson(normalizedStep) !== canonicalJson({ objective: run.objective })) throw new Error('outcome evaluation refuses contradictory canonical intake evidence');
+  if (!exactKeys(receivedStep, ['channel','profile']) || receivedStep.channel !== run.channel ||
+    !['development','test','production'].includes(receivedStep.profile) ||
+    canonicalJson(normalizedStep) !== canonicalJson({ objective: run.objective })) {
+    throw new Error('outcome evaluation refuses contradictory canonical intake or runtime profile evidence');
+  }
   const policyStep = detail('hermes.policy_evaluated');
   if (Boolean(policy) !== Boolean(policyStep) || (policy && canonicalJson(policyStep) !== canonicalJson({
     actionClass: policy.action_class, allowed: policy.decision === 'allow', requiresApproval: Boolean(policy.requires_approval),
@@ -297,6 +294,7 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   if (Boolean(routing) !== Boolean(routedStep) || (routing && canonicalJson(routedStep) !== canonicalJson({
     provider: routing.selected_provider, agent: routing.selected_agent, capabilities: parsedJson(routing.capabilities),
   }))) throw new Error('outcome evaluation refuses contradictory routing evidence');
+  if (routing) validateRegistryRouting(routing, receivedStep.profile);
   const verifiedStep = detail('hermes.verified');
   if (Boolean(verification) !== Boolean(verifiedStep) || (verification && canonicalJson(verifiedStep) !== canonicalJson({
     passed: Boolean(verification.passed), detail: verification.detail,
@@ -306,7 +304,8 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   const executedStep = detail('hermes.executed');
   if (invocation) {
     const expectedMode = invocation.status === 'completed' ? invocation.mode : invocation.status === 'cancelled' ? 'cancelled' : 'failed';
-    if (!executedStep || executedStep.provider !== invocation.provider || executedStep.executionMode !== expectedMode ||
+    if (!exactKeys(executedStep, ['provider','executionMode','ok','attempts','durationMs','timedOut','cancelled','artifactCount']) ||
+      executedStep.provider !== invocation.provider || executedStep.executionMode !== expectedMode ||
       executedStep.ok !== (invocation.status === 'completed') || executedStep.attempts !== invocation.attempt ||
       executedStep.durationMs !== invocation.duration_ms || executedStep.timedOut !== Boolean(invocation.timed_out) ||
       executedStep.cancelled !== Boolean(invocation.cancelled) || !Number.isSafeInteger(executedStep.artifactCount) || executedStep.artifactCount < 0) {
@@ -329,6 +328,152 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
     !rowsWithinStage(invocations, step('hermes.routed'), step('hermes.executed'), true) ||
     !rowsWithinStage(verifications, step('hermes.executed'), step('hermes.verified'))) {
     throw new Error('outcome evaluation refuses contradictory evidence chronology');
+  }
+}
+function validateTerminalMatrix({ run, steps, routings, policies, verifications, invocations }) {
+  if (policies.length > 1 || routings.length > 1 || verifications.length > 1) {
+    throw new Error('outcome evaluation refuses contradictory terminal evidence matrix cardinality');
+  }
+  const names = steps.map(({ name }) => name);
+  const finalInvocation = invocations.at(-1);
+  const base = ['hermes.received','hermes.normalized'];
+  const classified = [...base,'hermes.classified'];
+  const policy = [...classified,'hermes.policy_evaluated'];
+  const routed = [...policy,'hermes.routed'];
+  const failed = (prefix) => [...prefix,'hermes.failed'];
+  const executed = [...routed,'hermes.executed'];
+  const verified = [...executed,'hermes.verified'];
+  const completed = [...verified, ...(names.includes('hermes.memory_candidate_recorded') ? ['hermes.memory_candidate_recorded'] : []), 'hermes.completed'];
+  const expect = (sequence) => {
+    if (!sameStrings(names, sequence)) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+  };
+  const requirePolicy = (decision) => {
+    if (policies.length !== 1 || policies[0].decision !== decision ||
+      policies[0].requires_approval !== (decision === 'requires_approval' ? 1 : 0)) {
+      throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+    }
+  };
+  const requireRouting = () => {
+    if (routings.length !== 1) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+  };
+  const noSubordinates = () => {
+    if (policies.length || routings.length || verifications.length || invocations.length) {
+      throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+    }
+  };
+
+  switch (run.outcome) {
+    case 'emergency_stop':
+      if (run.status !== 'blocked') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(base)); noSubordinates(); break;
+    case 'policy_denied':
+      if (run.status !== 'blocked') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(policy)); requirePolicy('deny');
+      if (routings.length || verifications.length || invocations.length) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'blocked_pending_approval':
+      if (run.status !== 'blocked') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(policy)); requirePolicy('requires_approval');
+      if (routings.length || verifications.length || invocations.length) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'real_provider_blocked':
+      if (run.status !== 'blocked') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(policy)); requirePolicy('allow');
+      if (routings.length || verifications.length || invocations.length) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'approval_required':
+      if (run.status !== 'blocked') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(routed)); requirePolicy('allow'); requireRouting();
+      if (verifications.length || invocations.length) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'execution_blocked':
+      if (run.status !== 'failed') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(executed)); requirePolicy('allow'); requireRouting();
+      if (verifications.length || invocations.length) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'execution_failed':
+      if (run.status !== 'failed') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(executed)); requirePolicy('allow'); requireRouting();
+      if (verifications.length || !invocations.length || !['failed','timeout'].includes(finalInvocation.status)) throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'cancelled':
+      if (run.status !== 'cancelled') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(executed)); requirePolicy('allow'); requireRouting();
+      if (verifications.length || !invocations.length || finalInvocation.status !== 'cancelled') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'budget_exhausted':
+      if (run.status !== 'failed') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(executed)); requirePolicy('allow'); requireRouting();
+      if (verifications.length || !invocations.length || finalInvocation.status !== 'completed') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      break;
+    case 'verification_failed':
+      if (run.status !== 'failed') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(failed(verified)); requirePolicy('allow'); requireRouting();
+      if (verifications.length !== 1 || verifications[0].passed !== 0 || !invocations.length || finalInvocation.status !== 'completed') {
+        throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      }
+      break;
+    case 'verified':
+      if (run.status !== 'completed') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      expect(completed); requirePolicy('allow'); requireRouting();
+      if (verifications.length !== 1 || verifications[0].passed !== 1 || !invocations.length || finalInvocation.status !== 'completed') {
+        throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      }
+      break;
+    case 'error':
+      if (run.status !== 'failed') throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+      // A caught exception may terminate after any completed stage. Existing cross-source linkage,
+      // uniqueness, ordering, and exact-detail validation still apply to the retained prefix.
+      break;
+    default:
+      throw new Error('outcome evaluation refuses contradictory terminal evidence matrix');
+  }
+  validateCanonicalStepDetails({ run, steps, policies, routings, verifications, invocations });
+}
+function validateCanonicalStepDetails({ run, steps, policies, routings, verifications }) {
+  const detail = (name) => parsedJson(steps.find((step) => step.name === name)?.detail);
+  const failed = detail('hermes.failed');
+  const memory = detail('hermes.memory_candidate_recorded');
+  if (memory && (!exactKeys(memory, ['id','status']) || !safeId(memory.id) || memory.status !== 'pending')) {
+    throw new Error('outcome evaluation refuses malformed canonical step detail');
+  }
+  if (!failed) return;
+  const policy = latest(policies);
+  const exactReason = () => exactKeys(failed, ['reason']) && safeRequired(failed.reason);
+  let valid = false;
+  if (run.outcome === 'emergency_stop') valid = exactReason() && failed.reason === 'emergency stop active';
+  else if (['policy_denied','blocked_pending_approval'].includes(run.outcome)) valid = exactReason() && failed.reason === policy?.reason;
+  else if (run.outcome === 'real_provider_blocked') valid = exactKeys(failed, ['reason','requested']) && safeRequired(failed.reason) && safeId(failed.requested);
+  else if (run.outcome === 'approval_required') valid = exactReason() && /^approval required: /.test(failed.reason);
+  else if (['execution_blocked','execution_failed','cancelled'].includes(run.outcome)) {
+    valid = exactKeys(failed, ['reason','executionMode']) && safeRequired(failed.reason) &&
+      failed.executionMode === (run.outcome === 'cancelled' ? 'cancelled' : run.outcome === 'execution_blocked' ? 'blocked' : 'failed');
+  } else if (run.outcome === 'budget_exhausted') {
+    valid = exactKeys(failed, ['reason','costCents','ceilingCents']) && failed.reason === 'budget exhausted' &&
+      [failed.costCents, failed.ceilingCents].every((value) => Number.isSafeInteger(value) && value >= 0);
+  } else if (run.outcome === 'verification_failed') valid = exactReason() && failed.reason === 'verification failed';
+  else if (run.outcome === 'error') valid = exactReason();
+  if (!valid) throw new Error('outcome evaluation refuses malformed canonical step detail');
+}
+function exactKeys(value, keys) {
+  return Boolean(value && !Array.isArray(value) && Object.keys(value).sort().join(',') === [...keys].sort().join(','));
+}
+function validateRegistryRouting(routing, profile) {
+  const classification = parsedJson(routing.classification);
+  const capabilities = parsedJson(routing.capabilities);
+  const candidates = parsedJson(routing.candidates);
+  const provider = providerRegistry.get(routing.selected_provider);
+  const agent = agentRegistry.get(routing.selected_agent);
+  const expectedCandidates = providerRegistry.eligible(capabilities[0], profile, { includeDisabled: true })
+    .filter((candidate) => capabilities.every((capability) => providerRegistry.supports(candidate.id, capability)))
+    .map((candidate) => ({ provider: candidate.id, enabled: candidate.enabled }));
+  if (!provider || !provider.allowedEnvironments.includes(profile) ||
+    capabilities.some((capability) => !capabilityRegistry.allowedInEnvironment(capability, profile)) ||
+    !agent || agent.providerId !== provider.id || !capabilities.every((capability) => agent.capabilities.includes(capability)) ||
+    !classification || !['low','medium','high'].includes(classification.risk) ||
+    !agentRegistry.forCapability(capabilities[0], classification.risk).some((candidate) => candidate.id === agent.id) ||
+    canonicalJson(candidates) !== canonicalJson(expectedCandidates)) {
+    throw new Error('outcome evaluation refuses noncanonical routing evidence registry');
   }
 }
 function rowsWithinStage(rows, startStep, endStep, requireMonotonic = false) {
@@ -387,19 +532,22 @@ function recordedActorValid(actorPrincipalId, workspaceId, evidenceTime) {
   });
   const historicalGrant = effectiveGrants.length === 1 ? effectiveGrants[0] : null;
   let historicalPermission = false;
+  let currentPermission = false;
   try {
     const permissions = historicalGrant ? JSON.parse(canonicalPermissions(historicalGrant.permissions)) : [];
     historicalPermission = permissions.includes('evaluation.correct') || (actor?.type !== 'service' && historicalGrant?.role === 'admin');
+    const currentPermissions = currentGrant ? JSON.parse(canonicalPermissions(currentGrant.permissions)) : [];
+    currentPermission = currentPermissions.includes('evaluation.correct') || (actor?.type !== 'service' && currentGrant?.role === 'admin');
   } catch { return false; }
   if (!(actor && ['admin','service'].includes(actor.type) && actor.authentication_method === (actor.type === 'admin' ? 'bearer' : 'service') && actor.status === 'active' &&
     (actor.expires_at === null || Number(actor.expires_at) > Date.now()) && actor.revoked_at === null && actor.disabled_at === null &&
     Number.isSafeInteger(Number(actor.security_version)) && Number(actor.security_version) > 0 && Number.isFinite(Number(actor.issued_at)) &&
     actor.issued_at <= evidenceEpoch && actor.created_at <= evidenceEpoch && (actor.expires_at === null || actor.expires_at > evidenceEpoch) &&
-    historicalPermission && currentGrant)) return false;
-  // Subordinate evidence remains trusted only while its actor is still an authorized corrector.
-  // The resolver-created principal prevents a persisted ID from acting as a client-created shape.
-  const principal = resolvePrincipal({ principalId: actor.id });
-  return Boolean(principal && hasCurrentWorkspacePermission(principal, workspaceId, 'evaluation.correct'));
+    historicalPermission && currentGrant && currentPermission)) return false;
+  // This is persisted evidence validation, not client authentication. Service credentials are
+  // intentionally unavailable here; the canonical current row and complete current grant graph
+  // above are validated directly without minting an authenticated principal.
+  return true;
 }
 function provenanceMatches(evaluation) {
   try {
@@ -416,7 +564,7 @@ function provenanceMatches(evaluation) {
 }
 function latest(rows) { return rows.length ? rows[rows.length - 1] : null; }
 function durationMs(start, end) { const duration = Date.parse(end) - Date.parse(start); return canonicalTimestamp(start) && canonicalTimestamp(end) && Number.isSafeInteger(duration) && duration >= 0 ? duration : null; }
-function failureCategory(run, verification, invocation) { if (run.status === 'blocked') return 'blocked'; if (run.status === 'cancelled' || invocation?.cancelled) return 'cancelled'; if (invocation?.timed_out) return 'timeout'; if (verification && !(verification.passed === 1 || verification.passed === true)) return 'verification_failed'; return run.outcome || 'unknown'; }
+function failureCategory(run, verification, invocations) { if (run.status === 'blocked') return 'blocked'; if (run.status === 'cancelled' || invocations.some((row) => row.cancelled)) return 'cancelled'; if (invocations.some((row) => row.timed_out)) return 'timeout'; if (verification && !(verification.passed === 1 || verification.passed === true)) return 'verification_failed'; return run.outcome || 'unknown'; }
 function safeJson(value) { try { return JSON.stringify(redactDeep(JSON.parse(value || 'null'))); } catch { return JSON.stringify(redactDeep(value)); } }
 function digest(value) { return crypto.createHash('sha256').update(canonicalJson(value)).digest('hex'); }
 function canonicalJson(value) { if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`; return JSON.stringify(value); }
@@ -449,9 +597,11 @@ function canonicalClassification(evidence) {
   const classifiedStep = evidence.steps.find((step) => step.name === 'hermes.classified');
   const routingClassification = routing ? parsedJson(routing.classification) : null;
   const stepClassification = classifiedStep ? parsedJson(classifiedStep.detail) : null;
+  if ((routing && !validClassification(routingClassification)) || (classifiedStep && !validClassification(stepClassification))) {
+    throw new Error('outcome evaluation refuses malformed classification evidence');
+  }
   if (routingClassification && stepClassification && canonicalJson(routingClassification) !== canonicalJson(stepClassification)) throw new Error('outcome evaluation refuses contradictory classification evidence');
   const classification = routingClassification || stepClassification;
-  if (classification !== null && !validClassification(classification)) throw new Error('outcome evaluation refuses malformed classification evidence');
   return classification;
 }
 function canonicalExecutionMode(evidence) {
@@ -530,7 +680,9 @@ function persistedComponents(evaluation, rows, evidence) {
     verified: verification?.passed === 1 || verification?.passed === true,
     retryCount: evaluation.retry_count,
     duration: evaluation.duration_ms,
-    invocation,
+    hasInvocation: Boolean(invocation),
+    runTimedOut: Boolean(evaluation.timed_out),
+    runCancelled: Boolean(evaluation.cancelled),
     usage: { inputTokens: evaluation.input_tokens, outputTokens: evaluation.output_tokens, costCents: evaluation.cost_cents },
     run: evidence.run,
   }).sort((left, right) => left.name.localeCompare(right.name));

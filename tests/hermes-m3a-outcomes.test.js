@@ -88,6 +88,72 @@ test('blocked workflow is factual but ineligible; no verification can become pos
   assert.deepEqual(JSON.parse(e.classification), r.classification);
 });
 
+test('non-success outcomes require their exact causal evidence matrix', async () => {
+  workspace('m3a-terminal-matrix'); const completed = await runHermesWorkflow(task('m3a-terminal-matrix'));
+  deleteEvaluationForTest(completed.evaluationId);
+  run("UPDATE hermes_workflow_runs SET status='blocked',outcome='approval_required' WHERE id=?", [completed.runId]);
+  run(`UPDATE hermes_workflow_steps SET name='hermes.failed',status='failed',detail='{"reason":"approval required"}'
+    WHERE run_id=? AND name='hermes.completed'`, [completed.runId]);
+  assert.throws(() => evaluateTerminalOutcome(completed.runId), /terminal evidence matrix/);
+
+  workspace('m3a-policy-matrix'); const denied = await runHermesWorkflow(task('m3a-policy-matrix', 'deploy to production'));
+  deleteEvaluationForTest(denied.evaluationId);
+  run("UPDATE hermes_workflow_runs SET outcome='approval_required' WHERE id=?", [denied.runId]);
+  assert.throws(() => evaluateTerminalOutcome(denied.runId), /terminal evidence matrix/);
+});
+
+test('canonical step details and registry-derived routing identity reject forged claims', async () => {
+  for (const [suffix, mutate, message] of [
+    ['profile', (runId) => {
+      const received = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received'", [runId]).detail);
+      run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.received'", [JSON.stringify({ ...received, profile: 'forged-profile' }), runId]);
+    }, 'runtime profile'],
+    ['received-extra', (runId) => {
+      const received = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received'", [runId]).detail);
+      run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.received'", [JSON.stringify({ ...received, userAccepted: true }), runId]);
+    }, 'canonical intake'],
+    ['executed-extra', (runId) => {
+      const executed = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [runId]).detail);
+      run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...executed, userAccepted: true }), runId]);
+    }, 'execution evidence'],
+    ['agent', (runId) => {
+      run("UPDATE hermes_routing_decisions SET selected_agent='forged-agent' WHERE run_id=?", [runId]);
+      run("UPDATE hermes_workflow_runs SET agent='forged-agent' WHERE id=?", [runId]);
+      const routed = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.routed'", [runId]).detail);
+      run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.routed'", [JSON.stringify({ ...routed, agent: 'forged-agent' }), runId]);
+    }, 'routing.*registry'],
+    ['candidates', (runId) => {
+      const candidates = JSON.parse(get('SELECT candidates FROM hermes_routing_decisions WHERE run_id=?', [runId]).candidates);
+      run('UPDATE hermes_routing_decisions SET candidates=? WHERE run_id=?', [JSON.stringify(candidates.filter(({ provider }) => provider === 'mock')), runId]);
+    }, 'routing.*registry'],
+  ]) {
+    const workspaceId = `m3a-canonical-${suffix}`;
+    workspace(workspaceId); const result = await runHermesWorkflow(task(workspaceId));
+    deleteEvaluationForTest(result.evaluationId); mutate(result.runId);
+    assert.throws(() => evaluateTerminalOutcome(result.runId), new RegExp(message), suffix);
+  }
+
+  workspace('m3a-null-classification'); const denied = await runHermesWorkflow(task('m3a-null-classification', 'deploy to production'));
+  deleteEvaluationForTest(denied.evaluationId);
+  run("UPDATE hermes_workflow_steps SET detail='null' WHERE run_id=? AND name='hermes.classified'", [denied.runId]);
+  assert.throws(() => evaluateTerminalOutcome(denied.runId), /classification evidence/);
+});
+
+test('retry timeout and cancellation facts aggregate across every provider attempt', async () => {
+  workspace('m3a-attempt-signals'); const result = await runHermesWorkflow(task('m3a-attempt-signals'));
+  deleteEvaluationForTest(result.evaluationId);
+  run("UPDATE hermes_provider_invocations SET status='timeout',timed_out=1,attempt=1 WHERE run_id=?", [result.runId]);
+  run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
+    SELECT 'recovered-attempt',run_id,task_id,provider,adapter_type,model,mode,'completed',2,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,0,0,NULL,created_at
+    FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [result.runId]);
+  const executed = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [result.runId]).detail);
+  run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...executed, attempts: 2 }), result.runId]);
+  const evaluation = evaluateTerminalOutcome(result.runId).evaluation;
+  assert.equal(evaluation.timedOut, true);
+  const timeout = store.getOutcomeComponents(evaluation.id).find(({ name }) => name === 'timeout');
+  assert.equal(timeout.value, 'true');
+});
+
 test('free-form canonical channel actors remain readable without being treated as authority IDs', async () => {
   workspace('m3a-actor');
   const input = createUnifiedInput({ channel: 'jarvis', actorId: 'operator@example.com', channelKey: 'operator@example.com', workspaceId: 'm3a-actor', text: 'report status', idempotencyKey: 'm3a-actor-email' });
