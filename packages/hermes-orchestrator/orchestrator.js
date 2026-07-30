@@ -105,7 +105,7 @@ export async function runHermesWorkflow(input, options = {}) {
       const appr = checkApproval(normalized.taskId, policy.actionClass);
       if (!appr.ok) {
         events.record(HERMES_EVENTS.FAILED, { reason: `approval required: ${appr.reason}` }, 'failed');
-        finishWorkflowRun(runId, { status: 'blocked', outcome: 'approval_required', provider: routing.provider });
+        finishWorkflowRun(runId, { status: 'blocked', outcome: 'approval_required', provider: routing.provider, agent: routing.agent });
         return done(runId, 'blocked', 'approval_required', { executionMode: 'blocked', classification, routing });
       }
       approvalToConsume = appr.approvalId;

@@ -32,7 +32,7 @@ export function verifyExecution(execution, { classification } = {}) {
   check('has_summary', typeof execution?.summary === 'string' && execution.summary.length > 0, 'summary present');
   // The mock provider is always free; a real provider may report a (bounded, budget-checked) cost or
   // null. Only enforce zero-cost for the mock.
-  if (execution?.mode === 'mock') check('mock_is_free', (execution?.usage?.costCents || 0) === 0, `costCents=${execution?.usage?.costCents || 0}`);
+  if (execution?.executionMode === 'mock') check('mock_is_free', execution?.usage?.costCents === 0, `costCents=${execution?.usage?.costCents}`);
   // Artifact paths must be relative (no absolute paths / traversal) even for a mock proposal.
   const badPath = (execution?.artifacts || []).find((a) => typeof a?.path !== 'string' || a.path.startsWith('/') || a.path.includes('..'));
   check('artifact_paths_safe', !badPath, badPath ? `unsafe artifact path: ${badPath.path}` : 'all artifact paths relative and traversal-free');

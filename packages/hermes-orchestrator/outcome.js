@@ -3,19 +3,20 @@
 // run; it never changes routing, policy, memory, provider state, or task state.
 import crypto from 'node:crypto';
 import { id, now } from '../shared/util.js';
-import { transaction, get } from '../task-engine/db.js';
+import { transaction, get, all } from '../task-engine/db.js';
 import { getTask } from '../task-engine/tasks.js';
 import { normalizeTask } from './normalize.js';
 import { redactDeep, redactString } from './redaction.js';
 import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeComponents, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
 import { canReadEvaluation, canCorrectEvaluation, hasCurrentWorkspacePermission, activeGrant, resolvePrincipal } from '../shared/authorization.js';
+import { canonicalPermissions } from '../shared/authz-schema.js';
+import { providerRegistry } from './registries.js';
 
 export const OUTCOME_EVALUATION_VERSION = 'm3a-v1';
 export const OUTCOME_EVALUATOR_VERSION = 'hermes-outcome-evaluator-v1';
 const TERMINAL = new Set(['completed', 'failed', 'blocked', 'cancelled']);
 const STEP_NAMES = new Set(['hermes.received','hermes.normalized','hermes.classified','hermes.policy_evaluated','hermes.routed','hermes.executed','hermes.verified','hermes.memory_candidate_recorded','hermes.completed','hermes.failed']);
-const BASE_CHECK_NAMES = ['execution_ok','provider_present','artifacts_is_array','has_summary','artifact_paths_safe'];
-const CHECK_NAMES = new Set([...BASE_CHECK_NAMES,'artifact_present_for_edit']);
+const CHECK_NAMES = new Set(['execution_ok','provider_present','artifacts_is_array','has_summary','mock_is_free','artifact_paths_safe','artifact_present_for_edit']);
 
 export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVALUATION_VERSION } = {}) {
   if (typeof runId !== 'string' || !runId) throw new Error('outcome evaluation requires a run id');
@@ -32,7 +33,7 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
     const verified = verification?.passed === 1 || verification?.passed === true;
     const terminalCompleted = run.status === 'completed' && run.outcome === 'verified';
     const positive = terminalCompleted && verified;
-    const mode = invocation?.mode || (run.provider === 'mock' ? 'mock' : null);
+    const mode = canonicalExecutionMode(evidence);
     const duration = durationMs(run.started_at, run.finished_at);
     if (duration === null) throw new Error('outcome evaluation refuses malformed or negative duration');
     const retryCount = invocation ? Math.max(0, Number(invocation.attempt || 1) - 1) : null;
@@ -160,7 +161,11 @@ function componentRows({ positive, verified, retryCount, duration, invocation, u
     known('learning_eligibility', positive ? 'positive_eligible' : 'not_positive', 'does not affect routing in Phase 3A'),
   ];
 }
-function ordered(steps) { return steps.every((s, i) => Number.isInteger(s.seq) && s.seq === i + 1 && s.created_at && (!i || Date.parse(s.created_at) >= Date.parse(steps[i - 1].created_at))); }
+function ordered(steps) {
+  return steps.every((step, index) => Number.isInteger(step.seq) && step.seq === index + 1 && step.created_at &&
+    (!index || (Date.parse(step.started_at) >= Date.parse(steps[index - 1].created_at) &&
+      Date.parse(step.created_at) >= Date.parse(steps[index - 1].created_at))));
+}
 function terminalEventsPresent(steps, status) { const names = new Set(steps.map((s) => s.name)); return names.has('hermes.received') && (status === 'completed' ? names.has('hermes.completed') : names.has('hermes.failed')); }
 function loadEvidence(runId) {
   const run = getWorkflowRun(runId);
@@ -232,7 +237,11 @@ function validateLinks({ run, routings, policies, verifications, invocations }) 
   for (const verification of verifications) {
     const checks = parsedJson(verification.checks);
     const classification = canonicalClassification({ routings, steps: [] });
-    const expectedNames = [...BASE_CHECK_NAMES, ...(classification?.requiredCapabilities?.some((capability) => capability === 'doc.edit' || capability === 'code.edit') ? ['artifact_present_for_edit'] : [])];
+    const provider = latest(routings)?.selected_provider;
+    const expectedNames = ['execution_ok','provider_present','artifacts_is_array','has_summary',
+      ...(providerRegistry.get(provider)?.adapterType === 'mock' ? ['mock_is_free'] : []),
+      'artifact_paths_safe',
+      ...(classification?.requiredCapabilities?.some((capability) => capability === 'doc.edit' || capability === 'code.edit') ? ['artifact_present_for_edit'] : [])];
     if (verification.verifier !== 'deterministic-mock-verifier-v1' || ![0,1].includes(verification.passed) || !sanitizedJson(verification.checks) ||
       !Array.isArray(checks) || !checks.length || checks.some((check) => !check || Array.isArray(check) ||
         Object.keys(check).sort().join(',') !== 'detail,name,passed' || !CHECK_NAMES.has(check.name) || typeof check.passed !== 'boolean' || !safeRequired(check.detail)) ||
@@ -242,10 +251,14 @@ function validateLinks({ run, routings, policies, verifications, invocations }) 
   const routing = latest(routings);
   const attempts = new Set();
   for (const invocation of invocations) {
-    if (!safeId(invocation.provider) || !['mock', 'real'].includes(invocation.mode) || !['completed','failed','timeout','cancelled'].includes(invocation.status) ||
+    const provider = providerRegistry.get(invocation.provider);
+    const expectedMode = provider?.adapterType === 'mock' ? 'mock' : 'real';
+    if (!provider || invocation.adapter_type !== provider.adapterType || !provider.modelIdentifiers.includes(invocation.model) ||
+      invocation.mode !== expectedMode || !['completed','failed','timeout','cancelled'].includes(invocation.status) ||
       ![invocation.timed_out, invocation.cancelled].every((value) => value === 0 || value === 1) ||
       invocation.timed_out !== (invocation.status === 'timeout' ? 1 : 0) ||
       invocation.cancelled !== (invocation.status === 'cancelled' ? 1 : 0)) throw new Error('outcome evaluation refuses malformed provider evidence');
+    if (provider.adapterType === 'mock' && invocation.cost_cents !== 0) throw new Error('outcome evaluation refuses nonzero mock provider cost');
     if (!Number.isSafeInteger(Number(invocation.attempt)) || Number(invocation.attempt) < 1) throw new Error('outcome evaluation refuses impossible retry count');
     if (attempts.has(Number(invocation.attempt))) throw new Error('outcome evaluation refuses duplicate provider attempts');
     attempts.add(Number(invocation.attempt));
@@ -305,18 +318,29 @@ function validateCrossSourceEvidence({ run, steps, routings, policies, verificat
   }))) {
     throw new Error('outcome evaluation refuses contradictory blocked execution evidence');
   }
+  const artifactCheck = verification ? parsedJson(verification.checks)?.find((check) => check.name === 'artifact_present_for_edit') : null;
+  if (artifactCheck && (!executedStep || artifactCheck.passed !== (executedStep.artifactCount > 0))) {
+    throw new Error('outcome evaluation refuses contradictory artifact verification evidence');
+  }
   const completedStep = detail('hermes.completed');
   if (run.status === 'completed' && canonicalJson(completedStep) !== canonicalJson({ outcome: run.outcome, executionMode: invocation?.mode || null })) throw new Error('outcome evaluation refuses contradictory completion evidence');
-  const policyTime = policy ? Date.parse(policy.created_at) : null;
-  const routingTime = routing ? Date.parse(routing.created_at) : null;
-  const invocationTime = invocation ? Date.parse(invocation.created_at) : null;
-  const verificationTime = verification ? Date.parse(verification.created_at) : null;
-  if ((policy && (policyTime < Date.parse(step('hermes.classified').created_at) || policyTime > Date.parse(step('hermes.policy_evaluated').created_at))) ||
-    (routing && (routingTime < Date.parse(step('hermes.policy_evaluated').created_at) || routingTime > Date.parse(step('hermes.routed').created_at))) ||
-    (invocation && (invocationTime < Date.parse(step('hermes.routed').created_at) || invocationTime > Date.parse(step('hermes.executed').created_at))) ||
-    (verification && (verificationTime < Date.parse(step('hermes.executed').created_at) || verificationTime > Date.parse(step('hermes.verified').created_at)))) {
+  if (!rowsWithinStage(policies, step('hermes.classified'), step('hermes.policy_evaluated')) ||
+    !rowsWithinStage(routings, step('hermes.policy_evaluated'), step('hermes.routed')) ||
+    !rowsWithinStage(invocations, step('hermes.routed'), step('hermes.executed'), true) ||
+    !rowsWithinStage(verifications, step('hermes.executed'), step('hermes.verified'))) {
     throw new Error('outcome evaluation refuses contradictory evidence chronology');
   }
+}
+function rowsWithinStage(rows, startStep, endStep, requireMonotonic = false) {
+  if (!rows.length) return true;
+  if (!startStep || !endStep) return false;
+  const start = Date.parse(startStep.created_at);
+  const end = Date.parse(endStep.created_at);
+  return rows.every((row, index) => {
+    const timestamp = Date.parse(row.created_at);
+    return timestamp >= start && timestamp <= end &&
+      (!requireMonotonic || !index || timestamp >= Date.parse(rows[index - 1].created_at));
+  });
 }
 function aggregateUsage(invocations) {
   const total = (column) => invocations.length && invocations.every((row) => row[column] != null)
@@ -329,18 +353,21 @@ function aggregateUsage(invocations) {
 }
 function readableEvaluation(evaluation) {
   if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION || !evaluationShapeValid(evaluation) || !provenanceMatches(evaluation)) return false;
-  return correctionChainValid(evaluation, getOutcomeCorrections(evaluation.id)) && sourceEventsValid(evaluation, getOutcomeSourceEvents(evaluation.id));
+  const validationEpoch = Date.now();
+  return correctionChainValid(evaluation, getOutcomeCorrections(evaluation.id), validationEpoch) &&
+    sourceEventsValid(evaluation, getOutcomeSourceEvents(evaluation.id), validationEpoch);
 }
-function correctionChainValid(evaluation, corrections) {
+function correctionChainValid(evaluation, corrections, validationEpoch) {
   return corrections.every((row, index) => row.evaluation_id === evaluation.id && row.workspace_id === evaluation.workspace_id && row.run_id === evaluation.run_id &&
     safeId(row.id) && Number(row.version) === index + 1 && row.supersedes_correction_id === (index ? corrections[index - 1].id : null) &&
     safeRequired(row.reason) && row.reason === redactString(row.reason) && safeRequired(row.source_evidence) && row.source_evidence === redactString(row.source_evidence) && recordedActorValid(row.actor_principal_id, evaluation.workspace_id, row.created_at) && validTimestamp(row.created_at) &&
-    Date.parse(row.created_at) >= Date.parse(evaluation.created_at) && (!index || Date.parse(row.created_at) >= Date.parse(corrections[index - 1].created_at)));
+    Date.parse(row.created_at) >= Date.parse(evaluation.created_at) && Date.parse(row.created_at) <= validationEpoch &&
+    (!index || Date.parse(row.created_at) >= Date.parse(corrections[index - 1].created_at)));
 }
-function sourceEventsValid(evaluation, events) {
+function sourceEventsValid(evaluation, events, validationEpoch) {
   const idempotencyKeys = new Set();
   return events.every((row, index) => {
-    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !recordedActorValid(row.actor_principal_id, evaluation.workspace_id, row.created_at) || !safeEvidenceId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || row.evidence !== redactString(row.evidence) || !validTimestamp(row.created_at) || Date.parse(row.created_at) < Date.parse(evaluation.created_at) || (index && Date.parse(row.created_at) < Date.parse(events[index - 1].created_at))) return false;
+    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !recordedActorValid(row.actor_principal_id, evaluation.workspace_id, row.created_at) || !safeEvidenceId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || row.evidence !== redactString(row.evidence) || !validTimestamp(row.created_at) || Date.parse(row.created_at) < Date.parse(evaluation.created_at) || Date.parse(row.created_at) > validationEpoch || (index && Date.parse(row.created_at) < Date.parse(events[index - 1].created_at))) return false;
     idempotencyKeys.add(row.idempotency_key); return true;
   });
 }
@@ -349,12 +376,26 @@ function recordedActorValid(actorPrincipalId, workspaceId, evidenceTime) {
   if (!safeId(actorPrincipalId)) return false;
   const actor = get('SELECT id,type,authentication_method,status,issued_at,created_at,expires_at,revoked_at,disabled_at,security_version FROM auth_principals WHERE id=?', [actorPrincipalId]);
   const evidenceEpoch = Date.parse(evidenceTime);
-  const historicalGrant = get(`SELECT id FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=? AND issued_at<=? AND created_at<=?
-    AND (role='admin' OR permissions LIKE '%"evaluation.correct"%') ORDER BY version DESC LIMIT 1`, [actorPrincipalId, workspaceId, evidenceEpoch, evidenceEpoch]);
+  const currentGrant = activeGrant(actorPrincipalId, workspaceId);
+  const grantRows = currentGrant ? all('SELECT * FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=? ORDER BY version', [actorPrincipalId, workspaceId]) : [];
+  const effectiveGrants = grantRows.filter((grant, index) => {
+    const start = Math.max(grant.issued_at, grant.created_at);
+    const successor = grantRows[index + 1];
+    const successorStart = successor ? Math.max(successor.issued_at, successor.created_at) : Infinity;
+    const end = Math.min(grant.expires_at ?? Infinity, grant.revoked_at ?? Infinity, successorStart);
+    return start <= evidenceEpoch && evidenceEpoch < end;
+  });
+  const historicalGrant = effectiveGrants.length === 1 ? effectiveGrants[0] : null;
+  let historicalPermission = false;
+  try {
+    const permissions = historicalGrant ? JSON.parse(canonicalPermissions(historicalGrant.permissions)) : [];
+    historicalPermission = permissions.includes('evaluation.correct') || (actor?.type !== 'service' && historicalGrant?.role === 'admin');
+  } catch { return false; }
   if (!(actor && ['admin','service'].includes(actor.type) && actor.authentication_method === (actor.type === 'admin' ? 'bearer' : 'service') && actor.status === 'active' &&
     (actor.expires_at === null || Number(actor.expires_at) > Date.now()) && actor.revoked_at === null && actor.disabled_at === null &&
     Number.isSafeInteger(Number(actor.security_version)) && Number(actor.security_version) > 0 && Number.isFinite(Number(actor.issued_at)) &&
-    actor.issued_at <= evidenceEpoch && actor.created_at <= evidenceEpoch && historicalGrant && activeGrant(actor.id, workspaceId))) return false;
+    actor.issued_at <= evidenceEpoch && actor.created_at <= evidenceEpoch && (actor.expires_at === null || actor.expires_at > evidenceEpoch) &&
+    historicalPermission && currentGrant)) return false;
   // Subordinate evidence remains trusted only while its actor is still an authorized corrector.
   // The resolver-created principal prevents a persisted ID from acting as a client-created shape.
   const principal = resolvePrincipal({ principalId: actor.id });
@@ -364,6 +405,7 @@ function provenanceMatches(evaluation) {
   try {
     const evidence = loadEvidence(evaluation.run_id);
     validateEvidence(evidence);
+    if (evaluation.execution_mode !== canonicalExecutionMode(evidence)) return false;
     if (evaluation.classification !== safeJson(canonicalClassification(evidence))) return false;
     const payload = evaluationPayload(evaluation);
     const components = persistedComponents(evaluation, getOutcomeComponents(evaluation.id), evidence);
@@ -411,6 +453,14 @@ function canonicalClassification(evidence) {
   const classification = routingClassification || stepClassification;
   if (classification !== null && !validClassification(classification)) throw new Error('outcome evaluation refuses malformed classification evidence');
   return classification;
+}
+function canonicalExecutionMode(evidence) {
+  const invocation = evidence.invocations.at(-1);
+  if (invocation) return invocation.mode;
+  if (evidence.run.status === 'blocked' || evidence.run.outcome === 'execution_blocked' || evidence.run.outcome === 'approval_required') return 'blocked';
+  if (evidence.run.status === 'cancelled') return 'cancelled';
+  if (evidence.run.status === 'failed') return 'failed';
+  return null;
 }
 function assertSanitized(value) {
   if (!stringsAreSanitized(value)) throw new Error('outcome evaluation refuses unsanitized persisted evidence');
@@ -462,6 +512,7 @@ function evaluationShapeValid(evaluation) {
   return safeId(evaluation.id) && safeId(evaluation.workspace_id) && safeId(evaluation.project_id) && evaluation.project_id === evaluation.workspace_id &&
     safeId(evaluation.task_id) && safeId(evaluation.run_id) && (evaluation.user_id === null || safeActor(evaluation.user_id)) &&
     nullableIds.slice(1).every((value) => value === null || safeId(value)) &&
+    [null,'mock','real','blocked','failed','cancelled'].includes(evaluation.execution_mode) &&
     TERMINAL.has(evaluation.terminal_status) && ['passed','failed','unavailable'].includes(evaluation.verification_status) &&
     ['deterministic_pass','deterministic_fail','unknown'].includes(evaluation.verifier_confidence) && evaluation.acceptance_status === 'unavailable' &&
     ['positive_eligible','ineligible_blocked','negative_factual'].includes(evaluation.learning_eligibility) &&

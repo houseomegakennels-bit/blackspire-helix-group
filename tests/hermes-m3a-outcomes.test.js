@@ -52,18 +52,18 @@ test('verified mock workflow creates one immutable positive factual evaluation w
   assert.ok(store.getOutcomeComponents(e.id).some((c) => c.name === 'stability_evidence' && c.status === 'unknown'));
   assert.throws(() => evaluateTerminalOutcome(r.runId), /already exists/);
   assert.throws(() => evaluateTerminalOutcome(r.runId, { evaluationVersion: 'unreviewed-v2' }), /canonical evaluation version/);
-  run('UPDATE hermes_provider_invocations SET input_tokens=5,output_tokens=7,cost_cents=11 WHERE run_id=?', [r.runId]);
+  run('UPDATE hermes_provider_invocations SET input_tokens=5,output_tokens=7,cost_cents=0 WHERE run_id=?', [r.runId]);
   run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
-       SELECT 'retry-attempt',run_id,task_id,provider,adapter_type,model,mode,status,2,input_bytes,output_bytes,13,17,19,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
+       SELECT 'retry-attempt',run_id,task_id,provider,adapter_type,model,mode,status,2,input_bytes,output_bytes,13,17,0,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
   run("UPDATE hermes_provider_invocations SET status='failed' WHERE run_id=? AND attempt=1", [r.runId]);
-  run('UPDATE hermes_workflow_runs SET cost_cents=19 WHERE id=?', [r.runId]);
+  run('UPDATE hermes_workflow_runs SET cost_cents=0 WHERE id=?', [r.runId]);
   const executed = all("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [r.runId])[0];
   run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...JSON.parse(executed.detail), attempts: 2 }), r.runId]);
   deleteEvaluationForTest(e.id);
   const retried = evaluateTerminalOutcome(r.runId).evaluation;
   assert.notEqual(retried.provenanceDigest, e.provenance_digest, 'the digest covers every retry attempt');
   assert.equal(retried.retryCount, 1);
-  assert.deepEqual([retried.inputTokens,retried.outputTokens,retried.costCents],[18,24,30]);
+  assert.deepEqual([retried.inputTokens,retried.outputTokens,retried.costCents],[18,24,0]);
   run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
        SELECT 'duplicate-attempt',run_id,task_id,provider,adapter_type,model,mode,status,2,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
   deleteEvaluationForTest(retried.id);
@@ -244,10 +244,24 @@ test('completed verified outcomes reject contradictory routing, policy, invocati
     ['run-actor', (runId) => run("UPDATE hermes_workflow_runs SET actor_id='forged-actor' WHERE id=?", [runId]), 'task scope'],
     ['run-channel', (runId) => run("UPDATE hermes_workflow_runs SET channel='telegram' WHERE id=?", [runId]), 'task scope'],
     ['run-objective', (runId) => run("UPDATE hermes_workflow_runs SET objective='different sanitized objective' WHERE id=?", [runId]), 'task scope'],
+    ['provider-mode', (runId) => run("UPDATE hermes_provider_invocations SET mode='real' WHERE run_id=?", [runId]), 'provider evidence'],
+    ['provider-adapter', (runId) => run("UPDATE hermes_provider_invocations SET adapter_type='api' WHERE run_id=?", [runId]), 'provider evidence'],
+    ['provider-model', (runId) => run("UPDATE hermes_provider_invocations SET model='forged-model' WHERE run_id=?", [runId]), 'provider evidence'],
+    ['mock-cost', (runId) => run('UPDATE hermes_provider_invocations SET cost_cents=1 WHERE run_id=?', [runId]), 'mock provider cost'],
     ['policy-step', (runId) => run("UPDATE hermes_policy_decisions SET action_class='forged.action' WHERE run_id=?", [runId]), 'policy evidence'],
+    ['step-interval', (runId) => run(`UPDATE hermes_workflow_steps SET started_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received'),
+      finished_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received') WHERE run_id=? AND name='hermes.routed'`, [runId, runId, runId]), 'ordered|step evidence'],
     ['policy-chronology', (runId) => run(`UPDATE hermes_policy_decisions SET created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?`, [runId, runId]), 'chronology'],
     ['routing-chronology', (runId) => run(`UPDATE hermes_routing_decisions SET created_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.classified') WHERE run_id=?`, [runId, runId]), 'chronology'],
     ['invocation-chronology', (runId) => run(`UPDATE hermes_provider_invocations SET created_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.policy_evaluated') WHERE run_id=?`, [runId, runId]), 'chronology'],
+    ['prior-invocation-chronology', (runId) => {
+      run("UPDATE hermes_provider_invocations SET status='failed',attempt=1,created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?", [runId, runId]);
+      run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
+        SELECT 'valid-retry',run_id,task_id,provider,adapter_type,model,mode,'completed',2,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,0,0,NULL,
+          (SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed') FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [runId, runId]);
+      const executed = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [runId]).detail);
+      run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...executed, attempts: 2 }), runId]);
+    }, 'chronology'],
     ['verification-chronology', (runId) => run(`UPDATE hermes_verification_results SET created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?`, [runId, runId]), 'chronology'],
     ['terminal-outcome', (runId) => {
       run("UPDATE hermes_workflow_runs SET status='failed',outcome='verified' WHERE id=?", [runId]);
@@ -270,10 +284,26 @@ test('execution-blocked terminal runs produce factual evidence and reject forged
   assert.equal(result.outcome, 'execution_blocked');
   assert.ok(result.evaluationId);
   assert.equal(store.getOutcomeEvaluation(result.evaluationId).learning_eligibility, 'negative_factual');
+  assert.equal(store.getOutcomeEvaluation(result.evaluationId).execution_mode, 'blocked');
   deleteEvaluationForTest(result.evaluationId);
   run(`UPDATE hermes_workflow_steps SET detail='{"provider":"totally-forged","executionMode":"real","ok":true,"attempts":999,"durationMs":0,"timedOut":true,"cancelled":true,"artifactCount":0}'
     WHERE run_id=? AND name='hermes.executed'`, [result.runId]);
   assert.throws(() => evaluateTerminalOutcome(result.runId), /blocked execution evidence/);
+
+  workspace('m3a-approval-blocked');
+  const approvalBlocked = await runHermesWorkflow(task('m3a-approval-blocked', 'refactor the parser module'));
+  assert.equal(approvalBlocked.outcome, 'approval_required');
+  assert.equal(store.getOutcomeEvaluation(approvalBlocked.evaluationId).execution_mode, 'blocked');
+});
+
+test('edit verification is bound to the canonical executed artifact count', async () => {
+  workspace('m3a-artifact-binding');
+  const result = await runHermesWorkflow(task('m3a-artifact-binding', 'write documentation summary'));
+  assert.equal(result.outcome, 'verified');
+  deleteEvaluationForTest(result.evaluationId);
+  const executed = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [result.runId]).detail);
+  run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...executed, artifactCount: 0 }), result.runId]);
+  assert.throws(() => evaluateTerminalOutcome(result.runId), /artifact verification evidence/);
 });
 
 test('correction authorization and insertion are atomic against authority changes', async () => {
@@ -329,4 +359,42 @@ test('denied evidence mutations retain their authorization audits and reads do n
   const afterEvidence = Date.parse(evaluationCreatedAt) + 1;
   run('UPDATE auth_principals SET issued_at=?,created_at=? WHERE id=?', [afterEvidence, afterEvidence, admin.principalId]);
   assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'evidence cannot predate its persisted actor');
+});
+
+test('correction and source-event reads reject grant gaps and future evidence time', async () => {
+  for (const [suffix, kind, terminalStatus] of [
+    ['revoked-event-gap', 'event', 'revoked'],
+    ['expired-correction-gap', 'correction', 'expired'],
+  ]) {
+    const workspaceId = `m3a-${suffix}`;
+    workspace(workspaceId);
+    const result = await runHermesWorkflow(task(workspaceId));
+    const admin = principal(workspaceId);
+    const row = kind === 'event'
+      ? appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: `${suffix}-event`, eventType: 'accepted', evidence: 'verified evidence' })
+      : appendOutcomeCorrection(admin, result.evaluationId, { reason: 'verified correction', sourceEvidence: 'verified evidence' });
+    const grant = get('SELECT * FROM auth_workspace_grants WHERE principal_id=? AND workspace_id=?', [admin.principalId, workspaceId]);
+    const gapStart = Date.now();
+    if (terminalStatus === 'revoked') run("UPDATE auth_workspace_grants SET status='revoked',revoked_at=? WHERE id=?", [gapStart, grant.id]);
+    else run("UPDATE auth_workspace_grants SET status='expired',expires_at=? WHERE id=?", [gapStart, grant.id]);
+    const evidenceTime = new Date(gapStart + 1).toISOString();
+    const successorTime = gapStart + 2;
+    run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [`${grant.id}-successor`,admin.principalId,workspaceId,'viewer','["evaluation.correct","evaluation.read"]','active',2,grant.id,successorTime,null,null,'test',1,successorTime]);
+    const table = kind === 'event' ? 'hermes_outcome_source_events' : 'hermes_outcome_corrections';
+    withoutImmutability([table], () => run(`UPDATE ${table} SET created_at=? WHERE id=?`, [evidenceTime, row.id]));
+    assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, `${kind} cannot claim an authorization gap`);
+  }
+
+  workspace('m3a-future-evidence');
+  const result = await runHermesWorkflow(task('m3a-future-evidence'));
+  const admin = principal('m3a-future-evidence');
+  const correction = appendOutcomeCorrection(admin, result.evaluationId, { reason: 'verified correction', sourceEvidence: 'verified evidence' });
+  const event = appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'future-event', eventType: 'accepted', evidence: 'verified evidence' });
+  withoutImmutability(['hermes_outcome_corrections','hermes_outcome_source_events'], () => {
+    const future = '2099-01-01T00:00:00.000Z';
+    run('UPDATE hermes_outcome_corrections SET created_at=? WHERE id=?', [future, correction.id]);
+    run('UPDATE hermes_outcome_source_events SET created_at=? WHERE id=?', [future, event.id]);
+  });
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'future subordinate evidence fails closed');
 });
