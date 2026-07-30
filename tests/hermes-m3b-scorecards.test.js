@@ -86,18 +86,18 @@ test('derivation is deterministic: identical evidence reproduces byte-identical 
   assert.deepEqual(lineage.map((row) => row.provenance_digest), sources.map((row) => row.provenance_digest));
 });
 
-test('source input order cannot change a scorecard: SQL selection order is the only authority', async () => {
+test('lineage order is the canonical source order, not any caller-visible or arrival order', async () => {
   const sources = await seedSources('m3b-order', 5);
   const reader = principal('m3b-order');
   const [derived] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-order', cutoff: lastCutoff(sources) });
-  // The service never accepts a caller-ordered source list; ordering comes from an explicit ORDER BY
-  // plus an explicit sort before hashing. Recomputing the lineage packet from the shuffled rows in
-  // canonical order must reproduce exactly the stored digest.
+  // "Any input order produces the same result" holds structurally rather than by defence: the
+  // service accepts no caller-supplied source list at all, only a workspace and a cutoff. What is
+  // worth pinning is that the persisted lineage is the canonical (created_at, id) order even when
+  // the caller's own view of the sources is shuffled.
   const shuffled = [...sources].reverse();
   const reordered = [...shuffled].sort((left, right) => (`${left.created_at} ${left.id}` < `${right.created_at} ${right.id}` ? -1 : 1));
-  assert.deepEqual(reordered.map((row) => row.id), store.getVerifiedScorecardSources(derived.id).map((row) => row.evaluation_id));
   assert.notDeepEqual(shuffled.map((row) => row.id), reordered.map((row) => row.id), 'the fixture really was shuffled');
-  assert.equal(digest(reordered.map((row) => row.id)), digest(store.getVerifiedScorecardSources(derived.id).map((row) => row.evaluation_id)));
+  assert.deepEqual(store.getVerifiedScorecardSources(derived.id).map((row) => row.evaluation_id), reordered.map((row) => row.id));
 });
 
 test('confidence bands are exact at 4, 5, 19, and 20 intact sources and authorize nothing', async () => {
@@ -118,7 +118,7 @@ test('confidence bands are exact at 4, 5, 19, and 20 intact sources and authoriz
   assert.deepEqual(chain.slice(1).map((row) => row.supersedes_scorecard_id), chain.slice(0, -1).map((row) => row.id));
 });
 
-test('the cutoff tuple is inclusive at its boundary and deterministic when timestamps are equal', async () => {
+test('the cutoff tuple is inclusive at its boundary, and a rewritten timestamp fails closed', async () => {
   const sources = await seedSources('m3b-cutoff', 4);
   const reader = principal('m3b-cutoff');
   const [inclusive] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-cutoff', cutoff: cutoffAt(sources[2]) });
@@ -157,6 +157,33 @@ test('unknown acceptance, rollback, and stability are first-class counts, never 
   for (const [column, value] of Object.entries(card)) {
     if (/_count$|_total$|_numerator$|_denominator$|^known_/.test(column)) assert.ok(Number.isInteger(value), `${column} is an exact integer`);
   }
+});
+
+test('unknown timeout and unknown retry are counted, never summed as a confirmed zero', async () => {
+  // A policy-blocked run never reaches a provider, so Milestone 3A records its timeout and retry
+  // components as `unknown` while the NOT NULL row columns necessarily read 0 and NULL. Those must
+  // not be aggregated as "did not time out" and "zero retries".
+  const blocked = await seedSources('m3b-unknown-usage', 3, 'deploy to production');
+  const reader = principal('m3b-unknown-usage');
+  for (const evaluation of blocked) {
+    assert.equal(evaluation.learning_eligibility, 'ineligible_blocked');
+    assert.equal(evaluation.provider_invocation_id, null, 'a blocked run has no provider invocation');
+    assert.equal(evaluation.timed_out, 0, 'the NOT NULL column still reads zero');
+    assert.equal(evaluation.retry_count, null, 'retry is NULL, meaning unknown');
+    assert.equal(get("SELECT status FROM hermes_outcome_evaluation_components WHERE evaluation_id=? AND name='timeout'", [evaluation.id]).status, 'unknown', 'M3A itself calls this unknown');
+  }
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-unknown-usage', cutoff: lastCutoff(blocked) });
+  assert.equal(card.unknown_timeout_count, 3, 'an absent provider invocation is an unknown timeout');
+  assert.equal(card.timeout_count, 0, 'and is never counted as a confirmed timeout either');
+  assert.equal(card.known_retry_evaluations, 0, 'no source contributes a known retry count');
+  assert.equal(card.retry_total, 0, 'so the retry total has an explicitly empty denominator');
+  assert.equal(card.blocked_ineligible_count, 3);
+  assert.equal(card.positive_eligible_count, 0);
+  // A verified mock run does reach a provider, so its timeout determination is known.
+  const verified = await seedSources('m3b-known-usage', 3);
+  const [known] = deriveVerifiedScorecards(principal('m3b-known-usage'), { workspaceId: 'm3b-known-usage', cutoff: lastCutoff(verified) });
+  assert.equal(known.unknown_timeout_count, 0);
+  assert.equal(known.known_retry_evaluations, 3, 'a known zero retry count is counted as known');
 });
 
 test('recorded acceptance evidence is counted exactly and changes the derived content at the same identity', async () => {
@@ -218,10 +245,20 @@ test('workspace isolation: sources, reads, and authorization all derive scope fr
   const [card] = deriveVerifiedScorecards(alphaReader, { workspaceId: 'm3b-scope-a', cutoff: lastCutoff(alpha) });
   assert.equal(card.source_evaluation_count, 5, 'another workspace\'s evidence never enters the snapshot');
   assert.ok(store.getVerifiedScorecardSources(card.id).every((row) => row.workspace_id === 'm3b-scope-a'));
-  // One authorization decision per derivation, scoped to the derived workspace - not one per source.
-  assert.equal(all("SELECT id FROM auth_decisions WHERE workspace_id='m3b-scope-a'").length, decisionsBefore + 1);
-  // A caller cannot derive, or read, outside a workspace they hold `evaluation.read` in.
+  // Exactly one decision per permission per derivation, scoped to the derived workspace - not one
+  // per source. Both permissions are audited because deriving reads evidence and writes a snapshot.
+  const decisions = all("SELECT permission,allowed FROM auth_decisions WHERE workspace_id='m3b-scope-a' ORDER BY permission");
+  assert.equal(decisions.length, decisionsBefore + 2);
+  assert.deepEqual(decisions.slice(-2).map((row) => row.permission), ['evaluation.correct', 'evaluation.read']);
+  // Deriving persists rows, so a read-only grant must not be able to do it - but may still read.
+  const viewer = principal('m3b-scope-a', ['evaluation.read']);
+  assert.throws(() => deriveVerifiedScorecards(viewer, { workspaceId: 'm3b-scope-a', cutoff: lastCutoff(alpha) }), /not authorized/, 'a read-only grant cannot append snapshots');
+  assert.ok(readVerifiedScorecard(viewer, card.id), 'but a read-only grant can still read one');
+  // A denied attempt leaves durable audit evidence: the decision is recorded before the transaction
+  // that a refusal rolls back, so scope probing cannot be silent.
+  const deniedBefore = all("SELECT id FROM auth_decisions WHERE allowed=0").length;
   assert.throws(() => deriveVerifiedScorecards(betaReader, { workspaceId: 'm3b-scope-a', cutoff: lastCutoff(alpha) }), /not authorized/);
+  assert.ok(all("SELECT id FROM auth_decisions WHERE allowed=0").length > deniedBefore, 'a denied derivation is durably audited');
   assert.throws(() => deriveVerifiedScorecards({ principalId: alphaReader.principalId }, { workspaceId: 'm3b-scope-a', cutoff: lastCutoff(alpha) }), /not authorized/, 'a forged principal object is not trusted');
   assert.equal(readVerifiedScorecard(betaReader, card.id), null, 'a cross-workspace read is refused');
   assert.equal(readVerifiedScorecard({ principalId: alphaReader.principalId }, card.id), null, 'a forged principal cannot read');
@@ -270,6 +307,14 @@ test('malformed, missing, corrected, and contradictory evidence fails the whole 
     assert.throws(() => deriveVerifiedScorecards(scoped, { workspaceId, cutoff }), message, label);
     assert.equal(all('SELECT id FROM hermes_verified_scorecards WHERE workspace_id=?', [workspaceId]).length, 0, `${label} writes no partial snapshot`);
   }
+  // Milestone 3A permits an accepted and a rejected event on one evaluation. Aggregating that would
+  // resolve a contradiction in the favorable direction, so it must fail the snapshot closed.
+  const contradictory = await seedSources('m3b-contradictory', 3);
+  const contradictoryReader = principal('m3b-contradictory');
+  appendOutcomeSourceEvent(contradictoryReader, contradictory[0].id, { idempotencyKey: 'm3b-contra-accept', eventType: 'accepted', evidence: 'operator accepted the change' });
+  appendOutcomeSourceEvent(contradictoryReader, contradictory[0].id, { idempotencyKey: 'm3b-contra-reject', eventType: 'rejected', evidence: 'operator later rejected the change' });
+  assert.throws(() => deriveVerifiedScorecards(contradictoryReader, { workspaceId: 'm3b-contradictory', cutoff: lastCutoff(contradictory) }), /contradictory acceptance evidence/);
+  assert.equal(all("SELECT id FROM hermes_verified_scorecards WHERE workspace_id='m3b-contradictory'").length, 0, 'contradictory evidence writes no partial snapshot');
   // A corrected evaluation is disputed evidence and fails closed rather than being aggregated.
   const corrected = await seedSources('m3b-corrected', 3);
   const correctedReader = principal('m3b-corrected');
@@ -300,6 +345,14 @@ test('a stored snapshot whose persisted content no longer matches its digest is 
     ['a promoted confidence band', () => run('UPDATE hermes_verified_scorecards SET confidence_band=? WHERE id=?', ['established', card.id])],
     ['a truncated lineage', () => run('DELETE FROM hermes_verified_scorecard_sources WHERE scorecard_id=? AND seq=?', [card.id, 5])],
     ['a reordered lineage', () => run('UPDATE hermes_verified_scorecard_sources SET seq=? WHERE scorecard_id=? AND seq=?', [7, card.id, 1])],
+    // These four are caught only because the lineage digest is recomputed on read. Without it a
+    // snapshot could be re-attributed to another provider, or hand back forged lineage, and still
+    // read as authentic.
+    ['a re-attributed provider dimension', () => run('UPDATE hermes_verified_scorecards SET dimension_provider_id=? WHERE id=?', ['trusted-provider', card.id])],
+    ['a rewritten cutoff', () => run('UPDATE hermes_verified_scorecards SET cutoff_created_at=? WHERE id=?', ['2026-01-01T00:00:00.000Z', card.id])],
+    ['a forged lineage evaluation id', () => run('UPDATE hermes_verified_scorecard_sources SET evaluation_id=? WHERE scorecard_id=? AND seq=?', ['forged-evaluation', card.id, 2])],
+    ['a forged lineage provenance digest', () => run('UPDATE hermes_verified_scorecard_sources SET provenance_digest=? WHERE scorecard_id=? AND seq=?', ['0'.repeat(64), card.id, 2])],
+    ['a swapped lineage digest', () => run('UPDATE hermes_verified_scorecards SET lineage_digest=? WHERE id=?', ['a'.repeat(64), card.id])],
   ]) {
     const original = { card: get('SELECT * FROM hermes_verified_scorecards WHERE id=?', [card.id]), sources: store.getVerifiedScorecardSources(card.id) };
     withoutImmutability(['hermes_verified_scorecards', 'hermes_verified_scorecard_sources'], () => {

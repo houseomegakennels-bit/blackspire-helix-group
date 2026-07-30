@@ -19,7 +19,7 @@ merged and anchored Milestone 3A baseline.
   immutability triggers.
 - `apps/api/server.js` — one GET-only route, `/api/hermes/scorecards/:id`.
 - `scripts/typecheck-check.js` — adds the new and previously unlisted modules.
-- `tests/hermes-m3b-scorecards.test.js` — new, 13 tests.
+- `tests/hermes-m3b-scorecards.test.js` — new, 14 tests.
 - `docs/HERMES_M3B_VERIFIED_SCORECARDS.md`, `docs/HERMES_IMPLEMENTATION_STATUS.md`,
   `docs/HERMES_INTELLIGENCE_LAYER_ARCHITECTURE.md`, this file — documentation.
 
@@ -55,6 +55,12 @@ After a code revert they are inert: nothing reads or writes them, exactly as Mil
 behave. **Do not drop or edit them on any non-disposable database.** Removing them would require a
 separately reviewed destructive migration, and the immutability triggers deliberately refuse UPDATE
 and DELETE on both tables.
+
+Note for anyone who migrated an intermediate commit of this branch: the review pass added two
+columns (`known_retry_evaluations`, `unknown_timeout_count`) to `hermes_verified_scorecards`. Because
+the table is created with `CREATE TABLE IF NOT EXISTS`, a database migrated at the earlier commit
+will not gain them and will fail `assertSchemaCompatible` at startup. The branch is unmerged and
+never deployed, so the only affected databases are disposable development ones; recreate them.
 
 Reverting the schema registrations without re-migrating is safe in one direction only: a database
 that already has the new tables validates fine against older code, because

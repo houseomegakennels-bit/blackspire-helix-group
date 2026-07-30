@@ -133,21 +133,36 @@ than two that can drift.
 5. Dimensions come from the source's own immutable evidence: provider from the evaluation, agent from
    its routing decision, capability from the canonical sorted `requiredCapabilities`, classification
    from the four scalar facets re-emitted through `canonicalJson` so key order cannot vary.
-6. Metrics are exact integers. Unknown is counted in its own column and never folded into zero or
-   read as success. Ratios are integer numerator/denominator pairs; a zero denominator means the
-   ratio is not derivable, not that it is zero.
-7. Confidence is sample size only: `insufficient` under 5, `limited` 5–19, `established` 20 or more.
-8. The lineage digest covers the version, exact scope and dimensions, cutoff, every ordered
+6. Contradictory acceptance evidence — an `accepted` event alongside a `rejected` or
+   `partially_accepted` event on one evaluation — fails the snapshot closed rather than being
+   resolved in the favorable direction.
+7. Metrics are exact integers. Unknown is counted in its own column and never folded into zero or
+   read as success. This includes `unknown_timeout_count` (an evaluation with no provider invocation
+   at all, which Milestone 3A itself records as an unknown timeout even though the NOT NULL column
+   reads `0`) and `known_retry_evaluations` (the explicit denominator for `retry_total`, since a
+   NULL `retry_count` is unknown, not zero retries). Ratios are integer numerator/denominator pairs;
+   a zero denominator means the ratio is not derivable, not that it is zero.
+8. Confidence is sample size only: `insufficient` under 5, `limited` 5–19, `established` 20 or more.
+9. The lineage digest covers the version, exact scope and dimensions, cutoff, every ordered
    evaluation id and provenance digest, each correction head, ordered source-event ids, and every
    persisted metric. Neither the snapshot id nor its wall-clock creation time is hashed.
-9. Replay over an identical identity returns the stored snapshot without writing. An identical
+10. Replay over an identical identity returns the stored snapshot without writing. An identical
    identity whose derived content differs is an integrity error, never an overwrite.
-10. Sorting is by UTF-16 code unit, never `localeCompare`, whose result depends on host ICU data.
+11. Sorting within this module is by UTF-16 code unit, never `localeCompare`, whose result depends
+    on host ICU data. Note that revalidation still calls into Milestone 3A, which sorts component
+    rows with `localeCompare`; that is pre-existing 3A code and no ordering inversion exists among
+    its fixed ASCII component names, but the guarantee is this module's, not the whole path's.
 
 ## Authorization and read surface
 
-Derivation and reads both reuse the canonical `evaluation.read` permission; no new permission was
-added to `AUTHZ_PERMISSIONS`. Authorization is checked exactly once per derivation against the
+Reads reuse the canonical `evaluation.read` permission. Derivation persists rows, so it additionally
+requires the write-capable `evaluation.correct`: a read-only `viewer` grant must not be able to
+append permanent, immutable snapshots. No new permission was added to `AUTHZ_PERMISSIONS`.
+
+Authorization runs *before* the transaction opens, matching Milestone 3A's correction path, so the
+audited allow/deny decision survives the rollback that any later refusal triggers — scope probing
+cannot be silent. It is re-proved inside the transaction without emitting a second audit row, so one
+logical operation records one decision per permission. It is checked against the
 caller-named workspace before any evidence is read, and every selected source must already belong to
 that workspace, so a caller can neither widen scope nor override the scope stored in evidence. The
 HTTP route reuses `configuredEvaluationAdminPrincipal` and the existing session/bearer binding
@@ -181,6 +196,18 @@ Implemented and validated at the exact head. Known limitations, all deliberate:
 - **Registry drift breaks re-derivation.** Revalidation re-runs registry routing against the live
   registries, so editing a registry entry makes older evaluations unreadable and a previously
   successful snapshot non-reproducible. Registry definitions must be treated as immutable during 3B.
+- **A non-fixed-width `created_at` is silently excluded, not refused.** Timestamp canonicality is
+  checked only on rows the selection query already returned, so a row tampered to e.g.
+  `2026-01-01T00:00:00Z` sorts outside the cutoff and drops out of scope with no error. Same
+  trigger-dropping precondition as physical deletion.
+- **Derivation is unbounded.** `selectSources` has no `LIMIT` and each source runs a full provenance
+  re-derivation, all inside one `BEGIN IMMEDIATE` transaction that blocks other writers. One call is
+  O(entire workspace history) and writes one row per distinct dimension group. This is acceptable
+  only because there is no derivation route; a future API integration must bound it.
+- **Digest verification is corruption detection, not tamper resistance.** Both digests are unkeyed
+  SHA-256 over fully persisted public inputs, so an actor who can already write to these tables
+  (which requires dropping the immutability triggers) can recompute them to match an edit. No later
+  milestone may treat this as an integrity control against a database-write adversary.
 - No `follow_up_verification` semantics beyond a raw count; it is stored but not interpreted.
 
 Nothing here activates learned routing, memory promotion or retrieval, provider execution,
