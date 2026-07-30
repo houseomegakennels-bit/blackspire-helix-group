@@ -149,11 +149,17 @@ function validatedSource(evaluation, workspaceId, cutoff, derivationEpoch) {
 // already covers. An absent dimension becomes the explicit unknown sentinel, never an omitted field
 // and never a collapsed empty string; malformed evidence refuses rather than degrading to unknown.
 function dimensionsOf(evaluation) {
-  // A column that is SQL NULL is genuinely absent and becomes the unknown sentinel. A column that is
-  // present but does not parse is malformed evidence and refuses: collapsing it to unknown would let
-  // corruption read as "no classification recorded".
-  const classification = evaluation.classification === null ? null : parsedJson(evaluation.classification);
-  if (evaluation.classification !== null && classification === null) throw new Error('verified scorecard refuses a malformed classification dimension');
+  // Absent and malformed must be told apart, but SQL NULL is NOT the signal for absent: Milestone 3A
+  // writes this column through `safeJson`, which renders a missing classification as the four-byte
+  // JSON token `'null'`, never as SQL NULL. An emergency-stopped run legitimately produces exactly
+  // that - it terminates before `classifyTask`, so there is no routing row and no `hermes.classified`
+  // step - and `validateTerminalMatrix` explicitly blesses that shape. Keying "malformed" off SQL
+  // NULL therefore refused a perfectly intact evaluation and, because a failed source fails the whole
+  // snapshot, permanently broke derivation for any workspace that had ever hit an emergency stop.
+  // The real distinction is parsed-to-null versus did-not-parse, so that is what is tested.
+  const parsed = parsedValue(evaluation.classification);
+  if (parsed === UNPARSEABLE) throw new Error('verified scorecard refuses a malformed classification dimension');
+  const classification = parsed;
   const routing = evaluation.routing_decision_id ? getRoutingDecision(evaluation.routing_decision_id, evaluation.run_id) : null;
   if (evaluation.routing_decision_id && !routing) throw new Error('verified scorecard refuses a source evaluation with missing routing evidence');
   if (classification !== null && !validDimensionClassification(classification)) throw new Error('verified scorecard refuses a malformed classification dimension');
@@ -460,4 +466,7 @@ function safeSum(total, value) {
 function compareStrings(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 function sortKey(source) { return `${source.evaluation.created_at} ${source.evaluation.id}`; }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
-function parsedJson(value) { try { return JSON.parse(value); } catch { return null; } }
+// A sentinel, not `null`: `null` is a legitimate parse result here and must stay distinguishable
+// from a value that failed to parse at all.
+const UNPARSEABLE = Symbol('unparseable');
+function parsedValue(value) { try { return JSON.parse(value); } catch { return UNPARSEABLE; } }

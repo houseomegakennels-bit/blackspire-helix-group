@@ -14,7 +14,7 @@ const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { createUnifiedInput } = await import('../packages/unified-input/unified.js');
-const { getTask } = await import('../packages/task-engine/tasks.js');
+const { getTask, setFlag } = await import('../packages/task-engine/tasks.js');
 const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
 const store = await import('../packages/hermes-orchestrator/store.js');
 const { run, get, all, execSql } = await import('../packages/task-engine/db.js');
@@ -518,24 +518,24 @@ test('a same-millisecond second append is still an append, not a corruption alar
   const sources = await seedSources('m3b-tiebreak', 5);
   const reader = principal('m3b-tiebreak');
   const cutoff = lastCutoff(sources);
-  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tiebreak', cutoff });
+  // The snapshot must be taken AFTER the first append, so the stored lineage carries a non-empty
+  // source-event list. With an empty stored list every containment test passes trivially and this
+  // test would pass just as well against the prefix logic it exists to rule out.
   appendOutcomeSourceEvent(reader, sources[0].id, { eventType: 'rollback', evidence: 'change was rolled back', idempotencyKey: 'm3b-tiebreak-1' });
-  // `getOutcomeSourceEvents` orders by (created_at, id), `created_at` is millisecond resolution and
-  // `id` is random hex, so a second append inside the same millisecond can sort *before* the first.
-  // A prefix test would call that routine append corruption roughly half the time; the containment
-  // test is an ordered subsequence precisely so it cannot. Forcing the tie makes this deterministic
-  // rather than leaving it to a ~50% race.
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tiebreak', cutoff });
   const first = all('SELECT id,created_at FROM hermes_outcome_source_events WHERE evaluation_id=?', [sources[0].id]).at(-1);
+  assert.deepEqual(JSON.parse(store.getVerifiedScorecardSources(card.id)[0].source_event_ids), [first.id], 'the stored lineage really does carry the first event');
   appendOutcomeSourceEvent(reader, sources[0].id, { eventType: 'regression_linked', evidence: 'linked to a regression', idempotencyKey: 'm3b-tiebreak-2' });
   const second = all('SELECT id,created_at FROM hermes_outcome_source_events WHERE evaluation_id=? AND id!=?', [sources[0].id, first.id]).at(-1);
+  // `getOutcomeSourceEvents` orders by (created_at, id): `created_at` is millisecond resolution and
+  // `id` is random hex, so a second append inside the same millisecond can sort BEFORE the first.
+  // Rather than leave that to a ~50% race, the newer event is forced strictly earlier so the stored
+  // list is provably not a prefix of the live one. Prefix fails here; subsequence holds.
   withoutImmutability(['hermes_outcome_source_events'], () => {
-    // Same millisecond, and force the newer event to sort first by id.
-    const [earlier, later] = [first.id, second.id].sort();
-    run('UPDATE hermes_outcome_source_events SET created_at=? WHERE id IN (?,?)', [first.created_at, first.id, second.id]);
-    assert.ok(earlier < later);
+    run('UPDATE hermes_outcome_source_events SET created_at=? WHERE id=?', [sources[0].created_at, second.id]);
   });
   const ordered = all('SELECT id FROM hermes_outcome_source_events WHERE evaluation_id=? ORDER BY created_at,id', [sources[0].id]).map((row) => row.id);
-  assert.equal(ordered.length, 2, 'both events are present');
+  assert.deepEqual(ordered, [second.id, first.id], 'the append deterministically sorts ahead of the stored event');
   assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tiebreak', cutoff }),
     /source evidence was appended: derive a later cutoff/,
     'a tie-broken append must not be reported as an evidence-store integrity conflict');
@@ -545,4 +545,25 @@ test('a same-millisecond second append is still an append, not a corruption alar
   });
   assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tiebreak', cutoff }),
     /identity conflicts with stored derived content/);
+});
+
+test('an emergency-stopped evaluation has no classification and derives as unknown, not as malformed', async () => {
+  const workspaceId = 'm3b-emergency';
+  workspace(workspaceId);
+  const created = task(workspaceId, 'report current status', 'stop');
+  setFlag('emergency_stop', 'active');
+  let result;
+  try { result = await runHermesWorkflow(created); } finally { setFlag('emergency_stop', 'inactive'); }
+  const evaluation = store.getOutcomeEvaluation(result.evaluationId);
+  // Milestone 3A writes this column through `safeJson`, so an absent classification is the JSON token
+  // `'null'` and never SQL NULL. Keying "malformed" off SQL NULL refused this intact evaluation and,
+  // because a failed source fails the whole snapshot, permanently broke derivation for the workspace.
+  assert.equal(evaluation.classification, 'null', 'an absent classification is the JSON token, not SQL NULL');
+  assert.notEqual(evaluation.classification, null);
+  const reader = principal(workspaceId);
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId, cutoff: cutoffAt(evaluation) });
+  assert.equal(card.dimension_classification, UNKNOWN_DIMENSION, 'an absent classification is the explicit unknown sentinel');
+  assert.equal(card.dimension_capability, UNKNOWN_DIMENSION);
+  assert.equal(card.source_evaluation_count, 1);
+  assert.ok(readVerifiedScorecard(reader, card.id), 'the snapshot reads back');
 });

@@ -15,7 +15,7 @@ The first implementation slice is workspace-scoped and explicit:
 3. Group only by canonical workspace, provider, agent, capability, and classification dimensions.
 4. Derive integer counts and known totals without averages that silently discard unknown values.
 5. Persist a new immutable snapshot and its ordered source lineage in one transaction.
-6. Return the stored snapshot; never call the router, executor, provider registry mutation surface,
+14. Return the stored snapshot; never call the router, executor, provider registry mutation surface,
    or memory service.
 
 There is no background job, startup hook, workflow-completion hook, historical backfill, HTTP
@@ -133,23 +133,27 @@ than two that can drift.
 3. A source that fails any check fails the whole snapshot. Sources are never skipped, because
    silently dropping evidence would make a scorecard look better than the record supports.
 4. A corrected source is disputed evidence and fails closed rather than being aggregated.
-5. Dimensions come from the source's own immutable evidence: provider from the evaluation, agent from
+5. An absent classification is the explicit unknown sentinel, and "absent" is the JSON token `null`,
+   not SQL NULL — Milestone 3A writes this column through `safeJson`, so a run that terminated before
+   classification (an emergency stop, which `validateTerminalMatrix` explicitly blesses) stores the
+   four-byte token. Only a column that fails to parse at all is malformed and refuses.
+6. Dimensions come from the source's own immutable evidence: provider from the evaluation, agent from
    its routing decision, capability from the canonical sorted `requiredCapabilities`, classification
    from the four scalar facets re-emitted through `canonicalJson` so key order cannot vary.
-6. Contradictory acceptance evidence — an `accepted` event alongside a `rejected` or
+7. Contradictory acceptance evidence — an `accepted` event alongside a `rejected` or
    `partially_accepted` event on one evaluation — fails the snapshot closed rather than being
    resolved in the favorable direction.
-7. Metrics are exact integers. Unknown is counted in its own column and never folded into zero or
+8. Metrics are exact integers. Unknown is counted in its own column and never folded into zero or
    read as success. This includes `unknown_timeout_count` (an evaluation with no provider invocation
    at all, which Milestone 3A itself records as an unknown timeout even though the NOT NULL column
    reads `0`) and `known_retry_evaluations` (the explicit denominator for `retry_total`, since a
    NULL `retry_count` is unknown, not zero retries). Ratios are integer numerator/denominator pairs;
    a zero denominator means the ratio is not derivable, not that it is zero.
-8. Confidence is sample size only: `insufficient` under 5, `limited` 5–19, `established` 20 or more.
-9. The lineage digest covers the version, exact scope and dimensions, cutoff, every ordered
+9. Confidence is sample size only: `insufficient` under 5, `limited` 5–19, `established` 20 or more.
+10. The lineage digest covers the version, exact scope and dimensions, cutoff, every ordered
    evaluation id and provenance digest, each correction head, ordered source-event ids, and every
    persisted metric. Neither the snapshot id nor its wall-clock creation time is hashed.
-10. Replay over an identical identity returns the stored snapshot without writing. An identical
+11. Replay over an identical identity returns the stored snapshot without writing. An identical
    identity whose derived content differs never overwrites. It refuses with one of two distinct
    errors: appended Milestone 3A source evidence (routine, resolved by deriving a later cutoff) when
    the stored snapshot is still intact and every stored source-event list survives as an ordered
@@ -158,21 +162,21 @@ than two that can drift.
    random ids, so two appends inside one millisecond sort by random tie-break and a prefix test would
    misreport a routine second append as corruption. A stored id that disappears, or two stored ids
    whose relative order inverts, still fails to the integrity error.
-11. A successor may never cover an earlier cutoff than the snapshot it supersedes. Without this a
+12. A successor may never cover an earlier cutoff than the snapshot it supersedes. Without this a
    later derivation at an earlier cutoff appended a thinner snapshot that became the scope head and
    claimed to supersede a richer predecessor, silently regressing source count, confidence band, and
    every metric for any consumer reading the head. Equal cutoffs are handled as replay above.
-12. `scope_version` and `supersedes_scorecard_id` are covered by neither digest — they are assigned
+13. `scope_version` and `supersedes_scorecard_id` are covered by neither digest — they are assigned
    at insert time from the scope head, so hashing them would make an identical re-derivation depend
    on write order and break replay. They are instead proven structurally on every read: version 1
    iff no predecessor, otherwise the predecessor must exist, sit in the same scope, hold exactly the
    preceding `scope_version`, and carry an earlier cutoff. This is stronger than a self-digest,
    because it validates the row against its actual predecessor rather than against itself.
-13. Sorting within this module is by UTF-16 code unit, never `localeCompare`, whose result depends
+14. Sorting within this module is by UTF-16 code unit, never `localeCompare`, whose result depends
     on host ICU data. Note that revalidation still calls into Milestone 3A, which sorts component
     rows with `localeCompare`; that is pre-existing 3A code and no ordering inversion exists among
     its fixed ASCII component names, but the guarantee is this module's, not the whole path's.
-14. Cutoff timestamps must carry a four-digit year. `toISOString()` round-trips the extended form for
+15. Cutoff timestamps must carry a four-digit year. `toISOString()` round-trips the extended form for
     years outside 1000-9999, which would otherwise validate, pass the future-cutoff check, and then
     match no rows — returning an empty result instead of refusing an absurd cutoff.
 
