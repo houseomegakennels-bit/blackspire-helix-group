@@ -1,9 +1,9 @@
 # Hermes Intelligence Layer — Implementation Status
 
-## Milestone 3A — Verified outcome evidence (PR #57, final validation)
+## Milestone 3A — Verified outcome evidence (PR #57, recovered final validation)
 
-- **Implemented:** one immutable factual evaluation per terminal run/version; complete canonical provenance digest over exact, sanitized, causally bounded routing, policy, verification, provider-attempt, workflow-step, evaluation, and component evidence; canonical stored classification derived from route/step evidence; deterministic retry/usage aggregation; database-enforced append-only evaluations, components, corrections, source events, and failure records.
-- **Authorization:** evaluation reads derive stored workspace scope and require current `evaluation.read`; corrections/events require current `evaluation.correct`. Server-bound canonical admin sessions and bearer auth can use the narrow read path; forged, stale, cross-workspace, and unbound contexts fail closed.
+- **Implemented:** one immutable factual evaluation per terminal run/version; complete canonical provenance digest over exact, sanitized, causally bounded routing, policy, verification, every provider attempt, workflow-step, evaluation, and component evidence; exact terminal outcome matrices; registry-derived routing identity; canonical stored classification derived from route/step evidence; deterministic retry/usage/timeout/cancellation aggregation; database-enforced append-only evaluations, components, corrections, source events, and failure records.
+- **Authorization:** evaluation reads derive stored workspace scope and require current `evaluation.read`; corrections/events require current `evaluation.correct`. Server-bound canonical admin sessions and bearer auth can use the narrow read path; forged, stale, malformed, cross-workspace, and unbound contexts fail closed. Service authentication always requires its exact credential reference.
 - **Operational guarantees:** additive atomic migration, required integrity indexes/triggers, disposable-only provisioning/tests, strict production CSP, no routing or scorecard effect, no memory promotion/retrieval, no live provider, no production activation.
 - **Next:** Milestone 3B verified scorecards and learning-quality evidence, still non-operative. Approval-gated memory promotion and learned routing remain later milestones.
 

@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-07-30 — Hermes Milestone 3A timeout recovery and final blocker repair (Codex)
+
+- Recovered the previous live session, repository, PR #57, GitHub checks, reviewer transcripts, plan, and canonical logs without repeating completed work. The prior pushed head `bb584b8f2813a0fb5d111d7d1f2ba3648d56b8e1` was clean, mergeable, CI/Vercel green, and had four resolved threads; its recorded 587-test validation was intact.
+- Identified the actual interruption as a platform safety/UI reroute immediately after the lead reproduced the final reviewers' findings, not a repository, test, CI, deployment, provider, or production timeout. The only earlier operational slips were two detected Node 18 shell defaults; both runs were stopped and repeated with the required Node 22.23.1.
+- Resumed at the exact blocker batch. Service principals now require their exact credential reference; persisted sessions validate canonical identifiers, epochs, revocation state, binding, cutoff, and bounded rotation; registry definitions are recursively immutable; outcome evaluation derives runtime/routing identity from canonical registries, enforces exact step-detail schemas and outcome-specific terminal causal matrices, and aggregates timeout/cancellation evidence over every provider attempt. Added disposable regressions for every reproduced path. Focused recovery validation is 79/79 under Node 22.23.1. Full gates, exact-head push/CI/Vercel, and fresh independent final review remain pending before merge.
+
 ## 2026-07-30 — Hermes Milestone 3A coordinated stabilization (Codex)
 
 - Recovered PR #57 without moving it backward, reconciled its branch/remote/PR/main heads, checks, unresolved threads, processes, PR claims, and canonical memory, then completed six parallel read-only audits before any lead-written change.
