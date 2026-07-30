@@ -7,7 +7,6 @@ import path from 'node:path';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-test-expiry-'));
 process.env.NODE_ENV = 'test';
 process.env.UNIFIED_IPHONE_TEST_MODE = 'true';
-process.env.UNIFIED_TEST_EXPIRES_AT = new Date(Date.now() + 1000).toISOString();
 process.env.UNIFIED_TEST_WORKSPACE_ID = 'expiry-test';
 process.env.UNIFIED_TEST_ACTOR_ID = 'expiry-operator';
 process.env.UNIFIED_TEST_CHANNEL_KEY = 'expiry-chat';
@@ -24,6 +23,7 @@ for (const key of ['TELEGRAM_BOT_TOKEN','OPENAI_API_KEY','ANTHROPIC_API_KEY','CO
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+process.env.UNIFIED_TEST_EXPIRES_AT = new Date(Date.now() + 3000).toISOString();
 const { start } = await import('../apps/api/server.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
 const server = start(0, '127.0.0.1', { exitOnListenError: false });
@@ -36,7 +36,7 @@ test('test-mode sessions and fresh logins expire at the operator deadline', asyn
   const login = await fetch(`${origin}/api/test-mode/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ accessCode: process.env.UNIFIED_TEST_ACCESS_CODE }) });
   assert.equal(login.status, 200);
   const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await new Promise((resolve) => setTimeout(resolve, 3200));
   const existing = await (await fetch(`${origin}/api/auth/session`, { headers: { cookie } })).json();
   assert.equal(existing.authenticated, false);
   const fresh = await fetch(`${origin}/api/test-mode/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ accessCode: process.env.UNIFIED_TEST_ACCESS_CODE }) });

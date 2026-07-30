@@ -20,6 +20,7 @@ const MAX_DEPTH = 32;
 // so credentials embedded in free-text objectives/steps are never persisted verbatim. Ordered
 // specific-before-generic. Each entry redacts the sensitive span while keeping surrounding context.
 const EXTRA_SECRET_PATTERNS = [
+  [/\b(credential|private[_ -]?key|cookie|env)(\s*[:=]\s*)("?)[^\s,"'}]+/gi, '$1$2$3[REDACTED]'],
   // Authorization/Proxy-Authorization header VALUE (Bearer, Basic, Digest, or any scheme+token)
   [/\b(proxy-)?authorization(\s*[:=]\s*)("?)[^\s,"'}]+/gi, '$1authorization$2$3[REDACTED]'],
   // Bearer / Basic <token> appearing without an explicit "authorization" label

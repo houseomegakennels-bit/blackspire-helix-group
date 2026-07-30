@@ -1,4 +1,5 @@
 import { getDb, query, execSql } from '../packages/task-engine/db.js';
+import { findMissingSchemaObjects } from '../packages/shared/schema-validation.js';
 
 function tableColumns(table) {
   return query(`PRAGMA table_info(${table});`).map((row) => row.name);
@@ -112,6 +113,8 @@ CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_failures_immutable_update BEFORE
 CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_failures_immutable_delete BEFORE DELETE ON hermes_outcome_evaluation_failures BEGIN SELECT RAISE(ABORT,'immutable outcome failure'); END;`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
+  const missing = findMissingSchemaObjects(db);
+  if (missing.length) throw new Error(`migration produced incompatible schema: ${missing.join('; ')}`);
   db.exec('COMMIT;');
   } catch (error) {
     db.exec('ROLLBACK;');

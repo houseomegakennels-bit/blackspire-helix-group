@@ -78,7 +78,11 @@ export function findMissingSchemaObjects(db) {
   for (const [name, expected] of Object.entries(REQUIRED_SCHEMA_OBJECTS.index)) {
     const index = db.prepare(`PRAGMA index_list("${expected.table}")`).all().find((row) => row.name === name);
     const columns = index ? db.prepare(`PRAGMA index_info("${name}")`).all().map((row) => row.name) : [];
-    if (!index || index.unique !== 1 || columns.length !== expected.columns.length || columns.some((column, position) => column !== expected.columns[position])) missing.push(`invalid index ${name}`);
+    const schemaRow = db.prepare('SELECT sql FROM sqlite_master WHERE type=? AND name=?').get('index', name);
+    const expectedSql = `CREATE UNIQUE INDEX ${name} ON ${expected.table}(${expected.columns.join(',')})`;
+    if (!index || index.unique !== 1 || index.origin !== 'c' || index.partial !== 0 ||
+      normalizeSql(schemaRow?.sql) !== normalizeSql(expectedSql) ||
+      columns.length !== expected.columns.length || columns.some((column, position) => column !== expected.columns[position])) missing.push(`invalid index ${name}`);
   }
   for (const [name, expected] of Object.entries(REQUIRED_SCHEMA_OBJECTS.trigger)) {
     const trigger = db.prepare('SELECT tbl_name,sql FROM sqlite_master WHERE type=? AND name=?').get('trigger', name);

@@ -469,5 +469,7 @@ test('findMissingSchemaObjects rejects missing or shape-invalid integrity indexe
   const malformed = findMissingSchemaObjects(db);
   assert.ok(malformed.includes(`invalid index ${index.name}`));
   assert.ok(malformed.includes(`invalid trigger ${trigger.name}`));
+  db.exec(`DROP INDEX ${index.name}; ${index.sql} WHERE 0;`);
+  assert.ok(findMissingSchemaObjects(db).includes(`invalid index ${index.name}`));
   db.close();
 });

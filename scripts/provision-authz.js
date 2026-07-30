@@ -81,21 +81,23 @@ function nullableAuthorityId(v) { return v === null || v === undefined || author
 function integer(v) { return Number.isInteger(v); }
 function nullableInteger(v) { return v === null || v === undefined || integer(v); }
 function principalLifecycle(p) {
+  const currentTime = Date.now();
   const expiresAt = p.expires_at ?? null;
   const revokedAt = p.revoked_at ?? null;
   const disabledAt = p.disabled_at ?? null;
   if (!['active','revoked','disabled','expired'].includes(p.status) || !integer(p.issued_at) || !nullableInteger(expiresAt) || !nullableInteger(revokedAt) || !nullableInteger(disabledAt)) return false;
-  if ((expiresAt !== null && expiresAt < p.issued_at) || (revokedAt !== null && revokedAt < p.issued_at) || (disabledAt !== null && disabledAt < p.issued_at)) return false;
+  if (p.issued_at > currentTime || (expiresAt !== null && expiresAt < p.issued_at) || (revokedAt !== null && (revokedAt < p.issued_at || revokedAt > currentTime)) || (disabledAt !== null && (disabledAt < p.issued_at || disabledAt > currentTime))) return false;
   return (p.status === 'active' && revokedAt === null && disabledAt === null && (expiresAt === null || expiresAt > Date.now())) ||
     (p.status === 'revoked' && revokedAt !== null) || (p.status === 'disabled' && disabledAt !== null) ||
     (p.status === 'expired' && expiresAt !== null && expiresAt <= Date.now());
 }
 function grantLifecycle(g) {
+  const currentTime = Date.now();
   const status = g.status ?? 'active';
   const expiresAt = g.expires_at ?? null;
   const revokedAt = g.revoked_at ?? null;
   if (!['active','revoked','expired','superseded'].includes(status) || !integer(g.issued_at) || !nullableInteger(expiresAt) || !nullableInteger(revokedAt)) return false;
-  if ((expiresAt !== null && expiresAt < g.issued_at) || (revokedAt !== null && revokedAt < g.issued_at)) return false;
+  if (g.issued_at > currentTime || (expiresAt !== null && expiresAt < g.issued_at) || (revokedAt !== null && (revokedAt < g.issued_at || revokedAt > currentTime))) return false;
   return (status === 'active' && revokedAt === null && (expiresAt === null || expiresAt > Date.now())) ||
     (status === 'revoked' && revokedAt !== null) || (status === 'expired' && expiresAt !== null && expiresAt <= Date.now()) ||
     status === 'superseded';

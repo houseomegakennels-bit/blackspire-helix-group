@@ -47,6 +47,7 @@ test('verified mock workflow creates one immutable positive factual evaluation w
   assert.equal(r.outcome, 'verified'); assert.ok(r.evaluationId);
   const e = store.getOutcomeEvaluation(r.evaluationId);
   assert.equal(e.learning_eligibility, 'positive_eligible'); assert.equal(e.project_id, 'm3a-good');
+  assert.deepEqual(JSON.parse(e.classification), r.classification);
   assert.match(e.provenance_digest, /^[a-f0-9]{64}$/); assert.equal(e.cost_cents, 0, 'mock cost is an actually known zero');
   assert.ok(store.getOutcomeComponents(e.id).some((c) => c.name === 'stability_evidence' && c.status === 'unknown'));
   assert.throws(() => evaluateTerminalOutcome(r.runId), /already exists/);
@@ -80,6 +81,15 @@ test('blocked workflow is factual but ineligible; no verification can become pos
   workspace('m3a-block'); const r = await runHermesWorkflow(task('m3a-block', 'deploy to production'));
   const e = store.getOutcomeEvaluation(r.evaluationId);
   assert.equal(r.status, 'blocked'); assert.equal(e.learning_eligibility, 'ineligible_blocked'); assert.notEqual(e.learning_eligibility, 'positive_eligible');
+  assert.deepEqual(JSON.parse(e.classification), r.classification);
+});
+
+test('free-form canonical channel actors remain readable without being treated as authority IDs', async () => {
+  workspace('m3a-actor');
+  const input = createUnifiedInput({ channel: 'jarvis', actorId: 'operator@example.com', channelKey: 'operator@example.com', workspaceId: 'm3a-actor', text: 'report status', idempotencyKey: 'm3a-actor-email' });
+  const result = await runHermesWorkflow(getTask(input.taskId));
+  assert.equal(store.getOutcomeEvaluation(result.evaluationId).user_id, 'operator@example.com');
+  assert.equal(readOutcomeEvaluation(principal('m3a-actor'), result.evaluationId).id, result.evaluationId);
 });
 
 test('evaluation rejects incomplete/reordered evidence and does not write a partial row', () => {
@@ -109,6 +119,9 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { reason: 'branch', sourceEvidence: 'evidence' }), /sole current/);
   const second = appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: first.id, reason: 'new evidence', sourceEvidence: 'explicit evidence' });
   assert.equal(second.version, 2);
+  appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: second.id, reason: 'credential=hunter2-not-redacted', sourceEvidence: 'private_key=hunter2-not-redacted' });
+  const redactedCorrection = store.getOutcomeCorrections(result.evaluationId).at(-1);
+  assert.doesNotMatch(`${redactedCorrection.reason} ${redactedCorrection.source_evidence}`, /hunter2-not-redacted/);
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { supersedesCorrectionId: first.id, reason: 'cycle', sourceEvidence: 'evidence' }), /sole current/);
   withoutImmutability(['hermes_outcome_corrections'], () => {
     run('UPDATE hermes_outcome_corrections SET workspace_id=? WHERE id=?', ['m3a-reader', first.id]);
@@ -140,6 +153,9 @@ test('explicit source events are idempotent, evidence-required, and evaluator fa
   assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-3', eventType: 'rollback', evidence: '' }), /allowed type/);
   assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-4', eventType: 'rollback', evidence: '   ' }), /allowed type/);
   assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-5', eventType: 'rollback', evidence: '\u200b' }), /allowed type/, 'Unicode-only invisible evidence is not meaningful');
+  assert.throws(() => appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'ghp_1234567890abcdef', eventType: 'rollback', evidence: 'evidence' }), /idempotency key/);
+  appendOutcomeSourceEvent(admin, result.evaluationId, { idempotencyKey: 'source-event-redacted', eventType: 'rollback', evidence: 'credential=hunter2-not-redacted' });
+  assert.doesNotMatch(store.getOutcomeSourceEvents(result.evaluationId).at(-1).evidence, /hunter2-not-redacted/);
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { reason: '   ', sourceEvidence: 'evidence' }), /reason and source evidence/);
   withoutImmutability(['hermes_outcome_source_events'], () => {
     run('UPDATE hermes_outcome_source_events SET workspace_id=? WHERE id=?', ['m3a-events-other', event.id]);
@@ -178,15 +194,18 @@ test('complete canonical provenance rejects hidden evidence, raw-secret equivale
   run("UPDATE hermes_provider_invocations SET provider='forged',status='nonsense',input_tokens=1.5,duration_ms=-1,timed_out=2 WHERE run_id=?", [providerResult.runId]);
   assert.throws(() => evaluateTerminalOutcome(providerResult.runId), /provider evidence/);
 
-  for (const [suffix, table, assignment, message] of [
-    ['routing','hermes_routing_decisions',`candidates='not-json'`,'routing evidence'],
+  for (const [suffix, table, assignment, message, key = 'run_id'] of [
+    ['routing','hermes_routing_decisions',`classification='{}',candidates='[null]',capabilities='[]'`,'routing evidence'],
     ['policy','hermes_policy_decisions',`decision='invented'`,'policy evidence'],
-    ['verification','hermes_verification_results',`checks='not-json'`,'verification evidence'],
+    ['verification','hermes_verification_results',`verifier='forged-verifier',checks='[{\"name\":\"invented\",\"passed\":true,\"detail\":\"forged\"}]'`,'verification evidence'],
+    ['step-status','hermes_workflow_steps',`status='failed'`,'step evidence'],
+    ['future-route','hermes_routing_decisions',`created_at='2099-01-01T00:00:00.000Z'`,'timestamp'],
+    ['nested-secret','hermes_workflow_runs',`classification='{\"credential\":\"hunter2-not-redacted\"}'`,'terminal workflow run','id'],
   ]) {
     const workspaceId = `m3a-${suffix}-malformed`;
     workspace(workspaceId); const malformed = await runHermesWorkflow(task(workspaceId));
     deleteEvaluationForTest(malformed.evaluationId);
-    run(`UPDATE ${table} SET ${assignment} WHERE run_id=?`, [malformed.runId]);
+    run(`UPDATE ${table} SET ${assignment} WHERE ${key}=?`, [malformed.runId]);
     assert.throws(() => evaluateTerminalOutcome(malformed.runId), new RegExp(message));
   }
 

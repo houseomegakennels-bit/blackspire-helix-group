@@ -152,8 +152,8 @@ export async function runHermesWorkflow(input, options = {}) {
     const memoryCandidate = extractMemoryCandidate({ runId, normalized, classification, verification, provider: routing.provider, executionMode: execution.executionMode });
     if (memoryCandidate.created) events.record(HERMES_EVENTS.MEMORY_CANDIDATE, { id: memoryCandidate.id, status: 'pending' });
 
-    finishWorkflowRun(runId, { status: 'completed', outcome: 'verified', provider: execution.provider, agent: routing.agent, costCents: execution.usage.costCents });
     events.record(HERMES_EVENTS.COMPLETED, { outcome: 'verified', executionMode: execution.executionMode });
+    finishWorkflowRun(runId, { status: 'completed', outcome: 'verified', provider: execution.provider, agent: routing.agent, costCents: execution.usage.costCents });
     return done(runId, 'completed', 'verified', { executionMode: execution.executionMode, classification, routing, verification, memoryCandidate, execution });
   } catch (error) {
     events.record(HERMES_EVENTS.FAILED, { reason: String(error?.message || error) }, 'failed');
