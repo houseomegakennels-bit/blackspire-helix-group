@@ -55,6 +55,10 @@ test('verified mock workflow creates one immutable positive factual evaluation w
   run('UPDATE hermes_provider_invocations SET input_tokens=5,output_tokens=7,cost_cents=11 WHERE run_id=?', [r.runId]);
   run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
        SELECT 'retry-attempt',run_id,task_id,provider,adapter_type,model,mode,status,2,input_bytes,output_bytes,13,17,19,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [r.runId]);
+  run("UPDATE hermes_provider_invocations SET status='failed' WHERE run_id=? AND attempt=1", [r.runId]);
+  run('UPDATE hermes_workflow_runs SET cost_cents=19 WHERE id=?', [r.runId]);
+  const executed = all("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [r.runId])[0];
+  run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...JSON.parse(executed.detail), attempts: 2 }), r.runId]);
   deleteEvaluationForTest(e.id);
   const retried = evaluateTerminalOutcome(r.runId).evaluation;
   assert.notEqual(retried.provenanceDigest, e.provenance_digest, 'the digest covers every retry attempt');
@@ -212,7 +216,7 @@ test('complete canonical provenance rejects hidden evidence, raw-secret equivale
   workspace('m3a-time-malformed'); const timeResult = await runHermesWorkflow(task('m3a-time-malformed'));
   deleteEvaluationForTest(timeResult.evaluationId);
   run("UPDATE hermes_workflow_steps SET created_at='not-a-date' WHERE run_id=?", [timeResult.runId]);
-  assert.throws(() => evaluateTerminalOutcome(timeResult.runId), /timestamp/);
+  assert.throws(() => evaluateTerminalOutcome(timeResult.runId), /timestamp|ordered/);
 });
 
 test('completed verified outcomes reject contradictory routing, policy, invocation, or missing verification evidence', async () => {
@@ -224,7 +228,22 @@ test('completed verified outcomes reject contradictory routing, policy, invocati
       run('UPDATE hermes_routing_decisions SET candidates=? WHERE run_id=?', [JSON.stringify(candidates), runId]);
     }, 'routing evidence'],
     ['approval-allow', (runId) => run("UPDATE hermes_policy_decisions SET decision='allow',requires_approval=1 WHERE run_id=?", [runId]), 'policy evidence'],
-    ['missing-verification', (runId) => run('DELETE FROM hermes_verification_results WHERE run_id=?', [runId]), 'complete verified evidence'],
+    ['missing-verification', (runId) => run('DELETE FROM hermes_verification_results WHERE run_id=?', [runId]), 'verification evidence'],
+    ['verified-step', (runId) => run(`UPDATE hermes_workflow_steps SET detail='{"passed":false,"detail":"all deterministic checks passed"}' WHERE run_id=? AND name='hermes.verified'`, [runId]), 'verification evidence'],
+    ['incomplete-checks', (runId) => run(`UPDATE hermes_verification_results SET checks='[{"name":"execution_ok","passed":true,"detail":"execution reported ok"}]' WHERE run_id=?`, [runId]), 'verification evidence'],
+    ['two-successes', (runId) => {
+      run('UPDATE hermes_provider_invocations SET attempt=2 WHERE run_id=?', [runId]);
+      run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
+        SELECT 'prior-success',run_id,task_id,provider,adapter_type,model,mode,status,1,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at FROM hermes_provider_invocations WHERE run_id=?`, [runId]);
+    }, 'retry evidence'],
+    ['run-agent', (runId) => run("UPDATE hermes_workflow_runs SET agent='forged-agent' WHERE id=?", [runId]), 'run routing evidence'],
+    ['run-cost', (runId) => run('UPDATE hermes_workflow_runs SET cost_cents=99 WHERE id=?', [runId]), 'run cost evidence'],
+    ['policy-step', (runId) => run("UPDATE hermes_policy_decisions SET action_class='forged.action' WHERE run_id=?", [runId]), 'policy evidence'],
+    ['verification-chronology', (runId) => run(`UPDATE hermes_verification_results SET created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?`, [runId, runId]), 'chronology'],
+    ['terminal-outcome', (runId) => {
+      run("UPDATE hermes_workflow_runs SET status='failed',outcome='verified' WHERE id=?", [runId]);
+      run(`UPDATE hermes_workflow_steps SET name='hermes.failed',status='failed',detail='{"reason":"forged"}' WHERE run_id=? AND name='hermes.completed'`, [runId]);
+    }, 'terminal evidence'],
   ]) {
     const workspaceId = `m3a-contradictory-${suffix}`;
     workspace(workspaceId);
@@ -243,6 +262,7 @@ test('correction authorization and insertion are atomic against authority change
        BEGIN UPDATE auth_principals SET status='disabled',disabled_at=${Date.now()} WHERE id=NEW.principal_id; END`);
   assert.throws(() => appendOutcomeCorrection(admin, result.evaluationId, { reason: 'race', sourceEvidence: 'evidence' }), /not authorized/);
   assert.equal(all('SELECT * FROM hermes_outcome_corrections WHERE evaluation_id=?', [result.evaluationId]).length, 0);
+  assert.equal(all('SELECT * FROM auth_decisions WHERE principal_id=?', [admin.principalId]).length, 1, 'the denied post-audit revalidation does not erase the durable decision');
   assert.equal(store.getOutcomeEvaluation(result.evaluationId).id, result.evaluationId);
 });
 
@@ -264,4 +284,21 @@ test('correction and source-event insertion audit once and revalidate authority 
     assert.equal(all('SELECT * FROM auth_decisions WHERE allowed=1 AND principal_id=?', [admin.principalId]).length, 1);
     assert.equal(get('SELECT status FROM auth_principals WHERE id=?', [admin.principalId]).status, 'active');
   }
+});
+
+test('denied evidence mutations retain their authorization audits and reads do not fabricate correction decisions', async () => {
+  workspace('m3a-audit-durable');
+  const result = await runHermesWorkflow(task('m3a-audit-durable'));
+  const reader = principal('m3a-audit-durable', ['evaluation.read']);
+  assert.throws(() => appendOutcomeCorrection(reader, result.evaluationId, { reason: 'denied', sourceEvidence: 'evidence' }), /not authorized/);
+  assert.throws(() => appendOutcomeSourceEvent(reader, result.evaluationId, { idempotencyKey: 'denied-event', eventType: 'accepted', evidence: 'evidence' }), /not authorized/);
+  const denied = all("SELECT permission,allowed FROM auth_decisions WHERE principal_id=? AND permission='evaluation.correct' ORDER BY created_at,id", [reader.principalId]);
+  assert.deepEqual(denied, [{ permission: 'evaluation.correct', allowed: 0 }, { permission: 'evaluation.correct', allowed: 0 }]);
+
+  const admin = principal('m3a-audit-durable');
+  appendOutcomeCorrection(admin, result.evaluationId, { reason: 'valid', sourceEvidence: 'evidence' });
+  const correctBefore = all("SELECT * FROM auth_decisions WHERE principal_id=? AND permission='evaluation.correct'", [admin.principalId]).length;
+  assert.equal(readOutcomeEvaluation(admin, result.evaluationId).id, result.evaluationId);
+  assert.equal(all("SELECT * FROM auth_decisions WHERE principal_id=? AND permission='evaluation.correct'", [admin.principalId]).length, correctBefore);
+  assert.equal(all("SELECT * FROM auth_decisions WHERE principal_id=? AND permission='evaluation.read'", [admin.principalId]).length, 1);
 });

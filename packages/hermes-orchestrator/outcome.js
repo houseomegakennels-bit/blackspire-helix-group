@@ -13,7 +13,8 @@ export const OUTCOME_EVALUATION_VERSION = 'm3a-v1';
 export const OUTCOME_EVALUATOR_VERSION = 'hermes-outcome-evaluator-v1';
 const TERMINAL = new Set(['completed', 'failed', 'blocked', 'cancelled']);
 const STEP_NAMES = new Set(['hermes.received','hermes.normalized','hermes.classified','hermes.policy_evaluated','hermes.routed','hermes.executed','hermes.verified','hermes.memory_candidate_recorded','hermes.completed','hermes.failed']);
-const CHECK_NAMES = new Set(['execution_ok','provider_present','artifacts_is_array','has_summary','mock_is_free','artifact_paths_safe','artifact_present_for_edit']);
+const BASE_CHECK_NAMES = ['execution_ok','provider_present','artifacts_is_array','has_summary','artifact_paths_safe'];
+const CHECK_NAMES = new Set([...BASE_CHECK_NAMES,'artifact_present_for_edit']);
 
 export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVALUATION_VERSION } = {}) {
   if (typeof runId !== 'string' || !runId) throw new Error('outcome evaluation requires a run id');
@@ -86,10 +87,12 @@ export function readOutcomeEvaluation(principal, evaluationId) {
 }
 
 export function appendOutcomeCorrection(principal, evaluationId, { reason, sourceEvidence, supersedesCorrectionId = null } = {}) {
+  const scopedEvaluation = getOutcomeEvaluation(evaluationId);
+  if (!readableEvaluation(scopedEvaluation)) throw new Error('outcome correction requires an intact evaluation');
+  if (!canCorrectEvaluation(principal, scopedEvaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
   return transaction(() => {
     const evaluation = getOutcomeEvaluation(evaluationId);
     if (!readableEvaluation(evaluation)) throw new Error('outcome correction requires an intact evaluation');
-    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
     if (!safeRequired(reason) || !safeRequired(sourceEvidence)) throw new Error('outcome correction requires reason and source evidence');
     const prior = getOutcomeCorrections(evaluationId);
     const head = prior.at(-1) || null;
@@ -107,10 +110,12 @@ export function appendOutcomeCorrection(principal, evaluationId, { reason, sourc
 
 const EVENT_TYPES = new Set(['accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked']);
 export function appendOutcomeSourceEvent(principal, evaluationId, { idempotencyKey, eventType, evidence } = {}) {
+  const scopedEvaluation = getOutcomeEvaluation(evaluationId);
+  if (!readableEvaluation(scopedEvaluation)) throw new Error('outcome source event requires an intact evaluation');
+  if (!canCorrectEvaluation(principal, scopedEvaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
   return transaction(() => {
     const evaluation = getOutcomeEvaluation(evaluationId);
     if (!readableEvaluation(evaluation)) throw new Error('outcome source event requires an intact evaluation');
-    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
     if (!EVENT_TYPES.has(eventType) || !safeRequired(evidence) || !safeEvidenceId(idempotencyKey)) throw new Error('outcome source event requires an allowed type, evidence, and idempotency key');
     if (getOutcomeSourceEvents(evaluationId).some((event) => event.idempotency_key === idempotencyKey)) throw new Error('outcome source event already recorded');
     const createdAt = now();
@@ -154,7 +159,7 @@ function componentRows({ positive, verified, retryCount, duration, invocation, u
     known('learning_eligibility', positive ? 'positive_eligible' : 'not_positive', 'does not affect routing in Phase 3A'),
   ];
 }
-function ordered(steps) { return steps.every((s, i) => Number.isInteger(s.seq) && s.seq === i + 1 && s.created_at); }
+function ordered(steps) { return steps.every((s, i) => Number.isInteger(s.seq) && s.seq === i + 1 && s.created_at && (!i || Date.parse(s.created_at) >= Date.parse(steps[i - 1].created_at))); }
 function terminalEventsPresent(steps, status) { const names = new Set(steps.map((s) => s.name)); return names.has('hermes.received') && (status === 'completed' ? names.has('hermes.completed') : names.has('hermes.failed')); }
 function loadEvidence(runId) {
   const run = getWorkflowRun(runId);
@@ -185,6 +190,7 @@ function validateEvidence(evidence) {
   }
   if (steps[0].name !== 'hermes.received' || steps[1]?.name !== 'hermes.normalized' || steps.at(-1).name !== (run.status === 'completed' ? 'hermes.completed' : 'hermes.failed')) throw new Error('outcome evaluation refuses invalid workflow step order');
   validateLinks({ run, routings, policies, verifications, invocations });
+  validateCrossSourceEvidence({ run, steps, routings, policies, verifications, invocations });
   if (run.status === 'completed' && run.outcome === 'verified') {
     const requiredSteps = ['hermes.classified','hermes.policy_evaluated','hermes.routed','hermes.executed','hermes.verified','hermes.completed'];
     const finalInvocation = invocations.at(-1);
@@ -222,10 +228,12 @@ function validateLinks({ run, routings, policies, verifications, invocations }) 
   }
   for (const verification of verifications) {
     const checks = parsedJson(verification.checks);
+    const classification = canonicalClassification({ routings, steps: [] });
+    const expectedNames = [...BASE_CHECK_NAMES, ...(classification?.requiredCapabilities?.some((capability) => capability === 'doc.edit' || capability === 'code.edit') ? ['artifact_present_for_edit'] : [])];
     if (verification.verifier !== 'deterministic-mock-verifier-v1' || ![0,1].includes(verification.passed) || !sanitizedJson(verification.checks) ||
       !Array.isArray(checks) || !checks.length || checks.some((check) => !check || Array.isArray(check) ||
         Object.keys(check).sort().join(',') !== 'detail,name,passed' || !CHECK_NAMES.has(check.name) || typeof check.passed !== 'boolean' || !safeRequired(check.detail)) ||
-      new Set(checks.map((check) => check.name)).size !== checks.length ||
+      !sameStrings(checks.map((check) => check.name), expectedNames) ||
       verification.passed !== (checks.every((check) => check.passed) ? 1 : 0) || !safeRequired(verification.detail)) throw new Error('outcome evaluation refuses malformed verification evidence');
   }
   const routing = latest(routings);
@@ -244,6 +252,59 @@ function validateLinks({ run, routings, policies, verifications, invocations }) 
     if ((routing?.selected_provider && invocation.provider !== routing.selected_provider) || (run.provider && invocation.provider !== run.provider)) throw new Error('outcome evaluation refuses contradictory provider evidence');
   }
   if ([...attempts].some((attempt, index) => attempt !== index + 1)) throw new Error('outcome evaluation refuses non-contiguous provider attempts');
+  if (invocations.slice(0, -1).some((invocation) => !['failed','timeout'].includes(invocation.status))) throw new Error('outcome evaluation refuses contradictory provider retry evidence');
+}
+function validateCrossSourceEvidence({ run, steps, routings, policies, verifications, invocations }) {
+  const terminalOutcomes = {
+    completed: new Set(['verified']),
+    blocked: new Set(['emergency_stop','policy_denied','blocked_pending_approval','real_provider_blocked','approval_required','execution_blocked']),
+    failed: new Set(['execution_failed','budget_exhausted','verification_failed','error']),
+    cancelled: new Set(['cancelled']),
+  };
+  if (!terminalOutcomes[run.status]?.has(run.outcome)) throw new Error('outcome evaluation refuses contradictory terminal evidence');
+  const step = (name) => steps.find((row) => row.name === name);
+  const detail = (name) => parsedJson(step(name)?.detail);
+  const policy = latest(policies);
+  const routing = latest(routings);
+  const verification = latest(verifications);
+  const invocation = invocations.at(-1);
+  const policyStep = detail('hermes.policy_evaluated');
+  if (Boolean(policy) !== Boolean(policyStep) || (policy && canonicalJson(policyStep) !== canonicalJson({
+    actionClass: policy.action_class, allowed: policy.decision === 'allow', requiresApproval: Boolean(policy.requires_approval),
+    decision: policy.decision, reason: policy.reason,
+  }))) throw new Error('outcome evaluation refuses contradictory policy evidence');
+  const routedStep = detail('hermes.routed');
+  if (Boolean(routing) !== Boolean(routedStep) || (routing && canonicalJson(routedStep) !== canonicalJson({
+    provider: routing.selected_provider, agent: routing.selected_agent, capabilities: parsedJson(routing.capabilities),
+  }))) throw new Error('outcome evaluation refuses contradictory routing evidence');
+  const verifiedStep = detail('hermes.verified');
+  if (Boolean(verification) !== Boolean(verifiedStep) || (verification && canonicalJson(verifiedStep) !== canonicalJson({
+    passed: Boolean(verification.passed), detail: verification.detail,
+  }))) throw new Error('outcome evaluation refuses contradictory verification evidence');
+  if (routing && (run.agent !== routing.selected_agent || (run.provider && run.provider !== routing.selected_provider))) throw new Error('outcome evaluation refuses contradictory run routing evidence');
+  if (invocation && run.cost_cents !== invocation.cost_cents) throw new Error('outcome evaluation refuses contradictory run cost evidence');
+  const executedStep = detail('hermes.executed');
+  if (invocation) {
+    const expectedMode = invocation.status === 'completed' ? invocation.mode : invocation.status === 'cancelled' ? 'cancelled' : 'failed';
+    if (!executedStep || executedStep.provider !== invocation.provider || executedStep.executionMode !== expectedMode ||
+      executedStep.ok !== (invocation.status === 'completed') || executedStep.attempts !== invocation.attempt ||
+      executedStep.durationMs !== invocation.duration_ms || executedStep.timedOut !== Boolean(invocation.timed_out) ||
+      executedStep.cancelled !== Boolean(invocation.cancelled) || !Number.isSafeInteger(executedStep.artifactCount) || executedStep.artifactCount < 0) {
+      throw new Error('outcome evaluation refuses contradictory execution evidence');
+    }
+  }
+  const completedStep = detail('hermes.completed');
+  if (run.status === 'completed' && canonicalJson(completedStep) !== canonicalJson({ outcome: run.outcome, executionMode: invocation?.mode || null })) throw new Error('outcome evaluation refuses contradictory completion evidence');
+  const policyTime = policy ? Date.parse(policy.created_at) : null;
+  const routingTime = routing ? Date.parse(routing.created_at) : null;
+  const invocationTime = invocation ? Date.parse(invocation.created_at) : null;
+  const verificationTime = verification ? Date.parse(verification.created_at) : null;
+  if ((policy && policyTime > Date.parse(step('hermes.policy_evaluated').created_at)) ||
+    (routing && (routingTime < policyTime || routingTime > Date.parse(step('hermes.routed').created_at))) ||
+    (invocation && (invocationTime < routingTime || invocationTime > Date.parse(step('hermes.executed').created_at))) ||
+    (verification && (verificationTime < invocationTime || verificationTime > Date.parse(step('hermes.verified').created_at)))) {
+    throw new Error('outcome evaluation refuses contradictory evidence chronology');
+  }
 }
 function aggregateUsage(invocations) {
   const total = (column) => invocations.length && invocations.every((row) => row[column] != null)
@@ -281,7 +342,7 @@ function recordedActorValid(actorPrincipalId, workspaceId) {
   // Subordinate evidence remains trusted only while its actor is still an authorized corrector.
   // The resolver-created principal prevents a persisted ID from acting as a client-created shape.
   const principal = resolvePrincipal({ principalId: actor.id });
-  return Boolean(principal && canCorrectEvaluation(principal, workspaceId).allowed);
+  return Boolean(principal && hasCurrentWorkspacePermission(principal, workspaceId, 'evaluation.correct'));
 }
 function provenanceMatches(evaluation) {
   try {
