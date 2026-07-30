@@ -7,11 +7,11 @@
 // memory service. It has no background job, startup hook, workflow-completion hook, historical
 // backfill, or automatic refresh: derivation happens only when a caller explicitly asks for it.
 import { id, now } from '../shared/util.js';
-import { canonicalJson, digest, digestibleValue } from '../shared/canonical.js';
+import { canonicalJson, digest, digestibleValue, canonicalTimestamp } from '../shared/canonical.js';
 import { transaction, all } from '../task-engine/db.js';
 import { canReadEvaluation, canCorrectEvaluation, hasCurrentWorkspacePermission } from '../shared/authorization.js';
 import { evaluationIsIntact, OUTCOME_EVALUATION_VERSION } from './outcome.js';
-import { getOutcomeEvaluation, getOutcomeCorrections, getOutcomeSourceEvents, getRoutingDecision,
+import { getOutcomeCorrections, getOutcomeSourceEvents, getRoutingDecision,
   insertVerifiedScorecard, getVerifiedScorecard, getVerifiedScorecardSources,
   getVerifiedScorecardByIdentity, getVerifiedScorecardScopeHead } from './store.js';
 
@@ -149,7 +149,11 @@ function validatedSource(evaluation, workspaceId, cutoff, derivationEpoch) {
 // already covers. An absent dimension becomes the explicit unknown sentinel, never an omitted field
 // and never a collapsed empty string; malformed evidence refuses rather than degrading to unknown.
 function dimensionsOf(evaluation) {
-  const classification = parsedJson(evaluation.classification);
+  // A column that is SQL NULL is genuinely absent and becomes the unknown sentinel. A column that is
+  // present but does not parse is malformed evidence and refuses: collapsing it to unknown would let
+  // corruption read as "no classification recorded".
+  const classification = evaluation.classification === null ? null : parsedJson(evaluation.classification);
+  if (evaluation.classification !== null && classification === null) throw new Error('verified scorecard refuses a malformed classification dimension');
   const routing = evaluation.routing_decision_id ? getRoutingDecision(evaluation.routing_decision_id, evaluation.run_id) : null;
   if (evaluation.routing_decision_id && !routing) throw new Error('verified scorecard refuses a source evaluation with missing routing evidence');
   if (classification !== null && !validDimensionClassification(classification)) throw new Error('verified scorecard refuses a malformed classification dimension');
@@ -179,8 +183,13 @@ const CLASSIFICATION_FACETS = Object.freeze({
 });
 function validDimensionClassification(value) {
   return Boolean(value) && !Array.isArray(value) && typeof value === 'object' &&
+    // The exact key set and the distinctness check are what make this a real mirror of 3A rather
+    // than a weaker lookalike: without them an extra key or a duplicated capability passes here and
+    // the "still guards if upstream is relaxed" property quietly stops holding.
+    Object.keys(value).sort().join(',') === 'complexity,domain,requiredCapabilities,risk,urgency' &&
     Object.entries(CLASSIFICATION_FACETS).every(([facet, allowed]) => allowed.includes(value[facet])) &&
-    Array.isArray(value.requiredCapabilities) && value.requiredCapabilities.length > 0;
+    Array.isArray(value.requiredCapabilities) && value.requiredCapabilities.length > 0 &&
+    new Set(value.requiredCapabilities).size === value.requiredCapabilities.length;
 }
 
 // --- Derivation (m3b-v1) ---
@@ -330,10 +339,15 @@ function persistGroup(group, workspaceId, cutoff, scorecardVersion) {
 }
 
 // True when the stored lineage and the freshly derived lineage cover exactly the same evaluations in
-// exactly the same order, and every stored source-event list is an unchanged *prefix* of the fresh
-// one with at least one genuine append. Prefix rather than subset: source events are append-only and
-// `getOutcomeSourceEvents` returns them in insertion order, so a stored id disappearing or being
-// reordered is real corruption and must keep falling through to the integrity error.
+// exactly the same order, and every stored source-event list survives intact inside the fresh one
+// with at least one genuine append.
+//
+// The containment test is an ordered *subsequence*, not a prefix. `getOutcomeSourceEvents` orders by
+// `(created_at, id)`, and `id` is random hex while `created_at` is only millisecond-resolution, so
+// two events appended to one evaluation inside the same millisecond sort by random tie-break. A
+// prefix test would therefore call a perfectly routine second append "corruption" about half the
+// time - precisely the false alarm this whole path exists to prevent. A subsequence still rejects
+// the real corruption signals: a stored id disappearing, or stored ids swapping relative order.
 function appendedSourceEvidence(existing, lineage) {
   // A snapshot that is not itself intact is corrupt, and corruption must never be excused as a
   // routine append: if the stored row no longer reproduces its own digests, the honest answer is the
@@ -349,10 +363,23 @@ function appendedSourceEvidence(existing, lineage) {
     let storedEvents;
     try { storedEvents = JSON.parse(row.source_event_ids); } catch { return false; }
     if (!Array.isArray(storedEvents) || storedEvents.length > entry.sourceEventIds.length) return false;
-    if (storedEvents.some((eventId, position) => eventId !== entry.sourceEventIds[position])) return false;
+    if (!orderedSubsequence(storedEvents, entry.sourceEventIds)) return false;
     if (storedEvents.length < entry.sourceEventIds.length) appended = true;
   }
   return appended;
+}
+
+// Every id in `stored` appears in `fresh`, in the same relative order. A missing stored id or a
+// stored pair whose order inverted is real corruption and returns false; extra ids interleaved
+// anywhere in `fresh` are appends and are tolerated.
+function orderedSubsequence(stored, fresh) {
+  let cursor = 0;
+  for (const eventId of stored) {
+    const found = fresh.indexOf(eventId, cursor);
+    if (found === -1) return false;
+    cursor = found + 1;
+  }
+  return true;
 }
 
 // The successor chain is returned to callers by the read API but is deliberately NOT covered by
@@ -433,13 +460,4 @@ function safeSum(total, value) {
 function compareStrings(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 function sortKey(source) { return `${source.evaluation.created_at} ${source.evaluation.id}`; }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
-// The four-digit year anchor is load-bearing: `toISOString()` round-trips the *extended* form for
-// years outside 1000-9999 (`-000001-01-01T00:00:00.000Z`), so without it such a cutoff validates,
-// passes the future-cutoff check, and then string-compares against no rows at all - returning an
-// empty result where it should have refused an absurd cutoff outright.
-function canonicalTimestamp(value) {
-  if (typeof value !== 'string' || !/^\d{4}-/.test(value)) return false;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
-}
 function parsedJson(value) { try { return JSON.parse(value); } catch { return null; } }

@@ -152,8 +152,12 @@ than two that can drift.
 10. Replay over an identical identity returns the stored snapshot without writing. An identical
    identity whose derived content differs never overwrites. It refuses with one of two distinct
    errors: appended Milestone 3A source evidence (routine, resolved by deriving a later cutoff) when
-   the stored snapshot is still intact and every stored source-event list is an unchanged prefix of
-   the live one, and an integrity error in every other case.
+   the stored snapshot is still intact and every stored source-event list survives as an ordered
+   *subsequence* of the live one, and an integrity error in every other case. Subsequence rather than
+   prefix: `getOutcomeSourceEvents` orders by `(created_at, id)` with millisecond timestamps and
+   random ids, so two appends inside one millisecond sort by random tie-break and a prefix test would
+   misreport a routine second append as corruption. A stored id that disappears, or two stored ids
+   whose relative order inverts, still fails to the integrity error.
 11. A successor may never cover an earlier cutoff than the snapshot it supersedes. Without this a
    later derivation at an earlier cutoff appended a thinner snapshot that became the scope head and
    claimed to supersede a richer predecessor, silently regressing source count, confidence band, and

@@ -1,7 +1,7 @@
 // Hermes Milestone 3A: verified outcome scoring and immutable provenance.
 // This service is internal-only. It produces factual, append-only evaluations after a terminal
 // run; it never changes routing, policy, memory, provider state, or task state.
-import { canonicalJson, digest } from '../shared/canonical.js';
+import { canonicalJson, digest, canonicalTimestamp } from '../shared/canonical.js';
 import { id, now } from '../shared/util.js';
 import { transaction, get, all } from '../task-engine/db.js';
 import { getTask } from '../task-engine/tasks.js';
@@ -605,11 +605,6 @@ function latest(rows) { return rows.length ? rows[rows.length - 1] : null; }
 function durationMs(start, end) { const duration = Date.parse(end) - Date.parse(start); return canonicalTimestamp(start) && canonicalTimestamp(end) && Number.isSafeInteger(duration) && duration >= 0 ? duration : null; }
 function failureCategory(run, verification, invocations) { if (run.status === 'blocked') return 'blocked'; if (run.status === 'cancelled' || invocations.some((row) => row.cancelled)) return 'cancelled'; if (invocations.some((row) => row.timed_out)) return 'timeout'; if (verification && !(verification.passed === 1 || verification.passed === true)) return 'verification_failed'; return run.outcome || 'unknown'; }
 function safeJson(value) { try { return JSON.stringify(redactDeep(JSON.parse(value || 'null'))); } catch { return JSON.stringify(redactDeep(value)); } }
-function canonicalTimestamp(value) {
-  if (typeof value !== 'string') return false;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
-}
 function parsedJson(value) {
   try { return JSON.parse(value); } catch { return null; }
 }

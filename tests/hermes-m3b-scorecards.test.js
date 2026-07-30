@@ -513,3 +513,36 @@ test('an extended-year cutoff is refused outright rather than silently selecting
     /canonical cutoff tuple/);
   assert.ok(deriveVerifiedScorecards(reader, { workspaceId: 'm3b-yearform', cutoff: lastCutoff(sources) }).length, 'a canonical cutoff still derives');
 });
+
+test('a same-millisecond second append is still an append, not a corruption alarm', async () => {
+  const sources = await seedSources('m3b-tiebreak', 5);
+  const reader = principal('m3b-tiebreak');
+  const cutoff = lastCutoff(sources);
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tiebreak', cutoff });
+  appendOutcomeSourceEvent(reader, sources[0].id, { eventType: 'rollback', evidence: 'change was rolled back', idempotencyKey: 'm3b-tiebreak-1' });
+  // `getOutcomeSourceEvents` orders by (created_at, id), `created_at` is millisecond resolution and
+  // `id` is random hex, so a second append inside the same millisecond can sort *before* the first.
+  // A prefix test would call that routine append corruption roughly half the time; the containment
+  // test is an ordered subsequence precisely so it cannot. Forcing the tie makes this deterministic
+  // rather than leaving it to a ~50% race.
+  const first = all('SELECT id,created_at FROM hermes_outcome_source_events WHERE evaluation_id=?', [sources[0].id]).at(-1);
+  appendOutcomeSourceEvent(reader, sources[0].id, { eventType: 'regression_linked', evidence: 'linked to a regression', idempotencyKey: 'm3b-tiebreak-2' });
+  const second = all('SELECT id,created_at FROM hermes_outcome_source_events WHERE evaluation_id=? AND id!=?', [sources[0].id, first.id]).at(-1);
+  withoutImmutability(['hermes_outcome_source_events'], () => {
+    // Same millisecond, and force the newer event to sort first by id.
+    const [earlier, later] = [first.id, second.id].sort();
+    run('UPDATE hermes_outcome_source_events SET created_at=? WHERE id IN (?,?)', [first.created_at, first.id, second.id]);
+    assert.ok(earlier < later);
+  });
+  const ordered = all('SELECT id FROM hermes_outcome_source_events WHERE evaluation_id=? ORDER BY created_at,id', [sources[0].id]).map((row) => row.id);
+  assert.equal(ordered.length, 2, 'both events are present');
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tiebreak', cutoff }),
+    /source evidence was appended: derive a later cutoff/,
+    'a tie-broken append must not be reported as an evidence-store integrity conflict');
+  // Removing a stored id, rather than adding one, is still real corruption.
+  withoutImmutability(['hermes_verified_scorecard_sources'], () => {
+    run('UPDATE hermes_verified_scorecard_sources SET source_event_ids=? WHERE scorecard_id=? AND seq=1', [canonicalJson(['heevt_absent']), card.id]);
+  });
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-tiebreak', cutoff }),
+    /identity conflicts with stored derived content/);
+});

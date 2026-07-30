@@ -25,3 +25,14 @@ export function digestibleValue(value) {
   return Boolean(value) && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype &&
     Object.values(value).every(digestibleValue);
 }
+
+// A canonical timestamp is a fixed-width ISO-8601 UTC string that round-trips exactly through
+// `toISOString()`. The four-digit-year anchor is load-bearing and not redundant: `toISOString()`
+// round-trips the *extended* form for years outside 1000-9999 (`-000001-01-01T00:00:00.000Z`), which
+// would otherwise validate and then sort outside every real range - selecting nothing instead of
+// refusing. Shared so Milestone 3A and 3B cannot drift into two different notions of canonical.
+export function canonicalTimestamp(value) {
+  if (typeof value !== 'string' || !/^\d{4}-/.test(value)) return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}

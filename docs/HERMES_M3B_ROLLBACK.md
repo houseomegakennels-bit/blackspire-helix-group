@@ -19,7 +19,7 @@ merged and anchored Milestone 3A baseline.
   immutability triggers.
 - `apps/api/server.js` — one GET-only route, `/api/hermes/scorecards/:id`.
 - `scripts/typecheck-check.js` — adds the new and previously unlisted modules.
-- `tests/hermes-m3b-scorecards.test.js` — new, 14 tests.
+- `tests/hermes-m3b-scorecards.test.js` — new, 21 tests.
 - `docs/HERMES_M3B_VERIFIED_SCORECARDS.md`, `docs/HERMES_IMPLEMENTATION_STATUS.md`,
   `docs/HERMES_INTELLIGENCE_LAYER_ARCHITECTURE.md`, this file — documentation.
 
