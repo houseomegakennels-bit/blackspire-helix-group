@@ -70,9 +70,12 @@ claim that a provider or agent is good.
 ## Isolation and authorization
 
 Every query derives workspace from stored M3A evidence. Callers cannot supply a workspace that
-overrides source scope. Snapshot reads will reuse canonical `evaluation.read`; explicit snapshot
-creation will require a separately reviewed permission before any API integration. The first slice
-has no HTTP route and runs only in disposable development/test fixtures.
+overrides source scope. Snapshot reads reuse canonical `evaluation.read`; derivation persists rows
+and therefore additionally requires the write-capable `evaluation.correct`. No new permission and no
+new environment variable is introduced. The read is exposed over HTTP as a single GET route
+(`GET /api/hermes/scorecards/:id`); derivation has no HTTP route at all and runs only as an explicit
+service call against disposable development/test fixtures. See "Authorization and read surface"
+below for the full rules.
 
 ## Acceptance gates
 
@@ -147,11 +150,27 @@ than two that can drift.
    evaluation id and provenance digest, each correction head, ordered source-event ids, and every
    persisted metric. Neither the snapshot id nor its wall-clock creation time is hashed.
 10. Replay over an identical identity returns the stored snapshot without writing. An identical
-   identity whose derived content differs is an integrity error, never an overwrite.
-11. Sorting within this module is by UTF-16 code unit, never `localeCompare`, whose result depends
+   identity whose derived content differs never overwrites. It refuses with one of two distinct
+   errors: appended Milestone 3A source evidence (routine, resolved by deriving a later cutoff) when
+   the stored snapshot is still intact and every stored source-event list is an unchanged prefix of
+   the live one, and an integrity error in every other case.
+11. A successor may never cover an earlier cutoff than the snapshot it supersedes. Without this a
+   later derivation at an earlier cutoff appended a thinner snapshot that became the scope head and
+   claimed to supersede a richer predecessor, silently regressing source count, confidence band, and
+   every metric for any consumer reading the head. Equal cutoffs are handled as replay above.
+12. `scope_version` and `supersedes_scorecard_id` are covered by neither digest — they are assigned
+   at insert time from the scope head, so hashing them would make an identical re-derivation depend
+   on write order and break replay. They are instead proven structurally on every read: version 1
+   iff no predecessor, otherwise the predecessor must exist, sit in the same scope, hold exactly the
+   preceding `scope_version`, and carry an earlier cutoff. This is stronger than a self-digest,
+   because it validates the row against its actual predecessor rather than against itself.
+13. Sorting within this module is by UTF-16 code unit, never `localeCompare`, whose result depends
     on host ICU data. Note that revalidation still calls into Milestone 3A, which sorts component
     rows with `localeCompare`; that is pre-existing 3A code and no ordering inversion exists among
     its fixed ASCII component names, but the guarantee is this module's, not the whole path's.
+14. Cutoff timestamps must carry a four-digit year. `toISOString()` round-trips the extended form for
+    years outside 1000-9999, which would otherwise validate, pass the future-cutoff check, and then
+    match no rows — returning an empty result instead of refusing an absurd cutoff.
 
 ## Authorization and read surface
 
@@ -208,6 +227,24 @@ Implemented and validated at the exact head. Known limitations, all deliberate:
   SHA-256 over fully persisted public inputs, so an actor who can already write to these tables
   (which requires dropping the immutability triggers) can recompute them to match an edit. No later
   milestone may treat this as an integrity control against a database-write adversary.
+- **A cutoff is single-use once its source evidence grows.** Identity is `(scope, cutoff)`, but
+  derived content also depends on Milestone 3A source events, which are append-only and legitimately
+  arrive *after* the evaluation. Appending an `accepted` event and then re-deriving the same cutoff
+  therefore refuses: that cutoff can never be re-derived, and a later cutoff must be used instead.
+  This is not corruption, so it is reported as `refuses a replay after source evidence was appended:
+  derive a later cutoff`, distinct from the integrity error raised when a stored snapshot genuinely
+  no longer reproduces its own digests. Making a cutoff re-derivable would require a monotonic
+  source-event watermark in the identity, which is deferred.
+- **`verified_success_denominator` is every terminal evaluation in scope, including blocked ones.**
+  The ratio is "positive-eligible over all terminal evaluations", so `ineligible_blocked` sources -
+  runs policy stopped before execution - sit in the denominator. A consumer that wants
+  provider-attributable success must subtract `blocked_ineligible_count`, which is stored separately
+  for exactly that purpose. Most blocked runs carry no `provider_id` and so land in the `*`
+  dimension group, but this is a property of the current evidence, not a guarantee.
+- **There is no model dimension.** Dimensions are provider, agent, capability, and classification
+  only, so `known_input_tokens`, `known_output_tokens`, and `known_cost_cents` aggregate across every
+  model served by one provider and are not attributable to a model. Adding the dimension is an
+  `m3b-v2` decision because it changes the stored identity.
 - No `follow_up_verification` semantics beyond a raw count; it is stored but not interpreted.
 
 Nothing here activates learned routing, memory promotion or retrieval, provider execution,

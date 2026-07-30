@@ -196,9 +196,11 @@ test('recorded acceptance evidence is counted exactly and changes the derived co
   appendOutcomeSourceEvent(reader, sources[1].id, { idempotencyKey: 'm3b-accept-2', eventType: 'rejected', evidence: 'operator rejected the change' });
   appendOutcomeSourceEvent(reader, sources[2].id, { idempotencyKey: 'm3b-accept-3', eventType: 'stability_confirmed', evidence: 'stable after follow up' });
   // The identity (scope, cutoff, version) is unchanged but the underlying evidence is not, so the
-  // stored snapshot and current evidence now disagree. That is an integrity error, never a silent
-  // overwrite of an immutable snapshot and never a silently stale read.
-  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-acceptance', cutoff }), /identity conflicts with stored derived content/);
+  // stored snapshot and current evidence now disagree. That refuses - never a silent overwrite of an
+  // immutable snapshot and never a silently stale read. Because the cause here is append-only
+  // evidence arriving normally rather than corruption, it is named as appended evidence and the
+  // caller is told to derive a later cutoff, which the rest of this test then does.
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-acceptance', cutoff }), /source evidence was appended: derive a later cutoff/);
   // A later cutoff is a different identity, so it derives cleanly as a successor and shows the
   // newly recorded evidence with unknown counts reduced by exactly the sources now determined.
   const extra = await seedSources('m3b-acceptance', 1, 'write documentation summary');
@@ -401,4 +403,113 @@ test('the scorecard module imports no router, executor, provider, health, or mem
   assert.doesNotMatch(source, /routeTask|runHermesWorkflow|upsertProviderHealth|insertMemoryCandidate|promote/i, 'no routing, execution, provider-health, or memory-promotion call exists');
   assert.doesNotMatch(source, /BLACKSPIRE_RUNTIME_MODE|BLACKSPIRE_GATE4|process\.env/, 'the derivation reads no environment flag and cannot be switched into another mode');
   assert.equal(UNKNOWN_DIMENSION, '*', 'the unknown sentinel stays outside the safe-id character set');
+});
+
+// --- Review-cycle regressions (PR #60 confirmation review) ---
+
+test('a successor may never walk a scope backwards to an earlier cutoff', async () => {
+  const sources = await seedSources('m3b-monotonic', 6);
+  const reader = principal('m3b-monotonic');
+  const scope = { workspaceId: 'm3b-monotonic' };
+  const [rich] = deriveVerifiedScorecards(reader, { ...scope, cutoff: cutoffAt(sources[5]) });
+  assert.equal(rich.source_evaluation_count, 6);
+  assert.equal(rich.scope_version, 1);
+  const before = digest(all('SELECT * FROM hermes_verified_scorecards ORDER BY id'));
+  // Without the guard this appended a 1-source `insufficient` snapshot at scope_version 2 that
+  // claimed to supersede the 6-source predecessor, silently regressing the scope head.
+  assert.throws(() => deriveVerifiedScorecards(reader, { ...scope, cutoff: cutoffAt(sources[0]) }),
+    /successor behind its predecessor cutoff/);
+  assert.equal(digest(all('SELECT * FROM hermes_verified_scorecards ORDER BY id')), before, 'a refused successor writes nothing');
+  const head = store.getVerifiedScorecardScopeHead({
+    workspace_id: 'm3b-monotonic', scorecard_version: rich.scorecard_version,
+    dimension_provider_id: rich.dimension_provider_id, dimension_agent_id: rich.dimension_agent_id,
+    dimension_capability: rich.dimension_capability, dimension_classification: rich.dimension_classification,
+  });
+  assert.equal(head.id, rich.id, 'the scope head is still the richer snapshot');
+  assert.equal(head.source_evaluation_count, 6);
+  // Replay at the identical cutoff must still short-circuit rather than trip the new guard: the
+  // guard refuses regression only, never an equal or later cutoff.
+  const [replayed] = deriveVerifiedScorecards(reader, { ...scope, cutoff: cutoffAt(sources[5]) });
+  assert.equal(replayed.id, rich.id, 'replay at the head cutoff still returns the stored snapshot');
+});
+
+test('legitimately appended source evidence is named as such, not reported as an integrity conflict', async () => {
+  const sources = await seedSources('m3b-appended', 5);
+  const reader = principal('m3b-appended');
+  const cutoff = lastCutoff(sources);
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-appended', cutoff });
+  assert.equal(card.accepted_count, 0);
+  // A human accepting a change is routine, expected Milestone 3A activity - not corruption.
+  appendOutcomeSourceEvent(reader, sources[0].id, { eventType: 'accepted', evidence: 'human accepted the change', idempotencyKey: 'm3b-appended-accept-1' });
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-appended', cutoff }),
+    /source evidence was appended: derive a later cutoff/,
+    'appended evidence must not masquerade as an evidence-store integrity conflict');
+  // Genuine divergence still fails closed with the integrity error, so the two causes stay distinct
+  // and an operator is never told to "derive a later cutoff" in response to real corruption.
+  withoutImmutability(['hermes_verified_scorecards'], () => {
+    run('UPDATE hermes_verified_scorecards SET lineage_digest=? WHERE id=?', ['0'.repeat(64), card.id]);
+  });
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-appended', cutoff }),
+    /identity conflicts with stored derived content/);
+});
+
+test('the successor chain is proven against its real predecessor, not merely self-consistent', async () => {
+  const sources = await seedSources('m3b-chain', 4);
+  const reader = principal('m3b-chain');
+  const [first] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-chain', cutoff: cutoffAt(sources[1]) });
+  const [second] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-chain', cutoff: cutoffAt(sources[3]) });
+  assert.equal(second.scope_version, 2);
+  assert.equal(second.supersedes_scorecard_id, first.id);
+  assert.ok(readVerifiedScorecard(reader, second.id), 'an intact chain reads');
+  // `scope_version` and `supersedes_scorecard_id` are returned by the read API. They are covered by
+  // neither digest, so before this check a corrupted chain read back as authentic.
+  for (const [column, value] of [['scope_version', 99], ['supersedes_scorecard_id', null]]) {
+    const original = second[column];
+    withoutImmutability(['hermes_verified_scorecards'], () => run(`UPDATE hermes_verified_scorecards SET ${column}=? WHERE id=?`, [value, second.id]));
+    assert.equal(readVerifiedScorecard(reader, second.id), null, `a corrupted ${column} must not read as authentic`);
+    withoutImmutability(['hermes_verified_scorecards'], () => run(`UPDATE hermes_verified_scorecards SET ${column}=? WHERE id=?`, [original, second.id]));
+  }
+  assert.ok(readVerifiedScorecard(reader, second.id), 'the restored chain reads again');
+});
+
+test('an unauthorized read performs no lineage work and reveals nothing by timing', async () => {
+  const sources = await seedSources('m3b-oracle', 3);
+  const owner = principal('m3b-oracle');
+  const [card] = deriveVerifiedScorecards(owner, { workspaceId: 'm3b-oracle', cutoff: lastCutoff(sources) });
+  workspace('m3b-oracle-other');
+  const stranger = principal('m3b-oracle-other');
+  // The integrity check is a full lineage read plus two digests. Deciding authorization first means
+  // a caller with no grant cannot measure the size of a scorecard they cannot see.
+  const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/scorecard.js', import.meta.url), 'utf8');
+  const readBody = source.slice(source.indexOf('export function readVerifiedScorecard'));
+  assert.ok(readBody.indexOf('canReadEvaluation') < readBody.indexOf('storedScorecardIntact'),
+    'authorization must be decided before any lineage or digest work');
+  assert.equal(readVerifiedScorecard(stranger, card.id), null, 'a cross-workspace read is refused');
+  assert.ok(readVerifiedScorecard(owner, card.id), 'the owning workspace still reads');
+});
+
+test('classification dimension facets are enumerated, not merely non-empty strings', async () => {
+  const sources = await seedSources('m3b-facets', 2);
+  const reader = principal('m3b-facets');
+  const [card] = deriveVerifiedScorecards(reader, { workspaceId: 'm3b-facets', cutoff: lastCutoff(sources) });
+  assert.ok(card, 'in-enum evidence derives');
+  // `dimension_classification` is echoed to a browser, so an out-of-enum facet must be refused here
+  // rather than relying solely on the upstream provenance revalidation to catch it.
+  const evaluation = store.getOutcomeEvaluation(sources[0].id);
+  const tampered = { ...JSON.parse(evaluation.classification), domain: '<script>alert(1)</script>' };
+  withoutImmutability(['hermes_outcome_evaluations'], () => {
+    run('UPDATE hermes_outcome_evaluations SET classification=? WHERE id=?', [canonicalJson(tampered), sources[0].id]);
+  });
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-facets', cutoff: cutoffAt(sources[1]) }),
+    /does not revalidate|malformed classification dimension/);
+});
+
+test('an extended-year cutoff is refused outright rather than silently selecting nothing', async () => {
+  const sources = await seedSources('m3b-yearform', 2);
+  const reader = principal('m3b-yearform');
+  // `toISOString()` round-trips the extended form for years outside 1000-9999, so this passed
+  // canonical validation and then string-compared against no rows - an empty result, not a refusal.
+  assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId: 'm3b-yearform', cutoff: { createdAt: '-000001-01-01T00:00:00.000Z', id: sources[0].id } }),
+    /canonical cutoff tuple/);
+  assert.ok(deriveVerifiedScorecards(reader, { workspaceId: 'm3b-yearform', cutoff: lastCutoff(sources) }).length, 'a canonical cutoff still derives');
 });

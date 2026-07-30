@@ -79,8 +79,14 @@ export function deriveVerifiedScorecards(principal, { workspaceId, cutoff, score
 export function readVerifiedScorecard(principal, scorecardId) {
   return transaction(() => {
     const scorecard = getVerifiedScorecard(scorecardId);
-    if (!scorecard || !storedScorecardIntact(scorecard)) return null;
+    if (!scorecard) return null;
+    // Authorization precedes the integrity check, which is a full lineage read plus two SHA-256
+    // digests over an unbounded source list. Both paths return null (and therefore 404), so the
+    // response body was already indistinguishable - but the *latency* was not, and it scaled with
+    // the source count of a scorecard the caller holds no grant for. Deciding first means an
+    // unauthorized caller causes no lineage work at all and can measure nothing.
     if (!canReadEvaluation(principal, scorecard.workspace_id).allowed) return null;
+    if (!storedScorecardIntact(scorecard)) return null;
     const sources = getVerifiedScorecardSources(scorecard.id);
     return {
       id: scorecard.id, workspaceId: scorecard.workspace_id,
@@ -120,9 +126,11 @@ function validatedSource(evaluation, workspaceId, cutoff, derivationEpoch) {
   if (!canonicalTimestamp(evaluation.created_at) || Date.parse(evaluation.created_at) > derivationEpoch) throw new Error('verified scorecard refuses a source evaluation with a future timestamp');
   if (evaluation.created_at > cutoff.createdAt || (evaluation.created_at === cutoff.createdAt && evaluation.id > cutoff.id)) throw new Error('verified scorecard refuses a source evaluation beyond the cutoff');
   const corrections = getOutcomeCorrections(evaluation.id);
-  // A corrected evaluation is disputed evidence. The contract requires corrected sources to fail
-  // closed rather than be aggregated, so the correction head is recorded in lineage but a non-null
-  // head refuses the snapshot outright.
+  // A corrected evaluation is disputed evidence and refuses the snapshot outright, so this head is
+  // always null by the time anything downstream reads it. The `correction_head_id` and
+  // `correction_head_version` lineage columns are therefore reserved and currently always NULL:
+  // they exist so a later milestone that decides to aggregate corrected evidence can record which
+  // correction it selected without a schema migration. They are not populated today.
   const correctionHead = corrections.at(-1) || null;
   if (correctionHead) throw new Error('verified scorecard refuses a corrected source evaluation');
   const events = getOutcomeSourceEvents(evaluation.id);
@@ -160,9 +168,18 @@ function dimensionsOf(evaluation) {
   if (capabilities && !capabilities.every(safeId)) throw new Error('verified scorecard refuses a malformed capability dimension');
   return dimensions;
 }
+// The facet enumerations are pinned to Milestone 3A's `validClassification`, not merely to
+// "non-empty string". `dimension_classification` is echoed to a browser by the read route, so this
+// is the layer that keeps an unbounded attacker-shaped string out of that field. Today the upstream
+// provenance revalidation already refuses out-of-enum values, but relying on that alone means this
+// guard silently stops guarding the moment the upstream check is relaxed.
+const CLASSIFICATION_FACETS = Object.freeze({
+  complexity: ['trivial', 'moderate', 'complex'], domain: ['status', 'documentation', 'code', 'general'],
+  risk: ['low', 'medium', 'high'], urgency: ['low', 'normal', 'high'],
+});
 function validDimensionClassification(value) {
   return Boolean(value) && !Array.isArray(value) && typeof value === 'object' &&
-    ['complexity', 'domain', 'risk', 'urgency'].every((facet) => typeof value[facet] === 'string' && value[facet].length > 0) &&
+    Object.entries(CLASSIFICATION_FACETS).every(([facet, allowed]) => allowed.includes(value[facet])) &&
     Array.isArray(value.requiredCapabilities) && value.requiredCapabilities.length > 0;
 }
 
@@ -266,12 +283,31 @@ function persistGroup(group, workspaceId, cutoff, scorecardVersion) {
   const existing = getVerifiedScorecardByIdentity(scope, cutoff.createdAt, cutoff.id);
   if (existing) {
     // Replay. An identical identity must reproduce identical derived content; if it does not, the
-    // stored snapshot and the current evidence disagree and that is an integrity error, not an
-    // update. Immutability triggers mean the stored row cannot be repaired in place.
-    if (existing.lineage_digest !== lineageDigest || existing.content_digest !== contentDigest) throw new Error('verified scorecard identity conflicts with stored derived content');
+    // stored snapshot and the current evidence disagree. Immutability triggers mean the stored row
+    // cannot be repaired in place, so this always refuses - but *why* it refuses matters, because
+    // the two causes call for opposite operator responses.
+    if (existing.lineage_digest !== lineageDigest || existing.content_digest !== contentDigest) {
+      // Milestone 3A source events are append-only evidence that legitimately arrives *after* the
+      // evaluation. When that happens, an identical (scope, cutoff) genuinely derives different
+      // content, and that is the system working correctly - not corruption. Reporting it as an
+      // integrity conflict would raise a false alarm on routine acceptance activity, so appended
+      // evidence is named for what it is and the operator is told to derive a later cutoff.
+      if (appendedSourceEvidence(existing, lineage)) throw new Error('verified scorecard refuses a replay after source evidence was appended: derive a later cutoff');
+      throw new Error('verified scorecard identity conflicts with stored derived content');
+    }
     return existing;
   }
   const head = getVerifiedScorecardScopeHead(scope);
+  // A successor must not walk a scope backwards. Without this, deriving an earlier cutoff after a
+  // later one appends a thinner snapshot that becomes the scope head and claims to supersede the
+  // richer predecessor - silently downgrading source count, confidence band, and every metric for
+  // any consumer that reads the head. Both rows would be individually digest-consistent, so nothing
+  // downstream could detect it, and immutability means it could never be repaired. The equal-cutoff
+  // case is already handled as a replay above. Same tuple comparison used for source cutoffs.
+  if (head && (cutoff.createdAt < head.cutoff_created_at ||
+    (cutoff.createdAt === head.cutoff_created_at && cutoff.id < head.cutoff_evaluation_id))) {
+    throw new Error('verified scorecard refuses a successor behind its predecessor cutoff');
+  }
   const createdAt = now();
   const row = {
     ...scope, id: id('hscard'), derivation_version: SCORECARD_DERIVATION_VERSION,
@@ -293,6 +329,52 @@ function persistGroup(group, workspaceId, cutoff, scorecardVersion) {
   return getVerifiedScorecard(row.id);
 }
 
+// True when the stored lineage and the freshly derived lineage cover exactly the same evaluations in
+// exactly the same order, and every stored source-event list is an unchanged *prefix* of the fresh
+// one with at least one genuine append. Prefix rather than subset: source events are append-only and
+// `getOutcomeSourceEvents` returns them in insertion order, so a stored id disappearing or being
+// reordered is real corruption and must keep falling through to the integrity error.
+function appendedSourceEvidence(existing, lineage) {
+  // A snapshot that is not itself intact is corrupt, and corruption must never be excused as a
+  // routine append: if the stored row no longer reproduces its own digests, the honest answer is the
+  // integrity error regardless of what the live source events look like.
+  if (!storedScorecardIntact(existing)) return false;
+  const stored = getVerifiedScorecardSources(existing.id);
+  if (stored.length !== lineage.length) return false;
+  let appended = false;
+  for (const [index, entry] of lineage.entries()) {
+    const row = stored[index];
+    if (Number(row.seq) !== entry.seq || row.evaluation_id !== entry.evaluationId ||
+      row.provenance_digest !== entry.provenanceDigest || row.evaluation_created_at !== entry.evaluationCreatedAt) return false;
+    let storedEvents;
+    try { storedEvents = JSON.parse(row.source_event_ids); } catch { return false; }
+    if (!Array.isArray(storedEvents) || storedEvents.length > entry.sourceEventIds.length) return false;
+    if (storedEvents.some((eventId, position) => eventId !== entry.sourceEventIds[position])) return false;
+    if (storedEvents.length < entry.sourceEventIds.length) appended = true;
+  }
+  return appended;
+}
+
+// The successor chain is returned to callers by the read API but is deliberately NOT covered by
+// either digest: `scope_version` and `supersedes_scorecard_id` are assigned at insert time from the
+// scope head, so hashing them would make an identical re-derivation depend on write order and break
+// replay. They are proven structurally instead, which is strictly stronger than a self-digest
+// because it validates the row against its actual predecessor rather than against itself.
+function scorecardChainIntact(scorecard) {
+  const scopeVersion = Number(scorecard.scope_version);
+  if (!Number.isSafeInteger(scopeVersion) || scopeVersion < 1) return false;
+  if (scorecard.supersedes_scorecard_id === null) return scopeVersion === 1;
+  if (scopeVersion === 1) return false;
+  const predecessor = getVerifiedScorecard(scorecard.supersedes_scorecard_id);
+  if (!predecessor || Number(predecessor.scope_version) !== scopeVersion - 1) return false;
+  // A predecessor from a different scope would let one series claim another's history.
+  if (SCOPE_IDENTITY_COLUMNS.some((column) => predecessor[column] !== scorecard[column])) return false;
+  // Forward progress: a successor may never cover an earlier cutoff than the row it supersedes.
+  return predecessor.cutoff_created_at < scorecard.cutoff_created_at ||
+    (predecessor.cutoff_created_at === scorecard.cutoff_created_at && predecessor.cutoff_evaluation_id < scorecard.cutoff_evaluation_id);
+}
+const SCOPE_IDENTITY_COLUMNS = ['workspace_id', 'scorecard_version', 'dimension_provider_id', 'dimension_agent_id', 'dimension_capability', 'dimension_classification'];
+
 // A stored snapshot is readable only when its persisted scope, dimensions, cutoff, complete ordered
 // lineage, and metrics all still reproduce BOTH recorded digests. Checking only the content digest
 // would leave dimensions, cutoff, and every lineage row unverified, so a snapshot could be
@@ -305,13 +387,19 @@ function persistGroup(group, workspaceId, cutoff, scorecardVersion) {
 function storedScorecardIntact(scorecard) {
   if (scorecard.scorecard_version !== SCORECARD_VERSION || scorecard.derivation_version !== SCORECARD_DERIVATION_VERSION) return false;
   if (!/^[a-f0-9]{64}$/.test(scorecard.lineage_digest) || !/^[a-f0-9]{64}$/.test(scorecard.content_digest)) return false;
+  if (!scorecardChainIntact(scorecard)) return false;
   const sources = getVerifiedScorecardSources(scorecard.id);
   if (sources.length !== scorecard.source_evaluation_count) return false;
   if (sources.some((source, index) => Number(source.seq) !== index + 1 || source.workspace_id !== scorecard.workspace_id)) return false;
-  const metrics = metricsOf(scorecard);
-  if (scorecard.confidence_band !== confidenceBand(metrics.source_evaluation_count)) return false;
-  if (scorecard.content_digest !== digest(contentPacket(scorecard.scorecard_version, scorecard.confidence_band, metrics))) return false;
   try {
+    const metrics = metricsOf(scorecard);
+    // Guarded exactly as the lineage packet is: a corrupt or absent metric column yields NaN, which
+    // `canonicalJson` would serialize to the bare token `null` and hash to a stable but meaningless
+    // digest instead of failing closed. `confidenceBand` also throws on a NaN count, so it belongs
+    // inside this boundary too - otherwise a corrupt row surfaces as a 500 rather than a 404.
+    if (!digestibleValue(contentPacket(scorecard.scorecard_version, scorecard.confidence_band, metrics))) return false;
+    if (scorecard.confidence_band !== confidenceBand(metrics.source_evaluation_count)) return false;
+    if (scorecard.content_digest !== digest(contentPacket(scorecard.scorecard_version, scorecard.confidence_band, metrics))) return false;
     const lineage = sources.map((source) => ({
       seq: Number(source.seq), evaluationId: source.evaluation_id, evaluationCreatedAt: source.evaluation_created_at,
       provenanceDigest: source.provenance_digest,
@@ -345,8 +433,12 @@ function safeSum(total, value) {
 function compareStrings(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 function sortKey(source) { return `${source.evaluation.created_at} ${source.evaluation.id}`; }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
+// The four-digit year anchor is load-bearing: `toISOString()` round-trips the *extended* form for
+// years outside 1000-9999 (`-000001-01-01T00:00:00.000Z`), so without it such a cutoff validates,
+// passes the future-cutoff check, and then string-compares against no rows at all - returning an
+// empty result where it should have refused an absurd cutoff outright.
 function canonicalTimestamp(value) {
-  if (typeof value !== 'string') return false;
+  if (typeof value !== 'string' || !/^\d{4}-/.test(value)) return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
