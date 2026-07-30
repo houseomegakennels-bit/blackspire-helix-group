@@ -29,7 +29,7 @@ function revokedBefore() {
   return flag ? Number(flag.value) : 0;
 }
 
-export function createSession(adminToken, { userAgent = '', ip = 'local', principalId = null } = {}) {
+export function createSession(adminToken, { userAgent = '', ip = 'local', principalId = null, maxExpiresAt = null } = {}) {
   if (adminToken !== ADMIN_TOKEN) return null;
   // Binding is opt-in and performed only by a server-side caller after it has resolved a
   // configured canonical principal.  Invalid input becomes an unbound session; it never
@@ -38,7 +38,8 @@ export function createSession(adminToken, { userAgent = '', ip = 'local', princi
   const sessionId = crypto.randomBytes(24).toString('hex');
   const csrfToken = crypto.randomBytes(24).toString('hex');
   const createdAt = now();
-  const expiresAt = createdAt + SESSION_TTL_MS();
+  const boundedExpiry = Number.isSafeInteger(maxExpiresAt) && maxExpiresAt > createdAt ? maxExpiresAt : Infinity;
+  const expiresAt = Math.min(createdAt + SESSION_TTL_MS(), boundedExpiry);
   run(
     `INSERT INTO sessions (id, csrf_token, created_at, expires_at, rotated_at, user_agent, ip, revoked_at, principal_id) VALUES (?,?,?,?,?,?,?,NULL,?);`,
     [sessionId, csrfToken, createdAt, expiresAt, createdAt, userAgent, ip, boundPrincipalId],

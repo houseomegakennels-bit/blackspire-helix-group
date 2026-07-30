@@ -38,6 +38,8 @@ const PUBLIC_ASSETS = {
   '/jarvis.css': { file: 'apps/jarvis-pwa/public/jarvis.css', type: 'text/css; charset=utf-8', immutable: false },
   '/jarvis.js': { file: 'apps/jarvis-pwa/public/jarvis.js', type: 'text/javascript; charset=utf-8', immutable: false },
   '/helix-core.js': { file: 'apps/jarvis-pwa/public/helix-core.js', type: 'text/javascript; charset=utf-8', immutable: true },
+  '/hermes-runtime.css': { file: 'apps/jarvis-pwa/public/hermes-runtime.css', type: 'text/css; charset=utf-8', immutable: false },
+  '/hermes-runtime.js': { file: 'apps/jarvis-pwa/public/hermes-runtime.js', type: 'text/javascript; charset=utf-8', immutable: false },
 };
 
 // Assets are matched on the normalized pathname alone so cache-busting query strings
@@ -50,6 +52,7 @@ function isPublicAsset(url = '', pathname = '') {
 function authContext(req) {
   if (ALLOW_BEARER_AUTH && req.headers.authorization === `Bearer ${ADMIN_TOKEN}`) return { ok: true, mode: 'bearer', session: null };
   const session = getSession(parseCookies(req.headers.cookie || '').bc_session);
+  if (session && TEST_MODE.enabled && !testModeActive()) return { ok: false, mode: 'none', session: null };
   if (session) return { ok: true, mode: 'session', session };
   return { ok: false, mode: 'none', session: null };
 }
@@ -177,7 +180,7 @@ async function login(req, res) {
 }
 
 async function testModeLogin(req, res) {
-  if (!TEST_MODE.enabled || !TEST_MODE.ok || !isSameOrigin(req)) return json(res, 404, { error: 'not found' });
+  if (!TEST_MODE.enabled || !TEST_MODE.ok || !testModeActive() || !isSameOrigin(req)) return json(res, 404, { error: 'not found' });
   const limit = checkLimit(req, 'test-login', 10, 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
   const supplied = Buffer.from(String(body.accessCode || ''));
@@ -186,11 +189,12 @@ async function testModeLogin(req, res) {
     audit(null, 'test-mode', 'session.denied', { actor: TEST_MODE.testActor });
     return json(res, 404, { error: 'test session unavailable' });
   }
-  const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null });
+  const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null, maxExpiresAt: Date.parse(TEST_MODE.expiresAt) });
   if (!session) return json(res, 503, { error: 'test session unavailable' });
   audit(null, 'test-mode', 'session.created', { actor: TEST_MODE.testActor });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: Math.min(session.expiresAt, Date.parse(TEST_MODE.expiresAt)) }, { 'set-cookie': sessionCookie(session, { secure: true }) });
 }
+function testModeActive() { return Number.isFinite(Date.parse(TEST_MODE.expiresAt)) && Date.now() < Date.parse(TEST_MODE.expiresAt); }
 
 async function testTelegramInput(req, res) {
   const body = await readJson(req);

@@ -30,6 +30,9 @@ const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orch
 upsertWorkspace({ id: 'm2-api-workspace', name: 'm2-api-workspace', githubRepository: 'local/m2-api', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root });
 const m2EvaluationInput = createUnifiedInput({ channel: 'jarvis', actorId: 'm2-api-user', channelKey: 'm2-api-user', workspaceId: 'm2-api-workspace', text: 'report current status', idempotencyKey: 'm2-api-evaluation' });
 const m2Evaluation = await runHermesWorkflow(getTask(m2EvaluationInput.taskId));
+upsertWorkspace({ id: 'm2-api-other', name: 'm2-api-other', githubRepository: 'local/m2-api-other', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root });
+const otherInput = createUnifiedInput({ channel: 'jarvis', actorId: 'm2-api-user', channelKey: 'm2-api-user', workspaceId: 'm2-api-other', text: 'report other status', idempotencyKey: 'm2-api-other-evaluation' });
+const otherEvaluation = await runHermesWorkflow(getTask(otherInput.taskId));
 const { start } = await import('../apps/api/server.js');
 
 const server = start(8906, '127.0.0.1', { exitOnListenError: false });
@@ -61,6 +64,10 @@ test('the read-only hermes-runtime page is served', async () => {
   assert.equal(res.status, 200);
   const html = await res.text();
   assert.match(html, /Hermes Runtime Status/);
+  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/i);
+  assert.doesNotMatch(html, /<style(?:\s|>)/i);
+  assert.equal((await fetch(`${base}/hermes-runtime.js`)).status, 200);
+  assert.equal((await fetch(`${base}/hermes-runtime.css`)).status, 200);
 });
 
 test('a verified admin login session can read its configured, workspace-authorized evaluation without exposing a bearer', async () => {
@@ -72,5 +79,16 @@ test('a verified admin login session can read its configured, workspace-authoriz
   assert.equal(res.status, 200);
   const body = await res.text();
   assert.ok(!body.includes('m2-api-token'));
-  assert.equal(JSON.parse(body).evaluation.id, m2Evaluation.evaluationId);
+  const evaluation = JSON.parse(body).evaluation;
+  assert.equal(evaluation.id, m2Evaluation.evaluationId);
+  assert.deepEqual(Object.keys(evaluation).sort(), ['acceptanceStatus','corrections','createdAt','evaluationVersion','failureCategory','id','learningEligibility','runId','sourceEvents','terminalOutcome','terminalStatus','verificationStatus','workspaceId'].sort());
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(otherEvaluation.evaluationId)}`, { headers: { cookie } })).status, 404);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/unknown-evaluation`, { headers: { cookie } })).status, 404);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { authorization: 'Bearer m2-api-token' } })).status, 200);
+  const sessionId = cookie.slice(cookie.indexOf('=') + 1);
+  run('UPDATE sessions SET principal_id=NULL WHERE id=?', [sessionId]);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { cookie } })).status, 403);
+  run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-evaluation-admin', sessionId]);
+  run(`UPDATE auth_principals SET status='revoked',revoked_at=? WHERE id='m2-evaluation-admin'`, [Date.now()]);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { cookie } })).status, 403);
 });

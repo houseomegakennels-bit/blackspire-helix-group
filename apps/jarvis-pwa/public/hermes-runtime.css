@@ -1,0 +1,10 @@
+:root { color-scheme: light dark; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 1.25rem; max-width: 60rem; }
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1rem; margin-top: 1.5rem; }
+.muted { color: #8a94a6; }
+.pill { display: inline-block; padding: .1rem .5rem; border-radius: 1rem; font-size: .75rem; border: 1px solid currentColor; }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid rgba(128,128,128,.25); }
+.err { color: #c0392b; }
+code { background: rgba(128,128,128,.15); padding: 0 .25rem; border-radius: .25rem; }
