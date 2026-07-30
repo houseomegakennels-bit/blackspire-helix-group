@@ -88,6 +88,104 @@ has no HTTP route and runs only in disposable development/test fixtures.
 - Full repository validation, secret scan, zero-vulnerability audit, migration/restore checks,
   exact-head remote checks, and independent correctness/security review pass before merge.
 
+## Implemented surface
+
+The first slice is implemented in `packages/hermes-orchestrator/scorecard.js`, persisted through
+`packages/hermes-orchestrator/store.js`, and pinned by `tests/hermes-m3b-scorecards.test.js`.
+
+`deriveVerifiedScorecards(principal, { workspaceId, cutoff, scorecardVersion })` is an explicit
+service call with no HTTP mutation route, no background job, no startup or workflow-completion hook,
+no historical backfill, and no automatic refresh. It returns one immutable snapshot per dimension
+group. `readVerifiedScorecard(principal, scorecardId)` is the only read, exposed over HTTP as
+`GET /api/hermes/scorecards/:id`.
+
+Two additive tables carry the model:
+
+- `hermes_verified_scorecards` — one immutable snapshot per `(workspace, scorecard version, provider,
+  agent, capability, classification, cutoff)` identity, with `scope_version` and
+  `supersedes_scorecard_id` forming a linear successor chain, plus `lineage_digest` and
+  `content_digest`.
+- `hermes_verified_scorecard_sources` — the ordered lineage, one row per source evaluation, keyed by
+  an explicit gap-free `seq` and carrying that source's provenance digest, selected correction head,
+  and ordered source-event ids.
+
+Both tables are database-enforced append-only through `trg_hermes_scorecards_immutable_*` and
+`trg_hermes_scorecard_sources_immutable_*`. All four dimension columns are `NOT NULL` and use the
+sentinel `*`, which lies outside the canonical id character set: SQLite treats NULLs as distinct in a
+UNIQUE index, so a nullable dimension would silently permit duplicate snapshots for one scope.
+
+`canonicalJson`/`digest` moved to `packages/shared/canonical.js` with byte-identical bodies so
+Milestone 3A and 3B share exactly one digest algorithm and every stored 3A provenance digest is
+preserved. `evaluationIsIntact` is exported from `outcome.js` so "intact" has one definition rather
+than two that can drift.
+
+## Derivation rules (`m3b-v1`, `hermes-scorecard-derivation-v1`)
+
+1. Selection is `workspace_id` plus the cutoff tuple, ordered `(created_at, id)` and inclusive at the
+   boundary. Selection deliberately does **not** filter on `evaluation_version`: filtering it in SQL
+   would turn a mixed or tampered version into a silently skipped row, so every row in scope is
+   selected and a non-canonical version fails the snapshot closed.
+2. Every selected source is revalidated through `evaluationIsIntact` — shape, provenance digest
+   against live evidence, correction chain, and source-event lineage.
+3. A source that fails any check fails the whole snapshot. Sources are never skipped, because
+   silently dropping evidence would make a scorecard look better than the record supports.
+4. A corrected source is disputed evidence and fails closed rather than being aggregated.
+5. Dimensions come from the source's own immutable evidence: provider from the evaluation, agent from
+   its routing decision, capability from the canonical sorted `requiredCapabilities`, classification
+   from the four scalar facets re-emitted through `canonicalJson` so key order cannot vary.
+6. Metrics are exact integers. Unknown is counted in its own column and never folded into zero or
+   read as success. Ratios are integer numerator/denominator pairs; a zero denominator means the
+   ratio is not derivable, not that it is zero.
+7. Confidence is sample size only: `insufficient` under 5, `limited` 5–19, `established` 20 or more.
+8. The lineage digest covers the version, exact scope and dimensions, cutoff, every ordered
+   evaluation id and provenance digest, each correction head, ordered source-event ids, and every
+   persisted metric. Neither the snapshot id nor its wall-clock creation time is hashed.
+9. Replay over an identical identity returns the stored snapshot without writing. An identical
+   identity whose derived content differs is an integrity error, never an overwrite.
+10. Sorting is by UTF-16 code unit, never `localeCompare`, whose result depends on host ICU data.
+
+## Authorization and read surface
+
+Derivation and reads both reuse the canonical `evaluation.read` permission; no new permission was
+added to `AUTHZ_PERMISSIONS`. Authorization is checked exactly once per derivation against the
+caller-named workspace before any evidence is read, and every selected source must already belong to
+that workspace, so a caller can neither widen scope nor override the scope stored in evidence. The
+HTTP route reuses `configuredEvaluationAdminPrincipal` and the existing session/bearer binding
+unchanged, is GET-only, is absent from `isPublicAsset` and from the test-mode allowlist, and returns
+`404` for both an unknown id and a cross-workspace object so the two are indistinguishable.
+
+## Failure observability and operations
+
+Migrations stay additive and idempotent and publish atomically inside the existing single
+transaction. The new unique indexes and immutability triggers are registered in
+`packages/shared/schema-validation.js`, so startup and restore validation fail closed when
+integrity-critical structure is missing. A backup taken before this migration is not restorable
+against post-3B code — this matches the 3A precedent; recover such a backup on a pre-3B checkout or
+re-migrate. Rollback is code rollback: see `docs/HERMES_M3B_ROLLBACK.md`.
+
+## Status and limitations
+
+Implemented and validated at the exact head. Known limitations, all deliberate:
+
+- **Physical deletion is undetectable.** Selection is "every evaluation in scope", and there is no
+  independent manifest of what should exist, so a row physically removed from the database is
+  indistinguishable from one never written. Deletion is impossible through the application; it
+  requires dropping the immutability triggers. The same applies to reassigning a source row's own
+  `workspace_id`, which removes it from the query scope entirely.
+- **Integer overflow is guarded but structurally unreachable.** `safeSum` refuses any non-exact
+  addition, but Milestone 3A already refuses usage overflow at evaluation time, so intact evidence
+  cannot reach the guard. It is not covered by a test that exercises the throw.
+- **Rollback, stability, and acceptance are unknown for all current evidence.** Milestone 3A never
+  records those determinations on the evaluation row, so they are counted as unknown unless an
+  explicit append-only source event exists.
+- **Registry drift breaks re-derivation.** Revalidation re-runs registry routing against the live
+  registries, so editing a registry entry makes older evaluations unreadable and a previously
+  successful snapshot non-reproducible. Registry definitions must be treated as immutable during 3B.
+- No `follow_up_verification` semantics beyond a raw count; it is stored but not interpreted.
+
+Nothing here activates learned routing, memory promotion or retrieval, provider execution,
+deployment, production, or Gate 4.
+
 ## Deferred after 3B
 
 Approval-gated memory-candidate review/promotion, scorecard-informed learned routing, rollback of

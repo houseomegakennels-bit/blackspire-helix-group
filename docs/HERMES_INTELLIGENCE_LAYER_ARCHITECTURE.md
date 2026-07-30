@@ -58,9 +58,13 @@ Added in Milestone 3A: immutable outcome evaluations/components, additive correc
 explicit source-evidence events, and sanitized evaluator-failure records. Their complete canonical
 provenance is factual input for later learning work but has no routing or memory side effect.
 
-Deferred entities (M3B+): `hermes_agents`, `hermes_providers`, `hermes_capabilities` (DB-backed
-registries), `hermes_agent_metrics` (verified scorecards), `hermes_memories` (promoted long-term memory),
-`hermes_memory_conflicts`. **Raw audit (`audit_events`/`task_events`/`hermes_workflow_steps`) is
+Milestone 3B adds `hermes_verified_scorecards` and `hermes_verified_scorecard_sources`: append-only
+verified scorecard snapshots and their ordered source lineage, derived only from intact 3A evidence
+and carrying no routing or memory side effect. These supersede the entity sketched in earlier drafts
+of this document as `hermes_agent_metrics`.
+
+Deferred entities (post-3B): `hermes_agents`, `hermes_providers`, `hermes_capabilities` (DB-backed
+registries), `hermes_memories` (promoted long-term memory), `hermes_memory_conflicts`. **Raw audit (`audit_events`/`task_events`/`hermes_workflow_steps`) is
 deliberately separate from promoted memory (charter #13).**
 
 ## 4. Controlled learning model
