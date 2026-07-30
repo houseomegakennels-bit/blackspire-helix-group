@@ -1,6 +1,6 @@
 # Hermes Intelligence Layer — Architecture
 
-Status: **design + Milestone 1 foundation implemented (mock-only).** This document is the Phase A
+Status: **Milestones 1 and 2 merged; Milestone 3A in final validation.** This document is the Phase A
 architecture for evolving Hermes into the central orchestration and learning layer for Jarvis. It
 builds on the existing codebase; it does not introduce a disconnected subsystem.
 
@@ -54,16 +54,21 @@ Added in Milestone 1 (all `hermes_*`, additive, redaction-on-write):
 | `hermes_verification_results` | verifier id, pass/fail, per-check detail |
 | `hermes_memory_candidates` | **pending** lessons; never promoted in M1 |
 
-Deferred entities (M3): `hermes_agents`, `hermes_providers`, `hermes_capabilities` (DB-backed
-registries), `hermes_agent_metrics` (scorecards), `hermes_memories` (promoted long-term memory),
+Added in Milestone 3A: immutable outcome evaluations/components, additive correction chains,
+explicit source-evidence events, and sanitized evaluator-failure records. Their complete canonical
+provenance is factual input for later learning work but has no routing or memory side effect.
+
+Deferred entities (M3B+): `hermes_agents`, `hermes_providers`, `hermes_capabilities` (DB-backed
+registries), `hermes_agent_metrics` (verified scorecards), `hermes_memories` (promoted long-term memory),
 `hermes_memory_conflicts`. **Raw audit (`audit_events`/`task_events`/`hermes_workflow_steps`) is
 deliberately separate from promoted memory (charter #13).**
 
 ## 4. Controlled learning model
 
 Learning = **structured event capture → deterministic outcome evaluation → verified lesson
-extraction → (gated) promotion → retrieval/routing improvement.** Milestone 1 implements capture,
-evaluation, and candidate extraction only.
+extraction → (gated) promotion → retrieval/routing improvement.** Milestones 1 and 3A implement
+capture, factual outcome evaluation, and pending candidate extraction only. Phase 3A's
+`positive_eligible` label is evidence classification, not a scorecard update or routing input.
 
 Learning explicitly is **not**: automatic model retraining; uncontrolled prompt mutation; blind
 storage of all raw outputs as long-term memory; self-modifying production code; or bypassing review/
@@ -77,8 +82,9 @@ promotion code path** in M1 — promotion requires explicit policy/human approva
    mock execute, deterministic verify, event recording, pending memory candidate, tests.
 2. **One real adapter, development-only**: strict capability/domain allowlists, per-task budgets,
    redaction, dev profile only — **no production activation, no prod keys**.
-3. **Multi-agent routing + verification + scorecards + controlled memory promotion** (approval-gated).
-4. **Telegram/PWA integration + operational dashboards + approvals + production-readiness review.**
+3. **Verified learning foundations:** 3A immutable outcome provenance; 3B non-operative verified scorecards; then approval-gated memory candidate review/promotion.
+4. **Safe provider/agent registry, identity, operator PWA, and Telegram transport.**
+5. **Learned routing with explicit rollback, then production-readiness and Gate 4 review.**
 
 ## 6. Acceptance criteria & tests
 

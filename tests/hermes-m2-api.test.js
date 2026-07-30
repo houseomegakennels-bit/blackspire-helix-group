@@ -15,9 +15,24 @@ process.env.TELEGRAM_ALLOWED_USERS = '1001';
 process.env.ANTHROPIC_API_KEY = 'super-secret-should-never-appear';
 process.env.ALLOW_BEARER_AUTH = 'true';
 process.env.PORT = '8906';
+process.env.BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID = 'm2-evaluation-admin';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { run } = await import('../packages/task-engine/db.js');
+const authNow = Date.now();
+run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-evaluation-admin','admin','m2-evaluation-admin','bearer',null,'active',authNow,null,null,null,1,authNow]);
+run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-evaluation-grant','m2-evaluation-admin','m2-api-workspace','viewer','["evaluation.read"]','active',1,null,authNow,null,null,'test',1,authNow]);
+const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
+const { createUnifiedInput } = await import('../packages/unified-input/unified.js');
+const { getTask } = await import('../packages/task-engine/tasks.js');
+const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
+upsertWorkspace({ id: 'm2-api-workspace', name: 'm2-api-workspace', githubRepository: 'local/m2-api', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root });
+const m2EvaluationInput = createUnifiedInput({ channel: 'jarvis', actorId: 'm2-api-user', channelKey: 'm2-api-user', workspaceId: 'm2-api-workspace', text: 'report current status', idempotencyKey: 'm2-api-evaluation' });
+const m2Evaluation = await runHermesWorkflow(getTask(m2EvaluationInput.taskId));
+upsertWorkspace({ id: 'm2-api-other', name: 'm2-api-other', githubRepository: 'local/m2-api-other', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root });
+const otherInput = createUnifiedInput({ channel: 'jarvis', actorId: 'm2-api-user', channelKey: 'm2-api-user', workspaceId: 'm2-api-other', text: 'report other status', idempotencyKey: 'm2-api-other-evaluation' });
+const otherEvaluation = await runHermesWorkflow(getTask(otherInput.taskId));
 const { start } = await import('../apps/api/server.js');
 
 const server = start(8906, '127.0.0.1', { exitOnListenError: false });
@@ -49,4 +64,31 @@ test('the read-only hermes-runtime page is served', async () => {
   assert.equal(res.status, 200);
   const html = await res.text();
   assert.match(html, /Hermes Runtime Status/);
+  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/i);
+  assert.doesNotMatch(html, /<style(?:\s|>)/i);
+  assert.equal((await fetch(`${base}/hermes-runtime.js`)).status, 200);
+  assert.equal((await fetch(`${base}/hermes-runtime.css`)).status, 200);
+});
+
+test('a verified admin login session can read its configured, workspace-authorized evaluation without exposing a bearer', async () => {
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'm2-api-token' }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie);
+  const res = await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { cookie } });
+  assert.equal(res.status, 200);
+  const body = await res.text();
+  assert.ok(!body.includes('m2-api-token'));
+  const evaluation = JSON.parse(body).evaluation;
+  assert.equal(evaluation.id, m2Evaluation.evaluationId);
+  assert.deepEqual(Object.keys(evaluation).sort(), ['acceptanceStatus','corrections','createdAt','evaluationVersion','failureCategory','id','learningEligibility','runId','sourceEvents','terminalOutcome','terminalStatus','verificationStatus','workspaceId'].sort());
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(otherEvaluation.evaluationId)}`, { headers: { cookie } })).status, 404);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/unknown-evaluation`, { headers: { cookie } })).status, 404);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { authorization: 'Bearer m2-api-token' } })).status, 200);
+  const sessionId = cookie.slice(cookie.indexOf('=') + 1);
+  run('UPDATE sessions SET principal_id=NULL WHERE id=?', [sessionId]);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { cookie } })).status, 403);
+  run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-evaluation-admin', sessionId]);
+  run(`UPDATE auth_principals SET status='revoked',revoked_at=? WHERE id='m2-evaluation-admin'`, [Date.now()]);
+  assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { cookie } })).status, 403);
 });

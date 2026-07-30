@@ -13,7 +13,7 @@ export const REQUIRED_SCHEMA = {
   conversations: ['id', 'workspace_id', 'status', 'created_at', 'updated_at'], conversation_bindings: ['id', 'conversation_id', 'channel', 'channel_key', 'metadata', 'created_at'], unified_inputs: ['id', 'conversation_id', 'channel', 'actor_id', 'text', 'idempotency_key', 'policy_status', 'created_at'], task_events: ['id', 'conversation_id', 'task_id', 'type', 'payload', 'created_at'], channel_deliveries: ['id', 'event_id', 'conversation_id', 'channel', 'channel_key', 'status', 'attempts', 'last_error', 'next_attempt_at', 'created_at', 'updated_at'],
   // Hermes Intelligence Layer (Milestone 1). Additive orchestration/learning tables; kept in sync
   // with the schema-writer in scripts/migration-writer.js so a migrated database validates cleanly.
-  hermes_workflow_runs: ['id', 'task_id', 'conversation_id', 'workspace_id', 'actor_id', 'channel', 'objective', 'classification', 'status', 'outcome', 'provider', 'agent', 'cost_cents', 'started_at', 'finished_at', 'created_at'],
+  hermes_workflow_runs: ['id', 'task_id', 'conversation_id', 'workspace_id', 'actor_id', 'channel', 'objective', 'classification', 'status', 'outcome', 'provider', 'agent', 'cost_cents', 'started_at', 'finished_at', 'created_at', 'requested_provider'],
   hermes_workflow_steps: ['id', 'run_id', 'seq', 'name', 'status', 'detail', 'started_at', 'finished_at', 'created_at'],
   hermes_routing_decisions: ['id', 'run_id', 'task_id', 'classification', 'candidates', 'selected_provider', 'selected_agent', 'capabilities', 'rationale', 'created_at'],
   hermes_policy_decisions: ['id', 'run_id', 'task_id', 'action_class', 'decision', 'requires_approval', 'reason', 'created_at'],
@@ -26,6 +26,39 @@ export const REQUIRED_SCHEMA = {
   auth_principals: ['id','type','actor_id','authentication_method','credential_reference','status','issued_at','expires_at','revoked_at','disabled_at','security_version','created_at'],
   auth_workspace_grants: ['id','principal_id','workspace_id','role','permissions','status','version','supersedes_grant_id','issued_at','expires_at','revoked_at','issued_by','security_version','created_at'],
   auth_decisions: ['id','principal_id','principal_type','workspace_id','permission','resource_type','resource_id','allowed','reason_code','policy_version','created_at'],
+  hermes_outcome_evaluations: ['id', 'evaluation_version', 'user_id', 'project_id', 'workspace_id', 'task_id', 'run_id', 'routing_decision_id', 'policy_decision_id', 'verification_result_id', 'provider_invocation_id', 'execution_mode', 'provider_id', 'classification', 'terminal_status', 'terminal_outcome', 'verification_status', 'verifier_confidence', 'acceptance_status', 'retry_count', 'duration_ms', 'input_tokens', 'output_tokens', 'cost_cents', 'timed_out', 'cancelled', 'rollback_evidence', 'stability_evidence', 'failure_category', 'learning_eligibility', 'source_event_start_seq', 'source_event_end_seq', 'evaluator_version', 'provenance_digest', 'created_at'],
+  hermes_outcome_evaluation_components: ['id', 'evaluation_id', 'name', 'value', 'status', 'detail', 'created_at'],
+  hermes_outcome_corrections: ['id', 'evaluation_id', 'workspace_id', 'run_id', 'version', 'supersedes_correction_id', 'reason', 'source_evidence', 'actor_principal_id', 'created_at'],
+  hermes_outcome_source_events: ['id', 'evaluation_id', 'workspace_id', 'run_id', 'event_type', 'evidence', 'actor_principal_id', 'idempotency_key', 'created_at'],
+  hermes_outcome_evaluation_failures: ['id', 'run_id', 'workspace_id', 'category', 'remediation_state', 'detail', 'created_at'],
+};
+
+export const REQUIRED_SCHEMA_OBJECTS = {
+  index: {
+    idx_auth_principals_identity_unique: { table: 'auth_principals', columns: ['type','actor_id'] },
+    idx_auth_grants_scope_version_unique: { table: 'auth_workspace_grants', columns: ['principal_id','workspace_id','version'] },
+    idx_hermes_outcome_evaluations_run_version_unique: { table: 'hermes_outcome_evaluations', columns: ['run_id','evaluation_version'] },
+    idx_hermes_outcome_components_name_unique: { table: 'hermes_outcome_evaluation_components', columns: ['evaluation_id','name'] },
+    idx_hermes_outcome_corrections_version_unique: { table: 'hermes_outcome_corrections', columns: ['evaluation_id','version'] },
+    idx_hermes_outcome_corrections_parent_unique: { table: 'hermes_outcome_corrections', columns: ['supersedes_correction_id'] },
+    idx_hermes_outcome_source_events_idempotency_unique: { table: 'hermes_outcome_source_events', columns: ['idempotency_key'] },
+    idx_hermes_outcome_failures_run_unique: { table: 'hermes_outcome_evaluation_failures', columns: ['run_id'] },
+  },
+  trigger: Object.fromEntries([
+    ['trg_hermes_outcome_evaluations_immutable_update','hermes_outcome_evaluations','UPDATE','immutable outcome evaluation'],
+    ['trg_hermes_outcome_evaluations_immutable_delete','hermes_outcome_evaluations','DELETE','immutable outcome evaluation'],
+    ['trg_hermes_outcome_components_immutable_update','hermes_outcome_evaluation_components','UPDATE','immutable outcome component'],
+    ['trg_hermes_outcome_components_immutable_delete','hermes_outcome_evaluation_components','DELETE','immutable outcome component'],
+    ['trg_hermes_outcome_corrections_immutable_update','hermes_outcome_corrections','UPDATE','immutable outcome correction'],
+    ['trg_hermes_outcome_corrections_immutable_delete','hermes_outcome_corrections','DELETE','immutable outcome correction'],
+    ['trg_hermes_outcome_source_events_immutable_update','hermes_outcome_source_events','UPDATE','immutable outcome source event'],
+    ['trg_hermes_outcome_source_events_immutable_delete','hermes_outcome_source_events','DELETE','immutable outcome source event'],
+    ['trg_hermes_outcome_failures_immutable_update','hermes_outcome_evaluation_failures','UPDATE','immutable outcome failure'],
+    ['trg_hermes_outcome_failures_immutable_delete','hermes_outcome_evaluation_failures','DELETE','immutable outcome failure'],
+  ].map(([name, table, operation, message]) => [name, {
+    table,
+    sql: `CREATE TRIGGER ${name} BEFORE ${operation} ON ${table} BEGIN SELECT RAISE(ABORT,'${message}'); END`,
+  }])),
 };
 
 // Returns a list of human-readable descriptions of missing schema objects (empty when the database
@@ -42,7 +75,24 @@ export function findMissingSchemaObjects(db) {
     const missingColumns = expectedColumns.filter((column) => !actualColumns.has(column));
     if (missingColumns.length) missing.push(`${table} is missing ${missingColumns.join(', ')}`);
   }
+  for (const [name, expected] of Object.entries(REQUIRED_SCHEMA_OBJECTS.index)) {
+    const index = db.prepare(`PRAGMA index_list("${expected.table}")`).all().find((row) => row.name === name);
+    const columns = index ? db.prepare(`PRAGMA index_info("${name}")`).all().map((row) => row.name) : [];
+    const schemaRow = db.prepare('SELECT sql FROM sqlite_master WHERE type=? AND name=?').get('index', name);
+    const expectedSql = `CREATE UNIQUE INDEX ${name} ON ${expected.table}(${expected.columns.join(',')})`;
+    if (!index || index.unique !== 1 || index.origin !== 'c' || index.partial !== 0 ||
+      normalizeSql(schemaRow?.sql) !== normalizeSql(expectedSql) ||
+      columns.length !== expected.columns.length || columns.some((column, position) => column !== expected.columns[position])) missing.push(`invalid index ${name}`);
+  }
+  for (const [name, expected] of Object.entries(REQUIRED_SCHEMA_OBJECTS.trigger)) {
+    const trigger = db.prepare('SELECT tbl_name,sql FROM sqlite_master WHERE type=? AND name=?').get('trigger', name);
+    if (!trigger || trigger.tbl_name !== expected.table || normalizeSql(trigger.sql) !== normalizeSql(expected.sql)) missing.push(`invalid trigger ${name}`);
+  }
   return missing;
+}
+
+function normalizeSql(sql) {
+  return String(sql || '').trim().replace(/;$/, '').replace(/\s+/g, ' ').toLowerCase();
 }
 
 // Sorted names of every ordinary table on `db` (an already-open connection), excluding SQLite's own

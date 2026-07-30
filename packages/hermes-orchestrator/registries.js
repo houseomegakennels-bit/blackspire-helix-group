@@ -39,15 +39,21 @@
  * @property {boolean} productionEligible
  */
 
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
 /** @type {CapabilityDefinition[]} */
-const CAPABILITIES = Object.freeze([
+const CAPABILITIES = deepFreeze([
   { id: 'status.report', description: 'Report status / answer read-only questions', riskLevel: 'low', requiredPermissions: ['read'], providerCompatibility: ['mock', 'anthropic', 'fake'], toolRequirements: [], environmentRestrictions: ['development', 'test', 'production'], verificationRequired: true },
   { id: 'doc.edit', description: 'Propose safe local documentation edits', riskLevel: 'low', requiredPermissions: ['read'], providerCompatibility: ['mock', 'anthropic', 'fake'], toolRequirements: [], environmentRestrictions: ['development', 'test'], verificationRequired: true },
   { id: 'code.edit', description: 'Propose local code edits (a real adapter proposes text only; no execution)', riskLevel: 'medium', requiredPermissions: ['read'], providerCompatibility: ['mock', 'anthropic', 'fake'], toolRequirements: [], environmentRestrictions: ['development', 'test'], verificationRequired: true },
 ]);
 
 /** @type {ProviderDefinition[]} */
-const PROVIDERS = Object.freeze([
+const PROVIDERS = deepFreeze([
   {
     id: 'mock', displayName: 'Deterministic Mock', adapterType: 'mock', enabled: true,
     allowedEnvironments: ['development', 'test', 'production'], supportedCapabilities: ['status.report', 'doc.edit', 'code.edit'],
@@ -83,14 +89,14 @@ const PROVIDERS = Object.freeze([
  * @property {string[]} capabilities @property {'low'|'medium'|'high'} maxRisk
  */
 /** @type {AgentDefinition[]} */
-const AGENTS = Object.freeze([
+const AGENTS = deepFreeze([
   { id: 'mock-generalist', description: 'Credential-free deterministic mock agent', providerId: 'mock', capabilities: ['status.report', 'doc.edit', 'code.edit'], maxRisk: 'medium' },
   { id: 'claude-dev', description: 'Non-agentic Claude proposer (development-only, disabled by default)', providerId: 'anthropic', capabilities: ['status.report', 'doc.edit', 'code.edit'], maxRisk: 'medium' },
 ]);
 
 const RISK_ORDER = { low: 0, medium: 1, high: 2 };
 
-export const capabilityRegistry = {
+export const capabilityRegistry = Object.freeze({
   list: () => CAPABILITIES,
   get: (id) => CAPABILITIES.find((c) => c.id === id) || null,
   has: (id) => CAPABILITIES.some((c) => c.id === id),
@@ -98,9 +104,9 @@ export const capabilityRegistry = {
     const c = CAPABILITIES.find((x) => x.id === id);
     return Boolean(c && c.environmentRestrictions.includes(env));
   },
-};
+});
 
-export const providerRegistry = {
+export const providerRegistry = Object.freeze({
   list: () => PROVIDERS,
   get: (id) => PROVIDERS.find((p) => p.id === id) || null,
   // Providers eligible to serve a capability in a given environment. `enabledOnly` returns only the
@@ -114,16 +120,16 @@ export const providerRegistry = {
     const p = PROVIDERS.find((x) => x.id === id);
     return Boolean(p && p.supportedCapabilities.includes(capability));
   },
-};
+});
 
-export const agentRegistry = {
+export const agentRegistry = Object.freeze({
   list: () => AGENTS,
   get: (id) => AGENTS.find((a) => a.id === id) || null,
   // An agent may serve any task whose risk is at or below the agent's maxRisk.
   forCapability: (capability, taskRisk = 'low') =>
     AGENTS.filter((a) => a.capabilities.includes(capability) && RISK_ORDER[a.maxRisk] >= RISK_ORDER[taskRisk]),
   forProvider: (providerId) => AGENTS.filter((a) => a.providerId === providerId),
-};
+});
 
 /** Validate a provider definition shape (used by tests and defensive checks). */
 export function validateProviderDefinition(p) {

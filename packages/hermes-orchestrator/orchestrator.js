@@ -20,6 +20,7 @@ import { resolveRuntimeProfile, realProviderPermitted, workspacePermitted, realP
 import { checkApproval, reserve } from './approvals.js';
 import { providerRegistry } from './registries.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
+import { evaluateTerminalOutcome, recordOutcomeEvaluationFailure } from './outcome.js';
 import {
   insertWorkflowRun, finishWorkflowRun, insertRoutingDecision,
   insertPolicyDecision, insertVerificationResult,
@@ -34,9 +35,12 @@ export async function runHermesWorkflow(input, options = {}) {
   const runId = insertWorkflowRun({
     taskId: normalized.taskId, conversationId: normalized.conversationId, workspaceId: normalized.workspaceId,
     actorId: normalized.actorId, channel: normalized.channel, objective: normalized.objective, status: 'running',
+    requestedProvider: normalized.requestedProvider,
   });
   const events = makeEventRecorder({ taskId: normalized.taskId, runId });
-  events.record(HERMES_EVENTS.RECEIVED, { channel: normalized.channel, profile: rp.profile });
+  events.record(HERMES_EVENTS.RECEIVED, {
+    channel: normalized.channel, profile: rp.profile, requestedProvider: normalized.requestedProvider,
+  });
   events.record(HERMES_EVENTS.NORMALIZED, { objective: normalized.objective });
 
   if (getFlag('emergency_stop') === 'active') {
@@ -104,7 +108,7 @@ export async function runHermesWorkflow(input, options = {}) {
       const appr = checkApproval(normalized.taskId, policy.actionClass);
       if (!appr.ok) {
         events.record(HERMES_EVENTS.FAILED, { reason: `approval required: ${appr.reason}` }, 'failed');
-        finishWorkflowRun(runId, { status: 'blocked', outcome: 'approval_required', provider: routing.provider });
+        finishWorkflowRun(runId, { status: 'blocked', outcome: 'approval_required', provider: routing.provider, agent: routing.agent });
         return done(runId, 'blocked', 'approval_required', { executionMode: 'blocked', classification, routing });
       }
       approvalToConsume = appr.approvalId;
@@ -151,8 +155,8 @@ export async function runHermesWorkflow(input, options = {}) {
     const memoryCandidate = extractMemoryCandidate({ runId, normalized, classification, verification, provider: routing.provider, executionMode: execution.executionMode });
     if (memoryCandidate.created) events.record(HERMES_EVENTS.MEMORY_CANDIDATE, { id: memoryCandidate.id, status: 'pending' });
 
-    finishWorkflowRun(runId, { status: 'completed', outcome: 'verified', provider: execution.provider, agent: routing.agent, costCents: execution.usage.costCents });
     events.record(HERMES_EVENTS.COMPLETED, { outcome: 'verified', executionMode: execution.executionMode });
+    finishWorkflowRun(runId, { status: 'completed', outcome: 'verified', provider: execution.provider, agent: routing.agent, costCents: execution.usage.costCents });
     return done(runId, 'completed', 'verified', { executionMode: execution.executionMode, classification, routing, verification, memoryCandidate, execution });
   } catch (error) {
     events.record(HERMES_EVENTS.FAILED, { reason: String(error?.message || error) }, 'failed');
@@ -162,5 +166,9 @@ export async function runHermesWorkflow(input, options = {}) {
 }
 
 function done(runId, status, outcome, extra = {}) {
-  return { runId, status, outcome, ...extra };
+  // Trusted internal post-terminal evaluation only. It is append-only factual provenance and never
+  // changes this workflow's result; malformed/incomplete evidence simply remains unevaluated.
+  let evaluation = null; let evaluationFailureCategory = null;
+  try { evaluation = evaluateTerminalOutcome(runId); } catch (error) { evaluationFailureCategory = recordOutcomeEvaluationFailure(runId, error) || 'evaluation_unavailable'; }
+  return { runId, status, outcome, ...(evaluation ? { evaluationId: evaluation.evaluation.id } : {}), ...(evaluationFailureCategory ? { evaluationFailureCategory } : {}), ...extra };
 }

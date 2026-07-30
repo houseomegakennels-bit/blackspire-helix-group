@@ -37,22 +37,27 @@ function validate(c) {
   if (!c || c.version !== 1 || Object.keys(c).some((k) => !keys.includes(k)) || !Array.isArray(c.principals) || !Array.isArray(c.workspace_grants) || !c.service_mappings || typeof c.service_mappings !== 'object' || Array.isArray(c.service_mappings)) bad();
   const principals = new Map(); const grants = new Map(); const scopeVersions = new Set();
   for (const p of c.principals) {
-    if (!p || Object.keys(p).some((k) => !['principal_id','principal_type','actor_id','authentication_method','credential_reference','status','issued_at','expires_at','revoked_at','disabled_at','security_version'].includes(k)) || !text(p.principal_id) || principals.has(p.principal_id) || !['admin','service'].includes(p.principal_type) || !text(p.actor_id) || p.authentication_method !== (p.principal_type === 'admin' ? 'bearer' : 'service') || !['active','revoked','disabled','expired'].includes(p.status) || !integer(p.issued_at) || !nullableInteger(p.expires_at) || !nullableInteger(p.revoked_at) || !nullableInteger(p.disabled_at) || !integer(p.security_version) || p.security_version < 1) bad();
+    if (!p || Object.keys(p).some((k) => !['principal_id','principal_type','actor_id','authentication_method','credential_reference','status','issued_at','expires_at','revoked_at','disabled_at','security_version'].includes(k)) || !authorityId(p.principal_id) || principals.has(p.principal_id) || !['admin','service'].includes(p.principal_type) || !authorityId(p.actor_id) || p.authentication_method !== (p.principal_type === 'admin' ? 'bearer' : 'service') || (p.principal_type === 'service' && !authorityId(p.credential_reference)) || (p.principal_type === 'admin' && !nullableAuthorityId(p.credential_reference)) || !principalLifecycle(p) || !integer(p.security_version) || p.security_version < 1) bad();
     principals.set(p.principal_id, p);
   }
   for (const g of c.workspace_grants) {
     const scope = `${g?.principal_id}\u0000${g?.workspace_id}\u0000${g?.version}`;
-    if (!g || Object.keys(g).some((k) => !['grant_id','principal_id','workspace_id','role','permissions','status','version','supersedes_grant_id','issued_at','expires_at','revoked_at','issued_by','security_version'].includes(k)) || !text(g.grant_id) || grants.has(g.grant_id) || !principals.has(g.principal_id) || !text(g.workspace_id) || !AUTHZ_ROLES.includes(g.role) || !['active','revoked','expired','superseded'].includes(g.status ?? 'active') || !integer(g.version) || g.version < 1 || scopeVersions.has(scope) || !nullableText(g.supersedes_grant_id) || !integer(g.issued_at) || !nullableInteger(g.expires_at) || !nullableInteger(g.revoked_at) || !text(g.issued_by) || !integer(g.security_version) || g.security_version < 1) bad();
+    if (!g || Object.keys(g).some((k) => !['grant_id','principal_id','workspace_id','role','permissions','status','version','supersedes_grant_id','issued_at','expires_at','revoked_at','issued_by','security_version'].includes(k)) || !authorityId(g.grant_id) || grants.has(g.grant_id) || !principals.has(g.principal_id) || !authorityId(g.workspace_id) || !AUTHZ_ROLES.includes(g.role) || !grantLifecycle(g) || !integer(g.version) || g.version < 1 || scopeVersions.has(scope) || !nullableAuthorityId(g.supersedes_grant_id) || !authorityId(g.issued_by) || !integer(g.security_version) || g.security_version < 1) bad();
     try { canonicalPermissions(g.permissions); } catch { bad(); } grants.set(g.grant_id, g); scopeVersions.add(scope);
   }
   if (c.admin_bearer_principal_id !== null && principals.get(c.admin_bearer_principal_id)?.principal_type !== 'admin') bad();
   for (const id of Object.values(c.service_mappings)) if (principals.get(id)?.principal_type !== 'service') bad();
-  const heads = new Map();
+  const scopes = new Map();
   for (const g of grants.values()) {
-    if (g.supersedes_grant_id) { const parent = grants.get(g.supersedes_grant_id); if (!parent || parent.principal_id !== g.principal_id || parent.workspace_id !== g.workspace_id || parent.version >= g.version) bad(); }
-    if ((g.status ?? 'active') === 'active') { const key = `${g.principal_id}\u0000${g.workspace_id}`; if (heads.has(key)) bad(); heads.set(key, g.grant_id); }
+    const key = `${g.principal_id}\u0000${g.workspace_id}`;
+    if (!scopes.has(key)) scopes.set(key, []);
+    scopes.get(key).push(g);
+    if (g.supersedes_grant_id) {
+      const parent = grants.get(g.supersedes_grant_id);
+      if (!parent || parent.principal_id !== g.principal_id || parent.workspace_id !== g.workspace_id || g.version !== parent.version + 1 || g.issued_at < parent.issued_at) bad();
+    }
   }
-  for (const g of grants.values()) { const seen = new Set(); let current = g; while (current.supersedes_grant_id) { if (seen.has(current.grant_id)) bad(); seen.add(current.grant_id); current = grants.get(current.supersedes_grant_id); if (!current) bad(); } }
+  for (const rows of scopes.values()) validateGrantGraph(rows);
 }
 function apply(c, database) {
   const db = new DatabaseSync(database);
@@ -71,8 +76,47 @@ function apply(c, database) {
 function samePrincipal(r,p) { return r.id===p.principal_id && r.type===p.principal_type && r.actor_id===p.actor_id && r.authentication_method===p.authentication_method && (r.credential_reference??null)===(p.credential_reference??null) && r.status===p.status && r.issued_at===p.issued_at && (r.expires_at??null)===(p.expires_at??null) && (r.revoked_at??null)===(p.revoked_at??null) && (r.disabled_at??null)===(p.disabled_at??null) && r.security_version===p.security_version; }
 function sameGrant(r,g) { return r.id===g.grant_id && r.principal_id===g.principal_id && r.workspace_id===g.workspace_id && r.role===g.role && r.permissions===canonicalPermissions(g.permissions) && r.status===(g.status ?? 'active') && r.version===g.version && (r.supersedes_grant_id??null)===(g.supersedes_grant_id??null) && r.issued_at===g.issued_at && (r.expires_at??null)===(g.expires_at??null) && (r.revoked_at??null)===(g.revoked_at??null) && r.issued_by===g.issued_by && r.security_version===g.security_version; }
 function text(v) { return typeof v === 'string' && v.length > 0 && v.length <= 256 && !/[\u0000-\u001f\u007f]/.test(v); }
-function nullableText(v) { return v === null || v === undefined || text(v); }
+function authorityId(v) { return typeof v === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(v) && !/(?:secret|token|credential|bearer|authorization|cookie|session|csrf|pem|aws|private-key|api[-_:]?key|^(?:sk|pk|rk|ghp|github_pat|xox|akia)[_-])/i.test(v); }
+function nullableAuthorityId(v) { return v === null || v === undefined || authorityId(v); }
 function integer(v) { return Number.isInteger(v); }
 function nullableInteger(v) { return v === null || v === undefined || integer(v); }
+function principalLifecycle(p) {
+  const currentTime = Date.now();
+  const expiresAt = p.expires_at ?? null;
+  const revokedAt = p.revoked_at ?? null;
+  const disabledAt = p.disabled_at ?? null;
+  if (!['active','revoked','disabled','expired'].includes(p.status) || !integer(p.issued_at) || !nullableInteger(expiresAt) || !nullableInteger(revokedAt) || !nullableInteger(disabledAt)) return false;
+  if (p.issued_at > currentTime || (expiresAt !== null && expiresAt < p.issued_at) || (revokedAt !== null && (revokedAt < p.issued_at || revokedAt > currentTime)) || (disabledAt !== null && (disabledAt < p.issued_at || disabledAt > currentTime))) return false;
+  return (p.status === 'active' && revokedAt === null && disabledAt === null && (expiresAt === null || expiresAt > Date.now())) ||
+    (p.status === 'revoked' && revokedAt !== null) || (p.status === 'disabled' && disabledAt !== null) ||
+    (p.status === 'expired' && expiresAt !== null && expiresAt <= Date.now());
+}
+function grantLifecycle(g) {
+  const currentTime = Date.now();
+  const status = g.status ?? 'active';
+  const expiresAt = g.expires_at ?? null;
+  const revokedAt = g.revoked_at ?? null;
+  if (!['active','revoked','expired','superseded'].includes(status) || !integer(g.issued_at) || !nullableInteger(expiresAt) || !nullableInteger(revokedAt)) return false;
+  if (g.issued_at > currentTime || (expiresAt !== null && expiresAt < g.issued_at) || (revokedAt !== null && (revokedAt < g.issued_at || revokedAt > currentTime))) return false;
+  return (status === 'active' && revokedAt === null && (expiresAt === null || expiresAt > Date.now())) ||
+    (status === 'revoked' && revokedAt !== null) || (status === 'expired' && expiresAt !== null && expiresAt <= Date.now()) ||
+    status === 'superseded';
+}
+function validateGrantGraph(rows) {
+  const byId = new Map(rows.map((row) => [row.grant_id, row]));
+  const children = new Map(rows.map((row) => [row.grant_id, []]));
+  for (const row of rows) if (row.supersedes_grant_id) children.get(row.supersedes_grant_id)?.push(row);
+  const roots = rows.filter((row) => !row.supersedes_grant_id);
+  const terminals = rows.filter((row) => children.get(row.grant_id).length === 0);
+  if (roots.length !== 1 || terminals.length !== 1 || roots[0].version !== 1 || (terminals[0].status ?? 'active') !== 'active' || rows.filter((row) => (row.status ?? 'active') === 'active').length !== 1 || rows.some((row) => children.get(row.grant_id).length > 1)) bad();
+  const seen = new Set();
+  let current = roots[0];
+  while (current) {
+    if (seen.has(current.grant_id)) bad();
+    seen.add(current.grant_id);
+    current = children.get(current.grant_id)[0] || null;
+  }
+  if (seen.size !== byId.size) bad();
+}
 function bad() { throw new Error('AUTHZ_CONFIG_INVALID'); }
 function output(v) { process.stdout.write(`${JSON.stringify(v)}\n`); }

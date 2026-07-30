@@ -107,6 +107,34 @@ test('exact true migrates only a disposable database, is idempotent, and enables
   assert.equal(worker.exited, false, worker.stderr);
 });
 
+test('a migration failure rolls back every schema change in its transaction', () => {
+  const dbPath = emptyDatabase('atomic-failure');
+  const before = new DatabaseSync(dbPath);
+  before.exec('CREATE TABLE idx_hermes_outcome_run(x TEXT);');
+  before.close();
+  const result = run('scripts/migrate.js', [], { ...safeEnv(dbPath), BLACKSPIRE_RUN_MIGRATIONS: 'true' });
+  assert.notEqual(result.status, 0);
+  const check = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const names = check.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((row) => row.name);
+    assert.deepEqual(names, ['idx_hermes_outcome_run']);
+  } finally { check.close(); }
+});
+
+test('migration refuses same-name malformed integrity objects instead of reporting success', () => {
+  const dbPath = path.join(root, 'malformed-object.sqlite');
+  const env = { ...safeEnv(dbPath), BLACKSPIRE_RUN_MIGRATIONS: 'true' };
+  assert.equal(run('scripts/migrate.js', [], env).status, 0);
+  const db = new DatabaseSync(dbPath);
+  db.exec(`DROP TRIGGER trg_hermes_outcome_evaluations_immutable_update;
+    CREATE TRIGGER trg_hermes_outcome_evaluations_immutable_update BEFORE UPDATE ON hermes_outcome_evaluations BEGIN SELECT 1; END;`);
+  db.close();
+  const result = run('scripts/migrate.js', [], env);
+  assert.notEqual(result.status, 0);
+  assert.doesNotMatch(result.stdout, /Migrated Blackspire/);
+  assert.match(result.stderr, /incompatible schema/);
+});
+
 test('production wrapper never runs or fabricates a migration permission', () => {
   const text = fs.readFileSync('scripts/start-production.sh', 'utf8');
   assert.doesNotMatch(text, /scripts\/migrate\.js/);

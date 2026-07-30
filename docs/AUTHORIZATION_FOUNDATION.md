@@ -4,11 +4,11 @@ This is a server-side, route-unintegrated foundation for Blackspire Command. It 
 
 ## Model and decisions
 
-Principals carry lifecycle state and a monotonically positive security version. Resolution returns an immutable, credential-free summary, and only summaries created by the resolver can be authorized. Callers cannot inject an identity, role, permission, or workspace claim. Authorization is deny-by-default and writes sanitized allow/deny decision records; audit failure denies. Audit records a workspace only after an active grant validates it, never records arbitrary resource type/ID input, and uses server-owned permission and reason values.
+Principals carry lifecycle state and a monotonically positive security version. Resolution is an authentication boundary: the caller must select the exact canonical method, and a service principal must present the exact configured credential reference. It returns an immutable, credential-free summary, and only summaries created by the resolver can be authorized. Every authorization decision re-resolves the current persisted principal and rejects lifecycle, actor, authentication-method, security-version, or service credential-reference drift. Callers cannot inject an identity, role, permission, workspace claim, or credential-free service identity. Authorization is deny-by-default and writes sanitized allow/deny decision records; audit failure denies. Audit records a workspace only after an active grant validates it, never records arbitrary resource type/ID input, and uses server-owned permission and reason values.
 
 Workspace is the current project boundary. Roles are `admin`, `operator`, `viewer`, and `service`; all permissions are the fixed, sorted, duplicate-free `AUTHZ_PERMISSIONS` set. There are no wildcard permissions. Admin/operator/viewer may receive their role matrix; service receives only explicitly listed permissions.
 
-Grants are immutable versions scoped to one principal and workspace. A superseding version must reference an older grant in the same scope; missing parents, cycles, cross-scope links, duplicate versions, and multiple active heads fail closed. Revoked/expired grants are unusable; a later correctly chained version is the explicit re-grant flow.
+Grants are immutable, contiguous versions scoped to one principal and workspace. Authorization validates the entire persisted scope graph: it must have one root, one active terminal head, and exactly one same-scope successor at every nonterminal node. Missing parents, detached components, cycles, branches, cross-scope links, duplicate versions, backdated successors, mismatched supplied heads, and multiple active heads fail closed. Revoked/expired grants are unusable; a later correctly chained version is the explicit re-grant flow.
 
 ## Provisioning
 
@@ -18,4 +18,4 @@ No startup invokes provisioning, no public endpoint exists, no automatic princip
 
 ## Compatibility and limitations
 
-No HTTP route is protected in this pass. No evaluation-read API exists. No human identity, session binding, or automatic authorization exists. PR #57 remains draft and may resume only after its own rebase, completion, and review. No production, Gate 4, routing, memory, or live-provider behavior changed.
+PR #57 narrowly integrates the foundation with the evaluation-read API only. A cookie session is authority only after server-side login binds it to the configured canonical admin principal; session identifiers, CSRF tokens, lifecycle epochs, revocation state, principal binding, and the global revocation cutoff must all be canonical, and rotation never extends the original expiry. Malformed persisted sessions fail closed for reads, rotation, and active-session listing. This is not a verified human-identity system and does not generalize protection to other routes. No automatic authorization or real provisioning exists. No production, Gate 4, routing, memory, or live-provider behavior changed.

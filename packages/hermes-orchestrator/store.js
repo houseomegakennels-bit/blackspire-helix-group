@@ -8,8 +8,13 @@
 import { run, all, get } from '../task-engine/db.js';
 import { id, now } from '../shared/util.js';
 import { redactedJson, redactString } from './redaction.js';
+import { providerRegistry } from './registries.js';
 
 export function insertWorkflowRun(runRow) {
+  const requestedProvider = runRow.requestedProvider || null;
+  if (requestedProvider !== null && !providerRegistry.get(requestedProvider)) {
+    throw new Error('workflow run requestedProvider must be a registered provider id or null');
+  }
   const record = {
     id: runRow.id || id('hrun'),
     task_id: runRow.taskId || null,
@@ -27,11 +32,12 @@ export function insertWorkflowRun(runRow) {
     started_at: runRow.startedAt || now(),
     finished_at: runRow.finishedAt || null,
     created_at: now(),
+    requested_provider: requestedProvider,
   };
   run(
-    `INSERT INTO hermes_workflow_runs(id,task_id,conversation_id,workspace_id,actor_id,channel,objective,classification,status,outcome,provider,agent,cost_cents,started_at,finished_at,created_at)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [record.id, record.task_id, record.conversation_id, record.workspace_id, record.actor_id, record.channel, record.objective, record.classification, record.status, record.outcome, record.provider, record.agent, record.cost_cents, record.started_at, record.finished_at, record.created_at],
+    `INSERT INTO hermes_workflow_runs(id,task_id,conversation_id,workspace_id,actor_id,channel,objective,classification,status,outcome,provider,agent,cost_cents,started_at,finished_at,created_at,requested_provider)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [record.id, record.task_id, record.conversation_id, record.workspace_id, record.actor_id, record.channel, record.objective, record.classification, record.status, record.outcome, record.provider, record.agent, record.cost_cents, record.started_at, record.finished_at, record.created_at, record.requested_provider],
   );
   return record.id;
 }
@@ -130,7 +136,7 @@ export function consumeApprovalIfGranted(approvalId, at = now()) {
   const result = run(`UPDATE hermes_approvals SET status='consumed', consumed_at=? WHERE id=? AND status='granted' AND (expires_at IS NULL OR expires_at > ?)`, [at, approvalId, at]);
   return result.changes === 1;
 }
-export const getProviderInvocations = (runId) => all(`SELECT * FROM hermes_provider_invocations WHERE run_id=?`, [runId]);
+export const getProviderInvocations = (runId) => all(`SELECT * FROM hermes_provider_invocations WHERE run_id=? ORDER BY attempt,created_at,id`, [runId]);
 export const recentProviderInvocations = (limit = 20) => all(`SELECT * FROM hermes_provider_invocations ORDER BY created_at DESC LIMIT ?`, [limit]);
 
 const numOrNull = (v) => (Number.isFinite(Number(v)) && v !== null && v !== undefined ? Number(v) : null);
@@ -138,8 +144,38 @@ const numOrNull = (v) => (Number.isFinite(Number(v)) && v !== null && v !== unde
 // --- Reads (tests + future retrieval service) ---
 export const getWorkflowRun = (runId) => get(`SELECT * FROM hermes_workflow_runs WHERE id=?`, [runId]);
 export const getWorkflowSteps = (runId) => all(`SELECT * FROM hermes_workflow_steps WHERE run_id=? ORDER BY seq`, [runId]);
-export const getRoutingDecisions = (runId) => all(`SELECT * FROM hermes_routing_decisions WHERE run_id=?`, [runId]);
-export const getPolicyDecisions = (runId) => all(`SELECT * FROM hermes_policy_decisions WHERE run_id=?`, [runId]);
-export const getVerificationResults = (runId) => all(`SELECT * FROM hermes_verification_results WHERE run_id=?`, [runId]);
+// Source records participate in the Phase 3A provenance digest.  Their selection order must be
+// explicit so SQLite planner/order changes cannot alter an evaluation or its verification.
+export const getRoutingDecisions = (runId) => all(`SELECT * FROM hermes_routing_decisions WHERE run_id=? ORDER BY created_at,id`, [runId]);
+export const getPolicyDecisions = (runId) => all(`SELECT * FROM hermes_policy_decisions WHERE run_id=? ORDER BY created_at,id`, [runId]);
+export const getVerificationResults = (runId) => all(`SELECT * FROM hermes_verification_results WHERE run_id=? ORDER BY created_at,id`, [runId]);
 export const getMemoryCandidates = (runId) => all(`SELECT * FROM hermes_memory_candidates WHERE run_id=?`, [runId]);
 export const getPendingMemoryCandidates = () => all(`SELECT * FROM hermes_memory_candidates WHERE status='pending' ORDER BY created_at`);
+
+// Milestone 3A outcome records are append-only. No update/delete helper is deliberately exposed.
+export function insertOutcomeEvaluation(row, components) {
+  run(`INSERT INTO hermes_outcome_evaluations(id,evaluation_version,user_id,project_id,workspace_id,task_id,run_id,routing_decision_id,policy_decision_id,verification_result_id,provider_invocation_id,execution_mode,provider_id,classification,terminal_status,terminal_outcome,verification_status,verifier_confidence,acceptance_status,retry_count,duration_ms,input_tokens,output_tokens,cost_cents,timed_out,cancelled,rollback_evidence,stability_evidence,failure_category,learning_eligibility,source_event_start_seq,source_event_end_seq,evaluator_version,provenance_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  [row.id,row.evaluationVersion,row.userId,row.projectId,row.workspaceId,row.taskId,row.runId,row.routingDecisionId,row.policyDecisionId,row.verificationResultId,row.providerInvocationId,row.executionMode,row.providerId,row.classification,row.terminalStatus,row.terminalOutcome,row.verificationStatus,row.verifierConfidence,row.acceptanceStatus,row.retryCount,row.durationMs,row.inputTokens,row.outputTokens,row.costCents,row.timedOut ? 1 : 0,row.cancelled ? 1 : 0,row.rollbackEvidence,row.stabilityEvidence,row.failureCategory,row.learningEligibility,row.sourceEventStartSeq,row.sourceEventEndSeq,row.evaluatorVersion,row.provenanceDigest,row.createdAt]);
+  for (const c of components) run(`INSERT INTO hermes_outcome_evaluation_components(id,evaluation_id,name,value,status,detail,created_at) VALUES(?,?,?,?,?,?,?)`, [c.id,row.id,c.name,c.value,c.status,redactString(c.detail || ''),row.createdAt]);
+}
+export const getOutcomeEvaluationForRun = (runId, evaluationVersion) => get(`SELECT * FROM hermes_outcome_evaluations WHERE run_id=? AND evaluation_version=?`, [runId,evaluationVersion]);
+export const getOutcomeEvaluation = (id) => get(`SELECT * FROM hermes_outcome_evaluations WHERE id=?`, [id]);
+export const getOutcomeComponents = (evaluationId) => all(`SELECT * FROM hermes_outcome_evaluation_components WHERE evaluation_id=? ORDER BY name`, [evaluationId]);
+export const recentOutcomeEvaluations = (limit = 20) => all(`SELECT * FROM hermes_outcome_evaluations ORDER BY created_at DESC LIMIT ?`, [limit]);
+
+// Phase 3A additions remain append-only.  There are deliberately no update/delete paths.
+export function insertOutcomeCorrection(row) {
+  run(`INSERT INTO hermes_outcome_corrections(id,evaluation_id,workspace_id,run_id,version,supersedes_correction_id,reason,source_evidence,actor_principal_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+    [row.id,row.evaluationId,row.workspaceId,row.runId,row.version,row.supersedesCorrectionId || null,redactString(row.reason),redactString(row.sourceEvidence),row.actorPrincipalId,row.createdAt]);
+}
+export const getOutcomeCorrections = (evaluationId) => all(`SELECT * FROM hermes_outcome_corrections WHERE evaluation_id=? ORDER BY version`, [evaluationId]);
+export function insertOutcomeSourceEvent(row) {
+  run(`INSERT INTO hermes_outcome_source_events(id,evaluation_id,workspace_id,run_id,event_type,evidence,actor_principal_id,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+    [row.id,row.evaluationId,row.workspaceId,row.runId,row.eventType,redactString(row.evidence),row.actorPrincipalId,row.idempotencyKey,row.createdAt]);
+}
+export const getOutcomeSourceEvents = (evaluationId) => all(`SELECT * FROM hermes_outcome_source_events WHERE evaluation_id=? ORDER BY created_at,id`, [evaluationId]);
+export function insertOutcomeEvaluationFailure(row) {
+  run(`INSERT INTO hermes_outcome_evaluation_failures(id,run_id,workspace_id,category,remediation_state,detail,created_at) VALUES(?,?,?,?,?,?,?)`,
+    [row.id,row.runId,row.workspaceId || null,row.category,row.remediationState || 'open',redactString(row.detail || ''),row.createdAt]);
+}
+export const getOutcomeEvaluationFailure = (runId) => get(`SELECT * FROM hermes_outcome_evaluation_failures WHERE run_id=?`, [runId]);

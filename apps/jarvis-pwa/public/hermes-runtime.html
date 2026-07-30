@@ -4,60 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hermes Runtime Status</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 1.25rem; max-width: 60rem; }
-  h1 { font-size: 1.25rem; } h2 { font-size: 1rem; margin-top: 1.5rem; }
-  .muted { color: #8a94a6; } .pill { display:inline-block; padding:.1rem .5rem; border-radius:1rem; font-size:.75rem; border:1px solid currentColor; }
-  table { border-collapse: collapse; width: 100%; font-size: .85rem; }
-  th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid rgba(128,128,128,.25); }
-  .err { color: #c0392b; }
-  code { background: rgba(128,128,128,.15); padding: 0 .25rem; border-radius: .25rem; }
-</style>
+<link rel="stylesheet" href="/hermes-runtime.css">
 </head>
 <body>
 <h1>Hermes Runtime Status <span class="muted">(read-only)</span></h1>
 <p class="muted">This page shows metadata only. It never displays credentials, prompts, or unredacted provider output.</p>
 <div id="root">Loading…</div>
-<script>
-// Read-only status view. Uses the existing session/bearer auth via credentials:'include'.
-// It renders ONLY the safe metadata the API returns; there is no secret to leak here.
-async function load() {
-  const root = document.getElementById('root');
-  try {
-    const res = await fetch('/api/hermes/runtime', { credentials: 'include', headers: { accept: 'application/json' } });
-    if (res.status === 401) { root.innerHTML = '<p class="err">Sign in required.</p>'; return; }
-    if (!res.ok) { root.textContent = 'Status unavailable (HTTP ' + res.status + ').'; return; }
-    const s = await res.json();
-    const esc = (v) => String(v == null ? '' : v).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
-    const rt = s.runtime || {};
-    const providers = (s.providers || []).map((p) => `<tr>
-      <td><code>${esc(p.id)}</code></td><td>${esc(p.displayName)}</td><td>${esc(p.adapterType)}</td>
-      <td>${p.enabled ? 'enabled' : 'disabled'}</td><td>${esc(p.authentication)}</td>
-      <td>${esc(p.health && p.health.status)}</td><td>${esc((p.capabilities || []).join(', '))}</td>
-      <td>${p.productionEligible ? 'yes' : 'no'}</td></tr>`).join('');
-    const runs = (s.recentRuns || []).map((r) => `<tr>
-      <td>${esc(r.provider)}</td><td>${esc(r.status)}</td><td>${esc(r.outcome)}</td>
-      <td>${esc(r.workspaceId)}</td><td>${esc(r.createdAt)}</td></tr>`).join('');
-    const invs = (s.recentInvocations || []).map((i) => `<tr>
-      <td>${esc(i.provider)}</td><td>${esc(i.mode)}</td><td>${esc(i.status)}</td>
-      <td>${esc(i.durationMs)}ms</td><td>${i.usage && i.usage.inputTokens == null ? 'unavailable' : esc(i.usage && i.usage.inputTokens)}</td></tr>`).join('');
-    root.innerHTML = `
-      <p>Profile: <span class="pill">${esc(rt.profile)}</span> ·
-         Real provider: <span class="pill">${rt.realProviderEnabled ? 'enabled' : 'disabled'}</span> ·
-         Kill switch: <span class="pill">${rt.killSwitch ? 'ACTIVE' : 'clear'}</span> ·
-         Default mode: <span class="pill">${esc(s.executionModeDefault)}</span></p>
-      <h2>Providers</h2>
-      <table><thead><tr><th>ID</th><th>Name</th><th>Adapter</th><th>Enabled</th><th>Auth</th><th>Health</th><th>Capabilities</th><th>Prod-eligible</th></tr></thead><tbody>${providers}</tbody></table>
-      <h2>Recent development runs</h2>
-      <table><thead><tr><th>Provider</th><th>Status</th><th>Outcome</th><th>Workspace</th><th>At</th></tr></thead><tbody>${runs || '<tr><td colspan="5" class="muted">none</td></tr>'}</tbody></table>
-      <h2>Recent invocations</h2>
-      <table><thead><tr><th>Provider</th><th>Mode</th><th>Status</th><th>Duration</th><th>Input tokens</th></tr></thead><tbody>${invs || '<tr><td colspan="5" class="muted">none</td></tr>'}</tbody></table>`;
-  } catch (e) {
-    root.innerHTML = '<p class="err">Failed to load status.</p>';
-  }
-}
-load();
-</script>
+<script src="/hermes-runtime.js" defer></script>
 </body>
 </html>
