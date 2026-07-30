@@ -10,8 +10,10 @@ function ensureColumn(table, name, definition) {
 
 export function runMigration() {
   const db = getDb({ allowCreate: true });
-  db.exec(`PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY,name TEXT,description TEXT,github_repository TEXT,default_branch TEXT,allowed_paths TEXT,build_commands TEXT,provider_policy TEXT,risk_level TEXT,budget_cents INTEGER,secret_references TEXT,enabled_tools TEXT,last_health_status TEXT,root_path TEXT,created_at TEXT);
+  db.exec('PRAGMA journal_mode=WAL;');
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+  db.exec(`CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY,name TEXT,description TEXT,github_repository TEXT,default_branch TEXT,allowed_paths TEXT,build_commands TEXT,provider_policy TEXT,risk_level TEXT,budget_cents INTEGER,secret_references TEXT,enabled_tools TEXT,last_health_status TEXT,root_path TEXT,created_at TEXT);
 CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,workspace_id TEXT,request TEXT,status TEXT,idempotency_key TEXT UNIQUE,provider TEXT,plan TEXT,summary TEXT,error TEXT,budget_cents INTEGER,retry_count INTEGER,created_at TEXT,updated_at TEXT,worker_id TEXT,claimed_at TEXT,heartbeat_at TEXT,current_stage TEXT,evidence TEXT);
 CREATE TABLE IF NOT EXISTS audit_events(id TEXT PRIMARY KEY,task_id TEXT,actor TEXT,action TEXT,details TEXT,created_at TEXT);
 CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY,task_id TEXT,action TEXT,status TEXT,reason TEXT,created_at TEXT,decided_at TEXT,risk_level TEXT,requested_by TEXT,decided_by TEXT,decision_note TEXT,expires_at TEXT);
@@ -50,7 +52,9 @@ CREATE TABLE IF NOT EXISTS auth_decisions(id TEXT PRIMARY KEY,principal_id TEXT,
 CREATE INDEX IF NOT EXISTS idx_auth_principals_lookup ON auth_principals(type,actor_id,status);
 CREATE INDEX IF NOT EXISTS idx_auth_grants_active ON auth_workspace_grants(principal_id,workspace_id,status,version);
 CREATE INDEX IF NOT EXISTS idx_auth_grants_supersedes ON auth_workspace_grants(supersedes_grant_id);
-CREATE INDEX IF NOT EXISTS idx_auth_decisions_lookup ON auth_decisions(principal_id,workspace_id,permission,allowed,created_at);`);
+CREATE INDEX IF NOT EXISTS idx_auth_decisions_lookup ON auth_decisions(principal_id,workspace_id,permission,allowed,created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_principals_identity_unique ON auth_principals(type,actor_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_grants_scope_version_unique ON auth_workspace_grants(principal_id,workspace_id,version);`);
   ensureColumn('sessions', 'principal_id', 'TEXT');
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_principal ON sessions(principal_id);`);
   // --- Hermes Intelligence Layer (Milestone 1) ---
@@ -89,7 +93,28 @@ CREATE TABLE IF NOT EXISTS hermes_outcome_corrections(id TEXT PRIMARY KEY,evalua
 CREATE TABLE IF NOT EXISTS hermes_outcome_source_events(id TEXT PRIMARY KEY,evaluation_id TEXT NOT NULL,workspace_id TEXT NOT NULL,run_id TEXT NOT NULL,event_type TEXT NOT NULL CHECK(event_type IN ('accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked')),evidence TEXT NOT NULL,actor_principal_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS hermes_outcome_evaluation_failures(id TEXT PRIMARY KEY,run_id TEXT NOT NULL UNIQUE,workspace_id TEXT,category TEXT NOT NULL,remediation_state TEXT NOT NULL CHECK(remediation_state IN ('open','retry_requested','resolved')),detail TEXT,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_hermes_outcome_corrections_evaluation ON hermes_outcome_corrections(evaluation_id,version);
-CREATE INDEX IF NOT EXISTS idx_hermes_outcome_events_evaluation ON hermes_outcome_source_events(evaluation_id,created_at);`);
+CREATE INDEX IF NOT EXISTS idx_hermes_outcome_events_evaluation ON hermes_outcome_source_events(evaluation_id,created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_outcome_evaluations_run_version_unique ON hermes_outcome_evaluations(run_id,evaluation_version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_outcome_components_name_unique ON hermes_outcome_evaluation_components(evaluation_id,name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_outcome_corrections_version_unique ON hermes_outcome_corrections(evaluation_id,version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_outcome_corrections_parent_unique ON hermes_outcome_corrections(supersedes_correction_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_outcome_source_events_idempotency_unique ON hermes_outcome_source_events(idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_outcome_failures_run_unique ON hermes_outcome_evaluation_failures(run_id);
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_evaluations_immutable_update BEFORE UPDATE ON hermes_outcome_evaluations BEGIN SELECT RAISE(ABORT,'immutable outcome evaluation'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_evaluations_immutable_delete BEFORE DELETE ON hermes_outcome_evaluations BEGIN SELECT RAISE(ABORT,'immutable outcome evaluation'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_components_immutable_update BEFORE UPDATE ON hermes_outcome_evaluation_components BEGIN SELECT RAISE(ABORT,'immutable outcome component'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_components_immutable_delete BEFORE DELETE ON hermes_outcome_evaluation_components BEGIN SELECT RAISE(ABORT,'immutable outcome component'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_corrections_immutable_update BEFORE UPDATE ON hermes_outcome_corrections BEGIN SELECT RAISE(ABORT,'immutable outcome correction'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_corrections_immutable_delete BEFORE DELETE ON hermes_outcome_corrections BEGIN SELECT RAISE(ABORT,'immutable outcome correction'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_source_events_immutable_update BEFORE UPDATE ON hermes_outcome_source_events BEGIN SELECT RAISE(ABORT,'immutable outcome source event'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_source_events_immutable_delete BEFORE DELETE ON hermes_outcome_source_events BEGIN SELECT RAISE(ABORT,'immutable outcome source event'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_failures_immutable_update BEFORE UPDATE ON hermes_outcome_evaluation_failures BEGIN SELECT RAISE(ABORT,'immutable outcome failure'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_outcome_failures_immutable_delete BEFORE DELETE ON hermes_outcome_evaluation_failures BEGIN SELECT RAISE(ABORT,'immutable outcome failure'); END;`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
+  db.exec('COMMIT;');
+  } catch (error) {
+    db.exec('ROLLBACK;');
+    throw error;
+  }
 }

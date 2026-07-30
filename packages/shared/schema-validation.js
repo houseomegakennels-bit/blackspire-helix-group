@@ -33,6 +33,34 @@ export const REQUIRED_SCHEMA = {
   hermes_outcome_evaluation_failures: ['id', 'run_id', 'workspace_id', 'category', 'remediation_state', 'detail', 'created_at'],
 };
 
+export const REQUIRED_SCHEMA_OBJECTS = {
+  index: {
+    idx_auth_principals_identity_unique: { table: 'auth_principals', columns: ['type','actor_id'] },
+    idx_auth_grants_scope_version_unique: { table: 'auth_workspace_grants', columns: ['principal_id','workspace_id','version'] },
+    idx_hermes_outcome_evaluations_run_version_unique: { table: 'hermes_outcome_evaluations', columns: ['run_id','evaluation_version'] },
+    idx_hermes_outcome_components_name_unique: { table: 'hermes_outcome_evaluation_components', columns: ['evaluation_id','name'] },
+    idx_hermes_outcome_corrections_version_unique: { table: 'hermes_outcome_corrections', columns: ['evaluation_id','version'] },
+    idx_hermes_outcome_corrections_parent_unique: { table: 'hermes_outcome_corrections', columns: ['supersedes_correction_id'] },
+    idx_hermes_outcome_source_events_idempotency_unique: { table: 'hermes_outcome_source_events', columns: ['idempotency_key'] },
+    idx_hermes_outcome_failures_run_unique: { table: 'hermes_outcome_evaluation_failures', columns: ['run_id'] },
+  },
+  trigger: Object.fromEntries([
+    ['trg_hermes_outcome_evaluations_immutable_update','hermes_outcome_evaluations','UPDATE','immutable outcome evaluation'],
+    ['trg_hermes_outcome_evaluations_immutable_delete','hermes_outcome_evaluations','DELETE','immutable outcome evaluation'],
+    ['trg_hermes_outcome_components_immutable_update','hermes_outcome_evaluation_components','UPDATE','immutable outcome component'],
+    ['trg_hermes_outcome_components_immutable_delete','hermes_outcome_evaluation_components','DELETE','immutable outcome component'],
+    ['trg_hermes_outcome_corrections_immutable_update','hermes_outcome_corrections','UPDATE','immutable outcome correction'],
+    ['trg_hermes_outcome_corrections_immutable_delete','hermes_outcome_corrections','DELETE','immutable outcome correction'],
+    ['trg_hermes_outcome_source_events_immutable_update','hermes_outcome_source_events','UPDATE','immutable outcome source event'],
+    ['trg_hermes_outcome_source_events_immutable_delete','hermes_outcome_source_events','DELETE','immutable outcome source event'],
+    ['trg_hermes_outcome_failures_immutable_update','hermes_outcome_evaluation_failures','UPDATE','immutable outcome failure'],
+    ['trg_hermes_outcome_failures_immutable_delete','hermes_outcome_evaluation_failures','DELETE','immutable outcome failure'],
+  ].map(([name, table, operation, message]) => [name, {
+    table,
+    sql: `CREATE TRIGGER ${name} BEFORE ${operation} ON ${table} BEGIN SELECT RAISE(ABORT,'${message}'); END`,
+  }])),
+};
+
 // Returns a list of human-readable descriptions of missing schema objects (empty when the database
 // on `db` (an already-open node:sqlite DatabaseSync connection) contains every required table and
 // column. Never opens or closes the connection itself - callers own that lifecycle.
@@ -47,7 +75,20 @@ export function findMissingSchemaObjects(db) {
     const missingColumns = expectedColumns.filter((column) => !actualColumns.has(column));
     if (missingColumns.length) missing.push(`${table} is missing ${missingColumns.join(', ')}`);
   }
+  for (const [name, expected] of Object.entries(REQUIRED_SCHEMA_OBJECTS.index)) {
+    const index = db.prepare(`PRAGMA index_list("${expected.table}")`).all().find((row) => row.name === name);
+    const columns = index ? db.prepare(`PRAGMA index_info("${name}")`).all().map((row) => row.name) : [];
+    if (!index || index.unique !== 1 || columns.length !== expected.columns.length || columns.some((column, position) => column !== expected.columns[position])) missing.push(`invalid index ${name}`);
+  }
+  for (const [name, expected] of Object.entries(REQUIRED_SCHEMA_OBJECTS.trigger)) {
+    const trigger = db.prepare('SELECT tbl_name,sql FROM sqlite_master WHERE type=? AND name=?').get('trigger', name);
+    if (!trigger || trigger.tbl_name !== expected.table || normalizeSql(trigger.sql) !== normalizeSql(expected.sql)) missing.push(`invalid trigger ${name}`);
+  }
   return missing;
+}
+
+function normalizeSql(sql) {
+  return String(sql || '').trim().replace(/;$/, '').replace(/\s+/g, ' ').toLowerCase();
 }
 
 // Sorted names of every ordinary table on `db` (an already-open connection), excluding SQLite's own

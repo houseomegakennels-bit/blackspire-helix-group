@@ -4,8 +4,9 @@
 import crypto from 'node:crypto';
 import { id, now } from '../shared/util.js';
 import { transaction, get } from '../task-engine/db.js';
+import { getTask } from '../task-engine/tasks.js';
 import { redactDeep, redactString } from './redaction.js';
-import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
+import { getWorkflowRun, getWorkflowSteps, getRoutingDecisions, getPolicyDecisions, getVerificationResults, getProviderInvocations, getOutcomeEvaluationForRun, insertOutcomeEvaluation, getOutcomeEvaluation, getOutcomeComponents, getOutcomeCorrections, getOutcomeSourceEvents, insertOutcomeCorrection, insertOutcomeSourceEvent, insertOutcomeEvaluationFailure } from './store.js';
 import { canReadEvaluation, canCorrectEvaluation, activeGrant, resolvePrincipal } from '../shared/authorization.js';
 
 export const OUTCOME_EVALUATION_VERSION = 'm3a-v1';
@@ -17,16 +18,13 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
   if (evaluationVersion !== OUTCOME_EVALUATION_VERSION) throw new Error('outcome evaluation requires the canonical evaluation version');
   return transaction(() => {
     if (getOutcomeEvaluationForRun(runId, evaluationVersion)) throw new Error('outcome evaluation already exists for this run and version');
-    const run = getWorkflowRun(runId);
-    if (!run || !TERMINAL.has(run.status) || !run.finished_at) throw new Error('outcome evaluation requires a finished terminal workflow run');
-    const steps = getWorkflowSteps(runId);
-    if (!steps.length || !ordered(steps) || !terminalEventsPresent(steps, run.status)) throw new Error('outcome evaluation requires complete ordered terminal workflow evidence');
-    const verification = latest(getVerificationResults(runId));
-    const routing = latest(getRoutingDecisions(runId));
-    const policy = latest(getPolicyDecisions(runId));
-    const invocations = getProviderInvocations(runId);
+    const evidence = loadEvidence(runId);
+    validateEvidence(evidence);
+    const { run, steps, routings, policies, verifications, invocations } = evidence;
+    const verification = latest(verifications);
+    const routing = latest(routings);
+    const policy = latest(policies);
     const invocation = invocations.length ? invocations[invocations.length - 1] : null;
-    validateLinks({ run, routing, policy, verification, invocations });
     const verified = verification?.passed === 1 || verification?.passed === true;
     const terminalCompleted = run.status === 'completed' && run.outcome === 'verified';
     const positive = terminalCompleted && verified;
@@ -35,7 +33,6 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
     if (duration === null) throw new Error('outcome evaluation refuses malformed or negative duration');
     const retryCount = invocation ? Math.max(0, Number(invocation.attempt || 1) - 1) : null;
     const usage = aggregateUsage(invocations);
-    const components = componentRows({ positive, verified, retryCount, duration, invocation, usage, run });
     const payload = {
       evaluationVersion, userId: run.actor_id || null,
       // Projects do not yet have a canonical ID. In Phase 3A the workspace is the project boundary.
@@ -55,10 +52,14 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
       evaluatorVersion: OUTCOME_EVALUATOR_VERSION, createdAt: now(),
     };
     payload.id = id('heval');
-    // The evaluation aggregates every attempt, so its tamper-evident provenance must cover the
-    // complete canonical sequence rather than only the final attempt.
-    payload.provenanceDigest = digest({ run, steps, routing, policy, verification, invocations, payload: { ...payload, id: undefined, createdAt: undefined } });
-    insertOutcomeEvaluation(payload, components.map((c) => ({ ...c, id: id('hecomp') })));
+    if (!canonicalTimestamp(payload.createdAt) || Date.parse(payload.createdAt) < Date.parse(run.finished_at)) throw new Error('outcome evaluation refuses invalid evaluation timestamp');
+    const components = componentRows({ positive, verified, retryCount, duration, invocation, usage, run })
+      .map((component) => ({ ...component, id: id('hecomp'), evaluationId: payload.id, createdAt: payload.createdAt }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const packet = provenancePacket(evidence, payload, components);
+    assertSanitized(packet);
+    payload.provenanceDigest = digest(packet);
+    insertOutcomeEvaluation(payload, components);
     return { evaluation: payload, components };
   });
 }
@@ -66,46 +67,55 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
 // Authorization-facing reads return only bounded factual summaries.  The DB-derived workspace
 // decides scope; caller input never chooses the authority or filters an unscoped list.
 export function readOutcomeEvaluation(principal, evaluationId) {
-  const evaluation = getOutcomeEvaluation(evaluationId);
-  // Persisted rows are evidence only when they still identify the one reviewed Phase 3A
-  // evaluator contract.  A malformed/tampered version is never surfaced as a valid evaluation.
-  if (!readableEvaluation(evaluation)) return null;
-  const decision = canReadEvaluation(principal, evaluation.workspace_id);
-  if (!decision.allowed) return null;
-  const corrections = getOutcomeCorrections(evaluation.id);
-  const sourceEvents = getOutcomeSourceEvents(evaluation.id);
-  return { id: evaluation.id, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
-    evaluationVersion: evaluation.evaluation_version, terminalStatus: evaluation.terminal_status,
-    terminalOutcome: evaluation.terminal_outcome, verificationStatus: evaluation.verification_status,
-    acceptanceStatus: evaluation.acceptance_status, failureCategory: evaluation.failure_category,
-    learningEligibility: evaluation.learning_eligibility, createdAt: evaluation.created_at,
-    corrections: corrections.map(safeCorrection), sourceEvents: sourceEvents.map(safeEvent) };
+  return transaction(() => {
+    const evaluation = getOutcomeEvaluation(evaluationId);
+    if (!readableEvaluation(evaluation)) return null;
+    const decision = canReadEvaluation(principal, evaluation.workspace_id);
+    if (!decision.allowed) return null;
+    const corrections = getOutcomeCorrections(evaluation.id);
+    const sourceEvents = getOutcomeSourceEvents(evaluation.id);
+    return { id: evaluation.id, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
+      evaluationVersion: evaluation.evaluation_version, terminalStatus: evaluation.terminal_status,
+      terminalOutcome: evaluation.terminal_outcome, verificationStatus: evaluation.verification_status,
+      acceptanceStatus: evaluation.acceptance_status, failureCategory: evaluation.failure_category,
+      learningEligibility: evaluation.learning_eligibility, createdAt: evaluation.created_at,
+      corrections: corrections.map(safeCorrection), sourceEvents: sourceEvents.map(safeEvent) };
+  });
 }
 
 export function appendOutcomeCorrection(principal, evaluationId, { reason, sourceEvidence, supersedesCorrectionId = null } = {}) {
-  const evaluation = getOutcomeEvaluation(evaluationId);
-  if (!readableEvaluation(evaluation)) throw new Error('outcome correction requires an intact evaluation');
-  if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
-  if (!safeRequired(reason) || !safeRequired(sourceEvidence)) throw new Error('outcome correction requires reason and source evidence');
-  const prior = getOutcomeCorrections(evaluationId);
-  const head = prior.at(-1) || null;
-  if (head && supersedesCorrectionId !== head.id) throw new Error('outcome correction must supersede the sole current correction head');
-  if (!head && supersedesCorrectionId) throw new Error('outcome correction cannot supersede an absent correction');
-  const row = { id: id('hecorr'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
-    version: prior.length + 1, supersedesCorrectionId: head?.id || null, reason, sourceEvidence,
-    actorPrincipalId: principal.principalId, createdAt: now() };
-  insertOutcomeCorrection(row); return safeCorrection(row);
+  return transaction(() => {
+    const evaluation = getOutcomeEvaluation(evaluationId);
+    if (!readableEvaluation(evaluation)) throw new Error('outcome correction requires an intact evaluation');
+    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed || !canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome correction is not authorized');
+    if (!safeRequired(reason) || !safeRequired(sourceEvidence)) throw new Error('outcome correction requires reason and source evidence');
+    const prior = getOutcomeCorrections(evaluationId);
+    const head = prior.at(-1) || null;
+    if (head && supersedesCorrectionId !== head.id) throw new Error('outcome correction must supersede the sole current correction head');
+    if (!head && supersedesCorrectionId) throw new Error('outcome correction cannot supersede an absent correction');
+    const createdAt = now();
+    if (Date.parse(createdAt) < Date.parse(evaluation.created_at)) throw new Error('outcome correction requires a valid timestamp');
+    const row = { id: id('hecorr'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
+      version: prior.length + 1, supersedesCorrectionId: head?.id || null, reason, sourceEvidence,
+      actorPrincipalId: principal.principalId, createdAt };
+    insertOutcomeCorrection(row); return safeCorrection(row);
+  });
 }
 
 const EVENT_TYPES = new Set(['accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked']);
 export function appendOutcomeSourceEvent(principal, evaluationId, { idempotencyKey, eventType, evidence } = {}) {
-  const evaluation = getOutcomeEvaluation(evaluationId);
-  if (!readableEvaluation(evaluation)) throw new Error('outcome source event requires an intact evaluation');
-  if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
-  if (!EVENT_TYPES.has(eventType) || !safeRequired(evidence) || !safeId(idempotencyKey)) throw new Error('outcome source event requires an allowed type, evidence, and idempotency key');
-  const row = { id: id('heevt'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id, eventType, evidence, actorPrincipalId: principal.principalId, idempotencyKey, createdAt: now() };
-  try { insertOutcomeSourceEvent(row); } catch { throw new Error('outcome source event already recorded'); }
-  return safeEvent(row);
+  return transaction(() => {
+    const evaluation = getOutcomeEvaluation(evaluationId);
+    if (!readableEvaluation(evaluation)) throw new Error('outcome source event requires an intact evaluation');
+    if (!canCorrectEvaluation(principal, evaluation.workspace_id).allowed || !canCorrectEvaluation(principal, evaluation.workspace_id).allowed) throw new Error('outcome source event is not authorized');
+    if (!EVENT_TYPES.has(eventType) || !safeRequired(evidence) || !safeId(idempotencyKey)) throw new Error('outcome source event requires an allowed type, evidence, and idempotency key');
+    if (getOutcomeSourceEvents(evaluationId).some((event) => event.idempotency_key === idempotencyKey)) throw new Error('outcome source event already recorded');
+    const createdAt = now();
+    if (Date.parse(createdAt) < Date.parse(evaluation.created_at)) throw new Error('outcome source event requires a valid timestamp');
+    const row = { id: id('heevt'), evaluationId, workspaceId: evaluation.workspace_id, runId: evaluation.run_id, eventType, evidence, actorPrincipalId: principal.principalId, idempotencyKey, createdAt };
+    insertOutcomeSourceEvent(row);
+    return safeEvent(row);
+  });
 }
 
 export function recordOutcomeEvaluationFailure(runId, error) {
@@ -140,44 +150,93 @@ function componentRows({ positive, verified, retryCount, duration, invocation, u
 }
 function ordered(steps) { return steps.every((s, i) => Number.isInteger(s.seq) && s.seq === i + 1 && s.created_at); }
 function terminalEventsPresent(steps, status) { const names = new Set(steps.map((s) => s.name)); return names.has('hermes.received') && (status === 'completed' ? names.has('hermes.completed') : names.has('hermes.failed')); }
-function validateLinks({ run, routing, policy, verification, invocations }) {
-  for (const row of [routing, policy, verification, ...invocations]) {
-    if (!row) continue;
-    if (row.run_id !== run.id || (row.task_id && row.task_id !== run.task_id)) throw new Error('outcome evaluation refuses mismatched provenance references');
+function loadEvidence(runId) {
+  const run = getWorkflowRun(runId);
+  return {
+    run,
+    task: run?.task_id ? getTask(run.task_id) : null,
+    steps: getWorkflowSteps(runId),
+    routings: getRoutingDecisions(runId),
+    policies: getPolicyDecisions(runId),
+    verifications: getVerificationResults(runId),
+    invocations: getProviderInvocations(runId),
+  };
+}
+function validateEvidence(evidence) {
+  const { run, task, steps, routings, policies, verifications, invocations } = evidence;
+  if (!run || !TERMINAL.has(run.status) || !canonicalTimestamp(run.created_at) || !canonicalTimestamp(run.started_at) || !canonicalTimestamp(run.finished_at)) throw new Error('outcome evaluation requires a finished terminal workflow run with canonical timestamps');
+  if (Date.parse(run.started_at) > Date.parse(run.finished_at) || Date.parse(run.created_at) > Date.parse(run.finished_at)) throw new Error('outcome evaluation refuses invalid run timestamp order');
+  if (!task || task.id !== run.task_id || task.workspace_id !== run.workspace_id || (task.conversation_id ?? null) !== (run.conversation_id ?? null)) throw new Error('outcome evaluation refuses mismatched canonical task scope');
+  if (!steps.length || !ordered(steps) || !terminalEventsPresent(steps, run.status)) throw new Error('outcome evaluation requires complete ordered terminal workflow evidence');
+  for (const step of steps) {
+    if (!safeId(step.id) || !safeRequired(step.name) || !canonicalTimestamp(step.created_at) || !canonicalTimestamp(step.started_at) || !canonicalTimestamp(step.finished_at) ||
+      Date.parse(step.started_at) > Date.parse(step.finished_at) || Date.parse(step.created_at) < Date.parse(run.started_at)) throw new Error('outcome evaluation refuses invalid workflow step timestamp');
   }
+  validateLinks({ run, routings, policies, verifications, invocations });
+  assertSanitized({ run, steps, routings, policies, verifications, invocations });
+}
+function validateLinks({ run, routings, policies, verifications, invocations }) {
+  for (const row of [...routings, ...policies, ...verifications, ...invocations]) {
+    if (!row) continue;
+      if (!safeId(row.id) || row.run_id !== run.id || row.task_id !== run.task_id || !canonicalTimestamp(row.created_at) || Date.parse(row.created_at) < Date.parse(run.started_at)) throw new Error('outcome evaluation refuses mismatched provenance references or timestamp');
+  }
+  for (const routing of routings) {
+    const classification = parsedJson(routing.classification);
+    const candidates = parsedJson(routing.candidates);
+    const capabilities = parsedJson(routing.capabilities);
+    if (!classification || Array.isArray(classification) || !Array.isArray(candidates) || !Array.isArray(capabilities) ||
+      !capabilities.every(safeId) || !safeId(routing.selected_provider) || !safeId(routing.selected_agent) || !safeRequired(routing.rationale)) throw new Error('outcome evaluation refuses malformed routing evidence');
+  }
+  for (const policy of policies) {
+    if (!safeId(policy.action_class) || !['allow','deny','requires_approval'].includes(policy.decision) ||
+      ![0,1].includes(policy.requires_approval) || !safeRequired(policy.reason)) throw new Error('outcome evaluation refuses malformed policy evidence');
+  }
+  for (const verification of verifications) {
+    if (!safeId(verification.verifier) || ![0,1].includes(verification.passed) ||
+      !Array.isArray(parsedJson(verification.checks)) || !safeRequired(verification.detail)) throw new Error('outcome evaluation refuses malformed verification evidence');
+  }
+  const routing = latest(routings);
   const attempts = new Set();
   for (const invocation of invocations) {
-    if (!['mock', 'real'].includes(invocation.mode)) throw new Error('outcome evaluation refuses invalid execution mode');
+    if (!safeId(invocation.provider) || !['mock', 'real'].includes(invocation.mode) || !['completed','failed','timeout','cancelled'].includes(invocation.status) ||
+      ![invocation.timed_out, invocation.cancelled].every((value) => value === 0 || value === 1)) throw new Error('outcome evaluation refuses malformed provider evidence');
     if (!Number.isSafeInteger(Number(invocation.attempt)) || Number(invocation.attempt) < 1) throw new Error('outcome evaluation refuses impossible retry count');
     if (attempts.has(Number(invocation.attempt))) throw new Error('outcome evaluation refuses duplicate provider attempts');
     attempts.add(Number(invocation.attempt));
-    for (const value of [invocation.input_tokens, invocation.output_tokens, invocation.cost_cents]) if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) throw new Error('outcome evaluation refuses malformed usage or cost');
+    for (const value of [invocation.input_bytes, invocation.output_bytes, invocation.input_tokens, invocation.output_tokens, invocation.cost_cents, invocation.duration_ms]) {
+      if (value != null && (!Number.isSafeInteger(Number(value)) || Number(value) < 0)) throw new Error('outcome evaluation refuses malformed provider evidence');
+    }
+    if ((routing?.selected_provider && invocation.provider !== routing.selected_provider) || (run.provider && invocation.provider !== run.provider)) throw new Error('outcome evaluation refuses contradictory provider evidence');
   }
   if ([...attempts].some((attempt, index) => attempt !== index + 1)) throw new Error('outcome evaluation refuses non-contiguous provider attempts');
 }
 function aggregateUsage(invocations) {
   const total = (column) => invocations.length && invocations.every((row) => row[column] != null)
-    ? invocations.reduce((sum, row) => sum + Number(row[column]), 0) : null;
+    ? invocations.reduce((sum, row) => {
+      const next = sum + Number(row[column]);
+      if (!Number.isSafeInteger(next)) throw new Error('outcome evaluation refuses provider usage overflow');
+      return next;
+    }, 0) : null;
   return { inputTokens: total('input_tokens'), outputTokens: total('output_tokens'), costCents: total('cost_cents') };
 }
 function readableEvaluation(evaluation) {
-  if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION || !provenanceMatches(evaluation)) return false;
+  if (!evaluation || evaluation.evaluation_version !== OUTCOME_EVALUATION_VERSION || evaluation.evaluator_version !== OUTCOME_EVALUATOR_VERSION || !evaluationShapeValid(evaluation) || !provenanceMatches(evaluation)) return false;
   return correctionChainValid(evaluation, getOutcomeCorrections(evaluation.id)) && sourceEventsValid(evaluation, getOutcomeSourceEvents(evaluation.id));
 }
 function correctionChainValid(evaluation, corrections) {
   return corrections.every((row, index) => row.evaluation_id === evaluation.id && row.workspace_id === evaluation.workspace_id && row.run_id === evaluation.run_id &&
     safeId(row.id) && Number(row.version) === index + 1 && row.supersedes_correction_id === (index ? corrections[index - 1].id : null) &&
     safeRequired(row.reason) && safeRequired(row.source_evidence) && recordedActorValid(row.actor_principal_id, evaluation.workspace_id) && validTimestamp(row.created_at) &&
-    (!index || Date.parse(row.created_at) >= Date.parse(corrections[index - 1].created_at)));
+    Date.parse(row.created_at) >= Date.parse(evaluation.created_at) && (!index || Date.parse(row.created_at) >= Date.parse(corrections[index - 1].created_at)));
 }
 function sourceEventsValid(evaluation, events) {
   const idempotencyKeys = new Set();
-  return events.every((row) => {
-    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !recordedActorValid(row.actor_principal_id, evaluation.workspace_id) || !safeId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || !validTimestamp(row.created_at)) return false;
+  return events.every((row, index) => {
+    if (row.evaluation_id !== evaluation.id || row.workspace_id !== evaluation.workspace_id || row.run_id !== evaluation.run_id || !safeId(row.id) || !recordedActorValid(row.actor_principal_id, evaluation.workspace_id) || !safeId(row.idempotency_key) || idempotencyKeys.has(row.idempotency_key) || !EVENT_TYPES.has(row.event_type) || !safeRequired(row.evidence) || !validTimestamp(row.created_at) || Date.parse(row.created_at) < Date.parse(evaluation.created_at) || (index && Date.parse(row.created_at) < Date.parse(events[index - 1].created_at))) return false;
     idempotencyKeys.add(row.idempotency_key); return true;
   });
 }
-function validTimestamp(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
+function validTimestamp(value) { return canonicalTimestamp(value); }
 function recordedActorValid(actorPrincipalId, workspaceId) {
   if (!safeId(actorPrincipalId)) return false;
   const actor = get('SELECT id,type,authentication_method,status,issued_at,expires_at,revoked_at,disabled_at,security_version FROM auth_principals WHERE id=?', [actorPrincipalId]);
@@ -191,33 +250,95 @@ function recordedActorValid(actorPrincipalId, workspaceId) {
 }
 function provenanceMatches(evaluation) {
   try {
-    const run = getWorkflowRun(evaluation.run_id);
-    if (!run) return false;
-    const steps = getWorkflowSteps(run.id);
-    const routing = latest(getRoutingDecisions(run.id));
-    const policy = latest(getPolicyDecisions(run.id));
-    const verification = latest(getVerificationResults(run.id));
-    const invocations = getProviderInvocations(run.id);
-    const payload = {
-      id: undefined, evaluationVersion: evaluation.evaluation_version, userId: evaluation.user_id,
-      projectId: evaluation.project_id, workspaceId: evaluation.workspace_id, taskId: evaluation.task_id, runId: evaluation.run_id,
-      routingDecisionId: evaluation.routing_decision_id, policyDecisionId: evaluation.policy_decision_id, verificationResultId: evaluation.verification_result_id,
-      providerInvocationId: evaluation.provider_invocation_id, executionMode: evaluation.execution_mode, providerId: evaluation.provider_id,
-      classification: evaluation.classification, terminalStatus: evaluation.terminal_status, terminalOutcome: evaluation.terminal_outcome,
-      verificationStatus: evaluation.verification_status, verifierConfidence: evaluation.verifier_confidence, acceptanceStatus: evaluation.acceptance_status,
-      retryCount: evaluation.retry_count, durationMs: evaluation.duration_ms, inputTokens: evaluation.input_tokens, outputTokens: evaluation.output_tokens,
-      costCents: evaluation.cost_cents, timedOut: Boolean(evaluation.timed_out), cancelled: Boolean(evaluation.cancelled),
-      rollbackEvidence: evaluation.rollback_evidence, stabilityEvidence: evaluation.stability_evidence, failureCategory: evaluation.failure_category,
-      learningEligibility: evaluation.learning_eligibility, sourceEventStartSeq: evaluation.source_event_start_seq, sourceEventEndSeq: evaluation.source_event_end_seq,
-      evaluatorVersion: evaluation.evaluator_version, createdAt: undefined,
-    };
-    return typeof evaluation.provenance_digest === 'string' && evaluation.provenance_digest === digest({ run, steps, routing, policy, verification, invocations, payload });
+    const evidence = loadEvidence(evaluation.run_id);
+    validateEvidence(evidence);
+    const payload = evaluationPayload(evaluation);
+    const components = persistedComponents(evaluation, getOutcomeComponents(evaluation.id), evidence);
+    const packet = provenancePacket(evidence, payload, components);
+    assertSanitized(packet);
+    return evaluation.provenance_digest === digest(packet);
   } catch { return false; }
 }
 function latest(rows) { return rows.length ? rows[rows.length - 1] : null; }
-function durationMs(start, end) { const n = Date.parse(end) - Date.parse(start); return Number.isFinite(n) && n >= 0 ? n : null; }
-function numOrNull(v) { return v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null); }
+function durationMs(start, end) { const duration = Date.parse(end) - Date.parse(start); return canonicalTimestamp(start) && canonicalTimestamp(end) && Number.isSafeInteger(duration) && duration >= 0 ? duration : null; }
 function failureCategory(run, verification, invocation) { if (run.status === 'blocked') return 'blocked'; if (run.status === 'cancelled' || invocation?.cancelled) return 'cancelled'; if (invocation?.timed_out) return 'timeout'; if (verification && !(verification.passed === 1 || verification.passed === true)) return 'verification_failed'; return run.outcome || 'unknown'; }
 function safeJson(value) { try { return JSON.stringify(redactDeep(JSON.parse(value || 'null'))); } catch { return JSON.stringify(redactDeep(value)); } }
-function digest(value) { return crypto.createHash('sha256').update(canonicalJson(redactDeep(value))).digest('hex'); }
+function digest(value) { return crypto.createHash('sha256').update(canonicalJson(value)).digest('hex'); }
 function canonicalJson(value) { if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`; return JSON.stringify(value); }
+function canonicalTimestamp(value) {
+  if (typeof value !== 'string') return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+function parsedJson(value) {
+  try { return JSON.parse(value); } catch { return null; }
+}
+function assertSanitized(value) {
+  if (!stringsAreSanitized(value)) throw new Error('outcome evaluation refuses unsanitized persisted evidence');
+}
+function stringsAreSanitized(value) {
+  if (typeof value === 'string') return value === redactString(value);
+  if (Array.isArray(value)) return value.every(stringsAreSanitized);
+  if (value && typeof value === 'object') return Object.values(value).every(stringsAreSanitized);
+  return true;
+}
+function provenancePacket(evidence, payload, components) {
+  return {
+    run: evidence.run,
+    steps: evidence.steps,
+    routings: evidence.routings,
+    policies: evidence.policies,
+    verifications: evidence.verifications,
+    invocations: evidence.invocations,
+    payload,
+    components,
+  };
+}
+function evaluationPayload(evaluation) {
+  return {
+    id: evaluation.id, evaluationVersion: evaluation.evaluation_version, userId: evaluation.user_id,
+    projectId: evaluation.project_id, workspaceId: evaluation.workspace_id, taskId: evaluation.task_id, runId: evaluation.run_id,
+    routingDecisionId: evaluation.routing_decision_id, policyDecisionId: evaluation.policy_decision_id, verificationResultId: evaluation.verification_result_id,
+    providerInvocationId: evaluation.provider_invocation_id, executionMode: evaluation.execution_mode, providerId: evaluation.provider_id,
+    classification: evaluation.classification, terminalStatus: evaluation.terminal_status, terminalOutcome: evaluation.terminal_outcome,
+    verificationStatus: evaluation.verification_status, verifierConfidence: evaluation.verifier_confidence, acceptanceStatus: evaluation.acceptance_status,
+    retryCount: evaluation.retry_count, durationMs: evaluation.duration_ms, inputTokens: evaluation.input_tokens, outputTokens: evaluation.output_tokens,
+    costCents: evaluation.cost_cents, timedOut: Boolean(evaluation.timed_out), cancelled: Boolean(evaluation.cancelled),
+    rollbackEvidence: evaluation.rollback_evidence, stabilityEvidence: evaluation.stability_evidence, failureCategory: evaluation.failure_category,
+    learningEligibility: evaluation.learning_eligibility, sourceEventStartSeq: evaluation.source_event_start_seq, sourceEventEndSeq: evaluation.source_event_end_seq,
+    evaluatorVersion: evaluation.evaluator_version, createdAt: evaluation.created_at,
+  };
+}
+function evaluationShapeValid(evaluation) {
+  const nullableIds = [evaluation.user_id,evaluation.routing_decision_id,evaluation.policy_decision_id,evaluation.verification_result_id,evaluation.provider_invocation_id,evaluation.provider_id];
+  const nullableNumbers = [evaluation.retry_count,evaluation.input_tokens,evaluation.output_tokens,evaluation.cost_cents];
+  return safeId(evaluation.id) && safeId(evaluation.workspace_id) && safeId(evaluation.project_id) && evaluation.project_id === evaluation.workspace_id &&
+    safeId(evaluation.task_id) && safeId(evaluation.run_id) && nullableIds.every((value) => value === null || safeId(value)) &&
+    TERMINAL.has(evaluation.terminal_status) && ['passed','failed','unavailable'].includes(evaluation.verification_status) &&
+    ['deterministic_pass','deterministic_fail','unknown'].includes(evaluation.verifier_confidence) && evaluation.acceptance_status === 'unavailable' &&
+    ['positive_eligible','ineligible_blocked','negative_factual'].includes(evaluation.learning_eligibility) &&
+    [evaluation.timed_out,evaluation.cancelled].every((value) => value === 0 || value === 1) &&
+    nullableNumbers.every((value) => value === null || (Number.isSafeInteger(Number(value)) && Number(value) >= 0)) &&
+    Number.isSafeInteger(Number(evaluation.duration_ms)) && Number(evaluation.duration_ms) >= 0 &&
+    Number.isSafeInteger(Number(evaluation.source_event_start_seq)) && Number.isSafeInteger(Number(evaluation.source_event_end_seq)) &&
+    canonicalTimestamp(evaluation.created_at) && typeof evaluation.provenance_digest === 'string' && /^[a-f0-9]{64}$/.test(evaluation.provenance_digest);
+}
+function persistedComponents(evaluation, rows, evidence) {
+  const invocation = evidence.invocations.at(-1) || null;
+  const verification = evidence.verifications.at(-1) || null;
+  const expected = componentRows({
+    positive: evaluation.learning_eligibility === 'positive_eligible',
+    verified: verification?.passed === 1 || verification?.passed === true,
+    retryCount: evaluation.retry_count,
+    duration: evaluation.duration_ms,
+    invocation,
+    usage: { inputTokens: evaluation.input_tokens, outputTokens: evaluation.output_tokens, costCents: evaluation.cost_cents },
+    run: evidence.run,
+  }).sort((left, right) => left.name.localeCompare(right.name));
+  if (rows.length !== expected.length) throw new Error('outcome evaluation refuses malformed component packet');
+  return rows.map((row, index) => {
+    const expectedRow = expected[index];
+    if (!safeId(row.id) || row.evaluation_id !== evaluation.id || row.name !== expectedRow.name || row.value !== expectedRow.value || row.status !== expectedRow.status || row.detail !== expectedRow.detail || row.created_at !== evaluation.created_at) throw new Error('outcome evaluation refuses malformed component packet');
+    return { id: row.id, evaluationId: row.evaluation_id, name: row.name, value: row.value, status: row.status, detail: row.detail, createdAt: row.created_at };
+  });
+}

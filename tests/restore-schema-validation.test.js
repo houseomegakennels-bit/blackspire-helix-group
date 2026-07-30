@@ -450,3 +450,24 @@ test('findMissingSchemaObjects reports missing tables and missing columns distin
     assert.ok(missing.some((m) => m === 'missing table tasks'), 'reports an entirely absent required table');
   } finally { check.close(); }
 });
+
+test('findMissingSchemaObjects rejects missing or shape-invalid integrity indexes and immutability triggers', () => {
+  const dir = freshCase('helper-integrity-objects');
+  const dbPath = path.join(dir, 'command.sqlite');
+  prepareDisposableDatabase(dbPath);
+  const db = new DatabaseSync(dbPath);
+  const index = db.prepare("SELECT name,sql FROM sqlite_master WHERE type='index' AND name LIKE 'idx_hermes_outcome_%_unique' ORDER BY name LIMIT 1").get();
+  const trigger = db.prepare("SELECT name,tbl_name FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_hermes_outcome_%_immutable_update' ORDER BY name LIMIT 1").get();
+  assert.ok(index?.name);
+  assert.ok(trigger?.name);
+  db.exec(`DROP INDEX ${index.name}; DROP TRIGGER ${trigger.name};`);
+  const missing = findMissingSchemaObjects(db);
+  assert.ok(missing.includes(`invalid index ${index.name}`));
+  assert.ok(missing.includes(`invalid trigger ${trigger.name}`));
+  db.exec(`${index.sql.replace('CREATE UNIQUE INDEX', 'CREATE INDEX')};
+    CREATE TRIGGER ${trigger.name} BEFORE UPDATE ON ${trigger.tbl_name} BEGIN SELECT 1; END;`);
+  const malformed = findMissingSchemaObjects(db);
+  assert.ok(malformed.includes(`invalid index ${index.name}`));
+  assert.ok(malformed.includes(`invalid trigger ${trigger.name}`));
+  db.close();
+});
