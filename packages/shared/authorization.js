@@ -47,8 +47,10 @@ function validGrantRow(grant) {
 export function resolvePrincipal({ principalId = null, authenticationMethod, credentialReference = null } = {}) {
   const p = principalId && get('SELECT * FROM auth_principals WHERE id=?', [principalId]);
   if (!p || !validAuthorityId(p.id) || !validAuthorityId(p.actor_id) || !validAuthorityId(p.credential_reference, { nullable: true }) || !validLifecycle(p) || !['admin','service'].includes(p.type) || p.authentication_method !== (p.type === 'admin' ? 'bearer' : 'service') || p.status !== 'active' || (p.expires_at !== null && p.expires_at <= Date.now()) || p.revoked_at !== null || p.disabled_at !== null) return null;
-  if (authenticationMethod && p.authentication_method !== authenticationMethod) return null;
-  if (credentialReference && p.credential_reference !== credentialReference) return null;
+  // This is an authentication boundary, not a persisted-row lookup. Callers must select the
+  // canonical method explicitly, and service principals must prove the exact configured reference.
+  if (!['bearer', 'service'].includes(authenticationMethod) || p.authentication_method !== authenticationMethod) return null;
+  if (p.type === 'service' && (!validAuthorityId(credentialReference) || p.credential_reference !== credentialReference)) return null;
   const principal = Object.freeze({ principalId: p.id, principalType: p.type, actorId: p.actor_id, authenticationMethod: p.authentication_method, securityVersion: p.security_version });
   resolvedPrincipals.set(principal, p.credential_reference);
   return principal;
@@ -61,7 +63,7 @@ export const resolveServiceContext = (principalId, credentialReference) => valid
 // is a transport, not a new principal type or an impersonation input.
 export function resolveBoundSession(session) {
   const principalId = session?.principalId ?? session?.principal_id;
-  const principal = typeof principalId === 'string' ? resolvePrincipal({ principalId }) : null;
+  const principal = typeof principalId === 'string' ? resolveAdminBearer(principalId) : null;
   return principal?.principalType === 'admin' ? principal : null;
 }
 export const requireAuthenticatedPrincipal = (principal) => currentPrincipal(principal) ? allow('authenticated') : deny('unauthenticated');

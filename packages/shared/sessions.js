@@ -26,7 +26,24 @@ function row(session) {
 
 function revokedBefore() {
   const flag = get('SELECT value FROM system_flags WHERE key=?;', [REVOKED_BEFORE_FLAG]);
-  return flag ? Number(flag.value) : 0;
+  if (!flag) return 0;
+  const value = Number(flag.value);
+  return Number.isSafeInteger(value) && value >= 0 && String(value) === flag.value ? value : null;
+}
+
+function validSession(session, { active = true, at = now() } = {}) {
+  if (!session || typeof session.id !== 'string' || !/^[a-f0-9]{48}$/.test(session.id) ||
+    typeof session.csrf_token !== 'string' || !/^[a-f0-9]{48}$/.test(session.csrf_token)) return false;
+  const epochs = ['created_at', 'expires_at', 'rotated_at'];
+  if (epochs.some((key) => typeof session[key] !== 'number' || !Number.isSafeInteger(session[key]) || session[key] < 0) ||
+    session.expires_at <= session.created_at || session.rotated_at < session.created_at || session.rotated_at > session.expires_at) return false;
+  if (session.revoked_at !== null &&
+    (typeof session.revoked_at !== 'number' || !Number.isSafeInteger(session.revoked_at) || session.revoked_at < session.created_at)) return false;
+  if (session.principal_id !== null && (typeof session.principal_id !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(session.principal_id))) return false;
+  if (typeof session.user_agent !== 'string' || typeof session.ip !== 'string') return false;
+  const cutoff = revokedBefore();
+  if (cutoff === null || session.created_at < cutoff) return false;
+  return !active || (session.revoked_at === null && at <= session.expires_at);
 }
 
 export function createSession(adminToken, { userAgent = '', ip = 'local', principalId = null, maxExpiresAt = null } = {}) {
@@ -50,10 +67,7 @@ export function createSession(adminToken, { userAgent = '', ip = 'local', princi
 export function getSession(sessionId) {
   if (!sessionId) return null;
   const session = get('SELECT * FROM sessions WHERE id=?;', [sessionId]);
-  if (!session) return null;
-  if (session.revoked_at) return null;
-  if (session.created_at < revokedBefore()) return null;
-  if (now() > session.expires_at) return null;
+  if (!validSession(session)) return null;
   return row(session);
 }
 
@@ -62,12 +76,13 @@ export function getSession(sessionId) {
 export function rotateSession(sessionId) {
   return transaction(() => {
     const existing = get('SELECT * FROM sessions WHERE id=?;', [sessionId]);
-    if (!existing || existing.revoked_at || existing.created_at < revokedBefore() || now() > existing.expires_at) return null;
-    run('UPDATE sessions SET revoked_at=? WHERE id=?;', [now(), sessionId]);
+    if (!validSession(existing)) return null;
     const sessionIdNext = crypto.randomBytes(24).toString('hex');
     const csrfToken = crypto.randomBytes(24).toString('hex');
     const createdAt = now();
-    const expiresAt = createdAt + SESSION_TTL_MS();
+    const expiresAt = Math.min(createdAt + SESSION_TTL_MS(), existing.expires_at);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= createdAt) return null;
+    run('UPDATE sessions SET revoked_at=? WHERE id=?;', [createdAt, sessionId]);
     run(
       `INSERT INTO sessions (id, csrf_token, created_at, expires_at, rotated_at, user_agent, ip, revoked_at, principal_id) VALUES (?,?,?,?,?,?,?,NULL,?);`,
       [sessionIdNext, csrfToken, createdAt, expiresAt, createdAt, existing.user_agent, existing.ip, existing.principal_id || null],
@@ -97,5 +112,8 @@ export function cleanupExpiredSessions() {
 }
 
 export function listActiveSessions() {
-  return all('SELECT * FROM sessions WHERE revoked_at IS NULL AND expires_at > ?;', [now()]).map(row);
+  const at = now();
+  return all('SELECT * FROM sessions WHERE revoked_at IS NULL AND expires_at > ?;', [at])
+    .filter((session) => validSession(session, { at }))
+    .map(row);
 }

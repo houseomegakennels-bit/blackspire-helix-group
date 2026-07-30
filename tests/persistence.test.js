@@ -126,6 +126,23 @@ test('restart-persistence: expired sessions are rejected', async () => {
   delete process.env.SESSION_TTL_MS;
 });
 
+test('restart-persistence: malformed persisted sessions fail closed and cannot rotate', async () => {
+  const { run } = await import('../packages/task-engine/db.js');
+  const { getSession, rotateSession, listActiveSessions } = await import('../packages/shared/sessions.js');
+  const createdAt = Date.now();
+  const insert = (sessionId, expiresAt, revokedAt = null) => run(
+    'INSERT INTO sessions(id,csrf_token,created_at,expires_at,rotated_at,user_agent,ip,revoked_at,principal_id) VALUES(?,?,?,?,?,?,?,?,NULL)',
+    [sessionId, 'c'.repeat(48), createdAt, expiresAt, createdAt, 'test', 'local', revokedAt],
+  );
+  insert('a'.repeat(48), 'not-an-epoch');
+  insert('b'.repeat(48), createdAt + 60_000, 0);
+  for (const sessionId of ['a'.repeat(48), 'b'.repeat(48)]) {
+    assert.equal(getSession(sessionId), null);
+    assert.equal(rotateSession(sessionId), null);
+  }
+  assert.equal(listActiveSessions().some((session) => ['a'.repeat(48), 'b'.repeat(48)].includes(session.sessionId)), false);
+});
+
 test('restart-persistence: stop API', async () => {
   await stopApi(api);
 });
