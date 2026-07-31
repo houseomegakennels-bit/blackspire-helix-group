@@ -86,7 +86,11 @@ test('the read-only hermes-runtime page is served', async () => {
   assert.equal((await fetch(`${base}/hermes-runtime.css`)).status, 200);
 });
 
-test('a verified admin login session can read its configured, workspace-authorized evaluation without exposing a bearer', async () => {
+test('a verified admin login session can read its configured, workspace-authorized evaluation without exposing a bearer', async (t) => {
+  // This test revokes the shared evaluation admin principal to prove the 403. Restore it through
+  // `after` rather than a trailing statement so an assertion failure here cannot also leave every
+  // later test failing against a revoked principal, which would misdirect debugging.
+  t.after(() => run(`UPDATE auth_principals SET status='active',revoked_at=NULL WHERE id='m2-evaluation-admin'`));
   const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'm2-api-token' }) });
   assert.equal(login.status, 200);
   const cookie = login.headers.get('set-cookie')?.split(';')[0];
@@ -107,13 +111,15 @@ test('a verified admin login session can read its configured, workspace-authoriz
   run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-evaluation-admin', sessionId]);
   run(`UPDATE auth_principals SET status='revoked',revoked_at=? WHERE id='m2-evaluation-admin'`, [Date.now()]);
   assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { cookie } })).status, 403);
-  run(`UPDATE auth_principals SET status='active',revoked_at=NULL WHERE id='m2-evaluation-admin'`);
 });
 
 // Milestone 3B: the only read surface for a verified scorecard. The doc claims this route refuses a
 // principal that is not the configured evaluation admin and returns an indistinguishable 404 for an
-// unknown and a cross-workspace id; nothing pinned those claims against a future edit to route
-// ordering or the test-mode allowlist, so they are pinned here alongside the 3A twin above.
+// unknown and a cross-workspace id; nothing pinned those claims, so they are pinned here alongside
+// the 3A twin above. Test mode is deliberately NOT covered: this suite authenticates through
+// `POST /api/auth/login`, which 404s when test mode is enabled, so that branch is unreachable from
+// here. `testModeAllowsRequest` has no scorecard clause and falls through to deny, which is correct
+// but is pinned by the test-mode suite rather than by this one.
 test('the verified scorecard read route is admin-bound and discloses nothing across workspaces', async () => {
   const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'm2-api-token' }) });
   const cookie = login.headers.get('set-cookie')?.split(';')[0];

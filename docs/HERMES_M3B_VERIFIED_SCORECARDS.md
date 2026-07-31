@@ -88,9 +88,10 @@ below for the full rules.
   limitations.
 - Fewer than 5, exactly 5, exactly 19, and exactly 20 sources produce the documented confidence.
 - Unknown acceptance/rollback/stability cannot become false zero or positive evidence.
-- Cross-workspace, malformed, missing, corrected, and contradictory evidence fails closed, and a
-  corrected or contradictory source is proven to make the whole workspace underivable at every
-  cutoff rather than merely at the one under test.
+- Cross-workspace, malformed, missing, corrected, and contradictory evidence fails closed. A
+  *corrected* source is additionally proven to make the whole workspace underivable at every cutoff
+  rather than merely at the one under test; the contradictory-acceptance case shares that property
+  by construction but is pinned only at its own cutoff.
 - The read route is pinned: it refuses a principal that is not the configured evaluation admin and
   returns an indistinguishable `404` for an unknown and a cross-workspace scorecard id.
 - Database triggers refuse snapshot and lineage update/delete.
@@ -229,11 +230,13 @@ Implemented and validated at the exact head. Known limitations, all deliberate:
 - **The dimension guards validate the raw value and are structurally unreachable.** `dimensionsOf`
   runs `safeId` on the stored `provider_id` and `selected_agent` *before* substituting the `*`
   sentinel, so a value that is literally the sentinel refuses rather than taking the "absent" branch
-  and silently merging into the unknown group. This cannot be reached from stored evidence: the
-  provenance digest covers those columns and revalidation additionally re-derives them against the
-  live registry, so a forgery fails as "does not revalidate" first, and a digest-consistent forgery
-  still fails the registry check. Like `safeSum` it is defence in depth for the day an upstream check
-  is relaxed, and it is not pinned by a test that exercises the throw.
+  and silently merging into the unknown group. This cannot be reached from stored evidence, by a
+  different route for each column: `provider_id` is refused first by `evaluationShapeValid`'s own
+  `safeId` check, which runs before the provenance comparison, and it is also digest-covered;
+  `selected_agent` is re-derived against the live agent registry and must equal the expected route.
+  Either way a forgery fails as "does not revalidate" first, and a digest-consistent forgery still
+  fails those checks. Like `safeSum` it is defence in depth for the day an upstream check is relaxed,
+  and it is not pinned by a test that exercises the throw.
 - **The duplicated-source guard is likewise structurally unreachable.** `persistGroup` refuses a
   repeated evaluation ID within a group, but sources come from a single `SELECT` over a table whose
   `id` is the PRIMARY KEY, so a group cannot contain one twice. Like `safeSum` it is defence in
