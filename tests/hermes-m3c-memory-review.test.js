@@ -139,6 +139,33 @@ test('a review is isolated to the candidate workspace and discloses nothing acro
   assert.equal(readMemoryCandidateReview(outsider, recorded.id), null);
 });
 
+// Regression: the record path must not become an existence oracle for other workspaces. A principal
+// granted in exactly one workspace can supply any well-formed candidate id; if a real cross-workspace
+// candidate refused differently from an absent one, that principal could enumerate `hmem_*` ids and
+// learn which memory candidates exist everywhere else. Recording is an internal service call with no
+// HTTP route today, so this is defence in depth for the surface a later milestone will expose.
+test('the record path does not disclose whether a candidate exists in another workspace', async () => {
+  const [victimCandidate] = await seedCandidates('m3c-oracle-victim', 1);
+  await seedCandidates('m3c-oracle-attacker', 1);
+  const attacker = principal('m3c-oracle-attacker');
+  const refusal = (candidateId) => {
+    try { recordMemoryCandidateReview(attacker, candidateId, review({ idempotencyKey: 'm3c-key-oracle' })); return 'recorded'; }
+    catch (error) { return error.message; }
+  };
+  const real = refusal(victimCandidate.id);
+  const absent = refusal('hmem_absent0000000000');
+  assert.notEqual(real, 'recorded', 'a cross-workspace recording must refuse');
+  assert.equal(real, absent, 'a real cross-workspace candidate and an absent one must refuse identically');
+  assert.match(real, /not authorized/);
+  // The fixture is real: the victim candidate exists and its own reviewer can record against it, so
+  // the equality above is not two identical "absent" answers.
+  assert.ok(store.getMemoryCandidate(victimCandidate.id), 'the victim candidate really exists');
+  assert.ok(recordMemoryCandidateReview(principal('m3c-oracle-victim'), victimCandidate.id, review({ idempotencyKey: 'm3c-key-oracle-owner' })),
+    'the owning workspace can still record, so the refusal above is authorization and not breakage');
+  assert.equal(all('SELECT id FROM hermes_memory_candidate_reviews WHERE workspace_id=?', ['m3c-oracle-attacker']).length, 0,
+    'the attacker wrote no review');
+});
+
 test('malformed, missing, and non-reviewable subjects fail closed and write nothing', async () => {
   const [candidate, second] = await seedCandidates('m3c-closed', 2);
   const reader = principal('m3c-closed');
@@ -148,7 +175,10 @@ test('malformed, missing, and non-reviewable subjects fail closed and write noth
     ['an empty rationale', () => recordMemoryCandidateReview(reader, candidate.id, review({ rationale: '   ' })), /requires a rationale/],
     ['an over-long rationale', () => recordMemoryCandidateReview(reader, candidate.id, review({ rationale: 'x'.repeat(2001) })), /requires a rationale/],
     ['a malformed candidate id', () => recordMemoryCandidateReview(reader, 'not a candidate id', review()), /canonical candidate id/],
-    ['a missing candidate', () => recordMemoryCandidateReview(reader, 'hmc-absent', review()), /existing candidate/],
+    // Refuses as "not authorized", not "no such candidate": the record path deliberately collapses
+    // absence into the authorization refusal so it discloses no candidate existence. Pinned by the
+    // cross-workspace non-disclosure regression below.
+    ['a missing candidate', () => recordMemoryCandidateReview(reader, 'hmc-absent', review()), /not authorized/],
     ['a malformed idempotency key', () => recordMemoryCandidateReview(reader, candidate.id, review({ idempotencyKey: 'has spaces' })), /canonical idempotency key/],
   ];
   const before = digest(all('SELECT * FROM hermes_memory_candidate_reviews ORDER BY id'));
@@ -163,7 +193,9 @@ test('malformed, missing, and non-reviewable subjects fail closed and write noth
     ['a non-pending candidate', () => run('UPDATE hermes_memory_candidates SET status=? WHERE id=?', ['reviewed', second.id]), /not pending/],
     ['an already-promoted candidate', () => run('UPDATE hermes_memory_candidates SET promoted_at=? WHERE id=?', ['2026-07-31T00:00:00.000Z', second.id]), /already-promoted/],
     ['a global candidate scope', () => run('UPDATE hermes_memory_candidates SET scope=? WHERE id=?', ['global', second.id]), /non-workspace candidate scope/],
-    ['a null workspace', () => run('UPDATE hermes_memory_candidates SET workspace_id=NULL WHERE id=?', [second.id]), /canonical workspace id/],
+    // A NULL workspace names no scope to authorize against, so it refuses through the same single
+    // authorization message as absence rather than confirming the row exists.
+    ['a null workspace', () => run('UPDATE hermes_memory_candidates SET workspace_id=NULL WHERE id=?', [second.id]), /not authorized/],
     ['an empty lesson', () => run('UPDATE hermes_memory_candidates SET lesson=? WHERE id=?', ['', second.id]), /empty candidate lesson/],
   ];
   const original = store.getMemoryCandidate(second.id);

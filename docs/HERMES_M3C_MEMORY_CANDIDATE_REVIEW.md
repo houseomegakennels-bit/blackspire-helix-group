@@ -69,6 +69,16 @@ two audited decisions.
 On the read path authorization is decided **before** the integrity check, so an unauthorized caller
 causes no candidate read and no digest work and can measure nothing about a review they cannot read.
 
+On the record path an absent candidate, a candidate whose workspace is NULL or malformed, and a
+candidate in a workspace the caller holds no grant in all refuse with a **single** message
+(`memory candidate review is not authorized`). Differentiating them would let a principal granted in
+any one workspace supply well-formed candidate ids and learn which candidates exist in every other
+workspace. Only a caller already authorized in the candidate's own workspace reaches the
+differentiated subject diagnostics. One residual asymmetry is accepted and not closed: a denial is
+audited against the candidate's workspace while an absent candidate names no workspace to audit
+against, so `auth_decisions` distinguishes the two cases. That channel is visible only to a reader of
+the audit log, never to the calling principal.
+
 The single HTTP surface is `GET /api/hermes/memory-candidate-reviews/:id`, byte-parallel to the 3B
 scorecard route: the same configured evaluation-admin binding, `403` when that binding fails, and an
 indistinguishable `404` for an unknown id, a cross-workspace id, and a non-intact review.
@@ -117,6 +127,8 @@ Every bullet below maps to a named test in `tests/hermes-m3c-memory-review.test.
 - A review is unaffected by whether the workspace has verified scorecards.
 - The workspace-scoped pending reader never returns another workspace and orders totally.
 - Authorization precedes integrity work on the read path.
+- The record path refuses a real cross-workspace candidate and an absent one identically, so it
+  discloses no candidate existence across workspaces.
 
 ## Status and limitations
 

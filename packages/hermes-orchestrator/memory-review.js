@@ -47,18 +47,28 @@ export function recordMemoryCandidateReview(principal, candidateId, { decision, 
     throw new Error('memory candidate review requires a rationale');
   }
   const candidate = getMemoryCandidate(candidateId);
-  if (!candidate) throw new Error('memory candidate review requires an existing candidate');
   // Scope comes from the stored candidate row and is never a caller argument, so no caller can widen
   // scope or review into a workspace they were not granted. A candidate whose workspace is NULL or
   // malformed can satisfy no grant and is permanently unreviewable, which is the safe outcome.
-  const workspaceId = candidate.workspace_id;
-  if (!safeId(workspaceId)) throw new Error('memory candidate review requires a canonical workspace id');
+  const workspaceId = candidate && safeId(candidate.workspace_id) ? candidate.workspace_id : null;
+  // Authorization is decided before the caller learns anything about the candidate, and an absent
+  // candidate, an unusable workspace, and a workspace the caller holds no grant in all refuse with
+  // ONE message. Differentiating them would let a principal granted in any single workspace probe a
+  // well-formed candidate id and learn whether it exists in every other workspace - the read path
+  // already collapses these cases, and the record path must not be the weaker of the two. Only a
+  // caller already authorized in the candidate's own workspace reaches the diagnostics below.
+  //
+  // The audit trail stays asymmetric by construction: a denial is audited against the candidate's
+  // workspace, and an absent candidate names no workspace to audit against. That residual channel
+  // is visible only to a reader of `auth_decisions`, not to the calling principal.
+  //
   // Authorization happens BEFORE the transaction opens, so the audited allow/deny decision survives
   // the rollback that any later refusal triggers. Recording persists a permanent immutable row, so
   // it demands the write-capable `evaluation.correct` in addition to `evaluation.read`: a read-only
   // viewer grant must not append human judgements. No new permission is introduced.
-  if (!canReadEvaluation(principal, workspaceId).allowed) throw new Error('memory candidate review is not authorized');
-  if (!canCorrectEvaluation(principal, workspaceId).allowed) throw new Error('memory candidate review is not authorized');
+  if (workspaceId === null ||
+    !canReadEvaluation(principal, workspaceId).allowed ||
+    !canCorrectEvaluation(principal, workspaceId).allowed) throw new Error('memory candidate review is not authorized');
   return transaction(() => {
     // Re-proved inside the transaction against current grants, so a grant revoked between the
     // audited decision above and this point refuses. `hasCurrentWorkspacePermission` deliberately
