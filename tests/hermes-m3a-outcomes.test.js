@@ -432,6 +432,25 @@ test('complete canonical provenance rejects hidden evidence, raw-secret equivale
   assert.throws(() => evaluateTerminalOutcome(timeResult.runId), /timestamp|ordered/);
 });
 
+// Forges a provenance row to a timestamp that is deterministically before its stage window.
+//
+// These forgeries used to borrow an adjacent step's or the run's own timestamp. `rowsWithinStage`
+// accepts `timestamp >= start`, and `now()` is only millisecond-resolution, so whenever the borrowed
+// step and the stage's opening step landed in the same millisecond - routine on a fast host - the
+// forged value was still inside its window, no chronology violation existed, and the assertion failed
+// with "Missing expected exception". That made five cases here host-speed dependent.
+//
+// A bare early literal does not work either: `validateLinks` runs first and requires every row to sit
+// within `[run.started_at, run.finished_at]`, so an out-of-bounds value raises the provenance error
+// instead of the chronology one. Lowering the run's own start to the same instant keeps the row in
+// bounds while putting it unambiguously before every step, so the intended chronology violation is
+// the one that fires, on every machine.
+const BEFORE_ANY_STAGE = '2000-01-01T00:00:00.000Z';
+function forgeChronology(runId, statement) {
+  run(`UPDATE hermes_workflow_runs SET started_at=? WHERE id=?`, [BEFORE_ANY_STAGE, runId]);
+  run(statement, [BEFORE_ANY_STAGE, runId]);
+}
+
 test('completed verified outcomes reject contradictory routing, policy, invocation, or missing verification evidence', async () => {
   for (const [suffix, mutate, message] of [
     ['timeout-completed', (runId) => run("UPDATE hermes_provider_invocations SET status='completed',timed_out=1,cancelled=0 WHERE run_id=?", [runId]), 'provider evidence'],
@@ -461,18 +480,18 @@ test('completed verified outcomes reject contradictory routing, policy, invocati
     ['policy-step', (runId) => run("UPDATE hermes_policy_decisions SET action_class='forged.action' WHERE run_id=?", [runId]), 'policy evidence'],
     ['step-interval', (runId) => run(`UPDATE hermes_workflow_steps SET started_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received'),
       finished_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.received') WHERE run_id=? AND name='hermes.routed'`, [runId, runId, runId]), 'ordered|step evidence'],
-    ['policy-chronology', (runId) => run(`UPDATE hermes_policy_decisions SET created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?`, [runId, runId]), 'chronology'],
-    ['routing-chronology', (runId) => run(`UPDATE hermes_routing_decisions SET created_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.classified') WHERE run_id=?`, [runId, runId]), 'chronology'],
-    ['invocation-chronology', (runId) => run(`UPDATE hermes_provider_invocations SET created_at=(SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.policy_evaluated') WHERE run_id=?`, [runId, runId]), 'chronology'],
+    ['policy-chronology', (runId) => forgeChronology(runId, `UPDATE hermes_policy_decisions SET created_at=? WHERE run_id=?`), 'chronology'],
+    ['routing-chronology', (runId) => forgeChronology(runId, `UPDATE hermes_routing_decisions SET created_at=? WHERE run_id=?`), 'chronology'],
+    ['invocation-chronology', (runId) => forgeChronology(runId, `UPDATE hermes_provider_invocations SET created_at=? WHERE run_id=?`), 'chronology'],
     ['prior-invocation-chronology', (runId) => {
-      run("UPDATE hermes_provider_invocations SET status='failed',attempt=1,created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?", [runId, runId]);
+      forgeChronology(runId, "UPDATE hermes_provider_invocations SET status='failed',attempt=1,created_at=? WHERE run_id=?");
       run(`INSERT INTO hermes_provider_invocations(id,run_id,task_id,provider,adapter_type,model,mode,status,attempt,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,timed_out,cancelled,error,created_at)
         SELECT 'valid-retry',run_id,task_id,provider,adapter_type,model,mode,'completed',2,input_bytes,output_bytes,input_tokens,output_tokens,cost_cents,duration_ms,0,0,NULL,
           (SELECT created_at FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed') FROM hermes_provider_invocations WHERE run_id=? LIMIT 1`, [runId, runId]);
       const executed = JSON.parse(get("SELECT detail FROM hermes_workflow_steps WHERE run_id=? AND name='hermes.executed'", [runId]).detail);
       run("UPDATE hermes_workflow_steps SET detail=? WHERE run_id=? AND name='hermes.executed'", [JSON.stringify({ ...executed, attempts: 2 }), runId]);
     }, 'chronology'],
-    ['verification-chronology', (runId) => run(`UPDATE hermes_verification_results SET created_at=(SELECT started_at FROM hermes_workflow_runs WHERE id=?) WHERE run_id=?`, [runId, runId]), 'chronology'],
+    ['verification-chronology', (runId) => forgeChronology(runId, `UPDATE hermes_verification_results SET created_at=? WHERE run_id=?`), 'chronology'],
     ['terminal-outcome', (runId) => {
       run("UPDATE hermes_workflow_runs SET status='failed',outcome='verified' WHERE id=?", [runId]);
       run(`UPDATE hermes_workflow_steps SET name='hermes.failed',status='failed',detail='{"reason":"forged"}' WHERE run_id=? AND name='hermes.completed'`, [runId]);
