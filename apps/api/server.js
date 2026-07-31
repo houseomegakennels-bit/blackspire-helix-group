@@ -22,6 +22,7 @@ import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
 import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/authorization.js';
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
+import { readMemoryCandidateReview } from '../../packages/hermes-orchestrator/memory-review.js';
 
 let emergencyStopMemory = false;
 const TEST_MODE = requireSafeTestMode();
@@ -105,6 +106,8 @@ async function route(req, res) {
     if (evaluationMatch && req.method === 'GET') return outcomeEvaluationRoute(res, auth, evaluationMatch[1]);
     const scorecardMatch = u.pathname.match(/^\/api\/hermes\/scorecards\/([A-Za-z0-9._:-]{1,128})$/);
     if (scorecardMatch && req.method === 'GET') return verifiedScorecardRoute(res, auth, scorecardMatch[1]);
+    const memoryReviewMatch = u.pathname.match(/^\/api\/hermes\/memory-candidate-reviews\/([A-Za-z0-9._:-]{1,128})$/);
+    if (memoryReviewMatch && req.method === 'GET') return memoryCandidateReviewRoute(res, auth, memoryReviewMatch[1]);
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: TEST_MODE.enabled ? [getWorkspace(TEST_MODE.workspaceId)] : listWorkspaces() });
     if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => !TEST_MODE.enabled || task.workspace_id === TEST_MODE.workspaceId) });
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
@@ -183,6 +186,19 @@ function verifiedScorecardRoute(res, auth, scorecardId) {
   const scorecard = principal && readVerifiedScorecard(principal, scorecardId);
   // Do not distinguish a guessed identifier from a cross-workspace object.
   return scorecard ? json(res, 200, { scorecard }) : json(res, 404, { error: 'scorecard not found' });
+}
+
+// Milestone 3C read surface. GET-only and byte-parallel to the 3B route above: the same evaluation
+// principal binding, the same canonical `evaluation.read` permission, no review-specific permission,
+// no caller-supplied workspace, and deliberately no route that records, mutates, or promotes
+// anything. Recording a review is an internal service call only in `m3c-v1`.
+function memoryCandidateReviewRoute(res, auth, reviewId) {
+  const configuredPrincipal = configuredEvaluationAdminPrincipal();
+  const principal = auth.mode === 'bearer' ? configuredPrincipal : auth.mode === 'session' ? resolveBoundSession(auth.session) : null;
+  if (!configuredPrincipal || !principal || principal.principalId !== configuredPrincipal.principalId) return json(res, 403, { error: 'evaluation authorization unavailable' });
+  const review = principal && readMemoryCandidateReview(principal, reviewId);
+  // Do not distinguish a guessed identifier from a cross-workspace object.
+  return review ? json(res, 200, { review }) : json(res, 404, { error: 'memory candidate review not found' });
 }
 
 async function login(req, res) {

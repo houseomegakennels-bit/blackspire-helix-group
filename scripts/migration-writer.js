@@ -132,6 +132,27 @@ CREATE TRIGGER IF NOT EXISTS trg_hermes_scorecards_immutable_update BEFORE UPDAT
 CREATE TRIGGER IF NOT EXISTS trg_hermes_scorecards_immutable_delete BEFORE DELETE ON hermes_verified_scorecards BEGIN SELECT RAISE(ABORT,'immutable verified scorecard'); END;
 CREATE TRIGGER IF NOT EXISTS trg_hermes_scorecard_sources_immutable_update BEFORE UPDATE ON hermes_verified_scorecard_sources BEGIN SELECT RAISE(ABORT,'immutable verified scorecard source'); END;
 CREATE TRIGGER IF NOT EXISTS trg_hermes_scorecard_sources_immutable_delete BEFORE DELETE ON hermes_verified_scorecard_sources BEGIN SELECT RAISE(ABORT,'immutable verified scorecard source'); END;`);
+  // Hermes Milestone 3C: approval-gated memory-candidate review. Additive and idempotent.
+  //
+  // A review is a row in this NEW append-only table, never a mutation of `hermes_memory_candidates`.
+  // That Milestone 1 table has no immutability triggers, and its `status`/`promoted_at` columns ARE
+  // the promotion mechanism; introducing the first UPDATE path against it would make "review-only" a
+  // code convention rather than a structural fact. Both columns stay 'pending' and NULL all milestone.
+  //
+  // `decision` is deliberately advisory and there is no `promote` value: `recommend_promote` records
+  // a human judgement, and nothing in `m3c-v1` reads it. The CHECK constraint refuses a promotion-
+  // shaped value at the database layer, not merely in application code.
+  //
+  // `candidate_digest` pins the candidate row as it read at decision time. Because the candidate
+  // table has no immutability triggers, that pin is the only thing that makes a review verifiable at
+  // all: it turns "reviewed candidate X" into "reviewed candidate X as it then was". One terminal
+  // review per candidate in `m3c-v1`; re-review and successor chains are deferred.
+  db.exec(`CREATE TABLE IF NOT EXISTS hermes_memory_candidate_reviews(id TEXT PRIMARY KEY,review_version TEXT NOT NULL,decision_version TEXT NOT NULL,candidate_id TEXT NOT NULL,workspace_id TEXT NOT NULL,run_id TEXT NOT NULL,task_id TEXT,decision TEXT NOT NULL CHECK(decision IN ('recommend_promote','reject','defer_needs_evidence')),rationale TEXT NOT NULL,candidate_kind TEXT NOT NULL,candidate_scope TEXT NOT NULL CHECK(candidate_scope='workspace'),candidate_status_at_review TEXT NOT NULL CHECK(candidate_status_at_review='pending'),candidate_digest TEXT NOT NULL,evaluation_id TEXT NOT NULL,evaluation_version TEXT NOT NULL,provenance_digest TEXT NOT NULL,reviewer_principal_id TEXT NOT NULL,idempotency_key TEXT NOT NULL,content_digest TEXT NOT NULL,lineage_digest TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(candidate_id),UNIQUE(workspace_id,idempotency_key));
+CREATE INDEX IF NOT EXISTS idx_hermes_memory_reviews_workspace_created ON hermes_memory_candidate_reviews(workspace_id,created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_memory_reviews_candidate_unique ON hermes_memory_candidate_reviews(candidate_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_memory_reviews_idempotency_unique ON hermes_memory_candidate_reviews(workspace_id,idempotency_key);
+CREATE TRIGGER IF NOT EXISTS trg_hermes_memory_reviews_immutable_update BEFORE UPDATE ON hermes_memory_candidate_reviews BEGIN SELECT RAISE(ABORT,'immutable memory candidate review'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_memory_reviews_immutable_delete BEFORE DELETE ON hermes_memory_candidate_reviews BEGIN SELECT RAISE(ABORT,'immutable memory candidate review'); END;`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
   ensureColumn('hermes_workflow_runs', 'requested_provider', 'TEXT');
