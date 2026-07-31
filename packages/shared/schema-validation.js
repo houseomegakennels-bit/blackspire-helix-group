@@ -35,6 +35,10 @@ export const REQUIRED_SCHEMA = {
   // evidence; kept in sync with the schema-writer in scripts/migration-writer.js.
   hermes_verified_scorecards: ['id', 'scorecard_version', 'derivation_version', 'workspace_id', 'dimension_provider_id', 'dimension_agent_id', 'dimension_capability', 'dimension_classification', 'cutoff_created_at', 'cutoff_evaluation_id', 'scope_version', 'supersedes_scorecard_id', 'source_evaluation_count', 'confidence_band', 'positive_eligible_count', 'negative_terminal_count', 'blocked_ineligible_count', 'accepted_count', 'rejected_count', 'partially_accepted_count', 'rollback_count', 'follow_up_verification_count', 'stability_confirmed_count', 'regression_linked_count', 'unknown_acceptance_count', 'unknown_rollback_count', 'unknown_stability_count', 'retry_total', 'known_retry_evaluations', 'timeout_count', 'unknown_timeout_count', 'cancellation_count', 'known_input_tokens', 'known_input_token_evaluations', 'known_output_tokens', 'known_output_token_evaluations', 'known_cost_cents', 'known_cost_evaluations', 'verified_success_numerator', 'verified_success_denominator', 'acceptance_numerator', 'acceptance_denominator', 'lineage_digest', 'content_digest', 'created_at'],
   hermes_verified_scorecard_sources: ['id', 'scorecard_id', 'seq', 'evaluation_id', 'workspace_id', 'evaluation_created_at', 'provenance_digest', 'correction_head_id', 'correction_head_version', 'source_event_ids', 'created_at'],
+  // Hermes Memory-Candidate Review (Milestone 3C). Additive append-only human review decisions over
+  // Milestone 1 candidates; kept in sync with the schema-writer. Review-only: nothing here promotes,
+  // and `hermes_memory_candidates.status`/`promoted_at` are never written by this milestone.
+  hermes_memory_candidate_reviews: ['id', 'review_version', 'decision_version', 'candidate_id', 'workspace_id', 'run_id', 'task_id', 'decision', 'rationale', 'candidate_kind', 'candidate_scope', 'candidate_status_at_review', 'candidate_digest', 'evaluation_id', 'evaluation_version', 'provenance_digest', 'reviewer_principal_id', 'idempotency_key', 'content_digest', 'lineage_digest', 'created_at'],
 };
 
 export const REQUIRED_SCHEMA_OBJECTS = {
@@ -52,6 +56,8 @@ export const REQUIRED_SCHEMA_OBJECTS = {
     idx_hermes_scorecards_parent_unique: { table: 'hermes_verified_scorecards', columns: ['supersedes_scorecard_id'] },
     idx_hermes_scorecard_sources_seq_unique: { table: 'hermes_verified_scorecard_sources', columns: ['scorecard_id','seq'] },
     idx_hermes_scorecard_sources_evaluation_unique: { table: 'hermes_verified_scorecard_sources', columns: ['scorecard_id','evaluation_id'] },
+    idx_hermes_memory_reviews_candidate_unique: { table: 'hermes_memory_candidate_reviews', columns: ['candidate_id'] },
+    idx_hermes_memory_reviews_idempotency_unique: { table: 'hermes_memory_candidate_reviews', columns: ['workspace_id','idempotency_key'] },
   },
   trigger: Object.fromEntries([
     ['trg_hermes_outcome_evaluations_immutable_update','hermes_outcome_evaluations','UPDATE','immutable outcome evaluation'],
@@ -68,6 +74,8 @@ export const REQUIRED_SCHEMA_OBJECTS = {
     ['trg_hermes_scorecards_immutable_delete','hermes_verified_scorecards','DELETE','immutable verified scorecard'],
     ['trg_hermes_scorecard_sources_immutable_update','hermes_verified_scorecard_sources','UPDATE','immutable verified scorecard source'],
     ['trg_hermes_scorecard_sources_immutable_delete','hermes_verified_scorecard_sources','DELETE','immutable verified scorecard source'],
+    ['trg_hermes_memory_reviews_immutable_update','hermes_memory_candidate_reviews','UPDATE','immutable memory candidate review'],
+    ['trg_hermes_memory_reviews_immutable_delete','hermes_memory_candidate_reviews','DELETE','immutable memory candidate review'],
   ].map(([name, table, operation, message]) => [name, {
     table,
     sql: `CREATE TRIGGER ${name} BEFORE ${operation} ON ${table} BEGIN SELECT RAISE(ABORT,'${message}'); END`,

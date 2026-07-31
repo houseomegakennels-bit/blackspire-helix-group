@@ -211,3 +211,21 @@ export const getVerifiedScorecardByIdentity = (scope, cutoffCreatedAt, cutoffEva
   get(`SELECT * FROM hermes_verified_scorecards WHERE ${scopeFilter} AND cutoff_created_at=? AND cutoff_evaluation_id=?`, [...scopeValues(scope), cutoffCreatedAt, cutoffEvaluationId]);
 export const getVerifiedScorecardScopeHead = (scope) =>
   get(`SELECT * FROM hermes_verified_scorecards WHERE ${scopeFilter} ORDER BY scope_version DESC LIMIT 1`, scopeValues(scope));
+
+// Milestone 3C memory-candidate reviews are append-only. No update or delete helper is deliberately
+// exposed, and there is deliberately no writer of any kind for `hermes_memory_candidates`: a review
+// is a new row here, never a mutation of the candidate it reviews.
+const MEMORY_REVIEW_COLUMNS = ['id','review_version','decision_version','candidate_id','workspace_id','run_id','task_id','decision','rationale','candidate_kind','candidate_scope','candidate_status_at_review','candidate_digest','evaluation_id','evaluation_version','provenance_digest','reviewer_principal_id','idempotency_key','content_digest','lineage_digest','created_at'];
+export function insertMemoryCandidateReview(row) {
+  run(`INSERT INTO hermes_memory_candidate_reviews(${MEMORY_REVIEW_COLUMNS.join(',')}) VALUES(${placeholders(MEMORY_REVIEW_COLUMNS)})`, MEMORY_REVIEW_COLUMNS.map((column) => row[column]));
+}
+export const getMemoryCandidate = (candidateId) => get(`SELECT * FROM hermes_memory_candidates WHERE id=?`, [candidateId]);
+export const getMemoryCandidateReview = (reviewId) => get(`SELECT * FROM hermes_memory_candidate_reviews WHERE id=?`, [reviewId]);
+export const getMemoryCandidateReviewForCandidate = (candidateId) => get(`SELECT * FROM hermes_memory_candidate_reviews WHERE candidate_id=?`, [candidateId]);
+export const getMemoryCandidateReviewByIdempotencyKey = (workspaceId, idempotencyKey) =>
+  get(`SELECT * FROM hermes_memory_candidate_reviews WHERE workspace_id=? AND idempotency_key=?`, [workspaceId, idempotencyKey]);
+// Workspace-scoped, unlike the unscoped `getPendingMemoryCandidates` above, which returns every
+// workspace's pending candidates and must never back an authorized surface. The `,id` tiebreak makes
+// the order total: `created_at` is millisecond-resolution and ties are routine.
+export const getPendingMemoryCandidatesForWorkspace = (workspaceId) =>
+  all(`SELECT * FROM hermes_memory_candidates WHERE workspace_id=? AND status='pending' ORDER BY created_at,id`, [workspaceId]);
