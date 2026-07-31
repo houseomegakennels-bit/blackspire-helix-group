@@ -326,6 +326,31 @@ test('malformed, missing, corrected, and contradictory evidence fails the whole 
   assert.ok(reader, 'the closed-path fixture principal resolved');
 });
 
+// A failed source fails the whole snapshot rather than being skipped, and Milestone 3A corrections
+// are append-only and immutable, so correcting the EARLIEST evaluation makes every cutoff in the
+// workspace refuse, permanently, with no repair path. That is intended - skipping disputed evidence
+// would make a snapshot look better than the record supports - but it is a severe operational
+// property, so it is pinned here rather than left to be rediscovered. A future derivation API must
+// resolve it with an explicit lower bound or excluded-source manifest, never by skipping the source;
+// this test fails the moment anyone tries the latter.
+test('a corrected earliest source makes the whole workspace permanently underivable at every cutoff', async () => {
+  const workspaceId = 'm3b-corrected-permanence';
+  const sources = await seedSources(workspaceId, 4);
+  const reader = principal(workspaceId);
+  // Derivable before the correction, so the refusal below is caused by the correction and nothing else.
+  const [before] = deriveVerifiedScorecards(reader, { workspaceId, cutoff: cutoffAt(sources[1]) });
+  assert.equal(before.source_evaluation_count, 2);
+  appendOutcomeCorrection(reader, sources[0].id, { reason: 'operator disputed the recorded outcome', sourceEvidence: 'follow-up review' });
+  // Every cutoff, not just the one under test: the cutoff is a lower-inclusive bound over all prior
+  // history, so no later cutoff can escape the corrected row.
+  for (const source of sources) {
+    assert.throws(() => deriveVerifiedScorecards(reader, { workspaceId, cutoff: cutoffAt(source) }),
+      /corrected source evaluation/, `cutoff at ${source.id} must refuse`);
+  }
+  assert.equal(all('SELECT id FROM hermes_verified_scorecards WHERE workspace_id=?', [workspaceId]).length, 1,
+    'no cutoff appended a snapshot after the correction, and the pre-correction snapshot is untouched');
+});
+
 test('canonical Phase 3B snapshot and lineage tables reject update and delete', async () => {
   const sources = await seedSources('m3b-immutable', 5);
   const reader = principal('m3b-immutable');

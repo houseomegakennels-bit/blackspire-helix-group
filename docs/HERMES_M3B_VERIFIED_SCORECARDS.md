@@ -29,8 +29,10 @@ development/test service call against disposable state.
 - A source is accepted only when its M3A evaluation, components, provenance digest, terminal matrix,
   and current append-only correction/source-event lineage validate. A missing or contradictory
   source fails the whole snapshot; it is never skipped.
-- Repeated source evaluation IDs, cross-workspace sources, mixed scorecard versions, future
-  timestamps, malformed dimensions, integer overflow, and redaction failures fail closed.
+- Cross-workspace sources, mixed scorecard versions, future timestamps, malformed dimensions, and
+  redaction failures fail closed. Repeated source evaluation IDs and integer overflow are guarded
+  but structurally unreachable, so neither is pinned by a test that exercises the throw; see Status
+  and limitations.
 - Replay of an identical scope, cutoff, version, and ordered lineage returns the existing snapshot.
   The same identity with different derived content is an integrity error.
 - The lineage digest covers the scorecard version, exact scope/dimensions, cutoff, every ordered
@@ -80,13 +82,17 @@ below for the full rules.
 ## Acceptance gates
 
 - Same sources in any input order produce byte-identical metrics and lineage digest.
-- Cutoff boundaries, equal timestamps, replay, and successor lineage are pinned. Integer overflow is
-  guarded but structurally unreachable and therefore not pinned by a test that exercises the throw -
-  see Status and limitations.
+- Cutoff boundaries, equal timestamps, replay, and successor lineage are pinned. Integer overflow, a
+  duplicated source evaluation ID, and a dimension forged to the unknown sentinel are guarded but
+  structurally unreachable and therefore not pinned by tests that exercise the throw - see Status and
+  limitations.
 - Fewer than 5, exactly 5, exactly 19, and exactly 20 sources produce the documented confidence.
 - Unknown acceptance/rollback/stability cannot become false zero or positive evidence.
-- Cross-workspace, malformed, missing, duplicated, corrected, and contradictory evidence fails
-  closed.
+- Cross-workspace, malformed, missing, corrected, and contradictory evidence fails closed, and a
+  corrected or contradictory source is proven to make the whole workspace underivable at every
+  cutoff rather than merely at the one under test.
+- The read route is pinned: it refuses a principal that is not the configured evaluation admin and
+  returns an indistinguishable `404` for an unknown and a cross-workspace scorecard id.
 - Database triggers refuse snapshot and lineage update/delete.
 - Tests prove route decisions, provider health, approvals, workflow runs/steps, memory candidates,
   and promoted-memory tables are byte-identical before and after derivation.
@@ -220,6 +226,31 @@ Implemented and validated at the exact head. Known limitations, all deliberate:
 - **Integer overflow is guarded but structurally unreachable.** `safeSum` refuses any non-exact
   addition, but Milestone 3A already refuses usage overflow at evaluation time, so intact evidence
   cannot reach the guard. It is not covered by a test that exercises the throw.
+- **The dimension guards validate the raw value and are structurally unreachable.** `dimensionsOf`
+  runs `safeId` on the stored `provider_id` and `selected_agent` *before* substituting the `*`
+  sentinel, so a value that is literally the sentinel refuses rather than taking the "absent" branch
+  and silently merging into the unknown group. This cannot be reached from stored evidence: the
+  provenance digest covers those columns and revalidation additionally re-derives them against the
+  live registry, so a forgery fails as "does not revalidate" first, and a digest-consistent forgery
+  still fails the registry check. Like `safeSum` it is defence in depth for the day an upstream check
+  is relaxed, and it is not pinned by a test that exercises the throw.
+- **The duplicated-source guard is likewise structurally unreachable.** `persistGroup` refuses a
+  repeated evaluation ID within a group, but sources come from a single `SELECT` over a table whose
+  `id` is the PRIMARY KEY, so a group cannot contain one twice. Like `safeSum` it is defence in
+  depth against a future selection change and is not pinned by a test that exercises the throw.
+- **A corrected or contradictory source makes the whole workspace permanently underivable.** Rule 4
+  refuses a corrected source and the contradictory-acceptance rule refuses conflicting acceptance
+  evidence, and because a failed source fails the entire snapshot rather than being skipped, one such
+  evaluation makes *every* dimension group at *every* cutoff at or after it refuse, for that
+  workspace, forever. There is no repair path: Milestone 3A corrections and source events are
+  append-only and immutable, and the cutoff is a lower-inclusive bound over all prior history, so no
+  later cutoff escapes the row. This is intended - silently skipping disputed evidence would make a
+  snapshot look better than the record supports, which is the defect these rules exist to prevent -
+  but it means an operator using 3A's correction history exactly as designed disables 3B derivation
+  for that workspace. It is acceptable today only because there is no derivation route. Any future
+  derivation API must resolve it first, by an explicit lower cutoff bound or an excluded-source
+  manifest covered by the lineage digest, and must not resolve it by skipping the source. The
+  permanence is pinned by a regression asserting no cutoff recovers.
 - **Rollback, stability, and acceptance are unknown for all current evidence.** Milestone 3A never
   records those determinations on the evaluation row, so they are counted as unknown unless an
   explicit append-only source event exists.

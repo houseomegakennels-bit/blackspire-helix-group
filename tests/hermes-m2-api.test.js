@@ -33,6 +33,22 @@ const m2Evaluation = await runHermesWorkflow(getTask(m2EvaluationInput.taskId));
 upsertWorkspace({ id: 'm2-api-other', name: 'm2-api-other', githubRepository: 'local/m2-api-other', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root });
 const otherInput = createUnifiedInput({ channel: 'jarvis', actorId: 'm2-api-user', channelKey: 'm2-api-user', workspaceId: 'm2-api-other', text: 'report other status', idempotencyKey: 'm2-api-other-evaluation' });
 const otherEvaluation = await runHermesWorkflow(getTask(otherInput.taskId));
+
+// Milestone 3B read-route fixtures. Derivation persists immutable rows and so demands the
+// write-capable `evaluation.correct`, which the read-only session principal above deliberately does
+// not hold; a separate derivation principal mints the snapshots out of band. There is no derivation
+// route, so this is the only way a scorecard can exist, which is itself part of what is asserted.
+const authz = await import('../packages/shared/authorization.js');
+const { deriveVerifiedScorecards } = await import('../packages/hermes-orchestrator/scorecard.js');
+const { getOutcomeEvaluation } = await import('../packages/hermes-orchestrator/store.js');
+run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-scorecard-deriver','admin','m2-scorecard-deriver','bearer',null,'active',authNow,null,null,null,1,authNow]);
+run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-scorecard-grant','m2-scorecard-deriver','m2-api-workspace','viewer','["evaluation.correct","evaluation.read"]','active',1,null,authNow,null,null,'test',1,authNow]);
+run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-scorecard-grant-other','m2-scorecard-deriver','m2-api-other','viewer','["evaluation.correct","evaluation.read"]','active',1,null,authNow,null,null,'test',1,authNow]);
+const deriver = authz.resolveAdminBearer('m2-scorecard-deriver');
+const cutoffOf = (evaluationId) => { const row = getOutcomeEvaluation(evaluationId); return { createdAt: row.created_at, id: row.id }; };
+const [m2Scorecard] = deriveVerifiedScorecards(deriver, { workspaceId: 'm2-api-workspace', cutoff: cutoffOf(m2Evaluation.evaluationId) });
+const [otherScorecard] = deriveVerifiedScorecards(deriver, { workspaceId: 'm2-api-other', cutoff: cutoffOf(otherEvaluation.evaluationId) });
+
 const { start } = await import('../apps/api/server.js');
 
 const server = start(8906, '127.0.0.1', { exitOnListenError: false });
@@ -91,4 +107,39 @@ test('a verified admin login session can read its configured, workspace-authoriz
   run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-evaluation-admin', sessionId]);
   run(`UPDATE auth_principals SET status='revoked',revoked_at=? WHERE id='m2-evaluation-admin'`, [Date.now()]);
   assert.equal((await fetch(`${base}/api/hermes/evaluations/${encodeURIComponent(m2Evaluation.evaluationId)}`, { headers: { cookie } })).status, 403);
+  run(`UPDATE auth_principals SET status='active',revoked_at=NULL WHERE id='m2-evaluation-admin'`);
+});
+
+// Milestone 3B: the only read surface for a verified scorecard. The doc claims this route refuses a
+// principal that is not the configured evaluation admin and returns an indistinguishable 404 for an
+// unknown and a cross-workspace id; nothing pinned those claims against a future edit to route
+// ordering or the test-mode allowlist, so they are pinned here alongside the 3A twin above.
+test('the verified scorecard read route is admin-bound and discloses nothing across workspaces', async () => {
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'm2-api-token' }) });
+  const cookie = login.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie);
+  const res = await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(m2Scorecard.id)}`, { headers: { cookie } });
+  assert.equal(res.status, 200);
+  const body = await res.text();
+  assert.ok(!body.includes('m2-api-token'), 'the admin credential must never appear in a scorecard response');
+  assert.ok(!body.includes('super-secret-should-never-appear'));
+  const scorecard = JSON.parse(body).scorecard;
+  assert.equal(scorecard.id, m2Scorecard.id);
+  assert.equal(scorecard.workspaceId, 'm2-api-workspace');
+  // A scorecard in another workspace and an id that does not exist must be indistinguishable, so a
+  // caller cannot use the status code to probe which ids are real.
+  assert.equal((await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(otherScorecard.id)}`, { headers: { cookie } })).status, 404);
+  assert.equal((await fetch(`${base}/api/hermes/scorecards/unknown-scorecard`, { headers: { cookie } })).status, 404);
+  // Unauthenticated is refused before any lookup. A non-GET method never reaches the route at all:
+  // the CSRF gate refuses an unsafe method on a cookie session first, so the assertion is that it is
+  // refused, not which layer refuses it.
+  assert.equal((await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(m2Scorecard.id)}`)).status, 401);
+  assert.equal((await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(m2Scorecard.id)}`, { method: 'POST', headers: { cookie } })).status, 403);
+  // A session that is authenticated but not bound to the configured evaluation admin principal is
+  // refused with 403 rather than being allowed to read anything.
+  const sessionId = cookie.slice(cookie.indexOf('=') + 1);
+  run('UPDATE sessions SET principal_id=NULL WHERE id=?', [sessionId]);
+  assert.equal((await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(m2Scorecard.id)}`, { headers: { cookie } })).status, 403);
+  run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-evaluation-admin', sessionId]);
+  assert.equal((await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(m2Scorecard.id)}`, { headers: { cookie } })).status, 200);
 });

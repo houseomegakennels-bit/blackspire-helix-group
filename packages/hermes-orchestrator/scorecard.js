@@ -55,8 +55,10 @@ export function deriveVerifiedScorecards(principal, { workspaceId, cutoff, score
   return transaction(() => {
     const derivationEpoch = Date.now();
     if (Date.parse(cutoff.createdAt) > derivationEpoch) throw new Error('verified scorecard refuses a future cutoff');
-    // Re-proved inside the transaction without emitting a second audit row, exactly as Milestone 3A
-    // does for corrections, so one logical operation records one decision.
+    // Re-proved inside the transaction against current grants, exactly as Milestone 3A does for
+    // corrections. `hasCurrentWorkspacePermission` deliberately does not audit, so the re-proof adds
+    // no rows: one derivation records exactly the two audited decisions taken above, one for
+    // `evaluation.read` and one for `evaluation.correct`.
     if (!hasCurrentWorkspacePermission(principal, workspaceId, 'evaluation.read') ||
       !hasCurrentWorkspacePermission(principal, workspaceId, 'evaluation.correct')) throw new Error('verified scorecard derivation is not authorized');
     const sources = selectSources(workspaceId, cutoff).map((evaluation) => validatedSource(evaluation, workspaceId, cutoff, derivationEpoch));
@@ -164,17 +166,24 @@ function dimensionsOf(evaluation) {
   if (evaluation.routing_decision_id && !routing) throw new Error('verified scorecard refuses a source evaluation with missing routing evidence');
   if (classification !== null && !validDimensionClassification(classification)) throw new Error('verified scorecard refuses a malformed classification dimension');
   const capabilities = classification ? [...classification.requiredCapabilities].sort(compareStrings) : null;
+  // Validated on the RAW value, before the sentinel is substituted. Testing the coalesced dimension
+  // instead would let a stored value that is literally `*` take the "absent" branch and skip
+  // validation entirely, silently merging a forged row into the unknown group rather than refusing.
+  // The sentinel is outside the `safeId` character set, so no honest value can reach this, but that
+  // is exactly the upstream assumption this layer exists to stop depending on.
+  const rawProviderId = evaluation.provider_id ?? null;
+  const rawAgentId = routing?.selected_agent ?? null;
+  if (rawProviderId !== null && !safeId(rawProviderId)) throw new Error('verified scorecard refuses a malformed provider dimension');
+  if (rawAgentId !== null && !safeId(rawAgentId)) throw new Error('verified scorecard refuses a malformed agent dimension');
   const dimensions = {
-    providerId: evaluation.provider_id ?? UNKNOWN_DIMENSION,
-    agentId: routing?.selected_agent ?? UNKNOWN_DIMENSION,
+    providerId: rawProviderId ?? UNKNOWN_DIMENSION,
+    agentId: rawAgentId ?? UNKNOWN_DIMENSION,
     capability: capabilities?.length ? canonicalJson(capabilities) : UNKNOWN_DIMENSION,
     // Capabilities are their own dimension, so the classification dimension carries only the four
     // scalar facets. Re-emitting through canonicalJson normalizes key order: the stored column
     // preserves insertion order and two logically identical classifications could otherwise differ.
     classification: classification ? canonicalJson({ complexity: classification.complexity, domain: classification.domain, risk: classification.risk, urgency: classification.urgency }) : UNKNOWN_DIMENSION,
   };
-  if (dimensions.providerId !== UNKNOWN_DIMENSION && !safeId(dimensions.providerId)) throw new Error('verified scorecard refuses a malformed provider dimension');
-  if (dimensions.agentId !== UNKNOWN_DIMENSION && !safeId(dimensions.agentId)) throw new Error('verified scorecard refuses a malformed agent dimension');
   if (capabilities && !capabilities.every(safeId)) throw new Error('verified scorecard refuses a malformed capability dimension');
   return dimensions;
 }
