@@ -118,3 +118,11 @@ databases.
 No Telegram bot, provider, external service, Vercel project, DNS record, deployment, host control,
 release, or trading system was changed, so no external rollback is required. Production remains
 disabled and Gate 4 remains unauthorized; neither was touched by this branch.
+
+## Review-repair commits on this branch
+
+The review-finding repairs change application logic, tests, docs, and add
+`scripts/mutation-test-m3c-rereview.js`. They add no migration, no column, no index, no trigger, and
+no table, so the schema rollback above is unchanged and no additional data rule applies. Reverting
+them restores the reviewed-but-defective read, replay, and depth behaviour described in "Corrections
+from review" in HERMES_M3C_REREVIEW_SUCCESSOR_CHAINS.md; it does not require touching any database.

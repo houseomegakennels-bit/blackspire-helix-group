@@ -21,10 +21,10 @@ const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orch
 const store = await import('../packages/hermes-orchestrator/store.js');
 const { run, get, all, execSql } = await import('../packages/task-engine/db.js');
 const authz = await import('../packages/shared/authorization.js');
-const { digest } = await import('../packages/shared/canonical.js');
+const { digest, canonicalJson } = await import('../packages/shared/canonical.js');
 const { recordMemoryCandidateReview, readMemoryCandidateReview, recordMemoryCandidateRereview,
   readMemoryCandidateRereview, MEMORY_REREVIEW_VERSION, MEMORY_REVIEW_DECISION_VERSION,
-  INHERITED_CONTEXT_KEYS, MAX_REREVIEW_CHAIN_DEPTH } = await import('../packages/hermes-orchestrator/memory-review.js');
+  INHERITED_CONTEXT_KEYS, MAX_REREVIEW_CHAIN_DEPTH, inheritanceAllowlistDisjoint } = await import('../packages/hermes-orchestrator/memory-review.js');
 
 const authzNow = Date.now();
 function principal(workspaceId, permissions = ['evaluation.read', 'evaluation.correct']) {
@@ -563,6 +563,248 @@ test('a successor written around the service past the maximum depth is unreadabl
   assert.equal(readMemoryCandidateRereview(admin, forged.id), null);
   // The legitimate part of the chain is unaffected.
   assert.ok(readMemoryCandidateRereview(admin, first.id));
+});
+
+// --- Forged stored rows, with the digests resealed ---
+
+// The threat model explicitly grants the adversary database writes, and concedes the digests are
+// UNKEYED SHA-256 over public inputs. So a forger does not merely edit a column and hope: it edits
+// the column and recomputes both digests, exactly as the module would. Every forgery below is
+// resealed this way, which is what makes these tests reach the structural checks at all - without
+// the reseal they would be caught by the digest comparison and would prove nothing about ancestry,
+// inheritance, or isolation. This mirrors `rereviewPackets` deliberately: if the packet shape ever
+// changes, these tests stop reproducing digests and fail loudly rather than silently passing.
+function reseal(row) {
+  const chainVersion = Number(row.chain_version);
+  const predecessor = { id: row.supersedes_rereview_id ?? row.root_review_id, kind: row.supersedes_rereview_id ? 'rereview' : 'review',
+    chainVersion: chainVersion - 1, contentDigest: row.predecessor_content_digest, lineageDigest: row.predecessor_lineage_digest };
+  const inherited = JSON.parse(row.inherited_context);
+  const contentPacket = { rereviewVersion: MEMORY_REREVIEW_VERSION, decisionVersion: MEMORY_REVIEW_DECISION_VERSION,
+    rootReviewId: row.root_review_id, chainVersion, decision: row.decision, rationale: row.rationale,
+    candidateDigest: row.candidate_digest, predecessor };
+  const lineagePacket = { rereviewVersion: MEMORY_REREVIEW_VERSION, decisionVersion: MEMORY_REVIEW_DECISION_VERSION,
+    rootReviewId: row.root_review_id, chainVersion, predecessor,
+    subject: { candidateId: row.candidate_id, runId: row.run_id, taskId: row.task_id, candidateKind: row.candidate_kind,
+      candidateScope: row.candidate_scope, candidateStatus: row.candidate_status_at_review, candidateDigest: row.candidate_digest },
+    evaluation: { id: row.evaluation_id, version: row.evaluation_version, provenanceDigest: row.provenance_digest },
+    inherited, content: { decision: row.decision, rationale: row.rationale } };
+  return { ...row, content_digest: digest(canonicalJson(contentPacket)), lineage_digest: digest(canonicalJson(lineagePacket)) };
+}
+// Overwrites a stored successor in place with a resealed forgery.
+function forgeInPlace(rereviewId, mutate) {
+  const forged = reseal(mutate({ ...rereviewRow(rereviewId) }));
+  withoutImmutability(['hermes_memory_candidate_rereviews'], () => {
+    run('DELETE FROM hermes_memory_candidate_rereviews WHERE id=?', [rereviewId]);
+    store.insertMemoryCandidateRereview(forged);
+  });
+  return forged;
+}
+// A sanity check on the reseal itself: resealing without mutating must be a no-op that still reads.
+test('the forgery harness reproduces the digests it recomputes', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-reseal');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'reseal-1' }));
+  const resealed = reseal(rereviewRow(successor.id));
+  assert.equal(resealed.content_digest, successor.content_digest, 'the harness must reproduce the content digest');
+  assert.equal(resealed.lineage_digest, successor.lineage_digest, 'the harness must reproduce the lineage digest');
+  forgeInPlace(successor.id, (row) => row);
+  assert.ok(readMemoryCandidateRereview(admin, successor.id), 'an unmutated reseal must still read');
+});
+
+// Reviewer A's exact demonstration: the read path enforced a DENYLIST over attacker-chosen key names,
+// so any key the denylist did not happen to enumerate rode through to the API response - including a
+// `candidateId` contradicting the row's own candidate column and a smuggled authority-shaped block.
+test('a forged inherited context with smuggled keys and a contradicting candidate identity is unreadable', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-smuggle');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'smuggle-1' }));
+  assert.ok(readMemoryCandidateRereview(admin, successor.id), 'the honest successor reads before the forgery');
+
+  forgeInPlace(successor.id, (row) => {
+    const inherited = JSON.parse(row.inherited_context);
+    inherited.keys = ['candidateId'];
+    inherited.values = { ...inherited.values, candidateId: 'TOTALLY-OTHER-CANDIDATE',
+      smuggled: { grantedBy: 'attacker', promotionApproved: true } };
+    return { ...row, inherited_context: canonicalJson(inherited) };
+  });
+
+  // Refused outright, rather than returned with the forged block attached.
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null);
+});
+
+test('a forged inherited context is rejected even when every smuggled key name is undenied', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-undenied');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'undenied-1' }));
+
+  // Not one of these names appears in DENIED_INHERITANCE_KEYS - which is the whole point. A denylist
+  // cannot constrain names the forger chooses, so only the positive allowlist refuses this.
+  forgeInPlace(successor.id, (row) => {
+    const inherited = JSON.parse(row.inherited_context);
+    inherited.values = { ...inherited.values, reviewerNote: 'benign', priority: 9, escalate: true };
+    return { ...row, inherited_context: canonicalJson(inherited) };
+  });
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null);
+});
+
+test('a forged inherited context whose values contradict the row it is stored on is unreadable', async () => {
+  for (const [key, forgedValue] of [['runId', 'hrun-not-this-one'], ['taskId', 'task-not-this-one'],
+    ['candidateKind', 'workflow_lesson_forged'], ['candidateScope', 'global']]) {
+    // A fresh chain per case: forging a row corrupts the chain it sits in, so reusing one chain would
+    // measure the previous case's damage instead of this one's.
+    const { rootReview, admin } = await seedChain(`m3crr-contradict-${key}`);
+    const successor = recordMemoryCandidateRereview(admin, rootReview.id,
+      rereview(rootReview.id, { idempotencyKey: `contradict-${key}` }));
+    forgeInPlace(successor.id, (row) => {
+      const inherited = JSON.parse(row.inherited_context);
+      inherited.values = { ...inherited.values, [key]: forgedValue };
+      return { ...row, inherited_context: canonicalJson(inherited) };
+    });
+    assert.equal(readMemoryCandidateRereview(admin, successor.id), null, `a forged ${key} must be unreadable`);
+  }
+});
+
+test('a forged inherited provenance that disagrees with the row predecessor pin is unreadable', async () => {
+  // Each provenance field is forged on its own chain, so every one is proven to be checked
+  // individually rather than one strict field masking four unchecked ones.
+  for (const [field, forgedValue] of [['predecessorId', 'hmrrev-not-this-one'], ['predecessorKind', 'rereview'],
+    ['predecessorChainVersion', 7], ['predecessorContentDigest', digest('forged')], ['predecessorLineageDigest', digest('forged')]]) {
+    const { rootReview, admin } = await seedChain(`m3crr-prov-${field}`);
+    const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: `prov-${field}` }));
+    forgeInPlace(successor.id, (row) => {
+      const inherited = JSON.parse(row.inherited_context);
+      inherited.provenance = { ...inherited.provenance, [field]: forgedValue };
+      return { ...row, inherited_context: canonicalJson(inherited) };
+    });
+    assert.equal(readMemoryCandidateRereview(admin, successor.id), null, `a forged ${field} must be unreadable`);
+  }
+});
+
+test('a forged inherited context with an extra or missing top-level key is unreadable', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-toplevel');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'toplevel-1' }));
+  forgeInPlace(first.id, (row) => {
+    const inherited = { ...JSON.parse(row.inherited_context), extraBlock: { note: 'unlisted and undenied' } };
+    return { ...row, inherited_context: canonicalJson(inherited) };
+  });
+  assert.equal(readMemoryCandidateRereview(admin, first.id), null, 'an extra top-level key must be unreadable');
+
+  const other = await seedChain('m3crr-toplevel-missing');
+  const second = recordMemoryCandidateRereview(other.admin, other.rootReview.id, rereview(other.rootReview.id, { idempotencyKey: 'toplevel-2' }));
+  forgeInPlace(second.id, (row) => {
+    const inherited = JSON.parse(row.inherited_context);
+    delete inherited.provenance;
+    return { ...row, inherited_context: canonicalJson(inherited) };
+  });
+  assert.equal(readMemoryCandidateRereview(other.admin, second.id), null, 'a missing top-level key must be unreadable');
+});
+
+test('the read-side depth bound alone refuses a correctly linked successor past the maximum', async () => {
+  // Test 34's over-depth forgery is also refused by the predecessor chain-version check, so it does
+  // not isolate the depth bound. This one builds a genuine chain to exactly the bound and then
+  // appends a correctly linked, correctly pinned, digest-resealed row at depth+1 - so the ONLY
+  // invariant it violates is the bound itself. This is what makes the read-side bound independently
+  // pinned rather than defence in depth, correcting the earlier documented limitation.
+  const { rootReview, admin } = await seedChain('m3crr-depth-only');
+  let head = rootReview.id;
+  for (let depth = 1; depth <= MAX_REREVIEW_CHAIN_DEPTH; depth += 1) {
+    head = recordMemoryCandidateRereview(admin, rootReview.id, rereview(head, { idempotencyKey: `depth-only-${depth}` })).id;
+  }
+  assert.ok(readMemoryCandidateRereview(admin, head), 'the chain at exactly the bound reads');
+
+  const headRow = rereviewRow(head);
+  const forged = reseal({ ...headRow, id: 'hmrrev-depth-only-forged', chain_version: MAX_REREVIEW_CHAIN_DEPTH + 1,
+    supersedes_rereview_id: headRow.id, idempotency_key: 'depth-only-forged',
+    predecessor_content_digest: headRow.content_digest, predecessor_lineage_digest: headRow.lineage_digest,
+    inherited_context: canonicalJson({ ...JSON.parse(headRow.inherited_context),
+      provenance: { predecessorId: headRow.id, predecessorKind: 'rereview', predecessorChainVersion: MAX_REREVIEW_CHAIN_DEPTH,
+        predecessorContentDigest: headRow.content_digest, predecessorLineageDigest: headRow.lineage_digest } }) });
+  withoutImmutability(['hermes_memory_candidate_rereviews'], () => store.insertMemoryCandidateRereview(forged));
+
+  assert.equal(readMemoryCandidateRereview(admin, forged.id), null, 'depth alone must refuse it');
+  assert.ok(readMemoryCandidateRereview(admin, head), 'the legitimate chain is unaffected');
+});
+
+// --- Replay must agree with read about what is valid ---
+
+test('replay refuses a stored row whose candidate identity is not the root review candidate', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-replay-candidate');
+  const other = await seedChain('m3crr-replay-candidate-other');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'replay-cand' }));
+
+  // Internally consistent: the candidate column AND the carried identity are moved together and the
+  // digests are resealed, so the row re-derives its own digests perfectly. Only the comparison
+  // against the real root exposes it - which the replay path previously never performed.
+  forgeInPlace(successor.id, (row) => {
+    const inherited = JSON.parse(row.inherited_context);
+    inherited.values = { ...inherited.values, candidateId: other.candidate.id };
+    return { ...row, candidate_id: other.candidate.id, inherited_context: canonicalJson(inherited) };
+  });
+
+  // The read path already refused this. Replay must reach the same verdict rather than handing the
+  // forged row back as a successful append.
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the read path must refuse it');
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'replay-cand' })),
+    /refuses a non-intact stored decision/);
+});
+
+test('replay refuses a stored row whose predecessor pin does not match the record it names', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-replay-pin');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'replay-pin' }));
+
+  forgeInPlace(successor.id, (row) => ({ ...row, predecessor_content_digest: digest('a pin that names nothing real') }));
+
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the read path must refuse it');
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'replay-pin' })),
+    /refuses a non-intact stored decision/);
+});
+
+test('replay still returns the stored row unchanged when it is genuinely intact', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-replay-ok');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'replay-ok' }));
+  const before = rereviewCount('m3crr-replay-ok');
+  const again = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'replay-ok' }));
+  assert.equal(again.id, first.id, 'replay must return the same row');
+  assert.equal(again.content_digest, first.content_digest);
+  assert.equal(rereviewCount('m3crr-replay-ok'), before, 'replay must write nothing');
+});
+
+// --- The depth bound is decided before any ancestry work ---
+
+test('the depth bound is decided from the stored head before the ancestry walk runs', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-bound-order');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'bound-order-1' }));
+  // Depth 2, so the forged row can carry a non-NULL `supersedes_rereview_id` and still satisfy the
+  // database CHECK that binds depth 1 to a NULL parent.
+  const second = recordMemoryCandidateRereview(admin, rootReview.id, rereview(first.id, { idempotencyKey: 'bound-order-2' }));
+
+  // One head that is BOTH past the bound and structurally broken (its predecessor pin names nothing
+  // real). The two conditions produce different refusals, so the message reveals which check ran
+  // first. Before the fix the ancestry walk ran during predecessor construction and this refused
+  // with "requires an intact predecessor" - a full-depth verification pass on a chain that was
+  // going to be refused on depth regardless.
+  forgeInPlace(second.id, (row) => ({ ...row, chain_version: MAX_REREVIEW_CHAIN_DEPTH,
+    predecessor_content_digest: digest('a pin that names nothing real') }));
+
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(second.id, { idempotencyKey: 'bound-order-3' })),
+    /refuses a chain beyond the maximum depth/,
+    'depth must be refused before any ancestry is verified');
+});
+
+test('the inheritance allowlist is statically disjoint from the denied set, asserted at module load', async () => {
+  // The write-side denylist call cannot fail for any input - `inheritedContext` builds its block from
+  // frozen literals, so no caller-controlled key name can reach it. The invariant it was described as
+  // enforcing is a static property of this module, so it is asserted once at load, where it is
+  // actually decidable, rather than claimed as a runtime check on a value that cannot vary.
+  const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/memory-review.js', import.meta.url), 'utf8');
+  assert.match(source, /inheritance allowlist is not disjoint from the denied set/,
+    'the module must assert allowlist/denylist disjointness at load');
+  // Exercised directly with a deliberately widened allowlist, rather than merely observing that the
+  // module loaded: a predicate that always returned true would load fine and prove nothing.
+  assert.equal(inheritanceAllowlistDisjoint(), true, 'the shipped allowlist must be disjoint');
+  assert.equal(inheritanceAllowlistDisjoint(['candidateId', 'decision'], ['decision'], { candidateId: 'candidate_id', decision: 'decision' }), false,
+    'an allowlist widened into a denied name must be refused');
+  assert.equal(inheritanceAllowlistDisjoint(['candidateId'], [], { candidateId: 'candidate_id', runId: 'run_id' }), false,
+    'an allowlist out of step with the column map must be refused');
+  // Subject identity only: nothing judgement- or authority-bearing is inheritable in the first place.
+  assert.deepEqual([...INHERITED_CONTEXT_KEYS], ['candidateId', 'runId', 'taskId', 'candidateKind', 'candidateScope']);
 });
 
 // --- Boundary: the slice activates nothing ---

@@ -320,6 +320,13 @@ export function recordMemoryCandidateRereview(principal, rootReviewId, { superse
     // nothing. The same key with different content is an integrity conflict, never an overwrite.
     const replayed = getMemoryCandidateRereviewByIdempotencyKey(workspaceId, idempotencyKey);
     if (replayed) {
+      // Replay and normal read MUST agree on what a valid stored successor is. Re-deriving the row's
+      // own digests only proves it is self-consistent: every input to `replayedIdentity` comes from
+      // the row's own columns, so a row forged with a foreign `candidate_id`, a broken predecessor
+      // pin, or invalid ancestry reproduces its digests perfectly and would otherwise be handed back
+      // as a successful replay while `readMemoryCandidateRereview` refuses the very same row. The
+      // full structural check against the real root is what closes that disagreement.
+      if (!storedRereviewIntact(replayed, root)) throw new Error('memory candidate re-review refuses a non-intact stored decision');
       const replayedPackets = rereviewPackets(replayedIdentity(replayed));
       if (replayed.content_digest !== replayedPackets.contentDigest || replayed.lineage_digest !== replayedPackets.lineageDigest ||
         replayed.root_review_id !== rootReviewId || replayed.decision !== decision ||
@@ -329,6 +336,15 @@ export function recordMemoryCandidateRereview(principal, rootReviewId, { superse
       return replayed;
     }
     const head = getMemoryCandidateRereviewHead(rootReviewId);
+    // The depth bound is decided from the stored head's own `chain_version`, BEFORE any ancestry is
+    // verified. `rereviewPredecessor` below walks the entire chain to the root, so checking depth
+    // after it would mean a full-depth verification pass had already run on a chain that is refused
+    // anyway - which is precisely what the bound exists to prevent. `Number.isSafeInteger` guards a
+    // forged non-numeric `chain_version`; the intactness check inside `rereviewPredecessor` then
+    // re-proves the value independently.
+    const headChainVersion = head ? Number(head.chain_version) : 0;
+    if (!Number.isSafeInteger(headChainVersion) || headChainVersion < 0 ||
+      headChainVersion + 1 > MAX_REREVIEW_CHAIN_DEPTH) throw new Error('memory candidate re-review refuses a chain beyond the maximum depth');
     const predecessor = head ? rereviewPredecessor(head, workspaceId, root) : rootPredecessor(root);
     // The caller must name the CURRENT head. Anything else - the root after a successor already
     // exists, a superseded ancestor, a successor of some other chain, or the row's own future id -
@@ -341,9 +357,12 @@ export function recordMemoryCandidateRereview(principal, rootReviewId, { superse
     // and is refused again by the database CHECKs. Cycles are unreachable because `chain_version`
     // strictly increases over an append-only table with no update or delete path.
     //
-    // The depth bound refuses BEFORE the chain validation below, so an over-long chain cannot be used
-    // to make its own refusal expensive.
-    if (predecessor.chainVersion + 1 > MAX_REREVIEW_CHAIN_DEPTH) throw new Error('memory candidate re-review refuses a chain beyond the maximum depth');
+    // Depth was already bounded above, from the head's own `chain_version`, before any ancestry walk
+    // ran. It is deliberately NOT re-asserted here: `rereviewPredecessor` derives `chainVersion` from
+    // the very same row the bound was computed from, so a second check is unreachable rather than
+    // defence in depth - it would be a guard no input can trip, which is exactly the kind of claim
+    // this slice is removing rather than adding.
+    //
     // Ancestry must verify end to end before it is extended. A chain with a gap, a fork, a foreign
     // root, a broken digest pin, or a cross-workspace link is not a chain that may grow.
     if (head && !rereviewChainValid(root, getMemoryCandidateRereviewChain(rootReviewId))) {
@@ -480,13 +499,79 @@ function inheritedContext(predecessor, subject) {
 }
 
 // Re-proves at runtime that no judgement-bearing or authority-bearing key reached the carried
-// context, at any depth. Widening `INHERITED_CONTEXT_KEYS` cannot silently smuggle one in.
+// context, at any depth.
+//
+// On the WRITE path this is defence in depth and nothing more, and is documented as such rather than
+// claimed as an enforced runtime invariant: `inheritedContext` assembles `inherited` entirely from
+// frozen literals - `INHERITED_CONTEXT_KEYS`, a fixed provenance key set, and scalar leaves - so no
+// caller-controlled key name can reach it and this check cannot fail for any input. The condition it
+// really guards is a future widening of `INHERITED_CONTEXT_KEYS` into a denied name, which is a
+// static property of this module and is therefore asserted once at load below, where it is actually
+// decidable. On the READ path, where the stored blob IS attacker-reachable, it is load-bearing.
 function deniedInheritanceAbsent(value) {
   if (Array.isArray(value)) return value.every(deniedInheritanceAbsent);
   if (value && typeof value === 'object') {
     return Object.entries(value).every(([key, nested]) => !DENIED_INHERITANCE_KEYS.includes(key) && deniedInheritanceAbsent(nested));
   }
   return true;
+}
+
+// The column each inherited key must equal on the stored row. Inheritance is subject identity, and
+// the row records that same identity in its own columns, so the carried block is fully determined -
+// which is what makes positive verification on read possible at all.
+const INHERITED_CONTEXT_COLUMNS = Object.freeze({
+  candidateId: 'candidate_id', runId: 'run_id', taskId: 'task_id', candidateKind: 'candidate_kind', candidateScope: 'candidate_scope',
+});
+const INHERITED_PROVENANCE_KEYS = Object.freeze(['predecessorId', 'predecessorKind', 'predecessorChainVersion', 'predecessorContentDigest', 'predecessorLineageDigest']);
+const INHERITED_TOP_LEVEL_KEYS = Object.freeze(['inheritedVersion', 'keys', 'values', 'provenance']);
+// Decidable statically, so it is decided once here rather than pretended to be a runtime check on a
+// value that cannot vary. Widening `INHERITED_CONTEXT_KEYS` into a denied name, or letting it drift
+// out of step with the column map, fails the module at load instead of silently weakening a chain.
+const sameKeys = (a, b) => a.length === b.length && a.every((key, index) => key === b[index]);
+// Exported as a pure predicate rather than written inline, so the invariant can be exercised directly
+// with a deliberately widened allowlist instead of only being observed as "the module loaded".
+export function inheritanceAllowlistDisjoint(allowlist = INHERITED_CONTEXT_KEYS, denied = DENIED_INHERITANCE_KEYS, columns = INHERITED_CONTEXT_COLUMNS) {
+  if (allowlist.some((key) => denied.includes(key))) return false;
+  if (INHERITED_PROVENANCE_KEYS.some((key) => denied.includes(key))) return false;
+  return sameKeys([...allowlist], Object.keys(columns));
+}
+if (!inheritanceAllowlistDisjoint()) {
+  throw new Error('memory candidate re-review inheritance allowlist is not disjoint from the denied set');
+}
+
+// Positive verification of a STORED inherited-context blob: it must be exactly the block this module
+// would have written for this row, and nothing else.
+//
+// A denylist alone is not enough here and never can be. The digests are unkeyed SHA-256 over public
+// inputs, so a database-write actor - explicitly inside the threat model - can rewrite
+// `inherited_context` and recompute the row's own digests to match. A denylist only rejects the key
+// names it happens to enumerate, and the forger chooses the names; anything unlisted rides through
+// to the API response, including values contradicting the row's own candidate identity. So the shape
+// is pinned exhaustively: exact top-level keys, exact allowlisted key set, every value equal to the
+// column it claims to mirror, and provenance equal to the pin the row already carries.
+function inheritedContextIntact(inherited, rereview, chainVersion) {
+  if (!inherited || typeof inherited !== 'object' || Array.isArray(inherited)) return false;
+  if (!sameKeys(Object.keys(inherited).sort(), [...INHERITED_TOP_LEVEL_KEYS].sort())) return false;
+  if (inherited.inheritedVersion !== MEMORY_REREVIEW_VERSION) return false;
+  // The declared key list must be the allowlist itself, in order - not a subset, superset, or permutation.
+  if (!Array.isArray(inherited.keys) || !sameKeys(inherited.keys, [...INHERITED_CONTEXT_KEYS])) return false;
+  const values = inherited.values;
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
+  // Exact key set: a non-allowlisted key present here is a forgery even if its name is not denied.
+  if (!sameKeys(Object.keys(values).sort(), [...INHERITED_CONTEXT_KEYS].sort())) return false;
+  for (const key of INHERITED_CONTEXT_KEYS) {
+    if (values[key] !== (rereview[INHERITED_CONTEXT_COLUMNS[key]] ?? null)) return false;
+  }
+  const provenance = inherited.provenance;
+  if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)) return false;
+  if (!sameKeys(Object.keys(provenance).sort(), [...INHERITED_PROVENANCE_KEYS].sort())) return false;
+  // Provenance is fully determined by the row's own predecessor columns, so it is checked against
+  // them rather than merely being present.
+  return provenance.predecessorId === predecessorIdOf(rereview) &&
+    provenance.predecessorKind === (rereview.supersedes_rereview_id ? 'rereview' : 'review') &&
+    provenance.predecessorChainVersion === chainVersion - 1 &&
+    provenance.predecessorContentDigest === rereview.predecessor_content_digest &&
+    provenance.predecessorLineageDigest === rereview.predecessor_lineage_digest;
 }
 
 // Two digests, mirroring the root review. `content` is what was decided; `lineage` is what it was
@@ -552,7 +637,13 @@ function storedRereviewIntact(rereview, root) {
   // Same workspace and same candidate as the root: a chain may never cross either boundary.
   if (rereview.workspace_id !== root.workspace_id || rereview.candidate_id !== root.candidate_id) return false;
   const identity = replayedIdentity(rereview);
-  if (identity.inherited === null || !deniedInheritanceAbsent(identity.inherited)) return false;
+  // Allowlist FIRST, denylist second. The positive check is what actually constrains the blob: it
+  // pins the exact shape and requires every carried value to equal the row's own identity columns,
+  // so a forged key or a value contradicting the row is refused whatever it is named. The denylist
+  // is retained behind it as defence in depth against a denied name appearing inside an otherwise
+  // well-shaped block.
+  if (!inheritedContextIntact(identity.inherited, rereview, chainVersion)) return false;
+  if (!deniedInheritanceAbsent(identity.inherited)) return false;
   // The predecessor pin must match the record actually named, so an altered ancestor is detectable.
   const predecessor = chainVersion === 1 ? root : getMemoryCandidateRereview(rereview.supersedes_rereview_id);
   if (!predecessor) return false;
@@ -561,7 +652,8 @@ function storedRereviewIntact(rereview, root) {
   if (chainVersion > 1 && (Number(predecessor.chain_version) !== chainVersion - 1 ||
     predecessor.root_review_id !== rereview.root_review_id ||
     predecessor.workspace_id !== rereview.workspace_id)) return false;
-  if (identity.inherited.provenance?.predecessorId !== predecessorIdOf(rereview)) return false;
+  // (Provenance, including the predecessor id, is verified exhaustively by `inheritedContextIntact`
+  // above against the row's own predecessor columns.)
   // Ancestry is verified ALL THE WAY to the root, not one hop. A single hop is not enough: a
   // predecessor's own digests do not cover its `supersedes_rereview_id`, so an ancestor could be
   // re-pointed into a cycle or onto a foreign chain while every descendant's pin still matched.
