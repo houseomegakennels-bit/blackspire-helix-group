@@ -23,7 +23,7 @@ const { run, get, all, execSql } = await import('../packages/task-engine/db.js')
 const authz = await import('../packages/shared/authorization.js');
 const { digest, canonicalJson } = await import('../packages/shared/canonical.js');
 const { recordMemoryCandidateReview, readMemoryCandidateReview, recordMemoryCandidateRereview,
-  readMemoryCandidateRereview, MEMORY_REREVIEW_VERSION, MEMORY_REVIEW_DECISION_VERSION,
+  readMemoryCandidateRereview, MEMORY_REREVIEW_VERSION, MEMORY_REVIEW_DECISION_VERSION, MEMORY_REVIEW_VERSION,
   INHERITED_CONTEXT_KEYS, MAX_REREVIEW_CHAIN_DEPTH, inheritanceAllowlistDisjoint } = await import('../packages/hermes-orchestrator/memory-review.js');
 
 const authzNow = Date.now();
@@ -722,6 +722,108 @@ test('the read-side depth bound alone refuses a correctly linked successor past 
   assert.ok(readMemoryCandidateRereview(admin, head), 'the legitimate chain is unaffected');
 });
 
+// --- The predecessor digest pin: an ANCESTOR altered and resealed ---
+
+// Reseals a ROOT REVIEW row after mutating it, mirroring `digestPackets` in memory-review.js. The
+// root lives in the other table and has its own packet shape, so this is a separate helper from
+// `reseal` above. The point of these tests is the case the pin exists for and that nothing previously
+// reached: the ancestor is altered AND made self-consistent, so it passes `storedReviewIntact` on its
+// own columns and ONLY the descendant's pin can detect that its ancestor's content changed.
+function resealRoot(row) {
+  const contentPacket = { reviewVersion: MEMORY_REVIEW_VERSION, decisionVersion: MEMORY_REVIEW_DECISION_VERSION,
+    decision: row.decision, rationale: row.rationale, candidateDigest: row.candidate_digest };
+  const lineagePacket = { reviewVersion: MEMORY_REVIEW_VERSION, decisionVersion: MEMORY_REVIEW_DECISION_VERSION,
+    subject: { candidateId: row.candidate_id, runId: row.run_id, taskId: row.task_id, candidateKind: row.candidate_kind,
+      candidateScope: row.candidate_scope, candidateStatus: row.candidate_status_at_review, candidateDigest: row.candidate_digest },
+    evaluation: { id: row.evaluation_id, version: row.evaluation_version, provenanceDigest: row.provenance_digest },
+    content: { decision: row.decision, rationale: row.rationale } };
+  return { ...row, content_digest: digest(canonicalJson(contentPacket)), lineage_digest: digest(canonicalJson(lineagePacket)) };
+}
+const reviewRow = (id) => get('SELECT * FROM hermes_memory_candidate_reviews WHERE id=?', [id]);
+
+test('a root review altered and resealed after the fact makes its successor unreadable', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-pin-root');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'pin-root-1' }));
+  assert.ok(readMemoryCandidateRereview(admin, successor.id), 'the successor reads before the ancestor is altered');
+
+  // Rewrite the root's recorded judgement and reseal ITS digests. The root is now internally
+  // consistent and reads as intact on its own - so the successor's `predecessor_content_digest`,
+  // pinned at decision time, is the only thing that still knows the ancestor changed.
+  const forgedRoot = resealRoot({ ...reviewRow(rootReview.id), rationale: 'a rewritten judgement the reviewer never made' });
+  withoutImmutability(['hermes_memory_candidate_reviews'], () => {
+    run('DELETE FROM hermes_memory_candidate_reviews WHERE id=?', [rootReview.id]);
+    run(`INSERT INTO hermes_memory_candidate_reviews(${Object.keys(forgedRoot).join(',')}) VALUES(${Object.keys(forgedRoot).map(() => '?').join(',')})`,
+      Object.values(forgedRoot));
+  });
+  assert.ok(readMemoryCandidateReview(admin, rootReview.id), 'the resealed root reads as intact on its own columns');
+
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the pin must refuse the altered ancestor');
+  // Replay must reach the same verdict, not hand the row back.
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'pin-root-1' })),
+    /refuses a non-intact stored decision|requires an intact root review/);
+});
+
+test('a root review altered only in a lineage-covered field still breaks the pin', async () => {
+  // `evaluation_id` is hashed into the root's LINEAGE packet but not its CONTENT packet, so this
+  // forgery moves only `lineage_digest`. It proves both halves of the pin are compared: a test that
+  // rewrites `rationale` moves both digests at once and would pass even if the lineage half were
+  // dropped.
+  const { rootReview, admin } = await seedChain('m3crr-pin-lineage');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'pin-lineage-1' }));
+  const before = reviewRow(rootReview.id);
+
+  const forgedRoot = resealRoot({ ...before, evaluation_id: 'hoe-a-different-evaluation' });
+  assert.equal(forgedRoot.content_digest, before.content_digest, 'the content digest must be unchanged');
+  assert.notEqual(forgedRoot.lineage_digest, before.lineage_digest, 'only the lineage digest may move');
+  withoutImmutability(['hermes_memory_candidate_reviews'], () => {
+    run('DELETE FROM hermes_memory_candidate_reviews WHERE id=?', [rootReview.id]);
+    run(`INSERT INTO hermes_memory_candidate_reviews(${Object.keys(forgedRoot).join(',')}) VALUES(${Object.keys(forgedRoot).map(() => '?').join(',')})`,
+      Object.values(forgedRoot));
+  });
+
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the lineage half of the pin must refuse it');
+});
+
+test('a depth-2 predecessor altered and resealed after the fact makes its successor unreadable', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-pin-mid');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'pin-mid-1' }));
+  const second = recordMemoryCandidateRereview(admin, rootReview.id, rereview(first.id, { idempotencyKey: 'pin-mid-2' }));
+  assert.ok(readMemoryCandidateRereview(admin, second.id), 'the depth-2 successor reads before its parent is altered');
+
+  // Alter the INTERMEDIATE row and reseal it. It stays self-consistent, so it still reads on its own;
+  // only its child's pin records what it used to say.
+  forgeInPlace(first.id, (row) => ({ ...row, rationale: 'a rewritten intermediate judgement' }));
+  assert.ok(readMemoryCandidateRereview(admin, first.id), 'the resealed parent reads as intact on its own columns');
+
+  assert.equal(readMemoryCandidateRereview(admin, second.id), null, 'the pin must refuse the altered parent');
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(second.id, { idempotencyKey: 'pin-mid-3' })),
+    /refuses an invalid predecessor chain|requires an intact predecessor/);
+});
+
+// --- created_at carries no ordering guarantee ---
+
+test('chain_version is the sole ordering authority and created_at carries no ordering guarantee', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-timestamps');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'ts-1' }));
+  const second = recordMemoryCandidateRereview(admin, rootReview.id, rereview(first.id, { idempotencyKey: 'ts-2' }));
+
+  // Timestamps are not covered by either digest, so moving one needs no reseal. `created_at` is
+  // millisecond resolution and ties are routine, which is why nothing derives order from it.
+  withoutImmutability(['hermes_memory_candidate_rereviews'], () =>
+    run('UPDATE hermes_memory_candidate_rereviews SET created_at=? WHERE id=?', ['2001-01-01T00:00:00.000Z', second.id]));
+
+  // Deliberate and documented: a backwards timestamp is NOT an integrity failure. Both rows still
+  // read, because ordering authority is `chain_version` alone.
+  assert.ok(readMemoryCandidateRereview(admin, first.id));
+  assert.ok(readMemoryCandidateRereview(admin, second.id));
+  // And the chain still replays in chain_version order regardless of the timestamps.
+  const chain = store.getMemoryCandidateRereviewChain(rootReview.id);
+  assert.deepEqual(chain.map((row) => Number(row.chain_version)), [1, 2]);
+  // The chain remains extendable: the removed monotonicity rule does not block an append either.
+  const third = recordMemoryCandidateRereview(admin, rootReview.id, rereview(second.id, { idempotencyKey: 'ts-3' }));
+  assert.equal(Number(rereviewRow(third.id).chain_version), 3);
+});
+
 // --- Replay must agree with read about what is valid ---
 
 test('replay refuses a stored row whose candidate identity is not the root review candidate', async () => {
@@ -754,6 +856,26 @@ test('replay refuses a stored row whose predecessor pin does not match the recor
   assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the read path must refuse it');
   assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'replay-pin' })),
     /refuses a non-intact stored decision/);
+});
+
+test('reusing one idempotency key across two roots reports an identity conflict, not a corrupt row', async () => {
+  // Keys are scoped (workspace_id, idempotency_key), not per chain, so this collision is an ordinary
+  // caller mistake. It must be classified as an identity conflict rather than blaming the stored row
+  // for being non-intact - the stored row here is perfectly intact.
+  const workspaceId = 'm3crr-key-across-roots';
+  workspace(workspaceId);
+  const admin = principal(workspaceId);
+  const first = await seedChain(workspaceId);
+  const secondResult = await runHermesWorkflow(task(workspaceId, `${seq += 1}-second`));
+  const [otherCandidate] = store.getMemoryCandidates(secondResult.runId);
+  const otherRoot = recordMemoryCandidateReview(admin, otherCandidate.id, {
+    decision: 'reject', rationale: 'a second candidate in the same workspace', idempotencyKey: `${workspaceId}-root-2`,
+  });
+
+  recordMemoryCandidateRereview(admin, first.rootReview.id, rereview(first.rootReview.id, { idempotencyKey: 'shared-key' }));
+  assert.throws(() => recordMemoryCandidateRereview(admin, otherRoot.id, rereview(otherRoot.id, { idempotencyKey: 'shared-key' })),
+    /identity conflicts with stored decision/,
+    'a cross-root key collision must not be reported as a non-intact stored decision');
 });
 
 test('replay still returns the stored row unchanged when it is genuinely intact', async () => {
