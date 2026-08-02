@@ -326,10 +326,16 @@ export function recordMemoryCandidateRereview(principal, rootReviewId, { superse
       // pin, or invalid ancestry reproduces its digests perfectly and would otherwise be handed back
       // as a successful replay while `readMemoryCandidateRereview` refuses the very same row. The
       // full structural check against the real root is what closes that disagreement.
+      // Root mismatch is classified FIRST. Idempotency keys are scoped `(workspace_id,
+      // idempotency_key)`, not per chain, so reusing one key across two roots in the same workspace is
+      // an ordinary caller-side identity conflict - not evidence of a corrupt row. Checking
+      // intactness first would report it as "non-intact stored decision", blaming the stored data for
+      // a mistake the caller made.
+      if (replayed.root_review_id !== rootReviewId) throw new Error('memory candidate re-review identity conflicts with stored decision');
       if (!storedRereviewIntact(replayed, root)) throw new Error('memory candidate re-review refuses a non-intact stored decision');
       const replayedPackets = rereviewPackets(replayedIdentity(replayed));
       if (replayed.content_digest !== replayedPackets.contentDigest || replayed.lineage_digest !== replayedPackets.lineageDigest ||
-        replayed.root_review_id !== rootReviewId || replayed.decision !== decision ||
+        replayed.decision !== decision ||
         replayed.rationale !== redactString(rationale) || predecessorIdOf(replayed) !== supersedes) {
         throw new Error('memory candidate re-review identity conflicts with stored decision');
       }
@@ -507,7 +513,17 @@ function inheritedContext(predecessor, subject) {
 // caller-controlled key name can reach it and this check cannot fail for any input. The condition it
 // really guards is a future widening of `INHERITED_CONTEXT_KEYS` into a denied name, which is a
 // static property of this module and is therefore asserted once at load below, where it is actually
-// decidable. On the READ path, where the stored blob IS attacker-reachable, it is load-bearing.
+// decidable.
+//
+// On the READ path it is ALSO unreachable, and claiming otherwise would repeat the exact mistake this
+// module has been correcting. `inheritedContextIntact` runs first and fully determines every key name
+// and every leaf - the top-level key set, the `keys` array, the `values` key set, and the provenance
+// key set are all pinned to frozen lists, and every leaf must strict-equal a scalar column - so no
+// blob that reaches this call can carry a denied key at any depth. Deleting the read-side call does
+// not change behaviour; it is a documented EQUIVALENT MUTANT, not a killed one, and the tests that
+// prove the allowlist independently rejects those same states are named in
+// docs/HERMES_M3C_REREVIEW_SUCCESSOR_CHAINS.md. It is retained only as a standing tripwire should the
+// allowlist ever be widened to admit a non-scalar or free-form value.
 function deniedInheritanceAbsent(value) {
   if (Array.isArray(value)) return value.every(deniedInheritanceAbsent);
   if (value && typeof value === 'object') {
@@ -665,12 +681,25 @@ function storedRereviewIntact(rereview, root) {
 }
 
 // The whole chain, verified as a chain rather than row by row: gap-free `chain_version` from 1, each
-// row naming exactly its immediate predecessor, one root, one workspace, one candidate, and
-// non-decreasing timestamps. A fork or a gap fails here even if every individual row is intact.
+// row naming exactly its immediate predecessor, one root, one workspace, one candidate.
+//
+// `created_at` is deliberately NOT checked for monotonicity. `chain_version` is the sole ordering
+// authority for a chain - it is unique per root, so ordering by it is total and replay-stable, which
+// is exactly why `getMemoryCandidateRereviewChain` orders by it. `created_at` is millisecond
+// resolution and ties are routine (the same reason `getPendingMemoryCandidatesForWorkspace` needs an
+// `,id` tiebreak), so it carries NO ordering guarantee and nothing may derive order from it. A
+// monotonicity check here would also have been a write-only invariant: the read path loads one row
+// and its ancestry, never the sibling ordering this function sees, so a chain stored with backwards
+// timestamps would have read as fully intact. Rather than keep an invariant the read path cannot
+// verify, the requirement is removed and the absence of the guarantee is documented.
+//
+// Every remaining check here is independently re-derived on the read path by `storedRereviewIntact`'s
+// recursion to the root, which is why this function is a documented EQUIVALENT MUTANT rather than a
+// killed one - see docs/HERMES_M3C_REREVIEW_SUCCESSOR_CHAINS.md. It is retained as a cheap, explicit
+// whole-chain statement of the shape, checked once before a chain is extended.
 function rereviewChainValid(root, chain) {
   return chain.every((row, index) => Number(row.chain_version) === index + 1 &&
     row.supersedes_rereview_id === (index ? chain[index - 1].id : null) &&
     row.root_review_id === root.id && row.workspace_id === root.workspace_id && row.candidate_id === root.candidate_id &&
-    storedRereviewIntact(row, root) &&
-    (!index || Date.parse(row.created_at) >= Date.parse(chain[index - 1].created_at)));
+    storedRereviewIntact(row, root));
 }
