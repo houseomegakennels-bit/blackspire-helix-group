@@ -22,7 +22,7 @@ import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
 import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/authorization.js';
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
-import { readMemoryCandidateReview } from '../../packages/hermes-orchestrator/memory-review.js';
+import { readMemoryCandidateReview, readMemoryCandidateRereview } from '../../packages/hermes-orchestrator/memory-review.js';
 
 let emergencyStopMemory = false;
 const TEST_MODE = requireSafeTestMode();
@@ -108,6 +108,8 @@ async function route(req, res) {
     if (scorecardMatch && req.method === 'GET') return verifiedScorecardRoute(res, auth, scorecardMatch[1]);
     const memoryReviewMatch = u.pathname.match(/^\/api\/hermes\/memory-candidate-reviews\/([A-Za-z0-9._:-]{1,128})$/);
     if (memoryReviewMatch && req.method === 'GET') return memoryCandidateReviewRoute(res, auth, memoryReviewMatch[1]);
+    const memoryRereviewMatch = u.pathname.match(/^\/api\/hermes\/memory-candidate-rereviews\/([A-Za-z0-9._:-]{1,128})$/);
+    if (memoryRereviewMatch && req.method === 'GET') return memoryCandidateRereviewRoute(res, auth, memoryRereviewMatch[1]);
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: TEST_MODE.enabled ? [getWorkspace(TEST_MODE.workspaceId)] : listWorkspaces() });
     if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => !TEST_MODE.enabled || task.workspace_id === TEST_MODE.workspaceId) });
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
@@ -199,6 +201,19 @@ function memoryCandidateReviewRoute(res, auth, reviewId) {
   const review = principal && readMemoryCandidateReview(principal, reviewId);
   // Do not distinguish a guessed identifier from a cross-workspace object.
   return review ? json(res, 200, { review }) : json(res, 404, { error: 'memory candidate review not found' });
+}
+
+// Read surface for a re-review successor. Byte-parallel to the route above in every respect: GET
+// only, the same evaluation principal binding, the same canonical `evaluation.read` permission, no
+// caller-supplied workspace, and still no route anywhere that records, mutates, or promotes.
+// Appending a successor remains an internal service call with no HTTP surface.
+function memoryCandidateRereviewRoute(res, auth, rereviewId) {
+  const configuredPrincipal = configuredEvaluationAdminPrincipal();
+  const principal = auth.mode === 'bearer' ? configuredPrincipal : auth.mode === 'session' ? resolveBoundSession(auth.session) : null;
+  if (!configuredPrincipal || !principal || principal.principalId !== configuredPrincipal.principalId) return json(res, 403, { error: 'evaluation authorization unavailable' });
+  const rereview = principal && readMemoryCandidateRereview(principal, rereviewId);
+  // Do not distinguish a guessed identifier from a cross-workspace object.
+  return rereview ? json(res, 200, { rereview }) : json(res, 404, { error: 'memory candidate re-review not found' });
 }
 
 async function login(req, res) {
