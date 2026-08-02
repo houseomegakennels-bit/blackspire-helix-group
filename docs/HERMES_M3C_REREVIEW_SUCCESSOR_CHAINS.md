@@ -83,7 +83,12 @@ Enforced by the service:
   and recompute the row's digests to match. A denylist only rejects the names it enumerates, and the
   forger picks the names — so anything unlisted would ride through to the API response, including a
   `candidateId` contradicting the row's own candidate. `DENIED_INHERITANCE_KEYS` is retained behind
-  the allowlist as defence in depth against a denied name inside an otherwise well-shaped block.
+  the allowlist, but it is **not** load-bearing on the read path either: because the allowlist pins
+  every key name and requires every leaf to strict-equal a scalar column, no blob that reaches the
+  denylist can carry a denied key. Deleting the read-side call does not change behaviour, and it is
+  reported as a **declared equivalent mutant** rather than counted as killed — see
+  [Mutation testing](#mutation-testing). It is kept only as a standing tripwire should the allowlist
+  ever be widened to admit a non-scalar or free-form value.
 
   On the write path the denylist call is **defence in depth only, and is documented as such rather
   than claimed as an enforced runtime invariant**: `inheritedContext` assembles its block entirely
@@ -142,7 +147,7 @@ plus, for the integrity checks, an actor who can write the database directly.
 
 ## Acceptance gates
 
-Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 47 tests: valid successor and chain
+Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 52 tests: valid successor and chain
 creation; the read surface; allowlisted provenance-tracked inheritance and the absence of inherited
 authority; self-links; cycles written around the service; forks refused by the service and
 independently by the database; ambiguous depth-one ancestry; chain gaps; broken predecessor pins; a
@@ -162,10 +167,56 @@ proven to be decided before any ancestry walk; a correctly linked, correctly pin
 row at depth 65 that **only** the read-side bound refuses; and `inheritanceAllowlistDisjoint()`
 exercised with a deliberately widened allowlist.
 
-Mutation testing is reproducible from this branch: `node scripts/mutation-test-m3c-rereview.js`.
-It runs an unmutated baseline first, requires every mutation pattern to occur **exactly once** in its
-target file (a pattern matching zero or many places is a hard harness error, not a survivor), and
-restores the tree after each mutant. Current result: **10/10 mutants killed, 0 survived.**
+Added in the third pass, after a second round of exact-head review: a **root review** altered and
+resealed after the fact, so it reads as intact on its own columns and only the descendant's pin
+detects it; the same at depth 2 for an intermediate successor; a root altered only in a
+**lineage-covered** field (`evaluation_id`), proving both halves of the pin are compared rather than
+only the content half; a cross-root idempotency-key collision asserting the accurate error
+classification; and a `created_at` test pinning that timestamps carry no ordering guarantee.
+
+## Mutation testing
+
+Reproducible from this branch: `node scripts/mutation-test-m3c-rereview.js`. It runs an unmutated
+baseline first, requires every mutation pattern to occur **exactly once** in its target file (a
+pattern matching zero or many places is a hard harness error, not a survivor), and restores the tree
+after each mutant and on signal.
+
+Current result: **16 killed, 2 declared equivalent, 0 surviving, 0 misdeclared.**
+
+The mutant set deliberately covers pre-existing guards as well as recently repaired ones: the head
+rule, the full-ancestry recursion, both halves of the predecessor digest pin, the read and write depth
+bounds, and a true **reordering** mutant that moves the depth bound back after the ancestry walk —
+distinct from the mutant that merely removes it. An earlier version of this harness conflated those
+two and its label overclaimed; both now exist separately.
+
+### Declared equivalent mutants
+
+Two guards can be deleted without changing observable behaviour. They are reported separately, never
+folded into the killed count, and the harness treats a *killed* "equivalent" mutant as a hard error,
+since that would prove the declaration wrong.
+
+| Guard | Why deletion changes nothing | Same states independently rejected by |
+| --- | --- | --- |
+| Read-path `deniedInheritanceAbsent` | `inheritedContextIntact` runs first and pins every key name and every leaf, and each leaf must strict-equal a scalar column, so no blob reaching the denylist can carry a denied key at any depth | the smuggled-keys, undenied-names, and extra/missing-top-level-key tests |
+| Write-path `rereviewChainValid` | every remaining conjunct is re-derived by `storedRereviewIntact` recursing head-to-root, which `rereviewPredecessor` already invokes; `UNIQUE(root_review_id,chain_version)` makes the row set for a root exactly the head ancestry, so a gap or fork cannot hide off the walked path | the chain-gap, fork, and cycle tests |
+
+`rereviewChainValid`'s one genuinely unique conjunct, `created_at` monotonicity, was **removed** rather
+than kept — see below.
+
+### `created_at` carries no ordering guarantee
+
+`chain_version` is the sole ordering authority for a chain: it is unique per root, so ordering by it is
+total and replay-stable, which is exactly why `getMemoryCandidateRereviewChain` orders by it.
+`created_at` is millisecond resolution and ties are routine — the same reason
+`getPendingMemoryCandidatesForWorkspace` needs an `,id` tiebreak — so **nothing may derive order from
+it**, and no integrity check depends on it.
+
+The previous write-path monotonicity check was also a write-only invariant: the read path loads one row
+and its ancestry, never the sibling ordering that check saw, so a chain stored with backwards
+timestamps read as fully intact regardless. Rather than keep an invariant the read path cannot verify,
+the requirement is removed and the absence of the guarantee is documented and pinned by a test that
+stores a backwards timestamp and asserts the chain still reads, still replays in `chain_version` order,
+and remains extendable.
 
 ## Status and limitations
 
@@ -173,6 +224,15 @@ Accepted, not resolved:
 
 - Everything the first slice accepted still applies, including the mutable candidate table, the
   unkeyed digests, the `auth_decisions` asymmetry, and the pre-redaction rationale bound.
+- **Attribution is outside digest coverage.** Neither packet hashes `reviewer_principal_id`,
+  `created_at`, or the row `id` — deliberately, since they are assigned at insert time and hashing
+  them would make an idempotent replay depend on write order. For a table whose purpose is recording
+  *who* judged, this means accidental corruption of the reviewer field is undetectable on read.
+  Against the stated database-write adversary an extra unkeyed digest would buy nothing, so this is
+  documented rather than fixed.
+- Per-append validation remains super-linear in chain depth: `storedRereviewIntact` walks head-to-root
+  on every append. It is bounded at 64 and is not a denial-of-service vector, but building a
+  full-depth chain is measurably slow in the focused suite. Not addressed in this slice.
 - **Startup schema validation does not verify CHECK constraints.** `schema-validation.js` registers
   columns by name, the three named unique indexes, and the two immutability triggers. Index and
   trigger validation is strict — normalized SQL text, `unique`, `origin='c'`, `partial=0`, and column
