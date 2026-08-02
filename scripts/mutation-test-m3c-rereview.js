@@ -64,10 +64,57 @@ const MUTANTS = [
     replace: '',
   },
   {
-    name: 'write path: defer the depth bound until after the ancestry walk',
+    // Renamed: this mutant REMOVES the bound. It proves the bound exists, not that it is ordered
+    // before the ancestry walk. The ordering claim is carried by the reordering mutant below.
+    name: 'write path: remove the write-side depth bound entirely',
     file: REVIEW,
     find: '    if (!Number.isSafeInteger(headChainVersion) || headChainVersion < 0 ||\n      headChainVersion + 1 > MAX_REREVIEW_CHAIN_DEPTH) throw new Error',
     replace: '    if (false) throw new Error',
+  },
+  {
+    // The actual ordering mutant: the bound still runs, but only AFTER `rereviewPredecessor` has
+    // walked the whole ancestry to the root. This is the pre-fix behaviour.
+    name: 'write path: reorder the depth bound to run after the ancestry walk',
+    file: REVIEW,
+    find: `    const headChainVersion = head ? Number(head.chain_version) : 0;
+    if (!Number.isSafeInteger(headChainVersion) || headChainVersion < 0 ||
+      headChainVersion + 1 > MAX_REREVIEW_CHAIN_DEPTH) throw new Error('memory candidate re-review refuses a chain beyond the maximum depth');
+    const predecessor = head ? rereviewPredecessor(head, workspaceId, root) : rootPredecessor(root);`,
+    replace: `    const headChainVersion = head ? Number(head.chain_version) : 0;
+    const predecessor = head ? rereviewPredecessor(head, workspaceId, root) : rootPredecessor(root);
+    if (!Number.isSafeInteger(headChainVersion) || headChainVersion < 0 ||
+      headChainVersion + 1 > MAX_REREVIEW_CHAIN_DEPTH) throw new Error('memory candidate re-review refuses a chain beyond the maximum depth');`,
+  },
+  {
+    name: 'read path: stop comparing the predecessor content digest pin',
+    file: REVIEW,
+    find: `  if (predecessor.content_digest !== rereview.predecessor_content_digest ||
+    predecessor.lineage_digest !== rereview.predecessor_lineage_digest) return false;`,
+    replace: '',
+  },
+  {
+    name: 'read path: compare only the content half of the predecessor pin',
+    file: REVIEW,
+    find: '    predecessor.lineage_digest !== rereview.predecessor_lineage_digest) return false;',
+    replace: '    false) return false;',
+  },
+  {
+    name: 'write path: drop the head rule (allow a stale or conflicting predecessor)',
+    file: REVIEW,
+    find: "    if (predecessor.id !== supersedes) throw new Error('memory candidate re-review refuses a stale or conflicting predecessor');",
+    replace: '',
+  },
+  {
+    name: 'read path: verify ancestry only one hop instead of to the root',
+    file: REVIEW,
+    find: '  if (chainVersion > 1 && !storedRereviewIntact(predecessor, root)) return false;',
+    replace: '',
+  },
+  {
+    name: 'replay path: stop classifying a cross-root idempotency key collision',
+    file: REVIEW,
+    find: "      if (replayed.root_review_id !== rootReviewId) throw new Error('memory candidate re-review identity conflicts with stored decision');",
+    replace: '',
   },
   {
     name: 'module load: stop refusing an allowlist that overlaps the denied set',
@@ -86,6 +133,47 @@ const MUTANTS = [
     file: REVIEW,
     find: 'if (!Number.isSafeInteger(chainVersion) || chainVersion < 1 || chainVersion > MAX_REREVIEW_CHAIN_DEPTH) return false;',
     replace: 'if (!Number.isSafeInteger(chainVersion) || chainVersion < 1) return false;',
+  },
+];
+
+// DECLARED EQUIVALENT MUTANTS.
+//
+// These are guards whose deletion does NOT change observable behaviour, because a second check
+// already rejects exactly the same states. They are listed here, run, and reported separately -
+// never folded into the killed count and never quietly omitted. The harness asserts each one
+// SURVIVES: if a "declared equivalent" mutant is killed, the declaration was wrong and that is a
+// hard error, because it would mean the guard was load-bearing after all.
+//
+// Each entry must name the tests that prove the same bad states are independently rejected.
+const EQUIVALENT_MUTANTS = [
+  {
+    name: 'read path: drop the denylist behind the positive allowlist',
+    file: REVIEW,
+    find: '  if (!deniedInheritanceAbsent(identity.inherited)) return false;',
+    replace: '',
+    why: 'inheritedContextIntact runs first and pins every key name and leaf: the top-level key set, '
+      + 'the `keys` array, the `values` key set and the provenance key set are all fixed frozen lists, '
+      + 'and every leaf must strict-equal a scalar column. No blob reaching the denylist can carry a '
+      + 'denied key at any depth.',
+    provenBy: ['a forged inherited context with smuggled keys and a contradicting candidate identity',
+      'a forged inherited context is rejected even when every smuggled key name is undenied',
+      'a forged inherited context with an extra or missing top-level key is unreadable'],
+  },
+  {
+    name: 'write path: drop the whole-chain validity check',
+    file: REVIEW,
+    find: `    if (head && !rereviewChainValid(root, getMemoryCandidateRereviewChain(rootReviewId))) {
+      throw new Error('memory candidate re-review refuses an invalid predecessor chain');
+    }`,
+    replace: '',
+    why: 'every remaining conjunct is re-derived by storedRereviewIntact recursing from the head to '
+      + 'the root, which rereviewPredecessor already invokes. UNIQUE(root_review_id,chain_version) '
+      + 'makes the row set for a root exactly the head ancestry, so a gap or fork cannot hide off the '
+      + 'walked path. The created_at monotonicity conjunct - the one thing genuinely unique to this '
+      + 'function - was removed rather than kept, because the read path cannot verify it.',
+    provenBy: ['a gap in the chain makes the descendant unreadable and refuses further appends',
+      'a fork off the same predecessor is refused by the service and independently by the database',
+      'a cycle is unreadable even when written directly around the service'],
   },
 ];
 
@@ -131,4 +219,28 @@ for (const mutant of MUTANTS) {
 }
 
 console.log(`\n${MUTANTS.length - survivors}/${MUTANTS.length} mutants killed, ${survivors} survived`);
-process.exit(survivors === 0 ? 0 : 1);
+
+console.log('\ndeclared equivalent mutants (expected to survive; reported separately, never counted as killed):');
+let misdeclared = 0;
+for (const mutant of EQUIVALENT_MUTANTS) {
+  const source = readOriginal(mutant.file);
+  const occurrences = source.split(mutant.find).length - 1;
+  if (occurrences !== 1) {
+    console.error(`HARNESS ERROR: pattern for "${mutant.name}" occurs ${occurrences} times in ${mutant.file}, expected exactly 1`);
+    process.exit(1);
+  }
+  fs.writeFileSync(path.join(repoRoot, mutant.file), source.replace(mutant.find, mutant.replace));
+  const passed = runSuite();
+  fs.writeFileSync(path.join(repoRoot, mutant.file), source);
+  if (passed) {
+    console.log(`EQUIVALENT  ${mutant.name}`);
+    console.log(`            why: ${mutant.why}`);
+    console.log(`            same states independently rejected by: ${mutant.provenBy.join('; ')}`);
+  } else {
+    misdeclared += 1;
+    console.error(`MISDECLARED ${mutant.name} - killed, so it is NOT equivalent and must be counted as a real mutant`);
+  }
+}
+
+console.log(`\nsummary: ${MUTANTS.length - survivors} killed, ${EQUIVALENT_MUTANTS.length - misdeclared} declared equivalent, ${survivors} surviving, ${misdeclared} misdeclared`);
+process.exit(survivors === 0 && misdeclared === 0 ? 0 : 1);
