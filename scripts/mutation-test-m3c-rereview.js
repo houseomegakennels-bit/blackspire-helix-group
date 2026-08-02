@@ -99,6 +99,16 @@ const MUTANTS = [
     replace: '    false) return false;',
   },
   {
+    // The predecessor/child DEPTH relationship, distinct from both halves of the digest pin above.
+    // A forged row can name a real, intact ancestor and pin that ancestor's genuine digests while
+    // sitting at the wrong depth relative to it. Every row is present, no UNIQUE index is violated,
+    // and no immutability trigger fires, so this conjunct is the only thing that refuses it.
+    name: 'read path: stop requiring the predecessor to sit exactly one chain version below the child',
+    file: REVIEW,
+    find: '  if (chainVersion > 1 && (Number(predecessor.chain_version) !== chainVersion - 1 ||',
+    replace: '  if (chainVersion > 1 && (false ||',
+  },
+  {
     name: 'write path: drop the head rule (allow a stale or conflicting predecessor)',
     file: REVIEW,
     find: "    if (predecessor.id !== supersedes) throw new Error('memory candidate re-review refuses a stale or conflicting predecessor');",

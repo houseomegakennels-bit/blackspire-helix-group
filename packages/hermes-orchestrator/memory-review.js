@@ -654,10 +654,17 @@ function storedRereviewIntact(rereview, root) {
   if (rereview.workspace_id !== root.workspace_id || rereview.candidate_id !== root.candidate_id) return false;
   const identity = replayedIdentity(rereview);
   // Allowlist FIRST, denylist second. The positive check is what actually constrains the blob: it
-  // pins the exact shape and requires every carried value to equal the row's own identity columns,
-  // so a forged key or a value contradicting the row is refused whatever it is named. The denylist
-  // is retained behind it as defence in depth against a denied name appearing inside an otherwise
-  // well-shaped block.
+  // pins the exact shape - top-level keys, the declared key list, the value key set and the
+  // provenance key set are all fixed frozen lists - and requires every carried leaf to strict-equal
+  // the row's own identity column, so a forged key or a value contradicting the row is refused
+  // whatever it is named.
+  //
+  // The denylist behind it is therefore UNREACHABLE, not defence in depth. No blob that survives the
+  // allowlist can carry a denied key at any depth: every surviving key name is drawn from a frozen
+  // list and every surviving leaf equals a scalar column. It is a DECLARED EQUIVALENT MUTANT -
+  // deleting it fails no test, which scripts/mutation-test-m3c-rereview.js asserts deliberately and
+  // treats as a hard error if it is ever killed. It is retained only as an explicit statement of
+  // intent, and nothing may be claimed to rest on it.
   if (!inheritedContextIntact(identity.inherited, rereview, chainVersion)) return false;
   if (!deniedInheritanceAbsent(identity.inherited)) return false;
   // The predecessor pin must match the record actually named, so an altered ancestor is detectable.

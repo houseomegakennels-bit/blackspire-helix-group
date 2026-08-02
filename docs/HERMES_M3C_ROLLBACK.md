@@ -17,7 +17,7 @@ merged and anchored Milestone 3B baseline (`9dccdd95f5119195b192ee1f553b55d0eae3
   immutability triggers.
 - `apps/api/server.js` — one GET-only route, `/api/hermes/memory-candidate-reviews/:id`.
 - `scripts/typecheck-check.js` — adds the new module.
-- `tests/hermes-m3c-memory-review.test.js` — new, 18 tests.
+- `tests/hermes-m3c-memory-review.test.js` — new, 19 tests.
 - `docs/HERMES_M3C_MEMORY_CANDIDATE_REVIEW.md`, `docs/HERMES_IMPLEMENTATION_STATUS.md`,
   `docs/HERMES_INTELLIGENCE_LAYER_ARCHITECTURE.md`, this file — documentation.
 
@@ -49,7 +49,7 @@ merged and anchored first slice (`bf9072c5ebc1f195020e7c1709610c741cf8be43`, rev
   `readMemoryCandidateRereview`, the chain internals, the inheritance allowlist and denied-key guard,
   and `MAX_REREVIEW_CHAIN_DEPTH`. No new import.
 - `apps/api/server.js` — one GET-only route, `/api/hermes/memory-candidate-rereviews/:id`.
-- `tests/hermes-m3c-rereview-successor.test.js` — new, 52 tests.
+- `tests/hermes-m3c-rereview-successor.test.js` — new, 53 tests.
 - `docs/HERMES_M3C_REREVIEW_SUCCESSOR_CHAINS.md`, `docs/HERMES_IMPLEMENTATION_STATUS.md`, this file —
   documentation.
 

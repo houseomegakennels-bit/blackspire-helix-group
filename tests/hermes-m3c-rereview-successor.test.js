@@ -722,6 +722,60 @@ test('the read-side depth bound alone refuses a correctly linked successor past 
   assert.ok(readMemoryCandidateRereview(admin, head), 'the legitimate chain is unaffected');
 });
 
+// --- The predecessor-to-child chain-version relationship ---
+
+// A forged successor can name a real, fully intact ancestor, pin that ancestor's genuine digests,
+// carry correct provenance, and reseal its own packets perfectly - and still sit at the wrong DEPTH
+// relative to the ancestor it names. Nothing else in the system refuses that row:
+//
+//   * every row is present, so there is no gap for the whole-chain check to notice;
+//   * no UNIQUE index is violated - the skipped `chain_version` is simply free under
+//     UNIQUE(root_review_id,chain_version), and the ancestor is superseded exactly once under
+//     UNIQUE(supersedes_rereview_id);
+//   * no immutability trigger fires, because the forgery is a plain INSERT of a new row rather than
+//     an UPDATE or DELETE of an existing one;
+//   * the digest comparison passes, because the row is resealed;
+//   * the predecessor digest PIN passes, because the digests pinned are the ancestor's real ones.
+//
+// The single guard that refuses it is the predecessor/child `chain_version` relationship in
+// `storedRereviewIntact`. Deleting that one conjunct made this forgery readable while all 52 other
+// tests still passed, which is why it is pinned here and carried in the mutation harness.
+test('a successor sitting at the wrong depth relative to the ancestor it names is unreadable and refuses replay', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-version-skew');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'skew-1' }));
+  const firstRow = rereviewRow(first.id);
+  assert.equal(Number(firstRow.chain_version), 1, 'the seeded ancestor sits at depth 1');
+
+  // `chain_version` 3 names the depth-1 row as its predecessor, so its predecessor sits one level
+  // lower than a depth-3 row's predecessor must. Depth 2 is deliberately never written.
+  const forged = reseal({ ...firstRow, id: 'hmrrev-skew-forged', chain_version: 3,
+    supersedes_rereview_id: firstRow.id, idempotency_key: 'skew-forged',
+    predecessor_content_digest: firstRow.content_digest, predecessor_lineage_digest: firstRow.lineage_digest,
+    inherited_context: canonicalJson({ ...JSON.parse(firstRow.inherited_context),
+      provenance: { predecessorId: firstRow.id, predecessorKind: 'rereview', predecessorChainVersion: 2,
+        predecessorContentDigest: firstRow.content_digest, predecessorLineageDigest: firstRow.lineage_digest } }) });
+  // A plain INSERT, with every trigger left in place: nothing here depends on immutability being
+  // suspended, so the refusal below cannot be credited to a trigger.
+  store.insertMemoryCandidateRereview(forged);
+  assert.ok(rereviewRow(forged.id), 'the forgery is stored, so the refusal below is a read decision');
+  assert.equal(rereviewCount('m3crr-version-skew'), 2, 'both rows remain present - there is no gap to detect');
+
+  // Self-consistency is not in question: the stored row reproduces its own digests exactly.
+  const recomputed = reseal(rereviewRow(forged.id));
+  assert.equal(recomputed.content_digest, forged.content_digest, 'the forgery is self-consistent on content');
+  assert.equal(recomputed.lineage_digest, forged.lineage_digest, 'the forgery is self-consistent on lineage');
+  // ... and the ancestor it names is genuinely intact and still readable in its own right.
+  assert.ok(readMemoryCandidateRereview(admin, firstRow.id), 'the named ancestor is itself intact');
+
+  assert.equal(readMemoryCandidateRereview(admin, forged.id), null, 'the normal read must refuse the depth skew');
+  // Replay must agree with the read rather than handing the same row back as a successful replay.
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(firstRow.id, { idempotencyKey: 'skew-forged' })),
+  /refuses a non-intact stored decision/, 'idempotent replay must refuse the same row for the same reason');
+  assert.ok(readMemoryCandidateRereview(admin, firstRow.id), 'the legitimate chain is unaffected');
+});
+
 // --- The predecessor digest pin: an ANCESTOR altered and resealed ---
 
 // Reseals a ROOT REVIEW row after mutating it, mirroring `digestPackets` in memory-review.js. The
@@ -782,6 +836,12 @@ test('a root review altered only in a lineage-covered field still breaks the pin
   });
 
   assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the lineage half of the pin must refuse it');
+  // Replay must reach the same verdict as the read rather than handing the row back. The resealed
+  // root still passes `storedReviewIntact` on its own columns, so this refusal can only come from
+  // the descendant's lineage pin.
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'pin-lineage-1' })),
+  /refuses a non-intact stored decision/, 'replay must refuse the lineage-only forgery too');
 });
 
 test('a depth-2 predecessor altered and resealed after the fact makes its successor unreadable', async () => {
@@ -796,8 +856,12 @@ test('a depth-2 predecessor altered and resealed after the fact makes its succes
   assert.ok(readMemoryCandidateRereview(admin, first.id), 'the resealed parent reads as intact on its own columns');
 
   assert.equal(readMemoryCandidateRereview(admin, second.id), null, 'the pin must refuse the altered parent');
+  // A fresh append onto the broken chain is refused ...
   assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(second.id, { idempotencyKey: 'pin-mid-3' })),
     /refuses an invalid predecessor chain|requires an intact predecessor/);
+  // ... and so is an idempotent REPLAY of the broken row itself, which is the separate path.
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(first.id, { idempotencyKey: 'pin-mid-2' })),
+    /refuses a non-intact stored decision/, 'replay must refuse the depth-2 forgery too');
 });
 
 // --- created_at carries no ordering guarantee ---

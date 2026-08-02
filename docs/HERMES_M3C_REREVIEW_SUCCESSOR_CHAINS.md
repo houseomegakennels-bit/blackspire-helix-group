@@ -28,6 +28,13 @@ SQLite can only drop an inline constraint by **rebuilding the table** — which 
 re-writing historical immutable rows, exactly what a successor chain exists to avoid. Keeping the
 root byte-untouched is the whole point of the slice.
 
+The resemblance to Milestone 3A is **structural only** — a separate append-only table linked to the
+record it supersedes. It is not an ordering resemblance. 3C orders by `chain_version` alone and
+attaches no meaning whatsoever to `created_at`; the 3B scorecard chain, by contrast, selects by a
+`(created_at, id)` cutoff tuple. These milestones do **not** enforce the same `created_at` ordering
+shape and must not be described as if they do. See
+[`created_at` carries no ordering guarantee](#created_at-carries-no-ordering-guarantee).
+
 ## Invariants
 
 Chain shape is enforced by the database, not by convention:
@@ -90,10 +97,11 @@ Enforced by the service:
   [Mutation testing](#mutation-testing). It is kept only as a standing tripwire should the allowlist
   ever be widened to admit a non-scalar or free-form value.
 
-  On the write path the denylist call is **defence in depth only, and is documented as such rather
-  than claimed as an enforced runtime invariant**: `inheritedContext` assembles its block entirely
-  from frozen literals, so no caller-controlled key name can reach it and the check cannot fail for
-  any input. The condition it was previously described as enforcing — a future widening of
+  On the write path the denylist call is **unreachable**, and is documented as such rather than
+  claimed as an enforced runtime invariant or as defence in depth: `inheritedContext` assembles its
+  block entirely from frozen literals, so no caller-controlled key name can reach it and the check
+  cannot fail for any input. A guard no input can trip defends nothing, and nothing here rests on
+  it. The condition it was previously described as enforcing — a future widening of
   `INHERITED_CONTEXT_KEYS` into a denied name, or drift between that list and the column map — is a
   static property of the module, so it is decided once at load by `inheritanceAllowlistDisjoint()`,
   where it is actually decidable, and that predicate is exercised directly with a deliberately
@@ -147,7 +155,7 @@ plus, for the integrity checks, an actor who can write the database directly.
 
 ## Acceptance gates
 
-Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 52 tests: valid successor and chain
+Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 53 tests: valid successor and chain
 creation; the read surface; allowlisted provenance-tracked inheritance and the absence of inherited
 authority; self-links; cycles written around the service; forks refused by the service and
 independently by the database; ambiguous depth-one ancestry; chain gaps; broken predecessor pins; a
@@ -173,6 +181,17 @@ detects it; the same at depth 2 for an intermediate successor; a root altered on
 **lineage-covered** field (`evaluation_id`), proving both halves of the pin are compared rather than
 only the content half; a cross-root idempotency-key collision asserting the accurate error
 classification; and a `created_at` test pinning that timestamps carry no ordering guarantee.
+
+Added in the fourth pass, closing an undeclared surviving mutant: a successor sitting at the **wrong
+depth relative to the ancestor it names**. The forgery names a real, fully intact ancestor, pins that
+ancestor's genuine digests, carries correct provenance, and reseals its own packets, so every other
+control passes — all rows are present so there is no gap to detect, no UNIQUE index is violated
+because the skipped `chain_version` is free and the ancestor is superseded exactly once, and no
+immutability trigger fires because the forgery is a plain INSERT. Only the predecessor/child
+`chain_version` relationship in `storedRereviewIntact` refuses it, and the test proves **both** the
+normal read and the idempotent replay reject it. The lineage-only and depth-2 pin tests were extended
+in the same pass to assert the replay refusal as well as the read refusal, so their descriptions match
+their true coverage.
 
 ## Mutation testing
 
