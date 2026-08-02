@@ -467,6 +467,68 @@ test('appending a whole chain leaves every historical record byte-identical', as
   assert.deepEqual(rereviewRow(first.id), firstRow);
 });
 
+// --- Isolation, reached directly rather than through an authorization refusal ---
+//
+// The tests above prove a foreign principal is refused, but that refusal happens at authorization,
+// before any isolation check runs. These three drive the same forgeries from an AUTHORIZED caller,
+// which is the only way to reach the cross-workspace and cross-candidate guards themselves.
+
+test('an authorized caller cannot append when the candidate drifted into another workspace', async () => {
+  const { candidate, rootReview, admin } = await seedChain('m3crr-xwscand');
+  workspace('m3crr-xwscand-other');
+  // `hermes_memory_candidates` carries no immutability triggers, so this needs no trigger removal -
+  // which is exactly why the append path revalidates the candidate's workspace rather than trusting
+  // the root review's.
+  run('UPDATE hermes_memory_candidates SET workspace_id=? WHERE id=?', ['m3crr-xwscand-other', candidate.id]);
+
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'xwscand-1' })),
+    /refuses a cross-workspace candidate/);
+  assert.equal(rereviewCount('m3crr-xwscand'), 0);
+});
+
+test('an authorized caller cannot extend a chain whose head drifted into another workspace', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-xwshead');
+  workspace('m3crr-xwshead-other');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'xwshead-1' }));
+  // `workspace_id` is deliberately not covered by either digest - it is structural, not content - so
+  // this forgery leaves the row reproducing its own digests and is caught only by the explicit
+  // workspace binding.
+  withoutImmutability(['hermes_memory_candidate_rereviews'], () => {
+    run('UPDATE hermes_memory_candidate_rereviews SET workspace_id=? WHERE id=?', ['m3crr-xwshead-other', first.id]);
+  });
+
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(first.id, { decision: 'reject', rationale: 'an append onto a head that changed workspace', idempotencyKey: 'xwshead-2' })),
+    /refuses a cross-workspace predecessor/);
+  assert.equal(readMemoryCandidateRereview(admin, first.id), null, 'the drifted head is unreadable too');
+});
+
+test('an authorized caller cannot extend a chain whose head names a different candidate', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-xcand');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'xcand-1' }));
+  withoutImmutability(['hermes_memory_candidate_rereviews'], () => {
+    run('UPDATE hermes_memory_candidate_rereviews SET candidate_id=? WHERE id=?', ['hmcand-some-other-candidate', first.id]);
+  });
+
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id, rereview(first.id, { decision: 'reject', rationale: 'an append onto a head that changed subject', idempotencyKey: 'xcand-2' })),
+    /refuses a predecessor for a different candidate/);
+});
+
+test('a refused append is audited before the transaction, so the denial survives the rollback', async () => {
+  const { rootReview } = await seedChain('m3crr-audit');
+  // Holds `evaluation.read` but not the write-capable `evaluation.correct`.
+  const reader = principal('m3crr-audit', ['evaluation.read']);
+  const deniedBefore = get('SELECT COUNT(*) AS n FROM auth_decisions WHERE workspace_id=? AND allowed=0', ['m3crr-audit']).n;
+
+  assert.throws(() => recordMemoryCandidateRereview(reader, rootReview.id, rereview(rootReview.id, { idempotencyKey: 'audit-1' })),
+    /is not authorized/);
+
+  // The audited denial is durable: it is decided before the transaction opens, so the rollback that
+  // the refusal triggers cannot erase it. An in-transaction-only check would leave no trace.
+  assert.ok(get('SELECT COUNT(*) AS n FROM auth_decisions WHERE workspace_id=? AND allowed=0', ['m3crr-audit']).n > deniedBefore,
+    'the denial must be audited durably');
+  assert.equal(rereviewCount('m3crr-audit'), 0);
+});
+
 // --- Bounded ancestry ---
 
 test('a chain refuses to grow past the maximum depth, and the bound is enforced before validation', async () => {
