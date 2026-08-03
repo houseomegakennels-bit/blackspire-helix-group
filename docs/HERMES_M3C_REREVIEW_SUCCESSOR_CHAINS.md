@@ -55,7 +55,11 @@ Enforced by the service:
   successor exists yet, otherwise the latest successor id. Anything else (the root after a successor
   exists, a superseded ancestor, a successor of another chain) is a stale or conflicting predecessor
   and refuses. This is what turns two concurrent re-reviewers of the same head into one winner and
-  one explicit refusal rather than a fork; the unique index enforces the same thing independently.
+  one explicit refusal rather than a fork. `UNIQUE(root_review_id,chain_version)` backs this up only
+  for the race it names: a concurrent append that slips past the check still cannot produce a second
+  sibling. It is not a general backstop for the head rule — `chain_version` is derived from the actual
+  head rather than from `supersedes`, so with the head rule removed an append violates no unique index
+  and instead silently re-parents. The head rule is the only guard on which predecessor is named.
 - **Ancestry is verified all the way to the root, not one hop.** A predecessor's own digests do not
   cover its `supersedes_rereview_id`, so an ancestor could be re-pointed into a cycle or onto a
   foreign chain while every descendant's pin still matched. Recursion terminates because each step
@@ -233,8 +237,9 @@ checks, and so the simplest attack of all — change a column and leave the dige
 performed. The other two cover `canonicalTimestamp(created_at)`, the only guard on a column hashed
 into neither packet, and the replay path's predecessor comparison.
 
-The seventeenth mutant was added in the fourth pass and is the one the earlier set missed: the
-predecessor/child `chain_version` relationship. It is distinct from both halves of the digest pin,
+One mutant was added in the fourth pass and is the one the earlier set missed — `read path: stop
+requiring the predecessor to sit exactly one chain version below the child`: the predecessor/child
+`chain_version` relationship. It is distinct from both halves of the digest pin,
 which compare the ancestor's *digests* rather than its *depth*, and it survived every earlier harness
 run because no test constructed a row that named a genuinely intact ancestor at the wrong depth. It is
 now killed by a dedicated regression that proves both the normal read and the idempotent replay reject
@@ -288,7 +293,10 @@ Accepted, not resolved:
 - **Attribution is outside digest coverage.** Neither packet hashes `reviewer_principal_id`,
   `created_at`, or the row `id` — deliberately, since they are assigned at insert time and hashing
   them would make an idempotent replay depend on write order. For a table whose purpose is recording
-  *who* judged, this means accidental corruption of the reviewer field is undetectable on read.
+  *who* judged, this means any change to the reviewer field is undetectable on read — not merely
+  accidental corruption but deliberate mis-attribution: a database writer can reassign a stored
+  re-review to a different `reviewer_principal_id` and every digest, ancestry, and replay check still
+  passes. This is reproducible by execution, not a theoretical gap.
   Against the stated database-write adversary an extra unkeyed digest would buy nothing, so this is
   documented rather than fixed.
 - Per-append validation remains super-linear in chain depth: `storedRereviewIntact` walks head-to-root
@@ -336,6 +344,25 @@ path trusting what the write path had validated — and all now fixed and pinned
 3. **The depth bound was decided after a full ancestry walk**, contradicting a source comment that
    claimed the opposite ordering. The bound now precedes predecessor construction, and the ordering is
    pinned by a test that distinguishes the two refusals.
+
+The sixth pass acted on the one exact-head review of `501251f` that completed. It found no code
+defect and no missing coverage; all three findings were documentation accuracy, and all three are
+corrected above rather than restated here:
+
+1. The `UNIQUE(root_review_id,chain_version)` claim in the invariants section overstated the index as
+   an independent backstop for the head rule. It is not: `chain_version` is derived from the actual
+   head rather than from `supersedes`, so with the head rule removed an append violates no unique
+   index and silently re-parents. The claim is now scoped to the race it actually covers, matching the
+   precise wording already in the source comment and in the committed test rationale.
+2. The attribution limitation said "accidental corruption", which understated a gap reproducible by
+   execution: a database writer can deliberately re-attribute a stored re-review and every digest,
+   ancestry, and replay check still passes. Now stated as deliberate mis-attribution.
+3. A stale ordinal ("the seventeenth mutant") survived against a 24-entry mutant list. The mutant is
+   now named rather than numbered, so the text cannot drift against the inventory again.
+
+No source file changed in this pass, so the mutant inventory and every count above are unchanged and
+were re-run rather than carried over.
+
 - There is still no review queue, no listing route, and no promotion.
 - `getPendingMemoryCandidatesForWorkspace` still has no production caller.
 
