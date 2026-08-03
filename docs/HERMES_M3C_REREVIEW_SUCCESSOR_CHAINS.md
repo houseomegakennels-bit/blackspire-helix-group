@@ -200,13 +200,20 @@ baseline first, requires every mutation pattern to occur **exactly once** in its
 pattern matching zero or many places is a hard harness error, not a survivor), and restores the tree
 after each mutant and on signal.
 
-Current result: **16 killed, 2 declared equivalent, 0 surviving, 0 misdeclared.**
+Current result: **17 killed, 2 declared equivalent, 0 surviving, 0 misdeclared.**
 
 The mutant set deliberately covers pre-existing guards as well as recently repaired ones: the head
 rule, the full-ancestry recursion, both halves of the predecessor digest pin, the read and write depth
 bounds, and a true **reordering** mutant that moves the depth bound back after the ancestry walk —
 distinct from the mutant that merely removes it. An earlier version of this harness conflated those
 two and its label overclaimed; both now exist separately.
+
+The seventeenth mutant was added in the fourth pass and is the one the previous set missed: the
+predecessor/child `chain_version` relationship. It is distinct from both halves of the digest pin,
+which compare the ancestor's *digests* rather than its *depth*, and it survived every earlier harness
+run because no test constructed a row that named a genuinely intact ancestor at the wrong depth. It is
+now killed by a dedicated regression that proves both the normal read and the idempotent replay reject
+the malformed chain.
 
 ### Declared equivalent mutants
 
