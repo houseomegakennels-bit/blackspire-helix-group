@@ -155,7 +155,7 @@ plus, for the integrity checks, an actor who can write the database directly.
 
 ## Acceptance gates
 
-Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 53 tests: valid successor and chain
+Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 58 tests: valid successor and chain
 creation; the read surface; allowlisted provenance-tracked inheritance and the absence of inherited
 authority; self-links; cycles written around the service; forks refused by the service and
 independently by the database; ambiguous depth-one ancestry; chain gaps; broken predecessor pins; a
@@ -193,6 +193,14 @@ normal read and the idempotent replay reject it. The lineage-only and depth-2 pi
 in the same pass to assert the replay refusal as well as the read refusal, so their descriptions match
 their true coverage.
 
+Added in the fifth pass, after two independent exact-head reviews: three tests that tamper a stored
+successor **without resealing** — a rewritten `rationale` with the digests left stale, and each digest
+column corrupted alone while the other still matches exactly, which isolates the two halves that a
+single tampered field cannot (it moves both at once). All three assert normal read refusal **and**
+idempotent replay refusal with the `non-intact stored decision` classification. Alongside them, a
+non-canonical `created_at` (hashed into neither packet, so no digest stands behind it) and a replay
+against a different predecessor, which must be an identity conflict rather than a successful replay.
+
 ## Mutation testing
 
 Reproducible from this branch: `node scripts/mutation-test-m3c-rereview.js`. It runs an unmutated
@@ -200,7 +208,15 @@ baseline first, requires every mutation pattern to occur **exactly once** in its
 pattern matching zero or many places is a hard harness error, not a survivor), and restores the tree
 after each mutant and on signal.
 
-Current result: **17 killed, 2 declared equivalent, 0 surviving, 0 misdeclared.**
+Current result: **22 killed, 2 declared equivalent, 0 surviving, 0 misdeclared.**
+
+**What "0 surviving" does and does not mean.** It means every non-equivalent mutant *in the committed
+list* was killed on this run. It is **not** a claim that no guard in the module can be deleted with
+the suite green — two independent exact-head reviewers demonstrated by execution that several can,
+and the fifth pass closed the load-bearing ones they identified rather than restating the number.
+Guards that remain removable are ones whose states are independently rejected by a database CHECK or
+by a tautology in how the row is fetched; they are not claimed here as enforced runtime invariants.
+No claim of "fully pinned" is made about this module.
 
 The mutant set deliberately covers pre-existing guards as well as recently repaired ones: the head
 rule, the full-ancestry recursion, both halves of the predecessor digest pin, the read and write depth
@@ -208,7 +224,16 @@ bounds, and a true **reordering** mutant that moves the depth bound back after t
 distinct from the mutant that merely removes it. An earlier version of this harness conflated those
 two and its label overclaimed; both now exist separately.
 
-The seventeenth mutant was added in the fourth pass and is the one the previous set missed: the
+Five mutants were added in the fifth pass, closing the gap both exact-head reviewers reported.
+Three cover `storedRereviewIntact`'s own content/lineage digest comparison — the whole comparison and
+each half separately — which is the only guard covering `decision`, `rationale`, `candidate_digest`,
+`candidate_status_at_review` and the evaluation fields. It had been unpinned because **every forgery
+helper in the suite reseals the digests**, which is exactly what lets those tests reach the structural
+checks, and so the simplest attack of all — change a column and leave the digests alone — was never
+performed. The other two cover `canonicalTimestamp(created_at)`, the only guard on a column hashed
+into neither packet, and the replay path's predecessor comparison.
+
+The seventeenth mutant was added in the fourth pass and is the one the earlier set missed: the
 predecessor/child `chain_version` relationship. It is distinct from both halves of the digest pin,
 which compare the ancestor's *digests* rather than its *depth*, and it survived every earlier harness
 run because no test constructed a row that named a genuinely intact ancestor at the wrong depth. It is
@@ -224,10 +249,20 @@ since that would prove the declaration wrong.
 | Guard | Why deletion changes nothing | Same states independently rejected by |
 | --- | --- | --- |
 | Read-path `deniedInheritanceAbsent` | `inheritedContextIntact` runs first and pins every key name and every leaf, and each leaf must strict-equal a scalar column, so no blob reaching the denylist can carry a denied key at any depth | the smuggled-keys, undenied-names, and extra/missing-top-level-key tests |
-| Write-path `rereviewChainValid` | every remaining conjunct is re-derived by `storedRereviewIntact` recursing head-to-root, which `rereviewPredecessor` already invokes; `UNIQUE(root_review_id,chain_version)` makes the row set for a root exactly the head ancestry, so a gap or fork cannot hide off the walked path | the chain-gap, fork, and cycle tests |
+| Write-path `rereviewChainValid` (**conditional — see below**) | every remaining conjunct is re-derived by `storedRereviewIntact` recursing head-to-root, which `rereviewPredecessor` already invokes; `UNIQUE(root_review_id,chain_version)` makes the row set for a root exactly the head ancestry, so a gap or fork cannot hide off the walked path | the chain-gap, fork, and cycle tests |
 
 `rereviewChainValid`'s one genuinely unique conjunct, `created_at` monotonicity, was **removed** rather
 than kept — see below.
+
+**The `rereviewChainValid` declaration is conditional, and both exact-head reviewers were right to
+press on it.** Its justification appeals to the head-to-root recursion that `rereviewPredecessor`
+performs — but the predecessor-intactness call which performs that recursion is *itself* removable
+with the suite green. The two are **individually redundant but jointly load-bearing**: delete either
+alone and nothing changes; delete both together and the suite fails. One-mutant-at-a-time mutation
+testing is structurally blind to a mutually-redundant pair, so a green harness run must not be read
+as proving either guard dispensable. This is recorded here and in the harness rather than resolved by
+deleting one of them, because either deletion would leave the other genuinely load-bearing and
+unpinned.
 
 ### `created_at` carries no ordering guarantee
 

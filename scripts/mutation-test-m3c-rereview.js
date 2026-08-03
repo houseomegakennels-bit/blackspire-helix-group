@@ -223,7 +223,14 @@ const EQUIVALENT_MUTANTS = [
       + 'the root, which rereviewPredecessor already invokes. UNIQUE(root_review_id,chain_version) '
       + 'makes the row set for a root exactly the head ancestry, so a gap or fork cannot hide off the '
       + 'walked path. The created_at monotonicity conjunct - the one thing genuinely unique to this '
-      + 'function - was removed rather than kept, because the read path cannot verify it.',
+      + 'function - was removed rather than kept, because the read path cannot verify it. '
+      + 'IMPORTANT, and reported rather than glossed: this equivalence is CONDITIONAL on the '
+      + 'predecessor-intactness call in rereviewPredecessor, which is the thing that performs the '
+      + 'recursion this justification appeals to. That call is itself removable with the suite green. '
+      + 'The two are individually redundant but JOINTLY LOAD-BEARING: deleting either alone changes '
+      + 'nothing, deleting both together is caught. One-mutant-at-a-time mutation testing is '
+      + 'structurally blind to a mutually-redundant pair, so neither this declaration nor a green '
+      + 'harness run should be read as proving either guard is dispensable.',
     provenBy: ['a gap in the chain makes the descendant unreadable and refuses further appends',
       'a fork off the same predecessor is refused by the service and independently by the database',
       'a cycle is unreadable even when written directly around the service'],
