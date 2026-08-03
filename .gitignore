@@ -167,3 +167,4 @@ frontend/promo/tools/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+.mutation-test-m3c.lock

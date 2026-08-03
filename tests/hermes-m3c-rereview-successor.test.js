@@ -864,6 +864,131 @@ test('a depth-2 predecessor altered and resealed after the fact makes its succes
     /refuses a non-intact stored decision/, 'replay must refuse the depth-2 forgery too');
 });
 
+// --- The row's own digest comparison: tampering WITHOUT resealing ---
+
+// Every forgery helper above deliberately RESEALS, which is exactly what lets those tests reach the
+// structural checks instead of being stopped by the digest comparison. The unintended consequence
+// was that the suite never performed the simplest attack of all: change a stored column and leave
+// the digests alone. That left `storedRereviewIntact`'s final comparison deletable with the whole
+// suite green - and it is the ONLY guard covering `decision`, `rationale`, `candidate_digest`,
+// `candidate_status_at_review` and the evaluation fields. Every other check in that function passes
+// on such a row: it is present, correctly versioned, correctly linked, correctly pinned, and its
+// inherited context still equals its own identity columns.
+//
+// `tamperInPlace` is the deliberate opposite of `forgeInPlace`: it rewrites the row and KEEPS the
+// original digests, so the stored row is left self-inconsistent rather than self-consistent.
+function tamperInPlace(rereviewId, mutate) {
+  const tampered = mutate({ ...rereviewRow(rereviewId) });
+  withoutImmutability(['hermes_memory_candidate_rereviews'], () => {
+    run('DELETE FROM hermes_memory_candidate_rereviews WHERE id=?', [rereviewId]);
+    store.insertMemoryCandidateRereview(tampered);
+  });
+  return tampered;
+}
+
+test('a stored successor whose recorded judgement was rewritten without resealing is unreadable and refuses replay', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-tamper-rationale');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'tamper-1' }));
+  assert.ok(readMemoryCandidateRereview(admin, successor.id), 'the successor reads before it is tampered');
+  const before = rereviewRow(successor.id);
+
+  // The recorded human judgement is rewritten and the digests are deliberately NOT recomputed.
+  const tampered = tamperInPlace(successor.id, (row) => ({ ...row, rationale: 'a judgement the reviewer never made' }));
+  assert.equal(tampered.content_digest, before.content_digest, 'the stored content digest is left stale on purpose');
+  assert.equal(tampered.lineage_digest, before.lineage_digest, 'the stored lineage digest is left stale on purpose');
+  assert.equal(rereviewCount('m3crr-tamper-rationale'), 1, 'the row remains present - nothing else is disturbed');
+  assert.equal(rereviewRow(successor.id).rationale, 'a judgement the reviewer never made', 'the tampered value really is stored');
+
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the normal read must refuse the rewritten judgement');
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'tamper-1' })),
+  /refuses a non-intact stored decision/, 'replay must refuse it as a non-intact stored decision');
+});
+
+test('a stored successor whose content digest alone no longer matches is unreadable and refuses replay', async () => {
+  // Isolates the CONTENT half of the comparison: the lineage digest still matches exactly, so only
+  // the content half can refuse this row.
+  const { rootReview, admin } = await seedChain('m3crr-tamper-content');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'tamper-content-1' }));
+  const before = rereviewRow(successor.id);
+
+  const tampered = tamperInPlace(successor.id, (row) => ({ ...row, content_digest: digest('a content digest this row never had') }));
+  assert.notEqual(tampered.content_digest, before.content_digest, 'the content digest must move');
+  assert.equal(tampered.lineage_digest, before.lineage_digest, 'the lineage digest must NOT move');
+
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the content half of the comparison must refuse it');
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'tamper-content-1' })),
+  /refuses a non-intact stored decision/, 'replay must refuse it as a non-intact stored decision');
+});
+
+test('a stored successor whose lineage digest alone no longer matches is unreadable and refuses replay', async () => {
+  // Isolates the LINEAGE half, the mirror of the test above: the content digest still matches, so
+  // only the lineage half can refuse this row. Together the two prove both halves are compared,
+  // which a single tampered field could not - it moves both digests at once.
+  const { rootReview, admin } = await seedChain('m3crr-tamper-lineage');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'tamper-lineage-1' }));
+  const before = rereviewRow(successor.id);
+
+  const tampered = tamperInPlace(successor.id, (row) => ({ ...row, lineage_digest: digest('a lineage digest this row never had') }));
+  assert.equal(tampered.content_digest, before.content_digest, 'the content digest must NOT move');
+  assert.notEqual(tampered.lineage_digest, before.lineage_digest, 'the lineage digest must move');
+
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the lineage half of the comparison must refuse it');
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'tamper-lineage-1' })),
+  /refuses a non-intact stored decision/, 'replay must refuse it as a non-intact stored decision');
+});
+
+test('a stored successor whose created_at is not a canonical timestamp is unreadable and refuses replay', async () => {
+  // `created_at` is deliberately hashed into NEITHER packet, so no digest stands behind it and the
+  // canonicality check is the only guard on that column. That makes this the mirror of the tests
+  // above rather than a duplicate of them: here the digests still match perfectly.
+  //
+  // This does not give `created_at` any ordering authority - it remains metadata only, and
+  // `chain_version` remains the sole ordering authority. The check is purely a format guard.
+  const { rootReview, admin } = await seedChain('m3crr-created-at-format');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'created-at-1' }));
+  const before = rereviewRow(successor.id);
+
+  const tampered = tamperInPlace(successor.id, (row) => ({ ...row, created_at: 'not-a-canonical-timestamp' }));
+  assert.equal(tampered.content_digest, before.content_digest, 'the content digest is unaffected - created_at is in no packet');
+  assert.equal(tampered.lineage_digest, before.lineage_digest, 'the lineage digest is unaffected either');
+
+  assert.equal(readMemoryCandidateRereview(admin, successor.id), null, 'the canonicality guard must refuse it');
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'created-at-1' })),
+  /refuses a non-intact stored decision/, 'replay must refuse it as a non-intact stored decision');
+});
+
+test('replaying one idempotency key against a different predecessor is an identity conflict, not a successful replay', async () => {
+  // The stored row is entirely intact and the replayed decision and rationale match it byte for
+  // byte; only the named predecessor differs. Without the predecessor comparison the caller would
+  // get the stored row back as a successful replay, silently accepting a `supersedes` that is not
+  // the one the record was written against.
+  const { rootReview, admin } = await seedChain('m3crr-replay-pred');
+  const first = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'replay-pred-1' }));
+  const second = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(first.id, { idempotencyKey: 'replay-pred-2' }));
+  assert.equal(second.supersedes_rereview_id, first.id, 'the second successor supersedes the first');
+
+  // Same key, same decision, same rationale - but naming the ROOT as predecessor instead of `first`.
+  assert.throws(() => recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'replay-pred-2' })),
+  /identity conflicts with stored decision/, 'a different predecessor must be classified as an identity conflict');
+
+  // The honest replay still returns the stored row unchanged.
+  const replayed = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(first.id, { idempotencyKey: 'replay-pred-2' }));
+  assert.equal(replayed.id, second.id, 'the correct predecessor still replays cleanly');
+  assert.equal(rereviewCount('m3crr-replay-pred'), 2, 'no extra row was written');
+});
+
 // --- created_at carries no ordering guarantee ---
 
 test('chain_version is the sole ordering authority and created_at carries no ordering guarantee', async () => {

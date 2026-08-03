@@ -109,6 +109,49 @@ const MUTANTS = [
     replace: '  if (chainVersion > 1 && (false ||',
   },
   {
+    // The row's OWN digest comparison - the guard covering `decision`, `rationale`,
+    // `candidate_digest`, `candidate_status_at_review` and the evaluation fields. Nothing else in
+    // `storedRereviewIntact` reads any of them. Until the fifth pass this was absent from the list
+    // and unpinned by the suite, because every forgery helper in the test file RESEALS, so the
+    // simplest attack of all - change a column and leave the digests alone - was never performed.
+    name: 'read path: drop the stored row content/lineage digest comparison entirely',
+    file: REVIEW,
+    find: '  return packets.contentDigest === rereview.content_digest && packets.lineageDigest === rereview.lineage_digest;',
+    replace: '  return true;',
+  },
+  {
+    // Each half separately, mirroring the treatment of the predecessor pin. A single tampered field
+    // moves BOTH digests at once and so cannot distinguish these; the two isolating tests corrupt
+    // one digest column each, leaving the other matching exactly.
+    name: 'read path: compare only the content half of the stored row digests',
+    file: REVIEW,
+    find: '  return packets.contentDigest === rereview.content_digest && packets.lineageDigest === rereview.lineage_digest;',
+    replace: '  return packets.contentDigest === rereview.content_digest;',
+  },
+  {
+    name: 'read path: compare only the lineage half of the stored row digests',
+    file: REVIEW,
+    find: '  return packets.contentDigest === rereview.content_digest && packets.lineageDigest === rereview.lineage_digest;',
+    replace: '  return packets.lineageDigest === rereview.lineage_digest;',
+  },
+  {
+    // `created_at` is hashed into NEITHER packet, so no digest stands behind it and this format
+    // check is the only guard on that column. It grants `created_at` no ordering authority -
+    // `chain_version` remains the sole ordering authority; this is purely canonicality.
+    name: 'read path: stop requiring created_at to be a canonical timestamp',
+    file: REVIEW,
+    find: '  if (!canonicalTimestamp(rereview.created_at)) return false;',
+    replace: '',
+  },
+  {
+    // Replay classification: without this, one key replayed against a DIFFERENT predecessor returns
+    // the stored row as a successful replay instead of an identity conflict.
+    name: 'replay path: stop comparing the replayed predecessor against the supplied supersedes',
+    file: REVIEW,
+    find: '        replayed.rationale !== redactString(rationale) || predecessorIdOf(replayed) !== supersedes) {',
+    replace: '        replayed.rationale !== redactString(rationale)) {',
+  },
+  {
     name: 'write path: drop the head rule (allow a stale or conflicting predecessor)',
     file: REVIEW,
     find: "    if (predecessor.id !== supersedes) throw new Error('memory candidate re-review refuses a stale or conflicting predecessor');",
@@ -187,6 +230,43 @@ const EQUIVALENT_MUTANTS = [
   },
 ];
 
+// The harness rewrites its target files IN THE WORKING TREE. `runSuite` blocks the main thread in
+// synchronous `execFileSync`, so the signal handlers registered below cannot fire while a mutant is
+// applied: an interrupted run leaves the tree mutated. Caching that mutated file as the "original"
+// on a later run would silently invalidate every verdict, and has in practice produced both a
+// spurious "pattern occurs 0 times" hard error and scattered irreproducible failures when a harness
+// raced a concurrent test run.
+//
+// So: refuse to start unless every target is clean per git, and hold an exclusive lock. This is a
+// precondition on the evidence, not a convenience - a verdict from a dirty or raced tree is worth
+// nothing.
+function assertCleanTargets(files) {
+  for (const file of files) {
+    try {
+      execFileSync('git', ['diff', '--quiet', '--', file], { cwd: repoRoot, stdio: 'pipe' });
+    } catch {
+      console.error(`FAIL: ${file} has uncommitted changes.`);
+      console.error('The harness rewrites this file in place, so it must start from a clean copy.');
+      console.error(`If a previous run was interrupted, restore it with:  git checkout -- ${file}`);
+      process.exit(1);
+    }
+  }
+}
+
+const LOCK = path.join(repoRoot, '.mutation-test-m3c.lock');
+function acquireLock() {
+  try {
+    fs.writeFileSync(LOCK, `pid ${process.pid}\n`, { flag: 'wx' });
+  } catch {
+    console.error(`FAIL: ${LOCK} exists - another harness run is in progress, or a previous one was killed.`);
+    console.error('Two harnesses sharing one working tree corrupt each other. Remove the file only if no run is active.');
+    process.exit(1);
+  }
+  const release = () => { try { fs.unlinkSync(LOCK); } catch { /* already gone */ } };
+  process.on('exit', release);
+  return release;
+}
+
 function runSuite() {
   try {
     execFileSync(process.execPath, ['--test', '--test-concurrency=1', TEST_FILE],
@@ -205,6 +285,10 @@ const readOriginal = (file) => {
 const restoreAll = () => { for (const [file, source] of originals) fs.writeFileSync(path.join(repoRoot, file), source); };
 process.on('exit', restoreAll);
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { restoreAll(); process.exit(1); });
+
+// Preconditions on the evidence, before anything is mutated.
+assertCleanTargets([...new Set([...MUTANTS, ...EQUIVALENT_MUTANTS].map((m) => m.file))]);
+acquireLock();
 
 console.log(`baseline: running ${TEST_FILE} unmutated`);
 if (!runSuite()) {
