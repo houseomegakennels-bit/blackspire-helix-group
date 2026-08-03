@@ -105,7 +105,9 @@ Enforced by the service:
   claimed as an enforced runtime invariant or as defence in depth: `inheritedContext` assembles its
   block entirely from frozen literals, so no caller-controlled key name can reach it and the check
   cannot fail for any input. A guard no input can trip defends nothing, and nothing here rests on
-  it. The condition it was previously described as enforcing — a future widening of
+  it. It is reported as a **declared equivalent mutant** in the committed inventory alongside the
+  read-path call — it was missing from that inventory until an independent reviewer deleted the line,
+  saw the focused suite stay green, and reported the omission. The condition it was previously described as enforcing — a future widening of
   `INHERITED_CONTEXT_KEYS` into a denied name, or drift between that list and the column map — is a
   static property of the module, so it is decided once at load by `inheritanceAllowlistDisjoint()`,
   where it is actually decidable, and that predicate is exercised directly with a deliberately
@@ -159,7 +161,7 @@ plus, for the integrity checks, an actor who can write the database directly.
 
 ## Acceptance gates
 
-Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 58 tests: valid successor and chain
+Focused suite `tests/hermes-m3c-rereview-successor.test.js`, 59 tests: valid successor and chain
 creation; the read surface; allowlisted provenance-tracked inheritance and the absence of inherited
 authority; self-links; cycles written around the service; forks refused by the service and
 independently by the database; ambiguous depth-one ancestry; chain gaps; broken predecessor pins; a
@@ -212,7 +214,7 @@ baseline first, requires every mutation pattern to occur **exactly once** in its
 pattern matching zero or many places is a hard harness error, not a survivor), and restores the tree
 after each mutant and on signal.
 
-Current result: **22 killed, 2 declared equivalent, 0 surviving, 0 misdeclared.**
+Current result: **22 killed, 3 declared equivalent, 0 surviving, 0 misdeclared.**
 
 **What "0 surviving" does and does not mean.** It means every non-equivalent mutant *in the committed
 list* was killed on this run. It is **not** a claim that no guard in the module can be deleted with
@@ -247,13 +249,14 @@ the malformed chain.
 
 ### Declared equivalent mutants
 
-Two guards can be deleted without changing observable behaviour. They are reported separately, never
+Three guards can be deleted without changing observable behaviour. They are reported separately, never
 folded into the killed count, and the harness treats a *killed* "equivalent" mutant as a hard error,
 since that would prove the declaration wrong.
 
 | Guard | Why deletion changes nothing | Same states independently rejected by |
 | --- | --- | --- |
 | Read-path `deniedInheritanceAbsent` | `inheritedContextIntact` runs first and pins every key name and every leaf, and each leaf must strict-equal a scalar column, so no blob reaching the denylist can carry a denied key at any depth | the smuggled-keys, undenied-names, and extra/missing-top-level-key tests |
+| Write-path `deniedInheritanceAbsent` | `inheritedContext` assembles the block it inspects entirely from frozen literals immediately above the call, so no caller-controlled key name can reach it; the static property it reads as enforcing is decided at module load by the exported `inheritanceAllowlistDisjoint()` | the module-load disjointness test, and the smuggled-keys and undenied-names tests |
 | Write-path `rereviewChainValid` (**conditional — see below**) | every remaining conjunct is re-derived by `storedRereviewIntact` recursing head-to-root, which `rereviewPredecessor` already invokes; `UNIQUE(root_review_id,chain_version)` makes the row set for a root exactly the head ancestry, so a gap or fork cannot hide off the walked path | the chain-gap, fork, and cycle tests |
 
 `rereviewChainValid`'s one genuinely unique conjunct, `created_at` monotonicity, was **removed** rather

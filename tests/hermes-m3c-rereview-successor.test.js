@@ -906,6 +906,40 @@ test('a stored successor whose recorded judgement was rewritten without resealin
   /refuses a non-intact stored decision/, 'replay must refuse it as a non-intact stored decision');
 });
 
+// This test pins an ACCEPTED LIMITATION rather than a guard: it asserts that mis-attribution is NOT
+// detected. Neither digest packet covers `reviewer_principal_id`, `created_at`, or the row `id` -
+// deliberately, since they are assigned at insert time and hashing them would make an idempotent
+// replay depend on write order. The documentation calls this "reproducible by execution"; this is
+// that execution, committed, so the claim rests on the branch rather than on a reviewer's throwaway
+// probe. If this test ever starts FAILING, the limitation was closed - update the threat model and
+// the status docs. Do not "fix" the test.
+test('a stored re-review re-attributed to another principal still reads as intact - attribution is outside digest coverage', async () => {
+  const { rootReview, admin } = await seedChain('m3crr-misattribute');
+  const successor = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'misattribute-1' }));
+  const before = rereviewRow(successor.id);
+  const honestReviewer = before.reviewer_principal_id;
+  assert.ok(honestReviewer, 'the row records who judged');
+
+  // The reviewer is reassigned and the digests are deliberately NOT recomputed - they do not cover
+  // this column, so unlike every tamper case above, nothing needs resealing for the row to pass.
+  const tampered = tamperInPlace(successor.id, (row) => ({ ...row, reviewer_principal_id: 'SOMEONE-ELSE-ENTIRELY' }));
+  assert.equal(tampered.content_digest, before.content_digest, 'the content digest is untouched');
+  assert.equal(tampered.lineage_digest, before.lineage_digest, 'the lineage digest is untouched');
+  assert.notEqual(tampered.reviewer_principal_id, honestReviewer, 'the stored attribution really did change');
+
+  const read = readMemoryCandidateRereview(admin, successor.id);
+  assert.ok(read, 'the mis-attributed row still reads as fully intact - this is the accepted gap');
+  assert.equal(read.reviewerPrincipalId, 'SOMEONE-ELSE-ENTIRELY',
+    'and the read surface reports the forged reviewer as though it were the real one');
+
+  // Replay hands the mis-attributed row straight back rather than refusing it.
+  const again = recordMemoryCandidateRereview(admin, rootReview.id,
+    rereview(rootReview.id, { idempotencyKey: 'misattribute-1' }));
+  assert.equal(again.id, successor.id, 'replay returns the same row');
+  assert.equal(rereviewCount('m3crr-misattribute'), 1, 'replay writes nothing');
+});
+
 test('a stored successor whose content digest alone no longer matches is unreadable and refuses replay', async () => {
   // Isolates the CONTENT half of the comparison: the lineage digest still matches exactly, so only
   // the content half can refuse this row.

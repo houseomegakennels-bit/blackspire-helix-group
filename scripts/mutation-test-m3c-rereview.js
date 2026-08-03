@@ -213,6 +213,23 @@ const EQUIVALENT_MUTANTS = [
       'a forged inherited context with an extra or missing top-level key is unreadable'],
   },
   {
+    name: 'write path: drop the denylist over the assembled inherited block',
+    file: REVIEW,
+    find: `  if (!deniedInheritanceAbsent(inherited)) throw new Error('memory candidate re-review refuses inherited authority');`,
+    replace: '',
+    why: 'the block this call inspects is assembled immediately above it from frozen literals - the '
+      + 'four top-level keys, the INHERITED_VALUE_KEYS allowlist, and a provenance object whose keys '
+      + 'are written out literally - so no caller-controlled key name can reach it. The invariant it '
+      + 'reads as enforcing (allowlist and denylist disjoint) is decided at module load by the '
+      + 'exported, directly tested inheritanceAllowlistDisjoint(). Reported here rather than omitted '
+      + 'because HERMES_IMPLEMENTATION_STATUS.md describes BOTH denylist call sites as declared '
+      + 'equivalent mutants; before this entry only the read-path call was in the inventory, which an '
+      + 'independent reviewer caught by deleting this line and seeing the focused suite stay green.',
+    provenBy: ['the inheritance allowlist is statically disjoint from the denied set, asserted at module load',
+      'a forged inherited context with smuggled keys and a contradicting candidate identity',
+      'a forged inherited context is rejected even when every smuggled key name is undenied'],
+  },
+  {
     name: 'write path: drop the whole-chain validity check',
     file: REVIEW,
     find: `    if (head && !rereviewChainValid(root, getMemoryCandidateRereviewChain(rootReviewId))) {
@@ -343,5 +360,12 @@ for (const mutant of EQUIVALENT_MUTANTS) {
   }
 }
 
+// Restore BEFORE announcing anything terminal. The summary line is what an operator or a polling
+// reviewer treats as "the run is over", so it must not be observable while a mutant is still applied.
+// Leaving restoration to the `exit` handler alone left a window in which the summary was already
+// printed, the tree still mutated, and the lock still held - long enough for a concurrent reader to
+// measure mutated source and attribute the result to the branch. restoreAll is idempotent (it rewrites
+// each file from its captured original), so the exit handler re-running it is harmless.
+restoreAll();
 console.log(`\nsummary: ${MUTANTS.length - survivors} killed, ${EQUIVALENT_MUTANTS.length - misdeclared} declared equivalent, ${survivors} surviving, ${misdeclared} misdeclared`);
 process.exit(survivors === 0 && misdeclared === 0 ? 0 : 1);

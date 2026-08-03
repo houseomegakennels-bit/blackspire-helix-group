@@ -49,7 +49,7 @@ merged and anchored first slice (`bf9072c5ebc1f195020e7c1709610c741cf8be43`, rev
   `readMemoryCandidateRereview`, the chain internals, the inheritance allowlist and denied-key guard,
   and `MAX_REREVIEW_CHAIN_DEPTH`. No new import.
 - `apps/api/server.js` — one GET-only route, `/api/hermes/memory-candidate-rereviews/:id`.
-- `tests/hermes-m3c-rereview-successor.test.js` — new, 58 tests.
+- `tests/hermes-m3c-rereview-successor.test.js` — new, 59 tests.
 - `docs/HERMES_M3C_REREVIEW_SUCCESSOR_CHAINS.md`, `docs/HERMES_IMPLEMENTATION_STATUS.md`, this file —
   documentation.
 
