@@ -285,8 +285,10 @@ else
 fi
 
 # Blocker 3: log rotation must be installed and alert-tested.
-if [[ -f "$logrotate_file" ]]; then
-  record log-rotation READY "log rotation is installed at $logrotate_file"
+if [[ -f "$logrotate_file" ]] && cmp -s "$logrotate_file" "$repo_root/ops/blackspire-command-logrotate.conf"; then
+  record log-rotation READY "the exact reviewed log rotation policy is installed at $logrotate_file"
+elif [[ -f "$logrotate_file" ]]; then
+  record log-rotation FAILED "log rotation at $logrotate_file differs from the reviewed service-isolated policy"
 else
   record log-rotation PENDING "log rotation is not installed at $logrotate_file (template: ops/blackspire-command-logrotate.conf)"
 fi

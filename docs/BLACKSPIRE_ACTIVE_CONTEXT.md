@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## Current repository readiness work (2026-08-04 UTC)
+
+The service-isolated logging branch replaces the unrelated Docker-wide rotation target with one
+systemd-owned combined JSON log, exact-policy Gate 4 validation, preflight enforcement, regression
+coverage, and an operator retention/recovery guide. This is source preparation only: no live unit,
+directory, rotation policy, routing, provider, database, or production state changed. Installing the
+reviewed unit and policy, testing rotation and alert delivery, and accepting `copytruncate`'s small
+loss window remain operator actions behind Gate 4 authorization.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged as `0d6e977113e826095c4ed57db150bf30d9de954f` from exact reviewed head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is the new verified implementation anchor. It closes the first slice's one-terminal-review-per-candidate limitation with an append-only successor chain in `hermes_memory_candidate_rereviews`, and closes nothing else. `chain_version` is the sole ordering authority; `created_at` is metadata only. The slice is review-only and non-operative: recording is an internal service call with no production caller, the single surface is a GET-only admin-gated route, and appending never touches candidate `status` or `promoted_at`.
