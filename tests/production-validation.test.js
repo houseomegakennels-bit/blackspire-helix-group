@@ -79,6 +79,16 @@ test('rejects malformed or unsafe production runtime integer controls', () => {
   }
 });
 
+test('rejects missing, malformed, or unsafe production boolean controls', () => {
+  for (const [key, value] of Object.entries({
+    SECURE_COOKIES: 'TRUE', DEBUG: 'False', RATE_LIMIT_DISABLED: '0', TRUST_PROXY: 'yes',
+    GIT_WORKFLOW_ENABLED: '', UNIFIED_IPHONE_TEST_MODE: 'false ', ALLOW_BEARER_AUTH: '1',
+    BLACKSPIRE_RUN_MIGRATIONS: 'no',
+  })) {
+    assert.match(requireProductionSafeConfig(validEnv({ [key]: value }), dirs()).errors.join(), new RegExp(key));
+  }
+});
+
 test('same-origin API does not treat legacy CORS_ORIGIN as an authorization control', () => {
   assert.equal(requireProductionSafeConfig(validEnv({ CORS_ORIGIN: '*' }), dirs()).ok, true);
 });
@@ -88,7 +98,7 @@ test('rejects debug mode', () => {
 });
 
 test('rejects rate limiting disabled', () => {
-  assert.match(requireProductionSafeConfig(validEnv({ RATE_LIMIT_DISABLED: 'true' }), dirs()).errors.join(), /Rate limiting/);
+  assert.match(requireProductionSafeConfig(validEnv({ RATE_LIMIT_DISABLED: 'true' }), dirs()).errors.join(), /RATE_LIMIT_DISABLED|Rate limiting/);
 });
 
 test('rejects webhook mode without a Telegram webhook secret', () => {

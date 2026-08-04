@@ -9,6 +9,7 @@ import { rateLimit } from './rateLimits.js';
 import { validateProductionHost, validateProductionPort, PRODUCTION_STATE_OWNER } from './bind.js';
 import { credentialMatches } from './credential-compare.js';
 import { validateProductionIntegerConfig } from './runtime-numeric-config.js';
+import { validateProductionBooleanConfig } from './runtime-boolean-config.js';
 
 export { createSession, createTestModeSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
@@ -33,12 +34,9 @@ export function requireProductionSafeConfig(env = process.env, { dbDir = path.di
     if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) errors.push('Set SESSION_SECRET to at least 32 characters.');
     try { configuredSessionTtl(env); } catch (error) { errors.push(error.message); }
     errors.push(...validateProductionIntegerConfig(env));
-    if (env.SECURE_COOKIES === 'false') errors.push('SECURE_COOKIES=false is not allowed in production.');
+    errors.push(...validateProductionBooleanConfig(env));
     if (!env.PUBLIC_BASE_URL?.startsWith('https://')) errors.push('PUBLIC_BASE_URL must be HTTPS in production.');
     if (env.TELEGRAM_MODE === 'webhook' && !env.TELEGRAM_WEBHOOK_SECRET) errors.push('TELEGRAM_WEBHOOK_SECRET is required in webhook mode.');
-    if (env.DEBUG === 'true') errors.push('DEBUG=true is not allowed in production.');
-    if (env.RATE_LIMIT_DISABLED === 'true') errors.push('Rate limiting cannot be disabled in production.');
-    if (env.TRUST_PROXY !== 'true' && env.TRUST_PROXY !== 'false') errors.push('TRUST_PROXY must be explicitly set to "true" or "false" in production.');
     if (env.GIT_WORKFLOW_ENABLED === 'true' && spawnSync('git', ['--version'], { encoding: 'utf8' }).status !== 0) errors.push('Git workflow is enabled but the git binary is not available.');
     const [nodeMajor, nodeMinor] = String(env.NODE_VERSION_OVERRIDE || process.versions.node).split('.').map(Number);
     // The supported runtime is pinned to major 22 exactly: node:sqlite requires >= 22.5, and the durable-VPS
