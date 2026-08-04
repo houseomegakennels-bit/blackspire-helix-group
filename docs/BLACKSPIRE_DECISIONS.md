@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-08-04 — A local backup is observable evidence, not disaster recovery
+
+The latest-backup verifier proves local recency, checksum binding, SQLite integrity, and current schema compatibility read-only. It deliberately cannot repair, rotate, upload, restore, or delete. A green local snapshot does not survive host loss and cannot establish RPO/RTO, encryption/key custody, off-host separation, retention, or recovery time. Those remain operator-owned requirements and must not be defaulted by code.
+
 ## 2026-08-04 — `chain_version` is the sole ordering authority; `created_at` is metadata
 
 A re-review chain orders strictly by `chain_version`, and `created_at` carries no ordering guarantee. Wall-clock time is not a safe ordering key for an append-only chain: it is not monotonic across restarts or hosts, and nothing prevents two rows from sharing a timestamp. `UNIQUE(root_review_id,chain_version)` makes the ordering both total and enforceable by the database rather than by convention, so a gap or a fork cannot hide off the walked path. `created_at` is therefore stored as metadata, hashed into neither the content nor the lineage packet, and no re-review query orders by it. The read path deliberately does **not** verify `created_at` monotonicity, and that is recorded as a known non-guarantee rather than left implicit.
