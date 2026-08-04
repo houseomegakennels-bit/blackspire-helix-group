@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — bounded rate-limit configuration (Codex)
+
+- Replaced raw numeric parsing for API login/task and Telegram limits with one bounded configuration contract.
+- Production startup now rejects malformed, non-positive, fractional, or above-ceiling rate-limit overrides.
+- Added primitive-level key, limit, and window validation plus adversarial configuration tests.
+- This does not change the approved single-host topology or authorize production routing, live Telegram, or Gate 4.
+
 ## 2026-08-04 — API HTTP resource and async-failure boundary (Codex)
 
 - Audited rate limits, provider timeouts/cooldowns, emergency stops, body parsing, and Node server

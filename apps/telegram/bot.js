@@ -3,6 +3,7 @@ import path from 'node:path';
 import { TELEGRAM_ALLOWED_USERS, ADMIN_TOKEN, PUBLIC_BASE_URL, ATTACHMENTS_DIR, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
 import { escapeMarkdown, redact, id } from '../../packages/shared/util.js';
 import { rateLimit } from '../../packages/shared/security.js';
+import { configuredRateLimit } from '../../packages/shared/rateLimits.js';
 import { transcribeVoice } from '../../packages/shared/transcription.js';
 import { recordAttachment } from '../../packages/task-engine/attachments.js';
 import { audit } from '../../packages/task-engine/tasks.js';
@@ -22,7 +23,7 @@ export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
   const msg = update.message || update.callback_query?.message;
   const from = update.message?.from || update.callback_query?.from || {};
   if (!TELEGRAM_ALLOWED_USERS.includes(Number(from.id))) return { ignored: true };
-  const limit = rateLimit(`telegram:${from.id}`, { limit: Number(process.env.TELEGRAM_RATE_LIMIT || 30), windowMs: 60000 });
+  const limit = rateLimit(`telegram:${from.id}`, { limit: configuredRateLimit('TELEGRAM_RATE_LIMIT'), windowMs: 60000 });
   if (!limit.allowed) return { chatId: msg?.chat?.id, text: chunk(escapeMarkdown(`Rate limit exceeded. Retry after ${limit.retryAfter}s`)) };
   const text = update.message?.text || update.callback_query?.data || '';
   const chatId = msg?.chat?.id;
