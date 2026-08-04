@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { credentialMatches } from '../packages/shared/credential-compare.js';
 import { configuredSessionTtl } from '../packages/shared/sessions.js';
+import { parseCookies } from '../packages/shared/security.js';
 
 test('credential comparison accepts only the exact non-empty configured string', () => {
   assert.equal(credentialMatches('correct horse', 'correct horse'), true);
@@ -20,6 +21,14 @@ test('session TTL uses the reviewed default and accepts only bounded integer mil
   for (const value of ['0', '-1', '59999', '1.5', 'NaN', 'Infinity', '86400001']) {
     assert.throws(() => configuredSessionTtl({ SESSION_TTL_MS: value }), /SESSION_TTL_MS/);
   }
+});
+
+test('malformed cookie encoding fails as an absent cookie instead of throwing', () => {
+  const parsed = parseCookies('bc_session=%E0%A4%A; safe=value%20with%20spaces; empty=');
+  assert.equal(parsed.bc_session, undefined);
+  assert.equal(parsed.safe, 'value with spaces');
+  assert.equal(parsed.empty, '');
+  assert.equal(Object.getPrototypeOf(parsed), null);
 });
 
 test('credential-bearing HTTP boundaries use the fixed-digest comparator', () => {

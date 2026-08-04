@@ -157,7 +157,14 @@ function safeUsername() {
 }
 
 export function parseCookies(header = '') {
-  return Object.fromEntries(String(header).split(';').map((part) => part.trim().split('=')).filter(([key]) => key).map(([key, ...value]) => [key, decodeURIComponent(value.join('='))]));
+  const cookies = Object.create(null);
+  for (const part of String(header).split(';')) {
+    const [rawKey, ...rawValue] = part.trim().split('=');
+    const key = rawKey?.trim();
+    if (!key) continue;
+    try { cookies[key] = decodeURIComponent(rawValue.join('=')); } catch { /* malformed cookie is absent */ }
+  }
+  return cookies;
 }
 
 export function sessionCookie(session, { secure = process.env.NODE_ENV === 'production' } = {}) {
