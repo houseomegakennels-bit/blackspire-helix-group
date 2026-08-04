@@ -10,6 +10,8 @@ Production promotion is blocked until every item is evidenced and separately app
 - [ ] Production authentication and session controls are verified.
 - [ ] Secrets are injected externally with least privilege and never enter Git/Codespaces.
 - [ ] Health monitoring, alert routing, and dependency checks are active.
+- [ ] Slow-header, slow-body, idle-socket, keep-alive, header-size/count, socket-reuse, oversized
+  JSON, malformed JSON, and graceful-drain behavior has been exercised through the reverse proxy.
 - [ ] Logs, errors, evidence, and browser output are redacted.
 - [ ] Emergency stop and safe mode are tested before provider execution.
 - [ ] Provider budgets and no-fallback behavior are tested.
