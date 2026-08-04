@@ -17,7 +17,7 @@ merged and anchored Milestone 3B baseline (`9dccdd95f5119195b192ee1f553b55d0eae3
   immutability triggers.
 - `apps/api/server.js` — one GET-only route, `/api/hermes/memory-candidate-reviews/:id`.
 - `scripts/typecheck-check.js` — adds the new module.
-- `tests/hermes-m3c-memory-review.test.js` — new, 18 tests.
+- `tests/hermes-m3c-memory-review.test.js` — new, 19 tests.
 - `docs/HERMES_M3C_MEMORY_CANDIDATE_REVIEW.md`, `docs/HERMES_IMPLEMENTATION_STATUS.md`,
   `docs/HERMES_INTELLIGENCE_LAYER_ARCHITECTURE.md`, this file — documentation.
 
@@ -30,6 +30,42 @@ Vercel, CI, DNS, host configuration, release/Gate 4 scripts, `package.json`, and
 (zero dependency changes). No environment variable was added or read by the new code. No entry was
 added to `AUTHZ_PERMISSIONS`. No production, staging, shared, or real database was touched; all
 fixtures are disposable SQLite files under a temporary directory.
+
+## Second slice — re-review and successor chains
+
+Scope: the implementation commits on `feature/hermes-memory-rereview-successor-m3c`, on top of the
+merged and anchored first slice (`bf9072c5ebc1f195020e7c1709610c741cf8be43`, reviewed head
+`1b589807af5d8179ad5b63e13648645dc2741d57`).
+
+- `scripts/migration-writer.js` — one additive, idempotent schema block creating
+  `hermes_memory_candidate_rereviews` with three unique indexes, two ordinary indexes, and two
+  immutability triggers.
+- `packages/shared/schema-validation.js` — registers the table, three unique indexes, and two
+  immutability triggers.
+- `packages/hermes-orchestrator/store.js` — additive insert and read helpers for the new table
+  (chain, head, by id, by idempotency key). No update or delete helper, and still no writer of any
+  kind for `hermes_memory_candidates`.
+- `packages/hermes-orchestrator/memory-review.js` — `recordMemoryCandidateRereview`,
+  `readMemoryCandidateRereview`, the chain internals, the inheritance allowlist and denied-key guard,
+  and `MAX_REREVIEW_CHAIN_DEPTH`. No new import.
+- `apps/api/server.js` — one GET-only route, `/api/hermes/memory-candidate-rereviews/:id`.
+- `tests/hermes-m3c-rereview-successor.test.js` — new, 59 tests.
+- `docs/HERMES_M3C_REREVIEW_SUCCESSOR_CHAINS.md`, `docs/HERMES_IMPLEMENTATION_STATUS.md`, this file —
+  documentation.
+
+The "not touched" list above applies unchanged, and no dependency, environment variable, or
+`AUTHZ_PERMISSIONS` entry was added.
+
+Rollback follows the identical procedure and the identical data rules below.
+`hermes_memory_candidate_rereviews` is additive and append-only, inert after a code revert, and must
+not be dropped or edited on any non-disposable database. Reverting it discards recorded human
+judgements only; it cannot un-promote anything, because nothing was promoted — the root review table
+and `hermes_memory_candidates` are byte-identical before and after any successor, which the suite
+proves by table digest.
+
+The migration block, the `schema-validation.js` registrations, and `memory-review.js` must move
+together, for the same `assertSchemaCompatible` reason given below. The commits are otherwise ordered
+so each can be reverted newest-first: tests, then the route, then the service, then the data layer.
 
 ## Rollback procedure
 
@@ -82,3 +118,11 @@ databases.
 No Telegram bot, provider, external service, Vercel project, DNS record, deployment, host control,
 release, or trading system was changed, so no external rollback is required. Production remains
 disabled and Gate 4 remains unauthorized; neither was touched by this branch.
+
+## Review-repair commits on this branch
+
+The review-finding repairs change application logic, tests, docs, and add
+`scripts/mutation-test-m3c-rereview.js`. They add no migration, no column, no index, no trigger, and
+no table, so the schema rollback above is unchanged and no additional data rule applies. Reverting
+them restores the reviewed-but-defective read, replay, and depth behaviour described in "Corrections
+from review" in HERMES_M3C_REREVIEW_SUCCESSOR_CHAINS.md; it does not require touching any database.

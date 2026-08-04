@@ -229,3 +229,20 @@ export const getMemoryCandidateReviewByIdempotencyKey = (workspaceId, idempotenc
 // the order total: `created_at` is millisecond-resolution and ties are routine.
 export const getPendingMemoryCandidatesForWorkspace = (workspaceId) =>
   all(`SELECT * FROM hermes_memory_candidates WHERE workspace_id=? AND status='pending' ORDER BY created_at,id`, [workspaceId]);
+
+// Milestone 3C re-review successors. Append-only in exactly the same sense: insert and read only, no
+// update or delete helper, and still no writer of any kind for `hermes_memory_candidates`. A
+// re-review links to the record it supersedes and never touches it.
+const MEMORY_REREVIEW_COLUMNS = ['id','rereview_version','decision_version','root_review_id','supersedes_rereview_id','chain_version','candidate_id','workspace_id','run_id','task_id','decision','rationale','candidate_kind','candidate_scope','candidate_status_at_review','candidate_digest','evaluation_id','evaluation_version','provenance_digest','predecessor_content_digest','predecessor_lineage_digest','inherited_context','reviewer_principal_id','idempotency_key','content_digest','lineage_digest','created_at'];
+export function insertMemoryCandidateRereview(row) {
+  run(`INSERT INTO hermes_memory_candidate_rereviews(${MEMORY_REREVIEW_COLUMNS.join(',')}) VALUES(${placeholders(MEMORY_REREVIEW_COLUMNS)})`, MEMORY_REREVIEW_COLUMNS.map((column) => row[column]));
+}
+export const getMemoryCandidateRereview = (rereviewId) => get(`SELECT * FROM hermes_memory_candidate_rereviews WHERE id=?`, [rereviewId]);
+// The whole chain for a root, in canonical order. `chain_version` is unique per root, so ordering by
+// it is total and replay-stable - unlike `created_at`, which is millisecond-resolution and ties.
+export const getMemoryCandidateRereviewChain = (rootReviewId) =>
+  all(`SELECT * FROM hermes_memory_candidate_rereviews WHERE root_review_id=? ORDER BY chain_version`, [rootReviewId]);
+export const getMemoryCandidateRereviewHead = (rootReviewId) =>
+  get(`SELECT * FROM hermes_memory_candidate_rereviews WHERE root_review_id=? ORDER BY chain_version DESC LIMIT 1`, [rootReviewId]);
+export const getMemoryCandidateRereviewByIdempotencyKey = (workspaceId, idempotencyKey) =>
+  get(`SELECT * FROM hermes_memory_candidate_rereviews WHERE workspace_id=? AND idempotency_key=?`, [workspaceId, idempotencyKey]);

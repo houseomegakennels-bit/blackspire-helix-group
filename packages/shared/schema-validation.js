@@ -39,6 +39,9 @@ export const REQUIRED_SCHEMA = {
   // Milestone 1 candidates; kept in sync with the schema-writer. Review-only: nothing here promotes,
   // and `hermes_memory_candidates.status`/`promoted_at` are never written by this milestone.
   hermes_memory_candidate_reviews: ['id', 'review_version', 'decision_version', 'candidate_id', 'workspace_id', 'run_id', 'task_id', 'decision', 'rationale', 'candidate_kind', 'candidate_scope', 'candidate_status_at_review', 'candidate_digest', 'evaluation_id', 'evaluation_version', 'provenance_digest', 'reviewer_principal_id', 'idempotency_key', 'content_digest', 'lineage_digest', 'created_at'],
+  // Hermes Memory-Candidate Re-Review (Milestone 3C, second slice). Additive append-only successor
+  // chain over the reviews above; the root review row is never modified and no candidate is written.
+  hermes_memory_candidate_rereviews: ['id', 'rereview_version', 'decision_version', 'root_review_id', 'supersedes_rereview_id', 'chain_version', 'candidate_id', 'workspace_id', 'run_id', 'task_id', 'decision', 'rationale', 'candidate_kind', 'candidate_scope', 'candidate_status_at_review', 'candidate_digest', 'evaluation_id', 'evaluation_version', 'provenance_digest', 'predecessor_content_digest', 'predecessor_lineage_digest', 'inherited_context', 'reviewer_principal_id', 'idempotency_key', 'content_digest', 'lineage_digest', 'created_at'],
 };
 
 export const REQUIRED_SCHEMA_OBJECTS = {
@@ -58,6 +61,11 @@ export const REQUIRED_SCHEMA_OBJECTS = {
     idx_hermes_scorecard_sources_evaluation_unique: { table: 'hermes_verified_scorecard_sources', columns: ['scorecard_id','evaluation_id'] },
     idx_hermes_memory_reviews_candidate_unique: { table: 'hermes_memory_candidate_reviews', columns: ['candidate_id'] },
     idx_hermes_memory_reviews_idempotency_unique: { table: 'hermes_memory_candidate_reviews', columns: ['workspace_id','idempotency_key'] },
+    // The chain-shape guarantees. The pair index forbids a fork at every depth including the first
+    // successor; the parent index forbids two successors of the same successor.
+    idx_hermes_memory_rereviews_chain_unique: { table: 'hermes_memory_candidate_rereviews', columns: ['root_review_id','chain_version'] },
+    idx_hermes_memory_rereviews_parent_unique: { table: 'hermes_memory_candidate_rereviews', columns: ['supersedes_rereview_id'] },
+    idx_hermes_memory_rereviews_idempotency_unique: { table: 'hermes_memory_candidate_rereviews', columns: ['workspace_id','idempotency_key'] },
   },
   trigger: Object.fromEntries([
     ['trg_hermes_outcome_evaluations_immutable_update','hermes_outcome_evaluations','UPDATE','immutable outcome evaluation'],
@@ -76,6 +84,8 @@ export const REQUIRED_SCHEMA_OBJECTS = {
     ['trg_hermes_scorecard_sources_immutable_delete','hermes_verified_scorecard_sources','DELETE','immutable verified scorecard source'],
     ['trg_hermes_memory_reviews_immutable_update','hermes_memory_candidate_reviews','UPDATE','immutable memory candidate review'],
     ['trg_hermes_memory_reviews_immutable_delete','hermes_memory_candidate_reviews','DELETE','immutable memory candidate review'],
+    ['trg_hermes_memory_rereviews_immutable_update','hermes_memory_candidate_rereviews','UPDATE','immutable memory candidate rereview'],
+    ['trg_hermes_memory_rereviews_immutable_delete','hermes_memory_candidate_rereviews','DELETE','immutable memory candidate rereview'],
   ].map(([name, table, operation, message]) => [name, {
     table,
     sql: `CREATE TRIGGER ${name} BEFORE ${operation} ON ${table} BEGIN SELECT RAISE(ABORT,'${message}'); END`,

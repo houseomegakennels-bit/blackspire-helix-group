@@ -153,6 +153,41 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_memory_reviews_candidate_unique ON 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_memory_reviews_idempotency_unique ON hermes_memory_candidate_reviews(workspace_id,idempotency_key);
 CREATE TRIGGER IF NOT EXISTS trg_hermes_memory_reviews_immutable_update BEFORE UPDATE ON hermes_memory_candidate_reviews BEGIN SELECT RAISE(ABORT,'immutable memory candidate review'); END;
 CREATE TRIGGER IF NOT EXISTS trg_hermes_memory_reviews_immutable_delete BEFORE DELETE ON hermes_memory_candidate_reviews BEGIN SELECT RAISE(ABORT,'immutable memory candidate review'); END;`);
+  // Hermes Milestone 3C, second slice: re-review as an explicit successor. Additive and idempotent.
+  //
+  // A re-review is a NEW append-only row here that LINKS to the record it supersedes and never
+  // touches it. The chain root is the one `hermes_memory_candidate_reviews` row for the candidate;
+  // successors are `chain_version` 1..n in this table. This is the Milestone 3A correction-chain
+  // shape (`hermes_outcome_corrections`), not the 3B in-table `supersedes_*` shape, for a structural
+  // reason: the merged review table above declares an INLINE table-level `UNIQUE(candidate_id)`,
+  // which SQLite cannot drop without rebuilding the table - and rebuilding an append-only table
+  // means copying and re-writing historical immutable rows, which is exactly what a successor chain
+  // exists to avoid. Keeping the root byte-untouched is the whole point.
+  //
+  // Chain shape is enforced by the database, not by convention:
+  //   UNIQUE(root_review_id,chain_version)  - no forks at ANY depth, including the first successor,
+  //                                           because chain_version 1 can exist only once per root.
+  //   UNIQUE(supersedes_rereview_id)        - no forks off a successor. SQLite permits many NULLs,
+  //                                           which is why the pair above carries the depth-1 case.
+  //   the chain_version/supersedes CHECK    - depth 1 supersedes the root and names no successor;
+  //                                           every deeper row must name one. No ambiguous ancestry.
+  //   id<>root_review_id, id<>supersedes    - no self-links.
+  // Cycles are unreachable given strictly increasing `chain_version` over an append-only table.
+  //
+  // Still review-only. Same advisory vocabulary with no `promote` value, refused by CHECK; no writer
+  // for `hermes_memory_candidates` anywhere; `status`/`promoted_at` remain untouched. A successor
+  // INHERITS NO AUTHORITY: `decision` and `rationale` are supplied fresh by the caller and are never
+  // copied from the predecessor, and `inherited_context` carries only an allowlisted, provenance-
+  // tracked copy of the subject's identity. `predecessor_content_digest`/`predecessor_lineage_digest`
+  // pin the superseded record as it read at decision time, so a stale or altered predecessor refuses.
+  db.exec(`CREATE TABLE IF NOT EXISTS hermes_memory_candidate_rereviews(id TEXT PRIMARY KEY,rereview_version TEXT NOT NULL,decision_version TEXT NOT NULL,root_review_id TEXT NOT NULL,supersedes_rereview_id TEXT,chain_version INTEGER NOT NULL CHECK(chain_version>0),candidate_id TEXT NOT NULL,workspace_id TEXT NOT NULL,run_id TEXT NOT NULL,task_id TEXT,decision TEXT NOT NULL CHECK(decision IN ('recommend_promote','reject','defer_needs_evidence')),rationale TEXT NOT NULL,candidate_kind TEXT NOT NULL,candidate_scope TEXT NOT NULL CHECK(candidate_scope='workspace'),candidate_status_at_review TEXT NOT NULL CHECK(candidate_status_at_review='pending'),candidate_digest TEXT NOT NULL,evaluation_id TEXT NOT NULL,evaluation_version TEXT NOT NULL,provenance_digest TEXT NOT NULL,predecessor_content_digest TEXT NOT NULL,predecessor_lineage_digest TEXT NOT NULL,inherited_context TEXT NOT NULL,reviewer_principal_id TEXT NOT NULL,idempotency_key TEXT NOT NULL,content_digest TEXT NOT NULL,lineage_digest TEXT NOT NULL,created_at TEXT NOT NULL,CHECK(id<>root_review_id),CHECK(supersedes_rereview_id IS NULL OR supersedes_rereview_id<>id),CHECK((chain_version=1 AND supersedes_rereview_id IS NULL) OR (chain_version>1 AND supersedes_rereview_id IS NOT NULL)),UNIQUE(root_review_id,chain_version),UNIQUE(supersedes_rereview_id),UNIQUE(workspace_id,idempotency_key));
+CREATE INDEX IF NOT EXISTS idx_hermes_memory_rereviews_workspace_created ON hermes_memory_candidate_rereviews(workspace_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_hermes_memory_rereviews_candidate ON hermes_memory_candidate_rereviews(candidate_id,chain_version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_memory_rereviews_chain_unique ON hermes_memory_candidate_rereviews(root_review_id,chain_version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_memory_rereviews_parent_unique ON hermes_memory_candidate_rereviews(supersedes_rereview_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hermes_memory_rereviews_idempotency_unique ON hermes_memory_candidate_rereviews(workspace_id,idempotency_key);
+CREATE TRIGGER IF NOT EXISTS trg_hermes_memory_rereviews_immutable_update BEFORE UPDATE ON hermes_memory_candidate_rereviews BEGIN SELECT RAISE(ABORT,'immutable memory candidate rereview'); END;
+CREATE TRIGGER IF NOT EXISTS trg_hermes_memory_rereviews_immutable_delete BEFORE DELETE ON hermes_memory_candidate_rereviews BEGIN SELECT RAISE(ABORT,'immutable memory candidate rereview'); END;`);
   for (const [name, definition] of [['worker_id', 'TEXT'], ['claimed_at', 'TEXT'], ['heartbeat_at', 'TEXT'], ['current_stage', 'TEXT'], ['evidence', 'TEXT'], ['conversation_id', 'TEXT'], ['input_id', 'TEXT'], ['source_channel', 'TEXT'], ['actor_id', 'TEXT'], ['action_class', 'TEXT'], ['authority_class', 'TEXT'], ['policy_decision', 'TEXT']]) ensureColumn('tasks', name, definition);
   for (const [name, definition] of [['risk_level','TEXT'], ['requested_by','TEXT'], ['decided_by','TEXT'], ['decision_note','TEXT'], ['expires_at','TEXT']]) ensureColumn('approvals', name, definition);
   ensureColumn('hermes_workflow_runs', 'requested_provider', 'TEXT');
