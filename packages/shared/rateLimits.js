@@ -3,11 +3,40 @@ import { run, get } from '../task-engine/db.js';
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_SAMPLE_RATE = 0.02; // bounded, probabilistic cleanup instead of a full-table scan on every call
 
+export const RATE_LIMIT_CONFIG = Object.freeze({
+  LOGIN_RATE_LIMIT: Object.freeze({ defaultValue: 5, max: 100 }),
+  TASK_RATE_LIMIT: Object.freeze({ defaultValue: 20, max: 1000 }),
+  TELEGRAM_RATE_LIMIT: Object.freeze({ defaultValue: 30, max: 1000 }),
+});
+
+export function configuredRateLimit(name, env = process.env) {
+  const rule = RATE_LIMIT_CONFIG[name];
+  if (!rule) throw new TypeError(`Unknown rate-limit configuration key: ${name}`);
+  const raw = env[name];
+  if (raw === undefined || raw === '') return rule.defaultValue;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > rule.max) {
+    throw new TypeError(`${name} must be an integer from 1 through ${rule.max}.`);
+  }
+  return value;
+}
+
+export function validateRateLimitConfig(env = process.env) {
+  const errors = [];
+  for (const name of Object.keys(RATE_LIMIT_CONFIG)) {
+    try { configuredRateLimit(name, env); } catch (error) { errors.push(error.message); }
+  }
+  return errors;
+}
+
 // A single UPSERT with a CASE expression does the "is this a new window or the same one" decision and the
 // increment atomically in one statement. SQLite's WAL mode + busy_timeout (set in db.js) serializes concurrent
 // writers from other Node processes sharing this file instead of racing or erroring, so counts stay correct
 // even when the API, worker, and telegram bridge all hit the same bucket at once.
 export function rateLimit(key, { limit = 20, windowMs = 60000 } = {}) {
+  if (typeof key !== 'string' || key.length < 1 || key.length > 512) throw new TypeError('Rate-limit key must contain 1 through 512 characters.');
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new TypeError('Rate-limit limit must be a positive safe integer.');
+  if (!Number.isSafeInteger(windowMs) || windowMs < 1 || windowMs > RETENTION_MS) throw new TypeError('Rate-limit window must be a positive safe integer no greater than 24 hours.');
   if (process.env.RATE_LIMIT_DISABLED === 'true' && process.env.NODE_ENV !== 'production') return { allowed: true, remaining: limit };
   const nowMs = Date.now();
   const newResetAt = nowMs + windowMs;

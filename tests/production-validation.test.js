@@ -72,6 +72,19 @@ test('rejects rate limiting disabled', () => {
   assert.match(requireProductionSafeConfig(validEnv({ RATE_LIMIT_DISABLED: 'true' }), dirs()).errors.join(), /Rate limiting/);
 });
 
+test('accepts omitted rate-limit overrides and rejects malformed or unsafe production limits', () => {
+  for (const [key, values] of Object.entries({
+    LOGIN_RATE_LIMIT: ['0', '-1', '1.5', 'NaN', '101'],
+    TASK_RATE_LIMIT: ['0', '1.5', '1001'],
+    TELEGRAM_RATE_LIMIT: ['0', 'Infinity', '1001'],
+  })) {
+    for (const value of values) {
+      assert.match(requireProductionSafeConfig(validEnv({ [key]: value }), dirs()).errors.join(), new RegExp(key));
+    }
+  }
+  assert.equal(requireProductionSafeConfig(validEnv({ LOGIN_RATE_LIMIT: '1', TASK_RATE_LIMIT: '1000', TELEGRAM_RATE_LIMIT: '1000' }), dirs()).ok, true);
+});
+
 test('rejects webhook mode without a Telegram webhook secret', () => {
   assert.match(requireProductionSafeConfig(validEnv({ TELEGRAM_MODE: 'webhook', TELEGRAM_WEBHOOK_SECRET: '' }), dirs()).errors.join(), /TELEGRAM_WEBHOOK_SECRET/);
 });

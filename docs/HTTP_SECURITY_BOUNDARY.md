@@ -38,6 +38,13 @@ current SQLite-backed rate limiter is atomic and durable across processes sharin
 database, but it is suitable only for the documented single-host topology. A future multi-host
 topology requires a genuinely shared limiter and is an architectural decision.
 
+Rate-limit overrides are optional and fail closed in production. `LOGIN_RATE_LIMIT` accepts 1–100
+(default 5); `TASK_RATE_LIMIT` accepts 1–1000 (default 20); and `TELEGRAM_RATE_LIMIT` accepts 1–1000
+(default 30). Each is a per-minute integer. Zero, fractions, non-numeric values, and values above the
+reviewed ceiling stop production startup instead of disabling or weakening the control. The limiter
+primitive independently rejects empty/oversized bucket keys, non-positive limits, and windows above
+24 hours so a future caller cannot silently bypass the startup contract.
+
 Before production authorization, exercise slow headers, slow/oversized bodies, keep-alive expiry,
 socket reuse exhaustion, malformed JSON, and graceful draining through the approved reverse proxy.
 Confirm the proxy timeout envelope does not outlive the application boundary in a way that retains
