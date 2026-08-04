@@ -342,6 +342,15 @@ test('development behavior is preserved', () => {
   assert.equal(dev.port, 8787);
 });
 
+test('development and staging refuse malformed explicit ports instead of returning NaN', () => {
+  for (const value of ['0', '-1', '1.5', 'NaN', ' 8790', '08790', '65536']) {
+    const resolved = resolveBindTarget({ PORT: value });
+    assert.equal(resolved.ok, false, value);
+    assert.equal(resolved.port, null, value);
+    assert.ok(resolved.errors.length > 0, value);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Read-only availability probe and reviewed port selection
 // ---------------------------------------------------------------------------

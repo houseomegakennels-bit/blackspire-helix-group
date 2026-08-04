@@ -14,6 +14,7 @@ import { handleTelegramUpdate, dispatchReply } from '../telegram/bot.js';
 import { createSession, createTestModeSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
 import { clientIp } from '../../packages/shared/net.js';
 import { credentialMatches } from '../../packages/shared/credential-compare.js';
+import { configuredInteger } from '../../packages/shared/runtime-numeric-config.js';
 import { cleanupRateLimits } from '../../packages/shared/rateLimits.js';
 import { createUnifiedInput, getConversation, requestCancellation } from '../../packages/unified-input/unified.js';
 import { conversationEvents } from '../../packages/task-engine/tasks.js';
@@ -367,7 +368,7 @@ function exportTask(res, taskId, format) {
   const bundle = buildEvidenceBundle(taskId);
   if (!bundle) return json(res, 404, { error: 'task not found' });
   const redacted = redact(JSON.stringify(bundle, null, 2));
-  if (redacted.length > Number(process.env.EVIDENCE_BUNDLE_MAX_BYTES || 500000)) return json(res, 413, { error: 'evidence bundle too large' });
+  if (Buffer.byteLength(redacted, 'utf8') > configuredInteger('EVIDENCE_BUNDLE_MAX_BYTES')) return json(res, 413, { error: 'evidence bundle too large' });
   audit(taskId, 'administrator', 'evidence.exported', { format });
   const safeName = String(taskId).replace(/[^A-Za-z0-9_-]/g, '_');
   if (format === 'json') return writeJson(res, 200, JSON.parse(redacted), { 'content-disposition': `attachment; filename="${safeName}-evidence.json"`, 'cache-control': 'no-store' });
@@ -465,7 +466,7 @@ export function start(port, host, { exitOnListenError = true } = {}) {
     lifecyclePhase = 'ready';
     console.log(JSON.stringify({ service: 'api', port: boundPort, host: boundHost || 'default' }));
   });
-  const cleanupTimer = setInterval(() => { cleanupExpiredSessions(); cleanupRateLimits(); }, Number(process.env.CLEANUP_INTERVAL_MS || 15 * 60 * 1000));
+  const cleanupTimer = setInterval(() => { cleanupExpiredSessions(); cleanupRateLimits(); }, configuredInteger('CLEANUP_INTERVAL_MS'));
   cleanupTimer.unref();
   server.on('close', () => { lifecyclePhase = 'stopped'; clearInterval(cleanupTimer); });
   return server;

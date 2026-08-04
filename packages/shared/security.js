@@ -8,6 +8,7 @@ import { createSession, createTestModeSession, getSession, rotateSession, destro
 import { rateLimit } from './rateLimits.js';
 import { validateProductionHost, validateProductionPort, PRODUCTION_STATE_OWNER } from './bind.js';
 import { credentialMatches } from './credential-compare.js';
+import { validateProductionIntegerConfig } from './runtime-numeric-config.js';
 
 export { createSession, createTestModeSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
@@ -31,6 +32,7 @@ export function requireProductionSafeConfig(env = process.env, { dbDir = path.di
     if (!env.COMMAND_ADMIN_TOKEN || env.COMMAND_ADMIN_TOKEN === 'dev-admin-token-change-me' || env.COMMAND_ADMIN_TOKEN.length < 24) errors.push('Set a strong COMMAND_ADMIN_TOKEN before production use.');
     if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) errors.push('Set SESSION_SECRET to at least 32 characters.');
     try { configuredSessionTtl(env); } catch (error) { errors.push(error.message); }
+    errors.push(...validateProductionIntegerConfig(env));
     if (env.SECURE_COOKIES === 'false') errors.push('SECURE_COOKIES=false is not allowed in production.');
     if (!env.PUBLIC_BASE_URL?.startsWith('https://')) errors.push('PUBLIC_BASE_URL must be HTTPS in production.');
     if (env.TELEGRAM_MODE === 'webhook' && !env.TELEGRAM_WEBHOOK_SECRET) errors.push('TELEGRAM_WEBHOOK_SECRET is required in webhook mode.');

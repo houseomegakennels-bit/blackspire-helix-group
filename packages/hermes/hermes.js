@@ -10,6 +10,7 @@ import { createHermesRequest } from './contract.js';
 import { dispatchHermes } from './adapter.js';
 import { guardDispatch } from '../execution/dispatchGuard.js';
 import { authorizeReadOnlyTestTask } from '../shared/testMode.js';
+import { configuredInteger } from '../shared/runtime-numeric-config.js';
 
 const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider', 'execute_provider', 'apply_edits', 'validate', 'commit', 'pull_request', 'summarize'];
 const MAX_RETRIES = 2;
@@ -50,7 +51,7 @@ export async function processTask(task) {
     }
 
     const actorId = taskActor(task);
-    const hermesRequest = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: workspace.enabled_tools || ['read','status'], timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 30_000) });
+    const hermesRequest = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: workspace.enabled_tools || ['read','status'], timeoutMs: configuredInteger('HERMES_TIMEOUT_MS') });
     const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: hermesRequest.deadline, phase: 'hermes' });
     recordEvidence(task.id, hermesGuard.ok ? 'hermes_selection' : 'hermes_prevented', { allowed: hermesGuard.ok, reason: hermesGuard.reason || 'credential-free Hermes permitted', requestId: hermesRequest.requestId });
     if (!hermesGuard.ok) return transition(task.id, hermesGuard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: hermesGuard.reason });
@@ -153,7 +154,7 @@ function evaluateApproval(task) {
 }
 
 function recordApprovalPause(taskId, reason) {
-  const expiresAt = new Date(Date.now() + Number(process.env.APPROVAL_TTL_MS || 30 * 60 * 1000)).toISOString();
+  const expiresAt = new Date(Date.now() + configuredInteger('APPROVAL_TTL_MS')).toISOString();
   createSubtasks(taskId, [{ title: 'Approval required', stage: 'approval', status: 'waiting_for_approval', details: { reason } }]);
   createApproval(taskId, HIGH_RISK_ACTION, reason, { expiresAt });
   recordEvidence(taskId, 'approval_required', { reason });
