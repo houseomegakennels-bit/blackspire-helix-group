@@ -5,8 +5,8 @@
 - Review the HTTP timeout/async-failure PR after API lifecycle and worker drain. In isolated staging,
   exercise every application limit through nginx and record both client response and upstream
   connection cleanup; do not widen application limits merely to match a broader proxy default.
-- Retain the single-host in-memory rate limiter only while production remains one API instance. Any
-  horizontal topology requires a shared rate-limit store and an explicit architecture decision.
+- Retain the single-database SQLite-backed rate limiter only while production remains one host. Any
+  multi-host topology requires a genuinely shared rate-limit store and an explicit architecture decision.
 
 0. **IN REVIEW 2026-08-04 — bounded worker graceful drain.** Focused worker/integration 20/20 and full 703 total / 694 passed / 0 failed / 9 host skips pass. Complete independent review before merge. Next lifecycle work: explicit provider abort propagation and cross-process shutdown observability; do not extend the drain deadline or forge task completion to make shutdown appear clean.
 

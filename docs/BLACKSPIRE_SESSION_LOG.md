@@ -18,6 +18,8 @@
   deployment 2/2 on this stack. No service was started or changed by those read-only checks.
 - No proxy, TLS, DNS, firewall, listener, service, provider, database, Gate 4, or production state
   changed. Proxy/application timeout-envelope validation remains isolated-staging operator work.
+- Follow-up evidence correction before review: the rate limiter is SQLite-backed and atomic across
+  same-database processes, not in-memory. Documentation now names its real single-host boundary.
 
 ## 2026-08-04 — Bounded worker graceful drain implemented (Codex)
 

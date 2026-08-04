@@ -34,8 +34,9 @@ in-memory string. Request aborts and stream errors also settle the reader once.
 
 These limits complement rather than replace nginx timeouts, endpoint/IP rate limits, authentication,
 CSRF, maximum field lengths, task/provider deadlines, circuit breakers, and emergency stop. The
-current in-process rate limiter is suitable only for the documented single-host topology; a future
-multi-instance topology requires a shared limiter and is an architectural decision.
+current SQLite-backed rate limiter is atomic and durable across processes sharing the one production
+database, but it is suitable only for the documented single-host topology. A future multi-host
+topology requires a genuinely shared limiter and is an architectural decision.
 
 Before production authorization, exercise slow headers, slow/oversized bodies, keep-alive expiry,
 socket reuse exhaustion, malformed JSON, and graceful draining through the approved reverse proxy.
