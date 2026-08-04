@@ -8,6 +8,7 @@ import { tap } from 'node:test/reporters';
 
 import {
   captureTestTree,
+  closeTestTreeSnapshot,
   createLifecycleTracker,
   validateLifecycleResult,
   verifyTestTreeUnchanged,
@@ -87,6 +88,8 @@ try {
 } catch (error) {
   for (const watcher of watchers) watcher.close();
   console.error(`Trusted in-memory test result rejected: ${error.message}`);
+} finally {
+  closeTestTreeSnapshot(initial);
 }
 
 if (trustedTerminalResult) {

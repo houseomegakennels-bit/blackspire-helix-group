@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — stable trusted test pathname identity (Codex)
+
+- Trusted test snapshots now retain no-follow descriptors until final verification, preventing an unlinked test pathname from recycling its original inode before the boundary checks it.
+- Verification fails closed when a retained file is unlinked or replaced, closes comparison descriptors on every path, and explicitly releases the retained snapshot after the trusted run.
+- The regression performs 100 identical unlink/recreate substitutions to exercise aggressive filesystem identity recycling. No production, provider, routing, database, memory, or Gate 4 state changed.
+- Node 22.23.1 validation passed focused inventory/containment 17/17 and the final trusted full suite at 698 total, 689 passed, 0 failed, 9 host-conditional skips, inventory 49/49, zero mutations, and zero remaining descendants. Removing descriptor retention made the focused regression fail; the exact implementation was restored before final validation.
+
 ## 2026-08-04 — Hermes M3C re-review chain: eighth correction pass on PR #64 (Claude Code)
 
 - Two fresh independent exact-head reviews of `cca4dbf2ffeafce8376c90b361b8e50e3b501daa` both completed and both confirmed they reviewed that exact SHA. **Reviewer H returned `approve` with ZERO findings of any severity. Reviewer G returned `approve with minor fixes`** — no Critical, no Important, **no real code defect, no missing coverage**, and two Minor documentation/evidence inaccuracies, both located in text added by the seventh pass. Both reviewers reproduced focused 59/59, full 698·689·0·9, and mutation 22/3/0/0 exactly, and both independently confirmed all three declared-equivalent mutants by deletion and the jointly-load-bearing pair by execution (either alone 59/59; both together 56 pass, 3 fail).

@@ -36,6 +36,13 @@ test('immutable test identity detects content mutation and pathname replacement'
   fs.writeFileSync(file, 'export default 1;\n');
   const restored = captureTestTree(root, tests);
   fs.unlinkSync(file);
+  assert.equal(fs.fstatSync(restored.handles[0].descriptor).nlink, 0, 'snapshot must retain the now-unlinked original file');
+  // Holding the original descriptor prevents an immediate recreate from reusing the same inode.
+  // Repeat the substitution to cover filesystems that aggressively recycle unheld identities.
+  for (let index = 0; index < 100; index += 1) {
+    fs.writeFileSync(file, 'export default 1;\n');
+    fs.unlinkSync(file);
+  }
   fs.writeFileSync(file, 'export default 1;\n');
   assert.throws(() => verifyTestTreeUnchanged(restored), /changed|replaced|identity/i);
 });
