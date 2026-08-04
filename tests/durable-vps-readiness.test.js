@@ -54,13 +54,24 @@ function assertImmutableTree(release) {
   }
 }
 
+function releaseRequiredFiles() {
+  const validator = fs.readFileSync('scripts/release-tree-validator.sh', 'utf8');
+  const block = validator.match(/readonly -a RELEASE_REQUIRED_FILES=\(([\s\S]*?)\n\)/);
+  assert.ok(block, 'release validator must declare the required artifact files');
+  return [...block[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+}
+
 function createDisposableArchiveSource(name, populate) {
   const source = fs.mkdtempSync(path.join(root, `${name}-source-`));
   const git = (args) => spawnSync('git', args, { cwd: source, encoding: 'utf8' });
   assert.equal(git(['init', '--quiet']).status, 0, `${name}: git init`);
   assert.equal(git(['config', 'user.email', 'release-test@example.invalid']).status, 0, `${name}: git email`);
   assert.equal(git(['config', 'user.name', 'release test']).status, 0, `${name}: git name`);
-  fs.writeFileSync(path.join(source, 'required-runtime-file'), 'disposable\n');
+  for (const relative of releaseRequiredFiles()) {
+    const file = path.join(source, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, relative === 'package.json' ? '{}\n' : 'disposable\n');
+  }
   populate(source);
   assert.equal(git(['add', '-A']).status, 0, `${name}: git add`);
   assert.equal(git(['commit', '--quiet', '-m', 'disposable release fixture']).status, 0, `${name}: git commit`);
@@ -117,7 +128,7 @@ test('release creation is exact, idempotent, and switching is atomic', { skip: r
   assert.equal(fs.statSync(path.join(releaseRoot, 'releases')).uid, 0);
   assert.equal(fs.statSync(path.join(releaseRoot, 'releases')).gid, runtimeGid);
   assertImmutableTree(release);
-  for (const excluded of ['.agents', '.claude', '.devcontainer', '.github', '.githooks', '.vscode', 'AGENTS.md', 'tests']) {
+  for (const excluded of ['.agents', '.claude', '.devcontainer', '.github', '.githooks', '.vscode', 'AGENTS.md', 'tests', 'docs', 'frontend', 'oracle-helix-frontend']) {
     assert.equal(fs.existsSync(path.join(release, excluded)), false, `${excluded} is review or development metadata, not release content`);
   }
   assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0);
@@ -295,7 +306,7 @@ test('completed releases reject unsafe symlinks before create, preflight, switch
   }
 });
 
-test('completed releases accept only fully canonical in-tree symlink targets', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
+test('completed releases reject even in-tree symlinks so the manifest covers the complete artifact', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
   const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
   const releaseRoot = path.join(root, 'safe-in-tree-link');
   const env = releaseEnvironment(releaseRoot);
@@ -305,29 +316,66 @@ test('completed releases accept only fully canonical in-tree symlink targets', {
   fs.symlinkSync('scripts/start-production.sh', path.join(release, 'canonical-link'));
   fs.symlinkSync('canonical-link', path.join(release, 'canonical-link-chain'));
 
-  assert.equal(run('scripts/release-create.sh', [sha], env).status, 0, 'create preflight accepts canonical in-tree links');
-  assert.equal(run('scripts/release-preflight.sh', [sha], env).status, 0, 'explicit preflight accepts canonical in-tree links');
-  assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0, 'switch accepts canonical in-tree links');
-  assert.equal(run('scripts/release-rollback.sh', [sha], env).status, 0, 'rollback accepts canonical in-tree links');
+  for (const script of ['scripts/release-create.sh', 'scripts/release-preflight.sh', 'scripts/release-switch.sh', 'scripts/release-rollback.sh']) {
+    const result = run(script, [sha], env);
+    assert.notEqual(result.status, 0, `${script} must reject every post-build symlink`);
+    assert.match(result.stderr, /symlink|self-contained/i);
+  }
+});
+
+test('completed release identity, required files, exact file set, and content digests fail closed', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
+  const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
+  const cases = [
+    ['identity', (release) => fs.writeFileSync(path.join(release, 'COMMIT_SHA'), `${'f'.repeat(40)}\n`), /source identity/],
+    ['required', (release) => fs.rmSync(path.join(release, 'scripts', 'production-supervisor.js')), /required production artifact/],
+    ['content', (release) => fs.appendFileSync(path.join(release, 'apps', 'api', 'server.js'), '\n// changed\n'), /digest mismatch/],
+    ['addition', (release) => {
+      const added = path.join(release, 'unexpected-runtime-file');
+      fs.writeFileSync(added, 'unexpected\n', { mode: 0o644 });
+      fs.chownSync(added, 0, runtimeGid);
+    }, /exact file set/],
+    ['manifest', (release) => fs.appendFileSync(path.join(release, 'RELEASE_MANIFEST.sha256'), 'a'.repeat(64)), /trailing or incomplete/],
+  ];
+  for (const [name, mutate, expected] of cases) {
+    const releaseRoot = path.join(root, `integrity-${name}`);
+    const env = releaseEnvironment(releaseRoot);
+    const created = run('scripts/release-create.sh', [sha], env);
+    assert.equal(created.status, 0, `${name}: ${created.stderr}`);
+    const release = created.stdout.trim();
+    assert.ok(fs.statSync(path.join(release, 'RELEASE_MANIFEST.sha256')).size > 0);
+    mutate(release);
+    const checked = run('scripts/release-preflight.sh', [sha], env);
+    assert.notEqual(checked.status, 0, `${name}: modified artifact must fail preflight`);
+    assert.match(checked.stderr, expected, `${name}: exact refusal reason`);
+  }
+});
+
+test('the immutable artifact contract contains every production-preflight activation tool', () => {
+  const preflight = fs.readFileSync('scripts/production-preflight-check.js', 'utf8');
+  const toolingBlock = preflight.match(/const REQUIRED_TOOLING = \[([\s\S]*?)\n\];/);
+  assert.ok(toolingBlock);
+  const tooling = [...toolingBlock[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  const artifact = new Set(releaseRequiredFiles());
+  assert.deepEqual(tooling.filter((relative) => !artifact.has(relative)), []);
 });
 
 test('archived unsafe symlinks fail before the completion marker and preserve active and shared state', { skip: releaseContractAvailable ? false : releaseContractSkipReason }, () => {
   const activeSha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' }).stdout.trim();
   const cases = [
-    ['relative-escape', (source) => fs.symlinkSync('../outside', path.join(source, 'escape'))],
-    ['absolute-escape', (source) => fs.symlinkSync('/tmp', path.join(source, 'escape'))],
+    ['relative-escape', (source) => fs.symlinkSync('../../outside', path.join(source, 'apps', 'escape'))],
+    ['absolute-escape', (source) => fs.symlinkSync('/tmp', path.join(source, 'apps', 'escape'))],
     ['nested-escape', (source) => {
-      fs.mkdirSync(path.join(source, 'nested'));
-      fs.symlinkSync('/etc', path.join(source, 'nested', 'escape'));
+      fs.mkdirSync(path.join(source, 'apps', 'nested'));
+      fs.symlinkSync('/etc', path.join(source, 'apps', 'nested', 'escape'));
     }],
     ['chained-escape', (source) => {
-      fs.symlinkSync('second', path.join(source, 'first'));
-      fs.symlinkSync('/tmp', path.join(source, 'second'));
+      fs.symlinkSync('second', path.join(source, 'apps', 'first'));
+      fs.symlinkSync('/tmp', path.join(source, 'apps', 'second'));
     }],
-    ['dangling', (source) => fs.symlinkSync('missing', path.join(source, 'escape'))],
+    ['dangling', (source) => fs.symlinkSync('missing', path.join(source, 'apps', 'escape'))],
     ['loop', (source) => {
-      fs.symlinkSync('loop-b', path.join(source, 'loop-a'));
-      fs.symlinkSync('loop-a', path.join(source, 'loop-b'));
+      fs.symlinkSync('loop-b', path.join(source, 'apps', 'loop-a'));
+      fs.symlinkSync('loop-a', path.join(source, 'apps', 'loop-b'));
     }]
   ];
 

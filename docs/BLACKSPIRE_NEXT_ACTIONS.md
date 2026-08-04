@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-08-04 immutable artifact follow-up
+
+- Review the release-integrity PR after its monitoring and logging parents. Under separate host
+  authority, build the approved SHA and one known-good rollback SHA with the current builder, record
+  file count/bytes, preflight both, and run the disposable tamper/recovery checklist.
+- Do not switch or roll back to a legacy `.release-complete` directory without
+  `RELEASE_MANIFEST.sha256`. Preserve it as historical evidence; rebuild its exact reviewed commit
+  with the current builder if it is selected as the rollback candidate.
+
 ## 2026-08-04 monitoring follow-up
 
 - Review the provider-neutral monitoring PR after its logging parent. Under separate host authority,

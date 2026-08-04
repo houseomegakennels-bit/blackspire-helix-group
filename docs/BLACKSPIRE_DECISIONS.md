@@ -1,5 +1,15 @@
 # Blackspire Decisions
 
+## 2026-08-04 — A deployable release is an allowlisted, manifest-complete artifact
+
+Repository ancestry and root-owned modes alone do not prove the bytes being activated. A production
+release now consists only of the Command runtime/tooling allowlist and is valid only when its exact
+SHA identity, required files, complete file set, per-file SHA-256 manifest, ownership, modes, empty
+completion marker, regular types, and no-symlink rule all pass the shared validator. Unrelated
+website/demo assets are excluded to reduce attack surface, capacity use, and verification time.
+Legacy releases do not get grandfathered past the new contract; an exact commit may be rebuilt, but
+validation is never weakened to accept an old directory.
+
 ## 2026-08-04 — Monitoring is provider-neutral; local alert creation is not delivery evidence
 
 The repository owns deterministic detection and a local sanitized `daemon.alert`, not the choice of

@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## Current immutable-artifact readiness work (2026-08-04 UTC)
+
+The release-integrity slice is stacked on monitoring/logging and closes the repository half of the
+“readiness tooling in the deployment artifact” blocker: explicit Command-only archive roots, exact
+source identity, required files, exact manifest file set, per-file SHA-256, no symlinks, and shared
+validation before create reuse, switch, preflight, or rollback. Focused VPS/release tests pass 13/13;
+full trusted suite is 707 total, 697 passed, 0 failed, 10 environment-conditional skips, inventory
+50/50. No `/opt` release or `current` link changed; two approved manifest-era releases and a rollback
+exercise still require operator authority.
+
 ## Current monitoring readiness work (2026-08-04 UTC)
 
 The monitoring slice is stacked on the service-isolated logging PR and adds a one-minute systemd

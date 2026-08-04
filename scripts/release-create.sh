@@ -7,6 +7,15 @@ repo="${BLACKSPIRE_SOURCE_ROOT:-$(git rev-parse --show-toplevel)}"
 releases=""
 target=""
 temp=""
+readonly -a release_archive_paths=(
+  .node-version
+  package.json
+  package-lock.json
+  apps
+  packages
+  scripts
+  ops
+)
 
 source "$(dirname "$0")/release-tree-validator.sh"
 
@@ -56,13 +65,27 @@ fi
 
 trap cleanup_incomplete EXIT
 mkdir -- "$temp"
-git -C "$repo" archive "$commit" | tar -x -C "$temp" --exclude='.agents' --exclude='.claude' --exclude='.devcontainer' --exclude='.github' --exclude='.githooks' --exclude='.vscode' --exclude='AGENTS.md' --exclude='tests'
+git -C "$repo" archive "$commit" -- "${release_archive_paths[@]}" | tar -x -C "$temp"
 printf '%s\n' "$commit" > "$temp/COMMIT_SHA"
 release_validate_no_special_files "$temp" || exit 1
 chown -R root:blackspire -- "$temp"
 find -P "$temp" -type d -exec chmod 0755 {} +
 find -P "$temp" -type f -perm /111 -exec chmod 0755 {} +
 find -P "$temp" -type f ! -perm /111 -exec chmod 0644 {} +
+
+# Record the exact normalized file set and bytes. NUL-delimited hash/path pairs avoid filename
+# ambiguity; the validator also rejects additions, omissions, duplicates, symlinks, and escapes.
+manifest="$temp/RELEASE_MANIFEST.sha256"
+(
+  cd "$temp"
+  while IFS= read -r -d '' file; do
+    hash="$(sha256sum -- "$file")" || exit 1
+    hash="${hash%% *}"
+    printf '%s\0%s\0' "$hash" "$file"
+  done < <(find -P . -xdev -type f ! -path './RELEASE_MANIFEST.sha256' ! -path './.release-complete' -print0 | sort -z)
+) > "$manifest"
+chown root:blackspire -- "$manifest"
+chmod 0644 -- "$manifest"
 
 # The marker is intentionally last: consumers may trust a release only after all
 # content has been copied, normalized, and validated against the immutable contract.

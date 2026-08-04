@@ -16,6 +16,8 @@ Production promotion is blocked until every item is evidenced and separately app
 - [ ] Cancellation, outbox retry, and cleanup are tested.
 - [ ] Telegram cannot approve deployment, merge, repository creation, credentials, secrets, host security, budget increases, emergency controls, constitutional changes, trading, or funds actions.
 - [ ] A reviewed rollback and database recovery exercise has passed.
+- [ ] Approved and rollback releases both pass exact SHA, required-file, manifest, file-set, mode,
+  ownership, and no-symlink validation under the current artifact contract.
 - [ ] Mock providers are disabled.
 - [ ] Test authentication is disabled.
 - [ ] Disposable SQLite is not selected.
