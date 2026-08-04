@@ -23,6 +23,7 @@ import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/a
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
 import { readMemoryCandidateReview, readMemoryCandidateRereview } from '../../packages/hermes-orchestrator/memory-review.js';
+import { HTTP_SERVER_OPTIONS, enforceHttpServerBoundary } from '../../packages/shared/http-boundary.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
@@ -159,7 +160,7 @@ async function route(req, res) {
     }
     return json(res, 404, { error: 'not found' });
   } catch (error) {
-    return json(res, 500, { error: safeError(error) });
+    return requestFailure(res, error);
   }
 }
 
@@ -399,6 +400,17 @@ function serve(res, file, type, cacheControl) {
   stream.pipe(res);
 }
 
+function requestFailure(res, error) {
+  if (res.headersSent) { res.destroy(); return; }
+  const status = error?.code === 'PAYLOAD_TOO_LARGE' ? 413
+    : ['INVALID_JSON', 'REQUEST_ABORTED'].includes(error?.code) ? 400 : 500;
+  return json(res, status, { error: safeError(error) });
+}
+
+function requestListener(req, res) {
+  Promise.resolve(route(req, res)).catch((error) => requestFailure(res, error));
+}
+
 const IS_ENTRY_POINT = import.meta.url === `file://${process.argv[1]}`;
 
 // exitOnListenError defaults to true so every real startup path — the entry point and the
@@ -435,7 +447,7 @@ export function start(port, host, { exitOnListenError = true } = {}) {
     process.exit(1);
   }
   if (TEST_MODE.enabled) upsertWorkspace({ id: TEST_MODE.workspaceId, name: 'Unified Jarvis iPhone Test', description: 'Disposable read-only test workspace', githubRepository: 'local/iphone-test', defaultBranch: 'test', allowedPaths: [], buildCommands: [], providerPolicy: { preferred: ['mock'] }, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['status'], lastHealthStatus: 'test', rootPath: TEST_MODE.workspaceRoot });
-  const server = http.createServer(route);
+  const server = enforceHttpServerBoundary(http.createServer(HTTP_SERVER_OPTIONS, requestListener));
   // Fail closed on an occupied port. There is no retry and no fallback port: the existing
   // listener keeps the port and is never contacted, signalled, or replaced.
   server.on('error', (error) => {

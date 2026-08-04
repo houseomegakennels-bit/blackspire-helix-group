@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## API HTTP timeout and async-failure boundary prepared (2026-08-04 UTC)
+
+The API now pins request/header/idle/keep-alive/connection-scan/header-size/header-count/per-socket
+request limits in one non-environment-overridable contract. Its listener contains every async route
+promise, preventing returned handler rejections from escaping the route `try/catch` as unhandled
+process failures. JSON input is byte-bounded at 1,000,000 bytes, stops buffering after refusal,
+drains the request, returns 413 when oversized and 400 when malformed, and never echoes body content.
+This slice is stacked on API lifecycle and worker drain; no listener, proxy, host, or production state
+was changed.
+
 ## Bounded worker graceful drain implemented, in review (2026-08-04 UTC)
 
 A stacked draft branch stops polling before shutdown, refuses new claims, and waits up to thirty seconds for the single active task plus its delivery flush. Successful drain closes SQLite and exits zero; timeout is sanitized, closes SQLite, and exits nonzero so bounded supervisor restart and existing stale-task recovery apply. No incomplete task is marked successful and no new task state or schema is introduced. Focused worker/integration tests pass 20/20; the full suite passes 703 total, 694 passed, 0 failed, 9 host-conditional skips with trusted inventory 51/51. A false-success timeout mutation is killed by the focused regression. No service, task, deployment, provider, Telegram connection, or production state changed; independent review and merge are not claimed.
