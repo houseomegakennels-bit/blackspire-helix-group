@@ -776,6 +776,8 @@ test('health-check.sh has no implicit port fallback and fails closed without a t
   // ${PORT:-} is the explicit "no default" form; ${PORT:-8790} is the fallback that was removed.
   assert.doesNotMatch(executable, /\$\{PORT:-[^}]/, 'PORT must never carry a default value');
   assert.doesNotMatch(executable, /8790/, 'the removed production-candidate fallback must not return');
+  assert.match(executable, /\/health/);
+  assert.match(executable, /\/ready/);
   for (const protectedPort of PROTECTED_PORTS) {
     assert.doesNotMatch(executable, new RegExp(String(protectedPort)), `${protectedPort} must never be reachable implicitly`);
   }
@@ -803,12 +805,12 @@ test('health-check.sh succeeds against an explicit disposable loopback port', as
 
   const r = runHealthCheck({ PORT: String(port), BIND_HOST: '127.0.0.1' });
   assert.equal(r.status, 0, `an explicit loopback port must succeed: ${r.stderr}`);
-  assert.match(r.stdout, /BLACKSPIRE HEALTH OK: mode=health/);
+  assert.match(r.stdout, /BLACKSPIRE HEALTH AND READINESS OK: mode=health/);
 
   // The same target given as an explicit URL is accepted too, matching the monitoring contract.
   const viaUrl = runHealthCheck({ BLACKSPIRE_HEALTH_URL: `http://127.0.0.1:${port}` });
   assert.equal(viaUrl.status, 0, `an explicit health URL must succeed: ${viaUrl.stderr}`);
-  assert.match(viaUrl.stdout, /BLACKSPIRE HEALTH OK: mode=health/);
+  assert.match(viaUrl.stdout, /BLACKSPIRE HEALTH AND READINESS OK: mode=health/);
 });
 
 test('the shared config exposes no second port source of truth', () => {

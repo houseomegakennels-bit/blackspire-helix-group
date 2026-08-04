@@ -11,6 +11,9 @@ The final round (reviewers I and J at `055cd5b`) returned two unconditional `app
 One accepted limitation, pinned by a committed regression that was proven non-vacuous: `reviewer_principal_id` is outside digest coverage, so direct database write access can re-attribute a stored re-review while it still reads as intact. That is the documented threat model — a service-only caller genuinely cannot influence attribution, confirmed by adversarial probes supplying six payload aliases at once. If that regression ever fails, the gap was closed and the threat model should be updated rather than the test.
 
 The next dependency-safe milestone is the workspace-scoped review queue, and only then promotion — which must not inherit `evaluation.correct` as its authority without an explicit decision, and must never be automatic. The documentation lag persists by design: `docs/HERMES_IMPLEMENTATION_STATUS.md` still heads its 3C second-slice section "draft PR, in progress" because that file is outside the canonical-memory allowlist and correcting it here would invalidate the very anchor this refresh records; the next milestone's PR corrects it, exactly as PR #64 corrected the first-slice heading.
+## Dependency-aware readiness and graceful API shutdown implemented, in review (2026-08-04 UTC)
+
+The API now separates liveness from traffic readiness: `/health` stays responsive while reporting database/lifecycle state, whereas `/ready` fails with 503 for startup, drain, stop, schema failure, or unsafe startup configuration. Entry-point SIGTERM/SIGINT drains connections for a fixed ten-second ceiling and closes SQLite. Monitoring templates check both endpoints. Focused lifecycle 3/3, probe 4/4, and full 701 total / 692 passed / 0 failed / 9 skipped pass with trusted inventory 50/50. Worker task drain remains a separate next slice. Nothing was installed, restarted, routed, deployed, or activated.
 
 ## Hermes Milestone 3C merged (2026-07-31 UTC)
 
