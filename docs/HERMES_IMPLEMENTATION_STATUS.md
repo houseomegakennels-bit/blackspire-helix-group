@@ -1,5 +1,12 @@
 # Hermes Intelligence Layer — Implementation Status
 
+## Milestone 3C, third slice — Workspace review queue (implemented, in review)
+
+- Adds a GET-only, evaluation-admin-bound view over pending candidates and their effective root/re-review head. The view is workspace-scoped, keyset-paginated, bounded to 50 items, rate-limited, and authorized before candidate or integrity reads.
+- Every selected candidate and review chain is verified fail-closed. Outcome evidence that is unavailable leaves the candidate visible but ineligible; a structurally malformed selected row or corrupt review chain fails the page with 409. Cursors are navigation state bound to workspace and filter, never authority.
+- Adds only an ordinary `(workspace_id,status,created_at,id)` index. There is no queue table, count query, notification, job, mutation route, promotion permission, candidate update, memory retrieval, routing effect, provider call, or production activation.
+- Independent review, merge, deployment, and production effect are not claimed. Details: `HERMES_M3C_REVIEW_QUEUE.md`; rollback: `HERMES_M3C_ROLLBACK.md`.
+
 ## Cross-cutting schema CHECK validation (implemented, in review)
 
 - The shared startup/restore/migration gate now pins all 52 authorization and Hermes 3A-3C CHECK expressions as an exact normalized multiset.
@@ -12,7 +19,7 @@
 - Absent, unauthorized, and non-intact evaluations still return `null`; callers cannot nominate a workspace, and same-workspace reads still require `evaluation.read`.
 - Node 22.23.1 validation passed focused 21/21 and the clean full rerun at 699 total, 690 passed, 0 failed, 9 host-conditional skips, with trusted inventory 49/49. Independent review, merge, deployment, and production effect are not yet claimed.
 
-## Milestone 3C, second slice — Re-review and successor chains (draft PR, in progress)
+## Milestone 3C, second slice — Re-review and successor chains (PR #64, merged)
 
 - **Implemented:** additive, idempotent, append-only `hermes_memory_candidate_rereviews` with database-enforced immutability triggers; a re-review modelled as an explicit successor that links to the record it supersedes and never overwrites it; database-enforced chain shape (`UNIQUE(root_review_id,chain_version)` against forks at every depth including the first successor, `UNIQUE(supersedes_rereview_id)` against forks off a successor, a depth/parent CHECK against ambiguous ancestry, and self-link CHECKs); a required `supersedes` that must name the chain's current head, so a stale or conflicting predecessor refuses and two concurrent re-reviewers resolve to one winner and one explicit refusal rather than a fork; ancestry verified all the way to the root rather than one hop, because a predecessor's own digests do not cover its `supersedes_rereview_id`; a predecessor content/lineage digest pin; deterministic `chain_version` ordering and replay; workspace-scoped idempotent replay with integrity-conflict detection; a bounded chain depth enforced on both write and read; and a read-only service plus one GET route reusing canonical `evaluation.read`.
 - **No inherited authority:** a successor inherits no approval, correctness, scorecard result, authorization, or promotion eligibility from its predecessor. Decision and rationale are supplied fresh by the caller, the write-capable `evaluation.correct` is required per call and re-proved in-transaction against current grants, and the candidate is revalidated from scratch against live Milestone 3A evidence. Carried context is an explicit identity-only allowlist, copied safely and provenance-tracked, enforced on write and re-enforced on read by a **positive allowlist** that pins the exact block shape and requires every carried leaf to strict-equal the row's own identity column. The denied-key guard is **not** symmetric with it, and nothing rests on it: the write-path call is unreachable because the block is assembled from frozen literals, and the read-path call is unreachable behind the allowlist. Both are reported as declared equivalent mutants, not as enforced runtime invariants.

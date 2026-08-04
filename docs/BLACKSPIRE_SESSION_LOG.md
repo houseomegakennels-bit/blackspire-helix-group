@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Bounded Hermes M3C workspace review queue implemented (Codex)
+
+- Added an authorization-first, GET-only queue view over existing pending workspace candidates and their effective root/re-review heads. Pagination is a canonical, workspace/filter-bound `(created_at,id)` cursor with a 50-item ceiling and an exact ordinary supporting index; there is no total count or durable queue state.
+- Revalidates each candidate and complete bounded review chain. Missing/non-intact outcome evidence stays visible as ineligible; candidate drift is reported; a structurally malformed selected row or corrupt review chain fails the page closed. One audited `evaluation.read` decision occurs before data reads and current authority is re-proved without another audit inside the transaction.
+- Added service, API, schema, authorization-order, isolation, cursor, filter, successor-head, drift, unavailable-evidence, corruption, and index-shape regressions. Focused Node 22.23.1 validation passes 64 total, 63 passed, 0 failed, 1 root-only permission skip; the clean full suite passes 713 total, 704 passed, 0 failed, 9 host-conditional skips with trusted inventory 49/49, zero mutations, and zero remaining descendants. A targeted source mutation removing the one-row lookahead was killed with 2 focused failures, then exact source was restored and the focused 64/63/0/1 suite passed again.
+- Build, lint, typecheck, secret scan, `npm audit --audit-level=high` (0 vulnerabilities), both production preflights (`source=21/21 deployment=2/2`), living-memory, `bash -n` over every tracked shell script, and `git diff --check` passed. The paid end-to-end live smoke test was NOT RUN because no authorization was given.
+- No queue table, worker, scheduler, notification, mutation route, promotion permission, candidate update, memory retrieval, routing/provider effect, deployment, live call, production activation, or Gate 4 action was introduced. Independent review and merge are not claimed.
+
 ## 2026-08-04 — Authorization and Hermes CHECK constraints added to compatibility gate (Codex)
 
 - Reproduced the documented gap on disposable migrated state: a table definition with a removed M3C decision CHECK still returned no missing schema objects. Confirmed the same shared validator gates startup, restore pre/post-copy, and migration postconditions.

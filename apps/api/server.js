@@ -22,7 +22,7 @@ import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
 import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/authorization.js';
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
-import { readMemoryCandidateReview, readMemoryCandidateRereview } from '../../packages/hermes-orchestrator/memory-review.js';
+import { readMemoryCandidateReview, readMemoryCandidateRereview, listMemoryCandidateReviewQueue } from '../../packages/hermes-orchestrator/memory-review.js';
 
 let emergencyStopMemory = false;
 const TEST_MODE = requireSafeTestMode();
@@ -110,6 +110,8 @@ async function route(req, res) {
     if (memoryReviewMatch && req.method === 'GET') return memoryCandidateReviewRoute(res, auth, memoryReviewMatch[1]);
     const memoryRereviewMatch = u.pathname.match(/^\/api\/hermes\/memory-candidate-rereviews\/([A-Za-z0-9._:-]{1,128})$/);
     if (memoryRereviewMatch && req.method === 'GET') return memoryCandidateRereviewRoute(res, auth, memoryRereviewMatch[1]);
+    const memoryQueueMatch = u.pathname.match(/^\/api\/hermes\/workspaces\/([A-Za-z0-9._:-]{1,128})\/memory-candidate-review-queue$/);
+    if (memoryQueueMatch && req.method === 'GET') return memoryCandidateReviewQueueRoute(req, res, auth, u, memoryQueueMatch[1]);
     if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: TEST_MODE.enabled ? [getWorkspace(TEST_MODE.workspaceId)] : listWorkspaces() });
     if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => !TEST_MODE.enabled || task.workspace_id === TEST_MODE.workspaceId) });
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
@@ -214,6 +216,38 @@ function memoryCandidateRereviewRoute(res, auth, rereviewId) {
   const rereview = principal && readMemoryCandidateRereview(principal, rereviewId);
   // Do not distinguish a guessed identifier from a cross-workspace object.
   return rereview ? json(res, 200, { rereview }) : json(res, 404, { error: 'memory candidate re-review not found' });
+}
+
+// Read-only, bounded workspace queue. The path workspace is syntax only until the service decides
+// canonical `evaluation.read`; no candidate count, existence check, or review read occurs first.
+function memoryCandidateReviewQueueRoute(req, res, auth, url, workspaceId) {
+  const configuredPrincipal = configuredEvaluationAdminPrincipal();
+  const principal = auth.mode === 'bearer' ? configuredPrincipal : auth.mode === 'session' ? resolveBoundSession(auth.session) : null;
+  if (!configuredPrincipal || !principal || principal.principalId !== configuredPrincipal.principalId) {
+    return json(res, 403, { error: 'evaluation authorization unavailable' });
+  }
+  for (const key of ['limit', 'cursor', 'reviewState']) {
+    if (url.searchParams.getAll(key).length > 1) return json(res, 400, { error: 'invalid memory candidate review queue request' });
+  }
+  const rawLimit = url.searchParams.get('limit');
+  const limit = rawLimit === null ? 20 : (/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit) ? Number(rawLimit) : Number.NaN);
+  const cursor = url.searchParams.get('cursor');
+  const reviewState = url.searchParams.get('reviewState') ?? 'all';
+  const rate = checkLimit(req, 'memory-review-queue', 30, 60000);
+  if (!rate.allowed) return limited(res, rate);
+  try {
+    const queue = listMemoryCandidateReviewQueue(principal, workspaceId, { limit, cursor, reviewState });
+    if (!queue) return json(res, 404, { error: 'memory candidate review queue not found' });
+    return json(res, 200, { queue });
+  } catch (error) {
+    if (/integrity conflict/.test(String(error?.message || ''))) {
+      return json(res, 409, { error: 'memory candidate review queue integrity conflict' });
+    }
+    if (/memory candidate review queue requires/.test(String(error?.message || ''))) {
+      return json(res, 400, { error: 'invalid memory candidate review queue request' });
+    }
+    throw error;
+  }
 }
 
 async function login(req, res) {
