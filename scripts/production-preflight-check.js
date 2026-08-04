@@ -67,6 +67,10 @@ const REQUIRED_TOOLING = [
   'scripts/verify-environment.sh',
   'scripts/production-supervisor.js',
   'ops/blackspire-command-healthcheck.sh',
+  'ops/blackspire-command-monitor.sh',
+  'ops/blackspire-command-monitor.service',
+  'ops/blackspire-command-monitor.timer',
+  'ops/blackspire-command-monitor-alert@.service',
   'ops/blackspire-command-logrotate.conf',
   'ops/reverse-proxy/blackspire-command.nginx.conf',
   'ops/runtime-ownership/OWNERSHIP_MAP.md',
@@ -300,12 +304,23 @@ if (unit === null) {
     && /\bmaxsize\s+50M\b/.test(logrotate)
     && /\bcreate\s+0640\s+blackspire\s+blackspire\b/.test(logrotate)
     && !/\/var\/lib\/docker|\*/.test(logrotate);
-  record('activation-tooling', unusable.length === 0 && isolatedRotation, 'source',
-    unusable.length === 0 && isolatedRotation
-      ? `${REQUIRED_TOOLING.length} activation and rollback tools present and non-empty; log rotation targets only the service log`
+  const monitor = read('ops/blackspire-command-monitor.sh') ?? '';
+  const monitorService = read('ops/blackspire-command-monitor.service') ?? '';
+  const monitorTimer = read('ops/blackspire-command-monitor.timer') ?? '';
+  const monitorContract = /counter >= 3/.test(monitor)
+    && /disk_free < 20/.test(monitor)
+    && /^OnFailure=blackspire-command-monitor-alert@%n\.service$/m.test(monitorService)
+    && /^StateDirectory=blackspire-command-monitor$/m.test(monitorService)
+    && /^OnUnitActiveSec=1min$/m.test(monitorTimer);
+  const sourceContract = isolatedRotation && monitorContract;
+  record('activation-tooling', unusable.length === 0 && sourceContract, 'source',
+    unusable.length === 0 && sourceContract
+      ? `${REQUIRED_TOOLING.length} activation, rollback, and monitoring tools present and non-empty; log rotation is service-isolated`
       : (unusable.length > 0
         ? `missing or empty activation tooling: ${unusable.join(', ')}`
-        : 'log rotation must target only /var/log/blackspire-command/command.log with bounded retention'));
+        : (!isolatedRotation
+          ? 'log rotation must target only /var/log/blackspire-command/command.log with bounded retention'
+          : 'monitoring must pin the one-minute schedule, durable state, third-failure alert, and 20% disk threshold')));
 }
 
 // --- Deployment-class: installed unit drift (read-only) --------------------------------------

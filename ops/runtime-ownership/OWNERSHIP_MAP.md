@@ -35,6 +35,7 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 | `/opt/blackspire-command/shared/evidence/` | `blackspire:blackspire` | `0700` | Durable sanitized evidence/audit. Runtime read/write. |
 | `/opt/blackspire-command/shared/backups/` | `blackspire:blackspire` | `0700` | `scripts/backup.js` default destination; SHA-256 sidecars. Runtime/backup read/write. |
 | `/var/log/blackspire-command/` | `blackspire:blackspire` | `0750` | Created by systemd `LogsDirectory`; contains only this unit's combined JSON stdout/stderr. |
+| `/var/lib/blackspire-command-monitor/` | `blackspire:blackspire` | `0750` | Created by systemd `StateDirectory`; contains only the bounded consecutive-health-failure counter. |
 | `/etc/blackspire/` | `root:blackspire` | `0750` | Config dir. |
 | `/etc/blackspire/command.env` | `root:blackspire` | `0640` | **Secrets** (`COMMAND_ADMIN_TOKEN`, `SESSION_SECRET`, ...). Group-readable by runtime only; never world-readable; never committed to Git. |
 | `/etc/systemd/system/blackspire-command.service` | `root:root` | `0644` | Unit file; only root manages. |

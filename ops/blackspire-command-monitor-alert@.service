@@ -1,0 +1,15 @@
+# REVIEW TEMPLATE ONLY — emits a local daemon.alert; off-host delivery remains operator-managed.
+[Unit]
+Description=Record a local Blackspire Command monitoring alert for %i
+
+[Service]
+Type=oneshot
+User=blackspire
+Group=blackspire
+ExecStart=/usr/bin/logger --priority daemon.alert --tag blackspire-command-monitor monitor_failure=%i
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
