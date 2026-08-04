@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Isolated staging launch requirements reconciled (2026-08-04 UTC)
+
+`docs/ISOLATED_STAGING_LAUNCH_PLAN.md` now records the infrastructure, DNS/TLS, secrets, environment, database/migration, deployment, validation, smoke, rollback, and operator checklists for a new isolated staging environment. Repository evidence shows staging state-owner/bind semantics and an existing protected 8788 listener, but no tracked staging launcher, unit, environment template, release switch/rollback, or staging preflight; the existing host service is therefore not reproducible from reviewed artifacts. No launch readiness is claimed. Operator decisions remain hostname, topology, retention policy, and principals. No host, DNS, secret, certificate, database, service, deployment, routing, provider, Telegram, Gate 4, or production state changed.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged into `main` as `0d6e977113e826095c4ed57db150bf30d9de954f` from independently reviewed exact head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is that merge commit's second parent and is the new verified implementation anchor. The merge used the repository's established merge-commit method under an expected-head guard (`--match-head-commit`), so a head that moved between the final check and the merge would have refused rather than merged.
