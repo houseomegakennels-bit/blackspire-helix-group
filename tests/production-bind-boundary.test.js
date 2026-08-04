@@ -839,6 +839,21 @@ test('the systemd unit runs the preflight and the supervisor, and documents the 
   assert.match(unit, /8788/, 'the unit must document that restricted staging keeps 8788');
 });
 
+test('production logs are isolated to one systemd-owned file and rotation never targets Docker-wide logs', () => {
+  const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  assert.match(unit, /^LogsDirectory=blackspire-command$/m);
+  assert.match(unit, /^LogsDirectoryMode=0750$/m);
+  assert.match(unit, /^UMask=0027$/m);
+  assert.match(unit, /^StandardOutput=append:\/var\/log\/blackspire-command\/command\.log$/m);
+  assert.match(unit, /^StandardError=append:\/var\/log\/blackspire-command\/command\.log$/m);
+  const rotation = fs.readFileSync('ops/blackspire-command-logrotate.conf', 'utf8');
+  assert.match(rotation, /^\/var\/log\/blackspire-command\/command\.log \{$/m);
+  assert.match(rotation, /^\s+daily$/m);
+  assert.match(rotation, /^\s+maxsize 50M$/m);
+  assert.match(rotation, /^\s+create 0640 blackspire blackspire$/m);
+  assert.doesNotMatch(rotation, /\/var\/lib\/docker|\*/);
+});
+
 test('the systemd unit pins an absolute Node interpreter that satisfies the node:sqlite requirement', () => {
   // systemd's manager PATH does not include /opt/nodejs, so `/usr/bin/env node` resolves to the
   // distribution node (18.x on the durable VPS). The control plane imports node:sqlite, which does
