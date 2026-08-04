@@ -1,5 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## Immutable production artifact integrity prepared (2026-08-04 UTC)
+
+The release builder now archives only the Command deployment surface (`.node-version`, package
+manifest/lockfile, `apps/`, `packages/`, `scripts/`, and `ops/`) instead of roughly 92 MB including
+unrelated website/demo assets. Every candidate gets an exact `COMMIT_SHA` and NUL-delimited
+`RELEASE_MANIFEST.sha256`; create, preflight, switch, and rollback share validation of the exact file
+set, every content digest, required production/readiness files, ownership, modes, marker, types, and
+the absence of all symlinks. A test proves every production-preflight activation tool is required in
+the artifact. Older releases without this manifest are historical only and cannot be rollback
+targets under the new validator. No host release was built or switched and production was untouched.
+
 ## Provider-neutral production monitoring prepared (2026-08-04 UTC)
 
 The repository now contains reviewed systemd monitor/timer/local-alert templates and a fail-closed

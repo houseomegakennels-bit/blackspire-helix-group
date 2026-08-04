@@ -1,5 +1,22 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Immutable production artifact integrity and scope (Codex)
+
+- Confirmed that release validation checked structure/metadata but not `COMMIT_SHA` agreement,
+  required readiness files, exact file set, or content bytes. It also archived roughly 92 MB of
+  unrelated `frontend/`/demo assets into every Command release. Added a Command-only archive
+  allowlist, exact source identity, explicit runtime/readiness required paths, NUL-delimited SHA-256
+  manifest, exact-set verification, zero-byte refusal, empty completion marker, and a no-symlink
+  artifact rule shared by create, preflight, switch, and rollback.
+- Added non-vacuous tamper regressions for identity, missing required file, modified content,
+  correctly owned unexpected content, trailing manifest data, and symlinks, plus a cross-contract
+  test proving all production-preflight activation tools ship. Removing digest comparison and
+  exact-file-set comparison was independently killed by the corresponding regression.
+- Node 22.23.1 validation: focused VPS/release 13/13 and final integrity subset 2/2; full trusted
+  suite 707 total, 697 passed, 0 failed, 10 environment-conditional skips, inventory 50/50, clean
+  containment, and zero descendants. No live release, current symlink, host service, database,
+  provider, routing, Gate 4 state, or production state changed.
+
 ## 2026-08-04 — Provider-neutral production monitoring runner (Codex)
 
 - Stacked monitoring on the exact green service-isolated logging head so the two operator documents
