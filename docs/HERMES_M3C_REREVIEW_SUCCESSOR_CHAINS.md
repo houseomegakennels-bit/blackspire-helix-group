@@ -305,16 +305,12 @@ Accepted, not resolved:
 - Per-append validation remains super-linear in chain depth: `storedRereviewIntact` walks head-to-root
   on every append. It is bounded at 64 and is not a denial-of-service vector, but building a
   full-depth chain is measurably slow in the focused suite. Not addressed in this slice.
-- **Startup schema validation does not verify CHECK constraints.** `schema-validation.js` registers
-  columns by name, the three named unique indexes, and the two immutability triggers. Index and
-  trigger validation is strict — normalized SQL text, `unique`, `origin='c'`, `partial=0`, and column
-  order are all compared, so a named unique index cannot be silently degraded. But **no CHECK
-  constraint is validated at all.** This matters because several guarantees stated above rest on
-  CHECKs: the absence of a `promote` decision value, the `chain_version`/`supersedes` pairing, and
-  the two self-link bans. If the table were ever created by a path other than this migration,
-  `findMissingSchemaObjects` would report the schema as compatible with every CHECK absent. This is
-  the pre-existing pattern for `hermes_memory_candidate_reviews` and is not a regression, but the
-  confidence placed in those CHECKs elsewhere in this document is not backed by the validator.
+- **CHECK-constraint validation is implemented in the stacked schema-integrity branch and remains
+  in review.** The merged baseline recorded here validates columns, named indexes, and triggers but
+  accepts removed CHECKs. The follow-up adds an exact normalized CHECK-expression inventory across
+  authorization and Hermes 3A-3C, including the absence of a `promote` value, chain pairing, and
+  self-link bans. Startup, restore, and migration post-validation then reject a missing or widened
+  expression. Until that follow-up merges, the limitation remains present on `main`.
 - The three unique constraints are declared **twice** — once inline in `CREATE TABLE` and again as
   named `CREATE UNIQUE INDEX` statements — so SQLite maintains two B-trees per constraint. This is
   deliberate and required, not an oversight: `schema-validation.js` pins indexes by name and requires
