@@ -26,8 +26,8 @@ At the deadline remaining connections are destroyed, SQLite is closed, and the p
 second signal accelerates connection closure. Imported test/staging servers do not install process
 signal handlers; they may invoke the exported shutdown helper explicitly.
 
-This slice does not claim graceful worker task drain. The production supervisor already forwards
-termination to both children, but worker in-flight semantics remain a separate hardening milestone.
+The API slice itself does not claim graceful worker task drain. The separately stacked worker-drain
+slice is documented in `WORKER_GRACEFUL_DRAIN.md`; review and rollback the two boundaries separately.
 
 ## Rollback
 
