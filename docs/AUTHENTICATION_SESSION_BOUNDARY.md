@@ -16,6 +16,10 @@ before the API listens. Rotation never extends the original session expiry. Succ
 at most 512 User-Agent characters and 64 client-address characters; session and CSRF identifiers are
 independent 192-bit random values.
 
+Malformed percent-encoding in a Cookie header is treated as an absent cookie, not a server error;
+other well-formed cookies in the same header remain available. Parsed cookies use a null-prototype
+map so cookie names cannot interact with object prototypes.
+
 Sessions are durable in the one production SQLite database, can be individually revoked, and support
 an atomic revoke-all cutoff. Expired/revoked cleanup is periodic and revoked rows receive a 24-hour
 audit/replay grace period. The approved cookies are `HttpOnly` for the session identifier,

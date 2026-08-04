@@ -4,6 +4,7 @@
 
 - Replaced ordinary equality for admin, bearer, webhook, CSRF, and reset-confirmation credentials with fixed-digest timing-safe comparison.
 - Bounded the optional production session TTL to 1 minute through 24 hours (8-hour default) and capped stored login metadata.
+- Made malformed percent-encoded cookies fail as absent input in a null-prototype cookie map rather than producing a 500.
 - Added focused configuration and structural boundary coverage; no credentials, routing, provider, Telegram transport, or production state changed.
 
 ## 2026-08-04 — API HTTP resource and async-failure boundary (Codex)
