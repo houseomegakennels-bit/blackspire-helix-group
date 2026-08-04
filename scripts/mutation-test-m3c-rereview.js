@@ -218,7 +218,7 @@ const EQUIVALENT_MUTANTS = [
     find: `  if (!deniedInheritanceAbsent(inherited)) throw new Error('memory candidate re-review refuses inherited authority');`,
     replace: '',
     why: 'the block this call inspects is assembled immediately above it from frozen literals - the '
-      + 'four top-level keys, the INHERITED_VALUE_KEYS allowlist, and a provenance object whose keys '
+      + 'four top-level keys, the INHERITED_CONTEXT_KEYS allowlist, and a provenance object whose keys '
       + 'are written out literally - so no caller-controlled key name can reach it. The invariant it '
       + 'reads as enforcing (allowlist and denylist disjoint) is decided at module load by the '
       + 'exported, directly tested inheritanceAllowlistDisjoint(). Reported here rather than omitted '
@@ -360,12 +360,18 @@ for (const mutant of EQUIVALENT_MUTANTS) {
   }
 }
 
-// Restore BEFORE announcing anything terminal. The summary line is what an operator or a polling
-// reviewer treats as "the run is over", so it must not be observable while a mutant is still applied.
-// Leaving restoration to the `exit` handler alone left a window in which the summary was already
-// printed, the tree still mutated, and the lock still held - long enough for a concurrent reader to
-// measure mutated source and attribute the result to the branch. restoreAll is idempotent (it rewrites
-// each file from its captured original), so the exit handler re-running it is harmless.
+// Defensive only, and deliberately described as such. The summary line is what an operator or a
+// polling reviewer treats as "the run is over", so the tree must not be mutated when it appears -
+// but both mutant loops above already restore their target synchronously right after `runSuite`
+// returns, so in every reachable state the tree is ALREADY clean here and this call is a no-op.
+// It is kept as a cheap backstop against a future loop that forgets to restore.
+//
+// This comment previously claimed it CLOSED a window in which the summary printed over a mutated
+// tree with the lock still held. That was wrong on both counts and was never verified before being
+// written: the per-mutant restores predate it, and `restoreAll` does not touch the lock at all -
+// the lock is still released only by the `exit` handler registered in acquireLock. An independent
+// reviewer refuted the claim by reading the parent commit. Corrected rather than quietly dropped.
+// restoreAll is idempotent, so the exit handler re-running it remains harmless.
 restoreAll();
 console.log(`\nsummary: ${MUTANTS.length - survivors} killed, ${EQUIVALENT_MUTANTS.length - misdeclared} declared equivalent, ${survivors} surviving, ${misdeclared} misdeclared`);
 process.exit(survivors === 0 && misdeclared === 0 ? 0 : 1);
