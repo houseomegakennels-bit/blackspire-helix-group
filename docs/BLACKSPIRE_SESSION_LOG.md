@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Read-only latest-backup verification implemented (Codex)
+
+- Audited WAL-safe backup, disposable restore, monitoring, log rotation, Gate 3, and recovery documentation. Identified the absence of a standalone proof that the latest local snapshot remains recent, checksum-matching, schema-compatible, intact, regular, and non-symlinked.
+- Added a read-only verifier with an operator-supplied age ceiling, canonical timestamp/sidecar binding, streamed hashing, SQLite integrity and exact shared-schema checks, and sanitized basename/status output. It has no write, repair, prune, upload, decrypt, or restore mode.
+- Added focused success, checksum-corruption, symlink, future/stale-snapshot, malformed-bound, and output-sanitization coverage; focused validation passes 3/3. The clean full suite passes 701 total, 692 passed, 0 failed, 9 host-conditional skips with trusted inventory 50/50, zero mutations, and zero descendants. A targeted source mutation disabling the checksum mismatch guard was killed by one focused failure; exact source was restored. Build, lint, typecheck, secret scan, `npm audit --audit-level=high` (0 vulnerabilities), both production preflights (`source=21/21 deployment=2/2`), living-memory, tracked shell syntax, and `git diff --check` pass. The paid live smoke test was NOT RUN.
+- No production/staging database, backup, host, service, monitor, alert, secret, key, provider, Telegram connection, deployment, routing, Gate 3, or Gate 4 state was accessed or changed. RPO/RTO, encryption, off-host storage, retention, alerting, and recovery rehearsal remain operator gaps.
+
 ## 2026-08-04 — Hermes M3C re-review chain: ninth review round, PR #64 merged, anchor refreshed (Claude Code)
 
 - Recovered a session that had timed out after launching reviewers I and J against `055cd5b`. No reviewer process was still running and nothing was terminated: the only process from that day was the recovery session itself, every other `claude`/`codex` process dated from 2026-07-27 to 07-31 and was unrelated. Both reviewer workspaces survived intact at `/tmp/review-{i,j}/repo`, both clean and both at `055cd5b` with no lock left behind, and both full reports were recovered from the prior session's subagent transcripts. Local HEAD, `origin`, and the live PR head all read `055cd5b`; no commit or PR-body edit had occurred after it.

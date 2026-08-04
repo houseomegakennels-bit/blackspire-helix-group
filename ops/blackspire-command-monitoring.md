@@ -17,5 +17,15 @@ Record only sanitized events: release SHA, activation time, rollback SHA,
 migration result, health result, and restart count. Cap restarts at five attempts
 in ten minutes, then remain stopped for operator review.
 
+After the operator records an RPO, run the read-only latest-backup verifier on the approved schedule
+and alert on any nonzero exit. The age ceiling must be the approved RPO, never a repository default:
+
+```sh
+npm run db:verify-backup -- /opt/blackspire-command/shared/backups --max-age-hours <approved-hours>
+```
+
+The command prints no absolute path or digest and changes nothing. It does not replace an off-host,
+encrypted backup policy or a disposable restore rehearsal.
+
 Review these files, install them through the existing host mechanisms, and verify
 alerts before any production approval.

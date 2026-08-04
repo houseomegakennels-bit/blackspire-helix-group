@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Read-only latest-backup verification implemented, in review (2026-08-04 UTC)
+
+A draft branch adds a no-write verifier for the latest canonical local backup: non-symlinked regular snapshot/sidecar, canonical sidecar binding, streamed SHA-256 match, SQLite integrity, exact current schema compatibility, plausible timestamp, and optional operator-supplied maximum age. Output omits absolute paths and digests. Focused validation passes 3/3; the full suite passes 701 total, 692 passed, 0 failed, 9 host-conditional skips with trusted inventory 50/50. A checksum-guard mutation is killed by the corruption regression. It does not create, repair, prune, upload, decrypt, or restore backups. Production RPO/RTO, encryption/key custody, off-host storage, retention, scheduling, alerts, and authorized recovery rehearsal remain explicit operator gaps; no production or staging data was accessed or changed.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged into `main` as `0d6e977113e826095c4ed57db150bf30d9de954f` from independently reviewed exact head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is that merge commit's second parent and is the new verified implementation anchor. The merge used the repository's established merge-commit method under an expected-head guard (`--match-head-commit`), so a head that moved between the final check and the merge would have refused rather than merged.
