@@ -1,5 +1,24 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — API HTTP resource and async-failure boundary (Codex)
+
+- Audited rate limits, provider timeouts/cooldowns, emergency stops, body parsing, and Node server
+  defaults. Endpoint abuse controls existed, but the server left header/request/idle/keep-alive and
+  connection reuse broadly defaulted. More critically, async route branches returned promises
+  without awaiting them, so a body-reader rejection escaped the route `try/catch` as an unhandled
+  rejection. The JSON reader also kept appending chunks after rejecting an oversized body.
+- Added one fixed HTTP boundary, listener-level promise containment, byte-counted one-settlement JSON
+  reading, post-refusal draining, and deterministic sanitized 413/400 input errors. The focused
+  acceptance/lifecycle/HTTP suite passes 17/17. Replacing the guarded listener with the raw async
+  router was mutation-tested and reproduced the unhandled rejection, killing the mutant.
+- Full trusted validation: 706 total, 697 passed, 0 failed, 9 host-conditional skips; inventory
+  52/52, zero mutated files or remaining descendants, and clean process containment.
+- Lint, typecheck, build, secret scan, high-severity audit (0 vulnerabilities), living memory, shell
+  syntax, whitespace, and both production preflights passed; preflight reported source 21/21 and
+  deployment 2/2 on this stack. No service was started or changed by those read-only checks.
+- No proxy, TLS, DNS, firewall, listener, service, provider, database, Gate 4, or production state
+  changed. Proxy/application timeout-envelope validation remains isolated-staging operator work.
+
 ## 2026-08-04 — Bounded worker graceful drain implemented (Codex)
 
 - Replaced untracked interval ticks with a single owned active tick. Stop clears polling first, refuses later claims, and awaits the active task plus post-task Telegram outbox delivery. Deterministic injection points cover timing while production defaults remain unchanged.

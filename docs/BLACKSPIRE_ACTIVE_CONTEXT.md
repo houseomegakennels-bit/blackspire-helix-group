@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## Current HTTP resilience work (2026-08-04 UTC)
+
+The HTTP-boundary slice stacks on the green API lifecycle/worker-drain chain. It adds fixed bounded
+server timeouts and connection limits, contains async route rejections, and makes byte-bounded JSON
+refusals deterministic (413 oversized, 400 malformed) without continued buffering. Focused API,
+lifecycle, timeout, and acceptance coverage is 17/17. Reverse-proxy envelope testing remains an
+operator staging action; no live routing or service changed.
+The full trusted suite is 706 total, 697 passed, 0 failed, 9 host-conditional skips, with inventory
+52/52, clean containment, and zero remaining descendants.
+
 ## Bounded worker graceful drain implemented, in review (2026-08-04 UTC)
 
 The worker now stops polling before drain, refuses new claims, and awaits its one active task and delivery flush for up to thirty seconds. A clean drain closes SQLite and exits zero; timeout exits nonzero and leaves recovery to the existing stale-running-task mechanism rather than forging completion. Focused 20/20 and full 703 total / 694 passed / 0 failed / 9 skipped pass with trusted inventory 51/51. Nothing was deployed, restarted, or activated.

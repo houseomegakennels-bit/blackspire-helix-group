@@ -1,5 +1,14 @@
 # Blackspire Decisions
 
+## 2026-08-04 — HTTP resource limits are fixed application safety boundaries
+
+Header, request, idle, keep-alive, header-count/bytes, and socket-reuse limits are compiled into one
+server contract rather than exposed as environment tuning. The API performs short control-plane
+operations and queues longer work, so no production request needs an unbounded connection. Every
+async route promise is contained by the listener, and rejected JSON stops buffering immediately.
+Proxy limits must be validated around these application limits in staging; they do not override or
+silently relax them.
+
 ## 2026-08-04 — Worker shutdown may time out, but it may not forge completion
 
 Stop clears polling before waiting for the one active tick, including its delivery flush. A thirty-second timeout exits nonzero and relies on the existing stale-running-task recovery after restart. It does not transition the task to completed, failed, or queued without evidence. This favors recoverable explicit interruption over a falsely clean shutdown. A second signal is an explicit forced failure, not a successful drain.
