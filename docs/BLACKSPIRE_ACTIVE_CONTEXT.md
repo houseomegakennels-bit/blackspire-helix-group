@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Isolated staging launch plan complete; repository tooling gaps remain (2026-08-04 UTC)
+
+The complete isolated-staging checklist is now documented. Launch remains blocked by operator choices (hostname, topology, retention, principals) and missing reviewed repository artifacts: staging environment preflight, environment/unit/supervisor templates, isolated release/rollback tooling, encrypted off-host backup policy/tooling, and alert-test evidence. Existing restricted staging on protected port 8788 was not inspected, restarted, rebuilt, or treated as reproducible evidence.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged as `0d6e977113e826095c4ed57db150bf30d9de954f` from exact reviewed head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is the new verified implementation anchor. It closes the first slice's one-terminal-review-per-candidate limitation with an append-only successor chain in `hermes_memory_candidate_rereviews`, and closes nothing else. `chain_version` is the sole ordering authority; `created_at` is metadata only. The slice is review-only and non-operative: recording is an internal service call with no production caller, the single surface is a GET-only admin-gated route, and appending never touches candidate `status` or `promoted_at`.

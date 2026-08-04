@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-08-04 — Existing restricted staging is not a reproducible staging specification
+
+The repository encodes staging state-owner and loopback bind behavior and protects the existing 8788 listener, but it does not contain that service's launcher, unit, environment profile, release switch, rollback, or staging preflight. Host health cannot substitute for reviewed reproducible artifacts. A new isolated staging environment must use distinct identity, state, database, workspace, backups, logs, port, DNS, TLS, secrets, and deployment/rollback authority. Separate-host topology is recommended; same-host topology requires explicit risk acceptance.
+
 ## 2026-08-04 — `chain_version` is the sole ordering authority; `created_at` is metadata
 
 A re-review chain orders strictly by `chain_version`, and `created_at` carries no ordering guarantee. Wall-clock time is not a safe ordering key for an append-only chain: it is not monotonic across restarts or hosts, and nothing prevents two rows from sharing a timestamp. `UNIQUE(root_review_id,chain_version)` makes the ordering both total and enforceable by the database rather than by convention, so a gap or a fork cannot hide off the walked path. `created_at` is therefore stored as metadata, hashed into neither the content nor the lineage packet, and no re-review query orders by it. The read path deliberately does **not** verify `created_at` monotonicity, and that is recorded as a known non-guarantee rather than left implicit.

@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Isolated staging launch plan reconciled (Codex)
+
+- Audited tracked staging, deployment, environment, backup/restore, proxy/TLS, monitoring, release, rollback, and Gate 4 evidence. Confirmed the repository knows `vps-staging`, loopback staging, and protected port 8788, but lacks a tracked staging launcher, unit, environment template, isolated release/rollback tooling, and staging preflight. No current-host contents or secret values were read.
+- Added complete infrastructure, DNS/TLS, secrets, environment, database/migration, deployment, validation, smoke, rollback, and operator launch checklists plus an explicit repository implementation backlog. Operator decisions remain hostname, topology, retention policy, and principals; separate-host staging is recommended.
+- Documentation only. No host, DNS, certificate, secret, database, backup, service, monitor, proxy, deployment, route, provider, Telegram connection, production state, or Gate 4 state changed. No staging launch readiness is claimed.
+
 ## 2026-08-04 — Hermes M3C re-review chain: ninth review round, PR #64 merged, anchor refreshed (Claude Code)
 
 - Recovered a session that had timed out after launching reviewers I and J against `055cd5b`. No reviewer process was still running and nothing was terminated: the only process from that day was the recovery session itself, every other `claude`/`codex` process dated from 2026-07-27 to 07-31 and was unrelated. Both reviewer workspaces survived intact at `/tmp/review-{i,j}/repo`, both clean and both at `055cd5b` with no lock left behind, and both full reports were recovered from the prior session's subagent transcripts. Local HEAD, `origin`, and the live PR head all read `055cd5b`; no commit or PR-body edit had occurred after it.
