@@ -174,7 +174,10 @@ if (unit === null) {
       : 'ExecStartPre must run scripts/verify-environment.sh vps-production');
 
   const hardening = ['User=blackspire', 'Group=blackspire', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
-    'ProtectHome=yes', 'PrivateTmp=yes', 'RestrictSUIDSGID=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities='];
+    'ProtectHome=yes', 'PrivateTmp=yes', 'RestrictSUIDSGID=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
+    'LogsDirectory=blackspire-command', 'LogsDirectoryMode=0750', 'UMask=0027',
+    'StandardOutput=append:/var/log/blackspire-command/command.log',
+    'StandardError=append:/var/log/blackspire-command/command.log'];
   const missingHardening = hardening.filter((directive) => !unit.includes(directive));
   record('unit-hardening', missingHardening.length === 0, 'source',
     missingHardening.length === 0 ? 'least-privilege and sandboxing directives present'
@@ -292,9 +295,17 @@ if (unit === null) {
 {
   // A zero-byte file is a truncated or broken copy, not a present tool.
   const unusable = REQUIRED_TOOLING.filter((relative) => !usableFile(relative));
-  record('activation-tooling', unusable.length === 0, 'source',
-    unusable.length === 0 ? `${REQUIRED_TOOLING.length} activation and rollback tools present and non-empty`
-      : `missing or empty activation tooling: ${unusable.join(', ')}`);
+  const logrotate = read('ops/blackspire-command-logrotate.conf') ?? '';
+  const isolatedRotation = /^\/var\/log\/blackspire-command\/command\.log\s*\{/m.test(logrotate)
+    && /\bmaxsize\s+50M\b/.test(logrotate)
+    && /\bcreate\s+0640\s+blackspire\s+blackspire\b/.test(logrotate)
+    && !/\/var\/lib\/docker|\*/.test(logrotate);
+  record('activation-tooling', unusable.length === 0 && isolatedRotation, 'source',
+    unusable.length === 0 && isolatedRotation
+      ? `${REQUIRED_TOOLING.length} activation and rollback tools present and non-empty; log rotation targets only the service log`
+      : (unusable.length > 0
+        ? `missing or empty activation tooling: ${unusable.join(', ')}`
+        : 'log rotation must target only /var/log/blackspire-command/command.log with bounded retention'));
 }
 
 // --- Deployment-class: installed unit drift (read-only) --------------------------------------

@@ -1,5 +1,25 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Service-isolated production logging and retention (Codex)
+
+- Audited the production unit, runtime ownership map, monitoring template, Gate 4 preparation, and
+  logrotate policy. The prior policy broadly rotated `/var/lib/docker/containers/*/*-json.log`,
+  claiming unrelated host logs while the non-container systemd unit defaulted to journald. Replaced
+  that mismatch with systemd-managed `/var/log/blackspire-command/command.log`, exact ownership and
+  modes, daily-or-50-MiB rotation, 14 rotations, and no wildcard target.
+- Gate 4 now requires the installed policy to be byte-identical to the reviewed template and fails
+  a divergent present file. Production preflight enforces the logging directives and isolated
+  rotation inside its existing 21 source checks. Added a retention/recovery guide documenting the
+  `copytruncate` loss window and the absence of off-host durability.
+- Node 22.23.1 validation: focused Gate 4 24/24 and logging/preflight 6/6; full trusted suite 700
+  total, 691 passed, 0 failed, 9 host-conditional skips, inventory 49/49, zero mutation or remaining
+  descendants, and clean containment. A presence-only Gate 4 mutant was killed by the divergent-file
+  regression. Lint, typecheck, build, secret scan, high-severity audit (0 vulnerabilities), living
+  memory, shell syntax, whitespace, source preflight 21/21, and `logrotate --debug` passed. Strict
+  host preflight intentionally remained nonzero at deployment 1/2 because the installed unit differs
+  from this new reviewed template. No host file, service, routing, provider, database, Gate 4 state,
+  or production state was changed.
+
 ## 2026-08-04 — Hermes M3C re-review chain: ninth review round, PR #64 merged, anchor refreshed (Claude Code)
 
 - Recovered a session that had timed out after launching reviewers I and J against `055cd5b`. No reviewer process was still running and nothing was terminated: the only process from that day was the recovery session itself, every other `claude`/`codex` process dated from 2026-07-27 to 07-31 and was unrelated. Both reviewer workspaces survived intact at `/tmp/review-{i,j}/repo`, both clean and both at `055cd5b` with no lock left behind, and both full reports were recovered from the prior session's subagent transcripts. Local HEAD, `origin`, and the live PR head all read `055cd5b`; no commit or PR-body edit had occurred after it.

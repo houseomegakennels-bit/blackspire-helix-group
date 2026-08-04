@@ -1,5 +1,15 @@
 # Blackspire Decisions
 
+## 2026-08-04 — Production log rotation is service-isolated and exact-match validated
+
+The production unit owns one combined structured-log path under `/var/log/blackspire-command`, and
+the rotation policy names that path exactly. A host-wide Docker glob is outside Blackspire's
+ownership boundary and cannot satisfy readiness merely because it exists. Gate 4 therefore compares
+the installed policy byte-for-byte with the reviewed template, while preflight enforces the same
+unit and retention contract. `copytruncate` is retained because the supervisor does not reopen its
+descriptor; its small loss window and the lack of off-host durability are explicit accepted local
+retention limits pending an operator decision on stronger audit transport.
+
 ## 2026-08-04 — `chain_version` is the sole ordering authority; `created_at` is metadata
 
 A re-review chain orders strictly by `chain_version`, and `created_at` carries no ordering guarantee. Wall-clock time is not a safe ordering key for an append-only chain: it is not monotonic across restarts or hosts, and nothing prevents two rows from sharing a timestamp. `UNIQUE(root_review_id,chain_version)` makes the ordering both total and enforceable by the database rather than by convention, so a gap or a fork cannot hide off the walked path. `created_at` is therefore stored as metadata, hashed into neither the content nor the lineage packet, and no re-review query orders by it. The read path deliberately does **not** verify `created_at` monotonicity, and that is recorded as a known non-guarantee rather than left implicit.

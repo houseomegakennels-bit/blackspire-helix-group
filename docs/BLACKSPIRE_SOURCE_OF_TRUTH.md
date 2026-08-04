@@ -1,5 +1,17 @@
 # Blackspire Canonical Source of Truth
 
+## Service-isolated production logging prepared (2026-08-04 UTC)
+
+The repository-side production unit now retains its line-delimited JSON stdout/stderr at the exact
+service-owned path `/var/log/blackspire-command/command.log`; systemd creates the parent with mode
+`0750`, and the unit pins `UMask=0027`. The logrotate template targets only that file, rotates daily
+or at 50 MiB, retains 14 rotations, and recreates it as `0640 blackspire:blackspire`. The prior broad
+Docker-container glob was unsafe because it claimed unrelated host logs and did not retain this
+systemd unit's own output. Production preflight now includes the exact directives in its existing
+hardening/tooling checks, and Gate 4 reports a present but byte-divergent installed policy as FAILED.
+No host unit, log directory, or logrotate policy was installed or changed; the installed unit is
+therefore expected to remain a deployment-class mismatch until separately authorized installation.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged into `main` as `0d6e977113e826095c4ed57db150bf30d9de954f` from independently reviewed exact head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is that merge commit's second parent and is the new verified implementation anchor. The merge used the repository's established merge-commit method under an expected-head guard (`--match-head-commit`), so a head that moved between the final check and the merge would have refused rather than merged.
