@@ -64,6 +64,16 @@ Restore proves the backup is a real Blackspire database before it publishes anyt
 - Every refusal leaves no restored target and no temporary artifact, and never modifies the source backup.
 - Restore additionally refuses production mode (absent an explicit disposable flag) and the configured live database path.
 
+Verify the latest local snapshot read-only with an operator-approved age ceiling:
+
+```sh
+npm run db:verify-backup -- /opt/blackspire-command/shared/backups --max-age-hours <approved-RPO-hours>
+```
+
+This streams checksum verification and re-proves integrity plus the current required schema without
+printing an absolute path or digest. It does not restore, rotate, upload, encrypt, or repair a backup.
+See `DISASTER_RECOVERY_READINESS.md`; off-host encryption, retention, RPO, and RTO remain operator-owned.
+
 The single required-schema contract lives in `packages/shared/schema-validation.js` and is shared by application startup (`packages/task-engine/db.js`) and restore validation. Do not duplicate it.
 
 ## Monitoring templates

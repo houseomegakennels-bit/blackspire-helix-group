@@ -1,0 +1,46 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-backup-verify-'));
+const database = path.join(root, 'database', 'command.sqlite');
+const backups = path.join(root, 'backups');
+const node = process.execPath;
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(database);
+test.after(() => fs.rmSync(root, { recursive: true, force: true }));
+function run(args = []) { return spawnSync(node, ['scripts/verify-latest-backup.js', backups, ...args], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, BLACKSPIRE_DB_PATH: database } }); }
+function createBackup() {
+  const result = spawnSync(node, ['scripts/backup.js', backups], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, BLACKSPIRE_DB_PATH: database } });
+  assert.equal(result.status, 0, result.stderr); return JSON.parse(result.stdout);
+}
+test('latest backup verifier proves recency, checksum, integrity, and schema with sanitized output', () => {
+  const created = createBackup(); const result = run(['--max-age-hours', '1']);
+  assert.equal(result.status, 0, result.stderr); const report = JSON.parse(result.stdout);
+  assert.equal(report.ok, true); assert.equal(report.backup.file, path.basename(created.backup));
+  assert.equal(report.backup.checksum, 'match'); assert.equal(report.backup.integrity, 'ok'); assert.equal(report.backup.schemaCompatible, true);
+  assert.equal(result.stdout.includes(root), false); assert.equal(Object.hasOwn(report.backup, 'sha256'), false);
+});
+test('latest backup verifier refuses a mismatched checksum and a symlinked sidecar', () => {
+  const latest = fs.readdirSync(backups).find((file) => file.endsWith('.sqlite')); const sidecar = path.join(backups, `${latest}.sha256`);
+  const original = fs.readFileSync(sidecar, 'utf8'); fs.writeFileSync(sidecar, `${'0'.repeat(64)}  ${latest}\n`);
+  assert.match(run().stderr, /checksum mismatch/); fs.rmSync(sidecar);
+  fs.writeFileSync(path.join(root, 'sidecar-target'), original); fs.symlinkSync(path.join(root, 'sidecar-target'), sidecar);
+  assert.match(run().stderr, /non-symlinked regular file/); fs.rmSync(sidecar); fs.writeFileSync(sidecar, original, { mode: 0o600 });
+});
+test('latest backup verifier refuses future/stale snapshots and malformed age bounds', () => {
+  const latest = fs.readdirSync(backups).find((file) => file.endsWith('.sqlite')); const futureName = 'command-29990101T000000Z.sqlite';
+  fs.renameSync(path.join(backups, latest), path.join(backups, futureName)); const futureSidecar = path.join(backups, `${latest}.sha256`);
+  const digest = fs.readFileSync(futureSidecar, 'utf8').split(/\s+/)[0]; fs.renameSync(futureSidecar, path.join(backups, `${futureName}.sha256`));
+  fs.writeFileSync(path.join(backups, `${futureName}.sha256`), `${digest}  ${futureName}\n`, { mode: 0o600 });
+  assert.match(run(['--max-age-hours', '24']).stderr, /implausibly in the future/);
+  const oldName = 'command-20000101T000000Z.sqlite';
+  fs.renameSync(path.join(backups, futureName), path.join(backups, oldName));
+  fs.renameSync(path.join(backups, `${futureName}.sha256`), path.join(backups, `${oldName}.sha256`));
+  fs.writeFileSync(path.join(backups, `${oldName}.sha256`), `${digest}  ${oldName}\n`, { mode: 0o600 });
+  assert.match(run(['--max-age-hours', '24']).stderr, /exceeds the required maximum age/);
+  assert.match(run(['--max-age-hours', '0']).stderr, /positive integer/);
+});
