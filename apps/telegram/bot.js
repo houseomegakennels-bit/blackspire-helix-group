@@ -7,6 +7,7 @@ import { transcribeVoice } from '../../packages/shared/transcription.js';
 import { recordAttachment } from '../../packages/task-engine/attachments.js';
 import { audit } from '../../packages/task-engine/tasks.js';
 import { createUnifiedInput, getConversation, channelCanAccessConversation, channelCanAccessTask, cancelFromChannel } from '../../packages/unified-input/unified.js';
+import { configuredInteger } from '../../packages/shared/runtime-numeric-config.js';
 
 const MIME_EXTENSIONS = { 'text/plain': '.txt', 'text/markdown': '.md', 'application/json': '.json', 'audio/ogg': '.oga', 'audio/mpeg': '.mp3' };
 const ALLOWED_MIME_TYPES = Object.keys(MIME_EXTENSIONS);
@@ -81,7 +82,7 @@ export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
 // instead of silently truncating evidence bundles or long log histories.
 function deliverPayload(chatId, payload, filename, send) {
   const serialized = JSON.stringify(payload, null, 2);
-  if (serialized.length <= Number(process.env.TELEGRAM_INLINE_MAX_CHARS || 3500)) return send(serialized);
+  if (serialized.length <= configuredInteger('TELEGRAM_INLINE_MAX_CHARS')) return send(serialized);
   const dir = path.resolve(ATTACHMENTS_DIR);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${Date.now()}-${filename.replace(/[^A-Za-z0-9._-]/g, '_')}`);
@@ -118,7 +119,7 @@ export async function handleTelegramAttachment(update, apiBase = PUBLIC_BASE_URL
   const kind = message.voice ? 'voice' : 'document';
   const declaredSize = Number(file?.file_size || 0);
   const mime = file?.mime_type || (kind === 'voice' ? 'audio/ogg' : 'application/octet-stream');
-  const maxBytes = Number(process.env.TELEGRAM_FILE_MAX_BYTES || 2_000_000);
+  const maxBytes = configuredInteger('TELEGRAM_FILE_MAX_BYTES');
   const chatId = message.chat?.id;
   const workspaceId = sessions.get(message.from?.id) || 'blackspire-command';
 
