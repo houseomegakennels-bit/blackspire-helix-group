@@ -1,5 +1,11 @@
 # Hermes Intelligence Layer — Implementation Status
 
+## Milestone 3A read-path authorization ordering (implemented, in review)
+
+- `readOutcomeEvaluation` now authorizes the stored workspace before complete provenance validation or subordinate-evidence reads, matching M3B and M3C.
+- Absent, unauthorized, and non-intact evaluations still return `null`; callers cannot nominate a workspace, and same-workspace reads still require `evaluation.read`.
+- Node 22.23.1 validation passed focused 21/21 and the clean full rerun at 699 total, 690 passed, 0 failed, 9 host-conditional skips, with trusted inventory 49/49. Independent review, merge, deployment, and production effect are not yet claimed.
+
 ## Milestone 3C, second slice — Re-review and successor chains (draft PR, in progress)
 
 - **Implemented:** additive, idempotent, append-only `hermes_memory_candidate_rereviews` with database-enforced immutability triggers; a re-review modelled as an explicit successor that links to the record it supersedes and never overwrites it; database-enforced chain shape (`UNIQUE(root_review_id,chain_version)` against forks at every depth including the first successor, `UNIQUE(supersedes_rereview_id)` against forks off a successor, a depth/parent CHECK against ambiguous ancestry, and self-link CHECKs); a required `supersedes` that must name the chain's current head, so a stale or conflicting predecessor refuses and two concurrent re-reviewers resolve to one winner and one explicit refusal rather than a fork; ancestry verified all the way to the root rather than one hop, because a predecessor's own digests do not cover its `supersedes_rereview_id`; a predecessor content/lineage digest pin; deterministic `chain_version` ordering and replay; workspace-scoped idempotent replay with integrity-conflict detection; a bounded chain depth enforced on both write and read; and a read-only service plus one GET route reusing canonical `evaluation.read`.

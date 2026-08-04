@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — M3A evaluation-read authorization ordering corrected (Codex)
+
+- Reconciled the repository at `0d6e977` plus the open canonical-anchor PR #65 and confirmed the recorded M3A inconsistency: `readOutcomeEvaluation` ran full provenance validation before deciding `evaluation.read`, unlike M3B and M3C.
+- Changed the read order to fetch the evaluation identity, authorize its stored workspace, and only then run provenance and subordinate-evidence validation. No caller-supplied workspace, permission, response shape, mutation path, routing, provider, memory, promotion, deployment, or Gate 4 behavior changed.
+- Added a regression that pins the authorization-before-integrity order, refuses a real cross-workspace evaluation, and proves its owner still reads it. Focused Node 22.23.1 validation passed 21/21. The first full run completed 699 tests with one failure in `tests/persistence.test.js`; that file then passed standalone 8/8, and a complete clean rerun passed 699 total, 690 passed, 0 failed, 9 host-conditional skips, trusted inventory 49/49 with zero mutations and zero remaining descendants. No cause is claimed for the first-run-only failure. Build, lint, typecheck, secret scan, high-severity dependency audit (0 vulnerabilities), both preflights (`source=21/21 deployment=2/2`), living-memory, shell syntax, and whitespace all passed. The end-to-end paid live smoke test and M3C-only mutation harness were not run. Independent review remains outstanding; no merge or deployment is claimed.
+
 ## 2026-08-04 — Hermes M3C re-review chain: ninth review round, PR #64 merged, anchor refreshed (Claude Code)
 
 - Recovered a session that had timed out after launching reviewers I and J against `055cd5b`. No reviewer process was still running and nothing was terminated: the only process from that day was the recovery session itself, every other `claude`/`codex` process dated from 2026-07-27 to 07-31 and was unrelated. Both reviewer workspaces survived intact at `/tmp/review-{i,j}/repo`, both clean and both at `055cd5b` with no lock left behind, and both full reports were recovered from the prior session's subagent transcripts. Local HEAD, `origin`, and the live PR head all read `055cd5b`; no commit or PR-body edit had occurred after it.
