@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-08-04 — Database compatibility includes exact CHECK semantics
+
+Table and column names alone do not prove a compatible security schema. Because SQLite leaves an existing table untouched under `CREATE TABLE IF NOT EXISTS`, a removed or widened CHECK can survive migration and be accepted by startup and restore indefinitely. The compatibility contract now includes an exact normalized multiset of authorization and Hermes 3A-3C CHECK expressions, extracted with a balanced quote-aware scanner. Loose substring matching and automatic table rebuilds are rejected: the former can accept widened semantics, while the latter would rewrite historical append-only evidence without an explicit migration decision.
+
 ## 2026-08-04 — Stored scope must be authorized before expensive integrity work
 
 An authorization-facing read may need the stored row to discover its workspace, but it must do no more object-specific work until that workspace is authorized. M3A previously ran complete provenance validation before `evaluation.read`, creating a measurable cross-workspace work oracle even though the response body was already indistinguishable. M3A now follows M3B and M3C: read the bounded identity row, authorize its stored scope, then validate integrity. Absence, denial, and failed integrity still collapse to the same result.

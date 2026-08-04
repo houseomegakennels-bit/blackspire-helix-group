@@ -92,6 +92,63 @@ export const REQUIRED_SCHEMA_OBJECTS = {
   }])),
 };
 
+// Security- and integrity-bearing CHECK constraints that must survive backup/restore and startup.
+// Column presence, indexes, and triggers are not enough: SQLite's `CREATE TABLE IF NOT EXISTS` will
+// leave an existing weakened table untouched, so a database with a removed or widened CHECK would
+// otherwise be accepted forever. Expressions are compared as an exact normalized multiset, not by
+// substring, so adding `promote`, changing `>0` to `>=0`, or dropping one duplicate-looking guard is
+// detected. Keep this inventory synchronized with scripts/migration-writer.js.
+const NONNEGATIVE_SCORECARD_FIELDS = [
+  'source_evaluation_count', 'positive_eligible_count', 'negative_terminal_count',
+  'blocked_ineligible_count', 'accepted_count', 'rejected_count', 'partially_accepted_count',
+  'rollback_count', 'follow_up_verification_count', 'stability_confirmed_count',
+  'regression_linked_count', 'unknown_acceptance_count', 'unknown_rollback_count',
+  'unknown_stability_count', 'retry_total', 'known_retry_evaluations', 'timeout_count',
+  'unknown_timeout_count', 'cancellation_count', 'known_input_tokens',
+  'known_input_token_evaluations', 'known_output_tokens', 'known_output_token_evaluations',
+  'known_cost_cents', 'known_cost_evaluations', 'verified_success_numerator',
+  'verified_success_denominator', 'acceptance_numerator', 'acceptance_denominator',
+];
+
+export const REQUIRED_TABLE_CHECKS = {
+  auth_principals: [
+    "type IN ('admin','service')",
+    "status IN ('active','revoked','disabled','expired')",
+    'security_version>0',
+  ],
+  auth_workspace_grants: [
+    "status IN ('active','revoked','expired','superseded')",
+    'version>0',
+    'security_version>0',
+  ],
+  auth_decisions: ['allowed IN (0,1)'],
+  hermes_outcome_corrections: ['version>0'],
+  hermes_outcome_source_events: [
+    "event_type IN ('accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked')",
+  ],
+  hermes_outcome_evaluation_failures: ["remediation_state IN ('open','retry_requested','resolved')"],
+  hermes_verified_scorecards: [
+    'scope_version>0',
+    "confidence_band IN ('insufficient','limited','established')",
+    ...NONNEGATIVE_SCORECARD_FIELDS.map((field) => `${field}>=0`),
+  ],
+  hermes_verified_scorecard_sources: ['seq>0'],
+  hermes_memory_candidate_reviews: [
+    "decision IN ('recommend_promote','reject','defer_needs_evidence')",
+    "candidate_scope='workspace'",
+    "candidate_status_at_review='pending'",
+  ],
+  hermes_memory_candidate_rereviews: [
+    'chain_version>0',
+    "decision IN ('recommend_promote','reject','defer_needs_evidence')",
+    "candidate_scope='workspace'",
+    "candidate_status_at_review='pending'",
+    'id<>root_review_id',
+    'supersedes_rereview_id IS NULL OR supersedes_rereview_id<>id',
+    '(chain_version=1 AND supersedes_rereview_id IS NULL) OR (chain_version>1 AND supersedes_rereview_id IS NOT NULL)',
+  ],
+};
+
 // Returns a list of human-readable descriptions of missing schema objects (empty when the database
 // on `db` (an already-open node:sqlite DatabaseSync connection) contains every required table and
 // column. Never opens or closes the connection itself - callers own that lifecycle.
@@ -119,11 +176,76 @@ export function findMissingSchemaObjects(db) {
     const trigger = db.prepare('SELECT tbl_name,sql FROM sqlite_master WHERE type=? AND name=?').get('trigger', name);
     if (!trigger || trigger.tbl_name !== expected.table || normalizeSql(trigger.sql) !== normalizeSql(expected.sql)) missing.push(`invalid trigger ${name}`);
   }
+  for (const [table, expectedChecks] of Object.entries(REQUIRED_TABLE_CHECKS)) {
+    const schemaRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table);
+    if (!schemaRow) continue; // The required-table pass above already reports the absence.
+    const actual = extractCheckExpressions(schemaRow.sql).map(normalizeCheckExpression).sort();
+    const expected = expectedChecks.map(normalizeCheckExpression).sort();
+    if (actual.length !== expected.length || actual.some((expression, position) => expression !== expected[position])) {
+      missing.push(`invalid table constraints ${table}`);
+    }
+  }
   return missing;
 }
 
 function normalizeSql(sql) {
   return String(sql || '').trim().replace(/;$/, '').replace(/\s+/g, ' ').toLowerCase();
+}
+
+// Extracts balanced CHECK(...) bodies while respecting SQLite single/double quoted tokens. This is
+// deliberately a small syntax-aware scanner rather than a regular expression: CHECK expressions can
+// contain nested parentheses and escaped quotes, and a loose textual search can accept a widened
+// constraint merely because the old expression survives inside unrelated SQL.
+function extractCheckExpressions(sql) {
+  const source = String(sql || '');
+  const expressions = [];
+  let quote = null;
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    if (quote) {
+      if (char === quote && source[i + 1] === quote) i += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "'" || char === '"') { quote = char; continue; }
+    if (source.slice(i, i + 5).toLowerCase() !== 'check' || /[A-Za-z0-9_]/.test(source[i - 1] || '') ||
+      /[A-Za-z0-9_]/.test(source[i + 5] || '')) continue;
+    let open = i + 5;
+    while (/\s/.test(source[open] || '')) open += 1;
+    if (source[open] !== '(') continue;
+    let depth = 1;
+    let innerQuote = null;
+    let end = open + 1;
+    for (; end < source.length && depth > 0; end += 1) {
+      const inner = source[end];
+      if (innerQuote) {
+        if (inner === innerQuote && source[end + 1] === innerQuote) end += 1;
+        else if (inner === innerQuote) innerQuote = null;
+      } else if (inner === "'" || inner === '"') innerQuote = inner;
+      else if (inner === '(') depth += 1;
+      else if (inner === ')') depth -= 1;
+    }
+    if (depth !== 0) return [];
+    expressions.push(source.slice(open + 1, end - 1));
+    i = end - 1;
+  }
+  return expressions;
+}
+
+function normalizeCheckExpression(expression) {
+  let normalized = '';
+  let quote = null;
+  const source = String(expression || '').trim();
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    if (quote) {
+      normalized += char;
+      if (char === quote && source[i + 1] === quote) normalized += source[++i];
+      else if (char === quote) quote = null;
+    } else if (char === "'" || char === '"') { quote = char; normalized += char; }
+    else if (!/\s/.test(char)) normalized += char.toLowerCase();
+  }
+  return normalized;
 }
 
 // Sorted names of every ordinary table on `db` (an already-open connection), excluding SQLite's own

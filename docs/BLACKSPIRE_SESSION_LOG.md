@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Authorization and Hermes CHECK constraints added to compatibility gate (Codex)
+
+- Reproduced the documented gap on disposable migrated state: a table definition with a removed M3C decision CHECK still returned no missing schema objects. Confirmed the same shared validator gates startup, restore pre/post-copy, and migration postconditions.
+- Added a canonical inventory of 52 CHECK expressions across authorization and Hermes 3A-3C plus a balanced, quote-aware extractor and exact normalization. No loose substring acceptance and no automatic database rewrite were introduced.
+- Added disposable mutations covering removed and widened authorization lifecycles, M3A versions/event/remediation vocabularies, M3B scope/confidence/metrics/source order, and M3C decision/scope/status/re-review chain shape. A checksum-valid backup widened to admit `promote` is refused without publishing a target; application startup and migration post-validation also refuse weakened schemas.
+- Node 22.23.1 validation passes focused 30 with zero failures and one root-only permission skip, plus full 704 total, 695 passed, 0 failed, 9 host-conditional skips and trusted inventory 49/49 with zero mutations or descendants. Independent review remains outstanding. No production database, backup, service, deployment, routing, provider, memory candidate, review, promotion, or Gate 4 state was changed.
+
 ## 2026-08-04 — M3A evaluation-read authorization ordering corrected (Codex)
 
 - Reconciled the repository at `0d6e977` plus the open canonical-anchor PR #65 and confirmed the recorded M3A inconsistency: `readOutcomeEvaluation` ran full provenance validation before deciding `evaluation.read`, unlike M3B and M3C.
