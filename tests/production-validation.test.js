@@ -60,6 +60,14 @@ test('rejects secure cookies disabled', () => {
   assert.match(requireProductionSafeConfig(validEnv({ SECURE_COOKIES: 'false' }), dirs()).errors.join(), /SECURE_COOKIES/);
 });
 
+test('accepts the reviewed session TTL default and rejects unsafe production overrides', () => {
+  assert.equal(requireProductionSafeConfig(validEnv({ SESSION_TTL_MS: '60000' }), dirs()).ok, true);
+  assert.equal(requireProductionSafeConfig(validEnv({ SESSION_TTL_MS: '86400000' }), dirs()).ok, true);
+  for (const value of ['0', '59999', '1.5', 'NaN', '86400001']) {
+    assert.match(requireProductionSafeConfig(validEnv({ SESSION_TTL_MS: value }), dirs()).errors.join(), /SESSION_TTL_MS/);
+  }
+});
+
 test('same-origin API does not treat legacy CORS_ORIGIN as an authorization control', () => {
   assert.equal(requireProductionSafeConfig(validEnv({ CORS_ORIGIN: '*' }), dirs()).ok, true);
 });

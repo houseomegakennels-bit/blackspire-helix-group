@@ -11,8 +11,9 @@ import { attachmentsForTask } from '../../packages/task-engine/attachments.js';
 import { listWorkspaces, getWorkspace, upsertWorkspace } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
 import { handleTelegramUpdate, dispatchReply } from '../telegram/bot.js';
-import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
+import { createSession, createTestModeSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
 import { clientIp } from '../../packages/shared/net.js';
+import { credentialMatches } from '../../packages/shared/credential-compare.js';
 import { cleanupRateLimits } from '../../packages/shared/rateLimits.js';
 import { createUnifiedInput, getConversation, requestCancellation } from '../../packages/unified-input/unified.js';
 import { conversationEvents } from '../../packages/task-engine/tasks.js';
@@ -55,7 +56,7 @@ function isPublicAsset(url = '', pathname = '') {
 }
 
 function authContext(req) {
-  if (ALLOW_BEARER_AUTH && req.headers.authorization === `Bearer ${ADMIN_TOKEN}`) return { ok: true, mode: 'bearer', session: null };
+  if (ALLOW_BEARER_AUTH && credentialMatches(req.headers.authorization, `Bearer ${ADMIN_TOKEN}`)) return { ok: true, mode: 'bearer', session: null };
   const session = getSession(parseCookies(req.headers.cookie || '').bc_session);
   if (session && TEST_MODE.enabled && !testModeActive()) return { ok: false, mode: 'none', session: null };
   if (session) return { ok: true, mode: 'session', session };
@@ -145,7 +146,7 @@ async function route(req, res) {
     }
     if (u.pathname === '/api/stop/reset' && req.method === 'POST') {
       const limit = checkLimit(req, 'stop-reset', 3, 60000); if (!limit.allowed) return limited(res, limit);
-      if (auth.mode !== 'session' || req.headers['x-confirmation-token'] !== `${auth.session.csrfToken}:RESET`) return json(res, 403, { error: 'fresh session confirmation required' });
+      if (auth.mode !== 'session' || !credentialMatches(req.headers['x-confirmation-token'], `${auth.session.csrfToken}:RESET`)) return json(res, 403, { error: 'fresh session confirmation required' });
       emergencyStopMemory = false;
       setFlag('emergency_stop', 'inactive');
       audit(null, 'administrator', 'emergency_stop.reset');
@@ -241,7 +242,7 @@ async function testModeLogin(req, res) {
     audit(null, 'test-mode', 'session.denied', { actor: TEST_MODE.testActor });
     return json(res, 404, { error: 'test session unavailable' });
   }
-  const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null, maxExpiresAt: Date.parse(TEST_MODE.expiresAt) });
+  const session = createTestModeSession({ ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null, maxExpiresAt: Date.parse(TEST_MODE.expiresAt) });
   if (!session) return json(res, 503, { error: 'test session unavailable' });
   audit(null, 'test-mode', 'session.created', { actor: TEST_MODE.testActor });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: Math.min(session.expiresAt, Date.parse(TEST_MODE.expiresAt)) }, { 'set-cookie': sessionCookie(session, { secure: true }) });
@@ -375,7 +376,7 @@ function exportTask(res, taskId, format) {
 }
 
 async function telegramWebhook(req, res) {
-  if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { error: 'invalid telegram secret' });
+  if (process.env.TELEGRAM_WEBHOOK_SECRET && !credentialMatches(req.headers['x-telegram-bot-api-secret-token'], process.env.TELEGRAM_WEBHOOK_SECRET)) return json(res, 401, { error: 'invalid telegram secret' });
   const body = await readJson(req);
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
