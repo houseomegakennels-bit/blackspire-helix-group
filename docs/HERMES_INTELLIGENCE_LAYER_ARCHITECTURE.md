@@ -86,7 +86,7 @@ promotion code path** in M1 — promotion requires explicit policy/human approva
    mock execute, deterministic verify, event recording, pending memory candidate, tests.
 2. **One real adapter, development-only**: strict capability/domain allowlists, per-task budgets,
    redaction, dev profile only — **no production activation, no prod keys**.
-3. **Verified learning foundations:** 3A immutable outcome provenance; 3B non-operative verified scorecards; then approval-gated memory candidate review/promotion.
+3. **Verified learning foundations:** 3A immutable outcome provenance; 3B non-operative verified scorecards; 3C append-only review/re-review plus a bounded workspace review queue; only then separately authorized promotion.
 4. **Safe provider/agent registry, identity, operator PWA, and Telegram transport.**
 5. **Learned routing with explicit rollback, then production-readiness and Gate 4 review.**
 

@@ -149,3 +149,26 @@ test('the verified scorecard read route is admin-bound and discloses nothing acr
   run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-evaluation-admin', sessionId]);
   assert.equal((await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(m2Scorecard.id)}`, { headers: { cookie } })).status, 200);
 });
+
+test('the memory review queue route is bounded, admin-bound, and workspace-isolated', async () => {
+  const headers = { authorization: 'Bearer m2-api-token' };
+  const route = `${base}/api/hermes/workspaces/m2-api-workspace/memory-candidate-review-queue`;
+  const response = await fetch(`${route}?limit=1&reviewState=unreviewed`, { headers });
+  assert.equal(response.status, 200);
+  const body = await response.text();
+  assert.ok(!body.includes('m2-api-token'));
+  assert.ok(!body.includes('super-secret-should-never-appear'));
+  const queue = JSON.parse(body).queue;
+  assert.equal(queue.workspaceId, 'm2-api-workspace');
+  assert.equal(queue.version, 'm3c-q1');
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0].candidate.status, 'pending');
+  assert.equal(queue.items[0].review, null);
+  assert.equal((await fetch(`${base}/api/hermes/workspaces/m2-api-other/memory-candidate-review-queue`, { headers })).status, 404,
+    'a real ungranted workspace is indistinguishable from an absent one');
+  assert.equal((await fetch(`${base}/api/hermes/workspaces/absent-workspace/memory-candidate-review-queue`, { headers })).status, 404);
+  assert.equal((await fetch(`${route}?limit=1&limit=2`, { headers })).status, 400);
+  assert.equal((await fetch(`${route}?limit=1e1`, { headers })).status, 400);
+  assert.equal((await fetch(route)).status, 401);
+  assert.equal((await fetch(route, { method: 'POST', headers })).status, 404);
+});

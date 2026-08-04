@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Hermes Milestone 3C workspace review queue implemented, in review (2026-08-04 UTC)
+
+A stacked draft branch adds a bounded, GET-only operator view over pending workspace candidates and their effective review head. Authorization precedes candidate and integrity reads; keyset pagination is independently workspace-scoped; selected candidates and chains are verified fail-closed. The slice adds one ordinary index but no queue table, count, job, notification, mutation route, promotion authority, candidate update, memory retrieval, routing effect, provider call, deployment, or production activation. Focused service/API/schema validation passes 64 total, 63 passed, 0 failed, 1 root-only skip; the full suite passes 713 total, 704 passed, 0 failed, 9 host-conditional skips with trusted inventory 49/49. One targeted lookahead mutation was killed (2 focused failures). Build, lint, typecheck, secret scan, zero-vulnerability audit, shell syntax, whitespace, living-memory, and both preflights pass. Independent review and merge are not claimed.
+
 ## Schema CHECK-integrity validation implemented, in review (2026-08-04 UTC)
 
 A stacked draft branch extends the shared startup/restore/migration compatibility gate to verify the exact normalized multiset of 52 CHECK expressions across authorization and Hermes 3A-3C. Disposable tests remove or widen each constraint family and prove fail-closed behavior, including a checksum-valid backup widened to admit `promote`, application startup, and migration post-validation. Node 22.23.1 validation passes focused 30 with one host/root-conditional permission skip and full 704 total, 695 passed, 0 failed, 9 host-conditional skips, trusted inventory 49/49. The work is not independently reviewed or merged, and it changes no database automatically; `main` retains the documented gap until merge.

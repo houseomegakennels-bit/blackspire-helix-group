@@ -230,6 +230,22 @@ export const getMemoryCandidateReviewByIdempotencyKey = (workspaceId, idempotenc
 export const getPendingMemoryCandidatesForWorkspace = (workspaceId) =>
   all(`SELECT * FROM hermes_memory_candidates WHERE workspace_id=? AND status='pending' ORDER BY created_at,id`, [workspaceId]);
 
+// Bounded keyset page for the review queue. Workspace scope is mandatory and independent of the
+// cursor; the cursor can change navigation only inside the already-authorized workspace. `limit`
+// is validated by the service and includes its one-row lookahead.
+export function getMemoryCandidateReviewQueuePage(workspaceId, { afterCreatedAt = null, afterId = null, reviewState = 'all', limit }) {
+  const cursor = afterCreatedAt === null ? '' : ' AND (c.created_at>? OR (c.created_at=? AND c.id>?))';
+  const state = reviewState === 'reviewed'
+    ? ' AND EXISTS (SELECT 1 FROM hermes_memory_candidate_reviews r WHERE r.candidate_id=c.id)'
+    : reviewState === 'unreviewed'
+      ? ' AND NOT EXISTS (SELECT 1 FROM hermes_memory_candidate_reviews r WHERE r.candidate_id=c.id)'
+      : '';
+  const params = [workspaceId];
+  if (afterCreatedAt !== null) params.push(afterCreatedAt, afterCreatedAt, afterId);
+  params.push(limit);
+  return all(`SELECT c.* FROM hermes_memory_candidates c WHERE c.workspace_id=? AND c.status='pending'${cursor}${state} ORDER BY c.created_at,c.id LIMIT ?`, params);
+}
+
 // Milestone 3C re-review successors. Append-only in exactly the same sense: insert and read only, no
 // update or delete helper, and still no writer of any kind for `hermes_memory_candidates`. A
 // re-review links to the record it supersedes and never touches it.

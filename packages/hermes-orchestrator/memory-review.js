@@ -26,13 +26,16 @@ import { getMemoryCandidate, getOutcomeEvaluationForRun, insertMemoryCandidateRe
   getMemoryCandidateReview, getMemoryCandidateReviewForCandidate,
   getMemoryCandidateReviewByIdempotencyKey, insertMemoryCandidateRereview,
   getMemoryCandidateRereview, getMemoryCandidateRereviewChain, getMemoryCandidateRereviewHead,
-  getMemoryCandidateRereviewByIdempotencyKey } from './store.js';
+  getMemoryCandidateRereviewByIdempotencyKey, getMemoryCandidateReviewQueuePage } from './store.js';
 
 export const MEMORY_REVIEW_VERSION = 'm3c-v1';
 export const MEMORY_REVIEW_DECISION_VERSION = 'hermes-memory-review-v1';
 // Advisory only. There is deliberately no `promote`: a decision authorizes nothing and is read by
 // nothing in this milestone. Frozen so a caller cannot widen the vocabulary at runtime.
 export const MEMORY_REVIEW_DECISIONS = Object.freeze(['recommend_promote', 'reject', 'defer_needs_evidence']);
+export const MEMORY_REVIEW_QUEUE_VERSION = 'm3c-q1';
+export const MEMORY_REVIEW_QUEUE_STATES = Object.freeze(['all', 'unreviewed', 'reviewed']);
+export const MAX_MEMORY_REVIEW_QUEUE_LIMIT = 50;
 const MAX_RATIONALE_LENGTH = 2000;
 // The exact candidate columns the review pins. Listed explicitly rather than hashing the whole row,
 // so a column added to the Milestone 1 table by a later migration cannot silently change the digest
@@ -241,6 +244,107 @@ function reviewerPrincipalId(principal) {
 }
 
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value); }
+
+// Read-only workspace queue. It authorizes the explicit workspace before every candidate/review
+// read, emits one audited decision for the request rather than one per row, and re-proves current
+// authority inside the transaction. It never counts the full queue and never mutates a candidate.
+export function listMemoryCandidateReviewQueue(principal, workspaceId, { limit = 20, cursor = null, reviewState = 'all' } = {}) {
+  if (!safeId(workspaceId)) throw new Error('memory candidate review queue requires a canonical workspace id');
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MEMORY_REVIEW_QUEUE_LIMIT) {
+    throw new Error('memory candidate review queue requires a limit from 1 to 50');
+  }
+  if (!MEMORY_REVIEW_QUEUE_STATES.includes(reviewState)) throw new Error('memory candidate review queue requires a canonical review state');
+  const after = decodeQueueCursor(cursor, workspaceId, reviewState);
+  if (!canReadEvaluation(principal, workspaceId).allowed) return null;
+  return transaction(() => {
+    if (!hasCurrentWorkspacePermission(principal, workspaceId, 'evaluation.read')) return null;
+    const rows = getMemoryCandidateReviewQueuePage(workspaceId, {
+      afterCreatedAt: after?.createdAt ?? null, afterId: after?.candidateId ?? null,
+      reviewState, limit: limit + 1,
+    });
+    const page = rows.slice(0, limit);
+    const items = page.map((candidate) => queueItem(candidate, workspaceId));
+    const last = page.at(-1);
+    return {
+      version: MEMORY_REVIEW_QUEUE_VERSION,
+      workspaceId,
+      items,
+      nextCursor: rows.length > limit && last ? encodeQueueCursor(workspaceId, reviewState, last) : null,
+    };
+  });
+}
+
+function queueItem(candidate, workspaceId) {
+  if (candidate.workspace_id !== workspaceId || candidate.status !== 'pending' || candidate.promoted_at !== null ||
+    candidate.scope !== 'workspace' || !safeId(candidate.id) || !safeId(candidate.run_id) ||
+    (candidate.task_id !== null && !safeId(candidate.task_id)) || !safeId(candidate.kind) ||
+    typeof candidate.lesson !== 'string' || candidate.lesson.trim().length === 0 ||
+    !canonicalTimestamp(candidate.created_at)) throw new Error('memory candidate review queue integrity conflict');
+  const root = getMemoryCandidateReviewForCandidate(candidate.id);
+  let review = null;
+  if (root) {
+    if (root.workspace_id !== workspaceId || !storedReviewIntact(root)) throw new Error('memory candidate review queue integrity conflict');
+    const chain = getMemoryCandidateRereviewChain(root.id);
+    if (!rereviewChainValid(root, chain)) throw new Error('memory candidate review queue integrity conflict');
+    const head = chain.at(-1) || root;
+    review = {
+      rootReviewId: root.id,
+      headReviewId: head.id,
+      chainVersion: head === root ? 0 : Number(head.chain_version),
+      decision: head.decision,
+      rationale: head.rationale,
+      reviewerPrincipalId: head.reviewer_principal_id,
+      decidedAt: head.created_at,
+      candidateChangedSinceDecision: candidateDigest(candidate) !== head.candidate_digest,
+    };
+  }
+  let eligibility;
+  try {
+    validatedSubject(candidate, workspaceId);
+    eligibility = { reviewable: true, reason: 'eligible' };
+  } catch (error) {
+    eligibility = {
+      reviewable: false,
+      reason: /outcome evaluation/.test(String(error?.message || '')) ? 'outcome_evidence_unavailable' : 'candidate_invalid',
+    };
+  }
+  return {
+    candidate: {
+      id: candidate.id, runId: candidate.run_id, taskId: candidate.task_id, kind: candidate.kind,
+      scope: candidate.scope, lesson: candidate.lesson, evidenceRef: candidate.evidence_ref,
+      status: candidate.status, createdAt: candidate.created_at,
+    },
+    eligibility,
+    review,
+  };
+}
+
+function encodeQueueCursor(workspaceId, reviewState, candidate) {
+  return Buffer.from(canonicalJson({
+    v: MEMORY_REVIEW_QUEUE_VERSION, workspaceId, reviewState,
+    createdAt: candidate.created_at, candidateId: candidate.id,
+  }), 'utf8').toString('base64url');
+}
+
+function decodeQueueCursor(cursor, workspaceId, reviewState) {
+  if (cursor === null || cursor === undefined) return null;
+  if (typeof cursor !== 'string' || cursor.length === 0 || cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor)) {
+    throw new Error('memory candidate review queue requires a canonical cursor');
+  }
+  let packet;
+  try {
+    const bytes = Buffer.from(cursor, 'base64url');
+    if (bytes.toString('base64url') !== cursor) throw new Error('noncanonical');
+    packet = JSON.parse(bytes.toString('utf8'));
+  } catch { throw new Error('memory candidate review queue requires a canonical cursor'); }
+  if (!packet || Array.isArray(packet) || typeof packet !== 'object' ||
+    !sameKeys(Object.keys(packet), ['candidateId', 'createdAt', 'reviewState', 'v', 'workspaceId']) ||
+    packet.v !== MEMORY_REVIEW_QUEUE_VERSION || packet.workspaceId !== workspaceId ||
+    packet.reviewState !== reviewState || !canonicalTimestamp(packet.createdAt) || !safeId(packet.candidateId)) {
+    throw new Error('memory candidate review queue requires a canonical cursor');
+  }
+  return packet;
+}
 
 // --- Milestone 3C, second slice: re-review as an explicit successor ---
 //

@@ -1,5 +1,7 @@
 # Blackspire Next Actions
 
+0. **IN REVIEW 2026-08-04 — bounded M3C workspace review queue.** GET-only, evaluation-admin-bound, authorization-first, keyset-paginated, and fail-closed over existing candidates and effective review heads. Focused validation passes 64 total, 63 passed, 0 failed, 1 root-only skip; the full suite passes 713 total, 704 passed, 0 failed, 9 host-conditional skips with trusted inventory 49/49. Complete independent review before merge. Promotion remains a separate operator/architecture decision and must not inherit `evaluation.correct` automatically.
+
 0. **IN REVIEW 2026-08-04 — exact CHECK-integrity validation for authorization and Hermes 3A-3C.** The shared gate now pins 52 expressions and refuses removed/widened constraints during startup, restore, and migration post-validation. Node 22.23.1 validation passes focused 30 with 1 root-only permission skip and full 704 total, 695 passed, 0 failed, 9 host-conditional skips. Complete independent review before merge; NOT NULL/primary-key coverage remains separate hardening.
 
 0. **IN REVIEW 2026-08-04 — M3A evaluation reads authorize before provenance validation.** Node 22.23.1 validation passed focused 21/21 and the clean full rerun at 699 total, 690 passed, 0 failed, 9 host-conditional skips. Complete independent review before merge. This closes only the read-ordering follow-up; the workspace-scoped M3C review queue and cross-cutting schema-constraint validation remain separate next milestones.
