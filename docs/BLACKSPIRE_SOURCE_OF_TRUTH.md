@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Bounded worker graceful drain implemented, in review (2026-08-04 UTC)
+
+A stacked draft branch stops polling before shutdown, refuses new claims, and waits up to thirty seconds for the single active task plus its delivery flush. Successful drain closes SQLite and exits zero; timeout is sanitized, closes SQLite, and exits nonzero so bounded supervisor restart and existing stale-task recovery apply. No incomplete task is marked successful and no new task state or schema is introduced. Focused worker/integration tests pass 20/20; the full suite passes 703 total, 694 passed, 0 failed, 9 host-conditional skips with trusted inventory 51/51. A false-success timeout mutation is killed by the focused regression. No service, task, deployment, provider, Telegram connection, or production state changed; independent review and merge are not claimed.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged into `main` as `0d6e977113e826095c4ed57db150bf30d9de954f` from independently reviewed exact head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is that merge commit's second parent and is the new verified implementation anchor. The merge used the repository's established merge-commit method under an expected-head guard (`--match-head-commit`), so a head that moved between the final check and the merge would have refused rather than merged.
