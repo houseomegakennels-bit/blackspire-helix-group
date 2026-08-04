@@ -18,7 +18,7 @@ function assertContained(root, candidate, label) {
   }
 }
 
-function descriptorIdentity(root, file) {
+function descriptorIdentity(root, file, handles) {
   const before = fs.lstatSync(file);
   if (before.isSymbolicLink()) throw new Error(`test tree contains a symlink: ${file}`);
   if (!before.isFile()) throw new Error(`test tree entry is not a regular file: ${file}`);
@@ -41,7 +41,7 @@ function descriptorIdentity(root, file) {
       || afterRead.size !== opened.size || afterPath.size !== opened.size) {
       throw new Error(`test tree file changed while hashing: ${file}`);
     }
-    return {
+    const identity = {
       type: 'file',
       dev: opened.dev,
       ino: opened.ino,
@@ -52,12 +52,15 @@ function descriptorIdentity(root, file) {
       ctimeMs: opened.ctimeMs,
       sha256: crypto.createHash('sha256').update(content).digest('hex'),
     };
-  } finally {
+    handles.push({ descriptor, path: file, dev: opened.dev, ino: opened.ino });
+    return identity;
+  } catch (error) {
     fs.closeSync(descriptor);
+    throw error;
   }
 }
 
-function scanDirectory(root, directory, entries, testFiles) {
+function scanDirectory(root, directory, entries, testFiles, handles) {
   const directoryLstat = fs.lstatSync(directory);
   if (!directoryLstat.isDirectory() || directoryLstat.isSymbolicLink()) {
     throw new Error(`test root contains a substituted directory: ${directory}`);
@@ -80,11 +83,11 @@ function scanDirectory(root, directory, entries, testFiles) {
     const relative = path.relative(root, absolute).split(path.sep).join('/');
     if (child.isSymbolicLink()) throw new Error(`test tree contains a symlink: ${relative}`);
     if (child.isDirectory()) {
-      scanDirectory(root, absolute, entries, testFiles);
+      scanDirectory(root, absolute, entries, testFiles, handles);
       continue;
     }
     if (!child.isFile()) throw new Error(`test tree contains an unsupported entry: ${relative}`);
-    entries.push({ path: relative, ...descriptorIdentity(root, absolute) });
+    entries.push({ path: relative, ...descriptorIdentity(root, absolute, handles) });
     if (child.name.endsWith('.test.js')) testFiles.push(relative);
   }
 }
@@ -95,33 +98,67 @@ export function captureTestTree(root, tests) {
   assertContained(canonicalRoot, canonicalTests, 'approved tests directory');
   const entries = [];
   const testFiles = [];
-  scanDirectory(canonicalRoot, canonicalTests, entries, testFiles);
+  const handles = [];
+  try {
+    scanDirectory(canonicalRoot, canonicalTests, entries, testFiles, handles);
+  } catch (error) {
+    for (const handle of handles) fs.closeSync(handle.descriptor);
+    throw error;
+  }
   entries.sort((left, right) => canonicalPathComparator(left.path, right.path));
   testFiles.sort(canonicalPathComparator);
-  if (testFiles.length === 0) throw new Error('test discovery found no test files');
-  return { root: canonicalRoot, tests: canonicalTests, entries, testFiles };
+  if (testFiles.length === 0) {
+    for (const handle of handles) fs.closeSync(handle.descriptor);
+    throw new Error('test discovery found no test files');
+  }
+  return { root: canonicalRoot, tests: canonicalTests, entries, testFiles, handles };
+}
+
+export function closeTestTreeSnapshot(snapshot) {
+  let closeError = null;
+  for (const handle of snapshot.handles ?? []) {
+    if (handle.descriptor === null) continue;
+    try { fs.closeSync(handle.descriptor); } catch (error) { closeError ??= error; }
+    handle.descriptor = null;
+  }
+  if (closeError) throw closeError;
 }
 
 export function verifyTestTreeUnchanged(snapshot) {
   let current;
   try {
+    for (const handle of snapshot.handles ?? []) {
+      if (handle.descriptor === null) throw new Error(`test tree snapshot is closed: ${handle.path}`);
+      const held = fs.fstatSync(handle.descriptor);
+      if (held.dev !== handle.dev || held.ino !== handle.ino || held.nlink !== 1) {
+        throw new Error(`test tree file was unlinked or replaced: ${handle.path}`);
+      }
+    }
     current = captureTestTree(snapshot.root, snapshot.tests);
   } catch (error) {
+    closeTestTreeSnapshot(snapshot);
     throw new Error(`test tree changed or was replaced: ${error.message}`);
   }
-  if (JSON.stringify(current.entries) !== JSON.stringify(snapshot.entries)
-    || JSON.stringify(current.testFiles) !== JSON.stringify(snapshot.testFiles)) {
-    throw new Error('test tree changed, mutated, or had an identity replaced');
+  try {
+    if (JSON.stringify(current.entries) !== JSON.stringify(snapshot.entries)
+      || JSON.stringify(current.testFiles) !== JSON.stringify(snapshot.testFiles)) {
+      closeTestTreeSnapshot(snapshot);
+      throw new Error('test tree changed, mutated, or had an identity replaced');
+    }
+    return current;
+  } finally {
+    closeTestTreeSnapshot(current);
   }
-  return current;
 }
 
 export function expectedTestFiles() {
-  return captureTestTree(repositoryRoot, repositoryTests).testFiles;
+  const snapshot = captureTestTree(repositoryRoot, repositoryTests);
+  try { return snapshot.testFiles; } finally { closeTestTreeSnapshot(snapshot); }
 }
 
 export function testFilesUnder(root, tests) {
-  return captureTestTree(root, tests).testFiles;
+  const snapshot = captureTestTree(root, tests);
+  try { return snapshot.testFiles; } finally { closeTestTreeSnapshot(snapshot); }
 }
 
 function listValues(label, values, expected) {
