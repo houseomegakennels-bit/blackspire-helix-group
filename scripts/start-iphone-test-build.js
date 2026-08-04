@@ -2,10 +2,15 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { configuredInteger } from '../packages/shared/runtime-numeric-config.js';
 
+const rawPort = process.env.PORT ?? '8790';
+if (!/^[0-9]+$/.test(rawPort) || Number(rawPort) < 1024 || Number(rawPort) > 65_535 || rawPort === '8787') {
+  throw new TypeError('PORT must be an unreserved integer from 1024 through 65535 for disposable iPhone test mode.');
+}
+const port = Number(rawPort);
+const expiresAt = new Date(Date.now() + configuredInteger('UNIFIED_TEST_TTL_MS'));
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'));
-const port = Number(process.env.PORT || 8787);
-const expiresAt = new Date(Date.now() + Math.min(Number(process.env.UNIFIED_TEST_TTL_MS || 2 * 60 * 60 * 1000), 4 * 60 * 60 * 1000));
 
 for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT', 'GH_TOKEN', 'GITHUB_TOKEN']) delete process.env[key];
 Object.assign(process.env, {

@@ -10,7 +10,9 @@ tunnel="${1:-local}"
 cloudflared_image="cloudflare/cloudflared:2026.7.2@sha256:18626b1baac4450214535cd5bc40ef44c0635244d585ebf707749c22b6f3408f"
 tunnel_name="blackspire-iphone-tunnel-${UID}"
 
+[[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1024 && port <= 65535 )) || { echo 'PORT must be an integer from 1024 through 65535' >&2; exit 1; }
 [[ "$port" != "8787" ]] || { echo 'port 8787 is reserved for the durable VPS runtime' >&2; exit 1; }
+[[ "$ttl_ms" =~ ^[0-9]+$ ]] && (( ttl_ms >= 60000 && ttl_ms <= 14400000 )) || { echo 'UNIFIED_TEST_TTL_MS must be an integer from 60000 through 14400000' >&2; exit 1; }
 [[ ! -e "$runtime_dir/app.pid" ]] || { echo 'a disposable iPhone test is already recorded' >&2; exit 1; }
 install -d -m 0700 "$runtime_dir"
 access_code="$(openssl rand -hex 12)"

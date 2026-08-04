@@ -3,9 +3,10 @@ import { processTask } from '../../packages/hermes/hermes.js';
 import { drainTelegramOutbox } from '../../packages/unified-input/unified.js';
 import { dispatchReply } from '../telegram/bot.js';
 import { assertSchemaCompatible, closeDb } from '../../packages/task-engine/db.js';
+import { configuredInteger } from '../../packages/shared/runtime-numeric-config.js';
 
 export function startWorker({
-  intervalMs = Number(process.env.WORKER_POLL_MS || 750), once = false,
+  intervalMs = configuredInteger('WORKER_POLL_MS'), once = false,
   claimNextImpl = claimNext, processTaskImpl = processTask, deliverEventsImpl = deliverEvents,
 } = {}) {
   try {

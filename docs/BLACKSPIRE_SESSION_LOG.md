@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — bounded runtime numeric configuration (Codex)
+
+- Centralized ten API, worker, Hermes, approval, Telegram, outbox, and disposable-test integer controls.
+- Production now rejects malformed, empty, below-minimum, or above-ceiling values before listening.
+- Evidence export size enforcement now counts UTF-8 bytes; controlled-test-only tiny/zero-delay fixtures remain available outside production.
+- Node 22.23.1 focused runtime/production validation passed 25/25. The final trusted full run passed 718 total, 709 passed, 0 failed, and 9 host-conditional skips with inventory 54/54, zero mutations, and zero remaining descendants. A preceding full run observed one intermittent pre-existing pathname-replacement identity assertion; its exact test passed 20/20 immediate repetitions and the clean full retry is the claimed result, not the failed run.
+- No provider, Telegram transport, routing, production database, memory promotion, or Gate 4 state changed.
+
 ## 2026-08-04 — authentication and session configuration hardening (Codex)
 
 - Replaced ordinary equality for admin, bearer, webhook, CSRF, and reset-confirmation credentials with fixed-digest timing-safe comparison.

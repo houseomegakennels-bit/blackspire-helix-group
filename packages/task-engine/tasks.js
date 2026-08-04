@@ -1,4 +1,5 @@
 import { id, now, redact } from '../shared/util.js';
+import { configuredInteger } from '../shared/runtime-numeric-config.js';
 import { query, execSql, esc } from './db.js';
 
 export function audit(taskId, actor, action, details = {}) {
@@ -64,7 +65,7 @@ export function completeDelivery(deliveryId) {
   execSql(`UPDATE channel_deliveries SET status='delivered',updated_at=${esc(now())},last_error='' WHERE id=${esc(deliveryId)};`);
 }
 
-export function failDelivery(deliveryId, error, { maxAttempts = Number(process.env.TELEGRAM_OUTBOX_MAX_ATTEMPTS || 3), retrySeconds = Number(process.env.TELEGRAM_OUTBOX_RETRY_SECONDS || 30) } = {}) {
+export function failDelivery(deliveryId, error, { maxAttempts = configuredInteger('TELEGRAM_OUTBOX_MAX_ATTEMPTS'), retrySeconds = configuredInteger('TELEGRAM_OUTBOX_RETRY_SECONDS') } = {}) {
   const safe = redact(String(error || 'delivery failed'));
   const parsedAttempts = Number(maxAttempts);
   const parsedDelay = Number(retrySeconds);

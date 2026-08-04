@@ -68,6 +68,17 @@ test('accepts the reviewed session TTL default and rejects unsafe production ove
   }
 });
 
+test('rejects malformed or unsafe production runtime integer controls', () => {
+  for (const [key, value] of Object.entries({
+    EVIDENCE_BUNDLE_MAX_BYTES: '9999', CLEANUP_INTERVAL_MS: '59999', TELEGRAM_FILE_MAX_BYTES: '1023',
+    TELEGRAM_INLINE_MAX_CHARS: '3901', WORKER_POLL_MS: '99', APPROVAL_TTL_MS: '59999',
+    HERMES_TIMEOUT_MS: '999', TELEGRAM_OUTBOX_MAX_ATTEMPTS: '21', TELEGRAM_OUTBOX_RETRY_SECONDS: '0',
+    UNIFIED_TEST_TTL_MS: '59999',
+  })) {
+    assert.match(requireProductionSafeConfig(validEnv({ [key]: value }), dirs()).errors.join(), new RegExp(key));
+  }
+});
+
 test('same-origin API does not treat legacy CORS_ORIGIN as an authorization control', () => {
   assert.equal(requireProductionSafeConfig(validEnv({ CORS_ORIGIN: '*' }), dirs()).ok, true);
 });
