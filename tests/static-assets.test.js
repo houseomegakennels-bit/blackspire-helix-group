@@ -256,7 +256,11 @@ test('production CSP does not permit inline script or style', async () => {
       COMMAND_ADMIN_TOKEN: crypto.randomBytes(24).toString('hex'),
       SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
       PUBLIC_BASE_URL: 'https://command.example.com',
+      SECURE_COOKIES: 'true',
+      DEBUG: 'false',
+      RATE_LIMIT_DISABLED: 'false',
       TRUST_PROXY: 'false',
+      GIT_WORKFLOW_ENABLED: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
