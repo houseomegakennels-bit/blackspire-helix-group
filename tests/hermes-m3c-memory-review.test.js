@@ -22,7 +22,9 @@ const { run, all, execSql } = await import('../packages/task-engine/db.js');
 const authz = await import('../packages/shared/authorization.js');
 const { digest } = await import('../packages/shared/canonical.js');
 const { recordMemoryCandidateReview, readMemoryCandidateReview, MEMORY_REVIEW_VERSION,
-  MEMORY_REVIEW_DECISION_VERSION, MEMORY_REVIEW_DECISIONS } = await import('../packages/hermes-orchestrator/memory-review.js');
+  MEMORY_REVIEW_DECISION_VERSION, MEMORY_REVIEW_DECISIONS,
+  recordMemoryCandidateRereview, listMemoryCandidateReviewQueue,
+  MEMORY_REVIEW_QUEUE_VERSION } = await import('../packages/hermes-orchestrator/memory-review.js');
 
 const authzNow = Date.now();
 function principal(workspaceId, permissions = ['evaluation.read', 'evaluation.correct']) {
@@ -381,4 +383,98 @@ test('authorization is decided before any candidate or lineage work on the read 
   const body = source.slice(source.indexOf('export function readMemoryCandidateReview'));
   assert.ok(body.indexOf('canReadEvaluation') < body.indexOf('storedReviewIntact'),
     'an unauthorized caller must cause no digest or candidate work, so nothing about a review they cannot read is measurable');
+});
+
+test('workspace review queue is bounded, keyset-paginated, and totally ordered', async () => {
+  const candidates = await seedCandidates('m3c-queue-page', 3);
+  const reader = principal('m3c-queue-page', ['evaluation.read']);
+  const first = listMemoryCandidateReviewQueue(reader, 'm3c-queue-page', { limit: 2 });
+  assert.equal(first.version, MEMORY_REVIEW_QUEUE_VERSION);
+  assert.deepEqual(first.items.map((item) => item.candidate.id), candidates.slice(0, 2).map((candidate) => candidate.id));
+  assert.ok(first.nextCursor);
+  const second = listMemoryCandidateReviewQueue(reader, 'm3c-queue-page', { limit: 2, cursor: first.nextCursor });
+  assert.deepEqual(second.items.map((item) => item.candidate.id), candidates.slice(2).map((candidate) => candidate.id));
+  assert.equal(second.nextCursor, null);
+  assert.ok([...first.items, ...second.items].every((item) => item.eligibility.reason === 'eligible'));
+});
+
+test('queue review-state filters expose an intact effective root and no promotion authority', async () => {
+  const [reviewed, unreviewed] = await seedCandidates('m3c-queue-state', 2);
+  const writer = principal('m3c-queue-state');
+  const rootReview = recordMemoryCandidateReview(writer, reviewed.id, review({ idempotencyKey: 'queue-state-root' }));
+  const successor = recordMemoryCandidateRereview(writer, rootReview.id, {
+    supersedes: rootReview.id, decision: 'defer_needs_evidence',
+    rationale: 'a later review needs stronger evidence', idempotencyKey: 'queue-state-rereview',
+  });
+  const reviewedQueue = listMemoryCandidateReviewQueue(writer, 'm3c-queue-state', { reviewState: 'reviewed' });
+  assert.deepEqual(reviewedQueue.items.map((item) => item.candidate.id), [reviewed.id]);
+  assert.equal(reviewedQueue.items[0].review.rootReviewId, rootReview.id);
+  assert.equal(reviewedQueue.items[0].review.headReviewId, successor.id);
+  assert.equal(reviewedQueue.items[0].review.chainVersion, 1);
+  assert.equal(reviewedQueue.items[0].review.decision, 'defer_needs_evidence');
+  assert.equal(reviewedQueue.items[0].review.candidateChangedSinceDecision, false);
+  const unreviewedQueue = listMemoryCandidateReviewQueue(writer, 'm3c-queue-state', { reviewState: 'unreviewed' });
+  assert.deepEqual(unreviewedQueue.items.map((item) => item.candidate.id), [unreviewed.id]);
+  assert.equal(unreviewedQueue.items[0].review, null);
+  assert.equal(store.getMemoryCandidate(reviewed.id).status, 'pending');
+});
+
+test('queue authorizes once before all workspace candidate and review work', async () => {
+  await seedCandidates('m3c-queue-owner', 2);
+  await seedCandidates('m3c-queue-outsider', 1);
+  const owner = principal('m3c-queue-owner', ['evaluation.read']);
+  const outsider = principal('m3c-queue-outsider', ['evaluation.read']);
+  const before = all("SELECT id FROM auth_decisions WHERE principal_id=? AND permission='evaluation.read'", [owner.principalId]).length;
+  assert.equal(listMemoryCandidateReviewQueue(outsider, 'm3c-queue-owner'), null);
+  const queue = listMemoryCandidateReviewQueue(owner, 'm3c-queue-owner');
+  assert.equal(queue.items.length, 2);
+  const after = all("SELECT id FROM auth_decisions WHERE principal_id=? AND permission='evaluation.read'", [owner.principalId]).length;
+  assert.equal(after - before, 1, 'one queue request emits one audited decision, never one per row');
+  const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/memory-review.js', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('export function listMemoryCandidateReviewQueue'));
+  assert.ok(body.indexOf('canReadEvaluation') < body.indexOf('getMemoryCandidateReviewQueuePage'),
+    'authorization must precede the first candidate query');
+});
+
+test('queue rejects malformed limits and scope-bound noncanonical cursors', async () => {
+  await seedCandidates('m3c-queue-cursor', 2);
+  const reader = principal('m3c-queue-cursor', ['evaluation.read']);
+  for (const limit of [0, 51, -1, 1.5, Number.NaN]) {
+    assert.throws(() => listMemoryCandidateReviewQueue(reader, 'm3c-queue-cursor', { limit }), /limit from 1 to 50/);
+  }
+  assert.throws(() => listMemoryCandidateReviewQueue(reader, 'm3c-queue-cursor', { reviewState: 'pending' }), /canonical review state/);
+  const page = listMemoryCandidateReviewQueue(reader, 'm3c-queue-cursor', { limit: 1, reviewState: 'unreviewed' });
+  assert.throws(() => listMemoryCandidateReviewQueue(reader, 'm3c-queue-cursor', { cursor: page.nextCursor, reviewState: 'all' }), /canonical cursor/);
+  assert.throws(() => listMemoryCandidateReviewQueue(reader, 'm3c-queue-cursor-other', { cursor: page.nextCursor, reviewState: 'unreviewed' }), /canonical cursor/);
+  assert.throws(() => listMemoryCandidateReviewQueue(reader, 'm3c-queue-cursor', { cursor: `${page.nextCursor}=`, reviewState: 'unreviewed' }), /canonical cursor/);
+});
+
+test('one corrupt reviewed candidate fails the whole queue instead of disappearing', async () => {
+  const [candidate] = await seedCandidates('m3c-queue-integrity', 1);
+  const reader = principal('m3c-queue-integrity');
+  const recorded = recordMemoryCandidateReview(reader, candidate.id, review({ idempotencyKey: 'queue-integrity-root' }));
+  withoutImmutability(['hermes_memory_candidate_reviews'], () =>
+    run('UPDATE hermes_memory_candidate_reviews SET content_digest=? WHERE id=?', ['0'.repeat(64), recorded.id]));
+  assert.throws(() => listMemoryCandidateReviewQueue(reader, 'm3c-queue-integrity'), /queue integrity conflict/);
+});
+
+test('candidate drift is explicit while the historical review remains readable', async () => {
+  const [candidate] = await seedCandidates('m3c-queue-drift', 1);
+  const reader = principal('m3c-queue-drift');
+  const recorded = recordMemoryCandidateReview(reader, candidate.id, review({ idempotencyKey: 'queue-drift-root' }));
+  run('UPDATE hermes_memory_candidates SET lesson=? WHERE id=?', ['a materially changed lesson', candidate.id]);
+  assert.ok(readMemoryCandidateReview(reader, recorded.id), 'historical review integrity does not depend on the mutable live candidate');
+  const [item] = listMemoryCandidateReviewQueue(reader, 'm3c-queue-drift').items;
+  assert.equal(item.review.candidateChangedSinceDecision, true);
+  assert.equal(item.candidate.lesson, 'a materially changed lesson');
+});
+
+test('unavailable outcome evidence is reported as blocked eligibility, never silently omitted', async () => {
+  const [candidate] = await seedCandidates('m3c-queue-blocked-evidence', 1);
+  const evaluation = store.getOutcomeEvaluationForRun(candidate.run_id, 'm3a-v1');
+  withoutImmutability(['hermes_outcome_evaluations'], () =>
+    run('UPDATE hermes_outcome_evaluations SET provenance_digest=? WHERE id=?', ['0'.repeat(64), evaluation.id]));
+  const queue = listMemoryCandidateReviewQueue(principal('m3c-queue-blocked-evidence', ['evaluation.read']), 'm3c-queue-blocked-evidence');
+  assert.equal(queue.items.length, 1, 'the candidate remains visible for operator remediation');
+  assert.deepEqual(queue.items[0].eligibility, { reviewable: false, reason: 'outcome_evidence_unavailable' });
 });

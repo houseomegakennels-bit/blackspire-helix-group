@@ -67,6 +67,18 @@ The migration block, the `schema-validation.js` registrations, and `memory-revie
 together, for the same `assertSchemaCompatible` reason given below. The commits are otherwise ordered
 so each can be reverted newest-first: tests, then the route, then the service, then the data layer.
 
+## Third slice — workspace-scoped review queue
+
+The queue slice adds one ordinary performance index on the pre-existing candidate table, bounded
+read helpers, a read-only service, and one GET route. It adds no table, row, candidate writer,
+promotion authority, permission, dependency, or environment variable. Reverting the code makes the
+surface unavailable and leaves all historical candidates and judgements intact.
+
+The ordinary `idx_hermes_memory_candidates_review_queue` index may remain after code rollback; extra
+indexes are compatible with older code. Do not drop it during an incident without a separately
+reviewed database operation. Code rollback is `git revert` followed by the full validation matrix.
+There is no data rollback.
+
 ## Rollback procedure
 
 Shared-history rule: revert, never reset or rewrite.

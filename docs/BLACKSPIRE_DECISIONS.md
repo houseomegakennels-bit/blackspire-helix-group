@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-08-04 — The review queue is a bounded read model, not durable queue state
+
+Milestone 3C exposes existing pending candidates through an authorization-first, workspace-scoped keyset query and verifies each selected candidate and its effective review head. It deliberately adds no queue table, total count, snapshot promise, worker, notification, lease, or mutation route. The opaque cursor is bound to its version, workspace, filter, timestamp, and id, but remains untrusted navigation state; the SQL workspace predicate is the authority boundary. Promotion remains separate and requires an explicit authority decision.
+
 ## 2026-08-04 — Database compatibility includes exact CHECK semantics
 
 Table and column names alone do not prove a compatible security schema. Because SQLite leaves an existing table untouched under `CREATE TABLE IF NOT EXISTS`, a removed or widened CHECK can survive migration and be accepted by startup and restore indefinitely. The compatibility contract now includes an exact normalized multiset of authorization and Hermes 3A-3C CHECK expressions, extracted with a balanced quote-aware scanner. Loose substring matching and automatic table rebuilds are rejected: the former can accept widened semantics, while the latter would rewrite historical append-only evidence without an explicit migration decision.

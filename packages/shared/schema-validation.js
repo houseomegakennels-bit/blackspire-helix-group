@@ -61,6 +61,7 @@ export const REQUIRED_SCHEMA_OBJECTS = {
     idx_hermes_scorecard_sources_evaluation_unique: { table: 'hermes_verified_scorecard_sources', columns: ['scorecard_id','evaluation_id'] },
     idx_hermes_memory_reviews_candidate_unique: { table: 'hermes_memory_candidate_reviews', columns: ['candidate_id'] },
     idx_hermes_memory_reviews_idempotency_unique: { table: 'hermes_memory_candidate_reviews', columns: ['workspace_id','idempotency_key'] },
+    idx_hermes_memory_candidates_review_queue: { table: 'hermes_memory_candidates', columns: ['workspace_id','status','created_at','id'], unique: false },
     // The chain-shape guarantees. The pair index forbids a fork at every depth including the first
     // successor; the parent index forbids two successors of the same successor.
     idx_hermes_memory_rereviews_chain_unique: { table: 'hermes_memory_candidate_rereviews', columns: ['root_review_id','chain_version'] },
@@ -167,8 +168,9 @@ export function findMissingSchemaObjects(db) {
     const index = db.prepare(`PRAGMA index_list("${expected.table}")`).all().find((row) => row.name === name);
     const columns = index ? db.prepare(`PRAGMA index_info("${name}")`).all().map((row) => row.name) : [];
     const schemaRow = db.prepare('SELECT sql FROM sqlite_master WHERE type=? AND name=?').get('index', name);
-    const expectedSql = `CREATE UNIQUE INDEX ${name} ON ${expected.table}(${expected.columns.join(',')})`;
-    if (!index || index.unique !== 1 || index.origin !== 'c' || index.partial !== 0 ||
+    const unique = expected.unique !== false;
+    const expectedSql = `CREATE ${unique ? 'UNIQUE ' : ''}INDEX ${name} ON ${expected.table}(${expected.columns.join(',')})`;
+    if (!index || index.unique !== (unique ? 1 : 0) || index.origin !== 'c' || index.partial !== 0 ||
       normalizeSql(schemaRow?.sql) !== normalizeSql(expectedSql) ||
       columns.length !== expected.columns.length || columns.some((column, position) => column !== expected.columns[position])) missing.push(`invalid index ${name}`);
   }
