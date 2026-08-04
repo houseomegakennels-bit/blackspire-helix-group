@@ -347,6 +347,25 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
   });
 });
 
+test('outcome reads authorize before provenance or subordinate-evidence work', async () => {
+  workspace('m3a-read-order-owner');
+  const result = await runHermesWorkflow(task('m3a-read-order-owner'));
+  workspace('m3a-read-order-stranger');
+  const stranger = principal('m3a-read-order-stranger', ['evaluation.read']);
+  const owner = principal('m3a-read-order-owner', ['evaluation.read']);
+
+  // `readableEvaluation` walks the complete provenance graph and its subordinate correction/event
+  // evidence. Pin the call order directly so a future refactor cannot reintroduce the cross-workspace
+  // timing oracle while preserving the same null response body.
+  const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/outcome.js', import.meta.url), 'utf8');
+  const readBody = source.slice(source.indexOf('export function readOutcomeEvaluation'));
+  assert.ok(readBody.indexOf('canReadEvaluation') < readBody.indexOf('readableEvaluation(evaluation)'),
+    'authorization must be decided before provenance validation or subordinate-evidence reads');
+  assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null, 'a cross-workspace read is refused');
+  assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
+    'the owning workspace still receives an intact evaluation');
+});
+
 test('explicit source events are idempotent, evidence-required, and evaluator failures are observable', async () => {
   workspace('m3a-events'); const result = await runHermesWorkflow(task('m3a-events'));
   const admin = principal('m3a-events');
