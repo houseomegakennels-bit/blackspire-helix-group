@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — authentication and session configuration hardening (Codex)
+
+- Replaced ordinary equality for admin, bearer, webhook, CSRF, and reset-confirmation credentials with fixed-digest timing-safe comparison.
+- Bounded the optional production session TTL to 1 minute through 24 hours (8-hour default) and capped stored login metadata.
+- Added focused configuration and structural boundary coverage; no credentials, routing, provider, Telegram transport, or production state changed.
+
 ## 2026-08-04 — API HTTP resource and async-failure boundary (Codex)
 
 - Audited rate limits, provider timeouts/cooldowns, emergency stops, body parsing, and Node server
