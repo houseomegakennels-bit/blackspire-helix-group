@@ -157,6 +157,31 @@ function toast(text) {
 }
 function announce(text) { byId('announcer').textContent = text; }
 
+/* ---------- dangerous-action confirmation ---------- */
+let armedDangerousAction = null;
+function clearDangerousActionConfirmation() {
+  if (!armedDangerousAction) return;
+  clearTimeout(armedDangerousAction.timer);
+  armedDangerousAction.button.textContent = armedDangerousAction.defaultLabel;
+  armedDangerousAction.button.removeAttribute('aria-pressed');
+  armedDangerousAction = null;
+}
+function confirmDangerousAction({ key, button, confirmLabel, noticeId, prompt }) {
+  if (armedDangerousAction?.key === key && armedDangerousAction.button === button) {
+    clearDangerousActionConfirmation();
+    return true;
+  }
+  clearDangerousActionConfirmation();
+  const defaultLabel = button.textContent;
+  button.textContent = confirmLabel;
+  button.setAttribute('aria-pressed', 'true');
+  setNotice(noticeId, prompt);
+  const timer = setTimeout(() => clearDangerousActionConfirmation(), 6000);
+  armedDangerousAction = { key, button, defaultLabel, timer };
+  return false;
+}
+/* ---------- end dangerous-action confirmation ---------- */
+
 /* ---------- router (hash keeps refresh recovery credential-free) ---------- */
 const VIEWS = ['command', 'conversation', 'task', 'events', 'approvals', 'system', 'evidence'];
 function parseHash() {
@@ -432,7 +457,7 @@ async function renderApprovals() {
     const approve = el('button', 'primary', 'Approve'); approve.type = 'button';
     const reject = el('button', 'danger', 'Reject'); reject.type = 'button';
     approve.addEventListener('click', () => decideApprovalAction(task.id, 'approve', approve, reject));
-    reject.addEventListener('click', () => decideApprovalAction(task.id, 'reject', approve, reject));
+    reject.addEventListener('click', () => decideApprovalAction(task.id, 'reject', reject, approve));
     row.append(approve, reject);
     card.append(row);
     wrap.append(card);
@@ -443,6 +468,14 @@ function taskExplanation(task) {
   return 'The control plane requires administrator approval before execution.';
 }
 async function decideApprovalAction(taskId, action, ...buttons) {
+  const verb = action === 'approve' ? 'Approve' : 'Reject';
+  if (!confirmDangerousAction({
+    key: `approval:${action}:${taskId}`,
+    button: buttons[0],
+    confirmLabel: `Confirm ${verb.toLowerCase()}`,
+    noticeId: 'approvalNotice',
+    prompt: `Press again to confirm ${verb.toLowerCase()} for task ${taskId}.`,
+  })) return;
   buttons.forEach((b) => { b.disabled = true; });
   const { response, body } = action === 'approve' ? await api.approveTask(taskId) : await api.rejectTask(taskId);
   if (!response.ok) { toast(body.error || 'The control plane declined this decision.'); buttons.forEach((b) => { b.disabled = false; }); return; }
@@ -708,7 +741,15 @@ async function emergencyStopReset() {
 async function cancelCurrentTask() {
   const task = currentTask();
   if (!cancellable(task)) return;
-  byId('cancelBtn').disabled = true;
+  const cancelButton = byId('cancelBtn');
+  if (!confirmDangerousAction({
+    key: `cancel:${task.id}`,
+    button: cancelButton,
+    confirmLabel: 'Confirm cancellation',
+    noticeId: 'taskNotice',
+    prompt: `Press again to confirm cancellation of task ${task.id}.`,
+  })) return;
+  cancelButton.disabled = true;
   const { response, body } = await api.cancelTask(task.id);
   if (response.ok && body.task) {
     setNotice('taskNotice', body.task.status === 'cancelled' ? 'Canonical cancellation recorded.' : 'Cancellation requested — state: ' + (STATUS[body.task.status]?.label || body.task.status));
