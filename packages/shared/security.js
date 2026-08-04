@@ -4,11 +4,12 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DB_PATH, ATTACHMENTS_DIR } from './config.js';
 import { redact } from './util.js';
-import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions } from './sessions.js';
+import { createSession, createTestModeSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, configuredSessionTtl } from './sessions.js';
 import { rateLimit } from './rateLimits.js';
 import { validateProductionHost, validateProductionPort, PRODUCTION_STATE_OWNER } from './bind.js';
+import { credentialMatches } from './credential-compare.js';
 
-export { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
+export { createSession, createTestModeSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
 // packages/task-engine/db.js uses node:sqlite (DatabaseSync), which does not exist before Node 22.5.0 —
 // the module import itself throws on older Node, so the floor here must match that, not a generic LTS floor.
@@ -29,6 +30,7 @@ export function requireProductionSafeConfig(env = process.env, { dbDir = path.di
     }
     if (!env.COMMAND_ADMIN_TOKEN || env.COMMAND_ADMIN_TOKEN === 'dev-admin-token-change-me' || env.COMMAND_ADMIN_TOKEN.length < 24) errors.push('Set a strong COMMAND_ADMIN_TOKEN before production use.');
     if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) errors.push('Set SESSION_SECRET to at least 32 characters.');
+    try { configuredSessionTtl(env); } catch (error) { errors.push(error.message); }
     if (env.SECURE_COOKIES === 'false') errors.push('SECURE_COOKIES=false is not allowed in production.');
     if (!env.PUBLIC_BASE_URL?.startsWith('https://')) errors.push('PUBLIC_BASE_URL must be HTTPS in production.');
     if (env.TELEGRAM_MODE === 'webhook' && !env.TELEGRAM_WEBHOOK_SECRET) errors.push('TELEGRAM_WEBHOOK_SECRET is required in webhook mode.');
@@ -170,7 +172,7 @@ export function clearSessionCookies() {
 export function checkCsrf(req, session) {
   if (!session) return false;
   const token = req.headers['x-csrf-token'];
-  return Boolean(token && token === session.csrfToken);
+  return credentialMatches(token, session.csrfToken);
 }
 
 export function safeError(error) {

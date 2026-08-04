@@ -119,11 +119,11 @@ test('restart-persistence: expired sessions are rejected', async () => {
   process.env.BLACKSPIRE_DB_PATH = dbPath;
   process.env.COMMAND_ADMIN_TOKEN = 'persist-token';
   const { createSession, getSession } = await import('../packages/shared/sessions.js');
-  process.env.SESSION_TTL_MS = '1';
-  const expiring = createSession('persist-token', { ip: 'local' });
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  // Exercise the existing per-session upper bound instead of weakening the production-wide TTL
+  // contract with an otherwise invalid one-millisecond environment override.
+  const expiring = createSession('persist-token', { ip: 'local', maxExpiresAt: Date.now() + 100 });
+  await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(getSession(expiring.sessionId), null);
-  delete process.env.SESSION_TTL_MS;
 });
 
 test('restart-persistence: malformed persisted sessions fail closed and cannot rotate', async () => {

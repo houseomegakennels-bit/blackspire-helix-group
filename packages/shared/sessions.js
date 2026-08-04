@@ -1,9 +1,22 @@
 import crypto from 'node:crypto';
 import { run, all, get, transaction } from '../task-engine/db.js';
 import { ADMIN_TOKEN } from './config.js';
+import { credentialMatches } from './credential-compare.js';
 
-const SESSION_TTL_MS = () => Number(process.env.SESSION_TTL_MS || 8 * 60 * 60 * 1000);
+const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const MIN_SESSION_TTL_MS = 60 * 1000;
+const MAX_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const REVOKED_BEFORE_FLAG = 'sessions_revoked_before';
+
+export function configuredSessionTtl(env = process.env) {
+  const raw = env.SESSION_TTL_MS;
+  if (raw === undefined || raw === '') return DEFAULT_SESSION_TTL_MS;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < MIN_SESSION_TTL_MS || value > MAX_SESSION_TTL_MS) {
+    throw new TypeError(`SESSION_TTL_MS must be an integer from ${MIN_SESSION_TTL_MS} through ${MAX_SESSION_TTL_MS}.`);
+  }
+  return value;
+}
 
 function now() {
   return Date.now();
@@ -46,8 +59,7 @@ function validSession(session, { active = true, at = now() } = {}) {
   return !active || (session.revoked_at === null && at <= session.expires_at);
 }
 
-export function createSession(adminToken, { userAgent = '', ip = 'local', principalId = null, maxExpiresAt = null } = {}) {
-  if (adminToken !== ADMIN_TOKEN) return null;
+function createSessionRecord({ userAgent = '', ip = 'local', principalId = null, maxExpiresAt = null } = {}) {
   // Binding is opt-in and performed only by a server-side caller after it has resolved a
   // configured canonical principal.  Invalid input becomes an unbound session; it never
   // selects an identity through a request field.
@@ -56,12 +68,26 @@ export function createSession(adminToken, { userAgent = '', ip = 'local', princi
   const csrfToken = crypto.randomBytes(24).toString('hex');
   const createdAt = now();
   const boundedExpiry = Number.isSafeInteger(maxExpiresAt) && maxExpiresAt > createdAt ? maxExpiresAt : Infinity;
-  const expiresAt = Math.min(createdAt + SESSION_TTL_MS(), boundedExpiry);
+  const expiresAt = Math.min(createdAt + configuredSessionTtl(), boundedExpiry);
+  const storedUserAgent = typeof userAgent === 'string' ? userAgent.slice(0, 512) : '';
+  const storedIp = typeof ip === 'string' && ip.length > 0 ? ip.slice(0, 64) : 'local';
   run(
     `INSERT INTO sessions (id, csrf_token, created_at, expires_at, rotated_at, user_agent, ip, revoked_at, principal_id) VALUES (?,?,?,?,?,?,?,NULL,?);`,
-    [sessionId, csrfToken, createdAt, expiresAt, createdAt, userAgent, ip, boundPrincipalId],
+    [sessionId, csrfToken, createdAt, expiresAt, createdAt, storedUserAgent, storedIp, boundPrincipalId],
   );
   return row(get('SELECT * FROM sessions WHERE id=?;', [sessionId]));
+}
+
+export function createSession(adminToken, options = {}) {
+  if (!credentialMatches(adminToken, ADMIN_TOKEN)) return null;
+  return createSessionRecord(options);
+}
+
+// The credential-free iPhone fixture has its own explicit, non-production gate. Keeping this path
+// separate means an empty COMMAND_ADMIN_TOKEN can never authenticate through the normal login path.
+export function createTestModeSession(options = {}, env = process.env) {
+  if (env.NODE_ENV === 'production' || env.UNIFIED_IPHONE_TEST_MODE !== 'true') return null;
+  return createSessionRecord(options);
 }
 
 export function getSession(sessionId) {
@@ -80,7 +106,7 @@ export function rotateSession(sessionId) {
     const sessionIdNext = crypto.randomBytes(24).toString('hex');
     const csrfToken = crypto.randomBytes(24).toString('hex');
     const createdAt = now();
-    const expiresAt = Math.min(createdAt + SESSION_TTL_MS(), existing.expires_at);
+    const expiresAt = Math.min(createdAt + configuredSessionTtl(), existing.expires_at);
     if (!Number.isSafeInteger(expiresAt) || expiresAt <= createdAt) return null;
     run('UPDATE sessions SET revoked_at=? WHERE id=?;', [createdAt, sessionId]);
     run(
