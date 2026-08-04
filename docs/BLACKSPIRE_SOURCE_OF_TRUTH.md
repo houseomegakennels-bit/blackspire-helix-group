@@ -1,5 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## Provider-neutral production monitoring prepared (2026-08-04 UTC)
+
+The repository now contains reviewed systemd monitor/timer/local-alert templates and a fail-closed
+runner. The timer runs once per minute as `blackspire`, systemd owns its durable counter directory,
+the first two consecutive health failures remain degraded-but-nonalerting, the third and later fail
+the unit, and database-filesystem free space below 20% fails immediately. `OnFailure` emits a local
+`daemon.alert`; this is not evidence of off-host delivery, which remains a manual Gate 4 attestation.
+State is updated atomically, a successful check resets it, and malformed/symlinked state is refused
+with sanitized diagnostics rather than silently cleared. These are source templates only: no unit,
+timer, alert destination, host state, or production service was installed, enabled, or changed.
+
 ## Service-isolated production logging prepared (2026-08-04 UTC)
 
 The repository-side production unit now retains its line-delimited JSON stdout/stderr at the exact

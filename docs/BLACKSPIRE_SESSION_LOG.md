@@ -1,5 +1,21 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Provider-neutral production monitoring runner (Codex)
+
+- Stacked monitoring on the exact green service-isolated logging head so the two operator documents
+  remain coherent. Added reviewed systemd service/timer/local-alert templates and a non-concurrent
+  runner with atomic durable failure state, third-consecutive-health-failure alerting, immediate
+  below-20%-free database-filesystem alerting, success reset, bounded counter parsing, sanitized
+  structured diagnostics, pinned interpreter/PATH, non-root identity, and systemd sandboxing.
+- External delivery remains intentionally unselected. `OnFailure` records a local `daemon.alert`,
+  while Gate 4 still requires the operator to connect and test an approved off-host destination.
+  Nothing was installed, enabled, provisioned, routed, or deployed.
+- Validation under Node 22.23.1: combined focused 29/29; full trusted suite 705 total, 696 passed,
+  0 failed, 9 host-conditional skips, inventory 50/50, clean containment, and zero remaining
+  descendants. Lowered health and disk threshold mutants were both killed. `systemd-analyze verify`,
+  shell syntax, whitespace, and source preflight 21/21 passed; deployment remains 1/2 solely because
+  the reviewed parent unit was not installed.
+
 ## 2026-08-04 — Service-isolated production logging and retention (Codex)
 
 - Audited the production unit, runtime ownership map, monitoring template, Gate 4 preparation, and

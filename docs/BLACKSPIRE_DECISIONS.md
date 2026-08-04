@@ -1,5 +1,14 @@
 # Blackspire Decisions
 
+## 2026-08-04 — Monitoring is provider-neutral; local alert creation is not delivery evidence
+
+The repository owns deterministic detection and a local sanitized `daemon.alert`, not the choice of
+an external paging vendor or credential. Health becomes alerting on the third consecutive failure;
+database filesystem capacity below 20% alerts immediately; continued failures emit recurring local
+events for the destination to group. systemd is the single scheduled writer of the durable counter,
+and corrupt state fails closed rather than resetting incident history. Gate 4 continues to require a
+human attestation that an approved off-host destination actually received a test alert.
+
 ## 2026-08-04 — Production log rotation is service-isolated and exact-match validated
 
 The production unit owns one combined structured-log path under `/var/log/blackspire-command`, and

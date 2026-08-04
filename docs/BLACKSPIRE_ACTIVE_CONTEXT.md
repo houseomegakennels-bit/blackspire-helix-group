@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## Current monitoring readiness work (2026-08-04 UTC)
+
+The monitoring slice is stacked on the service-isolated logging PR and adds a one-minute systemd
+timer, durable three-failure threshold, immediate below-20%-free database-filesystem alarm, local
+`daemon.alert`, fail-closed state handling, preflight enforcement, and operator validation steps.
+Focused coverage is 29/29 including the logging/Gate 4 parent; the full trusted suite is 705 total,
+696 passed, 0 failed, 9 conditional skips, inventory 50/50. No monitoring unit is installed, and an
+operator must still choose/connect an off-host destination and prove alert delivery before Gate 4.
+
 ## Current repository readiness work (2026-08-04 UTC)
 
 The service-isolated logging branch replaces the unrelated Docker-wide rotation target with one
