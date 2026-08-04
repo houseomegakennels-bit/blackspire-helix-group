@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-04 — Bounded worker graceful drain implemented (Codex)
+
+- Replaced untracked interval ticks with a single owned active tick. Stop clears polling first, refuses later claims, and awaits the active task plus post-task Telegram outbox delivery. Deterministic injection points cover timing while production defaults remain unchanged.
+- Entry-point SIGTERM/SIGINT now waits at most thirty seconds, closes SQLite, and exits zero only after a clean drain. Timeout logs a sanitized state and exits nonzero; the existing stale-running-task recovery remains authoritative. No incomplete task is marked successful and no schema, task state, provider behavior, deployment, or production routing changed.
+- Node 22.23.1 focused worker/integration validation passed 20/20. The clean full suite passed 703 total, 694 passed, 0 failed, 9 host-conditional skips with trusted inventory 51/51, zero mutations, and zero remaining descendants. A targeted source mutation falsely reporting timeout as drained was killed by one focused failure; exact source was restored. Independent review, merge, deployment, and activation are not claimed.
+
 ## 2026-08-04 — Hermes M3C re-review chain: ninth review round, PR #64 merged, anchor refreshed (Claude Code)
 
 - Recovered a session that had timed out after launching reviewers I and J against `055cd5b`. No reviewer process was still running and nothing was terminated: the only process from that day was the recovery session itself, every other `claude`/`codex` process dated from 2026-07-27 to 07-31 and was unrelated. Both reviewer workspaces survived intact at `/tmp/review-{i,j}/repo`, both clean and both at `055cd5b` with no lock left behind, and both full reports were recovered from the prior session's subagent transcripts. Local HEAD, `origin`, and the live PR head all read `055cd5b`; no commit or PR-body edit had occurred after it.

@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Bounded worker graceful drain implemented, in review (2026-08-04 UTC)
+
+A stacked draft branch stops polling before shutdown, refuses new claims, and waits up to thirty seconds for the single active task plus its delivery flush. Successful drain closes SQLite and exits zero; timeout is sanitized, closes SQLite, and exits nonzero so bounded supervisor restart and existing stale-task recovery apply. No incomplete task is marked successful and no new task state or schema is introduced. Focused worker/integration tests pass 20/20; the full suite passes 703 total, 694 passed, 0 failed, 9 host-conditional skips with trusted inventory 51/51. A false-success timeout mutation is killed by the focused regression. No service, task, deployment, provider, Telegram connection, or production state changed; independent review and merge are not claimed.
+
 ## Dependency-aware readiness and graceful API shutdown implemented, in review (2026-08-04 UTC)
 
 An independent draft branch preserves `/health` as HTTP-200 process liveness while reporting lifecycle and database availability, and makes `/ready` return 503 during startup/drain/stop, database incompatibility/unavailability, or failed startup configuration. Public responses contain sanitized states, not dependency error text. SIGTERM/SIGINT now stop new API acceptance, allow existing connections ten seconds, force-close only at the deadline, close SQLite, and exit; worker task drain remains explicitly separate. Repository health helpers verify both endpoints over the explicit loopback target. Focused lifecycle 3/3 and probe 4/4 pass; the trusted full suite passes 701 total, 692 passed, 0 failed, 9 host-conditional skips with trusted inventory 50/50. A fail-open readiness mutation is killed by 2 focused failures. No live monitor, service, routing, deployment, or production state changed; independent review and merge are not claimed.
