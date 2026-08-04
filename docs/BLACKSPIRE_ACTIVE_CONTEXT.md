@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Schema CHECK-integrity validation implemented, in review (2026-08-04 UTC)
+
+The shared startup/restore/migration compatibility gate now validates the exact normalized inventory of 52 authorization and Hermes 3A-3C CHECK expressions. Disposable mutation cases prove removed and widened constraints fail closed, including a checksum-valid restore whose M3C decision vocabulary was widened with `promote`; startup and migration post-validation also refuse weakened tables. Node 22.23.1 validation passes focused 30 with 1 root-only permission skip and full 704 total, 695 passed, 0 failed, 9 host-conditional skips, trusted inventory 49/49. This stacked branch is not independently reviewed or merged and changes no database automatically.
+
 ## Milestone 3A read-path ordering correction implemented, in review (2026-08-04 UTC)
 
 The M3A evaluation read now authorizes the workspace stored on the evaluation before complete provenance validation and subordinate evidence reads. This closes the documented cross-workspace timing/work oracle and makes M3A consistent with M3B and M3C without changing permissions, response shapes, data, routing, providers, promotion, or production behavior. Node 22.23.1 validation passed focused 21/21 and a clean full rerun at 699 total, 690 passed, 0 failed, 9 host-conditional skips, with trusted inventory 49/49. This branch is not independently reviewed or merged.

@@ -1,5 +1,11 @@
 # Hermes Intelligence Layer — Implementation Status
 
+## Cross-cutting schema CHECK validation (implemented, in review)
+
+- The shared startup/restore/migration gate now pins all 52 authorization and Hermes 3A-3C CHECK expressions as an exact normalized multiset.
+- Disposable mutations prove enum widening, numeric weakening, constraint removal, `promote` admission, and re-review chain-shape weakening fail closed. No schema or data is rewritten automatically.
+- Node 22.23.1 validation passes focused 30 with one root-only permission skip and full 704 total, 695 passed, 0 failed, 9 host-conditional skips. Independent review, merge, deployment, and production effect are not yet claimed.
+
 ## Milestone 3A read-path authorization ordering (implemented, in review)
 
 - `readOutcomeEvaluation` now authorizes the stored workspace before complete provenance validation or subordinate-evidence reads, matching M3B and M3C.

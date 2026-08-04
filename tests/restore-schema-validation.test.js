@@ -11,13 +11,19 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
-import { findMissingSchemaObjects, listTableNames, REQUIRED_SCHEMA } from '../packages/shared/schema-validation.js';
+import { findMissingSchemaObjects, listTableNames, REQUIRED_SCHEMA, REQUIRED_TABLE_CHECKS } from '../packages/shared/schema-validation.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-restore-schema-'));
 const node = process.execPath;
 
 function run(script, args, env = {}) {
   return spawnSync(node, [script, ...args], { cwd: process.cwd(), env: { ...process.env, ...env }, encoding: 'utf8' });
+}
+
+function runModule(source, env = {}) {
+  return spawnSync(node, ['--input-type=module', '--eval', source], {
+    cwd: process.cwd(), env: { ...process.env, ...env }, encoding: 'utf8',
+  });
 }
 
 function freshCase(name) {
@@ -32,6 +38,21 @@ function sha256(file) {
 
 function writeSidecar(file) {
   fs.writeFileSync(`${file}.sha256`, `${sha256(file)}  ${path.basename(file)}\n`);
+}
+
+function rewriteTableSql(dbPath, table, replace) {
+  const db = new DatabaseSync(dbPath);
+  try {
+    const before = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table)?.sql;
+    assert.ok(before, `${table} must exist before the schema mutation`);
+    const after = replace(before);
+    assert.notEqual(after, before, `${table} mutation must change its CREATE TABLE definition`);
+    db.exec('PRAGMA writable_schema=ON;');
+    db.prepare("UPDATE sqlite_master SET sql=? WHERE type='table' AND name=?").run(after, table);
+    const version = Number(db.prepare('PRAGMA schema_version').get().schema_version);
+    db.exec(`PRAGMA schema_version=${version + 1};`);
+    db.exec('PRAGMA writable_schema=OFF;');
+  } finally { db.close(); }
 }
 
 // A genuine full-schema Blackspire database (via the reviewed migration tooling), backed up with
@@ -435,6 +456,86 @@ test('findMissingSchemaObjects reports nothing missing for a fully migrated data
   try {
     assert.deepEqual(findMissingSchemaObjects(db), []);
   } finally { db.close(); }
+});
+
+test('required CHECK inventory covers authorization and every Hermes 3A-3C constraint family', () => {
+  assert.deepEqual(Object.keys(REQUIRED_TABLE_CHECKS).sort(), [
+    'auth_decisions', 'auth_principals', 'auth_workspace_grants',
+    'hermes_memory_candidate_rereviews', 'hermes_memory_candidate_reviews',
+    'hermes_outcome_corrections', 'hermes_outcome_evaluation_failures',
+    'hermes_outcome_source_events', 'hermes_verified_scorecard_sources',
+    'hermes_verified_scorecards',
+  ]);
+  assert.equal(Object.values(REQUIRED_TABLE_CHECKS).reduce((total, checks) => total + checks.length, 0), 52);
+});
+
+test('schema validation rejects removed or widened authorization and Hermes CHECK constraints', () => {
+  const cases = [
+    ['auth-type', 'auth_principals', "CHECK(type IN ('admin','service'))", "CHECK(type IN ('admin','service','guest'))"],
+    ['auth-status', 'auth_workspace_grants', "CHECK(status IN ('active','revoked','expired','superseded'))", "CHECK(status IN ('active','revoked','expired','superseded','forged'))"],
+    ['auth-allowed', 'auth_decisions', 'CHECK(allowed IN (0,1))', 'CHECK(allowed IN (0,1,2))'],
+    ['m3a-version-removed', 'hermes_outcome_corrections', 'CHECK(version>0)', ''],
+    ['m3a-events', 'hermes_outcome_source_events', "CHECK(event_type IN ('accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked'))", "CHECK(event_type IN ('accepted','rejected','partially_accepted','rollback','follow_up_verification','stability_confirmed','regression_linked','invented'))"],
+    ['m3a-failure', 'hermes_outcome_evaluation_failures', "CHECK(remediation_state IN ('open','retry_requested','resolved'))", "CHECK(remediation_state IN ('open','retry_requested','resolved','ignored'))"],
+    ['m3b-scope', 'hermes_verified_scorecards', 'CHECK(scope_version>0)', 'CHECK(scope_version>=0)'],
+    ['m3b-confidence', 'hermes_verified_scorecards', "CHECK(confidence_band IN ('insufficient','limited','established'))", "CHECK(confidence_band IN ('insufficient','limited','established','trusted'))"],
+    ['m3b-metric', 'hermes_verified_scorecards', 'CHECK(accepted_count>=0)', 'CHECK(accepted_count>=-1)'],
+    ['m3b-source', 'hermes_verified_scorecard_sources', 'CHECK(seq>0)', 'CHECK(seq>=0)'],
+    ['m3c-decision', 'hermes_memory_candidate_reviews', "CHECK(decision IN ('recommend_promote','reject','defer_needs_evidence'))", "CHECK(decision IN ('recommend_promote','reject','defer_needs_evidence','promote'))"],
+    ['m3c-scope', 'hermes_memory_candidate_reviews', "CHECK(candidate_scope='workspace')", "CHECK(candidate_scope IN ('workspace','global'))"],
+    ['m3c-status', 'hermes_memory_candidate_reviews', "CHECK(candidate_status_at_review='pending')", "CHECK(candidate_status_at_review IN ('pending','promoted'))"],
+    ['m3c-rereview-link', 'hermes_memory_candidate_rereviews', 'CHECK(id<>root_review_id)', 'CHECK(id=root_review_id OR id<>root_review_id)'],
+    ['m3c-rereview-shape', 'hermes_memory_candidate_rereviews', 'CHECK((chain_version=1 AND supersedes_rereview_id IS NULL) OR (chain_version>1 AND supersedes_rereview_id IS NOT NULL))', 'CHECK(chain_version>0)'],
+  ];
+  for (const [name, table, from, to] of cases) {
+    const dir = freshCase(`constraint-${name}`);
+    const dbPath = path.join(dir, 'command.sqlite');
+    prepareDisposableDatabase(dbPath);
+    rewriteTableSql(dbPath, table, (sql) => {
+      assert.ok(sql.includes(from), `${name} fixture must find the exact canonical CHECK`);
+      return sql.replace(from, to);
+    });
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      assert.ok(findMissingSchemaObjects(db).includes(`invalid table constraints ${table}`), `${name} must fail closed`);
+    } finally { db.close(); }
+  }
+});
+
+test('restore refuses a checksum-valid backup with a widened promotion decision constraint', () => {
+  const dir = freshCase('constraint-restore');
+  const { backup } = fullSchemaBackup(dir);
+  rewriteTableSql(backup, 'hermes_memory_candidate_reviews', (sql) => sql.replace(
+    "CHECK(decision IN ('recommend_promote','reject','defer_needs_evidence'))",
+    "CHECK(decision IN ('recommend_promote','reject','defer_needs_evidence','promote'))"));
+  writeSidecar(backup);
+  const target = path.join(dir, 'disposable', 'command.sqlite');
+  const r = run('scripts/restore.js', [backup, target], restoreArgs(dir));
+  assertRejected(r, target);
+  assert.match(r.stderr, /invalid table constraints hermes_memory_candidate_reviews/);
+});
+
+test('migration postcondition refuses an existing weakened table that CREATE IF NOT EXISTS cannot heal', () => {
+  const dir = freshCase('constraint-migration');
+  const dbPath = path.join(dir, 'command.sqlite');
+  prepareDisposableDatabase(dbPath);
+  rewriteTableSql(dbPath, 'auth_decisions', (sql) => sql.replace('CHECK(allowed IN (0,1))', 'CHECK(allowed IN (0,1,2))'));
+  const migrated = run('scripts/migrate.js', [], { BLACKSPIRE_DB_PATH: dbPath, BLACKSPIRE_RUN_MIGRATIONS: 'true' });
+  assert.notEqual(migrated.status, 0);
+  assert.match(migrated.stderr, /invalid table constraints auth_decisions/);
+});
+
+test('application startup refuses a database with weakened security constraints', () => {
+  const dir = freshCase('constraint-startup');
+  const dbPath = path.join(dir, 'command.sqlite');
+  prepareDisposableDatabase(dbPath);
+  rewriteTableSql(dbPath, 'auth_principals', (sql) => sql.replace(
+    "CHECK(type IN ('admin','service'))", "CHECK(type IN ('admin','service','guest'))"));
+  const started = runModule(
+    "import('./packages/task-engine/db.js').then(({assertSchemaCompatible}) => assertSchemaCompatible())",
+    { BLACKSPIRE_DB_PATH: dbPath });
+  assert.notEqual(started.status, 0);
+  assert.match(started.stderr, /database schema migration required: invalid table constraints auth_principals/);
 });
 
 test('findMissingSchemaObjects reports missing tables and missing columns distinctly', () => {
