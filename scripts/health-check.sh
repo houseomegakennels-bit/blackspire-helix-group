@@ -22,8 +22,10 @@ mode="${2:-health}"
 node_bin="$(blackspire_resolve_node)" || { echo 'health-check requires Node 22.5 or newer' >&2; exit 2; }
 health="$(curl --fail --silent --show-error --max-time 5 "$base_url/health")"
 HEALTH_JSON="$health" "$node_bin" -e "const b=JSON.parse(process.env.HEALTH_JSON);if(b.ok!==true||b.service!=='blackspire-command-api')process.exit(1)"
+ready="$(curl --fail --silent --show-error --max-time 5 "$base_url/ready")"
+READY_JSON="$ready" "$node_bin" -e "const b=JSON.parse(process.env.READY_JSON);if(b.ok!==true||b.service!=='blackspire-command-api')process.exit(1)"
 if [[ "$mode" == "iphone-test" ]]; then
   status="$(curl --fail --silent --show-error --max-time 5 "$base_url/api/test-mode")"
   STATUS_JSON="$status" "$node_bin" -e "const b=JSON.parse(process.env.STATUS_JSON);if(!b.enabled||b.provider!=='mock'||b.telegram!=='mock'||b.productionData!==false||Date.parse(b.expiresAt)<=Date.now())process.exit(1)"
 fi
-printf 'BLACKSPIRE HEALTH OK: mode=%s\n' "$mode"
+printf 'BLACKSPIRE HEALTH AND READINESS OK: mode=%s\n' "$mode"

@@ -18,13 +18,15 @@ import { createUnifiedInput, getConversation, requestCancellation } from '../../
 import { conversationEvents } from '../../packages/task-engine/tasks.js';
 import { requireSafeTestMode, isSameOrigin, testModeAllowsRequest, publicTestModeStatus } from '../../packages/shared/testMode.js';
 import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
-import { assertSchemaCompatible } from '../../packages/task-engine/db.js';
+import { assertSchemaCompatible, closeDb } from '../../packages/task-engine/db.js';
 import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/authorization.js';
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
 import { readMemoryCandidateReview, readMemoryCandidateRereview } from '../../packages/hermes-orchestrator/memory-review.js';
 
 let emergencyStopMemory = false;
+let lifecyclePhase = 'starting';
+let startupConfigValidation = { ok: false };
 const TEST_MODE = requireSafeTestMode();
 
 // Exact-match allowlist of publicly servable frontend assets. Lookup is by literal
@@ -96,8 +98,11 @@ async function route(req, res) {
       return writeJson(res, 200, { ok: true, csrfToken: rotated.csrfToken, expiresAt: rotated.expiresAt }, { 'set-cookie': sessionCookie(rotated) });
     }
     if (u.pathname === '/api/auth/revoke-all' && req.method === 'POST') { revokeAllSessions(); audit(null, 'administrator', 'sessions.revoked'); return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() }); }
-    if (u.pathname === '/health') return json(res, 200, { ok: true, service: 'blackspire-command-api', emergencyStop: getFlag('emergency_stop') === 'active' || emergencyStopMemory, telegramMode: process.env.TELEGRAM_MODE || (process.env.TELEGRAM_BOT_TOKEN ? 'polling' : 'dry-run') });
-    if (u.pathname === '/ready') return json(res, 200, { ok: true, providers: activeModes(), productionConfig: requireProductionSafeConfig() });
+    if (u.pathname === '/health') return json(res, 200, healthSnapshot());
+    if (u.pathname === '/ready') {
+      const readiness = readinessSnapshot();
+      return json(res, readiness.ok ? 200 : 503, readiness);
+    }
     if (u.pathname === '/api/test-mode/telegram-input' && req.method === 'POST') return testTelegramInput(req, res);
     if (u.pathname === '/api/test-mode/queued-task' && req.method === 'POST') return testQueuedTask(req, res);
     if (u.pathname === '/api/test-mode/delivery-failure' && req.method === 'POST') return testDeliveryFailure(req, res);
@@ -402,6 +407,7 @@ const IS_ENTRY_POINT = import.meta.url === `file://${process.argv[1]}`;
 // runner alive pass false, and a production profile always exits regardless of the argument, so
 // this can never become a bypass. It is an argument, never an environment variable.
 export function start(port, host, { exitOnListenError = true } = {}) {
+  lifecyclePhase = 'starting';
   try {
     assertSchemaCompatible();
   } catch (error) {
@@ -409,6 +415,7 @@ export function start(port, host, { exitOnListenError = true } = {}) {
     process.exit(1);
   }
   const validation = requireProductionSafeConfig();
+  startupConfigValidation = { ok: validation.ok };
   if (process.env.NODE_ENV === 'production' && !validation.ok) {
     console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors }));
     process.exit(1);
@@ -441,10 +448,79 @@ export function start(port, host, { exitOnListenError = true } = {}) {
     }));
     if (exitOnListenError || bind.production) process.exit(1);
   });
-  server.listen(boundPort, boundHost, () => console.log(JSON.stringify({ service: 'api', port: boundPort, host: boundHost || 'default' })));
+  server.listen(boundPort, boundHost, () => {
+    lifecyclePhase = 'ready';
+    console.log(JSON.stringify({ service: 'api', port: boundPort, host: boundHost || 'default' }));
+  });
   const cleanupTimer = setInterval(() => { cleanupExpiredSessions(); cleanupRateLimits(); }, Number(process.env.CLEANUP_INTERVAL_MS || 15 * 60 * 1000));
   cleanupTimer.unref();
-  server.on('close', () => clearInterval(cleanupTimer));
+  server.on('close', () => { lifecyclePhase = 'stopped'; clearInterval(cleanupTimer); });
   return server;
 }
-if (IS_ENTRY_POINT) start();
+
+export function healthSnapshot() {
+  let database = 'available';
+  let persistentEmergencyStop = false;
+  try { persistentEmergencyStop = getFlag('emergency_stop') === 'active'; }
+  catch { database = 'unavailable'; persistentEmergencyStop = true; }
+  return {
+    ok: true,
+    service: 'blackspire-command-api',
+    lifecycle: lifecyclePhase,
+    database,
+    emergencyStop: persistentEmergencyStop || emergencyStopMemory,
+    telegramMode: process.env.TELEGRAM_MODE || (process.env.TELEGRAM_BOT_TOKEN ? 'polling' : 'dry-run'),
+  };
+}
+
+export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {}) {
+  let database = 'compatible';
+  try { schemaCheck(); } catch { database = 'unavailable_or_incompatible'; }
+  const checks = {
+    lifecycle: lifecyclePhase === 'ready',
+    database: database === 'compatible',
+    productionConfig: startupConfigValidation.ok === true,
+  };
+  return {
+    ok: Object.values(checks).every(Boolean),
+    service: 'blackspire-command-api',
+    lifecycle: lifecyclePhase,
+    checks,
+    database,
+    providers: activeModes(),
+    productionConfig: startupConfigValidation,
+  };
+}
+
+export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
+  if (lifecyclePhase === 'draining' || lifecyclePhase === 'stopped') return Promise.resolve();
+  lifecyclePhase = 'draining';
+  return new Promise((resolve) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(deadline);
+      closeDb();
+      resolve();
+    };
+    const deadline = setTimeout(() => {
+      server.closeAllConnections?.();
+      finish();
+    }, deadlineMs);
+    deadline.unref();
+    server.close(finish);
+  });
+}
+
+if (IS_ENTRY_POINT) {
+  const server = start();
+  let signalReceived = false;
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, async () => {
+    if (signalReceived) { server.closeAllConnections?.(); return; }
+    signalReceived = true;
+    console.log(JSON.stringify({ service: 'api', lifecycle: 'draining', signal }));
+    await beginGracefulShutdown(server);
+    process.exit(0);
+  });
+}

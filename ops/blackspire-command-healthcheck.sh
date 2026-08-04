@@ -17,3 +17,4 @@ fi
 . "$(dirname "${BASH_SOURCE[0]}")/../scripts/lib/node-bin.sh"
 node_bin="$(blackspire_resolve_node)" || { echo 'healthcheck requires Node 22.5 or newer' >&2; exit 2; }
 curl --fail --silent --show-error --max-time "${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-5}" "$base_url/health" | "$node_bin" -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const b=JSON.parse(s);if(b.ok!==true||b.service!=='blackspire-command-api'||b.telegramMode==='polling')process.exit(1)})"
+curl --fail --silent --show-error --max-time "${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-5}" "$base_url/ready" | "$node_bin" -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const b=JSON.parse(s);if(b.ok!==true||b.service!=='blackspire-command-api')process.exit(1)})"

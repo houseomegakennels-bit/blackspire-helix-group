@@ -15,6 +15,9 @@ Four evidence defects entered the record across PR #64, and independent review r
 ## 2026-08-04 — Milestone 3C's second slice merged; the review queue is next, promotion is not
 
 PR #64 merged as `0d6e977113e826095c4ed57db150bf30d9de954f` from exact reviewed head `055cd5bd919b2ddc2f94113e07134bb8b72829cc` only after two independent exact-head reviewers both returned unconditional `approve` on that exact SHA, under an expected-head merge guard. Re-review and successor chains authorize nothing: the write path has no production caller, the only surface is GET-only, and appending never mutates candidate `status` or `promoted_at`. The workspace-scoped review queue comes next, and only then promotion. Promotion must not inherit `evaluation.correct` as its authority without an explicit decision, and must never be automatic.
+## 2026-08-04 — Liveness is not permission to route traffic
+
+`/health` answers whether the API process can respond and remains HTTP 200 while exposing sanitized lifecycle/database state. `/ready` is the traffic contract and fails with 503 unless the listener is ready, the schema is compatible, and startup configuration passed. Provider-disabled mode is intentional and informational, not a readiness failure. Shutdown changes readiness before listener drain. Monitoring checks both signals; neither endpoint authorizes deployment or production routing.
 
 ## 2026-07-31 — A review is a new append-only row, never a candidate status update
 

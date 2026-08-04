@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Dependency-aware readiness and graceful API shutdown implemented, in review (2026-08-04 UTC)
+
+An independent draft branch preserves `/health` as HTTP-200 process liveness while reporting lifecycle and database availability, and makes `/ready` return 503 during startup/drain/stop, database incompatibility/unavailability, or failed startup configuration. Public responses contain sanitized states, not dependency error text. SIGTERM/SIGINT now stop new API acceptance, allow existing connections ten seconds, force-close only at the deadline, close SQLite, and exit; worker task drain remains explicitly separate. Repository health helpers verify both endpoints over the explicit loopback target. Focused lifecycle 3/3 and probe 4/4 pass; the trusted full suite passes 701 total, 692 passed, 0 failed, 9 host-conditional skips with trusted inventory 50/50. A fail-open readiness mutation is killed by 2 focused failures. No live monitor, service, routing, deployment, or production state changed; independent review and merge are not claimed.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged into `main` as `0d6e977113e826095c4ed57db150bf30d9de954f` from independently reviewed exact head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is that merge commit's second parent and is the new verified implementation anchor. The merge used the repository's established merge-commit method under an expected-head guard (`--match-head-commit`), so a head that moved between the final check and the merge would have refused rather than merged.
