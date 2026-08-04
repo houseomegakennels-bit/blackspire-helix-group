@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-08-04 monitoring follow-up
+
+- Review the provider-neutral monitoring PR after its logging parent. Under separate host authority,
+  install all three reviewed units together, verify them with `systemd-analyze`, exercise the first,
+  second, third, recovery, low-disk, corrupt-state, and timer-persistence paths, then enable the timer.
+- Select and configure the approved off-host destination for `daemon.alert`, including grouping or
+  deduplication for continued failures. A local journal event does not satisfy alert delivery and no
+  repository automation may choose a provider, provision credentials, or attest success.
+
 ## 2026-08-04 production logging follow-up
 
 - Review the focused service-isolated logging PR. After merge and only under separate host-change
