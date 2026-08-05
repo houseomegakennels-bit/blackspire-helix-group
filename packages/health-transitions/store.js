@@ -12,5 +12,5 @@ export class MemoryHealthTransitionStore {
   append(event) { const immutable = Object.freeze(structuredClone(event)); this.#events.push(immutable); return immutable; }
   current(environment, workspaceId) { return [...this.#latest.values()].filter((item) => item.environment === environment && item.workspaceId === workspaceId).sort((a,b) => a.component.localeCompare(b.component)); }
   events(environment, workspaceId) { return this.#events.filter((item) => item.environment === environment && item.workspaceId === workspaceId); }
-  snapshot() { return { version: 1, latest: [...this.#latest.entries()].map(([key,value]) => [key, structuredClone(value)]), events: this.#events.map(structuredClone) }; }
+  snapshot() { return { version: 1, latest: [...this.#latest.entries()].map(([key,value]) => [key, structuredClone(value)]), events: this.#events.map((event) => structuredClone(event)) }; }
 }
