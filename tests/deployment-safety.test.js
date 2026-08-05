@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { removeIdenticalFile, snapshotRegularFile } from '../packages/shared/deployment-lock-safety.js';
 
 const repository = path.resolve(import.meta.dirname, '..');
 const run = (script, args) => spawnSync(process.execPath, [path.join(repository, 'scripts', script), ...args], { cwd: repository, encoding: 'utf8', env: process.env });
@@ -38,6 +39,21 @@ test('deployment lock is plan-only, exclusive, ownership-bound, and reports stal
   assert.equal(JSON.parse(run('deployment-lock.js', ['status', ...base, '--max-age-seconds', '60']).stdout).status, 'stale');
   assert.match(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--apply']).stderr, /RECOVER-STAGING-LOCK/);
   assert.equal(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--ack', 'RECOVER-STAGING-LOCK', '--apply']).status, 0);
+});
+
+test('lock mutation refuses symlink traversal and replacement before removal', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-adversary-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-outside-'));
+  fs.symlinkSync(outside, path.join(root, 'shared'));
+  const symlinked = run('deployment-lock.js', ['acquire', '--target', 'staging', '--release-root', root, '--owner', 'test-operator', '--apply']);
+  assert.equal(symlinked.status, 1); assert.match(symlinked.stderr, /path contains a symlink/); assert.equal(fs.readdirSync(outside).length, 0);
+
+  const lockDirectory = path.join(root, 'real', 'shared', 'deploy'); fs.mkdirSync(lockDirectory, { recursive: true });
+  const lockPath = path.join(lockDirectory, 'staging.lock'); fs.writeFileSync(lockPath, 'authorized');
+  const expected = snapshotRegularFile(lockPath);
+  assert.throws(() => removeIdenticalFile(lockPath, expected, { beforeRename() { fs.renameSync(lockPath, `${lockPath}.original`); fs.writeFileSync(lockPath, 'substitute'); } }), /substituted before removal/);
+  assert.equal(fs.readFileSync(lockPath, 'utf8'), 'substitute');
+  assert.equal(fs.readFileSync(`${lockPath}.original`, 'utf8'), 'authorized');
 });
 
 test('disposable staging preflight verifies fingerprint, backup, rollback and clean source', () => {
