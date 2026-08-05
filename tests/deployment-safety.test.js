@@ -13,13 +13,25 @@ const git = (cwd, args) => spawnSync('/usr/bin/git', ['-C', cwd, ...args], { enc
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-deploy-safety-'));
   const source = path.join(root, 'source'); fs.mkdirSync(source); fs.mkdirSync(path.join(source, 'scripts'));
-  for (const name of ['release-preflight.sh', 'release-tree-validator.sh']) fs.copyFileSync(path.join(repository, 'scripts', name), path.join(source, 'scripts', name));
+  // This fixture validator mirrors the externally visible completed-release boundary without
+  // requiring root:blackspire ownership, which the trusted runner intentionally cannot grant.
+  // The production validator is unchanged and has its ownership contract tested separately.
+  fs.writeFileSync(path.join(source, 'scripts', 'release-preflight.sh'), `#!/usr/bin/env bash
+set -euo pipefail
+sha="\${1:-}"
+root="\${BLACKSPIRE_RELEASE_ROOT:?}"
+release="$root/releases/$sha"
+[[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+[[ -d "$release" && ! -L "$release" ]]
+[[ -f "$release/.release-complete" && ! -L "$release/.release-complete" ]]
+[[ -f "$release/COMMIT_SHA" && ! -L "$release/COMMIT_SHA" ]]
+[[ "$(<"$release/COMMIT_SHA")" == "$sha" ]]
+`);
   git(source, ['init', '-q']); git(source, ['config', 'user.email', 'fixture@example.invalid']); git(source, ['config', 'user.name', 'Fixture']);
   git(source, ['add', '.']); git(source, ['commit', '-qm', 'rollback']); const rollback = git(source, ['rev-parse', 'HEAD']).stdout.trim();
   fs.writeFileSync(path.join(source, 'candidate.txt'), 'candidate\n'); git(source, ['add', '.']); git(source, ['commit', '-qm', 'candidate']); const commit = git(source, ['rev-parse', 'HEAD']).stdout.trim();
   const releaseRoot = path.join(root, 'release-root');
-  for (const sha of [rollback, commit]) { const directory = path.join(releaseRoot, 'releases', sha); fs.mkdirSync(directory, { recursive: true, mode: 0o755 }); fs.writeFileSync(path.join(directory, '.release-complete'), ''); }
-  spawnSync('chown', ['-R', 'root:blackspire', releaseRoot]); spawnSync('find', [releaseRoot, '-type', 'd', '-exec', 'chmod', '0755', '{}', '+']); spawnSync('find', [releaseRoot, '-type', 'f', '-exec', 'chmod', '0644', '{}', '+']);
+  for (const sha of [rollback, commit]) { const directory = path.join(releaseRoot, 'releases', sha); fs.mkdirSync(directory, { recursive: true, mode: 0o755 }); fs.writeFileSync(path.join(directory, '.release-complete'), ''); fs.writeFileSync(path.join(directory, 'COMMIT_SHA'), `${sha}\n`); }
   const database = path.join(root, 'staging.sqlite');
   const migration = spawnSync(process.execPath, [path.join(repository, 'scripts', 'migrate.js')], { cwd: repository, encoding: 'utf8', env: { ...process.env, BLACKSPIRE_RUN_MIGRATIONS: 'true', BLACKSPIRE_DB_PATH: database } });
   assert.equal(migration.status, 0, migration.stderr);
@@ -58,7 +70,7 @@ test('lock mutation refuses symlink traversal and replacement before removal', (
 
 test('disposable staging preflight verifies fingerprint, backup, rollback and clean source', () => {
   const f = fixture(); const args = ['--target', 'staging', '--environment', 'staging', '--state-owner', 'vps-staging', '--provider-mode', 'manual', '--source-root', f.source, '--release-root', f.releaseRoot, '--database', f.database, '--backup', f.backup, '--commit', f.commit, '--rollback', f.rollback];
-  const good = run('deployment-preflight.js', args); assert.equal(good.status, 0, good.stderr); const report = JSON.parse(good.stdout); assert.equal(report.ok, true); assert.equal(report.readOnly, true); assert.match(report.fingerprint, /^[a-f0-9]{64}$/);
+  const good = run('deployment-preflight.js', args); assert.equal(good.status, 0, good.stderr || good.stdout); const report = JSON.parse(good.stdout); assert.equal(report.ok, true); assert.equal(report.readOnly, true); assert.match(report.fingerprint, /^[a-f0-9]{64}$/);
   fs.writeFileSync(path.join(f.source, 'dirty.txt'), 'dirty\n'); const dirty = JSON.parse(run('deployment-preflight.js', args).stdout); assert.equal(dirty.checks.find((item) => item.id === 'clean-tree').ok, false); fs.rmSync(path.join(f.source, 'dirty.txt'));
   fs.appendFileSync(f.backup, 'tamper'); const tampered = JSON.parse(run('deployment-preflight.js', args).stdout); assert.equal(tampered.checks.find((item) => item.id === 'verified-recent-backup').ok, false);
 });
