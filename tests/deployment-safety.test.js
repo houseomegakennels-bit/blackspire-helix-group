@@ -47,6 +47,13 @@ test('disposable staging preflight verifies fingerprint, backup, rollback and cl
   fs.appendFileSync(f.backup, 'tamper'); const tampered = JSON.parse(run('deployment-preflight.js', args).stdout); assert.equal(tampered.checks.find((item) => item.id === 'verified-recent-backup').ok, false);
 });
 
+test('preflight refuses a valid but superseded backup', () => {
+  const f = fixture(); const newer = path.join(path.dirname(f.backup), 'newer.sqlite'); fs.copyFileSync(f.database, newer); const newerDigest = crypto.createHash('sha256').update(fs.readFileSync(newer)).digest('hex'); fs.writeFileSync(`${newer}.sha256`, `${newerDigest}  newer.sqlite\n`);
+  const future = new Date(Date.now() + 1000); fs.utimesSync(newer, future, future);
+  const args = ['--target', 'staging', '--environment', 'staging', '--state-owner', 'vps-staging', '--provider-mode', 'manual', '--source-root', f.source, '--release-root', f.releaseRoot, '--database', f.database, '--backup', f.backup, '--commit', f.commit, '--rollback', f.rollback];
+  const report = JSON.parse(run('deployment-preflight.js', args).stdout); assert.equal(report.checks.find((item) => item.id === 'verified-recent-backup').ok, false); assert.match(report.checks.find((item) => item.id === 'verified-recent-backup').detail, /not the latest/);
+});
+
 test('preflight refuses production identity and production database namespace', () => {
   const f = fixture(); const args = ['--target', 'production', '--environment', 'production', '--state-owner', 'vps-production', '--provider-mode', 'openai', '--source-root', f.source, '--release-root', f.releaseRoot, '--database', '/opt/blackspire-command/shared/database/command.sqlite', '--backup', f.backup, '--commit', f.commit, '--rollback', f.rollback];
   const refused = run('deployment-preflight.js', args); assert.equal(refused.status, 1); const report = JSON.parse(refused.stdout); assert.equal(report.recommendation, 'REFUSE_DEPLOYMENT');
