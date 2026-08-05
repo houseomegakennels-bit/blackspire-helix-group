@@ -48,12 +48,18 @@ try {
   if (!fs.existsSync(sidecar) || fs.lstatSync(sidecar).isSymbolicLink()) throw new Error('checksum sidecar is absent or unsafe');
   const ageSeconds = Math.floor((Date.now() - fs.statSync(backup).mtimeMs) / 1000);
   if (ageSeconds < 0 || ageSeconds > 86400) throw new Error('backup is older than 24 hours');
+  const eligibleBackups = fs.readdirSync(path.dirname(backup), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && /\.sqlite$|\.db$/.test(entry.name))
+    .map((entry) => path.join(path.dirname(backup), entry.name))
+    .filter((candidate) => candidate !== path.resolve(database || ''))
+    .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+  if (eligibleBackups[0] !== path.resolve(backup)) throw new Error('selected backup is not the latest database backup in its directory');
   const expected = fs.readFileSync(sidecar, 'utf8').trim().split(/\s+/)[0];
   backupDigest = crypto.createHash('sha256').update(fs.readFileSync(backup)).digest('hex');
   if (!/^[a-f0-9]{64}$/.test(expected) || expected !== backupDigest) throw new Error('backup checksum does not match');
   const db = new DatabaseSync(backup, { readOnly: true });
   try { if (db.prepare('PRAGMA integrity_check').get().integrity_check !== 'ok') throw new Error('backup integrity check failed'); const missing = findMissingSchemaObjects(db); if (missing.length) throw new Error('backup is missing required schema objects'); } finally { db.close(); }
-  check('verified-recent-backup', true, 'backup checksum, age, integrity, and schema verified');
+  check('verified-recent-backup', true, 'latest backup checksum, age, integrity, and schema verified');
 } catch (error) { check('verified-recent-backup', false, error.message); }
 const lockPath = safeAbsolute(releaseRoot) ? path.join(path.resolve(releaseRoot), 'shared', 'deploy', 'staging.lock') : null;
 check('deployment-unlocked', lockPath !== null && !fs.existsSync(lockPath), 'preflight requires no existing staging deployment lock');
