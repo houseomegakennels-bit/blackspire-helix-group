@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { assertNoSymlinkTraversal, removeIdenticalFile, snapshotRegularFile } from '../packages/shared/deployment-lock-safety.js';
 
 const args = process.argv.slice(2);
 const value = (name) => { const index = args.indexOf(name); return index < 0 ? null : args[index + 1]; };
@@ -23,18 +24,21 @@ const lockPath = path.join(lockDirectory, `${target}.lock`);
 const now = Date.now();
 function readLock() {
   if (!fs.existsSync(lockPath)) return null;
-  const stat = fs.lstatSync(lockPath);
-  if (!stat.isFile() || stat.isSymbolicLink()) refuse('lock path is not a regular non-symlink file');
+  let snapshot;
+  try { snapshot = snapshotRegularFile(lockPath); } catch (error) { refuse(error.message); }
   let lock;
-  try { lock = JSON.parse(fs.readFileSync(lockPath, 'utf8')); } catch { refuse('lock record is malformed; manual inspection is required'); }
+  try { lock = JSON.parse(snapshot.raw); } catch { refuse('lock record is malformed; manual inspection is required'); }
   if (lock.version !== 1 || lock.target !== target || !Number.isInteger(lock.pid) || !Number.isFinite(Date.parse(lock.createdAt)) || !/^[a-f0-9]{32}$/.test(lock.nonce || '')) refuse('lock record is invalid; manual inspection is required');
   let processAlive = false;
   try { process.kill(lock.pid, 0); processAlive = true; } catch (error) { if (error.code === 'EPERM') processAlive = true; }
   const ageSeconds = Math.max(0, Math.floor((now - Date.parse(lock.createdAt)) / 1000));
-  return { ...lock, ageSeconds, processAlive, stale: !processAlive && ageSeconds >= maxAgeSeconds };
+  const result = { ...lock, ageSeconds, processAlive, stale: !processAlive && ageSeconds >= maxAgeSeconds };
+  Object.defineProperty(result, '_identity', { value: snapshot, enumerable: false });
+  return result;
 }
 function output(status, lock = null) { console.log(JSON.stringify({ ok: true, action, target, lockPath, status, lock }, null, 2)); }
 
+try { assertNoSymlinkTraversal(lockDirectory); } catch (error) { refuse(error.message); }
 const current = readLock();
 if (action === 'status') output(current ? (current.stale ? 'stale' : 'held') : 'unlocked', current);
 else {
@@ -43,7 +47,7 @@ else {
   if (!owner || !/^[A-Za-z0-9._-]{3,64}$/.test(owner)) refuse('--owner must be a bounded audit identifier');
   if (action === 'acquire') {
     if (current) refuse(current.stale ? 'a stale lock exists; inspect and use explicit recover' : 'deployment lock is already held');
-    fs.mkdirSync(lockDirectory, { recursive: true, mode: 0o700 });
+    try { assertNoSymlinkTraversal(lockDirectory); fs.mkdirSync(lockDirectory, { recursive: true, mode: 0o700 }); assertNoSymlinkTraversal(lockDirectory); } catch (error) { refuse(error.message); }
     const record = { version: 1, target, owner, pid: process.pid, createdAt: new Date(now).toISOString(), nonce: crypto.randomBytes(16).toString('hex') };
     try { fs.writeFileSync(lockPath, `${JSON.stringify(record)}\n`, { flag: 'wx', mode: 0o600 }); } catch (error) { refuse(error.code === 'EEXIST' ? 'deployment lock was acquired concurrently' : 'could not create deployment lock'); }
     output('acquired', record);
@@ -55,7 +59,7 @@ else {
       if (!current.stale) refuse('lock is not provably stale');
       if (acknowledgement !== `RECOVER-${target.toUpperCase()}-LOCK`) refuse(`recover requires --ack RECOVER-${target.toUpperCase()}-LOCK`);
     }
-    fs.unlinkSync(lockPath);
+    try { removeIdenticalFile(lockPath, current._identity); } catch (error) { refuse(error.message); }
     output(action === 'release' ? 'released' : 'recovered', { owner: current.owner, ageSeconds: current.ageSeconds, stale: current.stale });
   }
 }
