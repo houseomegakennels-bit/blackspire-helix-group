@@ -1,12 +1,15 @@
-import { claimNext, getFlag, setFlag } from '../../packages/task-engine/tasks.js';
+import { claimNext, getFlag, getTask, setFlag } from '../../packages/task-engine/tasks.js';
 import { processTask } from '../../packages/hermes/hermes.js';
 import { drainTelegramOutbox } from '../../packages/unified-input/unified.js';
 import { dispatchReply } from '../telegram/bot.js';
 import { assertSchemaCompatible, closeDb } from '../../packages/task-engine/db.js';
+import { recordWorkerHeartbeat, workerRuntimeStatus } from '../../packages/task-engine/runtime-status.js';
 
 export function startWorker({
   intervalMs = Number(process.env.WORKER_POLL_MS || 750), once = false,
   claimNextImpl = claimNext, processTaskImpl = processTask, deliverEventsImpl = deliverEvents,
+  heartbeatIntervalMs = Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS || 10_000),
+  recordHeartbeatImpl = recordWorkerHeartbeat, getTaskImpl = getTask,
 } = {}) {
   try {
     assertSchemaCompatible();
@@ -16,13 +19,29 @@ export function startWorker({
   }
   let stopping = false;
   let activeTick = null;
+  const workerId = process.env.WORKER_ID || 'worker-local';
+  const startedAt = new Date().toISOString();
+  let activeTaskId = null;
+  const heartbeat = (phase) => recordHeartbeatImpl({ workerId, phase, taskId: activeTaskId, startedAt });
+  const previous = workerRuntimeStatus({ workerId });
+  heartbeat('starting');
+  if (previous.restartDetected) console.warn(JSON.stringify({ service: 'worker', lifecycle: 'restart_after_stale_heartbeat' }));
   async function executeTick() {
+    heartbeat('idle');
     if (getFlag('emergency_stop') === 'active') return;
     if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true' && getFlag('test_worker_hold') === 'active') { await deliverEventsImpl(); return; }
-    const task = claimNextImpl({ workerId: process.env.WORKER_ID || 'worker-local' });
+    const task = claimNextImpl({ workerId });
     if (!task) { await deliverEventsImpl(); return; }
-    try { await processTaskImpl(task); }
-    finally { await deliverEventsImpl(); }
+    activeTaskId = task.id;
+    heartbeat('working');
+    try {
+      // A cancellation racing the atomic claim must be observed before provider dispatch.
+      if (getTaskImpl(task.id)?.status !== 'cancelled') await processTaskImpl(task);
+    } finally {
+      await deliverEventsImpl();
+      activeTaskId = null;
+      heartbeat(stopping ? 'draining' : 'idle');
+    }
   }
   function tick() {
     if (stopping) return Promise.resolve();
@@ -30,21 +49,26 @@ export function startWorker({
     activeTick = executeTick().finally(() => { activeTick = null; });
     return activeTick;
   }
-  if (once) return tick();
+  if (once) return tick().finally(() => heartbeat('stopped'));
   const timer = setInterval(() => { void tick(); }, intervalMs);
+  const heartbeatTimer = setInterval(() => { heartbeat(stopping ? 'draining' : activeTaskId ? 'working' : 'idle'); }, heartbeatIntervalMs);
+  heartbeatTimer.unref();
   console.log(JSON.stringify({ service: 'worker', intervalMs }));
   return {
     tick,
     async stop({ deadlineMs = 30_000 } = {}) {
       stopping = true;
       clearInterval(timer);
-      if (!activeTick) return { drained: true };
+      clearInterval(heartbeatTimer);
+      heartbeat('draining');
+      if (!activeTick) { heartbeat('stopped'); return { drained: true }; }
       let timeout;
       const result = await Promise.race([
         activeTick.then(() => ({ drained: true })),
         new Promise((resolve) => { timeout = setTimeout(() => resolve({ drained: false }), deadlineMs); }),
       ]);
       clearTimeout(timeout);
+      heartbeat(result.drained ? 'stopped' : 'unhealthy');
       return result;
     },
   };
