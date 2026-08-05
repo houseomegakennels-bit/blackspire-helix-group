@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+
+const repository = path.resolve(import.meta.dirname, '..');
+const run = (script, args) => spawnSync(process.execPath, [path.join(repository, 'scripts', script), ...args], { cwd: repository, encoding: 'utf8', env: process.env });
+const git = (cwd, args) => spawnSync('/usr/bin/git', ['-C', cwd, ...args], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } });
+function fixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-deploy-safety-'));
+  const source = path.join(root, 'source'); fs.mkdirSync(source); fs.mkdirSync(path.join(source, 'scripts'));
+  for (const name of ['release-preflight.sh', 'release-tree-validator.sh']) fs.copyFileSync(path.join(repository, 'scripts', name), path.join(source, 'scripts', name));
+  git(source, ['init', '-q']); git(source, ['config', 'user.email', 'fixture@example.invalid']); git(source, ['config', 'user.name', 'Fixture']);
+  git(source, ['add', '.']); git(source, ['commit', '-qm', 'rollback']); const rollback = git(source, ['rev-parse', 'HEAD']).stdout.trim();
+  fs.writeFileSync(path.join(source, 'candidate.txt'), 'candidate\n'); git(source, ['add', '.']); git(source, ['commit', '-qm', 'candidate']); const commit = git(source, ['rev-parse', 'HEAD']).stdout.trim();
+  const releaseRoot = path.join(root, 'release-root');
+  for (const sha of [rollback, commit]) { const directory = path.join(releaseRoot, 'releases', sha); fs.mkdirSync(directory, { recursive: true, mode: 0o755 }); fs.writeFileSync(path.join(directory, '.release-complete'), ''); }
+  spawnSync('chown', ['-R', 'root:blackspire', releaseRoot]); spawnSync('find', [releaseRoot, '-type', 'd', '-exec', 'chmod', '0755', '{}', '+']); spawnSync('find', [releaseRoot, '-type', 'f', '-exec', 'chmod', '0644', '{}', '+']);
+  const database = path.join(root, 'staging.sqlite');
+  const migration = spawnSync(process.execPath, [path.join(repository, 'scripts', 'migrate.js')], { cwd: repository, encoding: 'utf8', env: { ...process.env, BLACKSPIRE_RUN_MIGRATIONS: 'true', BLACKSPIRE_DB_PATH: database } });
+  assert.equal(migration.status, 0, migration.stderr);
+  const backup = path.join(root, 'backup.sqlite'); fs.copyFileSync(database, backup); const digest = crypto.createHash('sha256').update(fs.readFileSync(backup)).digest('hex'); fs.writeFileSync(`${backup}.sha256`, `${digest}  backup.sqlite\n`);
+  return { source, releaseRoot, database, backup, commit, rollback };
+}
+
+test('deployment lock is plan-only, exclusive, ownership-bound, and reports stale locks', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-')); const base = ['--target', 'staging', '--release-root', root, '--owner', 'test-operator'];
+  assert.match(run('deployment-lock.js', ['acquire', ...base]).stderr, /plan-only/);
+  const acquired = run('deployment-lock.js', ['acquire', ...base, '--apply']); assert.equal(acquired.status, 0, acquired.stderr); const record = JSON.parse(acquired.stdout).lock;
+  assert.match(run('deployment-lock.js', ['acquire', ...base, '--apply']).stderr, /already held/);
+  assert.match(run('deployment-lock.js', ['release', ...base, '--ack', 'wrong', '--apply']).stderr, /matching owner and nonce/);
+  assert.equal(run('deployment-lock.js', ['release', ...base, '--ack', record.nonce, '--apply']).status, 0);
+  assert.match(run('deployment-lock.js', ['acquire', '--target', 'production', '--release-root', root, '--owner', 'test-operator', '--apply']).stderr, /separately authorized/);
+  const lockDirectory = path.join(root, 'shared', 'deploy'); fs.mkdirSync(lockDirectory, { recursive: true }); fs.writeFileSync(path.join(lockDirectory, 'staging.lock'), JSON.stringify({ version: 1, target: 'staging', owner: 'old-operator', pid: 2147483647, createdAt: '2000-01-01T00:00:00.000Z', nonce: 'a'.repeat(32) }));
+  assert.equal(JSON.parse(run('deployment-lock.js', ['status', ...base, '--max-age-seconds', '60']).stdout).status, 'stale');
+  assert.match(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--apply']).stderr, /RECOVER-STAGING-LOCK/);
+  assert.equal(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--ack', 'RECOVER-STAGING-LOCK', '--apply']).status, 0);
+});
+
+test('disposable staging preflight verifies fingerprint, backup, rollback and clean source', () => {
+  const f = fixture(); const args = ['--target', 'staging', '--environment', 'staging', '--state-owner', 'vps-staging', '--provider-mode', 'manual', '--source-root', f.source, '--release-root', f.releaseRoot, '--database', f.database, '--backup', f.backup, '--commit', f.commit, '--rollback', f.rollback];
+  const good = run('deployment-preflight.js', args); assert.equal(good.status, 0, good.stderr); const report = JSON.parse(good.stdout); assert.equal(report.ok, true); assert.equal(report.readOnly, true); assert.match(report.fingerprint, /^[a-f0-9]{64}$/);
+  fs.writeFileSync(path.join(f.source, 'dirty.txt'), 'dirty\n'); const dirty = JSON.parse(run('deployment-preflight.js', args).stdout); assert.equal(dirty.checks.find((item) => item.id === 'clean-tree').ok, false); fs.rmSync(path.join(f.source, 'dirty.txt'));
+  fs.appendFileSync(f.backup, 'tamper'); const tampered = JSON.parse(run('deployment-preflight.js', args).stdout); assert.equal(tampered.checks.find((item) => item.id === 'verified-recent-backup').ok, false);
+});
+
+test('preflight refuses production identity and production database namespace', () => {
+  const f = fixture(); const args = ['--target', 'production', '--environment', 'production', '--state-owner', 'vps-production', '--provider-mode', 'openai', '--source-root', f.source, '--release-root', f.releaseRoot, '--database', '/opt/blackspire-command/shared/database/command.sqlite', '--backup', f.backup, '--commit', f.commit, '--rollback', f.rollback];
+  const refused = run('deployment-preflight.js', args); assert.equal(refused.status, 1); const report = JSON.parse(refused.stdout); assert.equal(report.recommendation, 'REFUSE_DEPLOYMENT');
+  for (const id of ['target-staging', 'explicit-environment', 'state-owner', 'providers-disabled', 'database-safe']) assert.equal(report.checks.find((item) => item.id === id).ok, false);
+});
