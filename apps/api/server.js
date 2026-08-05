@@ -23,6 +23,7 @@ import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/a
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
 import { readMemoryCandidateReview, readMemoryCandidateRereview } from '../../packages/hermes-orchestrator/memory-review.js';
+import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task-engine/runtime-status.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
@@ -463,6 +464,12 @@ export function healthSnapshot() {
   let persistentEmergencyStop = false;
   try { persistentEmergencyStop = getFlag('emergency_stop') === 'active'; }
   catch { database = 'unavailable'; persistentEmergencyStop = true; }
+  let worker = { required: false, ok: false, state: 'unknown', heartbeatAgeMs: null, activeTask: false, restartDetected: false };
+  let scheduler = { required: false, ok: true, state: 'disabled' };
+  if (database === 'available') {
+    worker = workerRuntimeStatus();
+    scheduler = schedulerRuntimeStatus();
+  }
   return {
     ok: true,
     service: 'blackspire-command-api',
@@ -470,16 +477,25 @@ export function healthSnapshot() {
     database,
     emergencyStop: persistentEmergencyStop || emergencyStopMemory,
     telegramMode: process.env.TELEGRAM_MODE || (process.env.TELEGRAM_BOT_TOKEN ? 'polling' : 'dry-run'),
+    dependencies: { worker, scheduler },
   };
 }
 
 export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {}) {
   let database = 'compatible';
   try { schemaCheck(); } catch { database = 'unavailable_or_incompatible'; }
+  let worker = { required: false, ok: false, state: 'unknown', heartbeatAgeMs: null, activeTask: false, restartDetected: false };
+  let scheduler = { required: false, ok: true, state: 'disabled' };
+  if (database === 'compatible') {
+    worker = workerRuntimeStatus();
+    scheduler = schedulerRuntimeStatus();
+  }
   const checks = {
     lifecycle: lifecyclePhase === 'ready',
     database: database === 'compatible',
     productionConfig: startupConfigValidation.ok === true,
+    worker: worker.ok,
+    scheduler: scheduler.ok,
   };
   return {
     ok: Object.values(checks).every(Boolean),
@@ -489,6 +505,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
     database,
     providers: activeModes(),
     productionConfig: startupConfigValidation,
+    dependencies: { worker, scheduler },
   };
 }
 
