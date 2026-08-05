@@ -97,3 +97,20 @@ test('scheduled tick rejection is routed to the bounded failure handler', async 
   await worker.stop();
   assert.match(failure.message, /scheduled failure/);
 });
+
+test('worker persists lifecycle heartbeat and refuses a cancellation racing claim', async () => {
+  const records = [];
+  let processed = false;
+  const worker = startWorker({
+    once: true,
+    claimNextImpl: () => ({ id: 'cancelled-after-claim' }),
+    getTaskImpl: () => ({ status: 'cancelled' }),
+    processTaskImpl: async () => { processed = true; },
+    deliverEventsImpl: async () => {},
+    recordHeartbeatImpl: (record) => { records.push(record); return record; },
+  });
+  await worker;
+  assert.equal(processed, false);
+  assert.deepEqual(records.map((record) => record.phase), ['starting', 'idle', 'working', 'idle', 'stopped']);
+  assert.equal(records.some((record) => record.taskId === 'cancelled-after-claim'), true);
+});

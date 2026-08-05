@@ -29,7 +29,23 @@ test('liveness remains explicit while readiness verifies lifecycle, schema, and 
   assert.equal(readyResponse.status, 200);
   const ready = await readyResponse.json();
   assert.equal(ready.ok, true);
-  assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true });
+  assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true, worker: true, scheduler: true });
+});
+
+test('required worker heartbeat makes readiness fail closed when missing or stale', async () => {
+  process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT = 'true';
+  const missing = readinessSnapshot();
+  assert.equal(missing.ok, false);
+  assert.equal(missing.dependencies.worker.state, 'missing');
+  const { recordWorkerHeartbeat } = await import('../packages/task-engine/runtime-status.js');
+  recordWorkerHeartbeat({ workerId: 'worker-local', phase: 'idle', now: new Date(Date.now() - 60_000) });
+  const stale = readinessSnapshot();
+  assert.equal(stale.ok, false);
+  assert.equal(stale.dependencies.worker.state, 'stale');
+  assert.equal(stale.dependencies.worker.restartDetected, true);
+  recordWorkerHeartbeat({ workerId: 'worker-local', phase: 'idle' });
+  assert.equal(readinessSnapshot().ok, true);
+  delete process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT;
 });
 
 test('readiness fails closed over HTTP without disclosing dependency errors', async () => {
