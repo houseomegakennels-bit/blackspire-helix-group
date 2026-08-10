@@ -26,4 +26,3 @@ BLACKSPIRE_HEALTH_URL=http://127.0.0.1:<production-port> npm run health:check
 ```
 
 Service restart and proxy cutover are host-specific and REQUIRES OPERATOR AUTHORIZATION; use `docs/GATE4_ACTIVATION_CHECKLIST.md` and `docs/VPS_RUNTIME_RUNBOOK.md`. Deployment locking, GitHub-check enforcement, and automatic post-switch rollback are NOT YET IMPLEMENTED.
-

@@ -23,4 +23,3 @@ npm run telegram:poll
 This command REQUIRES CREDENTIALS and OPERATOR AUTHORIZATION. The reviewed production profile keeps Telegram dry-run/disconnected. Do not send a real message or activate polling/webhooks during staging validation unless an explicitly authorized sandbox bot is provided.
 
 If delivery fails, preserve the task and outbox state, confirm the kill switch/status through the authenticated command API, and avoid replaying a command with a new idempotency identity.
-
