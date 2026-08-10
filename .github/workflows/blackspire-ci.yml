@@ -75,6 +75,21 @@ jobs:
       - name: Run build check
         run: npm run build 2>&1 | tee ci-logs/04-build.log
 
+      - name: Package immutable release evidence
+        run: |
+          mkdir -p ci-artifacts/release-package
+          git archive HEAD -- .node-version package.json package-lock.json apps packages scripts ops | tar -x -C ci-artifacts/release-package
+          git rev-parse HEAD > ci-artifacts/release-package/COMMIT_SHA
+          BLACKSPIRE_EXPECTED_ENVIRONMENT=disposable-staging \
+          BLACKSPIRE_BUILD_TIMESTAMP="$(git show -s --format=%cI HEAD)" \
+          BLACKSPIRE_ARTIFACT_NAME="blackspire-command-${GITHUB_SHA}" \
+            node scripts/release-evidence.js generate ci-artifacts/release-package \
+            > ci-artifacts/release-evidence-summary.json
+          BLACKSPIRE_EXPECTED_ENVIRONMENT=disposable-staging \
+          BLACKSPIRE_EXPECTED_COMMIT="$GITHUB_SHA" \
+          BLACKSPIRE_DEPLOYMENT_RECORD=self \
+            node scripts/release-evidence.js verify ci-artifacts/release-package
+
       - name: Run lint check
         run: npm run lint 2>&1 | tee ci-logs/05-lint.log
 
@@ -106,15 +121,19 @@ jobs:
           node_version="$(node --version)"
           commit_sha="$(git rev-parse HEAD)"
           tree_sha="$(git rev-parse HEAD^{tree})"
-          printf '{"commit":"%s","tree":"%s","node":"%s","runId":"%s","runAttempt":"%s"}\n' \
-            "$commit_sha" "$tree_sha" "$node_version" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+          artifact_digest="$(node -e "const m=require('./ci-artifacts/release-package/RELEASE_EVIDENCE.json'); process.stdout.write(m.artifact.digest)")"
+          printf '{"commit":"%s","tree":"%s","artifactDigest":"%s","node":"%s","runId":"%s","runAttempt":"%s"}\n' \
+            "$commit_sha" "$tree_sha" "$artifact_digest" "$node_version" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
             > ci-artifacts/build-metadata.json
 
       - name: Upload build metadata
         uses: actions/upload-artifact@v4
         with:
           name: blackspire-build-metadata-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ci-artifacts/build-metadata.json
+          path: |
+            ci-artifacts/build-metadata.json
+            ci-artifacts/release-evidence-summary.json
+            ci-artifacts/release-package
           if-no-files-found: error
           retention-days: 30
 
