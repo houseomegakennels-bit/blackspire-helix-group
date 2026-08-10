@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const workflow = fs.readFileSync('.github/workflows/blackspire-ci.yml', 'utf8');
+const deploymentWorkflow = fs.readFileSync('.github/workflows/deploy-oracle-helix.yml', 'utf8');
 const validator = path.resolve('scripts/ci-validate-whitespace-range.sh');
 
 function git(root, ...args) {
@@ -81,4 +82,12 @@ test('CI publishes commit, tree, runtime, and run identity metadata', () => {
     assert.match(workflow, new RegExp(field.replace(/[{}^$.*+?()[\]\\|]/g, '\\$&')));
   }
   assert.match(workflow, /Upload build metadata[\s\S]*if-no-files-found: error/);
+});
+
+test('official JavaScript actions use reviewed Node 24 releases pinned by immutable commit', () => {
+  const combined = `${workflow}\n${deploymentWorkflow}`;
+  assert.doesNotMatch(combined, /actions\/(?:checkout|setup-node|upload-artifact)@v\d/);
+  assert.match(combined, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\.0\.1/g);
+  assert.match(combined, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7\.0\.0/);
+  assert.match(combined, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/g);
 });
