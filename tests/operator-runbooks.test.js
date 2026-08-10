@@ -18,7 +18,6 @@ test('production operator runbooks exist and label authorization boundaries', ()
     assert.doesNotMatch(content, /TELEGRAM_BOT_TOKEN=\S+|COMMAND_ADMIN_TOKEN=\S+|SESSION_SECRET=\S+/, file);
   }
 });
-
 test('every package command documented by the operator runbooks exists', () => {
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
   const content = runbooks.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
@@ -33,4 +32,3 @@ test('every repository script explicitly documented by the operator runbooks exi
     assert.ok(fs.statSync(match[1]).isFile(), `missing documented tool ${match[1]}`);
   }
 });
-

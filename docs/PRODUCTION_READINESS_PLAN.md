@@ -40,4 +40,3 @@ find . -path './node_modules' -prune -o -path './.git' -prune -o -type f -name '
 ```
 
 Before requesting activation, resolve deployment locking, post-switch health automation, production restore design, alert routing, and real credential ownership. Gate 4 and memory promotion remain INTENTIONALLY DISABLED.
-
