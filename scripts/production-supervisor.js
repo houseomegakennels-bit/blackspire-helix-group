@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process';
 import { verifyVpsRuntime } from '../packages/shared/security.js';
 import { resolveBindTarget, probePortAvailable } from '../packages/shared/bind.js';
+import {
+  createDeploymentIdentityProvider,
+  validateDeploymentIdentityForStartup,
+} from '../packages/shared/deployment-identity.js';
 
 function fatal(reason, errors) {
   process.stderr.write(`fatal: ${reason}:\n${errors.map((e) => `  - ${e}`).join('\n')}\n`);
@@ -23,6 +27,15 @@ if (!availability.free) {
   fatal('production port conflict', [
     `${bind.host}:${bind.port} is already in use (${availability.code || 'unavailable'}); refusing to start without a fallback port.`,
   ]);
+}
+
+// Verify the packaged deployment artifact before starting either long-lived process. The
+// children repeat this check, but doing it here prevents a worker from briefly accepting work
+// while an API process is failing closed on an invalid deployment identity.
+const deploymentIdentity = createDeploymentIdentityProvider().get();
+const identityValidation = validateDeploymentIdentityForStartup(deploymentIdentity);
+if (!identityValidation.ok) {
+  fatal('deployment identity verification failed', identityValidation.errors);
 }
 
 const childEnvironment = { ...process.env, BIND_HOST: bind.host, PORT: String(bind.port) };

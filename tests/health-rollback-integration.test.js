@@ -4,7 +4,7 @@ import { postDeployReportObservation } from '../packages/health-transitions/post
 import { MemoryHealthTransitionStore } from '../packages/health-transitions/store.js';
 import { HealthTransitionEngine } from '../packages/health-transitions/engine.js';
 
-const report = (classification) => ({ schemaVersion:1, kind:'blackspire-post-deploy-verification', readOnly:true, automaticActionTaken:false, classification, environment:'disposable-staging', expected:{ environment:'disposable-staging', commit:'a'.repeat(40), buildFingerprint:'build-1', migrationVersion:'v1' }, reasons:[] });
+const report = (classification) => ({ schemaVersion:1, kind:'blackspire-post-deploy-verification', readOnly:true, automaticActionTaken:false, classification, environment:'disposable-staging', expected:{ environment:'disposable-staging', commit:'a'.repeat(40), buildFingerprint:'build-1', migrationVersion:'v1' }, observed:{deploymentIdentity:{state:classification==='operator intervention required'?'MISMATCH':'VERIFIED'}}, reasons:[] });
 const context = { workspaceId:'workspace-a', correlationId:'deploy-1', timestamp:'2026-08-05T02:00:00.000Z' };
 test('post-deploy classifications become advisory transitions only', () => {
   const expected = new Map([['proceed','none'],['observe','none'],['rollback recommended','rollback_recommended'],['operator intervention required','operator_intervention_required']]);
