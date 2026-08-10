@@ -25,7 +25,12 @@ test('liveness remains explicit while readiness verifies lifecycle, schema, and 
   assert.equal(readyResponse.status, 200);
   const ready = await readyResponse.json();
   assert.equal(ready.ok, true);
-  assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true, worker: true, scheduler: true });
+  assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true, worker: true, scheduler: true, deploymentIdentity: true });
+  assert.equal(ready.deploymentIdentity.state, 'UNKNOWN');
+  const spoofed = await fetch(`http://127.0.0.1:${address.port}/health?environment=production&buildSha=${'b'.repeat(40)}`);
+  assert.equal(spoofed.status, 401);
+  const headerSpoofed = await fetch(`http://127.0.0.1:${address.port}/health`, { headers: { 'x-environment': 'production', 'x-build-sha': 'b'.repeat(40) } });
+  assert.deepEqual((await headerSpoofed.json()).deploymentIdentity, ready.deploymentIdentity);
 });
 
 test('required worker heartbeat makes readiness fail closed when missing or stale', async () => {
