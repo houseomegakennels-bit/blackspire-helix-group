@@ -104,6 +104,29 @@ test('approval, rejection, and cancellation handlers all use the confirmation ga
   assert.match(source, /decideApprovalAction\(task\.id, 'reject', reject, approve\)/);
 });
 
+test('PWA fails visibly closed when deployment identity is absent or malformed', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- deployment identity (server-authoritative, display only) ---------- */');
+  const end = source.indexOf('/* ---------- app state', start);
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nthis.deploymentIdentity = deploymentIdentity;`, context);
+  assert.deepEqual({ ...context.deploymentIdentity({}) }, { environment: null, build: null, verified: false });
+  assert.deepEqual({ ...context.deploymentIdentity({ environment: '<production>', buildSha: 'not-a-sha' }) }, { environment: null, build: null, verified: false });
+});
+
+test('PWA renders bounded server-authoritative environment and build identity', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- deployment identity (server-authoritative, display only) ---------- */');
+  const end = source.indexOf('/* ---------- app state', start);
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nthis.deploymentIdentity = deploymentIdentity;`, context);
+  assert.deepEqual({ ...context.deploymentIdentity({ environment: 'vps-staging', buildSha: 'abcdef0123456789' }) }, { environment: 'vps-staging', build: 'abcdef0123456789', verified: true });
+  assert.match(source, /Stale — awaiting a fresh sync/);
+  assert.match(source, /Environment and build identity are not reported/);
+});
+
 function fakeButton(label) {
   return {
     textContent: label,
