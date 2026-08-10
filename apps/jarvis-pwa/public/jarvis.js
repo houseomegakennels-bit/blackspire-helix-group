@@ -73,6 +73,15 @@ const eventLabel = (type) => EVENT_LABELS[type] || ['System event', 'muted'];
    No speech API, provider, or microphone permission is used today. */
 const voice = { state: 'idle' };
 
+/* ---------- deployment identity (server-authoritative, display only) ---------- */
+const DEPLOYMENT_VALUE = /^[a-zA-Z0-9._:/-]{1,80}$/;
+const BUILD_SHA = /^[0-9a-f]{7,40}$/;
+const deploymentIdentity = (health) => {
+  const environment = DEPLOYMENT_VALUE.test(health?.environment || '') ? health.environment : null;
+  const build = BUILD_SHA.test(health?.buildSha || '') ? health.buildSha : null;
+  return { environment, build, verified: Boolean(environment && build) };
+};
+
 /* ---------- app state (memory only; refresh recovery via URL hash) ---------- */
 const store = {
   authed: false, csrfToken: '',
@@ -156,6 +165,31 @@ function toast(text) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove('show'), 2600);
 }
 function announce(text) { byId('announcer').textContent = text; }
+
+/* ---------- dangerous-action confirmation ---------- */
+let armedDangerousAction = null;
+function clearDangerousActionConfirmation() {
+  if (!armedDangerousAction) return;
+  clearTimeout(armedDangerousAction.timer);
+  armedDangerousAction.button.textContent = armedDangerousAction.defaultLabel;
+  armedDangerousAction.button.removeAttribute('aria-pressed');
+  armedDangerousAction = null;
+}
+function confirmDangerousAction({ key, button, confirmLabel, noticeId, prompt }) {
+  if (armedDangerousAction?.key === key && armedDangerousAction.button === button) {
+    clearDangerousActionConfirmation();
+    return true;
+  }
+  clearDangerousActionConfirmation();
+  const defaultLabel = button.textContent;
+  button.textContent = confirmLabel;
+  button.setAttribute('aria-pressed', 'true');
+  setNotice(noticeId, prompt);
+  const timer = setTimeout(() => clearDangerousActionConfirmation(), 6000);
+  armedDangerousAction = { key, button, defaultLabel, timer };
+  return false;
+}
+/* ---------- end dangerous-action confirmation ---------- */
 
 /* ---------- router (hash keeps refresh recovery credential-free) ---------- */
 const VIEWS = ['command', 'conversation', 'task', 'events', 'approvals', 'system', 'evidence'];
@@ -432,7 +466,7 @@ async function renderApprovals() {
     const approve = el('button', 'primary', 'Approve'); approve.type = 'button';
     const reject = el('button', 'danger', 'Reject'); reject.type = 'button';
     approve.addEventListener('click', () => decideApprovalAction(task.id, 'approve', approve, reject));
-    reject.addEventListener('click', () => decideApprovalAction(task.id, 'reject', approve, reject));
+    reject.addEventListener('click', () => decideApprovalAction(task.id, 'reject', reject, approve));
     row.append(approve, reject);
     card.append(row);
     wrap.append(card);
@@ -443,6 +477,14 @@ function taskExplanation(task) {
   return 'The control plane requires administrator approval before execution.';
 }
 async function decideApprovalAction(taskId, action, ...buttons) {
+  const verb = action === 'approve' ? 'Approve' : 'Reject';
+  if (!confirmDangerousAction({
+    key: `approval:${action}:${taskId}`,
+    button: buttons[0],
+    confirmLabel: `Confirm ${verb.toLowerCase()}`,
+    noticeId: 'approvalNotice',
+    prompt: `Press again to confirm ${verb.toLowerCase()} for task ${taskId}.`,
+  })) return;
   buttons.forEach((b) => { b.disabled = true; });
   const { response, body } = action === 'approve' ? await api.approveTask(taskId) : await api.rejectTask(taskId);
   if (!response.ok) { toast(body.error || 'The control plane declined this decision.'); buttons.forEach((b) => { b.disabled = false; }); return; }
@@ -453,6 +495,8 @@ async function decideApprovalAction(taskId, action, ...buttons) {
 
 function renderSystem() {
   const h = store.health; const r = store.ready;
+  const identity = deploymentIdentity(h);
+  const stale = !store.lastSync || Date.now() - new Date(store.lastSync).getTime() > Math.max(15000, store.pollMs * 3);
   byId('sysApi').textContent = h?.ok ? 'Healthy' : store.offline ? 'Unreachable' : '—';
   byId('sysLink').textContent = store.offline ? 'Offline — reconnecting with backoff' : 'Connected';
   byId('sysStop').textContent = h ? (h.emergencyStop ? 'ACTIVE' : 'Inactive') : '—';
@@ -462,10 +506,17 @@ function renderSystem() {
     ? Object.entries(r.providers).map(([name, mode]) => name + ': ' + mode).join(' · ')
     : '—';
   byId('sysWorkspace').textContent = byId('workspace').value || '—';
-  byId('sysMode').textContent = store.testMode?.enabled ? 'Test fixture (mock-only)' : 'Production contracts';
+  byId('sysMode').textContent = store.testMode?.enabled ? 'Test fixture (mock-only)' : identity.environment || 'Unverified environment';
+  byId('sysBuild').textContent = identity.build || 'Unverified';
+  byId('sysFreshness').textContent = store.offline ? 'Offline — canonical state may be stale' : stale ? 'Stale — awaiting a fresh sync' : 'Fresh canonical sync';
   byId('sysPolling').textContent = document.hidden ? 'paused (page hidden)' : 'every ' + Math.round(store.pollMs / 100) / 10 + 's';
   byId('sysSync').textContent = store.lastSync ? fmtTime(store.lastSync) : '—';
   byId('sysPwa').textContent = store.swWaiting ? 'Update ready — reload to apply' : 'Current';
+  const deploymentBar = byId('deploymentBar');
+  deploymentBar.classList.toggle('verified', identity.verified);
+  deploymentBar.textContent = identity.verified
+    ? `Environment: ${identity.environment} · build: ${identity.build}`
+    : 'Environment and build identity are not reported by the control plane. Treat this client as unverified.';
 }
 
 function renderEvidenceView() {
@@ -708,7 +759,15 @@ async function emergencyStopReset() {
 async function cancelCurrentTask() {
   const task = currentTask();
   if (!cancellable(task)) return;
-  byId('cancelBtn').disabled = true;
+  const cancelButton = byId('cancelBtn');
+  if (!confirmDangerousAction({
+    key: `cancel:${task.id}`,
+    button: cancelButton,
+    confirmLabel: 'Confirm cancellation',
+    noticeId: 'taskNotice',
+    prompt: `Press again to confirm cancellation of task ${task.id}.`,
+  })) return;
+  cancelButton.disabled = true;
   const { response, body } = await api.cancelTask(task.id);
   if (response.ok && body.task) {
     setNotice('taskNotice', body.task.status === 'cancelled' ? 'Canonical cancellation recorded.' : 'Cancellation requested — state: ' + (STATUS[body.task.status]?.label || body.task.status));

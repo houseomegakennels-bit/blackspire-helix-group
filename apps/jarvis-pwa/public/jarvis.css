@@ -162,6 +162,8 @@ ol.msgs li{border:1px solid var(--line);border-radius:var(--r-ctl);background:va
 #toast.show{opacity:1}
 #offlineBar{display:none;border:1px solid #4a3a1e;background:#1A1408;color:var(--amber);border-radius:var(--r-ctl);padding:9px 12px;font-size:13px;font-weight:600}
 #offlineBar.show{display:block}
+#deploymentBar{border:1px solid #5a4520;background:#1A1408;color:var(--amber);border-radius:var(--r-ctl);padding:9px 12px;font-size:13px;font-weight:600}
+#deploymentBar.verified{border-color:#1f594c;background:#071a16;color:var(--green)}
 #updateBar{display:none;border:1px solid #245064;background:#0B1E2A;color:var(--arc);border-radius:var(--r-ctl);padding:9px 12px;font-size:13px;font-weight:600}
 #updateBar.show{display:flex;align-items:center;justify-content:space-between;gap:10px}
 #updateBar button{min-height:34px;padding:5px 12px}

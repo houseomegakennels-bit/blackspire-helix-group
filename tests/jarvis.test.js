@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-jarvis-'));
 process.env.BLACKSPIRE_DB_PATH = path.join(root, 'jarvis.sqlite');
@@ -34,6 +35,106 @@ test('Jarvis markup exposes evidence download, approval history, and status badg
   assert.match(appScript, /Session expired/);
   assert.match(html, /viewport/);
 });
+
+test('dangerous PWA actions require a second press on the same control', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- dangerous-action confirmation ---------- */');
+  const endMarker = '/* ---------- end dangerous-action confirmation ---------- */';
+  const end = source.indexOf(endMarker, start);
+  assert.ok(start >= 0 && end > start, 'confirmation state machine must remain directly testable');
+
+  const notices = [];
+  const timers = [];
+  const context = {
+    setNotice: (id, message) => notices.push({ id, message }),
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end + endMarker.length)}\nthis.confirmDangerousAction = confirmDangerousAction;`, context);
+
+  const button = fakeButton('Approve');
+  assert.equal(context.confirmDangerousAction({ key: 'approval:approve:task-1', button, confirmLabel: 'Confirm approve', noticeId: 'approvalNotice', prompt: 'Confirm task 1' }), false);
+  assert.equal(button.textContent, 'Confirm approve');
+  assert.equal(button.attributes['aria-pressed'], 'true');
+  assert.deepEqual(notices.at(-1), { id: 'approvalNotice', message: 'Confirm task 1' });
+  assert.equal(timers.at(-1).delay, 6000);
+
+  assert.equal(context.confirmDangerousAction({ key: 'approval:approve:task-1', button, confirmLabel: 'Confirm approve', noticeId: 'approvalNotice', prompt: 'Confirm task 1' }), true);
+  assert.equal(button.textContent, 'Approve');
+  assert.equal(button.attributes['aria-pressed'], undefined);
+});
+
+test('approval, rejection, and cancellation confirmations cannot confirm each other and expire closed', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- dangerous-action confirmation ---------- */');
+  const endMarker = '/* ---------- end dangerous-action confirmation ---------- */';
+  const end = source.indexOf(endMarker, start);
+  const timers = [];
+  const context = {
+    setNotice: () => {},
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end + endMarker.length)}\nthis.confirmDangerousAction = confirmDangerousAction;`, context);
+
+  const approve = fakeButton('Approve');
+  const reject = fakeButton('Reject');
+  const cancel = fakeButton('Cancel task');
+  const arm = (key, button, label) => context.confirmDangerousAction({ key, button, confirmLabel: `Confirm ${label}`, noticeId: 'notice', prompt: label });
+
+  assert.equal(arm('approval:approve:task-2', approve, 'approve'), false);
+  assert.equal(arm('approval:reject:task-2', reject, 'reject'), false, 'reject must replace, not confirm, an armed approval');
+  assert.equal(approve.textContent, 'Approve');
+  assert.equal(arm('cancel:task-2', cancel, 'cancellation'), false, 'cancel must replace, not confirm, an armed rejection');
+  assert.equal(reject.textContent, 'Reject');
+
+  timers.at(-1).callback();
+  assert.equal(cancel.textContent, 'Cancel task');
+  assert.equal(arm('cancel:task-2', cancel, 'cancellation'), false, 'an expired confirmation must require a new first press');
+});
+
+test('approval, rejection, and cancellation handlers all use the confirmation gate before mutation', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  assert.match(source, /key: `approval:\$\{action\}:\$\{taskId\}`/);
+  assert.match(source, /key: `cancel:\$\{task\.id\}`/);
+  assert.match(source, /if \(!confirmDangerousAction\([\s\S]*?\)\) return;[\s\S]*?buttons\.forEach\(\(b\) => \{ b\.disabled = true; \}\);/);
+  assert.match(source, /if \(!confirmDangerousAction\([\s\S]*?key: `cancel:[\s\S]*?\)\) return;[\s\S]*?cancelButton\.disabled = true;/);
+  assert.match(source, /decideApprovalAction\(task\.id, 'reject', reject, approve\)/);
+});
+
+test('PWA fails visibly closed when deployment identity is absent or malformed', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- deployment identity (server-authoritative, display only) ---------- */');
+  const end = source.indexOf('/* ---------- app state', start);
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nthis.deploymentIdentity = deploymentIdentity;`, context);
+  assert.deepEqual({ ...context.deploymentIdentity({}) }, { environment: null, build: null, verified: false });
+  assert.deepEqual({ ...context.deploymentIdentity({ environment: '<production>', buildSha: 'not-a-sha' }) }, { environment: null, build: null, verified: false });
+});
+
+test('PWA renders bounded server-authoritative environment and build identity', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- deployment identity (server-authoritative, display only) ---------- */');
+  const end = source.indexOf('/* ---------- app state', start);
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end)}\nthis.deploymentIdentity = deploymentIdentity;`, context);
+  assert.deepEqual({ ...context.deploymentIdentity({ environment: 'vps-staging', buildSha: 'abcdef0123456789' }) }, { environment: 'vps-staging', build: 'abcdef0123456789', verified: true });
+  assert.match(source, /Stale — awaiting a fresh sync/);
+  assert.match(source, /Environment and build identity are not reported/);
+});
+
+function fakeButton(label) {
+  return {
+    textContent: label,
+    attributes: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
+  };
+}
 
 test('unauthenticated api() calls surface a 401 instead of throwing, so the UI can prompt re-login', async () => {
   const response = await fetch('http://localhost:8898/api/tasks');
