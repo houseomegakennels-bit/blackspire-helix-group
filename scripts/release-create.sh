@@ -7,6 +7,7 @@ repo="${BLACKSPIRE_SOURCE_ROOT:-$(git rev-parse --show-toplevel)}"
 releases=""
 target=""
 temp=""
+readonly -a release_archive_paths=(.node-version package.json package-lock.json apps packages scripts ops)
 
 source "$(dirname "$0")/release-tree-validator.sh"
 
@@ -56,8 +57,14 @@ fi
 
 trap cleanup_incomplete EXIT
 mkdir -- "$temp"
-git -C "$repo" archive "$commit" | tar -x -C "$temp" --exclude='.agents' --exclude='.claude' --exclude='.devcontainer' --exclude='.github' --exclude='.githooks' --exclude='.vscode' --exclude='AGENTS.md' --exclude='tests'
+git -C "$repo" archive "$commit" -- "${release_archive_paths[@]}" | tar -x -C "$temp"
 printf '%s\n' "$commit" > "$temp/COMMIT_SHA"
+build_timestamp="$(git -C "$repo" show -s --format=%cI "$commit")" || fail 'commit timestamp cannot be resolved'
+BLACKSPIRE_EXPECTED_ENVIRONMENT="${BLACKSPIRE_EXPECTED_ENVIRONMENT:-unassigned}" \
+BLACKSPIRE_BUILD_TIMESTAMP="$build_timestamp" \
+BLACKSPIRE_ARTIFACT_NAME="blackspire-command-$commit" \
+GITHUB_REF="" GITHUB_RUN_ID="" GITHUB_ACTIONS="false" \
+  bash "$repo/scripts/with-node.sh" "$repo/scripts/release-evidence.js" generate "$temp" >/dev/null
 release_validate_no_special_files "$temp" || exit 1
 chown -R root:blackspire -- "$temp"
 find -P "$temp" -type d -exec chmod 0755 {} +

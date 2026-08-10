@@ -81,4 +81,8 @@ test('CI publishes commit, tree, runtime, and run identity metadata', () => {
     assert.match(workflow, new RegExp(field.replace(/[{}^$.*+?()[\]\\|]/g, '\\$&')));
   }
   assert.match(workflow, /Upload build metadata[\s\S]*if-no-files-found: error/);
+  assert.match(workflow, /Package immutable release evidence[\s\S]*git archive HEAD/);
+  assert.match(workflow, /release-evidence\.js generate ci-artifacts\/release-package/);
+  assert.match(workflow, /release-evidence\.js verify ci-artifacts\/release-package/);
+  assert.match(workflow, /artifactDigest/);
 });
