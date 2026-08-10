@@ -11,7 +11,7 @@ const commit = 'a'.repeat(40);
 const healthy = {
   startedAt: start, observedAt: '2026-08-05T00:02:00.000Z', startupGraceSeconds: 30, verificationWindowSeconds: 300,
   expected: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7' },
-  observed: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
+  observed: { deploymentIdentity: { state:'VERIFIED', environment:{state:'VERIFIED',value:'disposable-staging'}, build:{state:'VERIFIED',value:commit} }, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
 };
 
 test('healthy disposable staging produces a read-only proceed audit', () => {
@@ -31,10 +31,20 @@ test('degraded health observes during grace and recommends rollback after grace'
 
 test('identity, migration, provider, and Telegram mismatches require intervention', () => {
   const unsafe = structuredClone(healthy);
-  Object.assign(unsafe.observed, { environment: 'production', commit: 'b'.repeat(40), buildFingerprint: 'wrong', migrationVersion: 'old', providersDisabled: false, telegramMode: 'polling' });
+  Object.assign(unsafe.observed, { deploymentIdentity:{state:'MISMATCH',environment:{state:'MISMATCH',value:'production'},build:{state:'MISMATCH',value:'b'.repeat(40)}}, buildFingerprint: 'wrong', migrationVersion: 'old', providersDisabled: false, telegramMode: 'polling' });
   const report = verifyPostDeploy(unsafe, Date.parse(unsafe.observedAt));
   assert.equal(report.classification, 'operator intervention required');
   assert.ok(report.reasons.every((item) => item.severity === 'intervention'));
+});
+
+test('unknown server identity cannot be promoted by caller-supplied legacy fields', () => {
+  const spoofed = structuredClone(healthy);
+  spoofed.observed.deploymentIdentity = { state:'UNKNOWN', environment:{state:'UNKNOWN',value:null}, build:{state:'UNKNOWN',value:null} };
+  spoofed.observed.environment = healthy.expected.environment;
+  spoofed.observed.commit = healthy.expected.commit;
+  const report = verifyPostDeploy(spoofed, Date.parse(spoofed.observedAt));
+  assert.equal(report.classification, 'operator intervention required');
+  assert.ok(report.reasons.some((item) => item.code === 'deployment_identity_unverified'));
 });
 
 test('CLI writes a private, exclusive audit record without taking action', () => {

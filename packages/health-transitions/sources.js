@@ -6,6 +6,7 @@ export function collectHealthObservations(context, sources = {}) {
   const add = (component, componentState, reasonCode, reason, extra = {}) => ({ ...base, component, state: componentState, reasonCode, reason, ...extra });
   const worker = sources.worker || workerRuntimeStatus(sources.workerOptions);
   const scheduler = sources.scheduler || schedulerRuntimeStatus();
+  const identityState = sources.deploymentIdentity?.state || (sources.fingerprintMatch === true ? 'VERIFIED' : sources.fingerprintMatch === false ? 'MISMATCH' : 'UNKNOWN');
   return [
     add('api_liveness', state(sources.apiLiveness), sources.apiLiveness ? 'check_passed' : 'check_failed', 'API liveness observation'),
     add('api_readiness', state(sources.apiReadiness, 'unavailable', 'ready'), sources.apiReadiness ? 'check_passed' : 'check_failed', 'API readiness observation'),
@@ -17,6 +18,6 @@ export function collectHealthObservations(context, sources = {}) {
     add('kill_switch', sources.killSwitch ? 'halted' : 'healthy', sources.killSwitch ? 'kill_switch_active' : 'check_passed', 'Kill-switch observation'),
     add('providers', sources.providersDisabled ? 'disabled' : 'dependency_failure', sources.providersDisabled ? 'capability_disabled' : 'check_failed', 'External-provider capability observation'),
     add('telegram', ['disabled','sandbox','dry-run'].includes(sources.telegramMode) ? 'disabled' : 'dependency_failure', ['disabled','sandbox','dry-run'].includes(sources.telegramMode) ? 'sandbox_active' : 'check_failed', 'Telegram transport observation', { metadata: { mode: sources.telegramMode } }),
-    add('build', sources.fingerprintMatch ? 'healthy' : 'dependency_failure', sources.fingerprintMatch ? 'check_passed' : 'check_failed', 'Build fingerprint observation'),
+    add('build', identityState === 'VERIFIED' ? 'healthy' : identityState === 'MISMATCH' ? 'dependency_failure' : 'unknown', identityState === 'VERIFIED' ? 'check_passed' : identityState === 'MISMATCH' ? 'version_mismatch' : 'observation_unknown', 'Server deployment identity observation', { metadata: { versionStatus: identityState } }),
   ];
 }

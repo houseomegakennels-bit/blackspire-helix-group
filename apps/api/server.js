@@ -23,11 +23,13 @@ import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/a
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
 import { readMemoryCandidateReview, readMemoryCandidateRereview } from '../../packages/hermes-orchestrator/memory-review.js';
+import { createDeploymentIdentityProvider, serializeDeploymentIdentity, validateDeploymentIdentityForStartup } from '../../packages/shared/deployment-identity.js';
 import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task-engine/runtime-status.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
 let startupConfigValidation = { ok: false };
+const deploymentIdentityProvider = createDeploymentIdentityProvider();
 const TEST_MODE = requireSafeTestMode();
 
 // Exact-match allowlist of publicly servable frontend assets. Lookup is by literal
@@ -416,9 +418,10 @@ export function start(port, host, { exitOnListenError = true } = {}) {
     process.exit(1);
   }
   const validation = requireProductionSafeConfig();
-  startupConfigValidation = { ok: validation.ok };
-  if (process.env.NODE_ENV === 'production' && !validation.ok) {
-    console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors }));
+  const identityValidation = validateDeploymentIdentityForStartup(deploymentIdentityProvider.get());
+  startupConfigValidation = { ok: validation.ok && identityValidation.ok, deploymentIdentity: identityValidation };
+  if ((process.env.NODE_ENV === 'production' && !validation.ok) || !identityValidation.ok) {
+    console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors, deploymentIdentityReasonCode: identityValidation.reasonCode }));
     process.exit(1);
   }
   // The canonical bind contract decides host and port. Explicit arguments stay supported for
@@ -478,6 +481,7 @@ export function healthSnapshot() {
     emergencyStop: persistentEmergencyStop || emergencyStopMemory,
     telegramMode: process.env.TELEGRAM_MODE || (process.env.TELEGRAM_BOT_TOKEN ? 'polling' : 'dry-run'),
     dependencies: { worker, scheduler },
+    deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
 }
 
@@ -496,6 +500,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
     productionConfig: startupConfigValidation.ok === true,
     worker: worker.ok,
     scheduler: scheduler.ok,
+    deploymentIdentity: validateDeploymentIdentityForStartup(deploymentIdentityProvider.get()).ok,
   };
   return {
     ok: Object.values(checks).every(Boolean),
@@ -506,6 +511,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
     providers: activeModes(),
     productionConfig: startupConfigValidation,
     dependencies: { worker, scheduler },
+    deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
 }
 
