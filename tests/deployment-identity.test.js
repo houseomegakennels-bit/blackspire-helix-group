@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createDeploymentIdentityProvider, serializeDeploymentIdentity, validateDeploymentIdentityForStartup } from '../packages/shared/deployment-identity.js';
+import { writeReleaseEvidence } from '../packages/shared/release-evidence.js';
 
 const sha = 'a'.repeat(40);
 function fixture({ owner = 'vps-staging', manifest = sha, directory = sha, expectedEnvironment = 'staging', expectedBuildSha = sha, imageBuildSha = null } = {}) {
@@ -11,10 +12,12 @@ function fixture({ owner = 'vps-staging', manifest = sha, directory = sha, expec
   const artifact = path.join(root, 'releases', directory); fs.mkdirSync(artifact, { recursive: true });
   if (manifest !== null) fs.writeFileSync(path.join(artifact, 'COMMIT_SHA'), `${manifest}\n`);
   fs.writeFileSync(path.join(artifact, 'package.json'), JSON.stringify({ version: '0.1.0', secret: 'must-not-serialize' }));
-  return { root, provider: createDeploymentIdentityProvider({ stateOwner: owner, artifactRoot: artifact, expectedEnvironment, expectedBuildSha, imageBuildSha }) };
+  let deploymentRecord = null;
+  if (manifest === sha) { const evidence=writeReleaseEvidence(artifact,{commitSha:sha,expectedEnvironment:'staging',buildTimestamp:'2026-08-10T00:00:00.000Z',buildId:'fixture-1',ciProvider:'local-disposable',artifactName:'fixture',packageVersion:'0.1.0',nodeVersion:'v22.23.1',repository:'houseomegakennels-bit/blackspire-helix-group'}); deploymentRecord={commitSha:sha,artifactDigest:evidence.artifact.digest,environment:'staging'}; }
+  return { root, provider: createDeploymentIdentityProvider({ stateOwner: owner, artifactRoot: artifact, expectedEnvironment, expectedBuildSha, imageBuildSha, deploymentRecord }) };
 }
 
-test('immutable manifest and exact state owner produce a verified safe identity', () => { const { root, provider } = fixture(); const first = provider.get(); const second = provider.get(); assert.strictEqual(first, second); assert.equal(first.state, 'VERIFIED'); assert.equal(first.environment.value, 'staging'); assert.equal(first.build.value, sha); assert.deepEqual(serializeDeploymentIdentity(first), { schemaVersion:1,state:'VERIFIED',environment:{state:'VERIFIED',value:'staging',source:'state_owner',reasonCode:null},build:{state:'VERIFIED',value:sha,source:'commit_manifest',reasonCode:null},version:'0.1.0',buildTimestamp:null,verificationSource:['state_owner','commit_manifest'] }); fs.rmSync(root,{recursive:true}); });
+test('immutable manifest and exact state owner produce a verified safe identity', () => { const { root, provider } = fixture(); const first = provider.get(); const second = provider.get(); assert.strictEqual(first, second); assert.equal(first.state, 'VERIFIED'); assert.equal(first.environment.value, 'staging'); assert.equal(first.build.value, sha); const safe=serializeDeploymentIdentity(first); assert.equal(safe.releaseEvidence.state,'VERIFIED'); assert.match(safe.releaseEvidence.artifactDigest,/^[a-f0-9]{64}$/); assert.equal(JSON.stringify(safe).includes('secret'),false); fs.rmSync(root,{recursive:true}); });
 test('missing metadata is UNKNOWN and malformed metadata is UNVERIFIED', () => { const missing=fixture({manifest:null}); assert.equal(missing.provider.get().state,'UNKNOWN'); const malformed=fixture({manifest:'not-a-sha'}); assert.equal(malformed.provider.get().state,'UNVERIFIED'); fs.rmSync(missing.root,{recursive:true});fs.rmSync(malformed.root,{recursive:true}); });
 test('wrong expected SHA, environment, release directory, and image label are mismatches', () => { for(const options of [{expectedBuildSha:'b'.repeat(40)},{expectedEnvironment:'production'},{directory:'b'.repeat(40)},{imageBuildSha:'b'.repeat(40)}]){const item=fixture(options);assert.equal(item.provider.get().state,'MISMATCH');fs.rmSync(item.root,{recursive:true});} });
 test('NODE_ENV alone cannot claim production', () => { const previous=process.env.NODE_ENV;process.env.NODE_ENV='production';const provider=createDeploymentIdentityProvider({stateOwner:'',artifactRoot:'/missing'});assert.equal(provider.get().environment.state,'UNKNOWN');process.env.NODE_ENV=previous; });
