@@ -122,8 +122,9 @@ test('PWA fails visibly closed when deployment identity is absent or malformed',
   const context = {};
   vm.createContext(context);
   vm.runInContext(`${source.slice(start, end)}\nthis.deploymentIdentity = deploymentIdentity;`, context);
-  assert.deepEqual({ ...context.deploymentIdentity({}) }, { environment: null, build: null, verified: false });
-  assert.deepEqual({ ...context.deploymentIdentity({ environment: '<production>', buildSha: 'not-a-sha' }) }, { environment: null, build: null, verified: false });
+  assert.deepEqual({ ...context.deploymentIdentity({}) }, { environment: null, build: null, state: 'UNKNOWN', verified: false });
+  assert.deepEqual({ ...context.deploymentIdentity({ deploymentIdentity: { state: 'VERIFIED', environment: { value: '<production>' }, build: { value: 'not-a-sha' } } }) }, { environment: null, build: null, state: 'VERIFIED', verified: false });
+  assert.equal(context.deploymentIdentity({ deploymentIdentity: { state: 'UNKNOWN', environment: { value: 'production' }, build: { value: 'abcdef0123456789' } } }).verified, false);
 });
 
 test('PWA renders bounded server-authoritative environment and build identity', () => {
@@ -133,9 +134,9 @@ test('PWA renders bounded server-authoritative environment and build identity', 
   const context = {};
   vm.createContext(context);
   vm.runInContext(`${source.slice(start, end)}\nthis.deploymentIdentity = deploymentIdentity;`, context);
-  assert.deepEqual({ ...context.deploymentIdentity({ environment: 'vps-staging', buildSha: 'abcdef0123456789' }) }, { environment: 'vps-staging', build: 'abcdef0123456789', verified: true });
+  assert.deepEqual({ ...context.deploymentIdentity({ deploymentIdentity: { state: 'VERIFIED', environment: { value: 'staging' }, build: { value: 'abcdef0123456789' } } }) }, { environment: 'staging', build: 'abcdef0123456789', state: 'VERIFIED', verified: true });
   assert.match(source, /Stale — awaiting a fresh sync/);
-  assert.match(source, /Environment and build identity are not reported/);
+  assert.match(source, /Deployment identity \$\{identity\.state\}/);
 });
 
 function fakeButton(label) {
