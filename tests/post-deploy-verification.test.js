@@ -8,15 +8,17 @@ import { verifyPostDeploy } from '../packages/shared/post-deploy-verifier.js';
 
 const start = '2026-08-05T00:00:00.000Z';
 const commit = 'a'.repeat(40);
+const artifactDigest = 'd'.repeat(64);
 const healthy = {
   startedAt: start, observedAt: '2026-08-05T00:02:00.000Z', startupGraceSeconds: 30, verificationWindowSeconds: 300,
-  expected: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7' },
-  observed: { deploymentIdentity: { state:'VERIFIED', environment:{state:'VERIFIED',value:'disposable-staging'}, build:{state:'VERIFIED',value:commit} }, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
+  expected: { environment: 'disposable-staging', commit, artifactDigest, buildFingerprint: 'build-123', migrationVersion: 'schema-7' },
+  observed: { deploymentIdentity: { state:'VERIFIED', environment:{state:'VERIFIED',value:'disposable-staging'}, build:{state:'VERIFIED',value:commit}, releaseEvidence:{state:'VERIFIED',artifactDigest,expectedEnvironment:'disposable-staging'} }, rollbackTargetState:'VERIFIED', buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
 };
 
 test('healthy disposable staging produces a read-only proceed audit', () => {
   const report = verifyPostDeploy(healthy, Date.parse(healthy.observedAt));
   assert.equal(report.classification, 'proceed');
+  assert.equal(report.releaseClassification, 'VERIFIED_RELEASE');
   assert.equal(report.automaticActionTaken, false);
   assert.match(report.mobileSummary, /STAGING VERIFIED/);
 });
@@ -45,6 +47,13 @@ test('unknown server identity cannot be promoted by caller-supplied legacy field
   const report = verifyPostDeploy(spoofed, Date.parse(spoofed.observedAt));
   assert.equal(report.classification, 'operator intervention required');
   assert.ok(report.reasons.some((item) => item.code === 'deployment_identity_unverified'));
+});
+
+test('artifact mismatch and missing rollback evidence fail closed without automatic rollback', () => {
+  const mismatch=structuredClone(healthy); mismatch.observed.deploymentIdentity.releaseEvidence.artifactDigest='e'.repeat(64); mismatch.observed.rollbackTargetState='MISSING';
+  const report=verifyPostDeploy(mismatch,Date.parse(mismatch.observedAt));
+  assert.equal(report.classification,'operator intervention required'); assert.equal(report.releaseClassification,'RELEASE_MISMATCH'); assert.equal(report.automaticActionTaken,false);
+  assert.ok(report.reasons.some((item)=>item.code==='artifact_digest_mismatch')); assert.ok(report.reasons.some((item)=>item.code==='rollback_target_unverified'));
 });
 
 test('CLI writes a private, exclusive audit record without taking action', () => {
