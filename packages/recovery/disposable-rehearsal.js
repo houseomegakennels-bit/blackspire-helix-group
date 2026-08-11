@@ -112,6 +112,28 @@ export function runDisposableRestoreCutover({ repository, root, environment = 'd
       // application-level read can detect it.
       if (fault === 'corrupted_row_payload') { const db=new DatabaseSync(target); db.exec("UPDATE tasks SET request='silently corrupted payload' WHERE id='rehearsal-task'"); db.close(); }
       if (fault === 'extra_row_in_target') { const db=new DatabaseSync(target); db.exec("INSERT INTO tasks(id,workspace_id,request,status,idempotency_key,budget_cents,retry_count,created_at,updated_at) VALUES('rehearsal-extra','rehearsal-workspace','unexpected extra row','completed','rehearsal-extra-v1',0,0,'2026-01-01T00:00:04.000Z','2026-01-01T00:00:05.000Z')"); db.close(); }
+      // Real structural corruption of the RESTORED target, introduced AFTER the backup and its
+      // checksum were verified, so the checksum stage cannot pre-empt it. `idx_tasks_status` is
+      // temporarily removed from sqlite_master, an indexed column is updated so the index b-tree
+      // goes stale, and the schema row is then reinstated byte-identically. The result is a genuine
+      // `PRAGMA integrity_check` failure whose schema fingerprint, required-object list, row counts
+      // and application-level read are all UNCHANGED, so `targetReport.integrity==='ok'` is the only
+      // conjunct below that can detect it. `idx_tasks_status` is not a required schema object, so
+      // `findMissingSchemaObjects` is deliberately unaffected.
+      if (fault === 'corrupted_target_index') {
+        const hide=new DatabaseSync(target); const row=hide.prepare("SELECT type,name,tbl_name,rootpage,sql FROM sqlite_master WHERE type='index' AND name='idx_tasks_status'").get();
+        hide.exec('PRAGMA writable_schema=ON'); hide.prepare("DELETE FROM sqlite_master WHERE type='index' AND name='idx_tasks_status'").run(); hide.close();
+        const stale=new DatabaseSync(target); stale.exec("UPDATE tasks SET status='succeeded' WHERE id='rehearsal-task'");
+        stale.exec('PRAGMA writable_schema=ON'); stale.prepare('INSERT INTO sqlite_master(type,name,tbl_name,rootpage,sql) VALUES(?,?,?,?,?)').run(row.type,row.name,row.tbl_name,row.rootpage,row.sql); stale.close();
+      }
+      // `targetReport.missing.length===0` is DEFENCE IN DEPTH and is deliberately NOT exercised by
+      // an independent fault, because no honest fault can reach it in this module: `missing` is
+      // derived entirely from sqlite_master rows (type, name, tbl_name, sql) that are also inside
+      // `schemaFingerprint`, so any missing-object defect present only in the target necessarily
+      // shifts the fingerprint and is classified NO_GO_SCHEMA_MISMATCH first (see the
+      // `missing_required_table` fault), while a defect present in BOTH source and target is
+      // refused earlier by scripts/restore.js:22, which runs findMissingSchemaObjects itself and
+      // exits non-zero. It is retained so this check does not depend on those two guards remaining.
       targetReport=validateDb(target); restoreOk=targetReport.integrity==='ok' && targetReport.foreignKeys.length===0 && targetReport.missing.length===0 && JSON.stringify(targetReport.rowCounts)===JSON.stringify(sourceReport.rowCounts);
     }
     const schemaOk=backupManifest.schemaFingerprint===sourceReport.schemaFingerprint && (!targetReport || targetReport.schemaFingerprint===sourceReport.schemaFingerprint);
@@ -125,7 +147,7 @@ export function runDisposableRestoreCutover({ repository, root, environment = 'd
     // rehearsal to fail closed so the recovery recommendation path can be exercised.
     const interrupted=fault==='interrupted_cutover'; if(interrupted) risks.push('simulated_cutover_interruption');
     const reportCore={environmentOk,authorized,backupOk,schemaOk,sourceTargetDistinct,restoreOk:restoreOk&&!interrupted,maintenanceMode,queueDrained,rollbackOk}; const goNoGo=classification(reportCore);
-    restoreVerificationReport={version:1,verified:restoreOk,integrity:targetReport?.integrity||null,foreignKeyViolations:targetReport?.foreignKeys.length??null,foreignKeyCheckInert:true,missingSchema:targetReport?.missing||[],rowCountsMatch:restoreOk,applicationReadVerified:applicationRead,migrationCompatible:schemaOk,backupAgeMs:ageMs,targetFingerprint};
+    restoreVerificationReport={version:1,verified:restoreOk,integrity:targetReport?.integrity||null,foreignKeyViolations:targetReport?.foreignKeys.length??null,foreignKeyCheckInert:true,missingSchema:targetReport?.missing||[],rowCountsMatch:Boolean(targetReport)&&JSON.stringify(targetReport?.rowCounts)===JSON.stringify(sourceReport.rowCounts),applicationReadVerified:applicationRead,migrationCompatible:schemaOk,backupAgeMs:ageMs,targetFingerprint};
     rollbackReadinessReport={version:1,verified:rollbackOk,rollbackCommit,recoveryRecommendation:interrupted?'restore_verified_target_and_rehearse_again':rollbackOk?'retain_verified_rollback_target':'operator_intervention_required'};
     cutoverRehearsalReport={version:1,rehearsed:true,verified:goNoGo==='GO_FOR_DISPOSABLE_REHEARSAL',productionAuthorized:false,maintenanceMode,queueDrained,targetFingerprint,sourceTargetDistinct,boundedPlan:['verify_operator_authority','enter_maintenance_mode','drain_queue','verify_backup','restore_disposable_target','verify_schema_and_data','verify_rollback_target','request_separate_cutover_authorization'],goNoGo,automaticActionTaken:false};
     const auditBase={version:1,environment,workspaceId:'rehearsal-workspace',rehearsalOnly:true,productionAuthorized:false,goNoGo,commit:expectedCommit,at:now.toISOString(),metadata:{fault:fault?safeReason(fault):'none',note:safeReason(auditMetadata)}};

@@ -1,14 +1,14 @@
 // Real fault/mutation coverage for the disposable restore-cutover rehearsal.
 //
 // Each mutant textually perturbs the SHIPPED module source, writes the perturbed source to a
-// sibling module file (so its relative imports resolve identically), imports it, and runs the
-// scenario the guard is supposed to catch. A mutant is KILLED only when the observed
+// throwaway module OUTSIDE the repository (under the system temporary directory), imports it, and
+// runs the scenario the guard is supposed to catch. A mutant is KILLED only when the observed
 // classification actually CHANGES from the NO_GO baseline to GO. Nothing here is asserted from a
 // literal table; every entry below is an observed behavioural difference.
 //
 // The shipped file is never modified: it is read, and its digest is re-verified after every
 // mutant to prove byte-identity.
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,6 +23,29 @@ const original=fs.readFileSync(modulePath,'utf8');
 const originalDigest=crypto.createHash('sha256').update(original).digest('hex');
 let seq=0;
 const root=()=>path.join(os.tmpdir(),`blackspire-rehearsal-mut-${process.pid}-${seq++}`);
+// Mutant modules are written OUTSIDE the repository. Writing them next to the shipped module left
+// untracked files inside the TRACKED packages/recovery/ directory for the duration of the run, and
+// a dirty working tree makes the clean-tree escape hatch in disposable-restore-cutover.test.js
+// return early, silently skipping that test's `exit 0`, GO and ageMs assertions whenever both files
+// run in one `--test` invocation. It also perturbs any other dirty-tree/release/secret-scan check
+// running concurrently on the same checkout.
+const mutantDir=path.join(os.tmpdir(),`blackspire-rehearsal-mutants-${process.pid}`);
+after(()=>{fs.rmSync(mutantDir,{recursive:true,force:true});});
+// Relocating the module out of the package directory breaks its RELATIVE imports, so each relative
+// specifier is rewritten to an absolute file: URL resolved against the SHIPPED module's directory.
+// The rewrite is applied AFTER the perturbation, so the mutation itself still targets the verbatim
+// shipped text, and it is asserted to have matched at least one specifier so a future import can
+// never be silently left unresolved.
+const RELATIVE_IMPORT=/(\bfrom\s*)(['"])(\.{1,2}\/[^'"]*)\2/g;
+function relocate(source){
+  let rewritten=0;
+  const out=source.replace(RELATIVE_IMPORT,(_match,prefix,quote,specifier)=>{
+    rewritten+=1;
+    return `${prefix}${quote}${pathToFileURL(path.resolve(path.dirname(modulePath),specifier)).href}${quote}`;
+  });
+  assert.ok(rewritten>0,'expected at least one relative import specifier to be rewritten');
+  return out;
+}
 const options=(overrides={})=>({repository,root:root(),environment:'disposable-staging',operatorAck:'REHEARSE-DISPOSABLE-CUTOVER',expectedCommit:'a'.repeat(40),rollbackCommit:'b'.repeat(40),now:new Date('2026-08-05T03:00:00.000Z'),treeClean:true,cleanup:true,...overrides});
 
 // Two honest outcomes count as a kill, and they are reported separately rather than merged:
@@ -47,6 +70,10 @@ const MUTANTS=[
   // claimed for it here. See the `source_equals_target` case in disposable-restore-cutover.test.js
   // for the behavioural assertion that the alias is refused.
   ['schema_fingerprint','const schemaOk=backupManifest.schemaFingerprint===sourceReport.schemaFingerprint && (!targetReport || targetReport.schemaFingerprint===sourceReport.schemaFingerprint);','const schemaOk=true;',{fault:'schema_drift'},'NO_GO_SCHEMA_MISMATCH','go'],
+  // `corrupted_target_index` stales an index b-tree on the RESTORED target after the checksum stage,
+  // leaving fingerprint, required objects, row counts and the application read all intact, so
+  // `PRAGMA integrity_check` is the sole guard that can see it.
+  ['target_integrity',"targetReport.integrity==='ok' && ",'',{fault:'corrupted_target_index'},'NO_GO_RESTORE_INVALID','go'],
   ['row_counts',' && JSON.stringify(targetReport.rowCounts)===JSON.stringify(sourceReport.rowCounts);',';',{fault:'extra_row_in_target'},'NO_GO_RESTORE_INVALID','go'],
   ['application_read','restoreOk &&= applicationRead;','',{fault:'corrupted_row_payload'},'NO_GO_RESTORE_INVALID','go'],
   ['queue_drain',"queueDrained=Number(targetDb.prepare(\"SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','planning','running','validating')\").get().n)===0;",'queueDrained=true;',{fault:'queue_not_drained'},'NO_GO_QUEUE_NOT_DRAINED','go'],
@@ -58,8 +85,9 @@ const MUTANTS=[
 async function withMutant(fragment,replacement,run){
   assert.ok(original.includes(fragment),`mutation target not found verbatim: ${fragment.slice(0,60)}`);
   assert.equal(original.split(fragment).length,2,`mutation target is not unique: ${fragment.slice(0,60)}`);
-  const file=path.join(path.dirname(modulePath),`.mutant-${process.pid}-${seq++}.js`);
-  fs.writeFileSync(file,original.replace(fragment,replacement),{mode:0o600});
+  fs.mkdirSync(mutantDir,{recursive:true,mode:0o700});
+  const file=path.join(mutantDir,`mutant-${process.pid}-${seq++}.mjs`);
+  fs.writeFileSync(file,relocate(original.replace(fragment,replacement)),{mode:0o600});
   try{ return await run(await import(pathToFileURL(file).href)); }
   finally{
     fs.rmSync(file,{force:true});
@@ -106,5 +134,8 @@ test('audit redaction is load-bearing: removing it leaks the secret-shaped value
 
 test('the shipped module is byte-identical after all mutants',()=>{
   assert.equal(crypto.createHash('sha256').update(fs.readFileSync(modulePath,'utf8')).digest('hex'),originalDigest);
-  assert.deepEqual(fs.readdirSync(path.dirname(modulePath)).filter((n)=>n.startsWith('.mutant-')),[]);
+  // No mutant artifact was ever placed in the tracked package directory, and none is left behind in
+  // the temporary mutant directory either.
+  assert.deepEqual(fs.readdirSync(path.dirname(modulePath)).filter((n)=>n.includes('mutant')),[]);
+  assert.deepEqual(fs.existsSync(mutantDir)?fs.readdirSync(mutantDir):[],[]);
 });

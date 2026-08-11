@@ -16,11 +16,34 @@ test('successful backup, restore, cutover, rollback, audit, and cleanup rehearsa
 const cases=[
   ['corrupted_backup','NO_GO_BACKUP_INVALID'],['truncated_backup','NO_GO_BACKUP_INVALID'],['checksum_mismatch','NO_GO_BACKUP_INVALID'],['stale_backup','NO_GO_BACKUP_INVALID'],
   ['source_equals_target','NO_GO_RESTORE_INVALID'],['schema_drift','NO_GO_SCHEMA_MISMATCH'],['migration_failure','NO_GO_SCHEMA_MISMATCH'],
-  ['partial_restore','NO_GO_RESTORE_INVALID'],['missing_required_table','NO_GO_SCHEMA_MISMATCH'],['incorrect_row_count','NO_GO_RESTORE_INVALID'],['extra_row_in_target','NO_GO_RESTORE_INVALID'],['corrupted_row_payload','NO_GO_RESTORE_INVALID'],
+  ['partial_restore','NO_GO_RESTORE_INVALID'],['missing_required_table','NO_GO_SCHEMA_MISMATCH'],['incorrect_row_count','NO_GO_RESTORE_INVALID'],['extra_row_in_target','NO_GO_RESTORE_INVALID'],['corrupted_row_payload','NO_GO_RESTORE_INVALID'],['corrupted_target_index','NO_GO_RESTORE_INVALID'],
   ['unauthorized','OPERATOR_AUTHORIZATION_REQUIRED'],['queue_not_drained','NO_GO_QUEUE_NOT_DRAINED'],['maintenance_off','NO_GO_QUEUE_NOT_DRAINED'],
   ['rollback_missing','NO_GO_ROLLBACK_TARGET_INVALID'],['rollback_mismatch','NO_GO_ROLLBACK_TARGET_INVALID'],['interrupted_cutover','NO_GO_RESTORE_INVALID'],['dirty_tree','NO_GO_RESTORE_INVALID'],
 ];
 for(const [fault,expected] of cases)test(`${fault} fails closed as ${expected}`,()=>{const report=runDisposableRestoreCutover(options({fault}));assert.equal(report.goNoGo,expected);assert.ok(GO_NO_GO.includes(report.goNoGo));assert.equal(report.automaticActionTaken,false);});
+
+// `rowCountsMatch` reports the row-count comparison ONLY. It used to be assigned the whole
+// `restoreOk` conjunction, so a fault detected by integrity or by the application-level read made
+// the report claim a row-count mismatch that never happened.
+test('rowCountsMatch reports its own measurement and not the overall restore verdict',()=>{
+  const payload=runDisposableRestoreCutover(options({fault:'corrupted_row_payload'}));
+  assert.equal(payload.goNoGo,'NO_GO_RESTORE_INVALID');
+  assert.equal(payload.restoreVerificationReport.verified,false);
+  assert.equal(payload.restoreVerificationReport.applicationReadVerified,false);
+  assert.equal(payload.restoreVerificationReport.rowCountsMatch,true,'row counts genuinely match under payload corruption');
+  // A genuine structural corruption of the restored target: integrity fails, row counts still match.
+  const corrupt=runDisposableRestoreCutover(options({fault:'corrupted_target_index'}));
+  assert.equal(corrupt.goNoGo,'NO_GO_RESTORE_INVALID');
+  assert.notEqual(corrupt.restoreVerificationReport.integrity,'ok');
+  assert.deepEqual(corrupt.restoreVerificationReport.missingSchema,[],'integrity fault must not disturb required schema objects');
+  assert.equal(corrupt.restoreVerificationReport.rowCountsMatch,true);
+  // A genuine row-count divergence still reports false.
+  const extra=runDisposableRestoreCutover(options({fault:'extra_row_in_target'}));
+  assert.equal(extra.restoreVerificationReport.rowCountsMatch,false);
+  // No target at all: nothing was measured, so the field stays false.
+  const noTarget=runDisposableRestoreCutover(options({fault:'checksum_mismatch'}));
+  assert.equal(noTarget.restoreVerificationReport.rowCountsMatch,false);
+});
 
 test('backup age is derived from the real artifact mtime, and a genuinely old artifact is refused',()=>{
   const fresh=runDisposableRestoreCutover(options());
