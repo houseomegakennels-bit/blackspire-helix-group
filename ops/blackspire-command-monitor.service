@@ -5,6 +5,7 @@ OnFailure=blackspire-command-monitor-alert@%n.service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=20s
 User=blackspire
 Group=blackspire
 WorkingDirectory=/opt/blackspire-command/current

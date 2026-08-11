@@ -15,6 +15,10 @@ do not schedule a second concurrent runner. Continued failures at or above the t
 local alert each minute, so the off-host destination must deduplicate or group an incident. A
 successful health check atomically resets the counter to zero. Missing, symlinked, malformed, or
 unreadable state fails closed with a sanitized structured error and is never silently reset.
+Native utility diagnostics are suppressed at the runner boundary and collapsed into fixed
+structured error codes, so private host paths cannot escape through stderr. The filesystem probe
+is killed after five seconds, and the `Type=oneshot` service has a 20-second `TimeoutStartSec` bound;
+a hung invocation therefore cannot occupy the next minute's timer slot indefinitely.
 
 The healthcheck scrapes both `/health` (process liveness and safe Telegram mode) and `/ready`
 (lifecycle, schema compatibility, and startup configuration) on the same loopback host and explicit port the runtime binds

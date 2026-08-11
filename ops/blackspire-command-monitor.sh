@@ -19,7 +19,7 @@ counter_file="$state_dir/consecutive-health-failures"
 counter=0
 if [[ -e "$counter_file" ]]; then
   [[ -f "$counter_file" && ! -L "$counter_file" ]] || fail state_counter_invalid
-  IFS= read -r counter < "$counter_file" || fail state_counter_invalid
+  IFS= read -r counter 2>/dev/null < "$counter_file" || fail state_counter_invalid
   [[ "$counter" =~ ^[0-9]+$ && "$counter" -le 1000000 ]] || fail state_counter_invalid
 fi
 
@@ -31,15 +31,15 @@ else
   counter=$((counter + 1))
 fi
 
-tmp="$(mktemp "$state_dir/.consecutive-health-failures.XXXXXX")" || fail state_write_failed
-trap 'rm -f -- "$tmp"' EXIT
-printf '%s\n' "$counter" > "$tmp"
-chmod 0640 "$tmp"
-mv -f -- "$tmp" "$counter_file"
+tmp="$(mktemp "$state_dir/.consecutive-health-failures.XXXXXX" 2>/dev/null)" || fail state_write_failed
+trap 'rm -f -- "$tmp" 2>/dev/null || :' EXIT
+printf '%s\n' "$counter" 2>/dev/null > "$tmp" || fail state_write_failed
+chmod 0640 "$tmp" 2>/dev/null || fail state_write_failed
+mv -f -- "$tmp" "$counter_file" 2>/dev/null || fail state_write_failed
 trap - EXIT
 
 database_dir="$(dirname "$database_path")"
-disk_used="$(df -P -- "$database_dir" | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')" || fail disk_metric_unavailable
+disk_used="$(timeout --signal=KILL 5s df -P -- "$database_dir" 2>/dev/null | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }' 2>/dev/null)" || fail disk_metric_unavailable
 [[ "$disk_used" =~ ^[0-9]+$ && "$disk_used" -le 100 ]] || fail disk_metric_invalid
 disk_free=$((100 - disk_used))
 
