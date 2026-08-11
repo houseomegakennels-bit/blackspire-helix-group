@@ -36,11 +36,28 @@ The command permits only the exact lowercase value `true`. Every other value, in
 
 Use `release-create.sh` to archive an exact full SHA into `releases/<sha>` and `release-switch.sh` to atomically update `current`. Keep `current` and the prior completed release until health checks pass. `release-rollback.sh <known-good-sha>` changes only the symlink; it does not rewrite Git history. Persistent database, evidence, and backup paths live under `shared/`, never inside a release.
 
-The privileged release creator accepts only a clean, non-root absolute release root (no `.`/`..` traversal or repeated separators), rejects symlinked ancestors before account/ownership work, then brings both that root and its `releases/` parent to the exact `root:blackspire` / `0755` contract. Every completed `releases/<full-sha>` tree is also `root:blackspire`: directories and archived executable files are mode `0755`; ordinary files, including `COMMIT_SHA` and `.release-complete`, are mode `0644`. Safe review/development metadata (`.agents`, `.claude`, `.devcontainer`, `.github`, `.githooks`, `.vscode`, `AGENTS.md`, and `tests`) is not archived into a release. One shared validator serves create, explicit preflight, switch, and rollback: every symlink must resolve to an existing canonical target inside that release; dangling links, loops, escapes, and symlinked ancestors fail closed. The completion marker is created with no-clobber semantics only after copy, containment/type, ownership, and mode validation succeed; its pre-existence or symlink status fails creation.
+The privileged release creator accepts only a clean, non-root absolute release root (no `.`/`..` traversal or repeated separators), rejects symlinked ancestors before account/ownership work, then brings both that root and its `releases/` parent to the exact `root:blackspire` / `0755` contract. Every completed `releases/<full-sha>` tree is also `root:blackspire`: directories and archived executable files are mode `0755`; ordinary files, including `COMMIT_SHA`, `RELEASE_MANIFEST.sha256`, and `.release-complete`, are mode `0644`.
+
+The archive is an explicit Command deployment allowlist: `.node-version`, the root package manifest
+and lockfile, `apps/`, `packages/`, `scripts/`, and `ops/`. It intentionally excludes unrelated
+website/demo trees (`frontend/`, `oracle-helix-frontend/`), documentation, tests, GitHub/editor/agent
+metadata, and every other repository path. The validator carries an explicit required-file contract
+covering runtime entrypoints, schema/migration/backup/restore, release/rollback, preflight, Gate 4,
+health/monitoring/log rotation, reverse proxy, and ownership tooling. A missing or zero-byte required
+file fails before activation, and a test pins every production-preflight activation tool as a subset
+of this artifact contract.
+
+`COMMIT_SHA` must be exactly the full SHA named by the release directory. The NUL-delimited
+`RELEASE_MANIFEST.sha256` covers the exact normalized regular-file set and every byte; additions,
+omissions, duplicate/unsafe/incomplete manifest entries, and digest changes fail closed. Releases
+contain no symlinks, even in-tree links, so every deployed byte is directly manifest-covered. The
+completion marker is an empty, no-clobber file created only after identity, required files, manifest,
+types, ownership, and modes pass. The same validator serves create, explicit preflight, switch, and
+rollback.
 
 This lets the `blackspire` systemd runtime traverse the full release, read application/static files, and execute required entrypoints without granting it any release-content write permission. It cannot create, modify, rename, delete, chmod, chown, or insert links in a completed release. Runtime-readable is not runtime-writable: databases, evidence, backups, and any optional writable logs remain under separately owned `shared/` directories, never in `releases/<sha>`.
 
-Creation fails closed for symlinked root ancestors or destinations, path traversal, incomplete destinations, ownership/mode/marker failures, and block/character/FIFO/socket entries. Failure cleanup removes only its named temporary incomplete artifact; it never mutates an active/completed release or shared state. Rollback keeps using the prior completed immutable release and changes only `current`. These source-only checks do not rebuild staging or authorize Gate 3.
+Creation fails closed for symlinked root ancestors or destinations, path traversal, incomplete destinations, identity/required-file/manifest/ownership/mode/marker failures, and block/character/FIFO/socket entries. Failure cleanup removes only its named temporary incomplete artifact; it never mutates an active/completed release or shared state. Releases built before the manifest contract are historical evidence but are no longer valid switch or rollback targets; build and validate at least two exact reviewed SHAs under the new contract before recording a rollback target. Rollback keeps using the prior completed immutable release and changes only `current`. These source-only checks do not rebuild staging or authorize Gate 3 or Gate 4.
 
 ## SQLite backup and restore
 
