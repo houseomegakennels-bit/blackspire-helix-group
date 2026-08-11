@@ -519,7 +519,14 @@ if (IS_ENTRY_POINT) {
     })();
     return shutdownPromise;
   };
-  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { void shutdown(signal); });
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
+    if (shutdownPromise) {
+      server?.closeAllConnections?.();
+      process.exitCode = 1;
+      return;
+    }
+    void shutdown(signal);
+  });
   try {
     server = start();
     server.once('error', () => { process.exitCode = 1; void shutdown(); });

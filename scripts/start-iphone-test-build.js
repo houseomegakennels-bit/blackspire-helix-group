@@ -2,8 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { createIphoneTestCleanup, waitForServerListening } from './lib/iphone-test-cleanup.js';
+import { spawn } from 'node:child_process';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'));
 const port = Number(process.env.PORT || 8787);
@@ -31,14 +30,38 @@ let server;
 let worker;
 let closeDb = () => {};
 const removeData = () => fs.rmSync(dataDir, { recursive: true, force: true });
-let cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
+let cleanup = async () => { closeDb(); removeData(); };
+let waitForServerListening;
 let timer;
 let shutdownPromise;
+let startupChild;
+function runMigrationSubprocess() {
+  return new Promise((resolve, reject) => {
+    startupChild = spawn(process.execPath, ['scripts/migrate.js'], {
+      cwd: process.cwd(), env: { ...process.env, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, stdio: 'ignore',
+    });
+    startupChild.once('error', () => reject(new Error('disposable database migration could not start')));
+    startupChild.once('exit', (code, signal) => {
+      startupChild = null;
+      if (code === 0) resolve();
+      else reject(new Error(`disposable database migration failed (${signal || 'nonzero'})`));
+    });
+  });
+}
 async function shutdownAndExit(reason) {
   if (shutdownPromise) return shutdownPromise;
   shutdownPromise = (async () => {
     if (timer) clearTimeout(timer);
-    try { await cleanup(reason); process.exitCode = 0; }
+    try {
+      if (startupChild?.exitCode === null) {
+        const child = startupChild;
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
+      await cleanup(reason);
+      process.exitCode = 0;
+    }
     catch (error) {
       console.error(JSON.stringify({ service: 'iphone-test-build', status: 'shutdown_failed', reason, error: String(error.message || error) }));
       process.exitCode = 1;
@@ -48,10 +71,11 @@ async function shutdownAndExit(reason) {
 }
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void shutdownAndExit(signal); });
 try {
-  const migration = spawnSync(process.execPath, ['scripts/migrate.js'], {
-    cwd: process.cwd(), env: { ...process.env, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, encoding: 'utf8',
-  });
-  if (migration.status !== 0) throw new Error('disposable database migration failed');
+  const cleanupModule = await import('./lib/iphone-test-cleanup.js');
+  if (shutdownPromise) { await shutdownPromise; throw new Error('startup interrupted'); }
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  waitForServerListening = cleanupModule.waitForServerListening;
+  await runMigrationSubprocess();
   const [{ start }, workerModule, dbModule] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
   closeDb = dbModule.closeDb;
   cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
@@ -63,13 +87,19 @@ try {
   worker = workerModule.startWorker();
   cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
 } catch (error) {
-  try { await cleanup('startup-failure'); }
-  catch (cleanupError) {
-    console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_cleanup_failed', error: String(cleanupError.message || cleanupError) }));
+  if (shutdownPromise) {
+    await shutdownPromise;
+  } else {
+    try { await cleanup('startup-failure'); }
+    catch (cleanupError) {
+      console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_cleanup_failed', error: String(cleanupError.message || cleanupError) }));
+    }
+    console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_failed', error: String(error.message || error) }));
+    process.exitCode = 1;
   }
-  console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_failed', error: String(error.message || error) }));
-  process.exit(1);
 }
-timer = setTimeout(() => { void shutdownAndExit('expired'); }, expiresAt.getTime() - Date.now());
-timer.unref();
-console.log(JSON.stringify({ service: 'iphone-test-build', status: 'ready', bind: `127.0.0.1:${port}`, expiresAt: expiresAt.toISOString(), provider: 'mock', telegram: 'mock', productionData: false }));
+if (!shutdownPromise) {
+  timer = setTimeout(() => { void shutdownAndExit('expired'); }, expiresAt.getTime() - Date.now());
+  timer.unref();
+  console.log(JSON.stringify({ service: 'iphone-test-build', status: 'ready', bind: `127.0.0.1:${port}`, expiresAt: expiresAt.toISOString(), provider: 'mock', telegram: 'mock', productionData: false }));
+}

@@ -84,7 +84,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     })();
     return shutdownPromise;
   };
-  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { void shutdown(signal); });
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
+    if (shutdownPromise) {
+      console.error(JSON.stringify({ service: 'worker', fatal: true, error: 'second shutdown signal forced immediate termination' }));
+      process.exit(1);
+    }
+    void shutdown(signal);
+  });
   try {
     worker = startWorker({ scheduledFailureImpl: (error) => { void shutdown(null, error); } });
   } catch (error) {
