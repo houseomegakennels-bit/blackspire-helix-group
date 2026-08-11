@@ -9,6 +9,13 @@ defaults:
   run:
     shell: bash
 
+permissions:
+  contents: read
+
+concurrency:
+  group: blackspire-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # Test-only, non-secret configuration. None of these values are real credentials.
 # Deliberately NOT set here: COMMAND_ADMIN_TOKEN and HERMES_TEST_PROVIDER. The test suite is self-contained —
 # each test file sets whatever admin token / provider mode it needs at import time (a documented convention
@@ -33,6 +40,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # node-version-file must read .node-version — the single canonical runtime pin (22.23.1), the same one
       # the devcontainer image (1-22-bookworm) and scripts/bootstrap-development.sh use. package.json's
@@ -77,6 +86,37 @@ jobs:
 
       - name: Run npm audit (high severity and above)
         run: npm audit --audit-level=high 2>&1 | tee ci-logs/08-npm-audit.log
+
+      - name: Validate tracked shell syntax
+        run: git ls-files -z '*.sh' | xargs -0 -r -n1 bash -n 2>&1 | tee ci-logs/09-shell-syntax.log
+
+      - name: Validate whitespace
+        env:
+          BLACKSPIRE_CI_EVENT_NAME: ${{ github.event_name }}
+          BLACKSPIRE_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BLACKSPIRE_CI_BEFORE_SHA: ${{ github.event.before }}
+        run: bash scripts/ci-validate-whitespace-range.sh 2>&1 | tee ci-logs/10-diff-check.log
+
+      - name: Run read-only production preflight
+        run: npm run production:preflight 2>&1 | tee ci-logs/11-production-preflight.log
+
+      - name: Record immutable build metadata
+        run: |
+          mkdir -p ci-artifacts
+          node_version="$(node --version)"
+          commit_sha="$(git rev-parse HEAD)"
+          tree_sha="$(git rev-parse HEAD^{tree})"
+          printf '{"commit":"%s","tree":"%s","node":"%s","runId":"%s","runAttempt":"%s"}\n' \
+            "$commit_sha" "$tree_sha" "$node_version" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            > ci-artifacts/build-metadata.json
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackspire-build-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts/build-metadata.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload logs on failure
         if: failure()
