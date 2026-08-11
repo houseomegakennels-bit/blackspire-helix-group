@@ -35,6 +35,7 @@ let waitForServerListening;
 let timer;
 let shutdownPromise;
 let startupChild;
+let startupSucceeded = false;
 function runMigrationSubprocess() {
   return new Promise((resolve, reject) => {
     startupChild = spawn(process.execPath, ['scripts/migrate.js'], {
@@ -78,15 +79,17 @@ try {
   await runMigrationSubprocess();
   const [{ start }, workerModule, dbModule] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
   closeDb = dbModule.closeDb;
-  cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
   // The launcher owns startup failure handling so it can remove its disposable state. Do not start
   // the worker or report readiness until the API has actually acquired its loopback listener.
   server = start(port, '127.0.0.1', { exitOnListenError: false });
-  cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
   await waitForServerListening(server);
   worker = workerModule.startWorker();
-  cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  startupSucceeded = true;
 } catch (error) {
+  startupSucceeded = false;
   if (shutdownPromise) {
     await shutdownPromise;
   } else {
@@ -98,7 +101,7 @@ try {
     process.exitCode = 1;
   }
 }
-if (!shutdownPromise) {
+if (startupSucceeded && !shutdownPromise) {
   timer = setTimeout(() => { void shutdownAndExit('expired'); }, expiresAt.getTime() - Date.now());
   timer.unref();
   console.log(JSON.stringify({ service: 'iphone-test-build', status: 'ready', bind: `127.0.0.1:${port}`, expiresAt: expiresAt.toISOString(), provider: 'mock', telegram: 'mock', productionData: false }));

@@ -119,3 +119,24 @@ test('signal during disposable startup removes partial state and never reports r
   await new Promise((resolve, reject) => rebound.once('error', reject).listen(port, '127.0.0.1', resolve));
   await new Promise((resolve) => rebound.close(resolve));
 });
+
+test('occupied disposable port reports the bind failure, never a launcher reference error or readiness', async () => {
+  const prefix = 'blackspire-iphone-build-';
+  const before = new Set(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(prefix)));
+  const listener = net.createServer();
+  await new Promise((resolve, reject) => listener.once('error', reject).listen(0, '127.0.0.1', resolve));
+  const { port } = listener.address();
+  const child = spawn(process.execPath, ['scripts/start-iphone-test-build.js'], {
+    env: { ...process.env, PORT: String(port), UNIFIED_TEST_ACCESS_CODE: 'disposable-test-code' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const result = await childResult(child);
+  await new Promise((resolve) => listener.close(resolve));
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, new RegExp(`port ${port} is already in use; refusing to start without a fallback`));
+  assert.match(result.stderr, /"status":"startup_failed"/);
+  assert.doesNotMatch(result.stderr, /ReferenceError|createIphoneTestCleanup is not defined/);
+  assert.doesNotMatch(result.stdout, /"status":"ready"/);
+  const remaining = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(prefix) && !before.has(name));
+  assert.deepEqual(remaining, [], `startup cleanup left disposable directories: ${remaining.join(', ')}`);
+});
