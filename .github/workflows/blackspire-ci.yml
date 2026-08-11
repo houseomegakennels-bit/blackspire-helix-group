@@ -9,6 +9,13 @@ defaults:
   run:
     shell: bash
 
+permissions:
+  contents: read
+
+concurrency:
+  group: blackspire-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # Test-only, non-secret configuration. None of these values are real credentials.
 # Deliberately NOT set here: COMMAND_ADMIN_TOKEN and HERMES_TEST_PROVIDER. The test suite is self-contained —
 # each test file sets whatever admin token / provider mode it needs at import time (a documented convention
@@ -32,7 +39,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
 
       # node-version-file must read .node-version — the single canonical runtime pin (22.23.1), the same one
       # the devcontainer image (1-22-bookworm) and scripts/bootstrap-development.sh use. package.json's
@@ -43,7 +52,7 @@ jobs:
       # Node 24, the production-mode API aborted at startup, and the test suite hung. Pinning to .node-version
       # keeps CI on the exact runtime the app is built, reviewed, and deployed for.
       - name: Set up Node.js (project-required version)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -78,9 +87,36 @@ jobs:
       - name: Run npm audit (high severity and above)
         run: npm audit --audit-level=high 2>&1 | tee ci-logs/08-npm-audit.log
 
+      - name: Validate tracked shell syntax
+        run: git ls-files -z '*.sh' | xargs -0 -r -n1 bash -n 2>&1 | tee ci-logs/09-shell-syntax.log
+
+      - name: Validate whitespace
+        run: git diff --check HEAD^ HEAD 2>&1 | tee ci-logs/10-diff-check.log
+
+      - name: Run read-only production preflight
+        run: npm run production:preflight 2>&1 | tee ci-logs/11-production-preflight.log
+
+      - name: Record immutable build metadata
+        run: |
+          mkdir -p ci-artifacts
+          node_version="$(node --version)"
+          commit_sha="$(git rev-parse HEAD)"
+          tree_sha="$(git rev-parse HEAD^{tree})"
+          printf '{"commit":"%s","tree":"%s","node":"%s","runId":"%s","runAttempt":"%s"}\n' \
+            "$commit_sha" "$tree_sha" "$node_version" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            > ci-artifacts/build-metadata.json
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blackspire-build-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts/build-metadata.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: blackspire-ci-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
