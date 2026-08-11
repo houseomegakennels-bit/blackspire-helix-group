@@ -23,14 +23,27 @@ function timestampFromName(file) {
   const time = Date.parse(iso);
   return Number.isFinite(time) && new Date(time).toISOString() === iso.replace('Z', '.000Z') ? { iso, time } : null;
 }
-function hashFile(file) {
+function hashFileDescriptor(fd) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
-    const input = fs.createReadStream(file);
+    const input = fs.createReadStream(null, { fd, autoClose: false, start: 0 });
     input.on('error', reject);
     input.on('data', (chunk) => hash.update(chunk));
     input.on('end', () => resolve(hash.digest('hex')));
   });
+}
+const sameFile = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const unchangedFile = (left, right) => sameFile(left, right) && left.size === right.size &&
+  left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+function descriptorStat(fd) { return fs.fstatSync(fd, { bigint: true }); }
+function pathStillNamesDescriptor(file, descriptor) {
+  const current = fs.lstatSync(file, { bigint: true });
+  return !current.isSymbolicLink() && current.isFile() && sameFile(current, descriptor);
+}
+function refuseSQLiteSidecars(backup) {
+  for (const suffix of ['-wal', '-shm', '-journal']) {
+    if (fs.existsSync(`${backup}${suffix}`)) fail('backup snapshot must be a standalone SQLite file without journal sidecars');
+  }
 }
 async function main() {
   const { directory, maxAgeHours } = parseArgs(process.argv);
@@ -45,32 +58,49 @@ async function main() {
   const latest = candidates[0];
   const backup = path.join(root, latest.file);
   const checksum = `${backup}.sha256`;
+  refuseSQLiteSidecars(backup);
   for (const [file, label] of [[backup, 'backup snapshot'], [checksum, 'checksum sidecar']]) {
     if (!fs.existsSync(file)) fail(`${label} is missing`);
     const stat = fs.lstatSync(file);
     if (stat.isSymbolicLink() || !stat.isFile()) fail(`${label} must be a non-symlinked regular file`);
   }
-  const backupStat = fs.statSync(backup);
-  if (backupStat.size === 0) fail('backup snapshot is empty');
-  const sidecar = fs.readFileSync(checksum, 'utf8');
-  const match = /^([a-f0-9]{64})  ([A-Za-z0-9._-]+)\n$/.exec(sidecar);
-  if (!match || match[2] !== latest.file) fail('checksum sidecar is not canonical or names another file');
-  const actual = await hashFile(backup);
-  if (!crypto.timingSafeEqual(Buffer.from(match[1]), Buffer.from(actual))) fail('backup checksum mismatch');
+  const noFollow = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+  let backupFd;
   let database;
   try {
-    database = new DatabaseSync(backup, { readOnly: true });
+    backupFd = fs.openSync(backup, noFollow);
+    const backupStat = descriptorStat(backupFd);
+    if (!backupStat.isFile()) fail('backup snapshot must be a non-symlinked regular file');
+    if (backupStat.size === 0n) fail('backup snapshot is empty');
+    if (!pathStillNamesDescriptor(backup, backupStat)) fail('backup snapshot changed during verification');
+    const sidecar = fs.readFileSync(checksum, 'utf8');
+    const match = /^([a-f0-9]{64})  ([A-Za-z0-9._-]+)\n$/.exec(sidecar);
+    if (!match || match[2] !== latest.file) fail('checksum sidecar is not canonical or names another file');
+    const actual = await hashFileDescriptor(backupFd);
+    if (!crypto.timingSafeEqual(Buffer.from(match[1]), Buffer.from(actual))) fail('backup checksum mismatch');
+    if (!unchangedFile(backupStat, descriptorStat(backupFd)) || !pathStillNamesDescriptor(backup, backupStat))
+      fail('backup snapshot changed during verification');
+    database = new DatabaseSync(`/proc/self/fd/${backupFd}`, { readOnly: true });
     if (database.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok') fail('backup integrity check failed');
     if (findMissingSchemaObjects(database).length) fail('backup is missing required Blackspire schema');
+    database.close(); database = null;
+    if (!unchangedFile(backupStat, descriptorStat(backupFd)) || !pathStillNamesDescriptor(backup, backupStat))
+      fail('backup snapshot changed during verification');
+    refuseSQLiteSidecars(backup);
+    const sizeBytes = Number(backupStat.size);
+    const now = Date.now();
+    if (latest.timestamp.time > now + 300_000) fail('latest backup timestamp is implausibly in the future');
+    const ageHours = Math.max(0, (now - latest.timestamp.time) / 3_600_000);
+    if (maxAgeHours !== null && ageHours > maxAgeHours) fail('latest backup exceeds the required maximum age');
+    console.log(JSON.stringify({ ok: true, backup: { file: latest.file, createdAt: latest.timestamp.iso,
+      ageHours: Number(ageHours.toFixed(3)), sizeBytes, checksum: 'match', integrity: 'ok', schemaCompatible: true } }));
   } catch (error) {
     if (/^backup verification failed:/.test(String(error?.message || ''))) throw error;
-    fail('backup could not be validated as SQLite');
-  } finally { database?.close(); }
-  const now = Date.now();
-  if (latest.timestamp.time > now + 300_000) fail('latest backup timestamp is implausibly in the future');
-  const ageHours = Math.max(0, (now - latest.timestamp.time) / 3_600_000);
-  if (maxAgeHours !== null && ageHours > maxAgeHours) fail('latest backup exceeds the required maximum age');
-  console.log(JSON.stringify({ ok: true, backup: { file: latest.file, createdAt: latest.timestamp.iso,
-    ageHours: Number(ageHours.toFixed(3)), sizeBytes: backupStat.size, checksum: 'match', integrity: 'ok', schemaCompatible: true } }));
+    fail('backup could not be validated');
+  } finally { database?.close(); if (backupFd !== undefined) fs.closeSync(backupFd); }
 }
-try { await main(); } catch (error) { console.error(String(error.message || error)); process.exit(1); }
+try { await main(); } catch (error) {
+  const message = String(error?.message || '');
+  console.error(message.startsWith('backup verification failed:') ? message : 'backup verification failed: filesystem operation failed');
+  process.exit(1);
+}

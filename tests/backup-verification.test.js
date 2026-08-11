@@ -13,6 +13,10 @@ const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable
 prepareDisposableDatabase(database);
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 function run(args = []) { return spawnSync(node, ['scripts/verify-latest-backup.js', backups, ...args], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, BLACKSPIRE_DB_PATH: database } }); }
+function runWithImport(preload, env = {}) {
+  return spawnSync(node, ['--import', preload, 'scripts/verify-latest-backup.js', backups],
+    { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...env, BLACKSPIRE_DB_PATH: database } });
+}
 function createBackup() {
   const result = spawnSync(node, ['scripts/backup.js', backups], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, BLACKSPIRE_DB_PATH: database } });
   assert.equal(result.status, 0, result.stderr); return JSON.parse(result.stdout);
@@ -30,6 +34,40 @@ test('latest backup verifier refuses a mismatched checksum and a symlinked sidec
   assert.match(run().stderr, /checksum mismatch/); fs.rmSync(sidecar);
   fs.writeFileSync(path.join(root, 'sidecar-target'), original); fs.symlinkSync(path.join(root, 'sidecar-target'), sidecar);
   assert.match(run().stderr, /non-symlinked regular file/); fs.rmSync(sidecar); fs.writeFileSync(sidecar, original, { mode: 0o600 });
+});
+test('latest backup verifier refuses WAL and rollback-journal sidecars', () => {
+  const latest = fs.readdirSync(backups).find((file) => file.endsWith('.sqlite'));
+  for (const suffix of ['-wal', '-journal', '-shm']) {
+    const sidecar = path.join(backups, `${latest}${suffix}`);
+    fs.writeFileSync(sidecar, 'uncheckpointed-state');
+    const result = run();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /standalone SQLite file without journal sidecars/);
+    assert.equal(result.stderr.includes(root), false, 'sidecar refusal never exposes the absolute backup path');
+    fs.rmSync(sidecar);
+  }
+});
+test('latest backup verifier refuses pathname replacement after opening the snapshot inode', () => {
+  const latest = fs.readdirSync(backups).find((file) => file.endsWith('.sqlite'));
+  const backup = path.join(backups, latest);
+  const replacement = path.join(root, 'byte-identical-replacement.sqlite');
+  const displaced = `${backup}.opened-original`;
+  fs.copyFileSync(backup, replacement);
+  const preload = path.join(root, 'replace-after-open.mjs');
+  fs.writeFileSync(preload, `import fs from 'node:fs';\nconst original = fs.openSync;\nfs.openSync = function(file, ...args) {\n  const fd = original.call(this, file, ...args);\n  if (String(file) === process.env.REPLACE_TARGET) {\n    fs.renameSync(file, process.env.DISPLACED_TARGET);\n    fs.renameSync(process.env.REPLACEMENT_SOURCE, file);\n  }\n  return fd;\n};\n`);
+  const result = runWithImport(preload, { REPLACE_TARGET: backup, DISPLACED_TARGET: displaced, REPLACEMENT_SOURCE: replacement });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /backup snapshot changed during verification/);
+  assert.equal(result.stderr.includes(root), false, 'replacement refusal never exposes an absolute path');
+  fs.rmSync(backup); fs.renameSync(displaced, backup);
+});
+test('unexpected filesystem failures are sanitized', () => {
+  const preload = path.join(root, 'fail-directory-read.mjs');
+  fs.writeFileSync(preload, `import fs from 'node:fs';\nconst original = fs.readdirSync;\nfs.readdirSync = function(directory, ...args) {\n  if (String(directory) === process.env.FAIL_DIRECTORY) throw new Error('private path: ' + directory);\n  return original.call(this, directory, ...args);\n};\n`);
+  const result = runWithImport(preload, { FAIL_DIRECTORY: path.resolve(backups) });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /^backup verification failed: filesystem operation failed\n$/);
+  assert.equal(result.stderr.includes(root), false);
 });
 test('latest backup verifier refuses future/stale snapshots and malformed age bounds', () => {
   const latest = fs.readdirSync(backups).find((file) => file.endsWith('.sqlite')); const futureName = 'command-29990101T000000Z.sqlite';
