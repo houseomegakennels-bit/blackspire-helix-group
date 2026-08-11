@@ -162,12 +162,14 @@ let armedDangerousAction = null;
 function clearDangerousActionConfirmation() {
   if (!armedDangerousAction) return;
   clearTimeout(armedDangerousAction.timer);
-  armedDangerousAction.button.textContent = armedDangerousAction.defaultLabel;
-  armedDangerousAction.button.removeAttribute('aria-pressed');
+  if (armedDangerousAction.button) {
+    armedDangerousAction.button.textContent = armedDangerousAction.defaultLabel;
+    armedDangerousAction.button.removeAttribute('aria-pressed');
+  }
   armedDangerousAction = null;
 }
 function confirmDangerousAction({ key, button, confirmLabel, noticeId, prompt }) {
-  if (armedDangerousAction?.key === key && armedDangerousAction.button === button) {
+  if (armedDangerousAction?.key === key) {
     clearDangerousActionConfirmation();
     return true;
   }
@@ -179,6 +181,13 @@ function confirmDangerousAction({ key, button, confirmLabel, noticeId, prompt })
   const timer = setTimeout(() => clearDangerousActionConfirmation(), 6000);
   armedDangerousAction = { key, button, defaultLabel, timer };
   return false;
+}
+function restoreDangerousActionConfirmation(key, button, confirmLabel, defaultLabel) {
+  if (armedDangerousAction?.key !== key) return;
+  armedDangerousAction.button = button;
+  armedDangerousAction.defaultLabel = defaultLabel;
+  button.textContent = confirmLabel;
+  button.setAttribute('aria-pressed', 'true');
 }
 /* ---------- end dangerous-action confirmation ---------- */
 
@@ -456,6 +465,8 @@ async function renderApprovals() {
     const row = el('div', 'row');
     const approve = el('button', 'primary', 'Approve'); approve.type = 'button';
     const reject = el('button', 'danger', 'Reject'); reject.type = 'button';
+    restoreDangerousActionConfirmation(`approval:approve:${task.id}`, approve, 'Confirm approve', 'Approve');
+    restoreDangerousActionConfirmation(`approval:reject:${task.id}`, reject, 'Confirm reject', 'Reject');
     approve.addEventListener('click', () => decideApprovalAction(task.id, 'approve', approve, reject));
     reject.addEventListener('click', () => decideApprovalAction(task.id, 'reject', reject, approve));
     row.append(approve, reject);
