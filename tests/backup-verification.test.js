@@ -10,6 +10,7 @@ const database = path.join(root, 'database', 'command.sqlite');
 const backups = path.join(root, 'backups');
 const node = process.execPath;
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+const { requireVerificationPlatform } = await import('../scripts/verify-latest-backup.js');
 prepareDisposableDatabase(database);
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 function run(args = []) { return spawnSync(node, ['scripts/verify-latest-backup.js', backups, ...args], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, BLACKSPIRE_DB_PATH: database } }); }
@@ -45,6 +46,29 @@ test('latest backup verifier refuses WAL and rollback-journal sidecars', () => {
     assert.match(result.stderr, /standalone SQLite file without journal sidecars/);
     assert.equal(result.stderr.includes(root), false, 'sidecar refusal never exposes the absolute backup path');
     fs.rmSync(sidecar);
+  }
+});
+test('unsupported no-follow capability fails before opening any descriptor', () => {
+  let opens = 0;
+  assert.throws(() => requireVerificationPlatform({
+    constants: { O_RDONLY: 0, O_NOFOLLOW: 0 },
+    openSync() { opens += 1; throw new Error('must not open'); },
+  }), /required no-follow and descriptor filesystem support is unavailable/);
+  assert.equal(opens, 0);
+});
+test('latest backup verifier refuses a journal sidecar introduced after the initial check', () => {
+  const latest = fs.readdirSync(backups).find((file) => file.endsWith('.sqlite'));
+  const backup = path.join(backups, latest);
+  const injected = `${backup}-wal`;
+  const preload = path.join(root, 'inject-sidecar-after-open.mjs');
+  fs.writeFileSync(preload, `import fs from 'node:fs';\nconst original = fs.fstatSync;\nlet targetStats = 0;\nfs.fstatSync = function(fd, ...args) {\n  const result = original.call(this, fd, ...args);\n  const link = fs.readlinkSync('/proc/self/fd/' + fd);\n  if (link === process.env.INJECT_TARGET && ++targetStats === 2) fs.writeFileSync(process.env.INJECT_SIDECAR, 'late journal state');\n  return result;\n};\n`);
+  const result = runWithImport(preload, { INJECT_TARGET: backup, INJECT_SIDECAR: injected });
+  try {
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /standalone SQLite file without journal sidecars/);
+    assert.equal(result.stderr.includes(root), false);
+  } finally {
+    for (const suffix of ['-wal', '-shm', '-journal']) fs.rmSync(`${backup}${suffix}`, { force: true });
   }
 });
 test('latest backup verifier refuses pathname replacement after opening the snapshot inode', () => {

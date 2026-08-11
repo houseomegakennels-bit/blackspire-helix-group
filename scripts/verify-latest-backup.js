@@ -45,6 +45,34 @@ function refuseSQLiteSidecars(backup) {
     if (fs.existsSync(`${backup}${suffix}`)) fail('backup snapshot must be a standalone SQLite file without journal sidecars');
   }
 }
+export function requireVerificationPlatform({
+  constants = fs.constants,
+  openSync = fs.openSync,
+  fstatSync = fs.fstatSync,
+  statSync = fs.statSync,
+  closeSync = fs.closeSync,
+  procRoot = '/proc/self/fd',
+  probePath = '/dev/null',
+} = {}) {
+  const noFollow = constants.O_NOFOLLOW;
+  if (!Number.isInteger(noFollow) || noFollow === 0) fail('required no-follow and descriptor filesystem support is unavailable');
+  let probeFd;
+  try {
+    probeFd = openSync(probePath, constants.O_RDONLY | noFollow);
+    const descriptor = fstatSync(probeFd, { bigint: true });
+    const procDescriptor = statSync(`${procRoot}/${probeFd}`, { bigint: true });
+    if (!sameFile(descriptor, procDescriptor)) fail('required no-follow and descriptor filesystem support is unavailable');
+  } catch (error) {
+    if (/^backup verification failed:/.test(String(error?.message || ''))) throw error;
+    fail('required no-follow and descriptor filesystem support is unavailable');
+  } finally {
+    if (probeFd !== undefined) {
+      try { closeSync(probeFd); }
+      catch { fail('required no-follow and descriptor filesystem support is unavailable'); }
+    }
+  }
+  return noFollow;
+}
 async function main() {
   const { directory, maxAgeHours } = parseArgs(process.argv);
   const root = path.resolve(directory);
@@ -64,7 +92,7 @@ async function main() {
     const stat = fs.lstatSync(file);
     if (stat.isSymbolicLink() || !stat.isFile()) fail(`${label} must be a non-symlinked regular file`);
   }
-  const noFollow = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+  const noFollow = fs.constants.O_RDONLY | requireVerificationPlatform();
   let backupFd;
   let database;
   try {
@@ -99,8 +127,10 @@ async function main() {
     fail('backup could not be validated');
   } finally { database?.close(); if (backupFd !== undefined) fs.closeSync(backupFd); }
 }
-try { await main(); } catch (error) {
-  const message = String(error?.message || '');
-  console.error(message.startsWith('backup verification failed:') ? message : 'backup verification failed: filesystem operation failed');
-  process.exit(1);
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try { await main(); } catch (error) {
+    const message = String(error?.message || '');
+    console.error(message.startsWith('backup verification failed:') ? message : 'backup verification failed: filesystem operation failed');
+    process.exit(1);
+  }
 }

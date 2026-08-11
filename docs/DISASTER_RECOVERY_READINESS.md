@@ -12,7 +12,9 @@ encryption, off-host storage, scheduling, and alert installation require operato
 - Read-only latest-backup verification through `npm run db:verify-backup -- <directory>
   --max-age-hours <hours>`. It selects the canonical latest timestamped snapshot, rejects symlinked
   or missing artifacts, streams checksum verification, checks SQLite integrity and current schema,
-  applies an optional age ceiling, and prints only basename and sanitized status metadata.
+  applies an optional age ceiling, and prints only basename and sanitized status metadata. The
+  verifier fails closed unless the runtime proves no-follow opens and same-inode `/proc/self/fd`
+  descriptor access before opening the snapshot.
 
 The verifier does not create, repair, delete, rotate, upload, decrypt, or restore anything. A green
 result proves the selected local snapshot is presently readable and compatible; it does not prove
