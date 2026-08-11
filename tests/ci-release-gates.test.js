@@ -85,4 +85,14 @@ test('CI publishes commit, tree, runtime, and run identity metadata', () => {
   assert.match(workflow, /release-evidence\.js generate ci-artifacts\/release-package/);
   assert.match(workflow, /release-evidence\.js verify ci-artifacts\/release-package/);
   assert.match(workflow, /artifactDigest/);
+  assert.match(workflow, /Cross-check packaged release and CI metadata[\s\S]*verify-ci-release-artifact\.js ci-artifacts/);
+});
+
+test('CI release artifact verifier cross-checks every authoritative identity source', () => {
+  const verifier = fs.readFileSync('scripts/verify-ci-release-artifact.js', 'utf8');
+  for (const field of ['build-metadata.json', 'RELEASE_EVIDENCE.json', 'COMMIT_SHA', 'GITHUB_SHA',
+    'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'artifactDigest', 'nodeVersion', 'buildId']) {
+    assert.match(verifier, new RegExp(field.replace(/[{}^$.*+?()[\]\\|]/g, '\\$&')));
+  }
+  assert.match(verifier, /process\.exit\(1\)/);
 });
