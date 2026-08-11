@@ -15,7 +15,7 @@ const { createUnifiedInput } = await import('../packages/unified-input/unified.j
 const { getTask, setFlag } = await import('../packages/task-engine/tasks.js');
 const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
 const store = await import('../packages/hermes-orchestrator/store.js');
-const { run, get, all, execSql } = await import('../packages/task-engine/db.js');
+const { run, get, all, execSql, getDb } = await import('../packages/task-engine/db.js');
 const authz = await import('../packages/shared/authorization.js');
 const { evaluateTerminalOutcome, readOutcomeEvaluation, appendOutcomeCorrection, appendOutcomeSourceEvent, recordOutcomeEvaluationFailure } = await import('../packages/hermes-orchestrator/outcome.js');
 const authzNow = Date.now();
@@ -354,13 +354,13 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   const stranger = principal('m3a-read-order-stranger', ['evaluation.read']);
   const owner = principal('m3a-read-order-owner', ['evaluation.read']);
 
-  // Pin the call order so a future refactor cannot reintroduce the cross-workspace timing oracle
-  // while preserving the same null response body. Two independent reviewers showed that pinning only
-  // `readableEvaluation` is not enough: inserting `provenanceMatches` (a full digest recompute and
-  // evidence-graph walk) ahead of the authorization line restores essentially the whole oracle while
-  // leaving that one anchor in its correct position. So every integrity entry point this function
-  // could call is pinned, not just the aggregate one, and the body is bounded to the function and
-  // stripped of comments so that neither a later definition nor prose can satisfy the assertion.
+  // A source-text pin over the read body, kept only as a fast, readable first failure for the
+  // ordinary case where someone moves an integrity call above the deny. It is NOT the coverage for
+  // this invariant and must not be described as such: it matches helper names literally, so a string
+  // literal containing `//` (which the comment stripper below then treats as a comment and erases to
+  // end of line) or any indirection -- a one-line alias function, a lookup table of helpers -- passes
+  // it while executing exactly the same pre-authorization work. Four such mutants were reproduced
+  // against this file. The behavioural recorder further down is what actually guards the invariant.
   const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/outcome.js', import.meta.url), 'utf8');
   const bodyStart = source.indexOf('export function readOutcomeEvaluation');
   const readBody = source.slice(bodyStart, source.indexOf('\n}\n', bodyStart))
@@ -377,16 +377,13 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
     'the owning workspace still receives an intact evaluation');
 
-  // The assertions above are source-text pins. This is the behavioural counterpart, which holds even
-  // if the source is rewritten in a shape no textual rule anticipated: hide the subordinate evidence
-  // tables so that reading any of them throws, then require an unauthorized read to still refuse
-  // quietly. `getOutcomeCorrections` and `getOutcomeSourceEvents` are called by `readableEvaluation`
-  // OUTSIDE the `provenanceMatches` try/catch, so pre-authorization work on them surfaces as a thrown
-  // error rather than collapsing into an indistinguishable `null`. This guard is deliberately NOT
-  // claimed to cover work confined to `hermes_outcome_evaluation_components` or the workflow-evidence
-  // tables: `provenanceMatches` swallows its own exceptions, so such work returns `false` and is
-  // indistinguishable from a normal integrity failure. The source-text pins above are what cover that
-  // case, which is why both exist.
+  // Behavioural guard 1: hide the subordinate evidence tables so that reading either one throws, then
+  // require an unauthorized read to still refuse quietly. `getOutcomeCorrections` and
+  // `getOutcomeSourceEvents` are called by `readableEvaluation` OUTSIDE the `provenanceMatches`
+  // try/catch, so pre-authorization work on them surfaces as a thrown error. This mechanism cannot
+  // reach work confined to the components or workflow-evidence tables, because `provenanceMatches`
+  // swallows its own exceptions and returns `false`, which is indistinguishable from a normal
+  // integrity failure. That gap is what guard 2 closes.
   const hidden = ['hermes_outcome_corrections', 'hermes_outcome_source_events'];
   for (const table of hidden) run(`ALTER TABLE ${table} RENAME TO ${table}_hidden`);
   try {
@@ -395,6 +392,49 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   } finally {
     for (const table of hidden) run(`ALTER TABLE ${table}_hidden RENAME TO ${table}`);
   }
+
+  // Behavioural guard 2: record access instead of provoking a throw, so a swallowed exception cannot
+  // hide it. Each sentinel table is swapped for a view over the real table whose WHERE clause calls a
+  // UDF that notes the access. Reads still return exactly the same rows, so the authorized path is
+  // unaffected -- but any pre-authorization touch of the workflow-evidence or component tables is now
+  // observed no matter what source shape produced it. This is the guard that kills the alias and
+  // string-literal mutants the source-text pin above cannot see.
+  const db = getDb();
+  const touched = new Set();
+  db.function('m3a_note_read', (table) => { touched.add(table); return 1; });
+  const sentinels = ['hermes_workflow_runs', 'hermes_outcome_evaluation_components'];
+  // SQLite rewrites the stored DDL of dependent indexes and triggers when a table is renamed and
+  // renamed back, quoting the identifier. Normalize that quoting so the round-trip check asserts the
+  // schema is restored without failing on cosmetic requoting.
+  const schema = () => all('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')
+    .map((row) => `${row.type}:${row.name}:${String(row.sql ?? '').replace(/"/g, '')}`).join('\n');
+  const schemaBefore = schema();
+  for (const table of sentinels) {
+    execSql(`ALTER TABLE ${table} RENAME TO ${table}__real`);
+    execSql(`CREATE VIEW ${table} AS SELECT * FROM ${table}__real WHERE m3a_note_read('${table}')=1`);
+  }
+  try {
+    touched.clear();
+    assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null,
+      'a cross-workspace read is still refused while the sentinels are installed');
+    assert.deepEqual([...touched], [],
+      'an unauthorized read must not touch the workflow-evidence or component tables: any integrity ' +
+      'work before the deny is a cross-workspace oracle, however the source is shaped');
+
+    // Anti-vacuity: the sentinels must actually be able to observe a read, or the assertion above
+    // would pass for the wrong reason.
+    touched.clear();
+    assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
+      'the owning workspace still reads the evaluation through the sentinel views');
+    assert.deepEqual([...touched].sort(), [...sentinels].sort(),
+      'the authorized read must touch every sentinel, proving the recorder observes real access');
+  } finally {
+    for (const table of sentinels) {
+      execSql(`DROP VIEW ${table}`);
+      execSql(`ALTER TABLE ${table}__real RENAME TO ${table}`);
+    }
+  }
+  assert.equal(schema(), schemaBefore, 'the sentinel swap must restore the schema exactly');
   assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
     'the owning workspace still reads the evaluation once the subordinate tables are restored');
 });
