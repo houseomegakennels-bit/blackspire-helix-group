@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createIphoneTestCleanup } from './lib/iphone-test-cleanup.js';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'));
 const port = Number(process.env.PORT || 8787);
@@ -28,19 +29,20 @@ globalThis.fetch = async (input, init) => {
 const [{ start }, { startWorker }, { closeDb }] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
 const server = start(port, '127.0.0.1');
 const worker = startWorker();
-let cleaning = false;
-async function cleanup(reason) {
-  if (cleaning) return;
-  cleaning = true;
-  worker.stop();
-  const closed = new Promise((resolve) => server.close(resolve));
-  server.closeAllConnections?.();
-  await closed;
-  closeDb();
-  fs.rmSync(dataDir, { recursive: true, force: true });
-  console.log(JSON.stringify({ service: 'iphone-test-build', status: 'stopped', reason, cleaned: true }));
+const cleanup = createIphoneTestCleanup({
+  worker,
+  server,
+  closeDb,
+  removeData: () => fs.rmSync(dataDir, { recursive: true, force: true }),
+});
+async function shutdownAndExit(reason) {
+  try { await cleanup(reason); process.exit(0); }
+  catch (error) {
+    console.error(JSON.stringify({ service: 'iphone-test-build', status: 'shutdown_failed', reason, error: String(error.message || error) }));
+    process.exit(1);
+  }
 }
-const timer = setTimeout(async () => { await cleanup('expired'); process.exit(0); }, expiresAt.getTime() - Date.now());
+const timer = setTimeout(() => { void shutdownAndExit('expired'); }, expiresAt.getTime() - Date.now());
 timer.unref();
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => { clearTimeout(timer); await cleanup(signal); process.exit(0); });
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { clearTimeout(timer); void shutdownAndExit(signal); });
 console.log(JSON.stringify({ service: 'iphone-test-build', status: 'ready', bind: `127.0.0.1:${port}`, expiresAt: expiresAt.toISOString(), provider: 'mock', telegram: 'mock', productionData: false }));
