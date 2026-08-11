@@ -398,25 +398,59 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   // Behavioural guard 2: record access instead of provoking a throw, so a swallowed exception cannot
   // hide it. Each sentinel table is swapped for a view over the real table whose WHERE clause calls a
   // UDF that notes the access. Reads still return exactly the same rows, so the authorized path is
-  // unaffected -- but any pre-authorization touch of a sentinel is observed no matter what source
-  // shape produced it. This is the guard that kills the alias and string-literal mutants the
-  // source-text pin above cannot see.
+  // unaffected -- but a pre-authorization touch of a sentinel is observed regardless of how the
+  // reading code is written: through an alias, a lookup table, raw SQL, a join, a subquery, or an
+  // aggregate. That is what the source-text pin above cannot do.
   //
-  // The sentinel set must be EVERY relation the integrity path can read, not a sample of it. An
-  // earlier revision covered only `hermes_workflow_runs` and the components table, and an
-  // independent reviewer then showed that a bare `getWorkflowSteps(evaluation.run_id)` ahead of the
-  // deny -- an already-imported accessor used under its real name, needing no evasion at all --
-  // survived at 21/21 while re-leaking object-scaled evidence-graph work. The list below is derived
-  // from `loadEvidence`, which reads the run, its task, and five per-run evidence relations, plus
-  // the components table read by `provenanceMatches`. If `loadEvidence` grows a new relation, it
-  // MUST be added here; the anti-vacuity assertion below is what makes that omission visible,
-  // because a relation the authorized read touches but the set omits cannot be detected at all.
+  // The sentinel set is EVERY object-scaled relation `readableEvaluation` can reach, and it must stay
+  // that way. Two successive revisions got this wrong and both were caught by independent review, so
+  // the history is kept here deliberately. The first covered only `hermes_workflow_runs` and the
+  // components table, and a bare `getWorkflowSteps(evaluation.run_id)` -- an imported accessor under
+  // its real name, no evasion at all -- survived at 21/21. The second added the `loadEvidence`
+  // relations and `tasks` but still omitted the corrections and source-event tables, on the mistaken
+  // assumption that guard 1 already covered them. Guard 1's mechanism is "the read throws", which a
+  // mutant-local `try { ... } catch {}` simply swallows, so a raw-SQL read of either table survived
+  // at 21/21 while leaking work that grows with the row count.
+  //
+  // Both failures were the same mistake: reasoning about which relations OUGHT to be reachable
+  // instead of enumerating what the code actually reads. The list below is derived by walking
+  // `readableEvaluation` -> `provenanceMatches` / `loadEvidence` / `correctionChainValid` /
+  // `sourceEventsValid` and taking every relation any of them touches. If any of those grows a new
+  // relation it MUST be added here. The anti-vacuity assertion below is the only thing standing
+  // between this list and silent staleness.
+  //
+  // The recorder fires from a view's WHERE clause, so it observes a table only when that table has at
+  // least one row -- an empty table yields no row to evaluate the predicate against. The fixture
+  // below therefore guarantees a correction and a source event exist. This is not merely a test
+  // detail: a pre-authorization read of an EMPTY relation leaks nothing that scales with the object,
+  // so it is outside what this guard is built to catch, and saying so is more honest than implying
+  // the recorder is unconditional.
+  //
+  // Deliberately EXCLUDED, and why -- these are not oversights:
+  //   * `hermes_outcome_evaluations` is read before authorization BY DESIGN: `getOutcomeEvaluation`
+  //     supplies the `workspace_id` that authorization is then performed against. It is a single
+  //     constant-cost primary-key lookup, so it carries the residual absent-vs-exists signal recorded
+  //     as follow-up (viii) and nothing more.
+  //   * `auth_principals`, `auth_workspace_grants`, and `auth_decisions` are read by
+  //     `canReadEvaluation` itself, so reading them early duplicates work the deny path already does.
+  //     Constant cost, not evidence-scaled, no new oracle.
+  // A mutant reading only these survives, by design; recorded here rather than left for a future
+  // reviewer to rediscover as though it were a gap.
+  const corrector = principal('m3a-read-order-owner', ['evaluation.read', 'evaluation.correct']);
+  appendOutcomeCorrection(corrector, result.evaluationId,
+    { reason: 'sentinel fixture correction', sourceEvidence: 'sentinel fixture evidence' });
+  appendOutcomeSourceEvent(corrector, result.evaluationId,
+    { idempotencyKey: 'sentinel-fixture-event', eventType: 'accepted', evidence: 'sentinel fixture evidence' });
+  assert.ok(all('SELECT id FROM hermes_outcome_corrections WHERE evaluation_id=?', [result.evaluationId]).length > 0,
+    'the corrections sentinel needs at least one row or its recorder can never fire');
+  assert.ok(all('SELECT id FROM hermes_outcome_source_events WHERE evaluation_id=?', [result.evaluationId]).length > 0,
+    'the source-events sentinel needs at least one row or its recorder can never fire');
   const db = getDb();
   const touched = new Set();
   db.function('m3a_note_read', (table) => { touched.add(table); return 1; });
   const sentinels = ['hermes_workflow_runs', 'hermes_outcome_evaluation_components', 'hermes_workflow_steps',
     'hermes_routing_decisions', 'hermes_policy_decisions', 'hermes_verification_results',
-    'hermes_provider_invocations', 'tasks'];
+    'hermes_provider_invocations', 'tasks', 'hermes_outcome_corrections', 'hermes_outcome_source_events'];
   // SQLite rewrites the stored DDL of dependent indexes and triggers when a table is renamed and
   // renamed back, quoting the identifier. Normalize that quoting so the round-trip check asserts the
   // schema is restored without failing on cosmetic requoting.
