@@ -13,7 +13,7 @@ import { activeModes } from '../../packages/providers/providers.js';
 import { handleTelegramUpdate, dispatchReply } from '../telegram/bot.js';
 import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
 import { clientIp } from '../../packages/shared/net.js';
-import { cleanupRateLimits } from '../../packages/shared/rateLimits.js';
+import { cleanupRateLimits, configuredRateLimit } from '../../packages/shared/rateLimits.js';
 import { createUnifiedInput, getConversation, requestCancellation } from '../../packages/unified-input/unified.js';
 import { conversationEvents } from '../../packages/task-engine/tasks.js';
 import { requireSafeTestMode, isSameOrigin, testModeAllowsRequest, publicTestModeStatus } from '../../packages/shared/testMode.js';
@@ -223,7 +223,7 @@ function memoryCandidateRereviewRoute(res, auth, rereviewId) {
 }
 
 async function login(req, res) {
-  const limit = checkLimit(req, 'login', Number(process.env.LOGIN_RATE_LIMIT || 5), 60000); if (!limit.allowed) return limited(res, limit);
+  const limit = checkLimit(req, 'login', configuredRateLimit('LOGIN_RATE_LIMIT'), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
   const session = createSession(body.adminToken, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null });
   if (!session) { audit(null, 'auth', 'login.failed', { ip: clientIp(req) }); return json(res, 401, { error: 'invalid credentials' }); }
@@ -274,7 +274,7 @@ async function testDeliveryFailure(req, res) {
 }
 
 async function createTaskRoute(req, res) {
-  const limit = checkLimit(req, 'task-create', Number(process.env.TASK_RATE_LIMIT || 20), 60000); if (!limit.allowed) return limited(res, limit);
+  const limit = checkLimit(req, 'task-create', configuredRateLimit('TASK_RATE_LIMIT'), 60000); if (!limit.allowed) return limited(res, limit);
   if (emergencyStopMemory || getFlag('emergency_stop') === 'active') return json(res, 423, { error: 'emergency stop active' });
   const body = await readJson(req);
   const request = String(body.request || '').trim();
@@ -285,7 +285,7 @@ async function createTaskRoute(req, res) {
 }
 
 async function unifiedInputRoute(req, res, auth) {
-  const limit = checkLimit(req, 'unified-input', Number(process.env.TASK_RATE_LIMIT || 20), 60000); if (!limit.allowed) return limited(res, limit);
+  const limit = checkLimit(req, 'unified-input', configuredRateLimit('TASK_RATE_LIMIT'), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
   const result = createUnifiedInput({
     channel: TEST_MODE.enabled ? 'jarvis' : (body.channel === 'api' ? 'api' : 'jarvis'),

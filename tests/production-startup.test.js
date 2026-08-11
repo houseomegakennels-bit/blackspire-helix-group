@@ -41,6 +41,28 @@ test('production startup refuses to boot with an unsafe configuration', async ()
   assert.match(result.stderr, /COMMAND_ADMIN_TOKEN/);
 });
 
+test('production startup refuses a malformed rate-limit override before serving traffic', async () => {
+  const result = await runApi({
+    NODE_ENV: 'production',
+    BLACKSPIRE_DB_PATH: path.join(root, 'unsafe-rate-limit', 'command.sqlite'),
+    TELEGRAM_TMP_DIR: path.join(root, 'unsafe-rate-limit-attachments'),
+    PORT: '8901',
+    COMMAND_ADMIN_TOKEN: 'a'.repeat(32),
+    SESSION_SECRET: 'b'.repeat(40),
+    SECURE_COOKIES: 'true',
+    PUBLIC_BASE_URL: 'https://command.example.com',
+    TELEGRAM_MODE: 'polling',
+    DEBUG: 'false',
+    RATE_LIMIT_DISABLED: 'false',
+    LOGIN_RATE_LIMIT: '1000000',
+    TRUST_PROXY: 'false',
+    GIT_WORKFLOW_ENABLED: 'false',
+  });
+  assert.equal(result.exited, true);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /LOGIN_RATE_LIMIT/);
+});
+
 test('production startup boots normally with a valid configuration', async () => {
   const dbPath = path.join(root, 'safe', 'command.sqlite');
   const attachmentsDir = path.join(root, 'safe-attachments');
