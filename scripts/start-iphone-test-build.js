@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createIphoneTestCleanup } from './lib/iphone-test-cleanup.js';
+import { createIphoneTestCleanup, waitForServerListening } from './lib/iphone-test-cleanup.js';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'));
 const port = Number(process.env.PORT || 8787);
@@ -26,21 +26,39 @@ globalThis.fetch = async (input, init) => {
   return nativeFetch(input, init);
 };
 
-const [{ start }, { startWorker }, { closeDb }] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
-const server = start(port, '127.0.0.1');
-const worker = startWorker();
-const cleanup = createIphoneTestCleanup({
-  worker,
-  server,
-  closeDb,
-  removeData: () => fs.rmSync(dataDir, { recursive: true, force: true }),
-});
+let server;
+let worker;
+let closeDb = () => {};
+const removeData = () => fs.rmSync(dataDir, { recursive: true, force: true });
+let cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
 async function shutdownAndExit(reason) {
   try { await cleanup(reason); process.exit(0); }
   catch (error) {
     console.error(JSON.stringify({ service: 'iphone-test-build', status: 'shutdown_failed', reason, error: String(error.message || error) }));
     process.exit(1);
   }
+}
+try {
+  const [{ runMigration }, { seedWorkspace }] = await Promise.all([import('./migration-writer.js'), import('../packages/workspace-registry/workspaces.js')]);
+  runMigration();
+  seedWorkspace();
+  const [{ start }, workerModule, dbModule] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
+  closeDb = dbModule.closeDb;
+  cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  // The launcher owns startup failure handling so it can remove its disposable state. Do not start
+  // the worker or report readiness until the API has actually acquired its loopback listener.
+  server = start(port, '127.0.0.1', { exitOnListenError: false });
+  cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  await waitForServerListening(server);
+  worker = workerModule.startWorker();
+  cleanup = createIphoneTestCleanup({ worker, server, closeDb, removeData });
+} catch (error) {
+  try { await cleanup('startup-failure'); }
+  catch (cleanupError) {
+    console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_cleanup_failed', error: String(cleanupError.message || cleanupError) }));
+  }
+  console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_failed', error: String(error.message || error) }));
+  process.exit(1);
 }
 const timer = setTimeout(() => { void shutdownAndExit('expired'); }, expiresAt.getTime() - Date.now());
 timer.unref();
