@@ -7,13 +7,9 @@ import { assertSchemaCompatible, closeDb } from '../../packages/task-engine/db.j
 export function startWorker({
   intervalMs = Number(process.env.WORKER_POLL_MS || 750), once = false,
   claimNextImpl = claimNext, processTaskImpl = processTask, deliverEventsImpl = deliverEvents,
+  scheduledFailureImpl = (error) => console.error(JSON.stringify({ service: 'worker', fatal: true, error: sanitizeWorkerError(error) })),
 } = {}) {
-  try {
-    assertSchemaCompatible();
-  } catch (error) {
-    console.error(JSON.stringify({ service: 'worker', fatal: true, error: String(error.message || error) }));
-    process.exit(1);
-  }
+  assertSchemaCompatible();
   let stopping = false;
   let activeTick = null;
   async function executeTick() {
@@ -31,7 +27,7 @@ export function startWorker({
     return activeTick;
   }
   if (once) return tick();
-  const timer = setInterval(() => { void tick(); }, intervalMs);
+  const timer = setInterval(() => { void tick().catch(scheduledFailureImpl); }, intervalMs);
   console.log(JSON.stringify({ service: 'worker', intervalMs }));
   return {
     tick,
@@ -41,13 +37,17 @@ export function startWorker({
       if (!activeTick) return { drained: true };
       let timeout;
       const result = await Promise.race([
-        activeTick.then(() => ({ drained: true })),
+        activeTick.then(() => ({ drained: true }), (error) => ({ drained: true, error })),
         new Promise((resolve) => { timeout = setTimeout(() => resolve({ drained: false }), deadlineMs); }),
       ]);
       clearTimeout(timeout);
       return result;
     },
   };
+}
+
+export function sanitizeWorkerError(error) {
+  return String(error?.message || error || 'worker failure').replace(/(?:token|secret|password|key)\s*[=:]\s*\S+/gi, '[redacted]');
 }
 
 async function deliverEvents() {
@@ -64,15 +64,30 @@ async function deliverEvents() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const worker = startWorker();
-  let signalReceived = false;
-  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, async () => {
-    if (signalReceived) process.exit(1);
-    signalReceived = true;
-    console.log(JSON.stringify({ service: 'worker', lifecycle: 'draining', signal }));
-    const result = await worker.stop();
-    closeDb();
-    if (!result.drained) console.error(JSON.stringify({ service: 'worker', lifecycle: 'drain_timeout' }));
-    process.exit(result.drained ? 0 : 1);
-  });
+  let worker = null;
+  let shutdownPromise = null;
+  const shutdown = (signal, startupError) => {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = (async () => {
+      if (signal) console.log(JSON.stringify({ service: 'worker', lifecycle: 'draining', signal }));
+      let result = { drained: true, error: startupError };
+      try {
+        if (worker) result = await worker.stop();
+        if (startupError && !result.error) result.error = startupError;
+      }
+      catch (error) { result = { drained: true, error }; }
+      finally { closeDb(); }
+      if (!result.drained) console.error(JSON.stringify({ service: 'worker', lifecycle: 'drain_timeout' }));
+      if (result.error) console.error(JSON.stringify({ service: 'worker', fatal: true, error: sanitizeWorkerError(result.error) }));
+      process.exitCode = result.drained && !result.error ? 0 : 1;
+      return result;
+    })();
+    return shutdownPromise;
+  };
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { void shutdown(signal); });
+  try {
+    worker = startWorker({ scheduledFailureImpl: (error) => { void shutdown(null, error); } });
+  } catch (error) {
+    void shutdown(null, error);
+  }
 }

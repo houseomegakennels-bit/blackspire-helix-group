@@ -401,24 +401,19 @@ function serve(res, file, type, cacheControl) {
 
 const IS_ENTRY_POINT = import.meta.url === `file://${process.argv[1]}`;
 
-// exitOnListenError defaults to true so every real startup path — the entry point and the
-// restricted staging launcher, which imports start() — terminates on a listen failure instead of
-// logging it and staying alive with no listener. Only in-process tests that deliberately keep the
-// runner alive pass false, and a production profile always exits regardless of the argument, so
-// this can never become a bypass. It is an argument, never an environment variable.
-export function start(port, host, { exitOnListenError = true } = {}) {
+export function start(port, host) {
   lifecyclePhase = 'starting';
   try {
     assertSchemaCompatible();
   } catch (error) {
     console.error(JSON.stringify({ service: 'api', fatal: true, error: String(error.message || error) }));
-    process.exit(1);
+    throw error;
   }
   const validation = requireProductionSafeConfig();
   startupConfigValidation = { ok: validation.ok };
   if (process.env.NODE_ENV === 'production' && !validation.ok) {
     console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors }));
-    process.exit(1);
+    throw new Error(`production configuration refused: ${validation.errors.join('; ')}`);
   }
   // The canonical bind contract decides host and port. Explicit arguments stay supported for
   // in-process tests and the restricted staging launcher, but a production profile is always
@@ -426,13 +421,13 @@ export function start(port, host, { exitOnListenError = true } = {}) {
   const bind = resolveBindTarget();
   if (bind.production && !bind.ok) {
     console.error(JSON.stringify({ service: 'api', fatal: true, errors: bind.errors }));
-    process.exit(1);
+    throw new Error(`production bind refused: ${bind.errors.join('; ')}`);
   }
   const boundPort = port === undefined ? bind.port : port;
   const boundHost = host === undefined ? bind.host : host;
   if (bind.production && (boundPort !== bind.port || boundHost !== bind.host)) {
     console.error(JSON.stringify({ service: 'api', fatal: true, errors: ['Production listener arguments must match the canonical BIND_HOST/PORT contract.'] }));
-    process.exit(1);
+    throw new Error('production listener arguments must match the canonical BIND_HOST/PORT contract');
   }
   if (TEST_MODE.enabled) upsertWorkspace({ id: TEST_MODE.workspaceId, name: 'Unified Jarvis iPhone Test', description: 'Disposable read-only test workspace', githubRepository: 'local/iphone-test', defaultBranch: 'test', allowedPaths: [], buildCommands: [], providerPolicy: { preferred: ['mock'] }, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['status'], lastHealthStatus: 'test', rootPath: TEST_MODE.workspaceRoot });
   const server = http.createServer(route);
@@ -446,7 +441,6 @@ export function start(port, host, { exitOnListenError = true } = {}) {
       error: occupied ? `port ${boundPort} is already in use; refusing to start without a fallback` : String(error.message || error),
       code: error.code || null,
     }));
-    if (exitOnListenError || bind.production) process.exit(1);
   });
   server.listen(boundPort, boundHost, () => {
     lifecyclePhase = 'ready';
@@ -514,13 +508,23 @@ export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
 }
 
 if (IS_ENTRY_POINT) {
-  const server = start();
-  let signalReceived = false;
-  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, async () => {
-    if (signalReceived) { server.closeAllConnections?.(); return; }
-    signalReceived = true;
-    console.log(JSON.stringify({ service: 'api', lifecycle: 'draining', signal }));
-    await beginGracefulShutdown(server);
-    process.exit(0);
-  });
+  let server;
+  let shutdownPromise = null;
+  const shutdown = (signal) => {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = (async () => {
+      if (signal) console.log(JSON.stringify({ service: 'api', lifecycle: 'draining', signal }));
+      try { if (server) await beginGracefulShutdown(server); }
+      finally { closeDb(); }
+    })();
+    return shutdownPromise;
+  };
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { void shutdown(signal); });
+  try {
+    server = start();
+    server.once('error', () => { process.exitCode = 1; void shutdown(); });
+  } catch {
+    process.exitCode = 1;
+    void shutdown();
+  }
 }

@@ -1,5 +1,6 @@
 import { getDb, query, execSql } from '../packages/task-engine/db.js';
 import { findMissingSchemaObjects } from '../packages/shared/schema-validation.js';
+import { seedWorkspace } from '../packages/workspace-registry/workspaces.js';
 
 function tableColumns(table) {
   return query(`PRAGMA table_info(${table});`).map((row) => row.name);
@@ -197,5 +198,17 @@ CREATE TRIGGER IF NOT EXISTS trg_hermes_memory_rereviews_immutable_delete BEFORE
   } catch (error) {
     db.exec('ROLLBACK;');
     throw error;
+  }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try {
+    if (process.env.BLACKSPIRE_RUN_MIGRATIONS !== 'true') throw new Error('dedicated writer authorization missing');
+    runMigration();
+    seedWorkspace();
+    console.log('Migrated Blackspire Command SQLite database.');
+  } catch (error) {
+    console.error(`migration failed: ${String(error?.message || error).replace(/(?:token|secret|password|key)\s*[=:]\s*\S+/gi, '[redacted]')}`);
+    process.exitCode = 1;
   }
 }

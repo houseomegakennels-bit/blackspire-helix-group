@@ -90,6 +90,14 @@ test('dedicated migration command denies every value except exact true without c
   }
 });
 
+test('migration writer cannot be invoked around the approved command boundary', () => {
+  const dbPath = emptyDatabase('direct-writer-denied');
+  const result = run('scripts/migration-writer.js', [], safeEnv(dbPath));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /authorization missing/);
+  assert.equal(tableCount(dbPath), 0);
+});
+
 test('exact true migrates only a disposable database, is idempotent, and enables compatible startup', async () => {
   const dbPath = path.join(root, 'explicit.sqlite');
   const first = run('scripts/migrate.js', [], { ...safeEnv(dbPath), BLACKSPIRE_RUN_MIGRATIONS: 'true' });
@@ -142,9 +150,9 @@ test('production wrapper never runs or fabricates a migration permission', () =>
 });
 
 test('schema-writing code and migration permission stay inside the dedicated command boundary', () => {
-  const approvedWriterImport = "import { runMigration } from './migration-writer.js';";
   const migrationCommand = fs.readFileSync('scripts/migrate.js', 'utf8');
-  assert.match(migrationCommand, new RegExp(approvedWriterImport.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(migrationCommand, /import\s+.*migration-writer/);
+  assert.match(migrationCommand, /spawnSync\(process\.execPath, \['scripts\/migration-writer\.js'\]/);
 
   const roots = ['apps', 'packages', 'tests', '.github', '.devcontainer', 'scripts'];
   const files = roots.flatMap((root) => fs.existsSync(root) ? fs.readdirSync(root, { recursive: true }).map((entry) => path.join(root, entry)).filter((entry) => fs.statSync(entry).isFile()) : []);
