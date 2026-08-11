@@ -50,7 +50,7 @@ function makeHost({ envFile = true, workspace = true, releases = ['a'.repeat(40)
     ].join('\n') + '\n');
   }
   const logrotatePath = path.join(home, 'logrotate.conf');
-  if (logrotate) fs.writeFileSync(logrotatePath, '# fixture\n');
+  if (logrotate) fs.copyFileSync('ops/blackspire-command-logrotate.conf', logrotatePath);
   return { home, releaseRoot, workspaceRoot, envPath, logrotatePath };
 }
 
@@ -253,6 +253,12 @@ test('gate4-prepare treats an absent current symlink as preparation, not failure
 test('gate4-prepare reports missing log rotation as outstanding', () => {
   const host = makeHost({ logrotate: false });
   assert.equal(findings(host, { env: { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) } }).state('log-rotation'), 'PENDING');
+});
+
+test('gate4-prepare rejects an installed policy that differs from the reviewed rotation policy', () => {
+  const host = makeHost();
+  fs.writeFileSync(host.logrotatePath, '/var/lib/docker/containers/*/*-json.log { rotate 1 }\n');
+  assert.equal(findings(host, { env: { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) } }).state('log-rotation'), 'FAILED');
 });
 
 // ---------------------------------------------------------------------------

@@ -34,7 +34,7 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 | `/opt/blackspire-command/shared/database/` | `blackspire:blackspire` | `0700` | SQLite `command.sqlite` + WAL/SHM. Runtime read/write. This is the DB parent `verifyVpsRuntime` checks. |
 | `/opt/blackspire-command/shared/evidence/` | `blackspire:blackspire` | `0700` | Durable sanitized evidence/audit. Runtime read/write. |
 | `/opt/blackspire-command/shared/backups/` | `blackspire:blackspire` | `0700` | `scripts/backup.js` default destination; SHA-256 sidecars. Runtime/backup read/write. |
-| `/opt/blackspire-command/shared/logs/` | `blackspire:blackspire` | `0750` | Optional file logs. See "Logging" below — journald is preferred and needs no app-writable dir. |
+| `/var/log/blackspire-command/` | `blackspire:blackspire` | `0750` | Created by systemd `LogsDirectory`; contains only this unit's combined JSON stdout/stderr. |
 | `/etc/blackspire/` | `root:blackspire` | `0750` | Config dir. |
 | `/etc/blackspire/command.env` | `root:blackspire` | `0640` | **Secrets** (`COMMAND_ADMIN_TOKEN`, `SESSION_SECRET`, ...). Group-readable by runtime only; never world-readable; never committed to Git. |
 | `/etc/systemd/system/blackspire-command.service` | `root:root` | `0644` | Unit file; only root manages. |
@@ -43,8 +43,8 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 
 - `/opt/blackspire-command/releases/*` and `current` (immutability boundary).
 - `/etc/systemd/system/blackspire-command.service` and all systemd paths.
-- `/var/lib/docker/containers/*` (the log-rotation target in `ops/blackspire-command-logrotate.conf`
-  is owned by the Docker daemon / root; logrotate runs as root).
+- Other services' journal files and `/var/lib/docker/containers/*`; Blackspire rotation must never
+  target broad host or container globs.
 - `/etc/blackspire/command.env` is `root:blackspire 0640` — owned by root, only *readable* by
   the runtime group, never writable by the runtime.
 
@@ -55,10 +55,11 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 
 ## Logging
 
-The app logs JSON to stdout. Preferred: capture via **systemd journald** (no app-writable log
-dir, no broad permissions). The existing `ops/blackspire-command-logrotate.conf` rotates the
-Docker container JSON logs (root-owned) and is unrelated to the non-root app's stdout. If the
-operator instead wants file logs, use `shared/logs/` (`0750 blackspire:blackspire`).
+The app, worker, and supervisor log line-delimited JSON to stdout/stderr. The production unit pins
+both streams to `/var/log/blackspire-command/command.log`, with systemd creating the isolated
+directory and `UMask=0027`. The reviewed logrotate policy names that one file exactly and uses
+`copytruncate` because the supervisor holds the descriptor. It never rotates Docker-wide or
+unrelated host logs.
 
 ## How deployment tooling gains only what it needs
 

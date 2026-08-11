@@ -54,7 +54,8 @@ Verified automatically by the checker:
 7. **Rollback target** — at least one other completed release is available to roll back to.
 8. **Runtime ownership** — the `blackspire` account exists and is non-root.
 9. **Production backup** — a snapshot exists under `shared/backups`.
-10. **Log rotation** — installed at `/etc/logrotate.d/blackspire-command`.
+10. **Log rotation** — the installed `/etc/logrotate.d/blackspire-command` is byte-identical to the
+    reviewed service-isolated policy; mere file presence is not readiness.
 
 Operator attestation required (the host cannot prove these):
 
@@ -94,7 +95,13 @@ test ! -e /etc/logrotate.d/blackspire-command && \
   test ! -L /etc/logrotate.d/blackspire-command
 install -o root -g root -m 0644 \
   ops/blackspire-command-logrotate.conf /etc/logrotate.d/blackspire-command
+cmp ops/blackspire-command-logrotate.conf /etc/logrotate.d/blackspire-command
+logrotate --debug /etc/logrotate.d/blackspire-command
 ```
+
+Before authorization, force one rotation against a disposable service log and verify the recreated
+file is `0640 blackspire:blackspire`. See `docs/PRODUCTION_LOGGING_AND_RETENTION.md` for retention,
+capacity, and `copytruncate` limitations.
 
 `/opt/blackspire-command/shared/workspace` is the reviewed location because the unit runs under
 `ProtectSystem=strict` with `ReadWritePaths=/opt/blackspire-command/shared`: that tree is the only
