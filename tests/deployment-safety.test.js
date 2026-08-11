@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { removeIdenticalFile, snapshotRegularFile } from '../packages/shared/deployment-lock-safety.js';
 
 const repository = path.resolve(import.meta.dirname, '..');
@@ -39,15 +39,19 @@ release="$root/releases/$sha"
   return { source, releaseRoot, database, backup, commit, rollback };
 }
 
-test('deployment lock is plan-only, exclusive, ownership-bound, and reports stale locks', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-')); const base = ['--target', 'staging', '--release-root', root, '--owner', 'test-operator'];
+test('deployment lock is plan-only, exclusive, ownership-bound, and reports stale locks', async (t) => {
+  const durableOwner = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  t.after(() => { try { durableOwner.kill('SIGKILL'); } catch {} });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-')); const base = ['--target', 'staging', '--release-root', root, '--owner', 'test-operator', '--owner-pid', String(durableOwner.pid)];
   assert.match(run('deployment-lock.js', ['acquire', ...base]).stderr, /plan-only/);
   const acquired = run('deployment-lock.js', ['acquire', ...base, '--apply']); assert.equal(acquired.status, 0, acquired.stderr); const record = JSON.parse(acquired.stdout).lock;
+  const held = JSON.parse(run('deployment-lock.js', ['status', ...base, '--max-age-seconds', '60']).stdout); assert.equal(held.status, 'held'); assert.equal(held.lock.processAlive, true);
+  assert.match(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--ack', 'RECOVER-STAGING-LOCK', '--apply']).stderr, /not provably stale/);
   assert.match(run('deployment-lock.js', ['acquire', ...base, '--apply']).stderr, /already held/);
   assert.match(run('deployment-lock.js', ['release', ...base, '--ack', 'wrong', '--apply']).stderr, /matching owner and nonce/);
   assert.equal(run('deployment-lock.js', ['release', ...base, '--ack', record.nonce, '--apply']).status, 0);
   assert.match(run('deployment-lock.js', ['acquire', '--target', 'production', '--release-root', root, '--owner', 'test-operator', '--apply']).stderr, /separately authorized/);
-  const lockDirectory = path.join(root, 'shared', 'deploy'); fs.mkdirSync(lockDirectory, { recursive: true }); fs.writeFileSync(path.join(lockDirectory, 'staging.lock'), JSON.stringify({ version: 1, target: 'staging', owner: 'old-operator', pid: 2147483647, createdAt: '2000-01-01T00:00:00.000Z', nonce: 'a'.repeat(32) }));
+  const lockDirectory = path.join(root, 'shared', 'deploy'); fs.mkdirSync(lockDirectory, { recursive: true }); fs.writeFileSync(path.join(lockDirectory, 'staging.lock'), JSON.stringify({ version: 2, target: 'staging', owner: 'old-operator', ownerProcess: { pid: 2147483647, startTicks: '1', bootId: '00000000-0000-0000-0000-000000000000' }, createdAt: '2000-01-01T00:00:00.000Z', nonce: 'a'.repeat(32) }));
   assert.equal(JSON.parse(run('deployment-lock.js', ['status', ...base, '--max-age-seconds', '60']).stdout).status, 'stale');
   assert.match(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--apply']).stderr, /RECOVER-STAGING-LOCK/);
   assert.equal(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--ack', 'RECOVER-STAGING-LOCK', '--apply']).status, 0);
@@ -57,7 +61,7 @@ test('lock mutation refuses symlink traversal and replacement before removal', (
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-adversary-'));
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-outside-'));
   fs.symlinkSync(outside, path.join(root, 'shared'));
-  const symlinked = run('deployment-lock.js', ['acquire', '--target', 'staging', '--release-root', root, '--owner', 'test-operator', '--apply']);
+  const symlinked = run('deployment-lock.js', ['acquire', '--target', 'staging', '--release-root', root, '--owner', 'test-operator', '--owner-pid', String(process.pid), '--apply']);
   assert.equal(symlinked.status, 1); assert.match(symlinked.stderr, /path contains a symlink/); assert.equal(fs.readdirSync(outside).length, 0);
 
   const lockDirectory = path.join(root, 'real', 'shared', 'deploy'); fs.mkdirSync(lockDirectory, { recursive: true });
@@ -86,4 +90,11 @@ test('preflight refuses production identity and production database namespace', 
   const f = fixture(); const args = ['--target', 'production', '--environment', 'production', '--state-owner', 'vps-production', '--provider-mode', 'openai', '--source-root', f.source, '--release-root', f.releaseRoot, '--database', '/opt/blackspire-command/shared/database/command.sqlite', '--backup', f.backup, '--commit', f.commit, '--rollback', f.rollback];
   const refused = run('deployment-preflight.js', args); assert.equal(refused.status, 1); const report = JSON.parse(refused.stdout); assert.equal(report.recommendation, 'REFUSE_DEPLOYMENT');
   for (const id of ['target-staging', 'explicit-environment', 'state-owner', 'providers-disabled', 'database-safe']) assert.equal(report.checks.find((item) => item.id === id).ok, false);
+});
+
+test('preflight refuses symlinked backup ancestors instead of following them', () => {
+  const f = fixture(); const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-backup-outside-')); const linked = path.join(path.dirname(f.backup), 'linked-backups'); fs.symlinkSync(outside, linked);
+  const backup = path.join(linked, 'backup.sqlite'); fs.copyFileSync(f.backup, path.join(outside, 'backup.sqlite')); fs.copyFileSync(`${f.backup}.sha256`, path.join(outside, 'backup.sqlite.sha256'));
+  const args = ['--target', 'staging', '--environment', 'staging', '--state-owner', 'vps-staging', '--provider-mode', 'manual', '--source-root', f.source, '--release-root', f.releaseRoot, '--database', f.database, '--backup', backup, '--commit', f.commit, '--rollback', f.rollback];
+  const report = JSON.parse(run('deployment-preflight.js', args).stdout); const check = report.checks.find((item) => item.id === 'verified-recent-backup'); assert.equal(check.ok, false); assert.match(check.detail, /path contains a symlink/);
 });
