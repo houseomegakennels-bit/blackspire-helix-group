@@ -81,6 +81,14 @@ export function verifyReleaseEvidence({ artifactRoot, packagedCommitSha, expecte
   const loaded = loadReleaseEvidence(artifactRoot);
   if (!loaded.manifest) return loaded;
   const manifest = loaded.manifest; const reasons = [];
+  const requiredBuildMetadata = [manifest.repository, manifest.buildId, manifest.artifact?.name,
+    manifest.runtime?.packageVersion, manifest.runtime?.nodeVersion];
+  const buildMetadataComplete = requiredBuildMetadata.every((value) => typeof value === 'string' && bounded(value) === value)
+    && Number.isFinite(Date.parse(manifest.buildTimestamp || ''))
+    && typeof manifest.ci?.provider === 'string' && bounded(manifest.ci.provider) === manifest.ci.provider
+    && (manifest.ci.provider !== 'github-actions'
+      || (typeof manifest.ci?.runId === 'string' && bounded(manifest.ci.runId) === manifest.ci.runId));
+  if (!buildMetadataComplete) reasons.push('BUILD_METADATA_MISSING');
   if (!SHA.test(packagedCommitSha || '')) reasons.push('UNKNOWN_BUILD');
   else if (manifest.commitSha !== packagedCommitSha) reasons.push('COMMIT_MISMATCH');
   if (expectedCommitSha && manifest.commitSha !== expectedCommitSha) reasons.push('COMMIT_MISMATCH');
@@ -95,7 +103,7 @@ export function verifyReleaseEvidence({ artifactRoot, packagedCommitSha, expecte
     if (deploymentRecord.environment !== manifest.expectedEnvironment) reasons.push('ENVIRONMENT_MISMATCH');
   }
   const unique = [...new Set(reasons)].filter((item) => REASONS.has(item));
-  const mismatch = unique.some((item) => !['DEPLOYMENT_RECORD_MISSING', 'UNKNOWN_BUILD'].includes(item));
+  const mismatch = unique.some((item) => !['BUILD_METADATA_MISSING', 'DEPLOYMENT_RECORD_MISSING', 'UNKNOWN_BUILD'].includes(item));
   return { state: mismatch ? 'MISMATCH' : unique.length ? 'UNVERIFIED' : 'VERIFIED', reasonCode: unique[0] || null, reasons: unique, manifest, actualDigest };
 }
 
