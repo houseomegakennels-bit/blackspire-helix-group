@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-
 const runbooks = [
   'docs/PRODUCTION_READINESS_PLAN.md',
   'docs/STAGING_DEPLOYMENT_RUNBOOK.md',
@@ -33,4 +32,3 @@ test('every repository script explicitly documented by the operator runbooks exi
     assert.ok(fs.statSync(match[1]).isFile(), `missing documented tool ${match[1]}`);
   }
 });
-

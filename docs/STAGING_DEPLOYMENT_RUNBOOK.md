@@ -26,7 +26,12 @@ npm run start:iphone-test
 npm run stop:iphone-test
 ```
 
-The start command refuses unsafe profiles and the stop command only targets its managed test process. A shared staging-bot credential, public callback URL, DNS change, or service restart REQUIRES OPERATOR AUTHORIZATION and is not performed by these commands.
+The start command refuses unsafe profiles. The stop command trusts the PID files and cleanup path in
+`BLACKSPIRE_IPHONE_RUNTIME_DIR`; it does not authenticate process identity. Use it only with the fresh,
+operator-inspected runtime directory created for the same disposable harness run. Do not point it at a
+reused, shared, or untrusted directory, and verify the recorded PIDs before stopping. Hardening that
+identity boundary remains separate work. A shared staging-bot credential, public callback URL, DNS
+change, or service restart REQUIRES OPERATOR AUTHORIZATION and is not performed by these commands.
 
 ## Readiness
 
@@ -36,5 +41,4 @@ For an explicitly selected loopback service:
 BLACKSPIRE_HEALTH_URL=http://127.0.0.1:<port> npm run health:check
 ```
 
-Current `main` checks `/health`; dependency-specific `/ready` behavior is available only in the separate readiness lifecycle draft and is therefore PARTIALLY VERIFIED here.
-
+Current `main` checks `/health`; dependency-specific `/ready` behavior is available only in the separate readiness lifecycle draft and is therefore PARTIALLY VERIFIED here. This document verifies a checkout and disposable harness only. It is not a complete staging deploy/cutover procedure; immutable release evidence, environment identity, deploy locking, backup, worker lifecycle, post-deploy observation, rollback evidence, reporting, and cleanup are owned by later readiness changes.
