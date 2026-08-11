@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-11 — Production monitoring runner bounded and sanitized (Codex)
+
+- Reconciled PR #74 onto the merged production-log isolation root, then closed its two accepted monitoring-runner findings without changing provider selection or activation policy. Native `df`, `mktemp`, state-file redirection, `chmod`, and `mv` diagnostics are suppressed and every failure is reduced to a fixed structured error, preventing private host paths from escaping through stderr.
+- The disk probe is forcibly bounded at five seconds and the `Type=oneshot` service now has `TimeoutStartSec=20s`, so a hung utility or runner cannot occupy the recurring timer indefinitely. Adversarial regressions inject private paths into each native failure, assert that neither structured output nor stderr discloses them, and prove a hung disk probe terminates before a subsequent invocation succeeds.
+- Focused monitoring validation passed **7/7**, together with shell syntax and diff checks. No template was installed or enabled, no alert provider or credential was selected, no service was activated, no public or production routing occurred, and Gate 4 remains unauthorized.
+
 ## 2026-08-04 — Hermes M3C re-review chain: PR #64 merged, anchor refreshed (Claude Code)
 
 - Recovered a session that had timed out after launching reviewers I and J against `055cd5b`. No reviewer process was still running and nothing was terminated: the only process from that day was the recovery session itself, every other `claude`/`codex` process dated from 2026-07-27 to 07-31 and was unrelated. Both reviewer workspaces survived intact at `/tmp/review-{i,j}/repo`, both clean and both at `055cd5b` with no lock left behind, and both full reports were recovered from the prior session's subagent transcripts. Local HEAD, `origin`, and the live PR head all read `055cd5b`; no commit or PR-body edit had occurred after it.

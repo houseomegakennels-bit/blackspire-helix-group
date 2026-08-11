@@ -97,11 +97,25 @@ install -o root -g root -m 0644 \
   ops/blackspire-command-logrotate.conf /etc/logrotate.d/blackspire-command
 cmp ops/blackspire-command-logrotate.conf /etc/logrotate.d/blackspire-command
 logrotate --debug /etc/logrotate.d/blackspire-command
+
+# 6. Reviewed provider-neutral monitoring units, installed but not enabled
+for unit in blackspire-command-monitor.service blackspire-command-monitor.timer \
+  'blackspire-command-monitor-alert@.service'; do
+  test ! -e "/etc/systemd/system/$unit" && test ! -L "/etc/systemd/system/$unit"
+  install -o root -g root -m 0644 "ops/$unit" "/etc/systemd/system/$unit"
+done
 ```
 
 Before authorization, force one rotation against a disposable service log and verify the recreated
 file is `0640 blackspire:blackspire`. See `docs/PRODUCTION_LOGGING_AND_RETENTION.md` for retention,
 capacity, and `copytruncate` limitations.
+
+Monitoring installation is a separately authorized host action. Install the reviewed monitor
+script, service, timer, and local alert unit together; then run `systemd-analyze verify` on all three
+units before enabling the timer. Prove first and second disposable health failures do not alert,
+the third does, a successful check resets the counter, a simulated database filesystem below 20%
+alerts immediately, and the local `daemon.alert` reaches the approved off-host destination. File
+presence or a local journal entry alone does not satisfy the monitoring attestation.
 
 `/opt/blackspire-command/shared/workspace` is the reviewed location because the unit runs under
 `ProtectSystem=strict` with `ReadWritePaths=/opt/blackspire-command/shared`: that tree is the only

@@ -1,0 +1,13 @@
+# REVIEW TEMPLATE ONLY — not installed or enabled by this repository change.
+[Unit]
+Description=Run Blackspire Command production monitoring every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Persistent=true
+Unit=blackspire-command-monitor.service
+
+[Install]
+WantedBy=timers.target
