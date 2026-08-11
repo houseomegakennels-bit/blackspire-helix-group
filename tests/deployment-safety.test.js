@@ -9,6 +9,12 @@ import { removeIdenticalFile, snapshotRegularFile } from '../packages/shared/dep
 
 const repository = path.resolve(import.meta.dirname, '..');
 const run = (script, args) => spawnSync(process.execPath, [path.join(repository, 'scripts', script), ...args], { cwd: repository, encoding: 'utf8', env: process.env });
+const runAsync = (script, args, env = {}) => new Promise((resolve) => {
+  const child = spawn(process.execPath, [path.join(repository, 'scripts', script), ...args], { cwd: repository, env: { ...process.env, ...env } });
+  let stdout = ''; let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
+  child.on('close', (status) => resolve({ status, stdout, stderr }));
+});
 const git = (cwd, args) => spawnSync('/usr/bin/git', ['-C', cwd, ...args], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } });
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-deploy-safety-'));
@@ -48,6 +54,10 @@ test('deployment lock is plan-only, exclusive, ownership-bound, and reports stal
   const held = JSON.parse(run('deployment-lock.js', ['status', ...base, '--max-age-seconds', '60']).stdout); assert.equal(held.status, 'held'); assert.equal(held.lock.processAlive, true);
   assert.match(run('deployment-lock.js', ['recover', ...base, '--max-age-seconds', '60', '--ack', 'RECOVER-STAGING-LOCK', '--apply']).stderr, /not provably stale/);
   assert.match(run('deployment-lock.js', ['acquire', ...base, '--apply']).stderr, /already held/);
+  const lockPath = path.join(root, 'shared', 'deploy', 'staging.lock');
+  const winner = fs.readFileSync(lockPath, 'utf8');
+  assert.match(run('deployment-lock.js', ['acquire', ...base, '--apply']).stderr, /already held/);
+  assert.equal(fs.readFileSync(lockPath, 'utf8'), winner, 'a losing acquisition must preserve the winner lock byte-for-byte');
   assert.match(run('deployment-lock.js', ['release', ...base, '--ack', 'wrong', '--apply']).stderr, /matching owner and nonce/);
   assert.equal(run('deployment-lock.js', ['release', ...base, '--ack', record.nonce, '--apply']).status, 0);
   assert.match(run('deployment-lock.js', ['acquire', '--target', 'production', '--release-root', root, '--owner', 'test-operator', '--apply']).stderr, /separately authorized/);
@@ -70,6 +80,19 @@ test('lock mutation refuses symlink traversal and replacement before removal', (
   assert.throws(() => removeIdenticalFile(lockPath, expected, { beforeRename() { fs.renameSync(lockPath, `${lockPath}.original`); fs.writeFileSync(lockPath, 'substitute'); } }), /substituted before removal/);
   assert.equal(fs.readFileSync(lockPath, 'utf8'), 'substitute');
   assert.equal(fs.readFileSync(`${lockPath}.original`, 'utf8'), 'authorized');
+});
+
+test('a concurrent acquisition loser preserves the winner lock', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-lock-race-'));
+  const args = ['acquire', '--target', 'staging', '--release-root', root, '--owner', 'race-operator', '--owner-pid', String(process.pid), '--apply'];
+  const env = { NODE_ENV: 'test', BLACKSPIRE_TEST_LOCK_WRITE_DELAY_MS: '300' };
+  const results = await Promise.all([runAsync('deployment-lock.js', args, env), runAsync('deployment-lock.js', args, env)]);
+  assert.deepEqual(results.map(({ status }) => status).sort(), [0, 1]);
+  assert.match(results.find(({ status }) => status === 1).stderr, /acquired concurrently/);
+  const lockPath = path.join(root, 'shared', 'deploy', 'staging.lock');
+  assert.equal(fs.existsSync(lockPath), true, 'the winner lock must survive the losing EEXIST path');
+  const record = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  assert.equal(record.owner, 'race-operator'); assert.equal(record.ownerProcess.pid, process.pid);
 });
 
 test('disposable staging preflight verifies fingerprint, backup, rollback and clean source', () => {

@@ -97,7 +97,19 @@ else {
     if (!durableOwner) refuse('acquire requires --owner-pid for a live durable deployment runner');
     try { assertNoSymlinkTraversal(lockDirectory); fs.mkdirSync(lockDirectory, { recursive: true, mode: 0o700 }); assertNoSymlinkTraversal(lockDirectory); if (directoryFd === null) openLockDirectory(); } catch (error) { refuse(error.message); }
     const record = { version: 2, target, owner, ownerProcess: durableOwner, createdAt: new Date(now).toISOString(), nonce: crypto.randomBytes(16).toString('hex') };
-    try { fs.writeFileSync(boundPath(), `${JSON.stringify(record)}\n`, { flag: 'wx', mode: 0o600 }); assertDirectoryStillBound(); } catch (error) { try { if (directoryFd !== null && fs.existsSync(boundPath())) fs.unlinkSync(boundPath()); } catch {} refuse(error.code === 'EEXIST' ? 'deployment lock was acquired concurrently' : error.message); }
+    const testWriteDelay = process.env.NODE_ENV === 'test' ? Number(process.env.BLACKSPIRE_TEST_LOCK_WRITE_DELAY_MS || 0) : 0;
+    if (Number.isInteger(testWriteDelay) && testWriteDelay > 0 && testWriteDelay <= 1000) await new Promise((resolve) => setTimeout(resolve, testWriteDelay));
+    let created = null;
+    try {
+      fs.writeFileSync(boundPath(), `${JSON.stringify(record)}\n`, { flag: 'wx', mode: 0o600 });
+      created = snapshotBoundLock();
+      assertDirectoryStillBound();
+    } catch (error) {
+      // EEXIST means another deployment owns the pathname. Never remove it. Cleanup is allowed
+      // only after this invocation captured the exact inode and content it created.
+      if (created) { try { removeBoundLock(created); } catch {} }
+      refuse(error.code === 'EEXIST' ? 'deployment lock was acquired concurrently' : error.message);
+    }
     output('acquired', record);
   } else {
     if (!current) refuse('deployment lock does not exist');
