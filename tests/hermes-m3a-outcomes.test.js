@@ -354,34 +354,49 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   const stranger = principal('m3a-read-order-stranger', ['evaluation.read']);
   const owner = principal('m3a-read-order-owner', ['evaluation.read']);
 
-  // `readableEvaluation` walks the complete provenance graph and its subordinate correction/event
-  // evidence. Pin the call order directly so a future refactor cannot reintroduce the cross-workspace
-  // timing oracle while preserving the same null response body.
+  // Pin the call order so a future refactor cannot reintroduce the cross-workspace timing oracle
+  // while preserving the same null response body. Two independent reviewers showed that pinning only
+  // `readableEvaluation` is not enough: inserting `provenanceMatches` (a full digest recompute and
+  // evidence-graph walk) ahead of the authorization line restores essentially the whole oracle while
+  // leaving that one anchor in its correct position. So every integrity entry point this function
+  // could call is pinned, not just the aggregate one, and the body is bounded to the function and
+  // stripped of comments so that neither a later definition nor prose can satisfy the assertion.
   const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/outcome.js', import.meta.url), 'utf8');
-  const readBody = source.slice(source.indexOf('export function readOutcomeEvaluation'));
-  assert.ok(readBody.indexOf('canReadEvaluation') < readBody.indexOf('readableEvaluation(evaluation)'),
-    'authorization must be decided before provenance validation or subordinate-evidence reads');
+  const bodyStart = source.indexOf('export function readOutcomeEvaluation');
+  const readBody = source.slice(bodyStart, source.indexOf('\n}\n', bodyStart))
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const authAt = readBody.indexOf('canReadEvaluation');
+  assert.ok(authAt >= 0, 'the read path must decide authorization');
+  for (const helper of ['readableEvaluation', 'provenanceMatches', 'correctionChainValid', 'sourceEventsValid',
+    'evaluationShapeValid', 'loadEvidence', 'getOutcomeComponents', 'getOutcomeCorrections', 'getOutcomeSourceEvents']) {
+    const at = readBody.indexOf(helper);
+    assert.ok(at === -1 || at > authAt,
+      `authorization must be decided before ${helper}: no integrity or subordinate-evidence work may precede the deny`);
+  }
   assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null, 'a cross-workspace read is refused');
   assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
     'the owning workspace still receives an intact evaluation');
 
-  // The assertion above is a source-text pin: it catches a wholesale reordering, but an independent
-  // reviewer demonstrated it does NOT catch a partial reintroduction that leaves both textual anchors
-  // in place and inserts integrity work ahead of the authorization line. This is the behavioural guard
-  // for that case. Renaming the subordinate correction table makes any subordinate-evidence read throw,
-  // and `getOutcomeCorrections` is called by `readableEvaluation` OUTSIDE the `provenanceMatches`
-  // try/catch, so integrity work performed before the authorization decision surfaces as a thrown
-  // error instead of collapsing into an indistinguishable `null`. An unauthorized caller must still
-  // be refused quietly.
-  run('ALTER TABLE hermes_outcome_corrections RENAME TO hermes_outcome_corrections_hidden');
+  // The assertions above are source-text pins. This is the behavioural counterpart, which holds even
+  // if the source is rewritten in a shape no textual rule anticipated: hide the subordinate evidence
+  // tables so that reading any of them throws, then require an unauthorized read to still refuse
+  // quietly. `getOutcomeCorrections` and `getOutcomeSourceEvents` are called by `readableEvaluation`
+  // OUTSIDE the `provenanceMatches` try/catch, so pre-authorization work on them surfaces as a thrown
+  // error rather than collapsing into an indistinguishable `null`. This guard is deliberately NOT
+  // claimed to cover work confined to `hermes_outcome_evaluation_components` or the workflow-evidence
+  // tables: `provenanceMatches` swallows its own exceptions, so such work returns `false` and is
+  // indistinguishable from a normal integrity failure. The source-text pins above are what cover that
+  // case, which is why both exist.
+  const hidden = ['hermes_outcome_corrections', 'hermes_outcome_source_events'];
+  for (const table of hidden) run(`ALTER TABLE ${table} RENAME TO ${table}_hidden`);
   try {
     assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null,
       'an unauthorized read must not touch subordinate evidence, even when reading it would throw');
   } finally {
-    run('ALTER TABLE hermes_outcome_corrections_hidden RENAME TO hermes_outcome_corrections');
+    for (const table of hidden) run(`ALTER TABLE ${table}_hidden RENAME TO ${table}`);
   }
   assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
-    'the owning workspace still reads the evaluation once the subordinate table is restored');
+    'the owning workspace still reads the evaluation once the subordinate tables are restored');
 });
 
 test('explicit source events are idempotent, evidence-required, and evaluator failures are observable', async () => {
