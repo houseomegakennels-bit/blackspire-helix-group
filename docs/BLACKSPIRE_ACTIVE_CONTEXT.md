@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## Vercel deployment-rate limit and preview churn (2026-08-11 UTC)
+
+The connected Hobby team is temporarily refusing new Git deployments before build start with exact GitHub status text `Deployment rate limited — retry in 24 hours.` Current affected exact heads include PRs #66, #70, #72, #94, and #96. Authenticated inventory found at least 73 frontend plus 76 always-ignored root-project deployment records in the latest rolling 24 hours. The platform does not expose exact current quota usage or a reset timestamp through the available authenticated tools; the authoritative published limit is 100 Hobby deployments per rolling 86,400 seconds. This is not a concurrency, monthly-usage, or code-build failure.
+
+The safe repository-side correction is in review on `ci/vercel-preview-churn-control`: the frontend project ignores only commits whose full diff from Vercel's previous successful SHA contains no frontend change. Every uncertain comparison and every frontend change fails open to a real build, so stable frontend heads and production-changing frontend commits retain exact-head validation. An Ignored Build Step still creates a deployment record and therefore does not evade the 100-deployments/day limit; intermediate heads must be batched and validated locally before one stable push. No production deployment, project-setting mutation, check waiver, or upgrade occurred.
+
 ## Hermes Milestone 3C second slice merged (2026-08-04 UTC)
 
 PR #64 merged as `0d6e977113e826095c4ed57db150bf30d9de954f` from exact reviewed head `055cd5bd919b2ddc2f94113e07134bb8b72829cc`, which is the new verified implementation anchor. It closes the first slice's one-terminal-review-per-candidate limitation with an append-only successor chain in `hermes_memory_candidate_rereviews`, and closes nothing else. `chain_version` is the sole ordering authority; `created_at` is metadata only. The slice is review-only and non-operative: recording is an internal service call with no production caller, the single surface is a GET-only admin-gated route, and appending never touches candidate `status` or `promoted_at`.
