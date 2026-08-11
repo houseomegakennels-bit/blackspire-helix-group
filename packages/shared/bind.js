@@ -137,7 +137,13 @@ export function resolveBindTarget(env = process.env) {
     // historical undefined host. Neither profile is subject to the production reserved-port rule:
     // 8788 belongs to staging.
     const host = explicitHost === undefined && isStagingProfile(env) ? STAGING_BIND_HOST : explicitHost;
-    return { ok: true, production: false, staging: isStagingProfile(env), host, port: Number(env.PORT || DEVELOPMENT_DEFAULT_PORT), errors: [] };
+    const rawPort = env.PORT === undefined || env.PORT === '' ? String(DEVELOPMENT_DEFAULT_PORT) : String(env.PORT);
+    const errors = [];
+    let port = null;
+    if (!EXPLICIT_PORT.test(rawPort)) errors.push('PORT must be a decimal integer with no whitespace, sign, or leading zero.');
+    else if (Number(rawPort) > MAX_PORT) errors.push(`PORT must be no greater than ${MAX_PORT}.`);
+    else port = Number(rawPort);
+    return { ok: errors.length === 0, production: false, staging: isStagingProfile(env), host, port, errors };
   }
   const hostResult = validateProductionHost(env.BIND_HOST);
   const portResult = validateProductionPort(env.PORT);
