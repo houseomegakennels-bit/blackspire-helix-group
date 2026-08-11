@@ -11,12 +11,19 @@ fs.rmSync(`${process.env.BLACKSPIRE_DB_PATH}-shm`, { force: true });
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start, healthSnapshot, readinessSnapshot, beginGracefulShutdown } = await import('../apps/api/server.js');
+const { HTTP_SERVER_OPTIONS, HTTP_MAX_HEADERS, HTTP_MAX_REQUESTS_PER_SOCKET, HTTP_SOCKET_IDLE_TIMEOUT_MS } = await import('../packages/shared/http-boundary.js');
 
 let server;
 
 test('liveness remains explicit while readiness verifies lifecycle, schema, and configuration', async () => {
   server = start(0, '127.0.0.1', { exitOnListenError: false });
   await new Promise((resolve) => server.once('listening', resolve));
+  assert.equal(server.requestTimeout, HTTP_SERVER_OPTIONS.requestTimeout);
+  assert.equal(server.headersTimeout, HTTP_SERVER_OPTIONS.headersTimeout);
+  assert.equal(server.keepAliveTimeout, HTTP_SERVER_OPTIONS.keepAliveTimeout);
+  assert.equal(server.timeout, HTTP_SOCKET_IDLE_TIMEOUT_MS);
+  assert.equal(server.maxHeadersCount, HTTP_MAX_HEADERS);
+  assert.equal(server.maxRequestsPerSocket, HTTP_MAX_REQUESTS_PER_SOCKET);
   const address = server.address();
   const healthResponse = await fetch(`http://127.0.0.1:${address.port}/health`);
   assert.equal(healthResponse.status, 200);
@@ -26,6 +33,19 @@ test('liveness remains explicit while readiness verifies lifecycle, schema, and 
   const ready = await readyResponse.json();
   assert.equal(ready.ok, true);
   assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true });
+  const oversized = await fetch(`http://127.0.0.1:${address.port}/api/tasks`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer readiness-test-token', 'content-type': 'application/json' },
+    body: JSON.stringify({ request: 'x'.repeat(1_000_001) }),
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error, 'payload too large');
+  const malformed = await fetch(`http://127.0.0.1:${address.port}/api/tasks`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer readiness-test-token', 'content-type': 'application/json' },
+    body: '{',
+  });
+  assert.equal(malformed.status, 400);
 });
 
 test('readiness fails closed without disclosing dependency errors', () => {
