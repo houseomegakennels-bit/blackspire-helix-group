@@ -32,6 +32,22 @@ test('stale, missing, and skewed observation times fail closed', () => {
   assert.equal(verifyPostDeploy(future, now).classification, 'operator intervention required');
 });
 
+test('verification window expiry fails closed while exact boundary remains valid', () => {
+  const bounded = structuredClone(healthy);
+  bounded.verificationWindowSeconds = 900;
+  bounded.observedAt = new Date(Date.parse(start) + 900_000).toISOString();
+  const atBoundary = verifyPostDeploy(bounded, Date.parse(start) + 900_000);
+  assert.equal(atBoundary.windowExpired, false);
+  assert.equal(atBoundary.classification, 'proceed');
+
+  bounded.observedAt = new Date(Date.parse(start) + 900_001).toISOString();
+  const expired = verifyPostDeploy(bounded, Date.parse(start) + 900_001);
+  assert.equal(expired.windowExpired, true);
+  assert.equal(expired.classification, 'rollback recommended');
+  assert.deepEqual(expired.reasons.map(({ code }) => code), ['verification_window_expired']);
+  assert.doesNotMatch(expired.mobileSummary, /STAGING VERIFIED/);
+});
+
 test('missing gating evidence cannot inherit a healthy result', () => {
   for (const field of ['liveness', 'readiness', 'databaseConnected', 'queueConnected', 'workerHeartbeatFresh']) {
     const missing = structuredClone(healthy); delete missing.observed[field];

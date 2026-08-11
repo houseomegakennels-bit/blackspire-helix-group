@@ -20,9 +20,10 @@ export function verifyPostDeploy(input, nowMs = Date.now()) {
   if (!Number.isFinite(observedMs)) throw new Error('observedAt must be an ISO timestamp');
   const elapsedSeconds = Math.floor((nowMs - startedMs) / 1000);
   const withinGrace = elapsedSeconds < graceSeconds;
-  const windowExpired = elapsedSeconds > windowSeconds;
+  const windowExpired = nowMs - startedMs > windowSeconds * 1_000;
   const reasons = [];
 
+  if (windowExpired) reasons.push(reason('verification_window_expired', 'rollback', 'post-deploy verification window has expired'));
   if (observedMs < startedMs) reasons.push(reason('observation_precedes_deployment', 'intervention', 'observation predates this deployment'));
   if (observedMs > nowMs + 5_000) reasons.push(reason('observation_clock_skew', 'intervention', 'observation timestamp is in the future'));
   if (nowMs - observedMs > windowSeconds * 1_000) reasons.push(reason('observation_stale', 'rollback', 'observation is older than the verification window'));
