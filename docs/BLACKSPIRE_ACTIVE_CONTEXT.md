@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## PWA deployment identity freshness correction in review (2026-08-11 UTC)
+
+The PWA's server-authoritative environment/build display remains fail-closed and its health/API requests remain network-only. A successful canonical sync now arms an independent bounded freshness-render deadline, so the System view transitions from fresh to stale based on elapsed time even if the next health request never settles. This source-only change is focused-tested and is not merged or deployed.
+
 ## Vercel deployment-rate limit and preview churn (2026-08-11 UTC)
 
 The connected Hobby team is temporarily refusing new Git deployments before build start with exact GitHub status text `Deployment rate limited — retry in 24 hours.` Current affected exact heads include PRs #66, #70, #72, #94, and #96. Authenticated inventory found at least 73 frontend plus 76 always-ignored root-project deployment records in the latest rolling 24 hours. The platform does not expose exact current quota usage or a reset timestamp through the available authenticated tools; the authoritative published limit is 100 Hobby deployments per rolling 86,400 seconds. This is not a concurrency, monthly-usage, or code-build failure.

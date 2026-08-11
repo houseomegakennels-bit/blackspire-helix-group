@@ -81,6 +81,9 @@ const deploymentIdentity = (health) => {
   const build = BUILD_SHA.test(health?.buildSha || '') ? health.buildSha : null;
   return { environment, build, verified: Boolean(environment && build) };
 };
+const MIN_CANONICAL_FRESH_MS = 15000;
+const canonicalSyncStale = (lastSync, pollMs, currentTime = Date.now()) =>
+  !lastSync || currentTime - new Date(lastSync).getTime() > Math.max(MIN_CANONICAL_FRESH_MS, pollMs * 3);
 
 /* ---------- app state (memory only; refresh recovery via URL hash) ---------- */
 const store = {
@@ -508,7 +511,7 @@ async function decideApprovalAction(taskId, action, ...buttons) {
 function renderSystem() {
   const h = store.health; const r = store.ready;
   const identity = deploymentIdentity(h);
-  const stale = !store.lastSync || Date.now() - new Date(store.lastSync).getTime() > Math.max(15000, store.pollMs * 3);
+  const stale = canonicalSyncStale(store.lastSync, store.pollMs);
   byId('sysApi').textContent = h?.ok ? 'Healthy' : store.offline ? 'Unreachable' : '—';
   byId('sysLink').textContent = store.offline ? 'Offline — reconnecting with backoff' : 'Connected';
   byId('sysStop').textContent = h ? (h.emergencyStop ? 'ACTIVE' : 'Inactive') : '—';
@@ -599,7 +602,15 @@ function render() {
 
 /* ---------- data refresh with bounded backoff + visibility awareness ---------- */
 let pollTimer = 0;
+let freshnessTimer = 0;
 let refreshController = null;
+function scheduleFreshnessDeadline() {
+  clearTimeout(freshnessTimer);
+  if (!store.lastSync) return;
+  const staleAfter = Math.max(MIN_CANONICAL_FRESH_MS, store.pollMs * 3);
+  const remaining = staleAfter - (Date.now() - new Date(store.lastSync).getTime()) + 1;
+  freshnessTimer = setTimeout(() => { freshnessTimer = 0; render(); }, Math.max(0, remaining));
+}
 async function refreshAll() {
   if (refreshController) refreshController.abort();
   const controller = new AbortController(); refreshController = controller;
@@ -629,6 +640,7 @@ async function refreshAll() {
     }
     store.lastSync = new Date().toISOString();
     store.pollMs = 2500;
+    scheduleFreshnessDeadline();
   } catch (error) {
     if (error.name === 'AbortError') return;
     store.offline = true;
@@ -654,6 +666,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => {
   clearTimeout(pollTimer);
+  clearTimeout(freshnessTimer);
   if (refreshController) refreshController.abort();
   store.helix?.destroy();
   store.helix = null;
