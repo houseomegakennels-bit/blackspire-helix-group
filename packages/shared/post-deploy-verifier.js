@@ -12,14 +12,20 @@ export function verifyPostDeploy(input, nowMs = Date.now()) {
   const startedMs = Date.parse(input.startedAt || '');
   const graceSeconds = Number(input.startupGraceSeconds);
   const windowSeconds = Number(input.verificationWindowSeconds);
+  const observedMs = Date.parse(input.observedAt || '');
   if (!Number.isFinite(startedMs)) throw new Error('startedAt must be an ISO timestamp');
   if (!Number.isInteger(graceSeconds) || graceSeconds < 0 || graceSeconds > 300) throw new Error('startupGraceSeconds must be an integer from 0 to 300');
   if (!Number.isInteger(windowSeconds) || windowSeconds < 1 || windowSeconds > 900) throw new Error('verificationWindowSeconds must be an integer from 1 to 900');
   if (nowMs < startedMs) throw new Error('verification clock precedes deployment start');
+  if (!Number.isFinite(observedMs)) throw new Error('observedAt must be an ISO timestamp');
   const elapsedSeconds = Math.floor((nowMs - startedMs) / 1000);
   const withinGrace = elapsedSeconds < graceSeconds;
   const windowExpired = elapsedSeconds > windowSeconds;
   const reasons = [];
+
+  if (observedMs < startedMs) reasons.push(reason('observation_precedes_deployment', 'intervention', 'observation predates this deployment'));
+  if (observedMs > nowMs + 5_000) reasons.push(reason('observation_clock_skew', 'intervention', 'observation timestamp is in the future'));
+  if (nowMs - observedMs > windowSeconds * 1_000) reasons.push(reason('observation_stale', 'rollback', 'observation is older than the verification window'));
 
   if (!ALLOWED_ENVIRONMENTS.has(expected.environment) || observed.environment !== expected.environment) reasons.push(reason('environment_identity_mismatch', 'intervention', 'deployed environment identity is absent, unknown, or unexpected'));
   if (!SHA.test(expected.commit || '') || observed.commit !== expected.commit) reasons.push(reason('commit_fingerprint_mismatch', 'intervention', 'deployed commit does not match the approved commit'));
@@ -59,8 +65,38 @@ export function verifyPostDeploy(input, nowMs = Date.now()) {
     windowExpired,
     environment: observed.environment || null,
     expected: { environment: expected.environment || null, commit: expected.commit || null, buildFingerprint: expected.buildFingerprint || null, migrationVersion: expected.migrationVersion || null },
-    observed: { commit: observed.commit || null, buildFingerprint: observed.buildFingerprint || null, migrationVersion: observed.migrationVersion || null, health: observed.health || null, telegramMode: observed.telegramMode || null, providersDisabled: observed.providersDisabled === true },
+    startedAt: new Date(startedMs).toISOString(),
+    observedAt: new Date(observedMs).toISOString(),
+    evaluatedAt: new Date(nowMs).toISOString(),
+    startupGraceSeconds: graceSeconds,
+    verificationWindowSeconds: windowSeconds,
+    observed: {
+      environment: observed.environment || null,
+      commit: observed.commit || null,
+      buildFingerprint: observed.buildFingerprint || null,
+      migrationVersion: observed.migrationVersion || null,
+      health: observed.health || null,
+      liveness: observed.liveness === true,
+      readiness: observed.readiness === true,
+      databaseConnected: observed.databaseConnected === true,
+      queueConnected: observed.queueConnected === true,
+      workerHeartbeatFresh: observed.workerHeartbeatFresh === true,
+      telegramMode: observed.telegramMode || null,
+      providersDisabled: observed.providersDisabled === true,
+    },
     reasons,
     mobileSummary: summary,
   };
+}
+
+export function recomputePostDeployAudit(audit, nowMs = Date.now()) {
+  if (!audit || audit.kind !== 'blackspire-post-deploy-verification') throw new Error('unsupported post-deploy audit');
+  return verifyPostDeploy({
+    startedAt: audit.startedAt,
+    observedAt: audit.observedAt,
+    startupGraceSeconds: audit.startupGraceSeconds,
+    verificationWindowSeconds: audit.verificationWindowSeconds,
+    expected: audit.expected,
+    observed: audit.observed,
+  }, nowMs);
 }

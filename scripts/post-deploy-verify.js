@@ -13,9 +13,9 @@ if (!inputPath || !path.isAbsolute(inputPath)) throw new Error('--input must be 
 const inputStat = fs.lstatSync(inputPath);
 if (!inputStat.isFile() || inputStat.isSymbolicLink()) throw new Error('--input must be a regular non-symlink file');
 const input = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
-const nowMs = input.observedAt ? Date.parse(input.observedAt) : Date.now();
+const nowMs = Date.now();
 const report = verifyPostDeploy(input, nowMs);
-const audit = { ...report, recordedAt: new Date(nowMs).toISOString() };
+const audit = { ...report, recordedAt: new Date().toISOString() };
 if (auditPath) {
   if (!path.isAbsolute(auditPath)) throw new Error('--audit-output must be an explicit absolute path');
   fs.mkdirSync(path.dirname(auditPath), { recursive: true, mode: 0o700 });
