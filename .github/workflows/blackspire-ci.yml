@@ -41,7 +41,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       # node-version-file must read .node-version — the single canonical runtime pin (22.23.1), the same one
       # the devcontainer image (1-22-bookworm) and scripts/bootstrap-development.sh use. package.json's
@@ -91,7 +91,11 @@ jobs:
         run: git ls-files -z '*.sh' | xargs -0 -r -n1 bash -n 2>&1 | tee ci-logs/09-shell-syntax.log
 
       - name: Validate whitespace
-        run: git diff --check HEAD^ HEAD 2>&1 | tee ci-logs/10-diff-check.log
+        env:
+          BLACKSPIRE_CI_EVENT_NAME: ${{ github.event_name }}
+          BLACKSPIRE_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BLACKSPIRE_CI_BEFORE_SHA: ${{ github.event.before }}
+        run: bash scripts/ci-validate-whitespace-range.sh 2>&1 | tee ci-logs/10-diff-check.log
 
       - name: Run read-only production preflight
         run: npm run production:preflight 2>&1 | tee ci-logs/11-production-preflight.log
