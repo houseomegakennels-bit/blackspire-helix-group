@@ -122,6 +122,9 @@ jobs:
             "$commit_sha" "$tree_sha" "$artifact_digest" "$node_version" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
             > ci-artifacts/build-metadata.json
 
+      - name: Cross-check packaged release and CI metadata
+        run: node scripts/verify-ci-release-artifact.js ci-artifacts
+
       - name: Upload build metadata
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
