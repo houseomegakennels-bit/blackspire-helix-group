@@ -166,6 +166,7 @@ function clearDangerousActionConfirmation() {
     armedDangerousAction.button.textContent = armedDangerousAction.defaultLabel;
     armedDangerousAction.button.removeAttribute('aria-pressed');
   }
+  setNotice(armedDangerousAction.noticeId, '');
   armedDangerousAction = null;
 }
 function confirmDangerousAction({ key, button, confirmLabel, noticeId, prompt }) {
@@ -179,7 +180,7 @@ function confirmDangerousAction({ key, button, confirmLabel, noticeId, prompt })
   button.setAttribute('aria-pressed', 'true');
   setNotice(noticeId, prompt);
   const timer = setTimeout(() => clearDangerousActionConfirmation(), 6000);
-  armedDangerousAction = { key, button, defaultLabel, timer };
+  armedDangerousAction = { key, button, defaultLabel, noticeId, timer };
   return false;
 }
 function restoreDangerousActionConfirmation(key, button, confirmLabel, defaultLabel) {

@@ -67,6 +67,7 @@ test('dangerous PWA actions require a second press on the same control', () => {
   assert.equal(context.confirmDangerousAction({ key: 'approval:approve:task-1', button: replacement, confirmLabel: 'Confirm approve', noticeId: 'approvalNotice', prompt: 'Confirm task 1' }), true);
   assert.equal(replacement.textContent, 'Approve');
   assert.equal(replacement.attributes['aria-pressed'], undefined);
+  assert.deepEqual(notices.at(-1), { id: 'approvalNotice', message: '' }, 'confirmation must clear its live prompt');
 });
 
 test('approval, rejection, and cancellation confirmations cannot confirm each other and expire closed', () => {
@@ -75,8 +76,9 @@ test('approval, rejection, and cancellation confirmations cannot confirm each ot
   const endMarker = '/* ---------- end dangerous-action confirmation ---------- */';
   const end = source.indexOf(endMarker, start);
   const timers = [];
+  const notices = [];
   const context = {
-    setNotice: () => {},
+    setNotice: (id, message) => notices.push({ id, message }),
     setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
     clearTimeout: () => {},
   };
@@ -96,6 +98,7 @@ test('approval, rejection, and cancellation confirmations cannot confirm each ot
 
   timers.at(-1).callback();
   assert.equal(cancel.textContent, 'Cancel task');
+  assert.deepEqual(notices.at(-1), { id: 'notice', message: '' }, 'expiry must clear its stale live prompt');
   assert.equal(arm('cancel:task-2', cancel, 'cancellation'), false, 'an expired confirmation must require a new first press');
 });
 
