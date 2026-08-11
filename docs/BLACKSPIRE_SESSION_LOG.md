@@ -1,5 +1,10 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-11 — M3A round-6 runtime-derived relation guard (Codex)
+
+- Recovered PR #66 at exact head `3bc44c10d423d5347f0d8dd08dd8f37235631130` in a new isolated worktree, leaving the preserved divergent Claude worktree and its local-only `b2772f1` untouched. Reproduced the round-6 coverage defect before fixing it: a pre-authorization raw read of the populated `hermes_memory_candidates` table passed the focused read-order test unchanged at 21/21 because the behavioral sentinel set manually named only ten relations.
+- Replaced the prose-maintained sentinel set with runtime discovery of every user table in the disposable SQLite schema. Only `hermes_outcome_evaluations` and the three authorization tables remain excluded for the existing documented constant-cost reasons. The same mutant now fails with `hermes_memory_candidates` recorded as an unauthorized touch; the unmutated focused guard passes. The authorized path retains representative non-vacuity witnesses, while row-empty relations retain the already documented no-object-scaled-work limit. No product code changed and `packages/hermes-orchestrator/outcome.js` remains byte-identical to `6a39c73`. Fresh exact-head independent review remains required; no merge, deployment, provider call, Telegram send, production action, or Gate 4 activation occurred.
+
 ## 2026-08-04 — M3A evaluation-read authorization ordering corrected (Codex)
 
 - Reconciled the repository at `0d6e977` plus the then-open canonical-anchor PR #65 — since merged as `03a0ee8b7493a719c0849f318361ebb604df0cd1`, onto which this branch is now rebased — and confirmed the recorded M3A inconsistency: `readOutcomeEvaluation` ran full provenance validation before deciding `evaluation.read`, unlike M3B and M3C.

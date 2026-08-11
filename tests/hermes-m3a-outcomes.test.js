@@ -402,22 +402,10 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   // reading code is written: through an alias, a lookup table, raw SQL, a join, a subquery, or an
   // aggregate. That is what the source-text pin above cannot do.
   //
-  // The sentinel set is EVERY object-scaled relation `readableEvaluation` can reach, and it must stay
-  // that way. Two successive revisions got this wrong and both were caught by independent review, so
-  // the history is kept here deliberately. The first covered only `hermes_workflow_runs` and the
-  // components table, and a bare `getWorkflowSteps(evaluation.run_id)` -- an imported accessor under
-  // its real name, no evasion at all -- survived at 21/21. The second added the `loadEvidence`
-  // relations and `tasks` but still omitted the corrections and source-event tables, on the mistaken
-  // assumption that guard 1 already covered them. Guard 1's mechanism is "the read throws", which a
-  // mutant-local `try { ... } catch {}` simply swallows, so a raw-SQL read of either table survived
-  // at 21/21 while leaking work that grows with the row count.
-  //
-  // Both failures were the same mistake: reasoning about which relations OUGHT to be reachable
-  // instead of enumerating what the code actually reads. The list below is derived by walking
-  // `readableEvaluation` -> `provenanceMatches` / `loadEvidence` / `correctionChainValid` /
-  // `sourceEventsValid` and taking every relation any of them touches. If any of those grows a new
-  // relation it MUST be added here. The anti-vacuity assertion below is the only thing standing
-  // between this list and silent staleness.
+  // Every user table is discovered from the live disposable schema and instrumented. This is
+  // intentionally broader than today's `readableEvaluation` graph: a new accessor, raw SQL query,
+  // join, CTE, or renamed evidence relation is covered without a reviewer having to remember to
+  // widen a prose-maintained list. Earlier rounds repeatedly proved that such a list goes stale.
   //
   // The recorder fires from a view's WHERE clause, so it observes a table only when that table has at
   // least one row -- an empty table yields no row to evaluate the predicate against. The fixture
@@ -426,7 +414,7 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   // so it is outside what this guard is built to catch, and saying so is more honest than implying
   // the recorder is unconditional.
   //
-  // Deliberately EXCLUDED, and why -- these are not oversights:
+  // Deliberately EXCLUDED from instrumentation, and why -- these are not oversights:
   //   * `hermes_outcome_evaluations` is read before authorization BY DESIGN: `getOutcomeEvaluation`
   //     supplies the `workspace_id` that authorization is then performed against. It is a single
   //     constant-cost primary-key lookup, so it carries the residual absent-vs-exists signal recorded
@@ -448,9 +436,12 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   const db = getDb();
   const touched = new Set();
   db.function('m3a_note_read', (table) => { touched.add(table); return 1; });
-  const sentinels = ['hermes_workflow_runs', 'hermes_outcome_evaluation_components', 'hermes_workflow_steps',
-    'hermes_routing_decisions', 'hermes_policy_decisions', 'hermes_verification_results',
-    'hermes_provider_invocations', 'tasks', 'hermes_outcome_corrections', 'hermes_outcome_source_events'];
+  const intentionalPreAuthorizationTables = new Set([
+    'hermes_outcome_evaluations', 'auth_principals', 'auth_workspace_grants', 'auth_decisions',
+  ]);
+  const sentinels = all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .map((row) => row.name).filter((table) => !intentionalPreAuthorizationTables.has(table));
+  assert.ok(sentinels.length > 10, 'the runtime-derived guard covers the whole user schema, not a handpicked evidence list');
   // SQLite rewrites the stored DDL of dependent indexes and triggers when a table is renamed and
   // renamed back, quoting the identifier. Normalize that quoting so the round-trip check asserts the
   // schema is restored without failing on cosmetic requoting.
@@ -469,13 +460,15 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
       'an unauthorized read must not touch any evidence relation the integrity path can reach: any ' +
       'integrity work before the deny is a cross-workspace oracle, however the source is shaped');
 
-    // Anti-vacuity: the sentinels must actually be able to observe a read, or the assertion above
-    // would pass for the wrong reason.
+    // Anti-vacuity: representative relations on each branch must actually be observable. Coverage
+    // itself comes from instrumenting every runtime-discovered user table, not from this witness set.
     touched.clear();
     assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
       'the owning workspace still reads the evaluation through the sentinel views');
-    assert.deepEqual([...touched].sort(), [...sentinels].sort(),
-      'the authorized read must touch every sentinel, proving the recorder observes real access');
+    for (const table of ['hermes_workflow_runs', 'hermes_outcome_evaluation_components',
+      'hermes_outcome_corrections', 'hermes_outcome_source_events']) {
+      assert.ok(touched.has(table), `the authorized read proves the ${table} recorder is live`);
+    }
   } finally {
     for (const table of sentinels) {
       execSql(`DROP VIEW ${table}`);
