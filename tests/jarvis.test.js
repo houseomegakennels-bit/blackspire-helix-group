@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-jarvis-'));
 process.env.BLACKSPIRE_DB_PATH = path.join(root, 'jarvis.sqlite');
@@ -34,6 +35,94 @@ test('Jarvis markup exposes evidence download, approval history, and status badg
   assert.match(appScript, /Session expired/);
   assert.match(html, /viewport/);
 });
+
+test('dangerous PWA actions require a second press on the same control', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- dangerous-action confirmation ---------- */');
+  const endMarker = '/* ---------- end dangerous-action confirmation ---------- */';
+  const end = source.indexOf(endMarker, start);
+  assert.ok(start >= 0 && end > start, 'confirmation state machine must remain directly testable');
+
+  const notices = [];
+  const timers = [];
+  const context = {
+    setNotice: (id, message) => notices.push({ id, message }),
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end + endMarker.length)}\nthis.confirmDangerousAction = confirmDangerousAction; this.restoreDangerousActionConfirmation = restoreDangerousActionConfirmation;`, context);
+
+  const button = fakeButton('Approve');
+  assert.equal(context.confirmDangerousAction({ key: 'approval:approve:task-1', button, confirmLabel: 'Confirm approve', noticeId: 'approvalNotice', prompt: 'Confirm task 1' }), false);
+  assert.equal(button.textContent, 'Confirm approve');
+  assert.equal(button.attributes['aria-pressed'], 'true');
+  assert.deepEqual(notices.at(-1), { id: 'approvalNotice', message: 'Confirm task 1' });
+  assert.equal(timers.at(-1).delay, 6000);
+
+  const replacement = fakeButton('Approve');
+  context.restoreDangerousActionConfirmation('approval:approve:task-1', replacement, 'Confirm approve', 'Approve');
+  assert.equal(replacement.textContent, 'Confirm approve', 'a polling render must preserve the visible armed state');
+  assert.equal(replacement.attributes['aria-pressed'], 'true');
+  assert.equal(context.confirmDangerousAction({ key: 'approval:approve:task-1', button: replacement, confirmLabel: 'Confirm approve', noticeId: 'approvalNotice', prompt: 'Confirm task 1' }), true);
+  assert.equal(replacement.textContent, 'Approve');
+  assert.equal(replacement.attributes['aria-pressed'], undefined);
+  assert.deepEqual(notices.at(-1), { id: 'approvalNotice', message: '' }, 'confirmation must clear its live prompt');
+});
+
+test('approval, rejection, and cancellation confirmations cannot confirm each other and expire closed', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const start = source.indexOf('/* ---------- dangerous-action confirmation ---------- */');
+  const endMarker = '/* ---------- end dangerous-action confirmation ---------- */';
+  const end = source.indexOf(endMarker, start);
+  const timers = [];
+  const notices = [];
+  const context = {
+    setNotice: (id, message) => notices.push({ id, message }),
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(`${source.slice(start, end + endMarker.length)}\nthis.confirmDangerousAction = confirmDangerousAction;`, context);
+
+  const approve = fakeButton('Approve');
+  const reject = fakeButton('Reject');
+  const cancel = fakeButton('Cancel task');
+  const arm = (key, button, label) => context.confirmDangerousAction({ key, button, confirmLabel: `Confirm ${label}`, noticeId: 'notice', prompt: label });
+
+  assert.equal(arm('approval:approve:task-2', approve, 'approve'), false);
+  assert.equal(arm('approval:reject:task-2', reject, 'reject'), false, 'reject must replace, not confirm, an armed approval');
+  assert.equal(approve.textContent, 'Approve');
+  assert.equal(arm('cancel:task-2', cancel, 'cancellation'), false, 'cancel must replace, not confirm, an armed rejection');
+  assert.equal(reject.textContent, 'Reject');
+
+  timers.at(-1).callback();
+  assert.equal(cancel.textContent, 'Cancel task');
+  assert.deepEqual(notices.at(-1), { id: 'notice', message: '' }, 'expiry must clear its stale live prompt');
+  assert.equal(arm('cancel:task-2', cancel, 'cancellation'), false, 'an expired confirmation must require a new first press');
+});
+
+test('approval, rejection, and cancellation handlers all use the confirmation gate before mutation', () => {
+  const source = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
+  const html = fs.readFileSync('apps/jarvis-pwa/public/index.html', 'utf8');
+  assert.match(source, /key: `approval:\$\{action\}:\$\{taskId\}`/);
+  assert.match(source, /key: `cancel:\$\{task\.id\}`/);
+  assert.match(source, /if \(!confirmDangerousAction\([\s\S]*?\)\) return;[\s\S]*?buttons\.forEach\(\(b\) => \{ b\.disabled = true; \}\);/);
+  assert.match(source, /if \(!confirmDangerousAction\([\s\S]*?key: `cancel:[\s\S]*?\)\) return;[\s\S]*?cancelButton\.disabled = true;/);
+  assert.match(source, /decideApprovalAction\(task\.id, 'reject', reject, approve\)/);
+  assert.match(source, /restoreDangerousActionConfirmation\(`approval:approve:\$\{task\.id\}`/);
+  assert.match(source, /restoreDangerousActionConfirmation\(`approval:reject:\$\{task\.id\}`/);
+  assert.match(html, /id="approvalNotice"[^>]*role="status"[^>]*aria-live="polite"/);
+});
+
+function fakeButton(label) {
+  return {
+    textContent: label,
+    attributes: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
+  };
+}
 
 test('unauthenticated api() calls surface a 401 instead of throwing, so the UI can prompt re-login', async () => {
   const response = await fetch('http://localhost:8898/api/tasks');
