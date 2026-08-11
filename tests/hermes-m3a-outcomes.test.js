@@ -364,6 +364,24 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null, 'a cross-workspace read is refused');
   assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
     'the owning workspace still receives an intact evaluation');
+
+  // The assertion above is a source-text pin: it catches a wholesale reordering, but an independent
+  // reviewer demonstrated it does NOT catch a partial reintroduction that leaves both textual anchors
+  // in place and inserts integrity work ahead of the authorization line. This is the behavioural guard
+  // for that case. Renaming the subordinate correction table makes any subordinate-evidence read throw,
+  // and `getOutcomeCorrections` is called by `readableEvaluation` OUTSIDE the `provenanceMatches`
+  // try/catch, so integrity work performed before the authorization decision surfaces as a thrown
+  // error instead of collapsing into an indistinguishable `null`. An unauthorized caller must still
+  // be refused quietly.
+  run('ALTER TABLE hermes_outcome_corrections RENAME TO hermes_outcome_corrections_hidden');
+  try {
+    assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null,
+      'an unauthorized read must not touch subordinate evidence, even when reading it would throw');
+  } finally {
+    run('ALTER TABLE hermes_outcome_corrections_hidden RENAME TO hermes_outcome_corrections');
+  }
+  assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
+    'the owning workspace still reads the evaluation once the subordinate table is restored');
 });
 
 test('explicit source events are idempotent, evidence-required, and evaluator failures are observable', async () => {

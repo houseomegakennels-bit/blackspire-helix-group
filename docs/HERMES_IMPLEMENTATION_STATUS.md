@@ -4,6 +4,8 @@
 
 - `readOutcomeEvaluation` now authorizes the stored workspace before complete provenance validation or subordinate-evidence reads, matching M3B and M3C.
 - Absent, unauthorized, and non-intact evaluations still return `null`; callers cannot nominate a workspace, and same-workspace reads still require `evaluation.read`.
+- The oracle is **narrowed, not closed**. Object-scaled work now sits behind the deny, but authorizing an existing row costs more than returning early on an absent one (measured ~45x, down from ~119x), so a residual absent-vs-exists signal survives. It names no workspace and matches the residual already accepted for M3C; it is carried as follow-up (viii).
+- The read-ordering regression is pinned two ways: a source-text order assertion, and a behavioural guard that renames the subordinate correction table so any pre-authorization evidence read throws. Both a full revert and a partial reintroduction that preserves the source order were executed and both fail the test.
 - Node 22.23.1 validation passed focused 21/21 and the clean full rerun at 699 total, 690 passed, 0 failed, 9 host-conditional skips, with trusted inventory 49/49. Independent review, merge, deployment, and production effect are not yet claimed.
 
 ## Milestone 3C, second slice — Re-review and successor chains (PR #64, merged)

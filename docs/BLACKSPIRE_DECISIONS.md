@@ -2,7 +2,7 @@
 
 ## 2026-08-04 — Stored scope must be authorized before expensive integrity work
 
-An authorization-facing read may need the stored row to discover its workspace, but it must do no more object-specific work until that workspace is authorized. M3A previously ran complete provenance validation before `evaluation.read`, creating a measurable cross-workspace work oracle even though the response body was already indistinguishable. M3A now follows M3B and M3C: read the bounded identity row, authorize its stored scope, then validate integrity. Absence, denial, and failed integrity still collapse to the same result.
+An authorization-facing read may need the stored row to discover its workspace, but it must do no more object-specific work until that workspace is authorized. M3A previously ran complete provenance validation before `evaluation.read`, creating a measurable cross-workspace work oracle even though the response body was already indistinguishable. M3A now follows M3B and M3C: read the bounded identity row, authorize its stored scope, then validate integrity. What this buys is bounded and should be stated as such: the object-scaled work - digest recompute, evidence-graph walk, subordinate correction and source-event reads - moves behind the deny, but the authorization step itself still costs more for a row that exists than for one that does not, so a residual existence signal survives in both M3A and M3C. Removing it would mean auditing and grant-checking against a workspace that an absent row cannot name. Absence, denial, and failed integrity still collapse to the same result.
 
 ## 2026-08-04 — `chain_version` is the sole ordering authority; `created_at` is metadata
 
