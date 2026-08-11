@@ -368,7 +368,9 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   const authAt = readBody.indexOf('canReadEvaluation');
   assert.ok(authAt >= 0, 'the read path must decide authorization');
   for (const helper of ['readableEvaluation', 'provenanceMatches', 'correctionChainValid', 'sourceEventsValid',
-    'evaluationShapeValid', 'loadEvidence', 'getOutcomeComponents', 'getOutcomeCorrections', 'getOutcomeSourceEvents']) {
+    'evaluationShapeValid', 'loadEvidence', 'getOutcomeComponents', 'getOutcomeCorrections', 'getOutcomeSourceEvents',
+    'getWorkflowRun', 'getWorkflowSteps', 'getRoutingDecisions', 'getPolicyDecisions', 'getVerificationResults',
+    'getProviderInvocations', 'getTask']) {
     const at = readBody.indexOf(helper);
     assert.ok(at === -1 || at > authAt,
       `authorization must be decided before ${helper}: no integrity or subordinate-evidence work may precede the deny`);
@@ -396,13 +398,25 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   // Behavioural guard 2: record access instead of provoking a throw, so a swallowed exception cannot
   // hide it. Each sentinel table is swapped for a view over the real table whose WHERE clause calls a
   // UDF that notes the access. Reads still return exactly the same rows, so the authorized path is
-  // unaffected -- but any pre-authorization touch of the workflow-evidence or component tables is now
-  // observed no matter what source shape produced it. This is the guard that kills the alias and
-  // string-literal mutants the source-text pin above cannot see.
+  // unaffected -- but any pre-authorization touch of a sentinel is observed no matter what source
+  // shape produced it. This is the guard that kills the alias and string-literal mutants the
+  // source-text pin above cannot see.
+  //
+  // The sentinel set must be EVERY relation the integrity path can read, not a sample of it. An
+  // earlier revision covered only `hermes_workflow_runs` and the components table, and an
+  // independent reviewer then showed that a bare `getWorkflowSteps(evaluation.run_id)` ahead of the
+  // deny -- an already-imported accessor used under its real name, needing no evasion at all --
+  // survived at 21/21 while re-leaking object-scaled evidence-graph work. The list below is derived
+  // from `loadEvidence`, which reads the run, its task, and five per-run evidence relations, plus
+  // the components table read by `provenanceMatches`. If `loadEvidence` grows a new relation, it
+  // MUST be added here; the anti-vacuity assertion below is what makes that omission visible,
+  // because a relation the authorized read touches but the set omits cannot be detected at all.
   const db = getDb();
   const touched = new Set();
   db.function('m3a_note_read', (table) => { touched.add(table); return 1; });
-  const sentinels = ['hermes_workflow_runs', 'hermes_outcome_evaluation_components'];
+  const sentinels = ['hermes_workflow_runs', 'hermes_outcome_evaluation_components', 'hermes_workflow_steps',
+    'hermes_routing_decisions', 'hermes_policy_decisions', 'hermes_verification_results',
+    'hermes_provider_invocations', 'tasks'];
   // SQLite rewrites the stored DDL of dependent indexes and triggers when a table is renamed and
   // renamed back, quoting the identifier. Normalize that quoting so the round-trip check asserts the
   // schema is restored without failing on cosmetic requoting.
@@ -418,8 +432,8 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
     assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null,
       'a cross-workspace read is still refused while the sentinels are installed');
     assert.deepEqual([...touched], [],
-      'an unauthorized read must not touch the workflow-evidence or component tables: any integrity ' +
-      'work before the deny is a cross-workspace oracle, however the source is shaped');
+      'an unauthorized read must not touch any evidence relation the integrity path can reach: any ' +
+      'integrity work before the deny is a cross-workspace oracle, however the source is shaped');
 
     // Anti-vacuity: the sentinels must actually be able to observe a read, or the assertion above
     // would pass for the wrong reason.
