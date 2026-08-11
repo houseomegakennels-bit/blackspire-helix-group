@@ -419,11 +419,11 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   //     supplies the `workspace_id` that authorization is then performed against. It is a single
   //     constant-cost primary-key lookup, so it carries the residual absent-vs-exists signal recorded
   //     as follow-up (viii) and nothing more.
-  //   * `auth_principals`, `auth_workspace_grants`, and `auth_decisions` are read by
-  //     `canReadEvaluation` itself, so reading them early duplicates work the deny path already does.
-  //     Constant cost, not evidence-scaled, no new oracle.
-  // A mutant reading only these survives, by design; recorded here rather than left for a future
-  // reviewer to rediscover as though it were a gap.
+  //   * `auth_decisions` is the write target of `canReadEvaluation`; replacing it with a read-only
+  //     view would change authorization behaviour. It is not an integrity-read relation.
+  // The other auth tables ARE instrumented. A direct `canReadEvaluation` call establishes the exact
+  // legitimate auth-read baseline; the full read must match it. Extra pre-denial actor/grant graph
+  // validation therefore cannot hide behind the authorization step's expected reads.
   const corrector = principal('m3a-read-order-owner', ['evaluation.read', 'evaluation.correct']);
   appendOutcomeCorrection(corrector, result.evaluationId,
     { reason: 'sentinel fixture correction', sourceEvidence: 'sentinel fixture evidence' });
@@ -434,10 +434,10 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   assert.ok(all('SELECT id FROM hermes_outcome_source_events WHERE evaluation_id=?', [result.evaluationId]).length > 0,
     'the source-events sentinel needs at least one row or its recorder can never fire');
   const db = getDb();
-  const touched = new Set();
-  db.function('m3a_note_read', (table) => { touched.add(table); return 1; });
+  const touched = new Map();
+  db.function('m3a_note_read', (table) => { touched.set(table, (touched.get(table) || 0) + 1); return 1; });
   const intentionalPreAuthorizationTables = new Set([
-    'hermes_outcome_evaluations', 'auth_principals', 'auth_workspace_grants', 'auth_decisions',
+    'hermes_outcome_evaluations', 'auth_decisions',
   ]);
   const sentinels = all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     .map((row) => row.name).filter((table) => !intentionalPreAuthorizationTables.has(table));
@@ -448,17 +448,26 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
   const schema = () => all('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')
     .map((row) => `${row.type}:${row.name}:${String(row.sql ?? '').replace(/"/g, '')}`).join('\n');
   const schemaBefore = schema();
-  for (const table of sentinels) {
-    execSql(`ALTER TABLE ${table} RENAME TO ${table}__real`);
-    execSql(`CREATE VIEW ${table} AS SELECT * FROM ${table}__real WHERE m3a_note_read('${table}')=1`);
-  }
+  const altered = [];
+  let primaryFailure = null;
   try {
+    for (const table of sentinels) {
+      execSql(`ALTER TABLE ${table} RENAME TO ${table}__real`);
+      altered.push(table);
+      execSql(`CREATE VIEW ${table} AS SELECT * FROM ${table}__real WHERE m3a_note_read('${table}')=1`);
+    }
+
+    touched.clear();
+    assert.equal(authz.canReadEvaluation(stranger, 'm3a-read-order-owner').allowed, false,
+      'the direct authorization baseline refuses the stranger');
+    const legitimateAuthorizationReads = new Map(touched);
+
     touched.clear();
     assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null,
       'a cross-workspace read is still refused while the sentinels are installed');
-    assert.deepEqual([...touched], [],
-      'an unauthorized read must not touch any evidence relation the integrity path can reach: any ' +
-      'integrity work before the deny is a cross-workspace oracle, however the source is shaped');
+    assert.deepEqual([...touched.entries()].sort(), [...legitimateAuthorizationReads.entries()].sort(),
+      'an unauthorized read may perform exactly the legitimate authorization graph reads and no ' +
+      'additional integrity or actor/grant graph work before the deny');
 
     // Anti-vacuity: representative relations on each branch must actually be observable. Coverage
     // itself comes from instrumenting every runtime-discovered user table, not from this witness set.
@@ -469,12 +478,22 @@ test('outcome reads authorize before provenance or subordinate-evidence work', a
       'hermes_outcome_corrections', 'hermes_outcome_source_events']) {
       assert.ok(touched.has(table), `the authorized read proves the ${table} recorder is live`);
     }
+  } catch (error) {
+    primaryFailure = error;
   } finally {
-    for (const table of sentinels) {
-      execSql(`DROP VIEW ${table}`);
-      execSql(`ALTER TABLE ${table}__real RENAME TO ${table}`);
+    const restoreFailures = [];
+    for (const table of altered.reverse()) {
+      try { execSql(`DROP VIEW IF EXISTS ${table}`); } catch (error) { restoreFailures.push(error); }
+      try { execSql(`ALTER TABLE ${table}__real RENAME TO ${table}`); } catch (error) { restoreFailures.push(error); }
+    }
+    if (restoreFailures.length) {
+      const restorationFailure = new AggregateError(restoreFailures, 'failed to restore every instrumented M3A table');
+      primaryFailure = primaryFailure
+        ? new AggregateError([primaryFailure, restorationFailure], 'M3A guard failed and schema restoration also failed')
+        : restorationFailure;
     }
   }
+  if (primaryFailure) throw primaryFailure;
   assert.equal(schema(), schemaBefore, 'the sentinel swap must restore the schema exactly');
   assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
     'the owning workspace still reads the evaluation once the subordinate tables are restored');
