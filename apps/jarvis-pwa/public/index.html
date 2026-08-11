@@ -22,6 +22,7 @@
   </header>
 
   <div id="offlineBar" role="status">Offline — showing last synced canonical state. Reconnecting…</div>
+  <div id="deploymentBar" role="status" aria-live="polite">Environment and build identity are not reported by the control plane. Treat this client as unverified.</div>
   <div id="updateBar" role="status"><span>A new Jarvis version is ready.</span><button id="applyUpdate" type="button">Reload</button></div>
 
   <nav class="views" aria-label="Screens" id="viewNav">
@@ -207,6 +208,7 @@
       <div class="panel wide">
         <h2>Approval center</h2>
         <p class="muted fs-13 mb-12">Approvals are decided by the control plane. Jarvis only submits your decision; it cannot create or widen approvals.</p>
+        <p class="notice" id="approvalNotice" role="status" aria-live="polite"></p>
         <div class="stack" id="approvalList"><p class="empty">No approvals pending.</p></div>
       </div>
     </section>
@@ -223,7 +225,9 @@
           <div class="fact"><span class="label">Telegram adapter</span><span class="value mono" id="sysTelegram">—</span></div>
           <div class="fact"><span class="label">Providers</span><span class="value mono" id="sysProviders">—</span></div>
           <div class="fact"><span class="label">Active workspace</span><span class="value mono" id="sysWorkspace">—</span></div>
-          <div class="fact"><span class="label">Mode</span><span class="value" id="sysMode">Production</span></div>
+          <div class="fact"><span class="label">Mode</span><span class="value" id="sysMode">Production contracts (environment unverified)</span></div>
+          <div class="fact"><span class="label">Deployed build</span><span class="value mono" id="sysBuild">Unverified</span></div>
+          <div class="fact"><span class="label">Client freshness</span><span class="value" id="sysFreshness">Unverified</span></div>
           <div class="fact"><span class="label">Polling</span><span class="value mono" id="sysPolling">—</span></div>
           <div class="fact"><span class="label">Last sync</span><span class="value mono" id="sysSync">—</span></div>
           <div class="fact"><span class="label">PWA update</span><span class="value" id="sysPwa">Current</span></div>
