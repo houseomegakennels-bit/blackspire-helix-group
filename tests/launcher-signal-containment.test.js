@@ -10,6 +10,9 @@ import { prepareDisposableDatabase } from './helpers/prepare-disposable-database
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-launcher-signals-'));
 
+// A suite about disposable hygiene must not leak its own scratch root on every run.
+test.after(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
 function childResult(child, timeoutMs = 8_000) {
   return new Promise((resolve, reject) => {
     let stdout = '';
@@ -118,6 +121,44 @@ test('signal during disposable startup removes partial state and never reports r
   const rebound = net.createServer();
   await new Promise((resolve, reject) => rebound.once('error', reject).listen(port, '127.0.0.1', resolve));
   await new Promise((resolve) => rebound.close(resolve));
+});
+
+// Regression: a signal landing mid-startup used to run cleanup to completion CONCURRENTLY with a
+// still-advancing startup, which then re-created the disposable root cleanup had just removed. The
+// launcher printed "cleaned":true and exited 0 while the directory and its SQLite file survived.
+// The pause seam lands the signal deterministically inside that window instead of racing wall-clock.
+test('signal inside the startup window leaves nothing behind and never reports a false clean exit', async (t) => {
+  const prefix = 'blackspire-iphone-build-';
+  const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-launcher-window-'));
+  t.after(() => fs.rmSync(tmpdir, { recursive: true, force: true }));
+  const port = await freePort();
+  const child = spawn(process.execPath, ['scripts/start-iphone-test-build.js'], {
+    cwd: path.resolve(import.meta.dirname, '..'),
+    env: {
+      ...process.env,
+      TMPDIR: tmpdir,
+      PORT: String(port),
+      UNIFIED_TEST_ACCESS_CODE: 'startup-window-regression',
+      UNIFIED_TEST_TTL_MS: '60000',
+      UNIFIED_TEST_STARTUP_PAUSE_MS: '750',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const resultPromise = childResult(child, 30_000);
+  await waitForOutput(child, /"status":"startup_paused"/, 20_000);
+  child.kill('SIGTERM');
+  const result = await resultPromise;
+  const output = `${result.stdout}\n${result.stderr}`;
+
+  // (a) nothing survives in the launcher's private TMPDIR.
+  const survivors = fs.readdirSync(tmpdir).filter((name) => name.startsWith(prefix));
+  assert.deepEqual(survivors, [], `interrupted startup leaked disposable state: ${survivors.join(', ')}\n${output}`);
+  // (b) the reported status is honest: never ready, and never a clean exit alongside a leak.
+  assert.notEqual(result.code, null, `unexpected signal termination: ${result.signal}\n${output}`);
+  assert.doesNotMatch(result.stdout, /"status":"ready"/, output);
+  if (result.code !== 0) assert.doesNotMatch(result.stdout, /"cleaned":true/, output);
+  assert.equal(result.code, 0, `interrupted-but-clean shutdown must exit 0: ${output}`);
+  assert.match(result.stdout, /"status":"stopped".*"cleaned":true/, output);
 });
 
 test('occupied disposable port reports the bind failure, never a launcher reference error or readiness', async () => {

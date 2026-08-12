@@ -84,6 +84,52 @@ test('startup waits for a confirmed listener and exposes bind failure', async ()
   await assert.rejects(listening, bindError);
 });
 
+test('every failing stage is aggregated instead of only the first', async () => {
+  const events = [];
+  const cleanup = createIphoneTestCleanup({
+    worker: { async stop() { throw new Error('stop failed'); } },
+    server: {
+      close(callback) { events.push('server-close'); callback(new Error('close failed')); },
+      closeAllConnections() { events.push('connections-close'); },
+    },
+    closeDb() { events.push('db-close'); throw new Error('db close failed'); },
+    removeData() { events.push('data-remove'); throw new Error('data remove failed'); },
+    log() { events.push('success'); },
+  });
+  const error = await cleanup('aggregate').then(() => null, (caught) => caught);
+  assert.ok(error instanceof AggregateError, `expected AggregateError, got ${error}`);
+  assert.deepEqual(error.errors.map((entry) => entry.message), ['stop failed', 'close failed', 'db close failed', 'data remove failed']);
+  // A failing db-close must not hide the stage that decides whether the disposable root went away.
+  assert.match(error.message, /data remove failed/);
+  assert.deepEqual(events, ['server-close', 'connections-close', 'db-close', 'data-remove']);
+  assert.equal(events.includes('success'), false);
+});
+
+test('a failed cleanup can be retried while success stays idempotent', async () => {
+  const events = [];
+  let failRemove = true;
+  const cleanup = createIphoneTestCleanup({
+    worker: undefined,
+    server: undefined,
+    closeDb() { events.push('db-close'); },
+    removeData() {
+      events.push('data-remove');
+      if (failRemove) throw new Error('data remove failed');
+    },
+    log() { events.push('success'); },
+  });
+  await assert.rejects(cleanup('first'), /data remove failed/);
+  assert.equal(events.includes('success'), false);
+  // A memoized rejection would make the disposable root permanently unrecoverable.
+  failRemove = false;
+  await cleanup('retry');
+  assert.deepEqual(events, ['db-close', 'data-remove', 'db-close', 'data-remove', 'success']);
+  const settled = cleanup('again');
+  assert.strictEqual(settled, cleanup('again-2'));
+  await settled;
+  assert.equal(events.filter((event) => event === 'data-remove').length, 2);
+});
+
 test('startup failure cleanup supports a server before worker creation', async () => {
   const events = [];
   const cleanup = createIphoneTestCleanup({

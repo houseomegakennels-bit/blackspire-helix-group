@@ -75,9 +75,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         if (worker) result = await worker.stop();
         if (startupError && !result.error) result.error = startupError;
       }
-      catch (error) { result = { drained: true, error }; }
+      // worker.stop() rejecting means the drain did not complete; reporting drained:true here made
+      // the lifecycle log claim a clean drain that never happened.
+      catch (error) { result = { drained: false, error }; }
       finally { closeDb(); }
-      if (!result.drained) console.error(JSON.stringify({ service: 'worker', lifecycle: 'drain_timeout' }));
+      // Only the deadline path is a timeout; a stop() rejection is reported by the fatal line below.
+      if (!result.drained && !result.error) console.error(JSON.stringify({ service: 'worker', lifecycle: 'drain_timeout' }));
       if (result.error) console.error(JSON.stringify({ service: 'worker', fatal: true, error: sanitizeWorkerError(result.error) }));
       process.exitCode = result.drained && !result.error ? 0 : 1;
       return result;

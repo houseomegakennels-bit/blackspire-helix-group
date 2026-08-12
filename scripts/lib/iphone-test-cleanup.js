@@ -3,14 +3,17 @@ export function createIphoneTestCleanup({ worker, server, closeDb, removeData, l
   return function cleanup(reason) {
     if (cleanupPromise) return cleanupPromise;
     cleanupPromise = (async () => {
-      let cleanupError;
+      // Every stage runs regardless of earlier failures, and every stage error is kept: a failing
+      // db-close must not mask a failing data-remove, which is the stage that decides whether the
+      // disposable root actually went away.
+      const errors = [];
       try {
         if (worker) {
           const result = await worker.stop({ deadlineMs });
           if (!result?.drained) throw new Error('worker shutdown did not drain before its deadline');
         }
       } catch (error) {
-        cleanupError = error;
+        errors.push(error);
       }
 
       if (server) {
@@ -21,14 +24,19 @@ export function createIphoneTestCleanup({ worker, server, closeDb, removeData, l
           server.closeAllConnections?.();
           await closed;
         } catch (error) {
-          cleanupError ||= error;
+          errors.push(error);
         }
       }
-      try { closeDb(); } catch (error) { cleanupError ||= error; }
-      try { removeData(); } catch (error) { cleanupError ||= error; }
-      if (cleanupError) throw cleanupError;
+      try { closeDb(); } catch (error) { errors.push(error); }
+      try { removeData(); } catch (error) { errors.push(error); }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, `disposable cleanup failed with ${errors.length} errors: ${errors.map((error) => String(error?.message || error)).join('; ')}`);
       log(JSON.stringify({ service: 'iphone-test-build', status: 'stopped', reason, cleaned: true }));
     })();
+    // Success stays memoized so cleanup is idempotent, but a failed cleanup must be retryable rather
+    // than returning the same rejection forever. The reset is registered first, so it has already run
+    // by the time a caller's own rejection handler observes the failure.
+    cleanupPromise.catch(() => { cleanupPromise = undefined; });
     return cleanupPromise;
   };
 }

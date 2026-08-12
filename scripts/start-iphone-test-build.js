@@ -29,13 +29,31 @@ globalThis.fetch = async (input, init) => {
 let server;
 let worker;
 let closeDb = () => {};
-const removeData = () => fs.rmSync(dataDir, { recursive: true, force: true });
+const removeData = () => {
+  fs.rmSync(dataDir, { recursive: true, force: true });
+  if (fs.existsSync(dataDir)) throw new Error(`disposable data directory survived removal: ${dataDir}`);
+};
 let cleanup = async () => { closeDb(); removeData(); };
 let waitForServerListening;
 let timer;
 let shutdownPromise;
+let shutdownRequested = null;
+let startupPromise;
 let startupChild;
 let startupSucceeded = false;
+// Signals can land at any await in the startup sequence. Every resource-creating step is guarded by
+// this so an interrupted startup stops before it can create anything else.
+function assertNotShuttingDown() {
+  if (shutdownRequested) throw new Error(`startup interrupted by ${shutdownRequested}`);
+}
+async function killStartupChild() {
+  if (startupChild?.exitCode === null) {
+    const child = startupChild;
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    child.kill('SIGTERM');
+    await exited;
+  }
+}
 function runMigrationSubprocess() {
   return new Promise((resolve, reject) => {
     startupChild = spawn(process.execPath, ['scripts/migrate.js'], {
@@ -50,17 +68,21 @@ function runMigrationSubprocess() {
   });
 }
 async function shutdownAndExit(reason) {
+  shutdownRequested ??= reason;
   if (shutdownPromise) return shutdownPromise;
   shutdownPromise = (async () => {
     if (timer) clearTimeout(timer);
     try {
-      if (startupChild?.exitCode === null) {
-        const child = startupChild;
-        const exited = new Promise((resolve) => child.once('exit', resolve));
-        child.kill('SIGTERM');
-        await exited;
-      }
+      // Cleanup must never run concurrently with a startup that can still create resources, or it
+      // removes the disposable root and the still-advancing startup silently re-creates it. Kill any
+      // in-flight startup child so the sequence settles promptly, then wait for it to actually settle.
+      await killStartupChild();
+      if (startupPromise) await startupPromise.catch(() => {});
+      // The sequence may have spawned its child between the kill above and observing the abort flag.
+      await killStartupChild();
       await cleanup(reason);
+      // The disposable root is the whole point of this launcher; never claim a clean exit on trust.
+      if (fs.existsSync(dataDir)) throw new Error(`disposable data directory survived shutdown: ${dataDir}`);
       process.exitCode = 0;
     }
     catch (error) {
@@ -71,37 +93,52 @@ async function shutdownAndExit(reason) {
   return shutdownPromise;
 }
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void shutdownAndExit(signal); });
-try {
+async function runStartup() {
   const cleanupModule = await import('./lib/iphone-test-cleanup.js');
-  if (shutdownPromise) { await shutdownPromise; throw new Error('startup interrupted'); }
   cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
   waitForServerListening = cleanupModule.waitForServerListening;
+  assertNotShuttingDown();
+  // Test-only seam: lets a regression test land a signal deterministically in the window that used to
+  // let cleanup race a still-advancing startup, instead of sweeping wall-clock delays.
+  const pauseMs = Number(process.env.UNIFIED_TEST_STARTUP_PAUSE_MS || 0);
+  if (pauseMs > 0) {
+    console.log(JSON.stringify({ service: 'iphone-test-build', status: 'startup_paused', stage: 'pre-migration' }));
+    await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    assertNotShuttingDown();
+  }
   await runMigrationSubprocess();
+  assertNotShuttingDown();
   const [{ start }, workerModule, dbModule] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
   closeDb = dbModule.closeDb;
   cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  assertNotShuttingDown();
   // The launcher owns startup failure handling so it can remove its disposable state. Do not start
   // the worker or report readiness until the API has actually acquired its loopback listener.
-  server = start(port, '127.0.0.1', { exitOnListenError: false });
+  server = start(port, '127.0.0.1');
   cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
   await waitForServerListening(server);
+  assertNotShuttingDown();
   worker = workerModule.startWorker();
   cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
-  startupSucceeded = true;
-} catch (error) {
-  startupSucceeded = false;
-  if (shutdownPromise) {
-    await shutdownPromise;
-  } else {
-    try { await cleanup('startup-failure'); }
-    catch (cleanupError) {
-      console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_cleanup_failed', error: String(cleanupError.message || cleanupError) }));
-    }
-    console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_failed', error: String(error.message || error) }));
-    process.exitCode = 1;
-  }
 }
-if (startupSucceeded && !shutdownPromise) {
+
+startupPromise = runStartup();
+let startupError = null;
+try { await startupPromise; startupSucceeded = true; }
+catch (error) { startupError = error; }
+if (shutdownRequested) {
+  // A signal won the race: shutdownAndExit owns cleanup and the exit code, and it waited for the
+  // sequence above to settle before touching anything.
+  await shutdownAndExit(shutdownRequested);
+} else if (startupError) {
+  try { await cleanup('startup-failure'); }
+  catch (cleanupError) {
+    console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_cleanup_failed', error: String(cleanupError.message || cleanupError) }));
+  }
+  console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_failed', error: String(startupError.message || startupError) }));
+  process.exitCode = 1;
+}
+if (startupSucceeded && !shutdownRequested) {
   timer = setTimeout(() => { void shutdownAndExit('expired'); }, expiresAt.getTime() - Date.now());
   timer.unref();
   console.log(JSON.stringify({ service: 'iphone-test-build', status: 'ready', bind: `127.0.0.1:${port}`, expiresAt: expiresAt.toISOString(), provider: 'mock', telegram: 'mock', productionData: false }));
