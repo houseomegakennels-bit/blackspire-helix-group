@@ -70,6 +70,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (shutdownPromise) return shutdownPromise;
     shutdownPromise = (async () => {
       if (signal) console.log(JSON.stringify({ service: 'worker', lifecycle: 'draining', signal }));
+      // Test-only seam: an idle worker drains instantly, so a second-signal regression could finish
+      // the whole shutdown before the second signal was delivered and silently test nothing. This
+      // holds the drain open long enough for the second signal to land deterministically.
+      const drainPauseMs = Number(process.env.UNIFIED_TEST_DRAIN_PAUSE_MS || 0);
+      if (drainPauseMs > 0) await new Promise((resolve) => setTimeout(resolve, drainPauseMs));
       let result = { drained: true, error: startupError };
       try {
         if (worker) result = await worker.stop();

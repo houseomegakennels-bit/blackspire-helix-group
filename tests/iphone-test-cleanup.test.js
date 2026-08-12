@@ -196,3 +196,21 @@ test('real launcher exits nonzero and removes disposable state when its loopback
   const created = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(prefix) && !before.has(name));
   assert.deepEqual(created, [], `leaked disposable directories: ${created.join(', ')}`);
 });
+
+test('a drained worker that reports an in-flight error still fails cleanup', async () => {
+  const events = [];
+  const taskError = new Error('in-flight task blew up');
+  const cleanup = createIphoneTestCleanup({
+    // stop() resolves {drained:true, error} when the drain completed but a tick rejected. Discarding
+    // that error let cleanup log a clean teardown for one that actually failed.
+    worker: { async stop() { events.push('worker-stop'); return { drained: true, error: taskError }; } },
+    server: undefined,
+    closeDb() { events.push('db-close'); },
+    removeData() { events.push('data-remove'); },
+    log() { events.push('success'); },
+  });
+  await assert.rejects(cleanup('drained-with-error'), /in-flight task blew up/);
+  // The drain really did complete, so every later stage must still have run.
+  assert.deepEqual(events, ['worker-stop', 'db-close', 'data-remove']);
+  assert.equal(events.includes('success'), false);
+});

@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+// Resolved from this file, not the cwd, so the launcher works from any working directory.
+const repoRoot = path.resolve(import.meta.dirname, '..');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'));
 const port = Number(process.env.PORT || 8787);
 const expiresAt = new Date(Date.now() + Math.min(Number(process.env.UNIFIED_TEST_TTL_MS || 2 * 60 * 60 * 1000), 4 * 60 * 60 * 1000));
@@ -50,14 +52,21 @@ async function killStartupChild() {
   if (startupChild?.exitCode === null) {
     const child = startupChild;
     const exited = new Promise((resolve) => child.once('exit', resolve));
-    child.kill('SIGTERM');
+    // Signal the whole process group so the migration writer grandchild dies with its parent. The
+    // group may already be gone between the guard and here, so fall back to the direct child.
+    try { process.kill(-child.pid, 'SIGTERM'); }
+    catch { try { child.kill('SIGTERM'); } catch { /* already exited */ } }
     await exited;
   }
 }
 function runMigrationSubprocess() {
   return new Promise((resolve, reject) => {
-    startupChild = spawn(process.execPath, ['scripts/migrate.js'], {
-      cwd: process.cwd(), env: { ...process.env, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, stdio: 'ignore',
+    // detached makes the child a process-group leader so an interrupted startup can signal the whole
+    // group. migrate.js runs its writer as a grandchild via spawnSync; signalling only the direct
+    // child left that writer alive, reparented to init, still holding the disposable database while
+    // the launcher removed the directory and reported a clean exit.
+    startupChild = spawn(process.execPath, [path.join(repoRoot, 'scripts', 'migrate.js')], {
+      cwd: repoRoot, env: { ...process.env, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, stdio: 'ignore', detached: true,
     });
     startupChild.once('error', () => reject(new Error('disposable database migration could not start')));
     startupChild.once('exit', (code, signal) => {

@@ -11,6 +11,10 @@ export function createIphoneTestCleanup({ worker, server, closeDb, removeData, l
         if (worker) {
           const result = await worker.stop({ deadlineMs });
           if (!result?.drained) throw new Error('worker shutdown did not drain before its deadline');
+          // stop() reports {drained:true, error} when an in-flight tick rejected. The drain really
+          // did complete, so this is not a leak, but discarding the error let cleanup log a clean
+          // result for a teardown that failed.
+          if (result.error) throw result.error;
         }
       } catch (error) {
         errors.push(error);

@@ -82,10 +82,14 @@ test('API second signal accelerates shutdown and exits nonzero without leaving i
 test('worker second signal forces sanitized nonzero termination', async () => {
   const dbPath = path.join(root, 'worker-second-signal.sqlite');
   prepareDisposableDatabase(dbPath);
-  const child = spawn(process.execPath, ['apps/worker/worker.js'], { env: baseEnv(dbPath, 0), stdio: ['ignore', 'pipe', 'pipe'] });
+  // An idle worker drains instantly. Without the pause seam and the draining-line wait below, the
+  // first shutdown could complete and exit 0 before the second signal was ever delivered, so this
+  // regression would pass while exercising nothing.
+  const child = spawn(process.execPath, ['apps/worker/worker.js'], { env: { ...baseEnv(dbPath, 0), UNIFIED_TEST_DRAIN_PAUSE_MS: '2000' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const resultPromise = childResult(child);
   await waitForOutput(child, /"service":"worker"/);
   child.kill('SIGTERM');
+  await waitForOutput(child, /"lifecycle":"draining"/);
   child.kill('SIGINT');
   const result = await resultPromise;
   assert.equal(result.code, 1, result.stderr);
@@ -118,6 +122,18 @@ test('signal during disposable startup removes partial state and never reports r
   assert.notEqual(result.code, null, `unexpected signal termination: ${result.signal}`);
   assert.doesNotMatch(result.stdout, /"status":"ready"/);
   for (const name of created) assert.equal(fs.existsSync(path.join(os.tmpdir(), name)), false, `${name} must be removed`);
+
+  // migrate.js runs the schema writer as a GRANDCHILD via spawnSync, and the exclusive lock above
+  // keeps it blocked. Signalling only the direct child killed migrate.js while it sat in spawnSync,
+  // leaving the writer alive and reparented to init, still holding the disposable database — while
+  // the directory check above still passed, because Linux unlinks happily with open descriptors.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const ps = spawn('ps', ['-eo', 'pid,ppid,args'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  let table = '';
+  ps.stdout.on('data', (chunk) => { table += chunk; });
+  await new Promise((resolve) => ps.once('close', resolve));
+  const orphans = table.split('\n').filter((line) => line.includes('migration-writer.js'));
+  assert.deepEqual(orphans, [], `an interrupted startup left an orphan writer process:\n${orphans.join('\n')}`);
   const rebound = net.createServer();
   await new Promise((resolve, reject) => rebound.once('error', reject).listen(port, '127.0.0.1', resolve));
   await new Promise((resolve) => rebound.close(resolve));
