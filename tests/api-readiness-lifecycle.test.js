@@ -32,7 +32,10 @@ test('liveness remains explicit while readiness verifies lifecycle, schema, and 
   assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true, worker: true, scheduler: true });
 });
 
-test('required worker heartbeat makes readiness fail closed when missing or stale', async () => {
+test('required worker heartbeat makes readiness fail closed when missing or stale', async (t) => {
+  // Restore on the failure path too: a bare delete on the last line leaks the flag out of a
+  // failed assertion and cascades into the later tests in this same process.
+  t.after(() => { delete process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT; });
   process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT = 'true';
   const missing = readinessSnapshot();
   assert.equal(missing.ok, false);

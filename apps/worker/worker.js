@@ -19,6 +19,13 @@ export function startWorker({
   const startedAt = new Date().toISOString();
   let activeTaskId = null;
   const heartbeat = (phase) => recordHeartbeatImpl({ workerId, phase, taskId: activeTaskId, startedAt });
+  // Heartbeat writes are observability, never a reason to lose a task. On the timer and shutdown
+  // paths there is no enclosing catch, so a synchronous DB fault (SQLITE_BUSY, disk full, closed
+  // handle) would kill the process outright and skip the graceful drain. Those paths use this.
+  const safeHeartbeat = (phase) => {
+    try { heartbeat(phase); }
+    catch (error) { console.error(JSON.stringify({ service: 'worker', lifecycle: 'heartbeat_failed', error: sanitizeWorkerError(error) })); }
+  };
   const previous = workerRuntimeStatus({ workerId });
   heartbeat('starting');
   if (previous.restartDetected) console.warn(JSON.stringify({ service: 'worker', lifecycle: 'restart_after_stale_heartbeat' }));
@@ -29,14 +36,21 @@ export function startWorker({
     const task = claimNextImpl({ workerId });
     if (!task) { await deliverEventsImpl(); return; }
     activeTaskId = task.id;
-    heartbeat('working');
+    // Guarded: the task is already claimed here, so a transient SQLITE_BUSY on this write would
+    // otherwise skip the finally block (leaving the outbox undrained and activeTaskId pinned, so
+    // the timer keeps publishing 'working' for a task that is not running) and drain the process
+    // on a self-clearing fault, stranding the task until claimNext's 300s stale reclaim.
+    safeHeartbeat('working');
     try {
       // A cancellation racing the atomic claim must be observed before provider dispatch.
       if (getTaskImpl(task.id)?.status !== 'cancelled') await processTaskImpl(task);
     } finally {
       await deliverEventsImpl();
       activeTaskId = null;
-      heartbeat(stopping ? 'draining' : 'idle');
+      // Post-completion observability: the task is already done here, so a failed write must not
+      // reject activeTick and turn a clean drain into a fatal exit 1. The pre-dispatch writes
+      // above stay unguarded so a genuinely dead database still trips containment before work.
+      safeHeartbeat(stopping ? 'draining' : 'idle');
     }
   }
   function tick() {
@@ -45,9 +59,9 @@ export function startWorker({
     activeTick = executeTick().finally(() => { activeTick = null; });
     return activeTick;
   }
-  if (once) return tick().finally(() => heartbeat('stopped'));
+  if (once) return tick().finally(() => safeHeartbeat('stopped'));
   const timer = setInterval(() => { void tick().catch(scheduledFailureImpl); }, intervalMs);
-  const heartbeatTimer = setInterval(() => { heartbeat(stopping ? 'draining' : activeTaskId ? 'working' : 'idle'); }, heartbeatIntervalMs);
+  const heartbeatTimer = setInterval(() => { safeHeartbeat(stopping ? 'draining' : activeTaskId ? 'working' : 'idle'); }, heartbeatIntervalMs);
   heartbeatTimer.unref();
   console.log(JSON.stringify({ service: 'worker', intervalMs }));
   return {
@@ -56,15 +70,15 @@ export function startWorker({
       stopping = true;
       clearInterval(timer);
       clearInterval(heartbeatTimer);
-      heartbeat('draining');
-      if (!activeTick) { heartbeat('stopped'); return { drained: true }; }
+      safeHeartbeat('draining');
+      if (!activeTick) { safeHeartbeat('stopped'); return { drained: true }; }
       let timeout;
       const result = await Promise.race([
         activeTick.then(() => ({ drained: true }), (error) => ({ drained: true, error })),
         new Promise((resolve) => { timeout = setTimeout(() => resolve({ drained: false }), deadlineMs); }),
       ]);
       clearTimeout(timeout);
-      heartbeat(result.drained ? 'stopped' : 'unhealthy');
+      safeHeartbeat(result.drained ? 'stopped' : 'unhealthy');
       return result;
     },
   };
