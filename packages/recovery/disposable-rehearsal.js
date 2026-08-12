@@ -64,6 +64,11 @@ export function runDisposableRestoreCutover({ repository, root, environment = 'd
   const authorized = operatorAck === ACK && fault !== 'unauthorized';
   if (!authorized) return refusal('OPERATOR_AUTHORIZATION_REQUIRED', risks);
   if (!treeClean || fault === 'dirty_tree') { risks.push('working_tree_not_clean'); return refusal('NO_GO_RESTORE_INVALID', risks); }
+  // Commit identifiers become path segments below, so they are validated BEFORE any path is built.
+  // Checking the format only at the rollback predicate let a non-SHA `--rollback` escape the
+  // disposable root: the release fixture was created at the traversed path first, and cleanup only
+  // removes the rehearsal root, so those files survived outside the disposable namespace.
+  if (!SHA.test(expectedCommit) || !SHA.test(rollbackCommit)) { risks.push('commit_identifier_invalid'); return refusal('NO_GO_ROLLBACK_TARGET_INVALID', risks); }
 
   fs.mkdirSync(rehearsalRoot, { recursive: true, mode: 0o700 });
   const source = path.join(rehearsalRoot, 'source', 'database', 'source.sqlite'); let target = path.join(rehearsalRoot, 'target', 'restored.sqlite'); const backupDir = path.join(rehearsalRoot, 'backups'); const auditDir = path.join(rehearsalRoot, 'audit'); fs.mkdirSync(auditDir, { mode: 0o700 });

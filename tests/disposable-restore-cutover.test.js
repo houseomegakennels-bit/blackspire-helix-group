@@ -114,3 +114,23 @@ test('a cleanup failure never masks the original error',()=>{
 });
 
 test('the shipped CLI exposes no fault-injection flag',()=>{assert.doesNotMatch(fs.readFileSync(path.join(repository,'scripts/disposable-restore-cutover-rehearsal.js'),'utf8'),/--fault/);});
+
+// Regression: commit identifiers become path segments, so a non-SHA `--rollback` used to create the
+// release fixture at the traversed location BEFORE the format was checked. The verdict was correctly
+// NO_GO, but cleanup only removes the rehearsal root, so those files survived outside the disposable
+// namespace entirely.
+test('an invalid rollback identifier refuses before writing anything outside the disposable root', () => {
+  const escape = path.join(os.tmpdir(), `blackspire-traversal-probe-${process.pid}`);
+  fs.rmSync(escape, { recursive: true, force: true });
+  const traversal = path.join('..', '..', '..', '..', escape.replace(/^\//, ''));
+  const report = runDisposableRestoreCutover(options({ rollbackCommit: traversal }));
+  assert.equal(report.goNoGo, 'NO_GO_ROLLBACK_TARGET_INVALID');
+  assert.ok(report.unresolvedRisks.includes("commit_identifier_invalid"), JSON.stringify(report.unresolvedRisks));
+  assert.equal(fs.existsSync(escape), false, 'the rehearsal wrote outside its disposable root');
+});
+
+test('an invalid expected commit refuses on the same guard', () => {
+  const report = runDisposableRestoreCutover(options({ expectedCommit: 'not-a-sha' }));
+  assert.equal(report.goNoGo, 'NO_GO_ROLLBACK_TARGET_INVALID');
+  assert.ok(report.unresolvedRisks.includes("commit_identifier_invalid"), JSON.stringify(report.unresolvedRisks));
+});

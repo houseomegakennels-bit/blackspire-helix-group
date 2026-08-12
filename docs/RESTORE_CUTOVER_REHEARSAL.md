@@ -63,9 +63,10 @@ the shipped module source, loads the perturbed copy, runs the scenario each guar
 records the observed classification. The shipped file is never modified (its SHA-256 is re-verified
 after every mutant). Measured on Node 22.23.1:
 
-- **10 sole-guard kills** — removing the expression reaches `GO`, so it alone fails the fault
-  closed: `backup_age`, `environment`, `authorization`, `schema_fingerprint`, `row_counts`,
-  `application_read`, `queue_drain`, `maintenance_mode`, `rollback_target`, `dirty_tree`.
+- **11 sole-guard kills** — removing the expression reaches `GO`, so it alone fails the fault
+  closed: `backup_age`, `environment`, `authorization`, `schema_fingerprint`, `target_integrity`,
+  `row_counts`, `application_read`, `queue_drain`, `maintenance_mode`, `rollback_target`,
+  `dirty_tree`.
 - **1 redundant kill** — `checksum`: removing it changes the outcome
   (`NO_GO_BACKUP_INVALID` → `NO_GO_RESTORE_INVALID`) but `scripts/restore.js` still fails closed.
 - **0 surviving mutants.**
