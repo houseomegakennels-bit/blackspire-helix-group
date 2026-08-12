@@ -108,9 +108,19 @@ async function main() {
     if (!crypto.timingSafeEqual(Buffer.from(match[1]), Buffer.from(actual))) fail('backup checksum mismatch');
     if (!unchangedFile(backupStat, descriptorStat(backupFd)) || !pathStillNamesDescriptor(backup, backupStat))
       fail('backup snapshot changed during verification');
+    // SQLite does not read through the descriptor: it readlink()s /proc/self/fd/N and reopens the
+    // real path. For a snapshot whose header declares WAL it then CREATES -wal and -shm next to it
+    // despite readOnly:true — so the verifier wrote into the directory it was auditing, and the
+    // post-open sidecar check tripped on the files it had just made, failing that backup
+    // permanently on every later run. Refuse on the header, before the database is opened at all.
+    const header = Buffer.alloc(2);
+    fs.readSync(backupFd, header, 0, 2, 18);
+    if (header[0] === 2 || header[1] === 2) fail('backup snapshot must be a standalone SQLite file without journal sidecars');
     database = new DatabaseSync(`/proc/self/fd/${backupFd}`, { readOnly: true });
-    if (database.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok') fail('backup integrity check failed');
-    if (findMissingSchemaObjects(database).length) fail('backup is missing required Blackspire schema');
+    const integrity = database.prepare('PRAGMA integrity_check').get()?.integrity_check;
+    if (integrity !== 'ok') fail('backup integrity check failed');
+    const schemaCompatible = findMissingSchemaObjects(database).length === 0;
+    if (!schemaCompatible) fail('backup is missing required Blackspire schema');
     database.close(); database = null;
     if (!unchangedFile(backupStat, descriptorStat(backupFd)) || !pathStillNamesDescriptor(backup, backupStat))
       fail('backup snapshot changed during verification');
@@ -121,7 +131,9 @@ async function main() {
     const ageHours = Math.max(0, (now - latest.timestamp.time) / 3_600_000);
     if (maxAgeHours !== null && ageHours > maxAgeHours) fail('latest backup exceeds the required maximum age');
     console.log(JSON.stringify({ ok: true, backup: { file: latest.file, createdAt: latest.timestamp.iso,
-      ageHours: Number(ageHours.toFixed(3)), sizeBytes, checksum: 'match', integrity: 'ok', schemaCompatible: true } }));
+      // Reported from the measured results rather than as literals: hardcoding them made the
+      // happy-path assertions vacuous, so deleting either check left every test still passing.
+      ageHours: Number(ageHours.toFixed(3)), sizeBytes, checksum: 'match', integrity, schemaCompatible } }));
   } catch (error) {
     if (/^backup verification failed:/.test(String(error?.message || ''))) throw error;
     fail('backup could not be validated');
