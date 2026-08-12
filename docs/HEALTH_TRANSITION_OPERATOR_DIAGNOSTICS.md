@@ -50,6 +50,34 @@ within a workspace scope the caller has already been authorized for.
   operator reading diagnostics under `mock` therefore sees a sandboxed transport while the deploy
   gate still blocks; that divergence is intended, not drift.
 
+## Post-deploy verification adapter
+
+`packages/health-transitions/post-deploy-integration.js` converts a
+`blackspire-post-deploy-verification` report into a single advisory observation with
+`source: 'post_deploy_verifier'`. It is an adapter only: it has **no production caller**, is not
+registered on any route, and performs no rollback or deployment action. It refuses any report that
+is not read-only, declares an action taken, carries an unknown schema or classification, or names an
+environment outside `staging`/`disposable-staging` — `production` is refused by the allowlist.
+
+The adapter records **every** classification on the dedicated `post_deploy` component, never on a
+runtime component. This is load-bearing rather than stylistic: the store keys latest state by
+`(environment, workspaceId, component)` and **not** by `source`, so an advisory observation written
+to `build`, `startup`, or `api_readiness` overwrites the live runtime observation for that
+component. Measured on the earlier revision of this adapter, a runtime build-fingerprint mismatch
+(`operator_intervention_required`) was reset to `rollback none / HEALTHY` by an advisory `proceed`
+arriving one second later, and diagnostics' `deployment` field — which reads the `build` component —
+then reported the approved commit instead of the running one. Both are closed by the separate
+component identity.
+
+`recommendation()` maps the `post_deploy` component's `dependency_failure` and `unavailable` arms to
+`operator_intervention_required` and `rollback_recommended` explicitly, so routing the advisory
+channel away from `build`/`api_readiness` does not soften the severity the verifier assigned.
+
+Mapping: `proceed` → `healthy`, `observe` → `recovering`, `rollback recommended` → `unavailable`,
+`operator intervention required` → `dependency_failure`. A report whose own `environment` disagrees
+with `expected.environment` is refused rather than recorded, so an `environment_identity_mismatch`
+verification fails closed here and is not surfaced as a transition.
+
 ## Verification
 
 Use Node.js 22.23.1. The focused entry points are:
@@ -57,6 +85,7 @@ Use Node.js 22.23.1. The focused entry points are:
 ```bash
 node --test tests/health-transitions.test.js tests/health-transition-mutation.test.js
 node --test tests/api-readiness-lifecycle.test.js tests/worker-graceful-drain.test.js
+node --test tests/health-rollback-integration.test.js
 ```
 
 All fixtures are local and disposable. Do not provide production credentials or enable providers.
