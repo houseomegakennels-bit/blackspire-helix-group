@@ -23,6 +23,7 @@ import {
   createSignedUploadTarget,
   deleteAssetFile,
   deleteBookRecord,
+  deleteUnreferencedBookAsset,
   getAssetUrl,
   getBookById,
   getBookBySlug,
@@ -2906,11 +2907,13 @@ export async function renderChapterVideo(chapterId: string) {
   const store = await readStore();
   const book = store.books.find((candidate) => candidate.chapters.some((chapter) => chapter.id === chapterId));
   if (!book) throw new Error("Chapter not found.");
+  let supersededAssetId: string | null = null;
 
-  return (
+  const rendered = (
     await mutateBookRecord(book.id, async (draft) => {
       const chapter = draft.chapters.find((candidate) => candidate.id === chapterId);
       if (!chapter) throw new Error("Chapter not found.");
+      const previousVideoAssetId = chapter.videoAssetId;
 
       const audioAsset = await ensureChapterAudio(draft, chapterId);
       const sceneAssets = chapter.sceneIds
@@ -2944,13 +2947,20 @@ export async function renderChapterVideo(chapterId: string) {
         `${slugify(chapter.title)}.mp4`,
         "video/mp4",
         await readFile(outputPath),
-        { chapterId: chapter.id },
+        { chapterId: chapter.id, supersedesAssetId: previousVideoAssetId },
       );
       draft.assets.push(asset);
       chapter.videoAssetId = asset.id;
+      supersededAssetId = previousVideoAssetId;
       return draft;
     })
   ).book;
+
+  if (supersededAssetId) {
+    await deleteUnreferencedBookAsset(rendered.id, supersededAssetId);
+  }
+
+  return rendered;
 }
 
 export async function renderQueue(bookId: string, mode: "key_scenes" | "full_book") {
