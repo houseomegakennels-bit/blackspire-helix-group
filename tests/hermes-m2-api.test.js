@@ -171,4 +171,19 @@ test('the memory review queue route is bounded, admin-bound, and workspace-isola
   assert.equal((await fetch(`${route}?limit=1e1`, { headers })).status, 400);
   assert.equal((await fetch(route)).status, 401);
   assert.equal((await fetch(route, { method: 'POST', headers })).status, 404);
+
+  // The route binds the session to the CONFIGURED evaluation admin. `m2-scorecard-deriver` is an
+  // active principal that genuinely holds `evaluation.read` on this workspace, so only that binding
+  // can refuse it — a workspace-permission check alone would let it straight through. The sibling
+  // 3A/3B routes pin this; the queue did not, so removing the binding left the whole suite green.
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'm2-api-token' }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie')?.split(';')[0];
+  const sessionId = cookie.slice(cookie.indexOf('=') + 1);
+  assert.equal((await fetch(route, { headers: { cookie } })).status, 200, 'the configured admin session must be accepted');
+  run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-scorecard-deriver', sessionId]);
+  assert.equal((await fetch(route, { headers: { cookie } })).status, 403,
+    'a non-admin principal holding evaluation.read must still be refused by the route binding');
+  run('UPDATE sessions SET principal_id=NULL WHERE id=?', [sessionId]);
+  assert.equal((await fetch(route, { headers: { cookie } })).status, 403);
 });
