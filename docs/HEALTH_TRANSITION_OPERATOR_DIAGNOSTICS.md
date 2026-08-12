@@ -24,7 +24,9 @@ a component as flapping. Recommendation values are `none`, `observe`, `investiga
 The diagnostics handler defaults to the existing `runtime.read` authorization decision. It is
 GET-only in intent, accepts explicit environment and workspace scope, caps pages at 100, validates
 checksummed cursors, orders events deterministically, and returns bounded fields suitable for a
-mobile formatter.
+mobile formatter. The cursor checksum is unkeyed: it detects truncation and corruption, it is not
+a signature and is not tamper-proof. Nothing relies on it for privilege — a cursor only offsets
+within a workspace scope the caller has already been authorized for.
 
 ## Known limitations and blocked integration
 
