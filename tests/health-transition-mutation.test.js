@@ -345,6 +345,33 @@ test('mutant: reporting the last appended event as the latest transition would c
   assert.equal(body.latestMeaningfulTransition.timestamp, body.history[0].timestamp);
 });
 
+test('mutant: dropping the latestTransition id tiebreak would contradict history[0] on a tied snapshot', () => {
+  const { store, engine } = setup();
+  // The case above uses DISTINCT timestamps, so it pins only the timestamp half of the
+  // (timestampMs, id) selection: the equal-timestamp clause could be deleted with every other
+  // test still green. Ties are the dominant shape, not an edge case -- collectHealthObservations
+  // stamps every component of one collection pass with the same context.timestamp -- and without
+  // the tiebreak the reducer keeps the FIRST event at the maximum timestamp while diagnostics.js
+  // sorts ties by descending id, so latestMeaningfulTransition and history[0] of the same payload
+  // disagree: the exact self-contradicting operator report this change set exists to remove.
+  const stamp = '2026-08-05T03:00:00.000Z';
+  // Ids are content hashes, so this component ORDER is load-bearing and is asserted below: the
+  // winner by id must be neither the first nor the last appended event, or the fixture would pass
+  // against a broken reducer by coincidence.
+  for (const component of ['database', 'queue', 'api_liveness']) {
+    engine.observe(observation({ component, state: 'unavailable', reasonCode: 'check_failed', timestamp: stamp }));
+  }
+  const stored = store.events('disposable-staging', 'workspace-a');
+  assert.equal(new Set(stored.map((event) => event.timestampMs)).size, 1, 'fixture must be a single-timestamp snapshot');
+  const winner = [...stored].sort((a, b) => b.id.localeCompare(a.id))[0];
+  assert.notEqual(stored[0].id, winner.id, 'fixture must not let the FIRST appended event win by id (that is what the untiebroken reduce keeps)');
+  assert.notEqual(stored.at(-1).id, winner.id, 'fixture must not let the LAST appended event win by id (that is what the old at(-1) kept)');
+  const summary = engine.summary('disposable-staging', 'workspace-a');
+  const body = readOperatorDiagnostics({ principal: {}, environment: 'disposable-staging', workspaceId: 'workspace-a', store, engine, authorize: () => ({ allowed: true }) }).body;
+  assert.equal(summary.latestTransition.id, body.history[0].id, 'tied events must resolve to the same row the history sort puts first');
+  assert.equal(body.latestMeaningfulTransition.id, body.history[0].id);
+});
+
 test('mutant: dropping a validateObservation allowlist would record an arbitrary string', () => {
   // Six of the eight fail-closed checks in validateObservation had no covering assertion, so each
   // allowlist could be deleted outright with every other test still green.
