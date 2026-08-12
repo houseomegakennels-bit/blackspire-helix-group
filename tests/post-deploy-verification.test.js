@@ -97,6 +97,43 @@ test('identity, migration, provider, and Telegram mismatches require interventio
   const report = verifyPostDeploy(unsafe, Date.parse(unsafe.observedAt));
   assert.equal(report.classification, 'operator intervention required');
   assert.ok(report.reasons.every((item) => item.severity === 'intervention'));
+  // Assert the specific codes, not just the classification. Asserting only the classification let
+  // the four identity gates satisfy this test on their own, so the provider and Telegram gates
+  // below could each be deleted outright with the suite still green.
+  assert.deepEqual(report.reasons.map((item) => item.code).sort(), [
+    'build_fingerprint_mismatch', 'commit_fingerprint_mismatch', 'environment_identity_mismatch',
+    'migration_version_mismatch', 'providers_not_disabled', 'telegram_not_sandboxed',
+  ]);
+});
+
+// Each gate below is isolated: every other input stays healthy, so the asserted reason code can
+// only originate from the gate under test and that gate cannot be removed without failing here.
+// Both are load-bearing -- scripts/post-deploy-verify.js exits non-zero on this classification.
+test('the providers gate alone requires intervention and is not satisfied by a truthy value', () => {
+  for (const providersDisabled of [false, undefined, null, 'true', 1]) {
+    const unsafe = structuredClone(healthy); unsafe.observed.providersDisabled = providersDisabled;
+    const report = verifyPostDeploy(unsafe, Date.parse(unsafe.observedAt));
+    assert.deepEqual(report.reasons.map((item) => item.code), ['providers_not_disabled'], `providersDisabled must fail closed: ${String(providersDisabled)}`);
+    assert.equal(report.classification, 'operator intervention required');
+  }
+  assert.equal(verifyPostDeploy(healthy, Date.parse(healthy.observedAt)).classification, 'proceed');
+});
+
+test('the Telegram gate accepts only proven-safe modes and rejects mock', () => {
+  // `mock` is deliberately NOT accepted here even though packages/health-transitions/sources.js
+  // counts it as sandboxed; see docs/HEALTH_TRANSITION_OPERATOR_DIAGNOSTICS.md. Widening this gate
+  // to unify the two constants would weaken a deployment safety check, so the divergence is now
+  // pinned by an executable test rather than defended by prose alone.
+  for (const telegramMode of ['mock', 'polling', 'webhook', 'live', undefined, null, '', 'Sandbox', 'dry_run', 'sandbox ']) {
+    const unsafe = structuredClone(healthy); unsafe.observed.telegramMode = telegramMode;
+    const report = verifyPostDeploy(unsafe, Date.parse(unsafe.observedAt));
+    assert.deepEqual(report.reasons.map((item) => item.code), ['telegram_not_sandboxed'], `telegramMode must fail closed: ${String(telegramMode)}`);
+    assert.equal(report.classification, 'operator intervention required');
+  }
+  for (const telegramMode of ['disabled', 'sandbox', 'dry-run']) {
+    const safe = structuredClone(healthy); safe.observed.telegramMode = telegramMode;
+    assert.equal(verifyPostDeploy(safe, Date.parse(safe.observedAt)).classification, 'proceed', `telegramMode must be accepted: ${telegramMode}`);
+  }
 });
 
 test('CLI writes a private, exclusive audit record without taking action', () => {
