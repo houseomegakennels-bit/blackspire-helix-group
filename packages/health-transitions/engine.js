@@ -66,7 +66,18 @@ export class HealthTransitionEngine {
     const state = components.some((item) => ['unavailable','migration_mismatch'].includes(item.state)) ? 'unavailable'
       : components.some((item) => ['degraded','dependency_failure','stale','halted','unknown','draining','recovering'].includes(item.state)) ? 'degraded'
         : components.length && components.every((item) => ['healthy','ready','disabled'].includes(item.state)) ? 'healthy' : 'starting';
-    return { environment, workspaceId, state, rollbackRecommendation, components, latestTransition: events.at(-1) || null,
+    // Append order is NOT timestamp order. observe() rejects a stale observation only per
+    // component (see the stale guard above), so an observation for a *different* component may
+    // legitimately arrive carrying an older timestamp. Taking events.at(-1) therefore reported
+    // whichever event was recorded last, which diagnostics.js then published as
+    // latestMeaningfulTransition and formatter.js printed as "Last transition:" -- while
+    // history[0], sorted by time in the same payload, showed a newer and more severe event.
+    // That is the same self-contradicting operator report this change set exists to remove, so
+    // select by (timestampMs, id) using the identical ordering diagnostics.js applies.
+    const latestTransition = events.reduce((newest, event) => !newest
+      || event.timestampMs > newest.timestampMs
+      || (event.timestampMs === newest.timestampMs && event.id.localeCompare(newest.id) > 0) ? event : newest, null);
+    return { environment, workspaceId, state, rollbackRecommendation, components, latestTransition,
       staleComponents: components.filter((item) => item.state === 'stale').map((item) => item.component),
       flappingComponents: [...new Set(events.filter((event) => event.flapping).map((event) => event.component))], automaticActionTaken: false };
   }

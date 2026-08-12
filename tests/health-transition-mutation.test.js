@@ -5,6 +5,8 @@ import { HealthTransitionEngine } from '../packages/health-transitions/engine.js
 import { collectHealthObservations } from '../packages/health-transitions/sources.js';
 import { readOperatorDiagnostics } from '../packages/health-transitions/diagnostics.js';
 import { redactMetadata, validateObservation } from '../packages/health-transitions/model.js';
+import { formatOperatorStatus } from '../packages/health-transitions/formatter.js';
+import { createHash } from 'node:crypto';
 
 // Fault injection against the load-bearing decision boundaries. Each test drives real production
 // code and asserts the specific outcome that disappears when its guard is removed, so deleting or
@@ -234,6 +236,55 @@ test('mutant: reversing the history sort would silently drop the newest transiti
   assert.equal(seen[0].timestampMs, Math.max(...store.events('disposable-staging', 'workspace-a').map((event) => event.timestampMs)), 'the newest event must appear first');
 });
 
+test('mutant: relaxing the summary healthy arm would report a still-starting system as healthy', () => {
+  const { engine } = setup();
+  // The healthy arm requires EVERY component to be healthy/ready/disabled. 'starting' matches no
+  // earlier arm, so relaxing the arm to a bare length check is only observable through this state
+  // -- and it flips a system that has not finished coming up to a green "healthy", the same
+  // direction of misreport the draining/recovering ladder fix above exists to prevent.
+  engine.observe(observation({ component: 'api_liveness', state: 'healthy' }));
+  engine.observe(observation({ component: 'worker', state: 'starting', reasonCode: 'startup_pending' }));
+  const summary = engine.summary('disposable-staging', 'workspace-a');
+  assert.equal(summary.state, 'starting', 'a component still starting must not read as healthy');
+  assert.notEqual(summary.state, 'healthy');
+  // The healthy arm must stay reachable, so this cannot be satisfied by hardcoding 'starting'.
+  engine.observe(observation({ component: 'worker', state: 'healthy', reasonCode: 'check_passed' }));
+  assert.equal(engine.summary('disposable-staging', 'workspace-a').state, 'healthy');
+});
+
+test('mutant: dropping the cursor id tiebreak would silently lose events at a page boundary', () => {
+  const { store, engine } = setup();
+  // Identical timestamps are the DOMINANT case, not an edge case: collectHealthObservations stamps
+  // every component in one pass with the same context.timestamp, so a real single-pass snapshot
+  // produces 11-13 events that all tie. The test above deliberately uses distinct timestamps and
+  // therefore never exercises the tiebreak, which left `event.id < after.id` deletable -- and with
+  // it deleted, paging a real snapshot drops every event after the first page: exactly the silent
+  // omission the newest-first work exists to prevent.
+  const stamp = '2026-08-05T02:00:00.000Z';
+  const components = ['api_liveness', 'api_readiness', 'database', 'queue', 'worker', 'scheduler'];
+  for (const component of components) engine.observe(observation({ component, timestamp: stamp }));
+  const stored = store.events('disposable-staging', 'workspace-a');
+  assert.equal(new Set(stored.map((event) => event.timestampMs)).size, 1, 'fixture must be a single-timestamp snapshot');
+  const request = { principal: {}, environment: 'disposable-staging', workspaceId: 'workspace-a', store, engine, authorize: () => ({ allowed: true }), limit: 2 };
+  const seen = []; let cursor = null;
+  for (let guard = 0; guard < 10; guard += 1) {
+    const page = readOperatorDiagnostics({ ...request, cursor });
+    assert.equal(page.status, 200);
+    seen.push(...page.body.history);
+    cursor = page.body.nextCursor;
+    if (!cursor) break;
+  }
+  assert.equal(cursor, null, 'paging must terminate');
+  const ids = seen.map((event) => event.id);
+  assert.equal(new Set(ids).size, ids.length, 'no tied event may be served twice');
+  assert.equal(ids.length, components.length, 'every tied event must be served exactly once across pages');
+  assert.deepEqual(new Set(ids), new Set(stored.map((event) => event.id)), 'no tied event may be omitted');
+  // Ties must still be totally ordered, descending by id, so the partition stays deterministic.
+  for (let i = 1; i < seen.length; i += 1) {
+    assert.ok(seen[i - 1].id.localeCompare(seen[i].id) > 0, 'tied events must be strictly ordered by descending id');
+  }
+});
+
 test('mutant: weakening cursor validation would accept a forged or truncated cursor', () => {
   const { store, engine } = setup();
   for (const component of ['api_liveness', 'database', 'queue']) engine.observe(observation({ component }));
@@ -274,4 +325,108 @@ test('mutant: dropping snapshot validation would rehydrate an unusable store', (
   assert.throws(() => { restored.events('disposable-staging', 'workspace-a')[0].newState = 'tampered'; }, TypeError);
   assert.throws(() => { store.events('disposable-staging', 'workspace-a')[0].newState = 'tampered'; }, TypeError);
   assert.throws(() => { store.latest('disposable-staging', 'workspace-a', 'api_liveness').state = 'tampered'; }, TypeError);
+});
+
+// --- Coverage for the fail-closed boundaries two independent exact-head reviews measured as
+// --- unkilled. Each test below deletes-by-proxy one guard and asserts the outcome that only
+// --- appears while the guard is present, so removing it fails here rather than silently.
+
+test('mutant: reporting the last appended event as the latest transition would contradict history[0]', () => {
+  const { store, engine } = setup();
+  // Append order is deliberately NOT timestamp order: the stale guard is per component, so a
+  // different component may arrive carrying an older timestamp. events.at(-1) reported the queue
+  // event below as "latest" while a newer database outage sat at history[0] of the same payload.
+  engine.observe(observation({ component: 'database', state: 'unavailable', reasonCode: 'check_failed', timestamp: '2026-08-05T00:05:00.000Z' }));
+  engine.observe(observation({ component: 'queue', state: 'degraded', reasonCode: 'check_failed', timestamp: '2026-08-05T00:01:00.000Z' }));
+  const summary = engine.summary('disposable-staging', 'workspace-a');
+  assert.equal(summary.latestTransition.component, 'database');
+  const body = readOperatorDiagnostics({ principal: {}, environment: 'disposable-staging', workspaceId: 'workspace-a', store, engine, authorize: () => ({ allowed: true }) }).body;
+  assert.equal(body.latestMeaningfulTransition.id, body.history[0].id, 'latest transition must be the newest row of the same payload');
+  assert.equal(body.latestMeaningfulTransition.timestamp, body.history[0].timestamp);
+});
+
+test('mutant: dropping a validateObservation allowlist would record an arbitrary string', () => {
+  // Six of the eight fail-closed checks in validateObservation had no covering assertion, so each
+  // allowlist could be deleted outright with every other test still green.
+  assert.throws(() => validateObservation(observation({ state: 'totally-made-up' })), /invalid health state/);
+  assert.throws(() => validateObservation(observation({ environment: 'prod-ish' })), /invalid environment/);
+  assert.throws(() => validateObservation(observation({ reasonCode: 'because' })), /invalid reason code/);
+  assert.throws(() => validateObservation(observation({ source: 'anonymous' })), /invalid observation source/);
+  assert.throws(() => validateObservation(observation({ component: 'not_a_component' })), /invalid component/);
+  for (const bad of ['', 'z'.repeat(40), commit.slice(0, 39), commit.toUpperCase(), `${commit}a`]) {
+    assert.throws(() => validateObservation(observation({ commit: bad })), /invalid commit fingerprint/, `commit must be rejected: ${bad}`);
+  }
+  assert.throws(() => validateObservation(observation({ reason: 'x'.repeat(241) })), /reason must be bounded/);
+  assert.equal(validateObservation(observation({ reason: 'x'.repeat(240) })).reason.length, 240);
+  for (const bad of ['', 'has space', 'a'.repeat(129), 'session-token']) {
+    assert.throws(() => validateObservation(observation({ workspaceId: bad })), /invalid workspace id/, `workspace id must be rejected: ${bad}`);
+  }
+});
+
+test('mutant: dropping the diagnostics request boundary would serve an unvalidated scope', () => {
+  const { store, engine } = setup();
+  engine.observe(observation());
+  const request = { principal: {}, environment: 'disposable-staging', workspaceId: 'workspace-a', store, engine, authorize: () => ({ allowed: true }) };
+  for (const environment of ['prod-ish', '', null, 'DISPOSABLE-STAGING']) {
+    assert.equal(readOperatorDiagnostics({ ...request, environment }).status, 400, `environment must be rejected: ${String(environment)}`);
+  }
+  for (const workspaceId of ['has space', '', 'a'.repeat(129), null, 42]) {
+    assert.equal(readOperatorDiagnostics({ ...request, workspaceId }).status, 400, `workspace must be rejected: ${String(workspaceId)}`);
+  }
+});
+
+test('mutant: relaxing cursor shape validation would accept a structurally invalid cursor', () => {
+  const { store, engine } = setup();
+  engine.observe(observation());
+  const request = { principal: {}, environment: 'disposable-staging', workspaceId: 'workspace-a', store, engine, authorize: () => ({ allowed: true }) };
+  // Each cursor below carries a VALID checksum, so only the decoded-shape and length checks can
+  // reject it. Without them a caller steers the filter with an arbitrary payload.
+  const signed = (payload) => { const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    return `${encoded}.${createHash('sha256').update(encoded).digest('hex').slice(0, 16)}`; };
+  const validId = 'a'.repeat(64);
+  for (const payload of [{ timestampMs: 1, id: 'not-a-digest' }, { timestampMs: 1, id: validId.toUpperCase() }, { timestampMs: 1 }, { timestampMs: 1, id: 42 }, { timestampMs: 1.5, id: validId }, { timestampMs: '1', id: validId }, { id: validId }]) {
+    assert.equal(readOperatorDiagnostics({ ...request, cursor: signed(payload) }).status, 400, `cursor must be rejected: ${JSON.stringify(payload)}`);
+  }
+  assert.equal(readOperatorDiagnostics({ ...request, cursor: signed({ timestampMs: 1, id: validId }) }).status, 200);
+  // Oversized BUT otherwise entirely valid: correct checksum, well-formed decoded shape. Only the
+  // 512-byte length bound can reject it, so relaxing that bound is caught here. Padding the JSON
+  // with insignificant whitespace inflates the payload without changing what it decodes to.
+  const padded = signed({ timestampMs: 1, id: validId, ...{} }).length;
+  const bulky = (() => { const encoded = Buffer.from(`{"timestampMs":1,"id":"${validId}"${' '.repeat(600)}}`).toString('base64url');
+    return `${encoded}.${createHash('sha256').update(encoded).digest('hex').slice(0, 16)}`; })();
+  assert.ok(bulky.length > 512, `cursor must exceed the bound to exercise it (${bulky.length}, baseline ${padded})`);
+  assert.equal(readOperatorDiagnostics({ ...request, cursor: bulky }).status, 400, 'oversized cursor must be rejected before parsing');
+});
+
+test('mutant: collapsing the tri-state would report an unobserved core signal as healthy', () => {
+  // state() must map undefined to 'unknown', never to the positive or negative pole. Only
+  // providers/telegram/worker asserted this; the four core components did not.
+  const context = { environment: 'disposable-staging', workspaceId: 'workspace-a', timestamp: '2026-08-05T01:00:00.000Z', correlationId: 'tri-1', commit, buildFingerprint: 'build-1' };
+  const observed = collectHealthObservations(context, { worker: { ok: true, state: 'idle' }, scheduler: { ok: true, state: 'disabled' }, migrationMatch: true, killSwitch: false, providersDisabled: true, telegramMode: 'sandbox', fingerprintMatch: true });
+  const byComponent = Object.fromEntries(observed.map((item) => [item.component, item]));
+  for (const component of ['api_liveness', 'api_readiness', 'database', 'queue']) {
+    assert.equal(byComponent[component].state, 'unknown', `${component} must be unknown when unobserved`);
+  }
+  // The positive and negative poles must stay reachable, so the assertion above cannot be
+  // satisfied by a mutant that simply hardcodes 'unknown'.
+  const live = Object.fromEntries(collectHealthObservations(context, { apiLiveness: true, apiReadiness: true, database: false, queue: true, worker: { ok: true, state: 'idle' }, scheduler: { ok: true, state: 'disabled' }, migrationMatch: true, killSwitch: false, providersDisabled: true, telegramMode: 'sandbox', fingerprintMatch: true }).map((item) => [item.component, item]));
+  assert.equal(live.api_liveness.state, 'healthy');
+  assert.equal(live.api_readiness.state, 'ready');
+  assert.equal(live.database.state, 'unavailable');
+});
+
+test('mutant: dropping a formatter guard would emit an unbounded or line-breaking chunk', () => {
+  const diagnostics = { environment: 'disposable-staging', overallState: 'degraded', rollbackRecommendation: 'observe',
+    deployment: { commit }, components: { api_liveness: { state: 'healthy' } },
+    staleComponents: Array.from({ length: 40 }, (_, index) => `queue-${index}`), flappingComponents: [],
+    latestMeaningfulTransition: { timestamp: '2026-08-05T01:00:00.000Z' } };
+  assert.throws(() => formatOperatorStatus(diagnostics, { maxChunkLength: 200 }), /oversized line/);
+  for (const bad of [199, 4097, 0, -1, 1.5, '1000', null, NaN]) {
+    assert.throws(() => formatOperatorStatus({ ...diagnostics, staleComponents: [] }, { maxChunkLength: bad }), /maxChunkLength must be from 200 to 4096/, `bound must be rejected: ${String(bad)}`);
+  }
+  // Newline/tab scrubbing keeps one transition on one line; without it a value forges extra rows.
+  const injected = formatOperatorStatus({ ...diagnostics, staleComponents: [], overallState: 'degraded\nAPI: healthy\tforged' }, { maxChunkLength: 1000 }).join('\n');
+  assert.ok(!/forged\b.*\n/.test(injected));
+  assert.equal(injected.split('\n').filter((line) => line.startsWith('BLACKSPIRE ')).length, 1);
+  assert.ok(!injected.includes('\t'));
 });

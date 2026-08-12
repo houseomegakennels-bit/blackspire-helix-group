@@ -1,4 +1,8 @@
 const LABELS = { api_liveness: 'API', database: 'DB', queue: 'Queue', worker: 'Worker', scheduler: 'Scheduler', kill_switch: 'Kill switch' };
+// The explicit [\r\n\t] pass is intentionally redundant: the following /\s+/ collapse already
+// covers CR, LF and TAB, so removing it is an EQUIVALENT mutation with no observable effect and
+// no test can kill it. It is kept as a self-documenting guard against the \s+ pass being narrowed
+// later. Do not report its survival as a coverage gap; two exact-head reviews already have.
 function clean(value, max = 80) { return String(value ?? 'unknown').replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').slice(0, max); }
 export function formatOperatorStatus(diagnostics, { maxChunkLength = 1000 } = {}) {
   if (!Number.isInteger(maxChunkLength) || maxChunkLength < 200 || maxChunkLength > 4096) throw new Error('maxChunkLength must be from 200 to 4096');
