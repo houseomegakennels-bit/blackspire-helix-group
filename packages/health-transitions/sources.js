@@ -56,7 +56,7 @@ export function collectHealthObservations(context, sources = {}) {
     // an alarm that can never clear, which trains operators to ignore it. dependency_failure is
     // now reserved for an observed failure, reported explicitly by the caller.
     add('providers', capabilityState(sources.providersDisabled, sources.providersHealthy), capabilityReason(sources.providersDisabled, sources.providersHealthy, 'capability_disabled'), 'External-provider capability observation'),
-    add('telegram', capabilityState(telegramSandboxed(sources.telegramMode), telegramHealth(sources.telegramMode, sources.telegramHealthy)), capabilityReason(telegramSandboxed(sources.telegramMode), telegramHealth(sources.telegramMode, sources.telegramHealthy), 'sandbox_active'), 'Telegram transport observation', sources.telegramMode === undefined ? {} : { metadata: { mode: sources.telegramMode } }),
+    add('telegram', capabilityState(telegramSandboxed(sources.telegramMode), telegramHealth(sources.telegramMode, sources.telegramHealthy)), capabilityReason(telegramSandboxed(sources.telegramMode), telegramHealth(sources.telegramMode, sources.telegramHealthy), 'sandbox_active'), 'Telegram transport observation', typeof sources.telegramMode === 'string' ? { metadata: { mode: sources.telegramMode } } : {}),
     add('build', sources.fingerprintMatch ? 'healthy' : 'dependency_failure', sources.fingerprintMatch ? 'check_passed' : 'check_failed', 'Build fingerprint observation'),
   ];
 }

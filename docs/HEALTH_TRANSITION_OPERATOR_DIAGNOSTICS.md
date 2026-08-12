@@ -40,6 +40,15 @@ within a workspace scope the caller has already been authorized for.
   `unsupported`; no scheduler heartbeat is fabricated.
 - PR #74's alert hook remains disabled/operator-owned. No automatic alert delivery is added here.
 - RPO/RTO and production alert thresholds remain operator decisions.
+- `TELEGRAM_MODE=mock` is deliberately classified differently by the two consumers, and the lists
+  are intentionally NOT shared. This package counts `mock` as sandboxed, because
+  `apps/telegram/bot.js` returns a fixture without reaching the API, so reporting it as a live
+  transport would be false. The release gate in `packages/shared/post-deploy-verifier.js` accepts
+  only `disabled|sandbox|dry-run` and treats `mock` as `telegram_not_sandboxed`. The gate is the
+  stricter of the two by design: an observation describes what is running, a gate decides what may
+  ship, and widening the gate to match this list would weaken a deployment safety check. An
+  operator reading diagnostics under `mock` therefore sees a sandboxed transport while the deploy
+  gate still blocks; that divergence is intended, not drift.
 
 ## Verification
 

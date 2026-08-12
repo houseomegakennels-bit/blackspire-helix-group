@@ -4,7 +4,7 @@ import { MemoryHealthTransitionStore } from '../packages/health-transitions/stor
 import { HealthTransitionEngine } from '../packages/health-transitions/engine.js';
 import { collectHealthObservations } from '../packages/health-transitions/sources.js';
 import { readOperatorDiagnostics } from '../packages/health-transitions/diagnostics.js';
-import { redactMetadata } from '../packages/health-transitions/model.js';
+import { redactMetadata, validateObservation } from '../packages/health-transitions/model.js';
 
 // Fault injection against the load-bearing decision boundaries. Each test drives real production
 // code and asserts the specific outcome that disappears when its guard is removed, so deleting or
@@ -152,7 +152,15 @@ test('mutant: failing the capability branch open would report an unobserved capa
   const empty = by({});
   assert.equal(empty.providers.state, 'unknown');
   assert.equal(empty.telegram.state, 'unknown');
-  assert.equal(empty.telegram.metadata.mode, undefined, 'an unset mode must not be stringified to "undefined"');
+  // Assert on the VALIDATED observation, not the raw one. redactMetadata does String(value), so
+  // the stringification only happens at the validation boundary -- reading metadata.mode off the
+  // raw object passes whether or not the guard exists, which is the same wrong-layer mistake the
+  // store-immutability assertion made.
+  for (const mode of [undefined, null]) {
+    const raw = collectHealthObservations(context, { telegramMode: mode }).find((item) => item.component === 'telegram');
+    assert.equal(validateObservation(raw).metadata.mode, undefined, `an unset mode (${JSON.stringify(mode)}) must not be stringified into metadata`);
+  }
+  assert.equal(validateObservation(by({ telegramMode: 'polling' }).telegram).metadata.mode, 'polling', 'a real mode must survive validation');
   // Casing drift and typos are misconfiguration, never a green live transport.
   for (const mode of ['Sandbox', 'dry_run', 'sandbox ', 'disabld', '', null]) {
     const observed = by({ telegramMode: mode, telegramHealthy: true }).telegram;
@@ -189,8 +197,41 @@ test('mutant: dropping draining from the summary ladder would render a shedding 
     const summary = fresh.summary('disposable-staging', 'workspace-a');
     assert.notEqual(summary.state, 'starting', `a ${state} system must not read as a fresh boot`);
     assert.equal(summary.state, 'degraded');
+    // The ladder and recommendation() must agree. Leaving these out of the observe arm reproduced
+    // the F1 contradiction in milder form: DEGRADED on one line, `rollback none` on the next.
+    assert.notEqual(summary.rollbackRecommendation, 'none', `a ${state} system must not recommend nothing while reading degraded`);
+    assert.equal(summary.rollbackRecommendation, 'observe');
   }
   assert.equal(engine.summary('disposable-staging', 'workspace-a').state, 'starting');
+});
+
+test('mutant: reversing the history sort would silently drop the newest transitions from paging', () => {
+  const { store, engine } = setup();
+  // Five events at distinct timestamps. The sort is newest-first and the cursor filter uses `<`,
+  // so the two are directional partners: flip the comparator and paging re-serves the oldest page
+  // and never reaches the newest events at all -- an operator paging through an incident silently
+  // never sees the most recent transitions. Round-tripping nextCursor does not detect this, so
+  // assert the order and the partition explicitly.
+  const components = ['api_liveness', 'api_readiness', 'database', 'queue', 'worker'];
+  for (const component of components) engine.observe(observation({ component }));
+  const request = { principal: {}, environment: 'disposable-staging', workspaceId: 'workspace-a', store, engine, authorize: () => ({ allowed: true }), limit: 2 };
+  const pages = []; let cursor = null;
+  for (let guard = 0; guard < 10; guard += 1) {
+    const page = readOperatorDiagnostics({ ...request, cursor });
+    assert.equal(page.status, 200);
+    pages.push(page.body.history);
+    cursor = page.body.nextCursor;
+    if (!cursor) break;
+  }
+  assert.equal(cursor, null, 'paging must terminate');
+  const seen = pages.flat();
+  for (let i = 1; i < seen.length; i += 1) {
+    assert.ok(seen[i - 1].timestampMs > seen[i].timestampMs, 'history must be strictly newest-first across pages');
+  }
+  const ids = seen.map((event) => event.id);
+  assert.equal(new Set(ids).size, ids.length, 'no event may be served twice');
+  assert.equal(ids.length, components.length, 'every event must be served exactly once');
+  assert.equal(seen[0].timestampMs, Math.max(...store.events('disposable-staging', 'workspace-a').map((event) => event.timestampMs)), 'the newest event must appear first');
 });
 
 test('mutant: weakening cursor validation would accept a forged or truncated cursor', () => {

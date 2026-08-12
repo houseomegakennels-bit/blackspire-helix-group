@@ -13,7 +13,11 @@ function recommendation(observation) {
   // but unavailable -> none once the flag declared that the worker matters.
   if (observation.state === 'unavailable') return 'investigate';
   if (observation.state === 'dependency_failure' || observation.state === 'halted') return 'investigate';
-  if (observation.state === 'degraded' || observation.state === 'stale' || observation.state === 'unknown') return 'observe';
+  // draining/recovering belong here for the same reason they belong in summary()'s degraded arm:
+  // leaving them to fall through to 'none' reproduced F1's contradiction in milder form, a report
+  // reading DEGRADED on one line and `rollback none` on the next. Every other state in that arm
+  // maps to at least observe.
+  if (['degraded','stale','unknown','draining','recovering'].includes(observation.state)) return 'observe';
   return 'none';
 }
 function severity(state) {
