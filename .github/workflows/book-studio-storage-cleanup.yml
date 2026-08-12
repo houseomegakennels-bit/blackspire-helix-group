@@ -21,8 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SUPABASE_URL: https://kchtrvfcixnimvxxctkj.supabase.co
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      VERCEL_ORG_ID: team_CaRyRaulJaFnCLSfTdyRYNIW
+      VERCEL_PROJECT_ID: prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,6 +39,18 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Pull Vercel production environment
+        working-directory: frontend
+        run: |
+          npm install -g vercel@latest
+          mkdir -p .vercel
+          node -e "require('fs').writeFileSync('.vercel/project.json', JSON.stringify({ orgId: process.env.VERCEL_ORG_ID, projectId: process.env.VERCEL_PROJECT_ID }))"
+          vercel env pull .env.production.local --environment=production --yes --token "$VERCEL_TOKEN"
+
       - name: Run cleanup
         working-directory: frontend
-        run: npx tsx scripts/book-studio/storage-cleanup.mts --${{ inputs.mode }}
+        run: |
+          set -a
+          source .env.production.local
+          set +a
+          npx tsx scripts/book-studio/storage-cleanup.mts --${{ inputs.mode }}
