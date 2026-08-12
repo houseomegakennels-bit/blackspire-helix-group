@@ -123,17 +123,6 @@ test('signal during disposable startup removes partial state and never reports r
   assert.doesNotMatch(result.stdout, /"status":"ready"/);
   for (const name of created) assert.equal(fs.existsSync(path.join(os.tmpdir(), name)), false, `${name} must be removed`);
 
-  // migrate.js runs the schema writer as a GRANDCHILD via spawnSync, and the exclusive lock above
-  // keeps it blocked. Signalling only the direct child killed migrate.js while it sat in spawnSync,
-  // leaving the writer alive and reparented to init, still holding the disposable database — while
-  // the directory check above still passed, because Linux unlinks happily with open descriptors.
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  const ps = spawn('ps', ['-eo', 'pid,ppid,args'], { stdio: ['ignore', 'pipe', 'ignore'] });
-  let table = '';
-  ps.stdout.on('data', (chunk) => { table += chunk; });
-  await new Promise((resolve) => ps.once('close', resolve));
-  const orphans = table.split('\n').filter((line) => line.includes('migration-writer.js'));
-  assert.deepEqual(orphans, [], `an interrupted startup left an orphan writer process:\n${orphans.join('\n')}`);
   const rebound = net.createServer();
   await new Promise((resolve, reject) => rebound.once('error', reject).listen(port, '127.0.0.1', resolve));
   await new Promise((resolve) => rebound.close(resolve));
@@ -196,4 +185,72 @@ test('occupied disposable port reports the bind failure, never a launcher refere
   assert.doesNotMatch(result.stdout, /"status":"ready"/);
   const remaining = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(prefix) && !before.has(name));
   assert.deepEqual(remaining, [], `startup cleanup left disposable directories: ${remaining.join(', ')}`);
+});
+
+// Regression: migrate.js runs the schema writer as a GRANDCHILD via spawnSync. Signalling only the
+// direct child killed migrate.js while it sat in spawnSync, leaving the writer running against the
+// disposable database. It then re-created the data directory after removeData() had already checked
+// it was gone, so the launcher printed "cleaned":true and exited 0 over surviving disposable state.
+//
+// Reaching that window is the whole difficulty: the disposable root is created at module load, long
+// before migration spawns, so waiting for the directory signals far too early and exercises nothing.
+// The pause seam holds startup BEFORE migration, which is when the exclusive lock has to be in place,
+// and the test then waits for the writer to actually appear before signalling.
+test('a signal blocked inside migration leaves no orphan writer and no surviving disposable state', async (t) => {
+  const prefix = 'blackspire-iphone-build-';
+  const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-launcher-orphan-'));
+  t.after(() => fs.rmSync(tmpdir, { recursive: true, force: true }));
+  const port = await freePort();
+  const child = spawn(process.execPath, ['scripts/start-iphone-test-build.js'], {
+    cwd: path.resolve(import.meta.dirname, '..'),
+    env: {
+      ...process.env,
+      TMPDIR: tmpdir,
+      PORT: String(port),
+      UNIFIED_TEST_ACCESS_CODE: 'orphan-writer-regression',
+      UNIFIED_TEST_TTL_MS: '60000',
+      UNIFIED_TEST_STARTUP_PAUSE_MS: '3000',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const resultPromise = childResult(child, 40_000);
+  // Take the lock during the pre-migration pause, so the writer is guaranteed to block on it.
+  await waitForOutput(child, /"status":"startup_paused"/, 20_000);
+  const created = fs.readdirSync(tmpdir).filter((name) => name.startsWith(prefix));
+  assert.equal(created.length, 1, `expected exactly one disposable root, got: ${created.join(', ')}`);
+  const startupDb = path.join(tmpdir, created[0], 'iphone-test.sqlite');
+  const lock = new DatabaseSync(startupDb);
+  lock.exec('BEGIN EXCLUSIVE;');
+
+  // Only signal once the writer is genuinely alive and blocked — otherwise this test would repeat
+  // the earlier mistake of interrupting before the grandchild ever existed.
+  const writerAlive = async () => {
+    const ps = spawn('ps', ['-eo', 'pid,args'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let table = '';
+    ps.stdout.on('data', (chunk) => { table += chunk; });
+    await new Promise((resolve) => ps.once('close', resolve));
+    // Match only a real node process whose command ENDS with the writer script. A substring test
+    // also matches any unrelated shell command line that merely mentions the path, which produced a
+    // false positive during mutation testing.
+    return table.split('\n').filter((line) => /node\S*\s+\S*scripts\/migration-writer\.js\s*$/.test(line));
+  };
+  let appeared = [];
+  for (let attempt = 0; attempt < 400 && appeared.length === 0; attempt += 1) {
+    appeared = await writerAlive();
+    if (!appeared.length) await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.ok(appeared.length > 0, 'the migration writer must be running and blocked before the signal');
+
+  child.kill('SIGTERM');
+  const result = await resultPromise;
+  lock.exec('ROLLBACK;');
+  lock.close();
+  const output = `${result.stdout}\n${result.stderr}`;
+
+  // Give any orphan a moment to surface before looking for it.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.deepEqual(await writerAlive(), [], `an interrupted startup left an orphan writer process\n${output}`);
+  const survivors = fs.readdirSync(tmpdir).filter((name) => name.startsWith(prefix));
+  assert.deepEqual(survivors, [], `interrupted startup left disposable state behind: ${survivors.join(', ')}\n${output}`);
+  assert.doesNotMatch(result.stdout, /"status":"ready"/, output);
 });
