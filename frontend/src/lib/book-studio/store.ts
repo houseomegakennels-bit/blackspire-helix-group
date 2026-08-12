@@ -1040,7 +1040,8 @@ export function getAssetUrl(asset: AssetRecord) {
 export async function deleteAssetFile(asset: AssetRecord) {
   if (hasSupabaseStoreEnv()) {
     const supabase = await ensureRemoteBookStudioStorage();
-    await supabase.storage.from(BOOK_STUDIO_BUCKET).remove([asset.relativePath]).catch(() => undefined);
+    const { error } = await supabase.storage.from(BOOK_STUDIO_BUCKET).remove([asset.relativePath]);
+    if (error) throw new Error(`Unable to delete Book Studio asset file: ${error.message}`);
     return;
   }
 
@@ -1049,6 +1050,46 @@ export async function deleteAssetFile(asset: AssetRecord) {
   } catch {
     // ignore
   }
+}
+
+function collectReferencedAssetIds(book: BookRecord) {
+  return new Set(
+    [
+      book.manuscriptAssetId,
+      book.coverAssetId,
+      ...book.chapters.flatMap((chapter) => [chapter.audioAssetId, chapter.videoAssetId]),
+      ...book.scenes.flatMap((scene) => [scene.imageAssetId, scene.audioAssetId]),
+      ...book.references.map((reference) => reference.assetId),
+    ].filter((assetId): assetId is string => Boolean(assetId)),
+  );
+}
+
+export async function deleteUnreferencedBookAsset(bookId: string, assetId: string) {
+  const book = await getBookById(bookId);
+  if (!book) throw new Error("Book not found.");
+  const referencedAssetIds = collectReferencedAssetIds(book);
+  if (referencedAssetIds.has(assetId)) {
+    throw new Error(`Refusing to delete referenced Book Studio asset: ${assetId}`);
+  }
+
+  const asset = book.assets.find((candidate) => candidate.id === assetId);
+  if (!asset) return { deleted: false, bytesReclaimed: 0 };
+
+  await deleteAssetFile(asset);
+  const next: BookRecord = {
+    ...book,
+    assets: book.assets.filter((candidate) => candidate.id !== assetId),
+  };
+  await saveBookRecord(next);
+  return {
+    deleted: true,
+    bytesReclaimed:
+      typeof asset.metadata?.sizeBytes === "number"
+        ? asset.metadata.sizeBytes
+        : typeof asset.metadata?.bytes === "number"
+          ? asset.metadata.bytes
+          : 0,
+  };
 }
 
 export async function readAssetBuffer(relativePath: string) {
