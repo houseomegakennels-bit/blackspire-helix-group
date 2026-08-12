@@ -2,7 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 
+// Resolved from this file, not the cwd, so the launcher works from any working directory.
+const repoRoot = path.resolve(import.meta.dirname, '..');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'));
 const port = Number(process.env.PORT || 8787);
 const expiresAt = new Date(Date.now() + Math.min(Number(process.env.UNIFIED_TEST_TTL_MS || 2 * 60 * 60 * 1000), 4 * 60 * 60 * 1000));
@@ -25,22 +28,127 @@ globalThis.fetch = async (input, init) => {
   return nativeFetch(input, init);
 };
 
-const [{ start }, { startWorker }, { closeDb }] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
-const server = start(port, '127.0.0.1');
-const worker = startWorker();
-let cleaning = false;
-async function cleanup(reason) {
-  if (cleaning) return;
-  cleaning = true;
-  worker.stop();
-  const closed = new Promise((resolve) => server.close(resolve));
-  server.closeAllConnections?.();
-  await closed;
-  closeDb();
+let server;
+let worker;
+let closeDb = () => {};
+const removeData = () => {
   fs.rmSync(dataDir, { recursive: true, force: true });
-  console.log(JSON.stringify({ service: 'iphone-test-build', status: 'stopped', reason, cleaned: true }));
+  if (fs.existsSync(dataDir)) throw new Error(`disposable data directory survived removal: ${dataDir}`);
+};
+let cleanup = async () => { closeDb(); removeData(); };
+let waitForServerListening;
+let timer;
+let shutdownPromise;
+let shutdownRequested = null;
+let startupPromise;
+let startupChild;
+let startupSucceeded = false;
+// Signals can land at any await in the startup sequence. Every resource-creating step is guarded by
+// this so an interrupted startup stops before it can create anything else.
+function assertNotShuttingDown() {
+  if (shutdownRequested) throw new Error(`startup interrupted by ${shutdownRequested}`);
 }
-const timer = setTimeout(async () => { await cleanup('expired'); process.exit(0); }, expiresAt.getTime() - Date.now());
-timer.unref();
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => { clearTimeout(timer); await cleanup(signal); process.exit(0); });
-console.log(JSON.stringify({ service: 'iphone-test-build', status: 'ready', bind: `127.0.0.1:${port}`, expiresAt: expiresAt.toISOString(), provider: 'mock', telegram: 'mock', productionData: false }));
+async function killStartupChild() {
+  if (startupChild?.exitCode === null) {
+    const child = startupChild;
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    // Signal the whole process group so the migration writer grandchild dies with its parent. The
+    // group may already be gone between the guard and here, so fall back to the direct child.
+    try { process.kill(-child.pid, 'SIGTERM'); }
+    catch { try { child.kill('SIGTERM'); } catch { /* already exited */ } }
+    await exited;
+  }
+}
+function runMigrationSubprocess() {
+  return new Promise((resolve, reject) => {
+    // detached makes the child a process-group leader so an interrupted startup can signal the whole
+    // group. migrate.js runs its writer as a grandchild via spawnSync; signalling only the direct
+    // child left that writer alive, reparented to init, still holding the disposable database while
+    // the launcher removed the directory and reported a clean exit.
+    startupChild = spawn(process.execPath, [path.join(repoRoot, 'scripts', 'migrate.js')], {
+      cwd: repoRoot, env: { ...process.env, BLACKSPIRE_RUN_MIGRATIONS: 'true' }, stdio: 'ignore', detached: true,
+    });
+    startupChild.once('error', () => reject(new Error('disposable database migration could not start')));
+    startupChild.once('exit', (code, signal) => {
+      startupChild = null;
+      if (code === 0) resolve();
+      else reject(new Error(`disposable database migration failed (${signal || 'nonzero'})`));
+    });
+  });
+}
+async function shutdownAndExit(reason) {
+  shutdownRequested ??= reason;
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    if (timer) clearTimeout(timer);
+    try {
+      // Cleanup must never run concurrently with a startup that can still create resources, or it
+      // removes the disposable root and the still-advancing startup silently re-creates it. Kill any
+      // in-flight startup child so the sequence settles promptly, then wait for it to actually settle.
+      await killStartupChild();
+      if (startupPromise) await startupPromise.catch(() => {});
+      // The sequence may have spawned its child between the kill above and observing the abort flag.
+      await killStartupChild();
+      await cleanup(reason);
+      // The disposable root is the whole point of this launcher; never claim a clean exit on trust.
+      if (fs.existsSync(dataDir)) throw new Error(`disposable data directory survived shutdown: ${dataDir}`);
+      process.exitCode = 0;
+    }
+    catch (error) {
+      console.error(JSON.stringify({ service: 'iphone-test-build', status: 'shutdown_failed', reason, error: String(error.message || error) }));
+      process.exitCode = 1;
+    }
+  })();
+  return shutdownPromise;
+}
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void shutdownAndExit(signal); });
+async function runStartup() {
+  const cleanupModule = await import('./lib/iphone-test-cleanup.js');
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  waitForServerListening = cleanupModule.waitForServerListening;
+  assertNotShuttingDown();
+  // Test-only seam: lets a regression test land a signal deterministically in the window that used to
+  // let cleanup race a still-advancing startup, instead of sweeping wall-clock delays.
+  const pauseMs = Number(process.env.UNIFIED_TEST_STARTUP_PAUSE_MS || 0);
+  if (pauseMs > 0) {
+    console.log(JSON.stringify({ service: 'iphone-test-build', status: 'startup_paused', stage: 'pre-migration' }));
+    await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    assertNotShuttingDown();
+  }
+  await runMigrationSubprocess();
+  assertNotShuttingDown();
+  const [{ start }, workerModule, dbModule] = await Promise.all([import('../apps/api/server.js'), import('../apps/worker/worker.js'), import('../packages/task-engine/db.js')]);
+  closeDb = dbModule.closeDb;
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  assertNotShuttingDown();
+  // The launcher owns startup failure handling so it can remove its disposable state. Do not start
+  // the worker or report readiness until the API has actually acquired its loopback listener.
+  server = start(port, '127.0.0.1');
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
+  await waitForServerListening(server);
+  assertNotShuttingDown();
+  worker = workerModule.startWorker();
+  cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
+}
+
+startupPromise = runStartup();
+let startupError = null;
+try { await startupPromise; startupSucceeded = true; }
+catch (error) { startupError = error; }
+if (shutdownRequested) {
+  // A signal won the race: shutdownAndExit owns cleanup and the exit code, and it waited for the
+  // sequence above to settle before touching anything.
+  await shutdownAndExit(shutdownRequested);
+} else if (startupError) {
+  try { await cleanup('startup-failure'); }
+  catch (cleanupError) {
+    console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_cleanup_failed', error: String(cleanupError.message || cleanupError) }));
+  }
+  console.error(JSON.stringify({ service: 'iphone-test-build', status: 'startup_failed', error: String(startupError.message || startupError) }));
+  process.exitCode = 1;
+}
+if (startupSucceeded && !shutdownRequested) {
+  timer = setTimeout(() => { void shutdownAndExit('expired'); }, expiresAt.getTime() - Date.now());
+  timer.unref();
+  console.log(JSON.stringify({ service: 'iphone-test-build', status: 'ready', bind: `127.0.0.1:${port}`, expiresAt: expiresAt.toISOString(), provider: 'mock', telegram: 'mock', productionData: false }));
+}

@@ -503,9 +503,11 @@ function devEnv(name, overrides = {}) {
 function bootImportedApi(env, port, host = '127.0.0.1') {
   prepareDisposableDatabase(env.BLACKSPIRE_DB_PATH);
   const moduleUrl = new URL('../apps/api/server.js', import.meta.url).href;
-  const launcher = `import(${JSON.stringify(moduleUrl)})`
-    + `.then((m) => m.start(Number(process.env.PORT), ${JSON.stringify(host)}))`
-    + `.catch((e) => { console.error(String((e && e.stack) || e)); process.exit(1); });`;
+  const launcher = `import('node:events').then(async ({ once }) => {`
+    + `const m=await import(${JSON.stringify(moduleUrl)});`
+    + `const server=m.start(Number(process.env.PORT), ${JSON.stringify(host)});`
+    + `await Promise.race([once(server,'listening'),once(server,'error').then(([e])=>Promise.reject(e))]);`
+    + `}).catch((e) => { console.error(String((e && e.stack) || e)); process.exitCode=1; });`;
   return new Promise((resolve) => {
     const child = spawn(node, ['-e', launcher], {
       env: { ...process.env, ...env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'],
