@@ -119,20 +119,78 @@ test('mutant: reordering the worker branch would report a dead worker as healthy
   assert.equal(workerState({ required: false, ok: true, state: 'stale' }).state, 'stale');
   assert.equal(workerState({ required: false, ok: true, state: 'idle' }).state, 'healthy');
   assert.equal(workerState({ required: false, ok: true, state: 'working' }).state, 'healthy');
+  const starting = workerState({ required: false, ok: true, state: 'starting' });
+  assert.equal(starting.state, 'starting', 'a booting worker is not yet healthy');
+  assert.equal(starting.reasonCode, 'startup_pending');
 });
 
 test('mutant: removing the enabled-capability branch would pin providers to a permanent alarm', () => {
   const context = observation();
   const by = (sources) => Object.fromEntries(collectHealthObservations(context, sources).map((item) => [item.component, item]));
-  const enabled = by({ providersDisabled: false, telegramMode: 'live' });
+  const enabled = by({ providersDisabled: false, providersHealthy: true, telegramMode: 'polling', telegramHealthy: true });
   assert.equal(enabled.providers.state, 'healthy', 'enabling providers is not a failure');
   assert.equal(enabled.telegram.state, 'healthy');
-  const failing = by({ providersDisabled: false, providersHealthy: false, telegramMode: 'live', telegramHealthy: false });
+  const failing = by({ providersDisabled: false, providersHealthy: false, telegramMode: 'polling', telegramHealthy: false });
   assert.equal(failing.providers.state, 'dependency_failure', 'an observed failure must still be reported');
   assert.equal(failing.telegram.state, 'dependency_failure');
   const sandboxed = by({ providersDisabled: true, telegramMode: 'dry-run' });
   assert.equal(sandboxed.providers.state, 'disabled');
   assert.equal(sandboxed.telegram.state, 'disabled');
+  assert.equal(by({ providersDisabled: false, telegramMode: 'mock' }).telegram.state, 'disabled', 'mock sends nothing live');
+});
+
+test('mutant: failing the capability branch open would report an unobserved capability as healthy', () => {
+  const context = observation();
+  const by = (sources) => Object.fromEntries(collectHealthObservations(context, sources).map((item) => [item.component, item]));
+  // An omitted signal is not good news. Every other component tri-states absence to unknown;
+  // these two must not be the exception that silently asserts a live capability is working.
+  const unobserved = by({ providersDisabled: false, telegramMode: 'polling' });
+  assert.equal(unobserved.providers.state, 'unknown', 'an unobserved provider must not read healthy');
+  assert.equal(unobserved.providers.reasonCode, 'observation_unknown');
+  assert.equal(unobserved.telegram.state, 'unknown', 'an unobserved transport must not read healthy');
+  assert.equal(unobserved.telegram.reasonCode, 'observation_unknown');
+  const empty = by({});
+  assert.equal(empty.providers.state, 'unknown');
+  assert.equal(empty.telegram.state, 'unknown');
+  assert.equal(empty.telegram.metadata.mode, undefined, 'an unset mode must not be stringified to "undefined"');
+  // Casing drift and typos are misconfiguration, never a green live transport.
+  for (const mode of ['Sandbox', 'dry_run', 'sandbox ', 'disabld', '', null]) {
+    const observed = by({ telegramMode: mode, telegramHealthy: true }).telegram;
+    assert.notEqual(observed.state, 'healthy', `an unrecognized telegramMode (${JSON.stringify(mode)}) must not read healthy`);
+    assert.equal(observed.state, 'unknown');
+  }
+});
+
+test('mutant: dropping the unavailable floor would report UNAVAILABLE with rollback none', () => {
+  const { engine } = setup();
+  // A non-core component reported unavailable matched no branch and fell through to 'none',
+  // while severity() called it critical and summary() escalated overall state to unavailable.
+  const result = engine.observe(observation({ component: 'worker', state: 'unavailable', reasonCode: 'check_failed' }));
+  assert.equal(result.event.severity, 'critical');
+  assert.notEqual(result.event.rollbackRecommendation, 'none', 'a critical event must not recommend nothing');
+  assert.equal(result.event.rollbackRecommendation, 'investigate');
+  assert.equal(result.event.operatorActionRequired, true);
+  const summary = engine.summary('disposable-staging', 'workspace-a');
+  assert.equal(summary.state, 'unavailable');
+  assert.notEqual(summary.rollbackRecommendation, 'none', 'summary must not contradict its own state');
+  // Declaring the worker required must never LOWER the escalation below the unset case.
+  const RANK = { none: 0, observe: 1, investigate: 2, rollback_recommended: 3, operator_intervention_required: 4 };
+  const unknownEngine = setup().engine;
+  unknownEngine.observe(observation({ component: 'worker', state: 'unknown', reasonCode: 'observation_unknown' }));
+  assert.ok(RANK[summary.rollbackRecommendation] >= RANK[unknownEngine.summary('disposable-staging', 'workspace-a').rollbackRecommendation],
+    'BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT must not reduce escalation');
+});
+
+test('mutant: dropping draining from the summary ladder would render a shedding system as starting', () => {
+  const { engine } = setup();
+  for (const state of ['draining', 'recovering']) {
+    const { engine: fresh } = setup();
+    fresh.observe(observation({ component: 'worker', state, reasonCode: state === 'draining' ? 'drain_started' : 'check_passed' }));
+    const summary = fresh.summary('disposable-staging', 'workspace-a');
+    assert.notEqual(summary.state, 'starting', `a ${state} system must not read as a fresh boot`);
+    assert.equal(summary.state, 'degraded');
+  }
+  assert.equal(engine.summary('disposable-staging', 'workspace-a').state, 'starting');
 });
 
 test('mutant: weakening cursor validation would accept a forged or truncated cursor', () => {
@@ -169,6 +227,10 @@ test('mutant: dropping snapshot validation would rehydrate an unusable store', (
   }
   const restored = new MemoryHealthTransitionStore(store.snapshot());
   assert.equal(restored.events('disposable-staging', 'workspace-a').length, 1);
-  // Stored rows must be frozen so a caller cannot mutate history in place.
+  // Stored rows must be frozen so a caller cannot mutate history in place. Assert on a LIVE
+  // store as well: the constructor freezes independently, so reading back only through a
+  // rehydrated store left append()'s own Object.freeze uncovered.
   assert.throws(() => { restored.events('disposable-staging', 'workspace-a')[0].newState = 'tampered'; }, TypeError);
+  assert.throws(() => { store.events('disposable-staging', 'workspace-a')[0].newState = 'tampered'; }, TypeError);
+  assert.throws(() => { store.latest('disposable-staging', 'workspace-a', 'api_liveness').state = 'tampered'; }, TypeError);
 });

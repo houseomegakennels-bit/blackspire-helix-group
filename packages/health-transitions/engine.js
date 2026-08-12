@@ -5,6 +5,13 @@ const RANK = { none: 0, observe: 1, investigate: 2, rollback_recommended: 3, ope
 function recommendation(observation) {
   if (observation.state === 'migration_mismatch' || (observation.component === 'build' && observation.state !== 'healthy')) return 'operator_intervention_required';
   if (observation.state === 'unavailable' && ['api_liveness','api_readiness','database','queue'].includes(observation.component)) return 'rollback_recommended';
+  // Any OTHER component reported unavailable still needs a human. Without this floor an
+  // unavailable non-core component fell through to 'none' while severity() called it critical
+  // and summary() escalated overall state to unavailable -- a report telling the operator
+  // UNAVAILABLE and `rollback none` on consecutive lines. It also inverted the worker flag:
+  // a missing worker read unknown -> observe with BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT unset,
+  // but unavailable -> none once the flag declared that the worker matters.
+  if (observation.state === 'unavailable') return 'investigate';
   if (observation.state === 'dependency_failure' || observation.state === 'halted') return 'investigate';
   if (observation.state === 'degraded' || observation.state === 'stale' || observation.state === 'unknown') return 'observe';
   return 'none';
@@ -48,8 +55,12 @@ export class HealthTransitionEngine {
     const events = this.store.events(environment, workspaceId);
     let rollbackRecommendation = 'none';
     for (const item of components) { const candidate = recommendation(item); if (RANK[candidate] > RANK[rollbackRecommendation]) rollbackRecommendation = candidate; }
+    // 'draining' and 'recovering' must appear in this ladder. They matched no arm and fell
+    // through to the terminal 'starting', so a system shedding a worker rendered as
+    // "... STARTING / rollback none" -- indistinguishable from a healthy fresh boot at exactly
+    // the moment it is losing capacity. severity() already classifies both as notice.
     const state = components.some((item) => ['unavailable','migration_mismatch'].includes(item.state)) ? 'unavailable'
-      : components.some((item) => ['degraded','dependency_failure','stale','halted','unknown'].includes(item.state)) ? 'degraded'
+      : components.some((item) => ['degraded','dependency_failure','stale','halted','unknown','draining','recovering'].includes(item.state)) ? 'degraded'
         : components.length && components.every((item) => ['healthy','ready','disabled'].includes(item.state)) ? 'healthy' : 'starting';
     return { environment, workspaceId, state, rollbackRecommendation, components, latestTransition: events.at(-1) || null,
       staleComponents: components.filter((item) => item.state === 'stale').map((item) => item.component),

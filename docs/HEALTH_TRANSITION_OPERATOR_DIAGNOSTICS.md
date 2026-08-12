@@ -47,7 +47,6 @@ Use Node.js 22.23.1. The focused entry points are:
 
 ```bash
 node --test tests/health-transitions.test.js tests/health-transition-mutation.test.js
-node --test tests/production-monitoring.test.js
 node --test tests/api-readiness-lifecycle.test.js tests/worker-graceful-drain.test.js
 ```
 
