@@ -7,10 +7,13 @@ import { HealthTransitionEngine } from '../packages/health-transitions/engine.js
 const report = (classification) => ({ schemaVersion:1, kind:'blackspire-post-deploy-verification', readOnly:true, automaticActionTaken:false, classification, environment:'disposable-staging', expected:{ environment:'disposable-staging', commit:'a'.repeat(40), buildFingerprint:'build-1', migrationVersion:'v1' }, reasons:[] });
 const context = { workspaceId:'workspace-a', correlationId:'deploy-1', timestamp:'2026-08-05T02:00:00.000Z' };
 test('post-deploy classifications become advisory transitions only', () => {
-  // 'observe' maps to component 'startup' / state 'recovering'. This expected 'none' when it was
-  // written against the earlier PR #90 head, where 'recovering' was absent from recommendation()'s
-  // observe bucket. PR #90's remediation added it, so a post-deploy 'observe' classification now
-  // surfaces as the 'observe' recommendation -- the coherent result, and current main's behavior.
+  // 'observe' maps to state 'recovering'. This expected 'none' when it was written against the
+  // earlier PR #90 head, where 'recovering' was absent from recommendation()'s observe bucket.
+  // PR #90's remediation added it, so a post-deploy 'observe' classification now surfaces as the
+  // 'observe' recommendation -- the coherent result, and current main's behavior.
+  // Every classification now records on the single 'post_deploy' component; this comment named the
+  // old per-classification runtime components ('startup' here) until that routing was removed as a
+  // defect, and said so after it no longer did.
   // The load-bearing claims of this test are unchanged: every classification stays advisory and
   // automaticActionTaken stays false.
   const expected = new Map([['proceed','none'],['observe','observe'],['rollback recommended','rollback_recommended'],['operator intervention required','operator_intervention_required']]);
@@ -80,6 +83,39 @@ test('advisory post-deploy observations never overwrite runtime component state'
   }
 });
 
+// Severity must not invert. 'operator intervention required' maps to state 'dependency_failure',
+// which severity() graded 'warning' and summary()'s ladder placed in the 'degraded' arm, while the
+// LESSER 'rollback recommended' arm (state 'unavailable') graded 'critical'/'unavailable'. The
+// worst post-deploy outcome therefore rendered less severe than a lesser one on every surface that
+// pages off severity or overallState, while rollbackRecommendation alone read correctly -- another
+// self-contradicting operator report. Asserting rollbackRecommendation is NOT sufficient to catch
+// this: it was already correct when the other two surfaces were wrong.
+test('post-deploy severity and overall state never rank a worse outcome below a lesser one', () => {
+  const RANK = { info:0, notice:1, warning:2, critical:3 };
+  const STATE_RANK = { healthy:0, starting:1, degraded:2, unavailable:3 };
+  const observed = new Map();
+  for (const classification of ['proceed','observe','rollback recommended','operator intervention required']) {
+    const engine = new HealthTransitionEngine(new MemoryHealthTransitionStore());
+    const result = engine.observe(postDeployReportObservation(report(classification), context));
+    const summary = engine.summary('disposable-staging','workspace-a');
+    observed.set(classification, { severity: result.event.severity, state: summary.state });
+  }
+  // The two serious arms both reach the top of both ladders.
+  for (const classification of ['rollback recommended','operator intervention required']) {
+    assert.equal(observed.get(classification).severity, 'critical', `${classification} must be critical`);
+    assert.equal(observed.get(classification).state, 'unavailable', `${classification} must be unavailable`);
+  }
+  // And the worst outcome is never ranked below the lesser one on either surface.
+  const worst = observed.get('operator intervention required');
+  const lesser = observed.get('rollback recommended');
+  assert.ok(RANK[worst.severity] >= RANK[lesser.severity], 'intervention graded below rollback');
+  assert.ok(STATE_RANK[worst.state] >= STATE_RANK[lesser.state], 'intervention overall state below rollback');
+  // The advisory arms stay below them, so this is an ordering guard rather than a blanket escalation.
+  assert.equal(observed.get('proceed').severity, 'info');
+  assert.equal(observed.get('observe').severity, 'notice');
+  assert.ok(RANK[observed.get('observe').severity] < RANK[lesser.severity]);
+});
+
 // Provenance was entirely unpinned: mutants that hardcoded workspaceId, froze the timestamp,
 // rewrote correlationId, or relabelled source as 'runtime' all left the other tests green. A
 // single-workspace fixture cannot detect cross-workspace misattribution in an adapter, so the
@@ -94,6 +130,11 @@ test('post-deploy observations carry caller-supplied provenance and stay per-wor
   const other = postDeployReportObservation(report('rollback recommended'), { workspaceId:'workspace-b', correlationId:'deploy-2', timestamp:'2026-08-05T03:00:00.000Z' });
   assert.equal(other.workspaceId, 'workspace-b');
   assert.equal(other.correlationId, 'deploy-2');
+  // Asserted on the SECOND fixture specifically. The first assertion compares against the same
+  // literal `context` supplies, so an adapter hardcoding that timestamp satisfies it -- a mutant
+  // that froze the timestamp survived the whole file while this comment already claimed timestamp
+  // was pinned. Only a second, differing value can distinguish pass-through from a constant.
+  assert.equal(other.timestamp, '2026-08-05T03:00:00.000Z');
   assert.equal(other.metadata.mode, 'rollback recommended');
   // Recorded together, one workspace's advisory state must not appear in the other's summary.
   const store = new MemoryHealthTransitionStore();

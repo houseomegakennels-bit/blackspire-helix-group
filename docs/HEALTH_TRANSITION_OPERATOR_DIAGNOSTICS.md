@@ -69,9 +69,21 @@ arriving one second later, and diagnostics' `deployment` field — which reads t
 then reported the approved commit instead of the running one. Both are closed by the separate
 component identity.
 
-`recommendation()` maps the `post_deploy` component's `dependency_failure` and `unavailable` arms to
-`operator_intervention_required` and `rollback_recommended` explicitly, so routing the advisory
-channel away from `build`/`api_readiness` does not soften the severity the verifier assigned.
+Three surfaces have to agree about this component, and an earlier revision of this document claimed
+they did when only one of them had been corrected. `recommendation()` maps the `post_deploy`
+component's `dependency_failure` and `unavailable` arms to `operator_intervention_required` and
+`rollback_recommended` explicitly. `severity()` grades that component's `dependency_failure` as
+`critical`, and `summary()`'s ladder places it in the `unavailable` arm.
+
+Both additions are load-bearing. Graded by state alone, `dependency_failure` — which is the
+verifier's **`operator intervention required`** arm, the most serious outcome — scored `warning` and
+`degraded`, while the **lesser** `rollback recommended` arm (`unavailable`) scored `critical` and
+`unavailable`. The worst outcome therefore rendered *less* severe than a lesser one on every surface
+that pages off `severity` or `overallState`, while `rollbackRecommendation` alone read correctly.
+Asserting `rollbackRecommendation` does not catch this, because it was already right when the other
+two were wrong. An exhaustive comparison of all 182 `(component, state)` pairs against the previous
+revision shows exactly one behavioral difference, confined to `post_deploy`/`dependency_failure`:
+`warning`/`degraded` → `critical`/`unavailable`. No existing component's grading changed.
 
 Mapping: `proceed` → `healthy`, `observe` → `recovering`, `rollback recommended` → `unavailable`,
 `operator intervention required` → `dependency_failure`. A report whose own `environment` disagrees

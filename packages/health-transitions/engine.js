@@ -30,7 +30,14 @@ function recommendation(observation) {
   if (['degraded','stale','unknown','draining','recovering'].includes(observation.state)) return 'observe';
   return 'none';
 }
-function severity(state) {
+function severity(state, component) {
+  // The advisory channel's dependency_failure IS its 'operator intervention required' arm, the
+  // most serious post-deploy outcome. Graded by state alone it scored 'warning' while the LESSER
+  // 'rollback recommended' arm (unavailable) scored 'critical' -- the worst outcome rendering
+  // less severe than a lesser one on every surface that pages off severity. recommendation()
+  // already special-cases this component; severity() and summary()'s ladder have to agree with it
+  // or the report contradicts itself again, in the same way this change set exists to prevent.
+  if (component === 'post_deploy' && state === 'dependency_failure') return 'critical';
   if (['migration_mismatch','unavailable'].includes(state)) return 'critical';
   if (['dependency_failure','halted','stale'].includes(state)) return 'warning';
   if (['degraded','unknown','starting','recovering','draining'].includes(state)) return 'notice';
@@ -59,7 +66,7 @@ export class HealthTransitionEngine {
       timestamp: observation.timestamp, timestampMs: observation.timestampMs, reasonCode: observation.reasonCode, reason: observation.reason,
       correlationId: observation.correlationId, commit: observation.commit, buildFingerprint: observation.buildFingerprint,
       dependency: observation.dependency, source: observation.source, metadata: observation.metadata,
-      severity: severity(observation.state), operatorActionRequired: RANK[rollbackRecommendation] >= RANK.investigate,
+      severity: severity(observation.state, observation.component), operatorActionRequired: RANK[rollbackRecommendation] >= RANK.investigate,
       rollbackRecommendation, flapping, automaticActionTaken: false,
     }));
     return { accepted: true, disposition: 'transition_recorded', latest: observation, event };
@@ -73,7 +80,7 @@ export class HealthTransitionEngine {
     // through to the terminal 'starting', so a system shedding a worker rendered as
     // "... STARTING / rollback none" -- indistinguishable from a healthy fresh boot at exactly
     // the moment it is losing capacity. severity() already classifies both as notice.
-    const state = components.some((item) => ['unavailable','migration_mismatch'].includes(item.state)) ? 'unavailable'
+    const state = components.some((item) => ['unavailable','migration_mismatch'].includes(item.state) || (item.component === 'post_deploy' && item.state === 'dependency_failure')) ? 'unavailable'
       : components.some((item) => ['degraded','dependency_failure','stale','halted','unknown','draining','recovering'].includes(item.state)) ? 'degraded'
         : components.length && components.every((item) => ['healthy','ready','disabled'].includes(item.state)) ? 'healthy' : 'starting';
     // Append order is NOT timestamp order. observe() rejects a stale observation only per
