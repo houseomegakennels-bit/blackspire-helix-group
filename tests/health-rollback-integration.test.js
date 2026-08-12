@@ -45,3 +45,60 @@ test('integration fails closed when any single contract clause is violated', () 
   // The valid report still passes, so the guards above are not rejecting everything.
   assert.equal(postDeployReportObservation(base, context).state, 'healthy');
 });
+
+// The store keys latest state by (environment, workspaceId, component) and NOT by source, so an
+// advisory observation written to a runtime component silently replaces that component's live
+// state. This was measured before the fix: runtime build dependency_failure ->
+// operator_intervention_required, then an advisory 'proceed' one second later -> none / healthy.
+// Every classification is asserted, because 'proceed' was only the loudest case: each arm used to
+// land on 'build', 'startup', or 'api_readiness'.
+test('advisory post-deploy observations never overwrite runtime component state', () => {
+  const runtime = (component, state, reasonCode) => ({ environment:'disposable-staging', workspaceId:'workspace-a', component, state, reasonCode, reason:`${component} runtime observation`, timestamp:'2026-08-05T02:00:00.000Z', correlationId:'runtime-1', commit:'b'.repeat(40), buildFingerprint:'running-build', dependency:null, source:'runtime', metadata:{} });
+  for (const classification of ['proceed','observe','rollback recommended','operator intervention required']) {
+    const store = new MemoryHealthTransitionStore();
+    const engine = new HealthTransitionEngine(store);
+    // A live, failing runtime picture across exactly the components the adapter used to target.
+    engine.observe(runtime('build','dependency_failure','check_failed'));
+    engine.observe(runtime('api_readiness','unavailable','check_failed'));
+    engine.observe(runtime('startup','recovering','startup_pending'));
+    const before = engine.summary('disposable-staging','workspace-a');
+    assert.equal(before.rollbackRecommendation, 'operator_intervention_required');
+    // The advisory report arrives one second later and is accepted.
+    const advisory = postDeployReportObservation(report(classification), { ...context, timestamp:'2026-08-05T02:00:01.000Z' });
+    assert.equal(advisory.component, 'post_deploy');
+    assert.equal(engine.observe(advisory).accepted, true);
+    const after = engine.summary('disposable-staging','workspace-a');
+    // Each runtime component keeps its own state and its own running-build identity.
+    for (const [component, state] of [['build','dependency_failure'],['api_readiness','unavailable'],['startup','recovering']]) {
+      const item = after.components.find((entry) => entry.component === component);
+      assert.equal(item.state, state, `${classification} overwrote runtime ${component}`);
+      assert.equal(item.source, 'runtime');
+      assert.equal(item.buildFingerprint, 'running-build');
+    }
+    // The runtime alarm is never softened by an advisory report.
+    assert.equal(after.rollbackRecommendation, 'operator_intervention_required');
+  }
+});
+
+// Provenance was entirely unpinned: mutants that hardcoded workspaceId, froze the timestamp,
+// rewrote correlationId, or relabelled source as 'runtime' all left the other tests green. A
+// single-workspace fixture cannot detect cross-workspace misattribution in an adapter, so the
+// second workspace here is load-bearing, not decoration.
+test('post-deploy observations carry caller-supplied provenance and stay per-workspace', () => {
+  const observation = postDeployReportObservation(report('proceed'), context);
+  assert.equal(observation.workspaceId, 'workspace-a');
+  assert.equal(observation.correlationId, 'deploy-1');
+  assert.equal(observation.timestamp, '2026-08-05T02:00:00.000Z');
+  assert.equal(observation.source, 'post_deploy_verifier');
+  assert.equal(observation.metadata.mode, 'proceed');
+  const other = postDeployReportObservation(report('rollback recommended'), { workspaceId:'workspace-b', correlationId:'deploy-2', timestamp:'2026-08-05T03:00:00.000Z' });
+  assert.equal(other.workspaceId, 'workspace-b');
+  assert.equal(other.correlationId, 'deploy-2');
+  assert.equal(other.metadata.mode, 'rollback recommended');
+  // Recorded together, one workspace's advisory state must not appear in the other's summary.
+  const store = new MemoryHealthTransitionStore();
+  const engine = new HealthTransitionEngine(store);
+  engine.observe(observation); engine.observe(other);
+  assert.equal(engine.summary('disposable-staging','workspace-a').rollbackRecommendation, 'none');
+  assert.equal(engine.summary('disposable-staging','workspace-b').rollbackRecommendation, 'rollback_recommended');
+});

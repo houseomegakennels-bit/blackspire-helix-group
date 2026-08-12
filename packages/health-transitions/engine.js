@@ -3,6 +3,16 @@ import { observationDigest, validateObservation } from './model.js';
 
 const RANK = { none: 0, observe: 1, investigate: 2, rollback_recommended: 3, operator_intervention_required: 4 };
 function recommendation(observation) {
+  // 'post_deploy' is the advisory verifier's OWN channel, deliberately separate from the runtime
+  // components it reports about. It carries the same severity the verifier assigned, so routing it
+  // to its own component does not soften it: dependency_failure is the verifier's 'operator
+  // intervention required' arm and unavailable is its 'rollback recommended' arm. Without these two
+  // lines both would fall through to the generic 'investigate' floor below -- a silent downgrade of
+  // the two most serious post-deploy outcomes.
+  if (observation.component === 'post_deploy') {
+    if (observation.state === 'dependency_failure') return 'operator_intervention_required';
+    if (observation.state === 'unavailable') return 'rollback_recommended';
+  }
   if (observation.state === 'migration_mismatch' || (observation.component === 'build' && observation.state !== 'healthy')) return 'operator_intervention_required';
   if (observation.state === 'unavailable' && ['api_liveness','api_readiness','database','queue'].includes(observation.component)) return 'rollback_recommended';
   // Any OTHER component reported unavailable still needs a human. Without this floor an
