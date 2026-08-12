@@ -15,7 +15,7 @@ const { createUnifiedInput } = await import('../packages/unified-input/unified.j
 const { getTask, setFlag } = await import('../packages/task-engine/tasks.js');
 const { runHermesWorkflow } = await import('../packages/hermes-orchestrator/orchestrator.js');
 const store = await import('../packages/hermes-orchestrator/store.js');
-const { run, get, all, execSql } = await import('../packages/task-engine/db.js');
+const { run, get, all, execSql, getDb } = await import('../packages/task-engine/db.js');
 const authz = await import('../packages/shared/authorization.js');
 const { evaluateTerminalOutcome, readOutcomeEvaluation, appendOutcomeCorrection, appendOutcomeSourceEvent, recordOutcomeEvaluationFailure } = await import('../packages/hermes-orchestrator/outcome.js');
 const authzNow = Date.now();
@@ -345,6 +345,158 @@ test('workspace-scoped trusted reads and additive corrections refuse injection, 
     run('UPDATE hermes_outcome_corrections SET created_at=?,actor_principal_id=? WHERE id=?', [new Date(Date.now() + 1).toISOString(), 'forged-actor', second.id]);
     assert.equal(readOutcomeEvaluation(admin, result.evaluationId), null, 'a forged correction actor fails closed');
   });
+});
+
+test('outcome reads authorize before provenance or subordinate-evidence work', async () => {
+  workspace('m3a-read-order-owner');
+  const result = await runHermesWorkflow(task('m3a-read-order-owner'));
+  workspace('m3a-read-order-stranger');
+  const stranger = principal('m3a-read-order-stranger', ['evaluation.read']);
+  const owner = principal('m3a-read-order-owner', ['evaluation.read']);
+
+  // A source-text pin over the read body, kept only as a fast, readable first failure for the
+  // ordinary case where someone moves an integrity call above the deny. It is NOT the coverage for
+  // this invariant and must not be described as such: it matches helper names literally, so a string
+  // literal containing `//` (which the comment stripper below then treats as a comment and erases to
+  // end of line) or any indirection -- a one-line alias function, a lookup table of helpers -- passes
+  // it while executing exactly the same pre-authorization work. Four such mutants were reproduced
+  // against this file. The behavioural recorder further down is what actually guards the invariant.
+  const source = fs.readFileSync(new URL('../packages/hermes-orchestrator/outcome.js', import.meta.url), 'utf8');
+  const bodyStart = source.indexOf('export function readOutcomeEvaluation');
+  const readBody = source.slice(bodyStart, source.indexOf('\n}\n', bodyStart))
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const authAt = readBody.indexOf('canReadEvaluation');
+  assert.ok(authAt >= 0, 'the read path must decide authorization');
+  for (const helper of ['readableEvaluation', 'provenanceMatches', 'correctionChainValid', 'sourceEventsValid',
+    'evaluationShapeValid', 'loadEvidence', 'getOutcomeComponents', 'getOutcomeCorrections', 'getOutcomeSourceEvents',
+    'getWorkflowRun', 'getWorkflowSteps', 'getRoutingDecisions', 'getPolicyDecisions', 'getVerificationResults',
+    'getProviderInvocations', 'getTask']) {
+    const at = readBody.indexOf(helper);
+    assert.ok(at === -1 || at > authAt,
+      `authorization must be decided before ${helper}: no integrity or subordinate-evidence work may precede the deny`);
+  }
+  assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null, 'a cross-workspace read is refused');
+  assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
+    'the owning workspace still receives an intact evaluation');
+
+  // Behavioural guard 1: hide the subordinate evidence tables so that reading either one throws, then
+  // require an unauthorized read to still refuse quietly. `getOutcomeCorrections` and
+  // `getOutcomeSourceEvents` are called by `readableEvaluation` OUTSIDE the `provenanceMatches`
+  // try/catch, so pre-authorization work on them surfaces as a thrown error. This mechanism cannot
+  // reach work confined to the components or workflow-evidence tables, because `provenanceMatches`
+  // swallows its own exceptions and returns `false`, which is indistinguishable from a normal
+  // integrity failure. That gap is what guard 2 closes.
+  const hidden = ['hermes_outcome_corrections', 'hermes_outcome_source_events'];
+  for (const table of hidden) run(`ALTER TABLE ${table} RENAME TO ${table}_hidden`);
+  try {
+    assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null,
+      'an unauthorized read must not touch subordinate evidence, even when reading it would throw');
+  } finally {
+    for (const table of hidden) run(`ALTER TABLE ${table}_hidden RENAME TO ${table}`);
+  }
+
+  // Behavioural guard 2: record access instead of provoking a throw, so a swallowed exception cannot
+  // hide it. Each sentinel table is swapped for a view over the real table whose WHERE clause calls a
+  // UDF that notes the access. Reads still return exactly the same rows, so the authorized path is
+  // unaffected -- but a pre-authorization touch of a sentinel is observed regardless of how the
+  // reading code is written: through an alias, a lookup table, raw SQL, a join, a subquery, or an
+  // aggregate. That is what the source-text pin above cannot do.
+  //
+  // Every user table is discovered from the live disposable schema and instrumented. This is
+  // intentionally broader than today's `readableEvaluation` graph: a new accessor, raw SQL query,
+  // join, CTE, or renamed evidence relation is covered without a reviewer having to remember to
+  // widen a prose-maintained list. Earlier rounds repeatedly proved that such a list goes stale.
+  //
+  // The recorder fires from a view's WHERE clause, so it observes a table only when that table has at
+  // least one row -- an empty table yields no row to evaluate the predicate against. The fixture
+  // below therefore guarantees a correction and a source event exist. This is not merely a test
+  // detail: a pre-authorization read of an EMPTY relation leaks nothing that scales with the object,
+  // so it is outside what this guard is built to catch, and saying so is more honest than implying
+  // the recorder is unconditional.
+  //
+  // Deliberately EXCLUDED from instrumentation, and why -- these are not oversights:
+  //   * `hermes_outcome_evaluations` is read before authorization BY DESIGN: `getOutcomeEvaluation`
+  //     supplies the `workspace_id` that authorization is then performed against. It is a single
+  //     constant-cost primary-key lookup, so it carries the residual absent-vs-exists signal recorded
+  //     as follow-up (viii) and nothing more.
+  //   * `auth_decisions` is the write target of `canReadEvaluation`; replacing it with a read-only
+  //     view would change authorization behaviour. It is not an integrity-read relation.
+  // The other auth tables ARE instrumented. A direct `canReadEvaluation` call establishes the exact
+  // legitimate auth-read baseline; the full read must match it. Extra pre-denial actor/grant graph
+  // validation therefore cannot hide behind the authorization step's expected reads.
+  const corrector = principal('m3a-read-order-owner', ['evaluation.read', 'evaluation.correct']);
+  appendOutcomeCorrection(corrector, result.evaluationId,
+    { reason: 'sentinel fixture correction', sourceEvidence: 'sentinel fixture evidence' });
+  appendOutcomeSourceEvent(corrector, result.evaluationId,
+    { idempotencyKey: 'sentinel-fixture-event', eventType: 'accepted', evidence: 'sentinel fixture evidence' });
+  assert.ok(all('SELECT id FROM hermes_outcome_corrections WHERE evaluation_id=?', [result.evaluationId]).length > 0,
+    'the corrections sentinel needs at least one row or its recorder can never fire');
+  assert.ok(all('SELECT id FROM hermes_outcome_source_events WHERE evaluation_id=?', [result.evaluationId]).length > 0,
+    'the source-events sentinel needs at least one row or its recorder can never fire');
+  const db = getDb();
+  const touched = new Map();
+  db.function('m3a_note_read', (table) => { touched.set(table, (touched.get(table) || 0) + 1); return 1; });
+  const intentionalPreAuthorizationTables = new Set([
+    'hermes_outcome_evaluations', 'auth_decisions',
+  ]);
+  const sentinels = all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .map((row) => row.name).filter((table) => !intentionalPreAuthorizationTables.has(table));
+  assert.ok(sentinels.length > 10, 'the runtime-derived guard covers the whole user schema, not a handpicked evidence list');
+  // SQLite rewrites the stored DDL of dependent indexes and triggers when a table is renamed and
+  // renamed back, quoting the identifier. Normalize that quoting so the round-trip check asserts the
+  // schema is restored without failing on cosmetic requoting.
+  const schema = () => all('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')
+    .map((row) => `${row.type}:${row.name}:${String(row.sql ?? '').replace(/"/g, '')}`).join('\n');
+  const schemaBefore = schema();
+  const altered = [];
+  let primaryFailure = null;
+  try {
+    for (const table of sentinels) {
+      execSql(`ALTER TABLE ${table} RENAME TO ${table}__real`);
+      altered.push(table);
+      execSql(`CREATE VIEW ${table} AS SELECT * FROM ${table}__real WHERE m3a_note_read('${table}')=1`);
+    }
+
+    touched.clear();
+    assert.equal(authz.canReadEvaluation(stranger, 'm3a-read-order-owner').allowed, false,
+      'the direct authorization baseline refuses the stranger');
+    const legitimateAuthorizationReads = new Map(touched);
+
+    touched.clear();
+    assert.equal(readOutcomeEvaluation(stranger, result.evaluationId), null,
+      'a cross-workspace read is still refused while the sentinels are installed');
+    assert.deepEqual([...touched.entries()].sort(), [...legitimateAuthorizationReads.entries()].sort(),
+      'an unauthorized read may perform exactly the legitimate authorization graph reads and no ' +
+      'additional integrity or actor/grant graph work before the deny');
+
+    // Anti-vacuity: representative relations on each branch must actually be observable. Coverage
+    // itself comes from instrumenting every runtime-discovered user table, not from this witness set.
+    touched.clear();
+    assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
+      'the owning workspace still reads the evaluation through the sentinel views');
+    for (const table of ['hermes_workflow_runs', 'hermes_outcome_evaluation_components',
+      'hermes_outcome_corrections', 'hermes_outcome_source_events']) {
+      assert.ok(touched.has(table), `the authorized read proves the ${table} recorder is live`);
+    }
+  } catch (error) {
+    primaryFailure = error;
+  } finally {
+    const restoreFailures = [];
+    for (const table of altered.reverse()) {
+      try { execSql(`DROP VIEW IF EXISTS ${table}`); } catch (error) { restoreFailures.push(error); }
+      try { execSql(`ALTER TABLE ${table}__real RENAME TO ${table}`); } catch (error) { restoreFailures.push(error); }
+    }
+    if (restoreFailures.length) {
+      const restorationFailure = new AggregateError(restoreFailures, 'failed to restore every instrumented M3A table');
+      primaryFailure = primaryFailure
+        ? new AggregateError([primaryFailure, restorationFailure], 'M3A guard failed and schema restoration also failed')
+        : restorationFailure;
+    }
+  }
+  if (primaryFailure) throw primaryFailure;
+  assert.equal(schema(), schemaBefore, 'the sentinel swap must restore the schema exactly');
+  assert.equal(readOutcomeEvaluation(owner, result.evaluationId).id, result.evaluationId,
+    'the owning workspace still reads the evaluation once the subordinate tables are restored');
 });
 
 test('explicit source events are idempotent, evidence-required, and evaluator failures are observable', async () => {

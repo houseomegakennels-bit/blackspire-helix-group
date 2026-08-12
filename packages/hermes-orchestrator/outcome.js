@@ -77,9 +77,14 @@ export function evaluateTerminalOutcome(runId, { evaluationVersion = OUTCOME_EVA
 export function readOutcomeEvaluation(principal, evaluationId) {
   return transaction(() => {
     const evaluation = getOutcomeEvaluation(evaluationId);
-    if (!readableEvaluation(evaluation)) return null;
+    if (!evaluation) return null;
+    // Authorization must precede provenance validation. `readableEvaluation` walks the complete
+    // evidence graph and recomputes its digest, so doing that work first lets a cross-workspace
+    // caller measure an evaluation it cannot read. The stored workspace remains the sole scope;
+    // callers never nominate one, and absence, denial, and failed integrity all remain `null`.
     const decision = canReadEvaluation(principal, evaluation.workspace_id);
     if (!decision.allowed) return null;
+    if (!readableEvaluation(evaluation)) return null;
     const corrections = getOutcomeCorrections(evaluation.id);
     const sourceEvents = getOutcomeSourceEvents(evaluation.id);
     return { id: evaluation.id, workspaceId: evaluation.workspace_id, runId: evaluation.run_id,
