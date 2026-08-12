@@ -1,5 +1,12 @@
 # Hermes Intelligence Layer — Implementation Status
 
+## Milestone 3C, third slice — Workspace review queue (implemented, in review)
+
+- Adds a GET-only, evaluation-admin-bound view over pending candidates and their effective root/re-review head. The view is workspace-scoped, keyset-paginated, bounded to 50 items, rate-limited, and authorized before candidate or integrity reads.
+- Every selected candidate and review chain is verified fail-closed. Outcome evidence that is unavailable leaves the candidate visible but ineligible; a structurally malformed selected row or corrupt review chain fails the page with 409. Cursors are navigation state bound to workspace and filter, never authority.
+- Adds only an ordinary `(workspace_id,status,created_at,id)` index. There is no queue table, count query, notification, job, mutation route, promotion permission, candidate update, memory retrieval, routing effect, provider call, or production activation.
+- Independent review, merge, deployment, and production effect are not claimed. Details: `HERMES_M3C_REVIEW_QUEUE.md`; rollback: `HERMES_M3C_ROLLBACK.md`.
+
 ## Cross-cutting schema CHECK validation (implemented, in review)
 
 - The shared startup/restore/migration gate now pins all 52 authorization and Hermes 3A-3C CHECK expressions as an exact normalized multiset.

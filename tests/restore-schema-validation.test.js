@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
-import { findMissingSchemaObjects, listTableNames, REQUIRED_SCHEMA, REQUIRED_TABLE_CHECKS } from '../packages/shared/schema-validation.js';
+import { findMissingSchemaObjects, listTableNames, REQUIRED_SCHEMA, REQUIRED_SCHEMA_OBJECTS, REQUIRED_TABLE_CHECKS } from '../packages/shared/schema-validation.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-restore-schema-'));
 const node = process.execPath;
@@ -456,6 +456,22 @@ test('findMissingSchemaObjects reports nothing missing for a fully migrated data
   try {
     assert.deepEqual(findMissingSchemaObjects(db), []);
   } finally { db.close(); }
+});
+
+test('review queue index is registered and validated as an exact non-unique keyset index', () => {
+  const expected = REQUIRED_SCHEMA_OBJECTS.index.idx_hermes_memory_candidates_review_queue;
+  assert.deepEqual(expected, {
+    table: 'hermes_memory_candidates', columns: ['workspace_id', 'status', 'created_at', 'id'], unique: false,
+  });
+  const dir = freshCase('queue-index-shape');
+  const dbPath = path.join(dir, 'command.sqlite');
+  prepareDisposableDatabase(dbPath);
+  const db = new DatabaseSync(dbPath);
+  assert.equal(db.prepare('PRAGMA index_list("hermes_memory_candidates")').all()
+    .find((row) => row.name === 'idx_hermes_memory_candidates_review_queue')?.unique, 0);
+  db.exec('DROP INDEX idx_hermes_memory_candidates_review_queue; CREATE INDEX idx_hermes_memory_candidates_review_queue ON hermes_memory_candidates(status,workspace_id,created_at,id);');
+  assert.ok(findMissingSchemaObjects(db).includes('invalid index idx_hermes_memory_candidates_review_queue'));
+  db.close();
 });
 
 test('required CHECK inventory covers authorization and every Hermes 3A-3C constraint family', () => {

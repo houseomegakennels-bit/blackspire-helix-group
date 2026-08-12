@@ -149,3 +149,41 @@ test('the verified scorecard read route is admin-bound and discloses nothing acr
   run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-evaluation-admin', sessionId]);
   assert.equal((await fetch(`${base}/api/hermes/scorecards/${encodeURIComponent(m2Scorecard.id)}`, { headers: { cookie } })).status, 200);
 });
+
+test('the memory review queue route is bounded, admin-bound, and workspace-isolated', async () => {
+  const headers = { authorization: 'Bearer m2-api-token' };
+  const route = `${base}/api/hermes/workspaces/m2-api-workspace/memory-candidate-review-queue`;
+  const response = await fetch(`${route}?limit=1&reviewState=unreviewed`, { headers });
+  assert.equal(response.status, 200);
+  const body = await response.text();
+  assert.ok(!body.includes('m2-api-token'));
+  assert.ok(!body.includes('super-secret-should-never-appear'));
+  const queue = JSON.parse(body).queue;
+  assert.equal(queue.workspaceId, 'm2-api-workspace');
+  assert.equal(queue.version, 'm3c-q1');
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0].candidate.status, 'pending');
+  assert.equal(queue.items[0].review, null);
+  assert.equal((await fetch(`${base}/api/hermes/workspaces/m2-api-other/memory-candidate-review-queue`, { headers })).status, 404,
+    'a real ungranted workspace is indistinguishable from an absent one');
+  assert.equal((await fetch(`${base}/api/hermes/workspaces/absent-workspace/memory-candidate-review-queue`, { headers })).status, 404);
+  assert.equal((await fetch(`${route}?limit=1&limit=2`, { headers })).status, 400);
+  assert.equal((await fetch(`${route}?limit=1e1`, { headers })).status, 400);
+  assert.equal((await fetch(route)).status, 401);
+  assert.equal((await fetch(route, { method: 'POST', headers })).status, 404);
+
+  // The route binds the session to the CONFIGURED evaluation admin. `m2-scorecard-deriver` is an
+  // active principal that genuinely holds `evaluation.read` on this workspace, so only that binding
+  // can refuse it — a workspace-permission check alone would let it straight through. The sibling
+  // 3A/3B routes pin this; the queue did not, so removing the binding left the whole suite green.
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'm2-api-token' }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie')?.split(';')[0];
+  const sessionId = cookie.slice(cookie.indexOf('=') + 1);
+  assert.equal((await fetch(route, { headers: { cookie } })).status, 200, 'the configured admin session must be accepted');
+  run('UPDATE sessions SET principal_id=? WHERE id=?', ['m2-scorecard-deriver', sessionId]);
+  assert.equal((await fetch(route, { headers: { cookie } })).status, 403,
+    'a non-admin principal holding evaluation.read must still be refused by the route binding');
+  run('UPDATE sessions SET principal_id=NULL WHERE id=?', [sessionId]);
+  assert.equal((await fetch(route, { headers: { cookie } })).status, 403);
+});

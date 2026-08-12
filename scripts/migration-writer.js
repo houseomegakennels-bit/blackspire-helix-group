@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS hermes_memory_candidates(id TEXT PRIMARY KEY,run_id T
 CREATE INDEX IF NOT EXISTS idx_hermes_steps_run ON hermes_workflow_steps(run_id, seq);
 CREATE INDEX IF NOT EXISTS idx_hermes_runs_task ON hermes_workflow_runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_hermes_memory_status ON hermes_memory_candidates(status, created_at);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_hermes_memory_candidates_review_queue ON hermes_memory_candidates(workspace_id,status,created_at,id);`);
   // --- Hermes Runtime & Provider Framework (Milestone 2) ---
   // Additive. Records real/mock provider invocations (with null-safe usage/cost), per-provider
   // health, and task-scoped single-use approvals. No secrets are stored: every text field is
