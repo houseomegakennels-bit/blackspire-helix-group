@@ -232,7 +232,9 @@ test('a signal blocked inside migration leaves no orphan writer and no surviving
     // Match only a real node process whose command ENDS with the writer script. A substring test
     // also matches any unrelated shell command line that merely mentions the path, which produced a
     // false positive during mutation testing.
-    return table.split('\n').filter((line) => /node\S*\s+\S*scripts\/migration-writer\.js\s*$/.test(line));
+    // Anchored on the argv0 field: the previous pattern only required the token "node" to appear
+    // somewhere earlier on the line, so `tail -f node scripts/migration-writer.js` matched it.
+    return table.split('\n').filter((line) => /^\s*\d+\s+\S*\/?node(?:js)?(?:-\S+)?\s+\S*scripts\/migration-writer\.js\s*$/.test(line));
   };
   let appeared = [];
   for (let attempt = 0; attempt < 400 && appeared.length === 0; attempt += 1) {
@@ -243,13 +245,22 @@ test('a signal blocked inside migration leaves no orphan writer and no surviving
 
   child.kill('SIGTERM');
   const result = await resultPromise;
-  lock.exec('ROLLBACK;');
-  lock.close();
   const output = `${result.stdout}\n${result.stderr}`;
 
-  // Give any orphan a moment to surface before looking for it.
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  assert.deepEqual(await writerAlive(), [], `an interrupted startup left an orphan writer process\n${output}`);
+  // The process check runs while the lock is still held, which is the only window in which a
+  // surviving writer stays observable. Measured honestly: this assertion is NOT what catches a
+  // reverted group kill — by this point the writer has already lost its race and exited. The
+  // surviving-directory assertion below is the one that fails. This is kept as a secondary guard
+  // for a longer-lived orphan, not as the pin for the bug.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const orphans = await writerAlive();
+  lock.exec('ROLLBACK;');
+  lock.close();
+  assert.deepEqual(orphans, [], `an interrupted startup left an orphan writer process:\n${orphans.join('\n')}\n${output}`);
+
+  // THIS is the load-bearing assertion. The orphaned writer re-creates the disposable root after
+  // removeData() has already checked it was gone, so the launcher reports "cleaned":true and exits 0
+  // over state that is still on disk. Reverting the process-group kill fails exactly here.
   const survivors = fs.readdirSync(tmpdir).filter((name) => name.startsWith(prefix));
   assert.deepEqual(survivors, [], `interrupted startup left disposable state behind: ${survivors.join(', ')}\n${output}`);
   assert.doesNotMatch(result.stdout, /"status":"ready"/, output);
