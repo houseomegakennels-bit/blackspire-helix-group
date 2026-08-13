@@ -114,6 +114,20 @@ test('post-deploy severity and overall state never rank a worse outcome below a 
   assert.equal(observed.get('proceed').severity, 'info');
   assert.equal(observed.get('observe').severity, 'notice');
   assert.ok(RANK[observed.get('observe').severity] < RANK[lesser.severity]);
+  // The escalation is scoped to 'post_deploy' ONLY. Deleting the `component === 'post_deploy'`
+  // test from either the severity clause or the summary ladder leaves every assertion above green
+  // while silently regrading THIRTEEN pre-existing components: each one's dependency_failure would
+  // go warning/degraded -> critical/unavailable, so a single 'providers' dependency_failure would
+  // flip the whole environment's operator headline to UNAVAILABLE. That scoping is the invariant
+  // this change set's central evidence claim rests on ("no existing component's grading changed"),
+  // so it is pinned here rather than left to the author's word.
+  for (const component of ['providers','telegram','worker','build']) {
+    const engine = new HealthTransitionEngine(new MemoryHealthTransitionStore());
+    const result = engine.observe({ environment:'disposable-staging', workspaceId:'workspace-a', component, state:'dependency_failure', reasonCode:'check_failed', reason:`${component} runtime observation`, timestamp:'2026-08-05T02:00:00.000Z', correlationId:'runtime-1', commit:'b'.repeat(40), buildFingerprint:'running-build', dependency:null, source:'runtime', metadata:{} });
+    assert.equal(result.event.severity, 'warning', `${component} dependency_failure must stay warning`);
+    // 'build' is escalated by its own pre-existing rule, so only the others assert the ladder.
+    if (component !== 'build') assert.equal(engine.summary('disposable-staging','workspace-a').state, 'degraded', `${component} dependency_failure must stay degraded`);
+  }
 });
 
 // Provenance was entirely unpinned: mutants that hardcoded workspaceId, froze the timestamp,
@@ -127,6 +141,11 @@ test('post-deploy observations carry caller-supplied provenance and stay per-wor
   assert.equal(observation.timestamp, '2026-08-05T02:00:00.000Z');
   assert.equal(observation.source, 'post_deploy_verifier');
   assert.equal(observation.metadata.mode, 'proceed');
+  // Pinned on BOTH fixtures, with different values, so no single hardcoded constant can satisfy
+  // the pair -- asserting only the second would be killed by a mutant that happens to freeze to
+  // that same literal.
+  assert.equal(observation.commit, 'a'.repeat(40));
+  assert.equal(observation.buildFingerprint, 'build-1');
   const other = postDeployReportObservation(report('rollback recommended'), { workspaceId:'workspace-b', correlationId:'deploy-2', timestamp:'2026-08-05T03:00:00.000Z' });
   assert.equal(other.workspaceId, 'workspace-b');
   assert.equal(other.correlationId, 'deploy-2');
@@ -136,6 +155,14 @@ test('post-deploy observations carry caller-supplied provenance and stay per-wor
   // was pinned. Only a second, differing value can distinguish pass-through from a constant.
   assert.equal(other.timestamp, '2026-08-05T03:00:00.000Z');
   assert.equal(other.metadata.mode, 'rollback recommended');
+  // Deployment identity, pinned on a report carrying DIFFERENT values. This is the field class
+  // that caused the original defect (the advisory record misattributing the running build), and
+  // it was the last thing in this adapter a constant could satisfy: the shared fixture supplies
+  // the same commit and buildFingerprint everywhere, so mutants hardcoding either survived the
+  // whole file.
+  const moved = postDeployReportObservation({ ...report('proceed'), expected:{ environment:'disposable-staging', commit:'c'.repeat(40), buildFingerprint:'build-2', migrationVersion:'v2' } }, context);
+  assert.equal(moved.commit, 'c'.repeat(40));
+  assert.equal(moved.buildFingerprint, 'build-2');
   // Recorded together, one workspace's advisory state must not appear in the other's summary.
   const store = new MemoryHealthTransitionStore();
   const engine = new HealthTransitionEngine(store);
