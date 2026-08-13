@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { recomputePostDeployAudit, verifyPostDeploy } from '../packages/shared/post-deploy-verifier.js';
 import { createDeploymentIdentityProvider, serializeDeploymentIdentity } from '../packages/shared/deployment-identity.js';
+import { writeReleaseEvidence } from '../packages/shared/release-evidence.js';
 import fsNode from 'node:fs';
 import osNode from 'node:os';
 import pathNode from 'node:path';
@@ -107,6 +108,14 @@ test('the audit identity projection sanitizes in place and survives replay', () 
   const report = verifyPostDeploy(healthy, Date.parse(healthy.observedAt));
   assert.deepEqual(report.observed.deploymentIdentity, healthy.observed.deploymentIdentity);
   assert.equal(recomputePostDeployAudit(report, Date.parse(healthy.observedAt)).classification, 'proceed');
+  // The release-evidence projection has the same round-trip obligation, and regressed the same
+  // way: verifyPostDeploy compares releaseEvidence.expectedEnvironment against
+  // expected.environment, so dropping it from the audit made every replay of a VALID audit raise
+  // release_environment_mismatch and downgrade to 'operator intervention required'.
+  assert.equal(report.observed.deploymentIdentity.releaseEvidence.expectedEnvironment,
+    healthy.observed.deploymentIdentity.releaseEvidence.expectedEnvironment,
+    'the audit must carry every field its own re-verification reads');
+  assert.deepEqual(recomputePostDeployAudit(report, Date.parse(healthy.observedAt)).reasons, []);
 
   const malformed = structuredClone(healthy);
   malformed.observed.deploymentIdentity = {
@@ -130,9 +139,9 @@ test('identity, migration, provider, and Telegram mismatches require interventio
   // the four identity gates satisfy this test on their own, so the provider and Telegram gates
   // below could each be deleted outright with the suite still green.
   assert.deepEqual(report.reasons.map((item) => item.code).sort(), [
-    'build_fingerprint_mismatch', 'commit_fingerprint_mismatch', 'deployment_identity_unverified',
-    'environment_identity_mismatch', 'migration_version_mismatch', 'providers_not_disabled',
-    'telegram_not_sandboxed',
+    'artifact_digest_mismatch', 'build_fingerprint_mismatch', 'commit_fingerprint_mismatch',
+    'deployment_identity_unverified', 'environment_identity_mismatch', 'migration_version_mismatch',
+    'providers_not_disabled', 'release_environment_mismatch', 'telegram_not_sandboxed',
   ]);
 });
 
@@ -217,16 +226,27 @@ test('a real disposable-staging identity from the provider verifies end to end',
     fsNode.writeFileSync(pathNode.join(artifact, 'COMMIT_SHA'), `${commit}\n`);
     fsNode.writeFileSync(pathNode.join(artifact, 'package.json'), JSON.stringify({ version: '0.1.0' }));
 
+    const evidence = writeReleaseEvidence(artifact, {
+      commitSha: commit, expectedEnvironment: 'disposable-staging',
+      buildTimestamp: '2026-08-10T00:00:00.000Z', buildId: 'e2e-1', ciProvider: 'local-disposable',
+      artifactName: 'e2e', packageVersion: '0.1.0', nodeVersion: 'v22.23.1',
+      repository: 'houseomegakennels-bit/blackspire-helix-group',
+    });
     const identity = serializeDeploymentIdentity(createDeploymentIdentityProvider({
       stateOwner: 'vps-disposable-staging',
       artifactRoot: artifact,
       expectedEnvironment: 'disposable-staging',
       expectedBuildSha: commit,
+      deploymentRecord: { commitSha: commit, artifactDigest: evidence.artifact.digest, environment: 'disposable-staging' },
     }).get());
     assert.equal(identity.state, 'VERIFIED', 'the provider itself must verify before the report is built');
 
     const input = structuredClone(healthy);
     input.observed.deploymentIdentity = identity;
+    // The intended artifact must be the one the evidence actually describes -- the point of this
+    // test is that a REAL provider output verifies, so the digest comes from the manifest rather
+    // than from the shared fixture's placeholder.
+    input.expected.artifactDigest = evidence.artifact.digest;
     const report = verifyPostDeploy(input, Date.parse(input.observedAt));
     assert.equal(report.classification, 'proceed', `a genuine disposable identity must verify: ${JSON.stringify(report.reasons)}`);
     assert.deepEqual(report.reasons, []);

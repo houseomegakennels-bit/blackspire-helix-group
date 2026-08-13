@@ -97,7 +97,7 @@ export function verifyPostDeploy(input, nowMs = Date.now()) {
     startupGraceSeconds: graceSeconds,
     verificationWindowSeconds: windowSeconds,
     observed: {
-      deploymentIdentity: { state: IDENTITY_STATES.includes(identity.state) ? identity.state : 'UNKNOWN', environment: identityComponent(identity.environment, (v) => typeof v === 'string' && v ? v : null), build: identityComponent(identity.build, (v) => SHA.test(v || '') ? v : null), releaseEvidence: { state: releaseEvidence.state || 'MISSING', artifactDigest: DIGEST.test(releaseEvidence.artifactDigest || '') ? releaseEvidence.artifactDigest : null } },
+      deploymentIdentity: { state: IDENTITY_STATES.includes(identity.state) ? identity.state : 'UNKNOWN', environment: identityComponent(identity.environment, (v) => typeof v === 'string' && v ? v : null), build: identityComponent(identity.build, (v) => SHA.test(v || '') ? v : null), releaseEvidence: { state: releaseEvidence.state || 'MISSING', artifactDigest: DIGEST.test(releaseEvidence.artifactDigest || '') ? releaseEvidence.artifactDigest : null, expectedEnvironment: typeof releaseEvidence.expectedEnvironment === 'string' && releaseEvidence.expectedEnvironment ? releaseEvidence.expectedEnvironment : null } },
       rollbackTargetState: observed.rollbackTargetState || null,
       buildFingerprint: observed.buildFingerprint || null,
       migrationVersion: observed.migrationVersion || null,
