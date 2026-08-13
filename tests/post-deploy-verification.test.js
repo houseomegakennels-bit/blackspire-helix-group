@@ -11,7 +11,7 @@ const commit = 'a'.repeat(40);
 const healthy = {
   startedAt: start, observedAt: '2026-08-05T00:02:00.000Z', startupGraceSeconds: 30, verificationWindowSeconds: 300,
   expected: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7' },
-  observed: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
+  observed: { deploymentIdentity: { state:'VERIFIED', environment:{state:'VERIFIED',value:'disposable-staging'}, build:{state:'VERIFIED',value:commit} }, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
 };
 
 test('healthy disposable staging produces a read-only proceed audit', () => {
@@ -91,9 +91,32 @@ test('degraded health observes during grace and recommends rollback after grace'
   assert.deepEqual(report.reasons.map((item) => item.code), ['readiness_failed', 'degraded_health']);
 });
 
+test('the audit identity projection sanitizes in place and survives replay', () => {
+  // Regression guard for the rebase of PR #95 onto the merged verification-window work. An
+  // earlier projection FLATTENED the identity to {environment: value, build: value}, which
+  // dropped each component's `state`. verifyPostDeploy() reads identity.environment?.state, so
+  // replaying a VERIFIED audit through recomputePostDeployAudit() then failed closed to
+  // 'operator intervention required' -- a clean deployment reported as needing intervention on
+  // every replay. Pin BOTH halves: the shape round-trips, and malformed input is still clamped.
+  const report = verifyPostDeploy(healthy, Date.parse(healthy.observedAt));
+  assert.deepEqual(report.observed.deploymentIdentity, healthy.observed.deploymentIdentity);
+  assert.equal(recomputePostDeployAudit(report, Date.parse(healthy.observedAt)).classification, 'proceed');
+
+  const malformed = structuredClone(healthy);
+  malformed.observed.deploymentIdentity = {
+    state: 'TOTALLY-BOGUS',
+    environment: { state: 'not-a-state', value: 'disposable-staging' },
+    build: { state: 'VERIFIED', value: 'not-a-sha' },
+  };
+  const clamped = verifyPostDeploy(malformed, Date.parse(malformed.observedAt)).observed.deploymentIdentity;
+  assert.equal(clamped.state, 'UNKNOWN');
+  assert.equal(clamped.environment.state, 'UNKNOWN');
+  assert.equal(clamped.build.value, null, 'a non-SHA build value must not reach the audit record');
+});
+
 test('identity, migration, provider, and Telegram mismatches require intervention', () => {
   const unsafe = structuredClone(healthy);
-  Object.assign(unsafe.observed, { environment: 'production', commit: 'b'.repeat(40), buildFingerprint: 'wrong', migrationVersion: 'old', providersDisabled: false, telegramMode: 'polling' });
+  Object.assign(unsafe.observed, { deploymentIdentity:{state:'MISMATCH',environment:{state:'MISMATCH',value:'production'},build:{state:'MISMATCH',value:'b'.repeat(40)}}, buildFingerprint: 'wrong', migrationVersion: 'old', providersDisabled: false, telegramMode: 'polling' });
   const report = verifyPostDeploy(unsafe, Date.parse(unsafe.observedAt));
   assert.equal(report.classification, 'operator intervention required');
   assert.ok(report.reasons.every((item) => item.severity === 'intervention'));
@@ -101,8 +124,9 @@ test('identity, migration, provider, and Telegram mismatches require interventio
   // the four identity gates satisfy this test on their own, so the provider and Telegram gates
   // below could each be deleted outright with the suite still green.
   assert.deepEqual(report.reasons.map((item) => item.code).sort(), [
-    'build_fingerprint_mismatch', 'commit_fingerprint_mismatch', 'environment_identity_mismatch',
-    'migration_version_mismatch', 'providers_not_disabled', 'telegram_not_sandboxed',
+    'build_fingerprint_mismatch', 'commit_fingerprint_mismatch', 'deployment_identity_unverified',
+    'environment_identity_mismatch', 'migration_version_mismatch', 'providers_not_disabled',
+    'telegram_not_sandboxed',
   ]);
 });
 
@@ -134,6 +158,16 @@ test('the Telegram gate accepts only proven-safe modes and rejects mock', () => 
     const safe = structuredClone(healthy); safe.observed.telegramMode = telegramMode;
     assert.equal(verifyPostDeploy(safe, Date.parse(safe.observedAt)).classification, 'proceed', `telegramMode must be accepted: ${telegramMode}`);
   }
+});
+
+test('unknown server identity cannot be promoted by caller-supplied legacy fields', () => {
+  const spoofed = structuredClone(healthy);
+  spoofed.observed.deploymentIdentity = { state:'UNKNOWN', environment:{state:'UNKNOWN',value:null}, build:{state:'UNKNOWN',value:null} };
+  spoofed.observed.environment = healthy.expected.environment;
+  spoofed.observed.commit = healthy.expected.commit;
+  const report = verifyPostDeploy(spoofed, Date.parse(spoofed.observedAt));
+  assert.equal(report.classification, 'operator intervention required');
+  assert.ok(report.reasons.some((item) => item.code === 'deployment_identity_unverified'));
 });
 
 test('CLI writes a private, exclusive audit record without taking action', () => {

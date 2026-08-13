@@ -23,11 +23,13 @@ import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/a
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
 import { readMemoryCandidateReview, readMemoryCandidateRereview, listMemoryCandidateReviewQueue } from '../../packages/hermes-orchestrator/memory-review.js';
+import { createDeploymentIdentityProvider, serializeDeploymentIdentity, validateDeploymentIdentityForStartup } from '../../packages/shared/deployment-identity.js';
 import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task-engine/runtime-status.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
 let startupConfigValidation = { ok: false };
+const deploymentIdentityProvider = createDeploymentIdentityProvider();
 const TEST_MODE = requireSafeTestMode();
 
 // Exact-match allowlist of publicly servable frontend assets. Lookup is by literal
@@ -445,10 +447,11 @@ export function start(port, host) {
     throw error;
   }
   const validation = requireProductionSafeConfig();
-  startupConfigValidation = { ok: validation.ok };
-  if (process.env.NODE_ENV === 'production' && !validation.ok) {
-    console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors }));
-    throw new Error(`production configuration refused: ${validation.errors.join('; ')}`);
+  const identityValidation = validateDeploymentIdentityForStartup(deploymentIdentityProvider.get());
+  startupConfigValidation = { ok: validation.ok && identityValidation.ok, deploymentIdentity: identityValidation };
+  if ((process.env.NODE_ENV === 'production' && !validation.ok) || !identityValidation.ok) {
+    console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors, deploymentIdentityReasonCode: identityValidation.reasonCode }));
+    throw new Error(`production configuration refused: ${[...validation.errors, ...(identityValidation.ok ? [] : [`deployment identity ${identityValidation.reasonCode}`])].join('; ')}`);
   }
   // The canonical bind contract decides host and port. Explicit arguments stay supported for
   // in-process tests and the restricted staging launcher, but a production profile is always
@@ -506,6 +509,7 @@ export function healthSnapshot() {
     emergencyStop: persistentEmergencyStop || emergencyStopMemory,
     telegramMode: process.env.TELEGRAM_MODE || (process.env.TELEGRAM_BOT_TOKEN ? 'polling' : 'dry-run'),
     dependencies: { worker, scheduler },
+    deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
 }
 
@@ -524,6 +528,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
     productionConfig: startupConfigValidation.ok === true,
     worker: worker.ok,
     scheduler: scheduler.ok,
+    deploymentIdentity: validateDeploymentIdentityForStartup(deploymentIdentityProvider.get()).ok,
   };
   return {
     ok: Object.values(checks).every(Boolean),
@@ -534,6 +539,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
     providers: activeModes(),
     productionConfig: startupConfigValidation,
     dependencies: { worker, scheduler },
+    deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
 }
 

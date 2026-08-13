@@ -617,6 +617,11 @@ test('the production supervisor and the API server agree on host and port', asyn
   const source = fs.readFileSync('scripts/production-supervisor.js', 'utf8');
   assert.match(source, /resolveBindTarget/, 'the supervisor must use the canonical contract');
   assert.match(source, /probePortAvailable/, 'the supervisor must preflight the port');
+  assert.match(source, /validateDeploymentIdentityForStartup/, 'the supervisor must verify deployment identity');
+  assert.ok(
+    source.indexOf('validateDeploymentIdentityForStartup(deploymentIdentity)') < source.indexOf('const children = ['),
+    'deployment identity must be verified before either child is spawned',
+  );
   assert.match(source, /BIND_HOST: bind\.host/, 'the supervisor must propagate the exact host');
   assert.match(source, /PORT: String\(bind\.port\)/, 'the supervisor must propagate the exact port');
 

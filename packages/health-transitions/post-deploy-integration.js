@@ -3,6 +3,7 @@ export function postDeployReportObservation(report, { workspaceId, correlationId
   if (!report || report.kind !== 'blackspire-post-deploy-verification' || report.schemaVersion !== 1 || report.readOnly !== true || report.automaticActionTaken !== false) throw new Error('invalid post-deploy verification contract');
   if (!CLASSIFICATIONS.has(report.classification)) throw new Error('invalid post-deploy classification');
   if (!['staging','disposable-staging'].includes(report.environment) || report.expected?.environment !== report.environment) throw new Error('post-deploy environment mismatch');
+  if (!report.observed?.deploymentIdentity || !['VERIFIED','UNVERIFIED','MISMATCH','UNKNOWN'].includes(report.observed.deploymentIdentity.state)) throw new Error('post-deploy deployment identity missing');
   // EVERY classification is recorded on the dedicated 'post_deploy' component, never on a runtime
   // component. The store keys latest state by (environment, workspaceId, component) ONLY -- 'source'
   // is not part of the key -- so writing this advisory channel to 'build', 'startup', or
