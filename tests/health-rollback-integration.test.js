@@ -132,6 +132,16 @@ test('post-deploy severity and overall state never rank a worse outcome below a 
     // mutant widening the new ladder clause to ['post_deploy','build'] -- turning any build
     // dependency_failure into an environment-wide UNAVAILABLE headline -- survived all 893 tests.
     assert.equal(engine.summary('disposable-staging','workspace-a').state, 'degraded', `${component} dependency_failure must stay degraded`);
+    // The THIRD surface. recommendation() was the first place the post_deploy scoping was added
+    // and the last to be pinned: widening its guard to include another component survived the
+    // entire 893-test suite while regrading that component (providers dependency_failure
+    // investigate -> operator_intervention_required, and unavailable investigate ->
+    // rollback_recommended). Pinning severity() and the summary ladder alone left the
+    // "no existing component's grading changed" claim only two-thirds enforced.
+    assert.equal(result.event.rollbackRecommendation, component === 'build' ? 'operator_intervention_required' : 'investigate', `${component} dependency_failure recommendation must not change`);
+    const unavailable = new HealthTransitionEngine(new MemoryHealthTransitionStore());
+    const unavailableResult = unavailable.observe({ environment:'disposable-staging', workspaceId:'workspace-a', component, state:'unavailable', reasonCode:'check_failed', reason:`${component} runtime observation`, timestamp:'2026-08-05T02:00:00.000Z', correlationId:'runtime-1', commit:'b'.repeat(40), buildFingerprint:'running-build', dependency:null, source:'runtime', metadata:{} });
+    assert.equal(unavailableResult.event.rollbackRecommendation, component === 'build' ? 'operator_intervention_required' : 'investigate', `${component} unavailable recommendation must not change`);
   }
 });
 
