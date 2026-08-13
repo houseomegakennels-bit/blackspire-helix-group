@@ -17,7 +17,7 @@
 // between packaging and deployment.
 import fs from 'node:fs';
 import path from 'node:path';
-import { computeArtifactDigest, DEPLOYMENT_RECORD_FILE } from '../packages/shared/release-evidence.js';
+import { computeArtifactDigest, verifyReleaseEvidence, loadReleaseEvidence, DEPLOYMENT_RECORD_FILE } from '../packages/shared/release-evidence.js';
 
 const SHA = /^[0-9a-f]{40}$/;
 const ENVIRONMENTS = new Set(['unassigned', 'development', 'test', 'staging', 'disposable-staging', 'production']);
@@ -47,6 +47,15 @@ try {
   if (!SHA.test(commitSha)) throw new Error('packaged COMMIT_SHA is not a full commit SHA');
 
   const artifactDigest = computeArtifactDigest(root);
+
+  // Fail fast, and name the recomputed value. This is what makes "recomputed, never copied out
+  // of the manifest" a falsifiable claim rather than a comment: an implementation that copied
+  // the manifest's digest could never produce this refusal.
+  const packaged = loadReleaseEvidence(root);
+  if (packaged.manifest && packaged.manifest.artifact?.digest !== artifactDigest) {
+    throw new Error(`packaged artifact digest does not match the release tree: recomputed ${artifactDigest}`);
+  }
+
   const record = { schema: 'blackspire-deployment-record', version: 1, commitSha, artifactDigest, environment, recordedAt: new Date().toISOString() };
 
   // Written atomically so a crashed deploy cannot leave a half-written record that would be
@@ -54,7 +63,37 @@ try {
   const target = path.join(root, DEPLOYMENT_RECORD_FILE);
   const temporary = `${target}.tmp`;
   fs.writeFileSync(temporary, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o644 });
+
+  // The release tree has an ownership contract (root:blackspire, 0644 files) enforced by
+  // scripts/release-tree-validator.sh on EVERY validation, including the one release-switch.sh
+  // runs and the one release-rollback.sh inherits. release-create.sh chowns the tree when it
+  // builds it, long before this record exists, so a record left with the deploying user's
+  // ownership permanently fails re-validation and makes rollback to this release impossible.
+  // Inherit the release directory's own ownership rather than hardcoding names that do not
+  // exist in development or test environments.
+  const owner = fs.statSync(root);
+  try {
+    fs.chownSync(temporary, owner.uid, owner.gid);
+  } catch (error) {
+    const current = fs.statSync(temporary);
+    if (current.uid !== owner.uid || current.gid !== owner.gid) {
+      fs.rmSync(temporary, { force: true });
+      throw new Error(`deployment record could not adopt the release ownership contract: ${error.message}`);
+    }
+  }
+  fs.chmodSync(temporary, 0o644);
   fs.renameSync(temporary, target);
+
+  // Prove the release we are about to make current actually verifies, before release-switch.sh
+  // swaps the symlink. Without this the deployer can install a release that its own startup
+  // identity check will refuse, and -- with the rollback target also refused -- strand the
+  // service with no scripted way back.
+  const verified = verifyReleaseEvidence({ artifactRoot: root, packagedCommitSha: commitSha,
+    expectedCommitSha: commitSha, expectedEnvironment: environment, deploymentRecord: record });
+  if (verified.state !== 'VERIFIED') {
+    fs.rmSync(target, { force: true });
+    throw new Error(`release does not verify for ${environment}: ${verified.reasons.join(',') || verified.reasonCode}`);
+  }
 
   process.stdout.write(`${JSON.stringify({ state: 'RECORDED', commitSha, artifactDigest, environment })}\n`);
 } catch (error) {

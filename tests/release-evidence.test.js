@@ -95,3 +95,24 @@ test('a rollback candidate that is not itself VERIFIED is refused even when ever
   }
   for (const item of [current, prior]) fs.rmSync(item.root, { recursive: true });
 });
+
+test('a rollback candidate must be a different, well-formed commit from the current release', () => {
+  // Rolling "back" to the release you are already running is not a rollback, and a malformed
+  // candidate SHA is not a target. Both were unpinned: deleting the check left the suite green.
+  const current = artifact(A), prior = artifact(B);
+  const c = verified(current).result, p = verified(prior).result;
+  assert.equal(verifyRollbackReleaseEvidence({ candidate: p, current: c, schemaCompatible: true, artifactAvailable: true }).state, 'VERIFIED');
+
+  // Same commit as the current release -- everything else agrees.
+  const same = verifyRollbackReleaseEvidence({ candidate: c, current: c, schemaCompatible: true, artifactAvailable: true });
+  assert.equal(same.state, 'INVALID');
+  assert.ok(same.reasons.includes('COMMIT_MISMATCH'));
+
+  // Malformed candidate commit.
+  const malformed = { ...p, manifest: { ...p.manifest, commitSha: 'not-a-sha' } };
+  const refused = verifyRollbackReleaseEvidence({ candidate: malformed, current: c, schemaCompatible: true, artifactAvailable: true });
+  assert.equal(refused.state, 'INVALID');
+  assert.ok(refused.reasons.includes('COMMIT_MISMATCH'));
+
+  for (const item of [current, prior]) fs.rmSync(item.root, { recursive: true });
+});

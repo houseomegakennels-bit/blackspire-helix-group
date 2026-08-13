@@ -85,12 +85,19 @@ test('the deployment record is outside digest coverage so recording does not inv
 });
 
 test('a record naming another environment is a mismatch rather than a silent pass', () => {
+  // Written directly rather than through the producer, which now refuses this case outright
+  // before the symlink swap. This pins the READ side: if such a record reaches a running
+  // system by any route, startup must still refuse it.
   const { root, artifact } = release({ environment: 'staging' });
-  // The host says production; the artifact was built for staging.
-  assert.equal(record(artifact, { BLACKSPIRE_DEPLOYMENT_ENVIRONMENT: 'production' }).status, 0);
+  assert.equal(record(artifact).status, 0);
+  const file = path.join(artifact, DEPLOYMENT_RECORD_FILE);
+  const written = JSON.parse(fs.readFileSync(file, 'utf8'));
+  written.environment = 'production';
+  fs.writeFileSync(file, `${JSON.stringify(written)}\n`);
   const result = identity(artifact);
   assert.ok(result.releaseEvidence.reasons.includes('ENVIRONMENT_MISMATCH'));
   assert.equal(result.state, 'MISMATCH');
+  assert.equal(validateDeploymentIdentityForStartup(result, 'vps-staging').ok, false);
   fs.rmSync(root, { recursive: true });
 });
 
@@ -132,4 +139,82 @@ test('release-switch records the deployment before making the release current', 
   // set -e plus no `|| true`: a failed record must abort the switch.
   assert.match(script, /set -euo pipefail/);
   assert.doesNotMatch(script, /write-deployment-record\.js[^\n]*\|\|/);
+});
+
+test('a record naming a different commit than the manifest is a mismatch', () => {
+  // The record's commit binding had no test: a record could name another commit entirely and
+  // nothing failed, because the packaged COMMIT_SHA is checked on a separate path.
+  const { root, artifact } = release();
+  assert.equal(record(artifact).status, 0);
+  const file = path.join(artifact, DEPLOYMENT_RECORD_FILE);
+  const written = JSON.parse(fs.readFileSync(file, 'utf8'));
+  written.commitSha = 'b'.repeat(40);
+  fs.writeFileSync(file, `${JSON.stringify(written)}\n`);
+  const result = identity(artifact);
+  assert.ok(result.releaseEvidence.reasons.includes('COMMIT_MISMATCH'));
+  assert.equal(result.state, 'MISMATCH');
+  assert.equal(validateDeploymentIdentityForStartup(result, 'vps-staging').ok, false);
+  fs.rmSync(root, { recursive: true });
+});
+
+test('the recorded digest is recomputed from the tree, not copied out of the manifest', () => {
+  // Falsifiability: an implementation that copied manifest.artifact.digest could never produce
+  // this refusal, because the comparison would be the manifest against itself.
+  const { root, artifact } = release();
+  fs.appendFileSync(path.join(artifact, 'apps', 'server.js'), 'changed after sealing\n');
+  const result = record(artifact);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /packaged artifact digest does not match the release tree/);
+  // The refusal names the digest actually recomputed from the tree.
+  assert.match(result.stderr, new RegExp(computeArtifactDigest(artifact)));
+  assert.equal(fs.existsSync(path.join(artifact, DEPLOYMENT_RECORD_FILE)), false);
+  fs.rmSync(root, { recursive: true });
+});
+
+test('the record adopts the release tree ownership so re-switch and rollback stay valid', () => {
+  // The release tree has a uniform ownership contract enforced on EVERY validation. A record
+  // left with foreign ownership permanently failed re-validation, which made rollback to any
+  // release that had ever been current impossible.
+  const { root, artifact } = release();
+  assert.equal(record(artifact).status, 0);
+  const expected = fs.statSync(artifact);
+  const written = fs.statSync(path.join(artifact, DEPLOYMENT_RECORD_FILE));
+  assert.equal(written.uid, expected.uid, 'record must adopt the release directory owner');
+  assert.equal(written.gid, expected.gid, 'record must adopt the release directory group');
+  assert.equal(written.mode & 0o777, 0o644, 'record must satisfy the 0644 file mode contract');
+  fs.rmSync(root, { recursive: true });
+});
+
+test('recording refuses before the symlink swap when the release would not verify', () => {
+  // A release sealed for one environment must not be installed into another: without this the
+  // deployer installs a release its own startup will refuse, and -- with the previous release
+  // also unrollbackable -- strands the service.
+  const { root, artifact } = release({ environment: 'staging' });
+  const result = record(artifact, { BLACKSPIRE_DEPLOYMENT_ENVIRONMENT: 'production' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /release does not verify for production/);
+  assert.match(result.stderr, /ENVIRONMENT_MISMATCH/);
+  // Nothing is left behind for a later start to read as a valid record.
+  assert.equal(fs.existsSync(path.join(artifact, DEPLOYMENT_RECORD_FILE)), false);
+  fs.rmSync(root, { recursive: true });
+});
+
+test('release-create seals the environment the host owns rather than defaulting to unassigned', () => {
+  // The documented VPS procedure is a bare `release-create.sh <sha>`. Defaulting the sealed
+  // environment to 'unassigned' meant the manifest disagreed with the host at startup and the
+  // release was refused, which is the same defect class the deployment record was added to fix.
+  const script = fs.readFileSync('scripts/release-create.sh', 'utf8');
+  assert.match(script, /BLACKSPIRE_EXPECTED_ENVIRONMENT:-\$\(release_expected_environment\)/);
+  assert.match(fs.readFileSync('scripts/release-tree-validator.sh', 'utf8'), /release_expected_environment\(\)/);
+  assert.doesNotMatch(script, /BLACKSPIRE_EXPECTED_ENVIRONMENT:-unassigned/);
+  for (const [owner, environment] of Object.entries({ 'vps-production': 'production', 'vps-staging': 'staging',
+    'vps-disposable-staging': 'disposable-staging', 'codespace-disposable': 'development', 'iphone-test-disposable': 'test' })) {
+    const resolved = spawnSync('bash', ['-c', 'source scripts/release-tree-validator.sh; release_expected_environment'],
+      { encoding: 'utf8', env: { ...process.env, BLACKSPIRE_STATE_OWNER: owner } });
+    assert.equal(resolved.status, 0, resolved.stderr);
+    assert.equal(resolved.stdout.trim(), environment, owner);
+  }
+  const noOwner = spawnSync('bash', ['-c', 'source scripts/release-tree-validator.sh; release_expected_environment'],
+    { encoding: 'utf8', env: { ...process.env, BLACKSPIRE_STATE_OWNER: '' } });
+  assert.equal(noOwner.stdout.trim(), 'unassigned', 'a host declaring no owner stays unassigned');
 });
