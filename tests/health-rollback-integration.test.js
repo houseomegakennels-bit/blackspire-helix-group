@@ -125,8 +125,13 @@ test('post-deploy severity and overall state never rank a worse outcome below a 
     const engine = new HealthTransitionEngine(new MemoryHealthTransitionStore());
     const result = engine.observe({ environment:'disposable-staging', workspaceId:'workspace-a', component, state:'dependency_failure', reasonCode:'check_failed', reason:`${component} runtime observation`, timestamp:'2026-08-05T02:00:00.000Z', correlationId:'runtime-1', commit:'b'.repeat(40), buildFingerprint:'running-build', dependency:null, source:'runtime', metadata:{} });
     assert.equal(result.event.severity, 'warning', `${component} dependency_failure must stay warning`);
-    // 'build' is escalated by its own pre-existing rule, so only the others assert the ladder.
-    if (component !== 'build') assert.equal(engine.summary('disposable-staging','workspace-a').state, 'degraded', `${component} dependency_failure must stay degraded`);
+    // 'build' is asserted here too. An earlier revision excluded it, claiming it was "escalated by
+    // its own pre-existing rule" -- that rule (engine.js, the build/migration_mismatch arm)
+    // escalates rollbackRecommendation ONLY, not the summary ladder, so build's summary state is
+    // 'degraded' exactly like the other three. The exclusion bought nothing and cost coverage: a
+    // mutant widening the new ladder clause to ['post_deploy','build'] -- turning any build
+    // dependency_failure into an environment-wide UNAVAILABLE headline -- survived all 893 tests.
+    assert.equal(engine.summary('disposable-staging','workspace-a').state, 'degraded', `${component} dependency_failure must stay degraded`);
   }
 });
 
