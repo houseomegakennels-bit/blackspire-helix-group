@@ -60,7 +60,7 @@ mkdir -- "$temp"
 git -C "$repo" archive "$commit" -- "${release_archive_paths[@]}" | tar -x -C "$temp"
 printf '%s\n' "$commit" > "$temp/COMMIT_SHA"
 build_timestamp="$(git -C "$repo" show -s --format=%cI "$commit")" || fail 'commit timestamp cannot be resolved'
-BLACKSPIRE_EXPECTED_ENVIRONMENT="${BLACKSPIRE_EXPECTED_ENVIRONMENT:-unassigned}" \
+BLACKSPIRE_EXPECTED_ENVIRONMENT="${BLACKSPIRE_EXPECTED_ENVIRONMENT:-$(release_expected_environment)}" \
 BLACKSPIRE_BUILD_TIMESTAMP="$build_timestamp" \
 BLACKSPIRE_ARTIFACT_NAME="blackspire-command-$commit" \
 GITHUB_REF="" GITHUB_RUN_ID="" GITHUB_ACTIONS="false" \

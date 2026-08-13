@@ -255,3 +255,24 @@ test('a real disposable-staging identity from the provider verifies end to end',
     fsNode.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('unverified release evidence is insufficient even when its digest agrees', () => {
+  // Isolating case: the earlier branch fires on MISMATCH or on a digest disagreement, so the
+  // only way to reach this guard is evidence that is not VERIFIED while its digest and
+  // environment both agree. Without this the guard was removable with the suite green.
+  const now = Date.parse(healthy.observedAt);
+  const insufficient = structuredClone(healthy);
+  insufficient.observed.deploymentIdentity.releaseEvidence.state = 'UNVERIFIED';
+  const report = verifyPostDeploy(insufficient, now);
+  assert.ok(report.reasons.some(({ code }) => code === 'release_evidence_insufficient'));
+  // The digest guard must NOT be what fired -- that would make this test prove nothing.
+  assert.ok(!report.reasons.some(({ code }) => code === 'artifact_digest_mismatch'));
+  assert.equal(report.classification, 'operator intervention required');
+  assert.equal(report.automaticActionTaken, false);
+
+  // A missing digest on either side is equally insufficient.
+  const noDigest = structuredClone(healthy);
+  noDigest.observed.deploymentIdentity.releaseEvidence.artifactDigest = null;
+  noDigest.expected.artifactDigest = null;
+  assert.ok(verifyPostDeploy(noDigest, now).reasons.some(({ code }) => code === 'release_evidence_insufficient'));
+});
