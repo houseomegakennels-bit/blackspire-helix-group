@@ -4,7 +4,7 @@ import { postDeployReportObservation } from '../packages/health-transitions/post
 import { MemoryHealthTransitionStore } from '../packages/health-transitions/store.js';
 import { HealthTransitionEngine } from '../packages/health-transitions/engine.js';
 
-const report = (classification) => ({ schemaVersion:1, kind:'blackspire-post-deploy-verification', readOnly:true, automaticActionTaken:false, classification, environment:'disposable-staging', expected:{ environment:'disposable-staging', commit:'a'.repeat(40), buildFingerprint:'build-1', migrationVersion:'v1' }, reasons:[] });
+const report = (classification) => ({ schemaVersion:1, kind:'blackspire-post-deploy-verification', readOnly:true, automaticActionTaken:false, classification, environment:'disposable-staging', expected:{ environment:'disposable-staging', commit:'a'.repeat(40), buildFingerprint:'build-1', migrationVersion:'v1' }, observed:{deploymentIdentity:{state:classification==='operator intervention required'?'MISMATCH':'VERIFIED'}}, reasons:[] });
 const context = { workspaceId:'workspace-a', correlationId:'deploy-1', timestamp:'2026-08-05T02:00:00.000Z' };
 test('post-deploy classifications become advisory transitions only', () => {
   // 'observe' maps to state 'recovering'. This expected 'none' when it was written against the
@@ -184,4 +184,25 @@ test('post-deploy observations carry caller-supplied provenance and stay per-wor
   engine.observe(observation); engine.observe(other);
   assert.equal(engine.summary('disposable-staging','workspace-a').rollbackRecommendation, 'none');
   assert.equal(engine.summary('disposable-staging','workspace-b').rollbackRecommendation, 'rollback_recommended');
+});
+
+test('an advisory report without a usable deployment identity is refused', () => {
+  // The identity precondition added by this change had no test: deleting the line left the whole
+  // suite green, because every fixture already supplies observed.deploymentIdentity. Feed reports
+  // that lack it, or carry an unrecognised state, and assert the throw.
+  const base = structuredClone(report('proceed'));
+  for (const observed of [undefined, {}, { deploymentIdentity: null }, { deploymentIdentity: {} },
+                          { deploymentIdentity: { state: 'PROBABLY-FINE' } }]) {
+    const bad = structuredClone(base);
+    bad.observed = observed;
+    assert.throws(() => postDeployReportObservation(bad, context),
+      /post-deploy deployment identity missing/,
+      `a report with observed=${JSON.stringify(observed)} must be refused`);
+  }
+  // A recognised state is still accepted, so the guard rejects absence rather than everything.
+  for (const state of ['VERIFIED', 'UNVERIFIED', 'MISMATCH', 'UNKNOWN']) {
+    const good = structuredClone(base);
+    good.observed = { deploymentIdentity: { state } };
+    assert.equal(postDeployReportObservation(good, context).component, 'post_deploy');
+  }
 });

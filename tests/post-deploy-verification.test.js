@@ -5,13 +5,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { recomputePostDeployAudit, verifyPostDeploy } from '../packages/shared/post-deploy-verifier.js';
+import { createDeploymentIdentityProvider, serializeDeploymentIdentity } from '../packages/shared/deployment-identity.js';
+import fsNode from 'node:fs';
+import osNode from 'node:os';
+import pathNode from 'node:path';
 
 const start = '2026-08-05T00:00:00.000Z';
 const commit = 'a'.repeat(40);
 const healthy = {
   startedAt: start, observedAt: '2026-08-05T00:02:00.000Z', startupGraceSeconds: 30, verificationWindowSeconds: 300,
   expected: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7' },
-  observed: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
+  observed: { deploymentIdentity: { state:'VERIFIED', environment:{state:'VERIFIED',value:'disposable-staging'}, build:{state:'VERIFIED',value:commit} }, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
 };
 
 test('healthy disposable staging produces a read-only proceed audit', () => {
@@ -91,9 +95,32 @@ test('degraded health observes during grace and recommends rollback after grace'
   assert.deepEqual(report.reasons.map((item) => item.code), ['readiness_failed', 'degraded_health']);
 });
 
+test('the audit identity projection sanitizes in place and survives replay', () => {
+  // Regression guard for the rebase of PR #95 onto the merged verification-window work. An
+  // earlier projection FLATTENED the identity to {environment: value, build: value}, which
+  // dropped each component's `state`. verifyPostDeploy() reads identity.environment?.state, so
+  // replaying a VERIFIED audit through recomputePostDeployAudit() then failed closed to
+  // 'operator intervention required' -- a clean deployment reported as needing intervention on
+  // every replay. Pin BOTH halves: the shape round-trips, and malformed input is still clamped.
+  const report = verifyPostDeploy(healthy, Date.parse(healthy.observedAt));
+  assert.deepEqual(report.observed.deploymentIdentity, healthy.observed.deploymentIdentity);
+  assert.equal(recomputePostDeployAudit(report, Date.parse(healthy.observedAt)).classification, 'proceed');
+
+  const malformed = structuredClone(healthy);
+  malformed.observed.deploymentIdentity = {
+    state: 'TOTALLY-BOGUS',
+    environment: { state: 'not-a-state', value: 'disposable-staging' },
+    build: { state: 'VERIFIED', value: 'not-a-sha' },
+  };
+  const clamped = verifyPostDeploy(malformed, Date.parse(malformed.observedAt)).observed.deploymentIdentity;
+  assert.equal(clamped.state, 'UNKNOWN');
+  assert.equal(clamped.environment.state, 'UNKNOWN');
+  assert.equal(clamped.build.value, null, 'a non-SHA build value must not reach the audit record');
+});
+
 test('identity, migration, provider, and Telegram mismatches require intervention', () => {
   const unsafe = structuredClone(healthy);
-  Object.assign(unsafe.observed, { environment: 'production', commit: 'b'.repeat(40), buildFingerprint: 'wrong', migrationVersion: 'old', providersDisabled: false, telegramMode: 'polling' });
+  Object.assign(unsafe.observed, { deploymentIdentity:{state:'MISMATCH',environment:{state:'MISMATCH',value:'production'},build:{state:'MISMATCH',value:'b'.repeat(40)}}, buildFingerprint: 'wrong', migrationVersion: 'old', providersDisabled: false, telegramMode: 'polling' });
   const report = verifyPostDeploy(unsafe, Date.parse(unsafe.observedAt));
   assert.equal(report.classification, 'operator intervention required');
   assert.ok(report.reasons.every((item) => item.severity === 'intervention'));
@@ -101,8 +128,9 @@ test('identity, migration, provider, and Telegram mismatches require interventio
   // the four identity gates satisfy this test on their own, so the provider and Telegram gates
   // below could each be deleted outright with the suite still green.
   assert.deepEqual(report.reasons.map((item) => item.code).sort(), [
-    'build_fingerprint_mismatch', 'commit_fingerprint_mismatch', 'environment_identity_mismatch',
-    'migration_version_mismatch', 'providers_not_disabled', 'telegram_not_sandboxed',
+    'build_fingerprint_mismatch', 'commit_fingerprint_mismatch', 'deployment_identity_unverified',
+    'environment_identity_mismatch', 'migration_version_mismatch', 'providers_not_disabled',
+    'telegram_not_sandboxed',
   ]);
 });
 
@@ -136,6 +164,16 @@ test('the Telegram gate accepts only proven-safe modes and rejects mock', () => 
   }
 });
 
+test('unknown server identity cannot be promoted by caller-supplied legacy fields', () => {
+  const spoofed = structuredClone(healthy);
+  spoofed.observed.deploymentIdentity = { state:'UNKNOWN', environment:{state:'UNKNOWN',value:null}, build:{state:'UNKNOWN',value:null} };
+  spoofed.observed.environment = healthy.expected.environment;
+  spoofed.observed.commit = healthy.expected.commit;
+  const report = verifyPostDeploy(spoofed, Date.parse(spoofed.observedAt));
+  assert.equal(report.classification, 'operator intervention required');
+  assert.ok(report.reasons.some((item) => item.code === 'deployment_identity_unverified'));
+});
+
 test('CLI writes a private, exclusive audit record without taking action', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-post-deploy-'));
   const input = path.join(root, 'input.json'); const audit = path.join(root, 'audit.json');
@@ -155,4 +193,36 @@ test('CLI writes a private, exclusive audit record without taking action', () =>
 test('verification budgets are bounded', () => {
   assert.throws(() => verifyPostDeploy({ ...healthy, verificationWindowSeconds: 901 }, Date.parse(healthy.observedAt)), /1 to 900/);
   assert.throws(() => verifyPostDeploy({ ...healthy, startupGraceSeconds: 301 }, Date.parse(healthy.observedAt)), /0 to 300/);
+});
+
+test('a real disposable-staging identity from the provider verifies end to end', () => {
+  // Every other fixture in this file hand-writes observed.deploymentIdentity, so none of them
+  // prove the identity PROVIDER can actually produce a value the verifier accepts. That gap is
+  // how a state of affairs shipped in which NO owner could emit 'disposable-staging' and every
+  // disposable rehearsal was permanently 'operator intervention required'. Build the identity
+  // from a real provider and run it through verification untouched.
+  const root = fsNode.mkdtempSync(pathNode.join(osNode.tmpdir(), 'blackspire-disposable-e2e-'));
+  try {
+    const artifact = pathNode.join(root, 'releases', commit);
+    fsNode.mkdirSync(artifact, { recursive: true });
+    fsNode.writeFileSync(pathNode.join(artifact, 'COMMIT_SHA'), `${commit}\n`);
+    fsNode.writeFileSync(pathNode.join(artifact, 'package.json'), JSON.stringify({ version: '0.1.0' }));
+
+    const identity = serializeDeploymentIdentity(createDeploymentIdentityProvider({
+      stateOwner: 'vps-disposable-staging',
+      artifactRoot: artifact,
+      expectedEnvironment: 'disposable-staging',
+      expectedBuildSha: commit,
+    }).get());
+    assert.equal(identity.state, 'VERIFIED', 'the provider itself must verify before the report is built');
+
+    const input = structuredClone(healthy);
+    input.observed.deploymentIdentity = identity;
+    const report = verifyPostDeploy(input, Date.parse(input.observedAt));
+    assert.equal(report.classification, 'proceed', `a genuine disposable identity must verify: ${JSON.stringify(report.reasons)}`);
+    assert.deepEqual(report.reasons, []);
+    assert.equal(recomputePostDeployAudit(report, Date.parse(input.observedAt)).classification, 'proceed');
+  } finally {
+    fsNode.rmSync(root, { recursive: true, force: true });
+  }
 });

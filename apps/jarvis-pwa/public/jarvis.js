@@ -77,9 +77,11 @@ const voice = { state: 'idle' };
 const DEPLOYMENT_VALUE = /^[a-zA-Z0-9._:/-]{1,80}$/;
 const BUILD_SHA = /^[0-9a-f]{7,40}$/;
 const deploymentIdentity = (health) => {
-  const environment = DEPLOYMENT_VALUE.test(health?.environment || '') ? health.environment : null;
-  const build = BUILD_SHA.test(health?.buildSha || '') ? health.buildSha : null;
-  return { environment, build, verified: Boolean(environment && build) };
+  const identity = health?.deploymentIdentity;
+  const environment = DEPLOYMENT_VALUE.test(identity?.environment?.value || '') ? identity.environment.value : null;
+  const build = BUILD_SHA.test(identity?.build?.value || '') ? identity.build.value : null;
+  const state = ['VERIFIED', 'UNVERIFIED', 'MISMATCH', 'UNKNOWN'].includes(identity?.state) ? identity.state : 'UNKNOWN';
+  return { environment, build, state, verified: state === 'VERIFIED' && Boolean(environment && build) };
 };
 const MIN_CANONICAL_FRESH_MS = 15000;
 const canonicalSyncStale = (lastSync, pollMs, currentTime = Date.now()) =>
@@ -531,7 +533,7 @@ function renderSystem() {
   deploymentBar.classList.toggle('verified', identity.verified);
   deploymentBar.textContent = identity.verified
     ? `Environment: ${identity.environment} · build: ${identity.build}`
-    : 'Environment and build identity are not reported by the control plane. Treat this client as unverified.';
+    : `Deployment identity ${identity.state}. Treat this client as unverified.`;
 }
 
 function renderEvidenceView() {

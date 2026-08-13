@@ -29,7 +29,12 @@ test('liveness remains explicit while readiness verifies lifecycle, schema, and 
   assert.equal(readyResponse.status, 200);
   const ready = await readyResponse.json();
   assert.equal(ready.ok, true);
-  assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true, worker: true, scheduler: true });
+  assert.deepEqual(ready.checks, { lifecycle: true, database: true, productionConfig: true, worker: true, scheduler: true, deploymentIdentity: true });
+  assert.equal(ready.deploymentIdentity.state, 'UNKNOWN');
+  const spoofed = await fetch(`http://127.0.0.1:${address.port}/health?environment=production&buildSha=${'b'.repeat(40)}`);
+  assert.equal(spoofed.status, 401);
+  const headerSpoofed = await fetch(`http://127.0.0.1:${address.port}/health`, { headers: { 'x-environment': 'production', 'x-build-sha': 'b'.repeat(40) } });
+  assert.deepEqual((await headerSpoofed.json()).deploymentIdentity, ready.deploymentIdentity);
 });
 
 test('required worker heartbeat makes readiness fail closed when missing or stale', async (t) => {
@@ -89,4 +94,25 @@ test('graceful shutdown marks the API unready and closes the database', async ()
   await closed;
   assert.equal(readinessSnapshot().lifecycle, 'stopped');
   assert.throws(() => openConnection.prepare('SELECT 1'), /database is not open/);
+});
+
+test('an unverified deployment identity is reported unready', () => {
+  // Hard-coding this readiness check to `true` previously left the whole suite green. The owner
+  // is read at call time, so switching to one where identity is REQUIRED exercises it without
+  // touching any real host path or release tree. The startup-refusal half is pinned in
+  // tests/production-startup.test.js instead: by this point in this file an earlier graceful
+  // shutdown has closed the schema, so start() fails the schema check before reaching identity.
+  const original = process.env.BLACKSPIRE_STATE_OWNER;
+  process.env.BLACKSPIRE_STATE_OWNER = 'vps-production';
+  try {
+    // The checkout carries no COMMIT_SHA manifest, so identity cannot verify.
+    assert.equal(readinessSnapshot().checks.deploymentIdentity, false,
+      'an unverified identity must make the service report unready');
+    assert.equal(readinessSnapshot().ok, false);
+  } finally {
+    if (original === undefined) delete process.env.BLACKSPIRE_STATE_OWNER;
+    else process.env.BLACKSPIRE_STATE_OWNER = original;
+  }
+  // The gate is scoped: with the original (non-required) owner the service is ready again.
+  assert.equal(readinessSnapshot().checks.deploymentIdentity, true);
 });

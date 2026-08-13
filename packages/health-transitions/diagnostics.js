@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { canViewRuntimeStatus } from '../shared/authorization.js';
 import { ENVIRONMENTS } from './model.js';
+import { serializeDeploymentIdentity } from '../shared/deployment-identity.js';
 
 const ID = /^[A-Za-z0-9._:-]{1,128}$/;
 function cursorFor(event) {
@@ -18,12 +19,13 @@ function parseCursor(cursor) {
   return decoded;
 }
 
-export function readOperatorDiagnostics({ principal, environment, workspaceId, limit = 25, cursor = null, store, engine, authorize = canViewRuntimeStatus }) {
+export function readOperatorDiagnostics({ principal, environment, workspaceId, limit = 25, cursor = null, store, engine, authorize = canViewRuntimeStatus, identityProvider = null }) {
   if (!ENVIRONMENTS.includes(environment)) return { status: 400, body: { error: 'invalid environment' } };
   if (typeof workspaceId !== 'string' || !ID.test(workspaceId)) return { status: 400, body: { error: 'invalid workspace' } };
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) return { status: 400, body: { error: 'limit must be from 1 to 100' } };
   const decision = authorize(principal, workspaceId);
   if (!decision?.allowed) return { status: 403, body: { error: 'diagnostics unavailable' } };
+  const deploymentIdentity = serializeDeploymentIdentity(identityProvider?.get?.());
   let after; try { after = parseCursor(cursor); } catch { return { status: 400, body: { error: 'invalid cursor' } }; }
   const summary = engine.summary(environment, workspaceId);
   const ordered = store.events(environment, workspaceId).slice().sort((a,b) => b.timestampMs - a.timestampMs || b.id.localeCompare(a.id));
@@ -32,7 +34,7 @@ export function readOperatorDiagnostics({ principal, environment, workspaceId, l
   const byComponent = Object.fromEntries(summary.components.map((item) => [item.component, { state: item.state, timestamp: item.timestamp, reasonCode: item.reasonCode }]));
   const build = summary.components.find((item) => item.component === 'build');
   return { status: 200, body: { version: 1, readOnly: true, automaticActionTaken: false, environment, workspaceId, overallState: summary.state,
-    rollbackRecommendation: summary.rollbackRecommendation, deployment: build ? { commit: build.commit, buildFingerprint: build.buildFingerprint } : null,
+    rollbackRecommendation: summary.rollbackRecommendation, deployment: build ? { commit: build.commit, buildFingerprint: build.buildFingerprint, identity: deploymentIdentity } : { identity: deploymentIdentity },
     components: byComponent, latestMeaningfulTransition: summary.latestTransition, history, nextCursor,
     staleComponents: summary.staleComponents, flappingComponents: summary.flappingComponents,
     migrationStatus: byComponent.migration || null, killSwitchStatus: byComponent.kill_switch || null,
