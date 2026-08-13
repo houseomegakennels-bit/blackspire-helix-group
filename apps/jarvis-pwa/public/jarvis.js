@@ -73,6 +73,18 @@ const eventLabel = (type) => EVENT_LABELS[type] || ['System event', 'muted'];
    No speech API, provider, or microphone permission is used today. */
 const voice = { state: 'idle' };
 
+/* ---------- deployment identity (server-authoritative, display only) ---------- */
+const DEPLOYMENT_VALUE = /^[a-zA-Z0-9._:/-]{1,80}$/;
+const BUILD_SHA = /^[0-9a-f]{7,40}$/;
+const deploymentIdentity = (health) => {
+  const environment = DEPLOYMENT_VALUE.test(health?.environment || '') ? health.environment : null;
+  const build = BUILD_SHA.test(health?.buildSha || '') ? health.buildSha : null;
+  return { environment, build, verified: Boolean(environment && build) };
+};
+const MIN_CANONICAL_FRESH_MS = 15000;
+const canonicalSyncStale = (lastSync, pollMs, currentTime = Date.now()) =>
+  !lastSync || currentTime - new Date(lastSync).getTime() > Math.max(MIN_CANONICAL_FRESH_MS, pollMs * 3);
+
 /* ---------- app state (memory only; refresh recovery via URL hash) ---------- */
 const store = {
   authed: false, csrfToken: '',
@@ -498,6 +510,8 @@ async function decideApprovalAction(taskId, action, ...buttons) {
 
 function renderSystem() {
   const h = store.health; const r = store.ready;
+  const identity = deploymentIdentity(h);
+  const stale = canonicalSyncStale(store.lastSync, store.pollMs);
   byId('sysApi').textContent = h?.ok ? 'Healthy' : store.offline ? 'Unreachable' : '—';
   byId('sysLink').textContent = store.offline ? 'Offline — reconnecting with backoff' : 'Connected';
   byId('sysStop').textContent = h ? (h.emergencyStop ? 'ACTIVE' : 'Inactive') : '—';
@@ -507,10 +521,17 @@ function renderSystem() {
     ? Object.entries(r.providers).map(([name, mode]) => name + ': ' + mode).join(' · ')
     : '—';
   byId('sysWorkspace').textContent = byId('workspace').value || '—';
-  byId('sysMode').textContent = store.testMode?.enabled ? 'Test fixture (mock-only)' : 'Production contracts';
+  byId('sysMode').textContent = store.testMode?.enabled ? 'Test fixture (mock-only)' : identity.environment || 'Unverified environment';
+  byId('sysBuild').textContent = identity.build || 'Unverified';
+  byId('sysFreshness').textContent = store.offline ? 'Offline — canonical state may be stale' : stale ? 'Stale — awaiting a fresh sync' : 'Fresh canonical sync';
   byId('sysPolling').textContent = document.hidden ? 'paused (page hidden)' : 'every ' + Math.round(store.pollMs / 100) / 10 + 's';
   byId('sysSync').textContent = store.lastSync ? fmtTime(store.lastSync) : '—';
   byId('sysPwa').textContent = store.swWaiting ? 'Update ready — reload to apply' : 'Current';
+  const deploymentBar = byId('deploymentBar');
+  deploymentBar.classList.toggle('verified', identity.verified);
+  deploymentBar.textContent = identity.verified
+    ? `Environment: ${identity.environment} · build: ${identity.build}`
+    : 'Environment and build identity are not reported by the control plane. Treat this client as unverified.';
 }
 
 function renderEvidenceView() {
@@ -581,7 +602,15 @@ function render() {
 
 /* ---------- data refresh with bounded backoff + visibility awareness ---------- */
 let pollTimer = 0;
+let freshnessTimer = 0;
 let refreshController = null;
+function scheduleFreshnessDeadline() {
+  clearTimeout(freshnessTimer);
+  if (!store.lastSync) return;
+  const staleAfter = Math.max(MIN_CANONICAL_FRESH_MS, store.pollMs * 3);
+  const remaining = staleAfter - (Date.now() - new Date(store.lastSync).getTime()) + 1;
+  freshnessTimer = setTimeout(() => { freshnessTimer = 0; render(); }, Math.max(0, remaining));
+}
 async function refreshAll() {
   if (refreshController) refreshController.abort();
   const controller = new AbortController(); refreshController = controller;
@@ -611,6 +640,7 @@ async function refreshAll() {
     }
     store.lastSync = new Date().toISOString();
     store.pollMs = 2500;
+    scheduleFreshnessDeadline();
   } catch (error) {
     if (error.name === 'AbortError') return;
     store.offline = true;
@@ -636,6 +666,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => {
   clearTimeout(pollTimer);
+  clearTimeout(freshnessTimer);
   if (refreshController) refreshController.abort();
   store.helix?.destroy();
   store.helix = null;
