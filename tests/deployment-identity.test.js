@@ -57,3 +57,60 @@ test('every recognised state owner maps to its own environment, including the di
   assert.equal(unknown.provider.get().environment.reasonCode, 'state_owner_unrecognized');
   fs.rmSync(unknown.root, { recursive: true });
 });
+
+// Builds an artifact whose commit manifest is valid (build VERIFIED) but which carries NO
+// packaged release evidence, so releaseEvidence.state is MISSING. The environment is chosen
+// by the caller so an environment MISMATCH can be combined with missing evidence.
+function evidencelessFixture({ owner = 'vps-staging', expectedEnvironment = 'staging' } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-identity-severity-'));
+  const artifact = path.join(root, 'releases', sha);
+  fs.mkdirSync(artifact, { recursive: true });
+  fs.writeFileSync(path.join(artifact, 'COMMIT_SHA'), `${sha}\n`);
+  fs.writeFileSync(path.join(artifact, 'package.json'), JSON.stringify({ version: '0.1.0' }));
+  return { root, provider: createDeploymentIdentityProvider({ stateOwner: owner, artifactRoot: artifact, expectedEnvironment, expectedBuildSha: sha }) };
+}
+
+test('release evidence can only make the identity state worse, never mask a component mismatch', () => {
+  // Regression: the evidence-derived state was returned directly, which discarded
+  // environment.state. A server deployed into the WRONG environment with no packaged
+  // evidence reported UNKNOWN, and packages/health-transitions/sources.js maps anything
+  // other than MISMATCH to a mere "unknown" observation instead of a failure -- so the
+  // single most important thing this contract exists to detect became invisible.
+  const wrongEnvironment = evidencelessFixture({ owner: 'vps-staging', expectedEnvironment: 'production' });
+  const identity = wrongEnvironment.provider.get();
+  assert.equal(identity.environment.state, 'MISMATCH');
+  assert.equal(identity.environment.reasonCode, 'expected_environment_mismatch');
+  assert.equal(identity.releaseEvidence.state, 'MISSING');
+  assert.equal(identity.build.state, 'VERIFIED');
+  assert.equal(identity.state, 'MISMATCH', 'missing evidence must not downgrade an environment mismatch');
+  fs.rmSync(wrongEnvironment.root, { recursive: true });
+
+  // With every component agreeing, missing evidence still degrades the identity to UNKNOWN.
+  const agreeing = evidencelessFixture({ owner: 'vps-staging', expectedEnvironment: 'staging' });
+  const degraded = agreeing.provider.get();
+  assert.equal(degraded.environment.state, 'VERIFIED');
+  assert.equal(degraded.build.state, 'VERIFIED');
+  assert.equal(degraded.state, 'UNKNOWN', 'missing evidence must still degrade a fully agreeing identity');
+  fs.rmSync(agreeing.root, { recursive: true });
+
+  // An unrecognised owner (environment UNVERIFIED) must not be flattened to UNKNOWN either.
+  const unrecognised = evidencelessFixture({ owner: 'vps-not-a-real-owner', expectedEnvironment: 'staging' });
+  const partial = unrecognised.provider.get();
+  assert.equal(partial.environment.state, 'UNVERIFIED');
+  assert.equal(partial.state, 'UNVERIFIED');
+  fs.rmSync(unrecognised.root, { recursive: true });
+});
+
+test('the serialized identity carries exactly its allowlisted fields and nothing else', () => {
+  // Exact-shape pin: a targeted assert cannot catch a NEW field appearing in the safe
+  // projection, which is how an internal path, timestamp, or secret would leak.
+  const item = fixture();
+  const identity = item.provider.get();
+  const safe = serializeDeploymentIdentity(identity);
+  assert.deepEqual(Object.keys(safe).sort(), ['build', 'buildTimestamp', 'environment', 'releaseEvidence', 'schemaVersion', 'state', 'verificationSource', 'version'].sort());
+  assert.deepEqual(Object.keys(safe.environment).sort(), ['reasonCode', 'source', 'state', 'value']);
+  assert.deepEqual(Object.keys(safe.build).sort(), ['reasonCode', 'source', 'state', 'value']);
+  assert.equal(JSON.stringify(safe).includes('secret'), false);
+  assert.equal(JSON.stringify(safe).includes('must-not-serialize'), false);
+  fs.rmSync(item.root, { recursive: true });
+});
