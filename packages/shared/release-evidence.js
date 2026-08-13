@@ -9,7 +9,10 @@ const SHA = /^[0-9a-f]{40}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const SAFE_ID = /^[A-Za-z0-9._:/@+-]{1,160}$/;
 const ENVIRONMENTS = new Set(['unassigned', 'development', 'test', 'staging', 'disposable-staging', 'production']);
-const EXCLUDED = new Set([RELEASE_EVIDENCE_FILE, '.release-complete']);
+export const DEPLOYMENT_RECORD_FILE = '.deployment-record.json';
+// The deployment record is written by release-switch.sh AFTER the evidence is sealed, so it
+// cannot be inside digest coverage without invalidating every artifact at deploy time.
+const EXCLUDED = new Set([RELEASE_EVIDENCE_FILE, '.release-complete', DEPLOYMENT_RECORD_FILE]);
 const REASONS = new Set(['COMMIT_MISMATCH', 'ARTIFACT_DIGEST_MISMATCH', 'ENVIRONMENT_MISMATCH', 'BUILD_METADATA_MISSING', 'DEPLOYMENT_RECORD_MISSING', 'UNTRUSTED_RUNTIME_OVERRIDE', 'UNKNOWN_BUILD', 'MANIFEST_INVALID', 'ROLLBACK_ARTIFACT_MISSING', 'ROLLBACK_SCHEMA_INCOMPATIBLE', 'ROLLBACK_ENVIRONMENT_MISMATCH', 'ROLLBACK_MANIFEST_MISSING']);
 
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');

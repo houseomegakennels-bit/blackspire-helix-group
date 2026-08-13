@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { verifyReleaseEvidence, serializeReleaseEvidence } from './release-evidence.js';
+import { verifyReleaseEvidence, serializeReleaseEvidence, DEPLOYMENT_RECORD_FILE } from './release-evidence.js';
 
 export const DEPLOYMENT_IDENTITY_STATES = Object.freeze(['VERIFIED', 'UNVERIFIED', 'MISMATCH', 'UNKNOWN']);
 const SHA = /^[0-9a-f]{40}$/;
@@ -100,7 +100,11 @@ export function createDeploymentIdentityProvider({
       if (cached) return cached;
       const environment = environmentIdentity(stateOwner, expectedEnvironment);
       const build = buildIdentity({ artifactRoot: path.resolve(artifactRoot), expectedBuildSha, imageBuildSha, readFile });
-      const trustedDeploymentRecord = deploymentRecord || safeDeploymentRecord(deploymentRecordPath, readFile);
+      // release-switch.sh writes the deployment record into the release directory as it makes
+      // that release current, so the record is found without any new host configuration. An
+      // explicit path still wins for callers that keep it outside the tree.
+      const trustedDeploymentRecord = deploymentRecord
+        || safeDeploymentRecord(deploymentRecordPath || path.join(path.resolve(artifactRoot), DEPLOYMENT_RECORD_FILE), readFile);
       const releaseEvidence = verifyReleaseEvidence({ artifactRoot: path.resolve(artifactRoot), packagedCommitSha: build.value,
         expectedCommitSha: expectedBuildSha, expectedEnvironment: environment.value, deploymentRecord: trustedDeploymentRecord, runtimeOverrideSha });
       const packageVersion = safeRead(path.join(path.resolve(artifactRoot), 'package.json'), readFile);
