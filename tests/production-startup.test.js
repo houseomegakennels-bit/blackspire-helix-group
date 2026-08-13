@@ -41,6 +41,37 @@ test('production startup refuses to boot with an unsafe configuration', async ()
   assert.match(result.stderr, /COMMAND_ADMIN_TOKEN/);
 });
 
+test('startup refuses to boot when a required deployment identity is unverified', async () => {
+  // The identity clause in the startup refusal had no executable coverage: deleting it from
+  // apps/api/server.js left the whole suite green, even though refusing to serve traffic on an
+  // unverified deployment identity is this change's central enforcement. Boot a real child under
+  // an owner for which identity is REQUIRED, from a cwd carrying no COMMIT_SHA manifest, and
+  // assert it exits fail-closed naming the reason. Everything else in this fixture is valid, so
+  // the refusal cannot be attributed to an unrelated unsafe-config error.
+  const result = await runApi({
+    NODE_ENV: 'production',
+    BLACKSPIRE_STATE_OWNER: 'vps-staging',
+    BLACKSPIRE_DB_PATH: path.join(root, 'identity', 'command.sqlite'),
+    TELEGRAM_TMP_DIR: path.join(root, 'identity-attachments'),
+    PORT: '8901',
+    COMMAND_ADMIN_TOKEN: 'a'.repeat(32),
+    SESSION_SECRET: 'b'.repeat(40),
+    SECURE_COOKIES: 'true',
+    PUBLIC_BASE_URL: 'https://command.example.com',
+    TELEGRAM_MODE: 'dry-run',
+    DEBUG: 'false',
+    CORS_ORIGIN: 'https://command.example.com',
+    RATE_LIMIT_DISABLED: 'false',
+    TRUST_PROXY: 'false',
+  });
+  assert.equal(result.exited, true, `the API must refuse to serve traffic on an unverified deployment identity: ${result.stderr}`);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /deploymentIdentityReasonCode/, `the refusal must name the deployment identity: ${result.stderr}`);
+  assert.match(result.stderr, /commit_manifest_missing/, `the operator must receive the machine-readable reason code: ${result.stderr}`);
+  assert.match(result.stderr, /"errors":\[\]/, `the config itself must be valid, so the refusal is attributable to identity alone: ${result.stderr}`);
+  assert.doesNotMatch(result.stderr, /COMMAND_ADMIN_TOKEN|SESSION_SECRET/, `the refusal must be the identity gate, not an unrelated config error: ${result.stderr}`);
+});
+
 test('production startup boots normally with a valid configuration', async () => {
   const dbPath = path.join(root, 'safe', 'command.sqlite');
   const attachmentsDir = path.join(root, 'safe-attachments');

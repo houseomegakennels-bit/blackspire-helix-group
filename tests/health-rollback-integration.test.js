@@ -185,3 +185,24 @@ test('post-deploy observations carry caller-supplied provenance and stay per-wor
   assert.equal(engine.summary('disposable-staging','workspace-a').rollbackRecommendation, 'none');
   assert.equal(engine.summary('disposable-staging','workspace-b').rollbackRecommendation, 'rollback_recommended');
 });
+
+test('an advisory report without a usable deployment identity is refused', () => {
+  // The identity precondition added by this change had no test: deleting the line left the whole
+  // suite green, because every fixture already supplies observed.deploymentIdentity. Feed reports
+  // that lack it, or carry an unrecognised state, and assert the throw.
+  const base = structuredClone(report('proceed'));
+  for (const observed of [undefined, {}, { deploymentIdentity: null }, { deploymentIdentity: {} },
+                          { deploymentIdentity: { state: 'PROBABLY-FINE' } }]) {
+    const bad = structuredClone(base);
+    bad.observed = observed;
+    assert.throws(() => postDeployReportObservation(bad, context),
+      /post-deploy deployment identity missing/,
+      `a report with observed=${JSON.stringify(observed)} must be refused`);
+  }
+  // A recognised state is still accepted, so the guard rejects absence rather than everything.
+  for (const state of ['VERIFIED', 'UNVERIFIED', 'MISMATCH', 'UNKNOWN']) {
+    const good = structuredClone(base);
+    good.observed = { deploymentIdentity: { state } };
+    assert.equal(postDeployReportObservation(good, context).component, 'post_deploy');
+  }
+});

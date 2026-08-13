@@ -35,7 +35,7 @@ if (!availability.free) {
 const deploymentIdentity = createDeploymentIdentityProvider().get();
 const identityValidation = validateDeploymentIdentityForStartup(deploymentIdentity);
 if (!identityValidation.ok) {
-  fatal('deployment identity verification failed', identityValidation.errors);
+  fatal('deployment identity verification failed', [`state ${identityValidation.state}`, `reason ${identityValidation.reasonCode}`]);
 }
 
 const childEnvironment = { ...process.env, BIND_HOST: bind.host, PORT: String(bind.port) };

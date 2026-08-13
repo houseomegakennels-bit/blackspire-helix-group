@@ -641,6 +641,7 @@ function runSupervisor(env, spawnOptions = {}) {
 }
 
 const SUPERVISOR_REASONS = {
+  identity: 'deployment identity verification failed',
   root: 'The production runtime must not run as root.',
   dbParent: 'The persistent database parent directory does not exist.',
   conflict: 'refusing to start without a fallback port',
@@ -714,6 +715,29 @@ test('the production supervisor refuses an occupied port without touching the li
   const stillBusy = await probePortAvailable('127.0.0.1', port);
   assert.equal(stillBusy.free, false, 'the original test listener must still hold the port');
   assert.equal(stillBusy.code, 'EADDRINUSE');
+});
+
+test('the production supervisor fails closed with a usable diagnostic on an unverified deployment identity', () => {
+  // This gate previously had only a source-text grep for the function name plus an indexOf
+  // ordering check, so it never executed. Two consequences shipped: (a) the fatal path crashed
+  // with "Cannot read properties of undefined (reading 'map')" because it passed a non-existent
+  // .errors field to fatal(), destroying the operator's reason for the refusal, and (b) the gate
+  // could be disabled outright (`if (!identityValidation.ok && false)`) with the suite still
+  // green. Execute the supervisor and assert the refusal AND its diagnostic content.
+  const identity = productionChildIdentity();
+  grantDisposableRootTo(identity.uid);
+  // cwd is the repository checkout, which carries no COMMIT_SHA manifest, so a vps-production
+  // owner cannot verify its build identity. No release tree or host path is touched.
+  const r = runSupervisor(productionChildEnv({ BLACKSPIRE_RUNTIME_USER: identity.username }), identity.spawnOptions);
+
+  assert.equal(r.status, 1, `the supervisor must fail closed on an unverified identity: ${r.stderr}`);
+  assert.match(r.stderr, /fatal: deployment identity verification failed/);
+  // The operator must receive the machine-readable cause, not a stack trace.
+  assert.match(r.stderr, /state \w+/, `the refusal must name the identity state: ${r.stderr}`);
+  assert.match(r.stderr, /reason \w+/, `the refusal must name the reason code: ${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /TypeError|Cannot read properties/, `the refusal must not crash: ${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /at fatal \(|\.js:\d+:\d+/, `the refusal must not print a stack trace: ${r.stderr}`);
+  assertOnlyReason(r.stderr, 'identity', 'the deployment identity refusal');
 });
 
 // ---------------------------------------------------------------------------

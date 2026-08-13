@@ -7,6 +7,11 @@ const VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
 const OWNER_ENVIRONMENTS = Object.freeze({
   'vps-production': 'production',
   'vps-staging': 'staging',
+  // The disposable rehearsal environment is first-class in packages/recovery/disposable-rehearsal.js
+  // and in ALLOWED_ENVIRONMENTS, but no owner mapped to it -- so a disposable-staging deployment
+  // could never produce an identity matching its own expected environment and post-deploy
+  // verification was pinned to 'operator intervention required' forever.
+  'vps-disposable-staging': 'disposable-staging',
   'codespace-disposable': 'development',
   'iphone-test-disposable': 'test',
 });
