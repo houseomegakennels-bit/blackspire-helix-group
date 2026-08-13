@@ -78,7 +78,7 @@ const MUTANTS=[
   ['application_read','restoreOk &&= applicationRead;','',{fault:'corrupted_row_payload'},'NO_GO_RESTORE_INVALID','go'],
   ['queue_drain',"queueDrained=Number(targetDb.prepare(\"SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','planning','running','validating')\").get().n)===0;",'queueDrained=true;',{fault:'queue_not_drained'},'NO_GO_QUEUE_NOT_DRAINED','go'],
   ['maintenance_mode','maintenanceMode=targetDb.prepare("SELECT value FROM system_flags WHERE key=\'maintenance_mode\'").get()?.value===\'active\';','maintenanceMode=true;',{fault:'maintenance_off'},'NO_GO_QUEUE_NOT_DRAINED','go'],
-  ['rollback_target',"const rollbackOk=SHA.test(rollbackCommit)&&rollbackCommit!==expectedCommit&&fs.existsSync(path.join(release,'.release-complete'))&&fs.readFileSync(path.join(release,'COMMIT_SHA'),'utf8').trim()===rollbackCommit;",'const rollbackOk=true;',{fault:'rollback_missing'},'NO_GO_ROLLBACK_TARGET_INVALID','go'],
+  ['rollback_target',"const rollbackOk=SHA.test(rollbackCommit)&&rollbackCommit!==expectedCommit&&rollbackEvidence.state==='VERIFIED';",'const rollbackOk=true;',{fault:'rollback_missing'},'NO_GO_ROLLBACK_TARGET_INVALID','go'],
   ['dirty_tree',"if (!treeClean || fault === 'dirty_tree') { risks.push('working_tree_not_clean'); return refusal('NO_GO_RESTORE_INVALID', risks); }",'',{treeClean:false},'NO_GO_RESTORE_INVALID','go'],
 ];
 

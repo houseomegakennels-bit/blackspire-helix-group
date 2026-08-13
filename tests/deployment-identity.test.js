@@ -13,7 +13,7 @@ function fixture({ owner = 'vps-staging', manifest = sha, directory = sha, expec
   if (manifest !== null) fs.writeFileSync(path.join(artifact, 'COMMIT_SHA'), `${manifest}\n`);
   fs.writeFileSync(path.join(artifact, 'package.json'), JSON.stringify({ version: '0.1.0', secret: 'must-not-serialize' }));
   let deploymentRecord = null;
-  if (manifest === sha) { const evidence=writeReleaseEvidence(artifact,{commitSha:sha,expectedEnvironment:'staging',buildTimestamp:'2026-08-10T00:00:00.000Z',buildId:'fixture-1',ciProvider:'local-disposable',artifactName:'fixture',packageVersion:'0.1.0',nodeVersion:'v22.23.1',repository:'houseomegakennels-bit/blackspire-helix-group'}); deploymentRecord={commitSha:sha,artifactDigest:evidence.artifact.digest,environment:'staging'}; }
+  if (manifest === sha) { const evidence=writeReleaseEvidence(artifact,{commitSha:sha,expectedEnvironment,buildTimestamp:'2026-08-10T00:00:00.000Z',buildId:'fixture-1',ciProvider:'local-disposable',artifactName:'fixture',packageVersion:'0.1.0',nodeVersion:'v22.23.1',repository:'houseomegakennels-bit/blackspire-helix-group'}); deploymentRecord={commitSha:sha,artifactDigest:evidence.artifact.digest,environment:expectedEnvironment}; }
   return { root, provider: createDeploymentIdentityProvider({ stateOwner: owner, artifactRoot: artifact, expectedEnvironment, expectedBuildSha, imageBuildSha, deploymentRecord }) };
 }
 
