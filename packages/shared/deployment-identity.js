@@ -58,8 +58,22 @@ function buildIdentity({ artifactRoot, expectedBuildSha, imageBuildSha, readFile
   return component('VERIFIED', manifestSha, 'commit_manifest');
 }
 
-function overallState(environment, build) {
-  return [environment.state, build.state].sort((a, b) => REASON_PRIORITY[b] - REASON_PRIORITY[a])[0];
+function overallState(...states) {
+  return states.sort((a, b) => REASON_PRIORITY[b] - REASON_PRIORITY[a])[0];
+}
+
+// Release evidence contributes to the identity state, but only ever by making it WORSE.
+// An earlier form of this returned the evidence-derived state directly, which discarded
+// environment.state: a server deployed into the wrong environment with no packaged
+// evidence reported UNKNOWN instead of MISMATCH, and health-transition sources map
+// anything other than MISMATCH to a mere "unknown" observation rather than a failure.
+function releaseEvidenceState(releaseEvidence) {
+  switch (releaseEvidence.state) {
+    case 'MISMATCH': case 'INVALID': return 'MISMATCH';
+    case 'UNVERIFIED': return 'UNVERIFIED';
+    case 'MISSING': return 'UNKNOWN';
+    default: return 'VERIFIED';
+  }
 }
 
 export function createDeploymentIdentityProvider({
@@ -94,9 +108,7 @@ export function createDeploymentIdentityProvider({
       try { const parsed = JSON.parse(packageVersion || '{}'); if (VERSION.test(parsed.version || '')) version = parsed.version; } catch { /* untrusted artifact metadata remains absent */ }
       cached = deepFreeze({
         schemaVersion: 1,
-        state: releaseEvidence.state === 'MISMATCH' || releaseEvidence.state === 'INVALID' ? 'MISMATCH'
-          : releaseEvidence.state === 'MISSING' && build.state === 'VERIFIED' ? 'UNKNOWN'
-            : releaseEvidence.state === 'UNVERIFIED' && build.state === 'VERIFIED' ? 'UNVERIFIED' : overallState(environment, build),
+        state: overallState(environment.state, build.state, releaseEvidenceState(releaseEvidence)),
         environment,
         build,
         releaseEvidence,
