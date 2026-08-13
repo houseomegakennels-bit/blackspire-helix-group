@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { recomputePostDeployAudit, verifyPostDeploy } from '../packages/shared/post-deploy-verifier.js';
+import { createDeploymentIdentityProvider, serializeDeploymentIdentity } from '../packages/shared/deployment-identity.js';
+import fsNode from 'node:fs';
+import osNode from 'node:os';
+import pathNode from 'node:path';
 
 const start = '2026-08-05T00:00:00.000Z';
 const commit = 'a'.repeat(40);
@@ -189,4 +193,36 @@ test('CLI writes a private, exclusive audit record without taking action', () =>
 test('verification budgets are bounded', () => {
   assert.throws(() => verifyPostDeploy({ ...healthy, verificationWindowSeconds: 901 }, Date.parse(healthy.observedAt)), /1 to 900/);
   assert.throws(() => verifyPostDeploy({ ...healthy, startupGraceSeconds: 301 }, Date.parse(healthy.observedAt)), /0 to 300/);
+});
+
+test('a real disposable-staging identity from the provider verifies end to end', () => {
+  // Every other fixture in this file hand-writes observed.deploymentIdentity, so none of them
+  // prove the identity PROVIDER can actually produce a value the verifier accepts. That gap is
+  // how a state of affairs shipped in which NO owner could emit 'disposable-staging' and every
+  // disposable rehearsal was permanently 'operator intervention required'. Build the identity
+  // from a real provider and run it through verification untouched.
+  const root = fsNode.mkdtempSync(pathNode.join(osNode.tmpdir(), 'blackspire-disposable-e2e-'));
+  try {
+    const artifact = pathNode.join(root, 'releases', commit);
+    fsNode.mkdirSync(artifact, { recursive: true });
+    fsNode.writeFileSync(pathNode.join(artifact, 'COMMIT_SHA'), `${commit}\n`);
+    fsNode.writeFileSync(pathNode.join(artifact, 'package.json'), JSON.stringify({ version: '0.1.0' }));
+
+    const identity = serializeDeploymentIdentity(createDeploymentIdentityProvider({
+      stateOwner: 'vps-disposable-staging',
+      artifactRoot: artifact,
+      expectedEnvironment: 'disposable-staging',
+      expectedBuildSha: commit,
+    }).get());
+    assert.equal(identity.state, 'VERIFIED', 'the provider itself must verify before the report is built');
+
+    const input = structuredClone(healthy);
+    input.observed.deploymentIdentity = identity;
+    const report = verifyPostDeploy(input, Date.parse(input.observedAt));
+    assert.equal(report.classification, 'proceed', `a genuine disposable identity must verify: ${JSON.stringify(report.reasons)}`);
+    assert.deepEqual(report.reasons, []);
+    assert.equal(recomputePostDeployAudit(report, Date.parse(input.observedAt)).classification, 'proceed');
+  } finally {
+    fsNode.rmSync(root, { recursive: true, force: true });
+  }
 });

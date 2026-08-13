@@ -22,3 +22,35 @@ test('client-shaped inputs cannot override identity', () => { const item=fixture
 test('concurrent consumers receive one immutable identity snapshot', async () => { const item=fixture();const identities=await Promise.all(Array.from({length:32},()=>Promise.resolve().then(()=>item.provider.get())));assert.ok(identities.every((identity)=>identity===identities[0]));assert.equal(Object.isFrozen(identities[0].environment),true);fs.rmSync(item.root,{recursive:true}); });
 test('production rejects test override and verified identity is required for trusted startup', () => { const previous=process.env.NODE_ENV;process.env.NODE_ENV='test';assert.throws(()=>createDeploymentIdentityProvider({stateOwner:'vps-production',allowTestOverride:true,testIdentity:{state:'VERIFIED'}}),/override unavailable/);assert.equal(validateDeploymentIdentityForStartup({state:'UNKNOWN'},'vps-production').ok,false);assert.equal(validateDeploymentIdentityForStartup({state:'UNKNOWN'},'').ok,true);process.env.NODE_ENV=previous; });
 test('serialization drops secrets, paths, timestamps, and unknown sources', () => { const result=serializeDeploymentIdentity({state:'VERIFIED',environment:{state:'VERIFIED',value:'staging',source:'raw_environment',reasonCode:'token_value'},build:{state:'VERIFIED',value:'/internal/secret/path',source:'filesystem_path'},version:'bad value',verificationSource:['raw_environment']});assert.equal(JSON.stringify(result).includes('secret'),false);assert.equal(JSON.stringify(result).includes('token'),false);assert.equal(result.environment.source,null);assert.equal(result.environment.reasonCode,null);assert.equal(result.build.value,null);assert.equal(result.build.source,null);assert.equal(result.version,null); });
+
+test('every recognised state owner maps to its own environment, including the disposable rehearsal owner', () => {
+  // OWNER_ENVIRONMENTS is a trust-boundary constant on the deployment-verification path and was
+  // asserted by nothing: deleting the disposable entry survived the entire suite, silently
+  // restoring the defect where no owner could produce 'disposable-staging' and every disposable
+  // rehearsal was pinned to 'operator intervention required'. Every existing test that uses
+  // disposable-staging hand-writes the value into a fixture instead of obtaining it from an
+  // owner, which is exactly why that defect shipped green. Derive it from the owner here.
+  const expected = {
+    'vps-production': 'production',
+    'vps-staging': 'staging',
+    'vps-disposable-staging': 'disposable-staging',
+    'codespace-disposable': 'development',
+    'iphone-test-disposable': 'test',
+  };
+  for (const [owner, environment] of Object.entries(expected)) {
+    const item = fixture({ owner, expectedEnvironment: environment });
+    const identity = item.provider.get();
+    assert.equal(identity.environment.value, environment, `${owner} must map to ${environment}`);
+    assert.equal(identity.environment.state, 'VERIFIED', `${owner} must verify its environment`);
+    assert.equal(identity.state, 'VERIFIED', `${owner} must produce a verified identity`);
+    // The serialized allowlist must carry the value too, not strip it to null.
+    assert.equal(serializeDeploymentIdentity(identity).environment.value, environment);
+    fs.rmSync(item.root, { recursive: true });
+  }
+
+  // An unrecognised owner must NOT silently acquire an environment.
+  const unknown = fixture({ owner: 'vps-not-a-real-owner', expectedEnvironment: 'staging' });
+  assert.equal(unknown.provider.get().environment.state, 'UNVERIFIED');
+  assert.equal(unknown.provider.get().environment.reasonCode, 'state_owner_unrecognized');
+  fs.rmSync(unknown.root, { recursive: true });
+});
