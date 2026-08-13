@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
 export const HEALTH_STATES = Object.freeze(['starting','healthy','ready','degraded','unavailable','disabled','draining','halted','recovering','stale','migration_mismatch','dependency_failure','unknown']);
-export const COMPONENTS = Object.freeze(['api_liveness','api_readiness','database','queue','worker','scheduler','migration','kill_switch','providers','telegram','build','startup','shutdown']);
+export const COMPONENTS = Object.freeze(['api_liveness','api_readiness','database','queue','worker','scheduler','migration','kill_switch','providers','telegram','build','startup','shutdown','post_deploy']);
 export const REASON_CODES = Object.freeze(['startup_pending','startup_complete','check_passed','check_failed','dependency_unavailable','heartbeat_stale','heartbeat_recovered','version_mismatch','kill_switch_active','capability_disabled','sandbox_active','drain_started','shutdown_complete','unsupported','observation_unknown']);
 export const SOURCES = Object.freeze(['api','worker','monitor','preflight','post_deploy_verifier','operator_fixture','runtime']);
 export const ENVIRONMENTS = Object.freeze(['development','test','disposable-staging','staging','production']);

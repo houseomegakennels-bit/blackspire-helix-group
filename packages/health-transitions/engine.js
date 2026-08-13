@@ -3,6 +3,16 @@ import { observationDigest, validateObservation } from './model.js';
 
 const RANK = { none: 0, observe: 1, investigate: 2, rollback_recommended: 3, operator_intervention_required: 4 };
 function recommendation(observation) {
+  // 'post_deploy' is the advisory verifier's OWN channel, deliberately separate from the runtime
+  // components it reports about. It carries the same severity the verifier assigned, so routing it
+  // to its own component does not soften it: dependency_failure is the verifier's 'operator
+  // intervention required' arm and unavailable is its 'rollback recommended' arm. Without these two
+  // lines both would fall through to the generic 'investigate' floor below -- a silent downgrade of
+  // the two most serious post-deploy outcomes.
+  if (observation.component === 'post_deploy') {
+    if (observation.state === 'dependency_failure') return 'operator_intervention_required';
+    if (observation.state === 'unavailable') return 'rollback_recommended';
+  }
   if (observation.state === 'migration_mismatch' || (observation.component === 'build' && observation.state !== 'healthy')) return 'operator_intervention_required';
   if (observation.state === 'unavailable' && ['api_liveness','api_readiness','database','queue'].includes(observation.component)) return 'rollback_recommended';
   // Any OTHER component reported unavailable still needs a human. Without this floor an
@@ -20,7 +30,14 @@ function recommendation(observation) {
   if (['degraded','stale','unknown','draining','recovering'].includes(observation.state)) return 'observe';
   return 'none';
 }
-function severity(state) {
+function severity(state, component) {
+  // The advisory channel's dependency_failure IS its 'operator intervention required' arm, the
+  // most serious post-deploy outcome. Graded by state alone it scored 'warning' while the LESSER
+  // 'rollback recommended' arm (unavailable) scored 'critical' -- the worst outcome rendering
+  // less severe than a lesser one on every surface that pages off severity. recommendation()
+  // already special-cases this component; severity() and summary()'s ladder have to agree with it
+  // or the report contradicts itself again, in the same way this change set exists to prevent.
+  if (component === 'post_deploy' && state === 'dependency_failure') return 'critical';
   if (['migration_mismatch','unavailable'].includes(state)) return 'critical';
   if (['dependency_failure','halted','stale'].includes(state)) return 'warning';
   if (['degraded','unknown','starting','recovering','draining'].includes(state)) return 'notice';
@@ -49,7 +66,7 @@ export class HealthTransitionEngine {
       timestamp: observation.timestamp, timestampMs: observation.timestampMs, reasonCode: observation.reasonCode, reason: observation.reason,
       correlationId: observation.correlationId, commit: observation.commit, buildFingerprint: observation.buildFingerprint,
       dependency: observation.dependency, source: observation.source, metadata: observation.metadata,
-      severity: severity(observation.state), operatorActionRequired: RANK[rollbackRecommendation] >= RANK.investigate,
+      severity: severity(observation.state, observation.component), operatorActionRequired: RANK[rollbackRecommendation] >= RANK.investigate,
       rollbackRecommendation, flapping, automaticActionTaken: false,
     }));
     return { accepted: true, disposition: 'transition_recorded', latest: observation, event };
@@ -63,7 +80,7 @@ export class HealthTransitionEngine {
     // through to the terminal 'starting', so a system shedding a worker rendered as
     // "... STARTING / rollback none" -- indistinguishable from a healthy fresh boot at exactly
     // the moment it is losing capacity. severity() already classifies both as notice.
-    const state = components.some((item) => ['unavailable','migration_mismatch'].includes(item.state)) ? 'unavailable'
+    const state = components.some((item) => ['unavailable','migration_mismatch'].includes(item.state) || (item.component === 'post_deploy' && item.state === 'dependency_failure')) ? 'unavailable'
       : components.some((item) => ['degraded','dependency_failure','stale','halted','unknown','draining','recovering'].includes(item.state)) ? 'degraded'
         : components.length && components.every((item) => ['healthy','ready','disabled'].includes(item.state)) ? 'healthy' : 'starting';
     // Append order is NOT timestamp order. observe() rejects a stale observation only per

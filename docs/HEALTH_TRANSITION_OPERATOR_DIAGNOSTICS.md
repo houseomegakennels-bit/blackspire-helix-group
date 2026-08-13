@@ -50,6 +50,46 @@ within a workspace scope the caller has already been authorized for.
   operator reading diagnostics under `mock` therefore sees a sandboxed transport while the deploy
   gate still blocks; that divergence is intended, not drift.
 
+## Post-deploy verification adapter
+
+`packages/health-transitions/post-deploy-integration.js` converts a
+`blackspire-post-deploy-verification` report into a single advisory observation with
+`source: 'post_deploy_verifier'`. It is an adapter only: it has **no production caller**, is not
+registered on any route, and performs no rollback or deployment action. It refuses any report that
+is not read-only, declares an action taken, carries an unknown schema or classification, or names an
+environment outside `staging`/`disposable-staging` — `production` is refused by the allowlist.
+
+The adapter records **every** classification on the dedicated `post_deploy` component, never on a
+runtime component. This is load-bearing rather than stylistic: the store keys latest state by
+`(environment, workspaceId, component)` and **not** by `source`, so an advisory observation written
+to `build`, `startup`, or `api_readiness` overwrites the live runtime observation for that
+component. Measured on the earlier revision of this adapter, a runtime build-fingerprint mismatch
+(`operator_intervention_required`) was reset to `rollback none / HEALTHY` by an advisory `proceed`
+arriving one second later, and diagnostics' `deployment` field — which reads the `build` component —
+then reported the approved commit instead of the running one. Both are closed by the separate
+component identity.
+
+Three surfaces have to agree about this component, and an earlier revision of this document claimed
+they did when only one of them had been corrected. `recommendation()` maps the `post_deploy`
+component's `dependency_failure` and `unavailable` arms to `operator_intervention_required` and
+`rollback_recommended` explicitly. `severity()` grades that component's `dependency_failure` as
+`critical`, and `summary()`'s ladder places it in the `unavailable` arm.
+
+Both additions are load-bearing. Graded by state alone, `dependency_failure` — which is the
+verifier's **`operator intervention required`** arm, the most serious outcome — scored `warning` and
+`degraded`, while the **lesser** `rollback recommended` arm (`unavailable`) scored `critical` and
+`unavailable`. The worst outcome therefore rendered *less* severe than a lesser one on every surface
+that pages off `severity` or `overallState`, while `rollbackRecommendation` alone read correctly.
+Asserting `rollbackRecommendation` does not catch this, because it was already right when the other
+two were wrong. An exhaustive comparison of all 182 `(component, state)` pairs against the previous
+revision shows exactly one behavioral difference, confined to `post_deploy`/`dependency_failure`:
+`warning`/`degraded` → `critical`/`unavailable`. No existing component's grading changed.
+
+Mapping: `proceed` → `healthy`, `observe` → `recovering`, `rollback recommended` → `unavailable`,
+`operator intervention required` → `dependency_failure`. A report whose own `environment` disagrees
+with `expected.environment` is refused rather than recorded, so an `environment_identity_mismatch`
+verification fails closed here and is not surfaced as a transition.
+
 ## Verification
 
 Use Node.js 22.23.1. The focused entry points are:
@@ -57,6 +97,7 @@ Use Node.js 22.23.1. The focused entry points are:
 ```bash
 node --test tests/health-transitions.test.js tests/health-transition-mutation.test.js
 node --test tests/api-readiness-lifecycle.test.js tests/worker-graceful-drain.test.js
+node --test tests/health-rollback-integration.test.js
 ```
 
 All fixtures are local and disposable. Do not provide production credentials or enable providers.
