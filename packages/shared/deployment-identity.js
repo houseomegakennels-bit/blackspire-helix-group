@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { verifyReleaseEvidence, serializeReleaseEvidence, DEPLOYMENT_RECORD_FILE } from './release-evidence.js';
 
 export const DEPLOYMENT_IDENTITY_STATES = Object.freeze(['VERIFIED', 'UNVERIFIED', 'MISMATCH', 'UNKNOWN']);
 const SHA = /^[0-9a-f]{40}$/;
@@ -21,6 +22,14 @@ function deepFreeze(value) { if (value && typeof value === 'object' && !Object.i
 
 function safeRead(file, readFile = fs.readFileSync) {
   try { return readFile(file, 'utf8').trim(); } catch { return null; }
+}
+function safeDeploymentRecord(file, readFile = fs.readFileSync) {
+  if (!file) return null;
+  try {
+    const stat = fs.lstatSync(file); if (!stat.isFile() || stat.isSymbolicLink()) return null;
+    const value = JSON.parse(readFile(file, 'utf8'));
+    return typeof value === 'object' && value ? value : null;
+  } catch { return null; }
 }
 
 function component(state, value, source, reasonCode = null) {
@@ -49,8 +58,22 @@ function buildIdentity({ artifactRoot, expectedBuildSha, imageBuildSha, readFile
   return component('VERIFIED', manifestSha, 'commit_manifest');
 }
 
-function overallState(environment, build) {
-  return [environment.state, build.state].sort((a, b) => REASON_PRIORITY[b] - REASON_PRIORITY[a])[0];
+function overallState(...states) {
+  return states.sort((a, b) => REASON_PRIORITY[b] - REASON_PRIORITY[a])[0];
+}
+
+// Release evidence contributes to the identity state, but only ever by making it WORSE.
+// An earlier form of this returned the evidence-derived state directly, which discarded
+// environment.state: a server deployed into the wrong environment with no packaged
+// evidence reported UNKNOWN instead of MISMATCH, and health-transition sources map
+// anything other than MISMATCH to a mere "unknown" observation rather than a failure.
+function releaseEvidenceState(releaseEvidence) {
+  switch (releaseEvidence.state) {
+    case 'MISMATCH': case 'INVALID': return 'MISMATCH';
+    case 'UNVERIFIED': return 'UNVERIFIED';
+    case 'MISSING': return 'UNKNOWN';
+    default: return 'VERIFIED';
+  }
 }
 
 export function createDeploymentIdentityProvider({
@@ -62,6 +85,9 @@ export function createDeploymentIdentityProvider({
   readFile = fs.readFileSync,
   allowTestOverride = false,
   testIdentity = null,
+  deploymentRecord = null,
+  deploymentRecordPath = process.env.BLACKSPIRE_DEPLOYMENT_RECORD_PATH || null,
+  runtimeOverrideSha = null,
 } = {}) {
   if (testIdentity) {
     if (!allowTestOverride || process.env.NODE_ENV !== 'test' || stateOwner === 'vps-production') throw new Error('deployment identity test override unavailable');
@@ -74,14 +100,22 @@ export function createDeploymentIdentityProvider({
       if (cached) return cached;
       const environment = environmentIdentity(stateOwner, expectedEnvironment);
       const build = buildIdentity({ artifactRoot: path.resolve(artifactRoot), expectedBuildSha, imageBuildSha, readFile });
+      // release-switch.sh writes the deployment record into the release directory as it makes
+      // that release current, so the record is found without any new host configuration. An
+      // explicit path still wins for callers that keep it outside the tree.
+      const trustedDeploymentRecord = deploymentRecord
+        || safeDeploymentRecord(deploymentRecordPath || path.join(path.resolve(artifactRoot), DEPLOYMENT_RECORD_FILE), readFile);
+      const releaseEvidence = verifyReleaseEvidence({ artifactRoot: path.resolve(artifactRoot), packagedCommitSha: build.value,
+        expectedCommitSha: expectedBuildSha, expectedEnvironment: environment.value, deploymentRecord: trustedDeploymentRecord, runtimeOverrideSha });
       const packageVersion = safeRead(path.join(path.resolve(artifactRoot), 'package.json'), readFile);
       let version = null;
       try { const parsed = JSON.parse(packageVersion || '{}'); if (VERSION.test(parsed.version || '')) version = parsed.version; } catch { /* untrusted artifact metadata remains absent */ }
       cached = deepFreeze({
         schemaVersion: 1,
-        state: overallState(environment, build),
+        state: overallState(environment.state, build.state, releaseEvidenceState(releaseEvidence)),
         environment,
         build,
+        releaseEvidence,
         version,
         buildTimestamp: null,
         verificationSource: Object.freeze(['state_owner', 'commit_manifest']),
@@ -95,7 +129,7 @@ export function serializeDeploymentIdentity(identity) {
   const safeComponent = (item, kind) => ({ state: DEPLOYMENT_IDENTITY_STATES.includes(item?.state) ? item.state : 'UNKNOWN', value: kind === 'build' ? SHA.test(item?.value || '') ? item.value : null : Object.values(OWNER_ENVIRONMENTS).includes(item?.value) ? item.value : null, source: ['state_owner', 'commit_manifest'].includes(item?.source) ? item.source : null, reasonCode: REASON_CODES.has(item?.reasonCode) ? item.reasonCode : null });
   const environment = safeComponent(identity?.environment, 'environment'); const build = safeComponent(identity?.build, 'build');
   const state = DEPLOYMENT_IDENTITY_STATES.includes(identity?.state) ? identity.state : 'UNKNOWN';
-  return Object.freeze({ schemaVersion: 1, state, environment, build, version: VERSION.test(identity?.version || '') ? identity.version : null, buildTimestamp: null, verificationSource: ['state_owner', 'commit_manifest'].filter((source) => identity?.verificationSource?.includes(source)) });
+  return Object.freeze({ schemaVersion: 1, state, environment, build, releaseEvidence: serializeReleaseEvidence(identity?.releaseEvidence), version: VERSION.test(identity?.version || '') ? identity.version : null, buildTimestamp: null, verificationSource: ['state_owner', 'commit_manifest'].filter((source) => identity?.verificationSource?.includes(source)) });
 }
 
 export function validateDeploymentIdentityForStartup(identity, stateOwner = process.env.BLACKSPIRE_STATE_OWNER || '') {

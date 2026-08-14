@@ -6,21 +6,24 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { recomputePostDeployAudit, verifyPostDeploy } from '../packages/shared/post-deploy-verifier.js';
 import { createDeploymentIdentityProvider, serializeDeploymentIdentity } from '../packages/shared/deployment-identity.js';
+import { writeReleaseEvidence } from '../packages/shared/release-evidence.js';
 import fsNode from 'node:fs';
 import osNode from 'node:os';
 import pathNode from 'node:path';
 
 const start = '2026-08-05T00:00:00.000Z';
 const commit = 'a'.repeat(40);
+const artifactDigest = 'd'.repeat(64);
 const healthy = {
   startedAt: start, observedAt: '2026-08-05T00:02:00.000Z', startupGraceSeconds: 30, verificationWindowSeconds: 300,
-  expected: { environment: 'disposable-staging', commit, buildFingerprint: 'build-123', migrationVersion: 'schema-7' },
-  observed: { deploymentIdentity: { state:'VERIFIED', environment:{state:'VERIFIED',value:'disposable-staging'}, build:{state:'VERIFIED',value:commit} }, buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
+  expected: { environment: 'disposable-staging', commit, artifactDigest, buildFingerprint: 'build-123', migrationVersion: 'schema-7' },
+  observed: { deploymentIdentity: { state:'VERIFIED', environment:{state:'VERIFIED',value:'disposable-staging'}, build:{state:'VERIFIED',value:commit}, releaseEvidence:{state:'VERIFIED',artifactDigest,expectedEnvironment:'disposable-staging'} }, rollbackTargetState:'VERIFIED', buildFingerprint: 'build-123', migrationVersion: 'schema-7', health: 'healthy', liveness: true, readiness: true, workerHeartbeatFresh: true, queueConnected: true, databaseConnected: true, providersDisabled: true, telegramMode: 'dry-run' },
 };
 
 test('healthy disposable staging produces a read-only proceed audit', () => {
   const report = verifyPostDeploy(healthy, Date.parse(healthy.observedAt));
   assert.equal(report.classification, 'proceed');
+  assert.equal(report.releaseClassification, 'VERIFIED_RELEASE');
   assert.equal(report.automaticActionTaken, false);
   assert.match(report.mobileSummary, /STAGING VERIFIED/);
   assert.deepEqual(report.observed, healthy.observed);
@@ -105,6 +108,14 @@ test('the audit identity projection sanitizes in place and survives replay', () 
   const report = verifyPostDeploy(healthy, Date.parse(healthy.observedAt));
   assert.deepEqual(report.observed.deploymentIdentity, healthy.observed.deploymentIdentity);
   assert.equal(recomputePostDeployAudit(report, Date.parse(healthy.observedAt)).classification, 'proceed');
+  // The release-evidence projection has the same round-trip obligation, and regressed the same
+  // way: verifyPostDeploy compares releaseEvidence.expectedEnvironment against
+  // expected.environment, so dropping it from the audit made every replay of a VALID audit raise
+  // release_environment_mismatch and downgrade to 'operator intervention required'.
+  assert.equal(report.observed.deploymentIdentity.releaseEvidence.expectedEnvironment,
+    healthy.observed.deploymentIdentity.releaseEvidence.expectedEnvironment,
+    'the audit must carry every field its own re-verification reads');
+  assert.deepEqual(recomputePostDeployAudit(report, Date.parse(healthy.observedAt)).reasons, []);
 
   const malformed = structuredClone(healthy);
   malformed.observed.deploymentIdentity = {
@@ -128,9 +139,9 @@ test('identity, migration, provider, and Telegram mismatches require interventio
   // the four identity gates satisfy this test on their own, so the provider and Telegram gates
   // below could each be deleted outright with the suite still green.
   assert.deepEqual(report.reasons.map((item) => item.code).sort(), [
-    'build_fingerprint_mismatch', 'commit_fingerprint_mismatch', 'deployment_identity_unverified',
-    'environment_identity_mismatch', 'migration_version_mismatch', 'providers_not_disabled',
-    'telegram_not_sandboxed',
+    'artifact_digest_mismatch', 'build_fingerprint_mismatch', 'commit_fingerprint_mismatch',
+    'deployment_identity_unverified', 'environment_identity_mismatch', 'migration_version_mismatch',
+    'providers_not_disabled', 'release_environment_mismatch', 'telegram_not_sandboxed',
   ]);
 });
 
@@ -174,6 +185,13 @@ test('unknown server identity cannot be promoted by caller-supplied legacy field
   assert.ok(report.reasons.some((item) => item.code === 'deployment_identity_unverified'));
 });
 
+test('artifact mismatch and missing rollback evidence fail closed without automatic rollback', () => {
+  const mismatch=structuredClone(healthy); mismatch.observed.deploymentIdentity.releaseEvidence.artifactDigest='e'.repeat(64); mismatch.observed.rollbackTargetState='MISSING';
+  const report=verifyPostDeploy(mismatch,Date.parse(mismatch.observedAt));
+  assert.equal(report.classification,'operator intervention required'); assert.equal(report.releaseClassification,'RELEASE_MISMATCH'); assert.equal(report.automaticActionTaken,false);
+  assert.ok(report.reasons.some((item)=>item.code==='artifact_digest_mismatch')); assert.ok(report.reasons.some((item)=>item.code==='rollback_target_unverified'));
+});
+
 test('CLI writes a private, exclusive audit record without taking action', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-post-deploy-'));
   const input = path.join(root, 'input.json'); const audit = path.join(root, 'audit.json');
@@ -208,16 +226,27 @@ test('a real disposable-staging identity from the provider verifies end to end',
     fsNode.writeFileSync(pathNode.join(artifact, 'COMMIT_SHA'), `${commit}\n`);
     fsNode.writeFileSync(pathNode.join(artifact, 'package.json'), JSON.stringify({ version: '0.1.0' }));
 
+    const evidence = writeReleaseEvidence(artifact, {
+      commitSha: commit, expectedEnvironment: 'disposable-staging',
+      buildTimestamp: '2026-08-10T00:00:00.000Z', buildId: 'e2e-1', ciProvider: 'local-disposable',
+      artifactName: 'e2e', packageVersion: '0.1.0', nodeVersion: 'v22.23.1',
+      repository: 'houseomegakennels-bit/blackspire-helix-group',
+    });
     const identity = serializeDeploymentIdentity(createDeploymentIdentityProvider({
       stateOwner: 'vps-disposable-staging',
       artifactRoot: artifact,
       expectedEnvironment: 'disposable-staging',
       expectedBuildSha: commit,
+      deploymentRecord: { commitSha: commit, artifactDigest: evidence.artifact.digest, environment: 'disposable-staging' },
     }).get());
     assert.equal(identity.state, 'VERIFIED', 'the provider itself must verify before the report is built');
 
     const input = structuredClone(healthy);
     input.observed.deploymentIdentity = identity;
+    // The intended artifact must be the one the evidence actually describes -- the point of this
+    // test is that a REAL provider output verifies, so the digest comes from the manifest rather
+    // than from the shared fixture's placeholder.
+    input.expected.artifactDigest = evidence.artifact.digest;
     const report = verifyPostDeploy(input, Date.parse(input.observedAt));
     assert.equal(report.classification, 'proceed', `a genuine disposable identity must verify: ${JSON.stringify(report.reasons)}`);
     assert.deepEqual(report.reasons, []);
@@ -225,4 +254,25 @@ test('a real disposable-staging identity from the provider verifies end to end',
   } finally {
     fsNode.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('unverified release evidence is insufficient even when its digest agrees', () => {
+  // Isolating case: the earlier branch fires on MISMATCH or on a digest disagreement, so the
+  // only way to reach this guard is evidence that is not VERIFIED while its digest and
+  // environment both agree. Without this the guard was removable with the suite green.
+  const now = Date.parse(healthy.observedAt);
+  const insufficient = structuredClone(healthy);
+  insufficient.observed.deploymentIdentity.releaseEvidence.state = 'UNVERIFIED';
+  const report = verifyPostDeploy(insufficient, now);
+  assert.ok(report.reasons.some(({ code }) => code === 'release_evidence_insufficient'));
+  // The digest guard must NOT be what fired -- that would make this test prove nothing.
+  assert.ok(!report.reasons.some(({ code }) => code === 'artifact_digest_mismatch'));
+  assert.equal(report.classification, 'operator intervention required');
+  assert.equal(report.automaticActionTaken, false);
+
+  // A missing digest on either side is equally insufficient.
+  const noDigest = structuredClone(healthy);
+  noDigest.observed.deploymentIdentity.releaseEvidence.artifactDigest = null;
+  noDigest.expected.artifactDigest = null;
+  assert.ok(verifyPostDeploy(noDigest, now).reasons.some(({ code }) => code === 'release_evidence_insufficient'));
 });
