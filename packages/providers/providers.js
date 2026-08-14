@@ -26,10 +26,13 @@ export function selectProvider(policy = {}, { requested = null, model = null } =
   if (requested === 'mock') return { provider: 'mock', mode: 'mock', model: model || 'mock-hermes-status-v1' };
   if (requested === 'manual') return { provider: 'manual', mode: 'handoff', model };
   const modes = activeModes();
-  if (requested === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex };
-  if (requested === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api' };
-  if (requested === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api' };
-  if (requested === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli' };
+  // `model` is server authority (Hermes' BLACKSPIRE_PRODUCTION_MODEL) and is carried
+  // through selection unchanged, so execution cannot silently substitute a
+  // worker-local default for the model the server chose.
+  if (requested === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex, model };
+  if (requested === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api', model };
+  if (requested === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api', model };
+  if (requested === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli', model };
   return { provider: requested, mode: 'unconfigured', model };
 }
 
@@ -41,8 +44,8 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
   try {
     if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', model: selected.model, started, response: mockResponse(packet) });
     const timeoutMs = deadline ? Math.max(1, Date.parse(deadline) - Date.now()) : 30_000;
-    if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, started, response: await callOpenAI({ prompt: JSON.stringify(packet), timeoutMs }) });
-    if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, started, response: await callAnthropic({ prompt: JSON.stringify(packet), timeoutMs }) });
+    if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, model: selected.model, started, response: await callOpenAI({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
+    if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, model: selected.model, started, response: await callAnthropic({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
     if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', started, response: runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path)) });
     if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
@@ -52,7 +55,8 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
   }
 }
 
-export async function callOpenAI({ prompt, model = process.env.OPENAI_MODEL || 'gpt-5.1', timeoutMs = 30000 }) {
+export async function callOpenAI({ prompt, model = null, timeoutMs = 30000 }) {
+  model ||= process.env.OPENAI_MODEL || 'gpt-5.1';
   if (!process.env.OPENAI_API_KEY) return { ok: false, mode: 'unconfigured', error: 'OPENAI_API_KEY required', artifacts: [] };
   const response = await withTimeout(fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -63,7 +67,8 @@ export async function callOpenAI({ prompt, model = process.env.OPENAI_MODEL || '
   return parseModelBody({ ok: response.ok, provider: 'openai', mode: 'api', body, error: response.ok ? null : JSON.stringify(body) });
 }
 
-export async function callAnthropic({ prompt, model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5', timeoutMs = 30000 }) {
+export async function callAnthropic({ prompt, model = null, timeoutMs = 30000 }) {
+  model ||= process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
   if (!process.env.ANTHROPIC_API_KEY) return { ok: false, mode: 'unconfigured', error: 'ANTHROPIC_API_KEY required', artifacts: [] };
   const response = await withTimeout(fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -109,7 +114,7 @@ function writeTaskPacket(packet, workspaceRoot = '.') {
 function normalizeProviderResult({ provider, mode, model = null, started, response }) {
   return {
     ok: Boolean(response.ok), provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
-    usage: { provider, mode, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents || 0 },
+    usage: { provider, mode, model, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents || 0 },
     error: response.ok ? null : redact(response.error || 'provider failed'), raw: response,
   };
 }
@@ -140,7 +145,7 @@ function usageFromBody(body) {
 }
 
 function usage(selected, latencyMs) {
-  return { provider: selected.provider, mode: selected.mode, latencyMs, inputTokens: 0, outputTokens: 0, costCents: 0 };
+  return { provider: selected.provider, mode: selected.mode, model: selected.model || null, latencyMs, inputTokens: 0, outputTokens: 0, costCents: 0 };
 }
 
 function withTimeout(promise, timeoutMs) {
