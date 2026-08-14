@@ -4,6 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+// Registered before the first resource-creating call below. A signal that lands between creating the
+// disposable root and installing these handlers would otherwise get Node's default disposition: the
+// process dies by signal and leaves the directory and its SQLite file behind. `shutdownAndExit` is a
+// hoisted declaration and only ever runs on a later event-loop turn, by which point the whole module
+// body -- including every binding it closes over -- has finished evaluating.
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void shutdownAndExit(signal); });
+
 // Resolved from this file, not the cwd, so the launcher works from any working directory.
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-iphone-build-'));
@@ -101,7 +108,6 @@ async function shutdownAndExit(reason) {
   })();
   return shutdownPromise;
 }
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void shutdownAndExit(signal); });
 async function runStartup() {
   const cleanupModule = await import('./lib/iphone-test-cleanup.js');
   cleanup = cleanupModule.createIphoneTestCleanup({ worker, server, closeDb, removeData });
