@@ -502,7 +502,11 @@ export function healthSnapshot() {
     scheduler = schedulerRuntimeStatus();
   }
   return {
-    ok: true,
+    // Truthful, not decorative. This was a hardcoded `true`, so an unreachable database or a dead
+    // required worker still published {"ok":true} and any uptime check keying on it was blind. The
+    // dependency flags already carry `required`, so a dependency that is optional in this
+    // deployment still reports ok:true and cannot fail the health verdict.
+    ok: database === 'available' && worker.ok && scheduler.ok,
     service: 'blackspire-command-api',
     lifecycle: lifecyclePhase,
     database,

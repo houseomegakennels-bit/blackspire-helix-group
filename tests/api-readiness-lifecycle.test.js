@@ -56,6 +56,28 @@ test('required worker heartbeat makes readiness fail closed when missing or stal
   delete process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT;
 });
 
+test('liveness ok reflects dependency state instead of asserting itself', async (t) => {
+  t.after(() => { delete process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT; });
+  // Baseline: with no dependency required, a healthy process still reports ok.
+  assert.equal(healthSnapshot().ok, true);
+
+  // A required-but-stale worker must drag `ok` down. This is the assertion a hardcoded `ok: true`
+  // cannot satisfy -- deleting the dependency terms from healthSnapshot fails here.
+  process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT = 'true';
+  const { recordWorkerHeartbeat } = await import('../packages/task-engine/runtime-status.js');
+  recordWorkerHeartbeat({ workerId: 'worker-local', phase: 'idle', now: new Date(Date.now() - 60_000) });
+  const degraded = healthSnapshot();
+  assert.equal(degraded.ok, false);
+  assert.equal(degraded.dependencies.worker.state, 'stale');
+  // Still served with 200: /health is liveness, and the body -- not the status -- carries the verdict.
+  const response = await fetch(`${baseUrl}/health`);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).ok, false);
+
+  recordWorkerHeartbeat({ workerId: 'worker-local', phase: 'idle' });
+  assert.equal(healthSnapshot().ok, true);
+});
+
 test('readiness fails closed over HTTP without disclosing dependency errors', async () => {
   const readiness = readinessSnapshot({ schemaCheck: () => { throw new Error('sensitive path'); } });
   assert.equal(readiness.ok, false);
