@@ -198,7 +198,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     const result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline });
     if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt }); return { ok: false, error: 'cancelled' }; }
     last = result;
-    recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket: { artifacts: result.artifacts, summary: result.summary, manualPacketPath: result.manualPacketPath }, error: result.error, latencyMs: Date.now() - started });
+    recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket: { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath }, error: result.error, latencyMs: Date.now() - started });
     recordUsage(task.id, result.usage || { provider: result.provider, mode: result.mode });
     if (result.ok) return result;
     transition(task.id, 'running', { retry_count: attempt });
