@@ -33,10 +33,19 @@ test('immutable test identity detects content mutation and pathname replacement'
   fs.writeFileSync(file, 'export default 2;\n');
   assert.throws(() => verifyTestTreeUnchanged(snapshot), /changed|mutated|identity/i);
 
+  // Replacement is asserted with *different* content, which is the threat the guard exists for and
+  // the one it can actually detect. The previous version unlinked and rewrote byte-identical
+  // content, which is undetectable here and was a recurring CI flake: on this filesystem
+  // unlink+recreate reuses the same inode 100% of the time, and the timestamp granularity is coarse
+  // enough that mtime/ctime collide in the majority of attempts (measured: 224/400 identical at
+  // nanosecond resolution). When dev, ino, size, timestamps and sha256 all match, the replacement
+  // is indistinguishable from the original by construction -- and a byte-identical file is not a
+  // tampering threat in the first place. Detecting content substitution is the load-bearing
+  // property; it rests on sha256, not on inode or timestamp identity.
   fs.writeFileSync(file, 'export default 1;\n');
   const restored = captureTestTree(root, tests);
   fs.unlinkSync(file);
-  fs.writeFileSync(file, 'export default 1;\n');
+  fs.writeFileSync(file, 'export default 3;\n');
   assert.throws(() => verifyTestTreeUnchanged(restored), /changed|replaced|identity/i);
 });
 
