@@ -77,9 +77,15 @@ case "$mode" in
         case "$entry" in
           "") fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist contains an empty entry" ;;
           mock) fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist must not contain mock" ;;
-          openai) allowed_openai=true; has_value OPENAI_API_KEY || fail "allowlisted provider openai requires OPENAI_API_KEY" ;;
-          anthropic) allowed_anthropic=true; has_value ANTHROPIC_API_KEY || fail "allowlisted provider anthropic requires ANTHROPIC_API_KEY" ;;
-          codex) allowed_codex=true; { has_value CODEX_API_KEY && has_value CODEX_API_ENDPOINT; } || fail "allowlisted provider codex requires CODEX_API_KEY and CODEX_API_ENDPOINT" ;;
+          openai) allowed_openai=true; fail "allowlisted provider openai is disabled until production cost accounting can enforce the monetary ceiling before dispatch" ;;
+          anthropic) allowed_anthropic=true; fail "allowlisted provider anthropic is disabled until production cost accounting can enforce the monetary ceiling before dispatch" ;;
+          codex)
+            allowed_codex=true
+            { ! has_value CODEX_API_KEY && ! has_value CODEX_API_ENDPOINT; } || fail "Codex direct-api is not implemented; production Codex requires authenticated Codex CLI with no CODEX_API_KEY or CODEX_API_ENDPOINT"
+            command -v codex >/dev/null 2>&1 || fail "allowlisted provider codex requires the Codex CLI"
+            codex --version >/dev/null 2>&1 || fail "allowlisted provider codex requires an executable Codex CLI"
+            codex doctor --json >/dev/null 2>&1 || fail "allowlisted provider codex requires authenticated Codex CLI"
+            ;;
           # The Claude Code CLI authenticates itself; there is no credential to inject here.
           claudeCode) ;;
           *) fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist contains an unknown provider: $entry" ;;
@@ -87,9 +93,9 @@ case "$mode" in
       done
       # A credential that no allowlisted provider can use must not be present at all: loading it
       # would widen the blast radius of the process without any configuration authorizing its use.
-      [[ "$allowed_openai" == true ]] || ! has_value OPENAI_API_KEY || fail "production execution forbids OPENAI_API_KEY: openai is not in the allowlist"
-      [[ "$allowed_anthropic" == true ]] || ! has_value ANTHROPIC_API_KEY || fail "production execution forbids ANTHROPIC_API_KEY: anthropic is not in the allowlist"
-      [[ "$allowed_codex" == true ]] || { ! has_value CODEX_API_KEY && ! has_value CODEX_API_ENDPOINT; } || fail "production execution forbids CODEX_API_KEY: codex is not in the allowlist"
+      ! has_value OPENAI_API_KEY || fail "production execution forbids OPENAI_API_KEY until metered API cost accounting is implemented"
+      ! has_value ANTHROPIC_API_KEY || fail "production execution forbids ANTHROPIC_API_KEY until metered API cost accounting is implemented"
+      [[ "$allowed_codex" == true ]] || { ! has_value CODEX_API_KEY && ! has_value CODEX_API_ENDPOINT; } || fail "production execution forbids Codex direct-api credentials: codex is not in the allowlist"
       # The provider mode is the request the runtime makes; it has to be one the server allows.
       [[ ",$allowlist," == *",$provider,"* ]] || fail "BLACKSPIRE_PROVIDER_MODE $provider is not in the server allowlist"
     else

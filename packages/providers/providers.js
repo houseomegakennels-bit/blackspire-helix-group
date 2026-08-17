@@ -3,6 +3,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { id, redact } from '../shared/util.js';
 
+export function codexCliAvailable() {
+  const version = spawnSync('codex', ['--version'], { encoding: 'utf8' });
+  if (version.status !== 0) return false;
+  const doctor = spawnSync('codex', ['doctor', '--json'], { encoding: 'utf8', timeout: 30_000 });
+  if (doctor.status !== 0) return false;
+  try {
+    const report = JSON.parse(doctor.stdout || '{}');
+    const auth = report?.checks?.['auth.credentials'];
+    return auth?.status === 'ok' && /auth is configured/i.test(auth?.summary || '');
+  } catch {
+    return /auth is configured/i.test(doctor.stdout);
+  }
+}
+
 export function activeModes() {
   if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && process.env.BLACKSPIRE_PROVIDER_MODE === 'manual') {
     return { openai: 'disabled-by-profile', anthropic: 'disabled-by-profile', codex: 'disabled-by-profile', claudeCode: 'disabled-by-profile' };
@@ -10,7 +24,7 @@ export function activeModes() {
   return {
     openai: process.env.OPENAI_API_KEY ? 'api' : 'unconfigured',
     anthropic: process.env.ANTHROPIC_API_KEY ? 'api' : 'unconfigured',
-    codex: process.env.CODEX_API_ENDPOINT && process.env.CODEX_API_KEY ? 'direct-api' : (spawnSync('codex', ['--version'], { encoding: 'utf8' }).status === 0 ? 'cli' : 'manual-handoff'),
+    codex: (process.env.CODEX_API_ENDPOINT || process.env.CODEX_API_KEY) ? 'direct-api-unimplemented' : (codexCliAvailable() ? 'cli' : 'manual-handoff'),
     claudeCode: spawnSync('claude', ['--version'], { encoding: 'utf8' }).status === 0 ? 'cli' : 'unavailable',
   };
 }
@@ -39,6 +53,9 @@ export function selectProvider(policy = {}, { requested = null, model = null } =
 export async function executeProviderRequest({ selected, packet, workspace, deadline = null }) {
   if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && process.env.BLACKSPIRE_PROVIDER_MODE === 'manual' && selected.provider !== 'manual') {
     return { ok: false, provider: selected.provider || 'unknown', mode: 'disabled-by-profile', artifacts: [], usage: usage(selected, 0), error: 'external providers are disabled by the production profile', raw: null };
+  }
+  if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && ['openai', 'anthropic'].includes(selected.provider)) {
+    return { ok: false, provider: selected.provider, mode: 'api-disabled-pending-cost-accounting', artifacts: [], usage: usage(selected, 0, { monetaryCostState: 'metered_cost_unavailable' }), error: 'metered API providers require conservative production cost accounting before dispatch', raw: null };
   }
   const started = Date.now();
   try {
@@ -112,9 +129,10 @@ function writeTaskPacket(packet, workspaceRoot = '.') {
 }
 
 function normalizeProviderResult({ provider, mode, model = null, started, response }) {
+  const monetaryCostState = response.usage?.monetaryCostState || (provider === 'codex' && mode === 'cli' ? 'subscription_unmetered' : 'metered');
   return {
     ok: Boolean(response.ok), provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
-    usage: { provider, mode, model, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents || 0 },
+    usage: { provider, mode, model, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents ?? null, monetaryCostState },
     error: response.ok ? null : redact(response.error || 'provider failed'), raw: response,
   };
 }
@@ -141,11 +159,11 @@ function parseModelBody({ ok, provider, mode, body, error }) {
 }
 
 function usageFromBody(body) {
-  return { inputTokens: body.usage?.input_tokens || body.usage?.inputTokens || 0, outputTokens: body.usage?.output_tokens || body.usage?.outputTokens || 0, costCents: 0 };
+  return { inputTokens: body.usage?.input_tokens || body.usage?.inputTokens || 0, outputTokens: body.usage?.output_tokens || body.usage?.outputTokens || 0, costCents: null, monetaryCostState: 'metered_cost_unavailable' };
 }
 
-function usage(selected, latencyMs) {
-  return { provider: selected.provider, mode: selected.mode, model: selected.model || null, latencyMs, inputTokens: 0, outputTokens: 0, costCents: 0 };
+function usage(selected, latencyMs, overrides = {}) {
+  return { provider: selected.provider, mode: selected.mode, model: selected.model || null, latencyMs, inputTokens: 0, outputTokens: 0, costCents: null, monetaryCostState: 'unavailable', ...overrides };
 }
 
 function withTimeout(promise, timeoutMs) {

@@ -33,10 +33,21 @@ assert.ok(disposableBase, 'no writable disposable base directory outside /tmp is
 const root = fs.mkdtempSync(path.join(disposableBase, 'blackspire-production-execution-'));
 const dbDir = path.join(root, 'database');
 const workspaceRoot = path.join(root, 'workspace');
+const binDir = path.join(root, 'bin');
 fs.mkdirSync(dbDir, { recursive: true });
+fs.mkdirSync(binDir, { recursive: true });
 fs.mkdirSync(path.join(workspaceRoot, 'apps'), { recursive: true });
 fs.mkdirSync(path.join(workspaceRoot, 'packages'), { recursive: true });
 fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'w', type: 'module' }));
+fs.writeFileSync(path.join(binDir, 'codex'), `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  --version) printf 'codex-cli 999.0.0-test\\n' ;;
+  doctor) [[ "\${2:-}" == "--json" ]] && printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n' || printf 'auth is configured\\n' ;;
+  *) exit 64 ;;
+esac
+`);
+fs.chmodSync(path.join(binDir, 'codex'), 0o755);
 assert.equal(spawnSync('git', ['init', '-b', 'main'], { cwd: workspaceRoot, encoding: 'utf8' }).status, 0);
 
 // The production preflight refuses to run as root, so a root test process runs the
@@ -49,7 +60,7 @@ const childUsername = runningAsRoot
   : os.userInfo().username;
 const spawnOptions = runningAsRoot ? { uid: UNPRIVILEGED_UID, gid: UNPRIVILEGED_UID } : {};
 if (runningAsRoot) {
-  for (const dir of [root, dbDir, workspaceRoot]) {
+  for (const dir of [root, dbDir, workspaceRoot, binDir]) {
     spawnSync('chown', ['-R', `${UNPRIVILEGED_UID}:${UNPRIVILEGED_UID}`, dir]);
     fs.chmodSync(dir, 0o755);
   }
@@ -57,7 +68,7 @@ if (runningAsRoot) {
 
 function baseEnv(overrides = {}) {
   const env = {
-    PATH: process.env.PATH, HOME: process.env.HOME,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH}`, HOME: process.env.HOME,
     NODE_ENV: 'production',
     BLACKSPIRE_RUNTIME_MODE: 'production',
     BLACKSPIRE_STATE_OWNER: 'vps-production',
@@ -80,16 +91,15 @@ function baseEnv(overrides = {}) {
   return env;
 }
 
-// The coherent opt-in: execution enabled, a real provider mode, production Hermes,
-// a mock-free allowlist, and a credential for the one allowlisted provider.
+// The coherent opt-in: execution enabled, Codex CLI provider mode, production Hermes,
+// and a mock-free allowlist. The CLI authenticates itself; no provider credential is injected.
 function executionEnv(overrides = {}) {
   return baseEnv({
     BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled',
-    BLACKSPIRE_PROVIDER_MODE: 'openai',
+    BLACKSPIRE_PROVIDER_MODE: 'codex',
     BLACKSPIRE_HERMES_MODE: 'production',
-    BLACKSPIRE_PRODUCTION_PROVIDERS: 'openai',
+    BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex',
     BLACKSPIRE_PRODUCTION_MODEL: 'operator-selected-model',
-    OPENAI_API_KEY: 'operator-supplied-credential-0123456789',
     ...overrides,
   });
 }
@@ -148,20 +158,30 @@ test('the opt-in refuses an unknown provider in the allowlist', () => {
   assert.match(result.stderr, /allowlist/);
 });
 
-test('the opt-in requires a credential for every allowlisted provider', () => {
-  const missing = verify(executionEnv({ OPENAI_API_KEY: undefined }));
-  assert.notEqual(missing.status, 0, 'an allowlisted provider without a credential must be refused');
-  assert.match(missing.stderr, /OPENAI_API_KEY/);
+test('the opt-in refuses metered API providers until cost accounting can enforce the ceiling', () => {
+  for (const provider of ['openai', 'anthropic']) {
+    const result = verify(executionEnv({ BLACKSPIRE_PROVIDER_MODE: provider, BLACKSPIRE_PRODUCTION_PROVIDERS: provider }));
+    assert.notEqual(result.status, 0, `${provider} must not be preflight-authorized without cost accounting`);
+    assert.match(result.stderr, /cost accounting/);
+  }
+});
 
-  const partial = verify(executionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: 'openai,anthropic' }));
-  assert.notEqual(partial.status, 0, 'a partially credentialed allowlist must be refused');
-  assert.match(partial.stderr, /ANTHROPIC_API_KEY/);
+test('the opt-in refuses Codex direct-api credentials because only CLI execution is implemented', () => {
+  const result = verify(executionEnv({ CODEX_API_KEY: 'operator-supplied-credential-0123456789', CODEX_API_ENDPOINT: 'https://codex.example.invalid' }));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /direct-api is not implemented/);
+});
+
+test('the opt-in refuses unavailable Codex CLI', () => {
+  const result = verify(executionEnv({ PATH: process.env.PATH }));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Codex CLI/);
 });
 
 test('the opt-in still refuses a credential that is not for an allowlisted provider', () => {
-  const result = verify(executionEnv({ ANTHROPIC_API_KEY: 'operator-supplied-credential-0123456789' }));
+  const result = verify(executionEnv({ OPENAI_API_KEY: 'operator-supplied-credential-0123456789' }));
   assert.notEqual(result.status, 0, 'an unallowlisted credential must not be loaded into production');
-  assert.match(result.stderr, /ANTHROPIC_API_KEY/);
+  assert.match(result.stderr, /OPENAI_API_KEY/);
 });
 
 test('the opt-in does not relax the unrelated production boundaries', () => {

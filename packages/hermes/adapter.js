@@ -5,7 +5,18 @@ import { activeModes } from '../providers/providers.js';
 // Production selection treats every one of these as unavailable so a
 // misconfigured or profile-disabled provider fails closed instead of being
 // dispatched to and failing later inside the task pipeline.
-const UNUSABLE_PROVIDER_MODES = new Set(['unconfigured', 'unavailable', 'manual-handoff', 'disabled-by-profile']);
+const UNUSABLE_PROVIDER_MODES = new Set([
+  'unconfigured',
+  'unavailable',
+  'manual-handoff',
+  'disabled-by-profile',
+  'direct-api-unimplemented',
+  'api-disabled-pending-cost-accounting',
+]);
+const PRODUCTION_PROVIDER_MODE = {
+  codex: 'cli',
+  claudeCode: 'cli',
+};
 
 /**
  * Decide which provider a production Hermes dispatch may use.
@@ -29,7 +40,12 @@ export function resolveProductionProvider({ env = process.env, allowedProviders 
   if (!permitted.length) throw new Error('no provider is permitted by both the server allowlist and workspace policy');
 
   const modes = availability() || {};
-  const provider = permitted.find((candidate) => modes[candidate] && !UNUSABLE_PROVIDER_MODES.has(modes[candidate]));
+  const provider = permitted.find((candidate) => {
+    if (!modes[candidate] || UNUSABLE_PROVIDER_MODES.has(modes[candidate])) return false;
+    const requiredMode = PRODUCTION_PROVIDER_MODE[candidate];
+    if (!requiredMode) return false;
+    return modes[candidate] === requiredMode;
+  });
   if (!provider) throw new Error('no configured production provider is available');
 
   return { provider, mode: modes[provider], model: env.BLACKSPIRE_PRODUCTION_MODEL || null };

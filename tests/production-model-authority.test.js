@@ -72,6 +72,33 @@ test('the executed model is reported back on the provider result', async () => {
   assert.equal(result.usage.model, 'server-authoritative-model');
 });
 
+test('metered API usage is not recorded as fake zero-cost accounting', async () => {
+  let result;
+  await withEnv({ OPENAI_API_KEY: 'test-openai', OPENAI_MODEL: 'worker-local-default' }, () => captureOutboundBody(
+    async () => { result = await executeProviderRequest({ selected: { provider: 'openai', mode: 'api', model: 'server-authoritative-model' }, packet: { request: 'x' } }); },
+  ));
+  assert.equal(result.usage.costCents, null);
+  assert.equal(result.usage.monetaryCostState, 'metered_cost_unavailable');
+});
+
+test('production metered API dispatch is refused before outbound fetch', async () => {
+  const realFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; throw new Error('must not fetch'); };
+  try {
+    const result = await withEnv({ BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PROVIDER_MODE: 'openai', OPENAI_API_KEY: 'test-openai' }, () => executeProviderRequest({
+      selected: { provider: 'openai', mode: 'api', model: 'server-authoritative-model' },
+      packet: { request: 'x' },
+    }));
+    assert.equal(result.ok, false);
+    assert.match(result.error, /cost accounting/);
+    assert.equal(result.usage.monetaryCostState, 'metered_cost_unavailable');
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('callOpenAI and callAnthropic still refuse to run unconfigured', async () => {
   await withEnv({ OPENAI_API_KEY: undefined }, async () => {
     assert.equal((await callOpenAI({ prompt: 'x' })).ok, false);
