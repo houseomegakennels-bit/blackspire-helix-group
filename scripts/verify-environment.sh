@@ -50,11 +50,61 @@ case "$mode" in
     [[ "${BLACKSPIRE_STATE_OWNER:-}" == "vps-production" ]] || fail "production state owner must be vps-production"
     [[ -n "${BLACKSPIRE_DB_PATH:-}" && "${BLACKSPIRE_DB_PATH}" != /tmp/* ]] || fail "production requires persistent database storage"
     [[ "${UNIFIED_IPHONE_TEST_MODE:-false}" != "true" && "${TELEGRAM_MODE:-dry-run}" != "mock" ]] || fail "production cannot enable test mode or mock Telegram"
-    [[ "$provider" == "manual" ]] || fail "approved production profile requires manual provider mode"
-    [[ "${BLACKSPIRE_HERMES_MODE:-restricted}" != "mock" ]] || fail "production cannot use mock Hermes"
-    for key in OPENAI_API_KEY ANTHROPIC_API_KEY CODEX_API_KEY CODEX_API_ENDPOINT TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET; do
+    # Real provider execution is an explicit operator authorization, never a default and never
+    # inferred from the presence of a credential. Absent (or 'disabled') this stays the approved
+    # no-external-provider profile: manual provider mode, and no provider credential may even be
+    # loaded into the process. Set to exactly 'enabled', the whole execution configuration must be
+    # coherent here, so a half-configured opt-in is refused before systemd starts the supervisor
+    # rather than failing on every task after it is already serving.
+    execution="${BLACKSPIRE_PRODUCTION_EXECUTION:-disabled}"
+    case "$execution" in
+      enabled|disabled) ;;
+      *) fail "BLACKSPIRE_PRODUCTION_EXECUTION must be exactly 'enabled' or 'disabled'" ;;
+    esac
+    # Telegram credentials are outside the provider-execution decision and stay forbidden either way.
+    for key in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET; do
       has_value "$key" && fail "production profile forbids $key"
     done
+    if [[ "$execution" == "enabled" ]]; then
+      [[ "$provider" != "manual" && "$provider" != "mock" ]] || fail "production execution requires a real provider mode, not $provider"
+      [[ "${BLACKSPIRE_HERMES_MODE:-}" == "production" ]] || fail "production execution requires BLACKSPIRE_HERMES_MODE=production"
+      allowlist="${BLACKSPIRE_PRODUCTION_PROVIDERS:-}"
+      allowlist="${allowlist//[[:space:]]/}"
+      [[ -n "$allowlist" ]] || fail "production execution requires a non-empty BLACKSPIRE_PRODUCTION_PROVIDERS allowlist"
+      allowed_openai=false; allowed_anthropic=false; allowed_codex=false
+      IFS=',' read -r -a allowlist_entries <<< "$allowlist"
+      for entry in "${allowlist_entries[@]}"; do
+        case "$entry" in
+          "") fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist contains an empty entry" ;;
+          mock) fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist must not contain mock" ;;
+          openai) allowed_openai=true; fail "allowlisted provider openai is disabled until production cost accounting can enforce the monetary ceiling before dispatch" ;;
+          anthropic) allowed_anthropic=true; fail "allowlisted provider anthropic is disabled until production cost accounting can enforce the monetary ceiling before dispatch" ;;
+          codex)
+            allowed_codex=true
+            { ! has_value CODEX_API_KEY && ! has_value CODEX_API_ENDPOINT; } || fail "Codex direct-api is not implemented; production Codex requires authenticated Codex CLI with no CODEX_API_KEY or CODEX_API_ENDPOINT"
+            command -v codex >/dev/null 2>&1 || fail "allowlisted provider codex requires the Codex CLI"
+            codex --version >/dev/null 2>&1 || fail "allowlisted provider codex requires an executable Codex CLI"
+            codex doctor --json >/dev/null 2>&1 || fail "allowlisted provider codex requires authenticated Codex CLI"
+            ;;
+          # The Claude Code CLI authenticates itself; there is no credential to inject here.
+          claudeCode) ;;
+          *) fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist contains an unknown provider: $entry" ;;
+        esac
+      done
+      # A credential that no allowlisted provider can use must not be present at all: loading it
+      # would widen the blast radius of the process without any configuration authorizing its use.
+      ! has_value OPENAI_API_KEY || fail "production execution forbids OPENAI_API_KEY until metered API cost accounting is implemented"
+      ! has_value ANTHROPIC_API_KEY || fail "production execution forbids ANTHROPIC_API_KEY until metered API cost accounting is implemented"
+      [[ "$allowed_codex" == true ]] || { ! has_value CODEX_API_KEY && ! has_value CODEX_API_ENDPOINT; } || fail "production execution forbids Codex direct-api credentials: codex is not in the allowlist"
+      # The provider mode is the request the runtime makes; it has to be one the server allows.
+      [[ ",$allowlist," == *",$provider,"* ]] || fail "BLACKSPIRE_PROVIDER_MODE $provider is not in the server allowlist"
+    else
+      [[ "$provider" == "manual" ]] || fail "approved production profile requires manual provider mode"
+      [[ "${BLACKSPIRE_HERMES_MODE:-restricted}" != "mock" ]] || fail "production cannot use mock Hermes"
+      for key in OPENAI_API_KEY ANTHROPIC_API_KEY CODEX_API_KEY CODEX_API_ENDPOINT; do
+        has_value "$key" && fail "production profile forbids $key"
+      done
+    fi
     [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
     [[ -n "${COMMAND_ADMIN_TOKEN:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production authentication is not configured"
     [[ "${BLACKSPIRE_RUN_MIGRATIONS:-false}" != "true" ]] || fail "migrations must not run implicitly; approve them separately"

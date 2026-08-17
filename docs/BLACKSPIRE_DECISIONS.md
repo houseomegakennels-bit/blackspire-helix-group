@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-08-17 — Production Codex uses authenticated CLI; metered APIs wait for real cost accounting
+
+Production execution may not treat unknown monetary spend as zero. OpenAI and Anthropic API usage bodies do not provide a reliable cent value in this branch, so production preflight and Hermes provider selection refuse those metered API providers until a conservative reservation/reconciliation contract can enforce task ceilings before dispatch. The authenticated Codex CLI is a different accounting class: it uses the operator's ChatGPT subscription/session auth and records `subscription_unmetered`, not a fabricated `costCents: 0` metered value. Codex direct-api is not implemented, so any `CODEX_API_KEY` or `CODEX_API_ENDPOINT` production configuration is refused before startup rather than blessed and then failed per task.
+
 ## 2026-08-04 — The review queue is a bounded read model, not durable queue state
 
 Milestone 3C exposes existing pending candidates through an authorization-first, workspace-scoped keyset query and verifies each selected candidate and its effective review head. It deliberately adds no queue table, total count, snapshot promise, worker, notification, lease, or mutation route. The opaque cursor is bound to its version, workspace, filter, timestamp, and id, but remains untrusted navigation state; the SQL workspace predicate is the authority boundary. Promotion remains separate and requires an explicit authority decision.
