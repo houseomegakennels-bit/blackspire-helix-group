@@ -2,15 +2,14 @@
 //
 //   authenticated API task creation -> durable queue -> worker claim
 //   -> production Hermes dispatch -> server-selected real provider
-//   -> real provider call -> applied artifacts -> persisted evidence
+//   -> authenticated Codex CLI provider module -> applied artifacts -> persisted evidence
 //   -> observable through the API
 //
-// Everything above the network socket is production code: production runtime
+// Everything around the external client is production code: production runtime
 // mode, the production Hermes mode, the real worker loop, the real dispatch
-// guard and the real providers module. Only the outbound HTTPS transport is
-// substituted, so the proof is deterministic and costs nothing, while the
-// provider request that is asserted on is the exact bytes the worker would
-// have put on the wire.
+// guard and the real providers module. Only the Codex executable is substituted,
+// so the proof is deterministic, costs nothing, and still exercises the CLI
+// execution mode production now permits.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -19,6 +18,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-production-e2e-'));
+const binDir = path.join(root, 'bin');
+fs.mkdirSync(binDir, { recursive: true });
+process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH}`;
 process.env.BLACKSPIRE_DATA_DIR = root;
 process.env.BLACKSPIRE_DB_PATH = path.join(root, 'production-e2e.sqlite');
 process.env.COMMAND_ADMIN_TOKEN = 'production-e2e-admin-token-0123456789';
@@ -27,9 +29,12 @@ process.env.BIND_HOST = '127.0.0.1';
 // Server-side production authority. None of this is reachable from a request body.
 process.env.BLACKSPIRE_RUNTIME_MODE = 'production';
 process.env.BLACKSPIRE_HERMES_MODE = 'production';
-process.env.BLACKSPIRE_PRODUCTION_PROVIDERS = 'openai';
+process.env.BLACKSPIRE_PRODUCTION_PROVIDERS = 'codex';
 process.env.BLACKSPIRE_PRODUCTION_MODEL = 'server-authoritative-model';
-process.env.OPENAI_API_KEY = 'e2e-proof-credential-0123456789';
+delete process.env.OPENAI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
+delete process.env.CODEX_API_KEY;
+delete process.env.CODEX_API_ENDPOINT;
 process.env.OPENAI_MODEL = 'worker-local-default-model';
 delete process.env.BLACKSPIRE_PROVIDER_MODE;
 delete process.env.HERMES_TEST_PROVIDER;
@@ -64,32 +69,50 @@ function createRepo() {
   return repo;
 }
 
-// Stands in for the provider's HTTPS endpoint only. It records every outbound
-// request so the test can assert on what production actually sent.
+const codexInvocations = [];
+const codexLog = path.join(root, 'codex-invocations.jsonl');
+fs.writeFileSync(path.join(binDir, 'codex'), `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  --version)
+    printf 'codex-cli 999.0.0-test\\n'
+    ;;
+  doctor)
+    if [[ "\${2:-}" == "--json" ]]; then
+      printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n'
+    else
+      printf 'auth is configured\\n'
+    fi
+    ;;
+  exec)
+    printf '{"argv":["exec","--json"]}\\n' >> "${codexLog}"
+    printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n'
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+`);
+fs.chmodSync(path.join(binDir, 'codex'), 0o755);
+
+// The allowed production path for this milestone is Codex CLI. Any outbound API
+// fetch during the provider phase would mean the test stopped proving that path.
 const outbound = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init = {}) => {
   const target = String(url);
-  if (!target.startsWith('https://api.openai.com/')) return realFetch(url, init);
-  const body = JSON.parse(init.body);
-  outbound.push({ url: target, authorization: init.headers.authorization, body });
-  return {
-    ok: true,
-    json: async () => ({
-      output_text: JSON.stringify({
-        artifacts: [{ path: 'docs/production-proof.md', content: '# Production proof\n\nWritten by the configured provider.\n' }],
-        summary: 'Wrote the requested proof document.',
-      }),
-      usage: { input_tokens: 120, output_tokens: 45 },
-    }),
-  };
+  if (target.startsWith('https://api.openai.com/') || target.startsWith('https://api.anthropic.com/')) {
+    outbound.push({ url: target, authorization: init.headers?.authorization || init.headers?.['x-api-key'] || null });
+    throw new Error('metered API provider must not be reached by the Codex production E2E');
+  }
+  return realFetch(url, init);
 };
 
 const repo = createRepo();
 upsertWorkspace({
   id: 'production-e2e', name: 'Production E2E', description: 'production end-to-end proof',
   githubRepository: 'local/production-e2e', defaultBranch: 'main', allowedPaths: ['docs'],
-  buildCommands: ['true'], providerPolicy: { preferred: ['openai'] }, riskLevel: 'low',
+  buildCommands: ['true'], providerPolicy: { preferred: ['codex'] }, riskLevel: 'low',
   budgetCents: 500, secretReferences: [], enabledTools: ['read', 'status', 'write_branch'],
   lastHealthStatus: 'ok', rootPath: repo,
 });
@@ -123,17 +146,21 @@ test('an authenticated request is queued durably and not executed inline', async
   assert.equal(outbound.length, 0, 'the API must not reach a provider itself');
 });
 
-test('the worker claims the queued task and reaches the real configured provider', async () => {
+test('the worker claims the queued task and reaches the real configured Codex CLI provider', async () => {
   await startWorker({ once: true });
-  assert.equal(outbound.length >= 1, true, 'the worker dispatched to the provider endpoint');
+  const lines = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean);
+  codexInvocations.push(...lines.map((line) => JSON.parse(line)));
+  assert.equal(codexInvocations.length, 1, 'the worker invoked Codex CLI exactly once');
+  assert.equal(outbound.length, 0, 'no metered API provider endpoint was reached');
 });
 
-test('the provider request carries the server-chosen model and credential, not a request-supplied one', () => {
-  const [call] = outbound;
-  assert.equal(call.url, 'https://api.openai.com/v1/responses');
-  assert.equal(call.body.model, 'server-authoritative-model');
-  assert.notEqual(call.body.model, 'worker-local-default-model');
-  assert.equal(call.authorization, `Bearer ${process.env.OPENAI_API_KEY}`);
+test('the provider record carries the server-chosen model, not a request-supplied one', () => {
+  assert.deepEqual(codexInvocations[0].argv.slice(0, 2), ['exec', '--json']);
+  const task = getTask(taskId);
+  assert.equal(task.status, 'completed', task.error || 'task did not complete');
+  const executed = JSON.parse(taskRecords(taskId).providerAttempts.at(-1).response_packet);
+  assert.equal(executed.model, 'server-authoritative-model');
+  assert.notEqual(executed.model, 'worker-local-default-model');
 });
 
 test('the task completes and its persisted record names the real provider, never mock', () => {
@@ -141,8 +168,8 @@ test('the task completes and its persisted record names the real provider, never
   assert.equal(task.status, 'completed', task.error || 'task did not complete');
   const records = taskRecords(taskId);
   const attempt = records.providerAttempts.at(-1);
-  assert.equal(attempt.provider, 'openai');
-  assert.equal(attempt.mode, 'api');
+  assert.equal(attempt.provider, 'codex');
+  assert.equal(attempt.mode, 'cli');
   assert.equal(attempt.status, 'completed');
   assert.ok(!records.providerAttempts.some((row) => row.provider === 'mock'), 'no mock attempt occurred');
 });
@@ -150,7 +177,7 @@ test('the task completes and its persisted record names the real provider, never
 test('the provider artifacts were actually applied inside the workspace allowlist', () => {
   const written = path.join(repo, 'docs/production-proof.md');
   assert.ok(fs.existsSync(written), 'the provider artifact was written to the workspace');
-  assert.match(fs.readFileSync(written, 'utf8'), /Written by the configured provider/);
+  assert.match(fs.readFileSync(written, 'utf8'), /Written by the configured Codex CLI provider/);
   const changed = taskRecords(taskId).changedFiles.map((row) => row.path);
   assert.ok(changed.some((file) => file.includes('docs/production-proof.md')), `changed files: ${changed.join(',')}`);
 });
@@ -158,8 +185,8 @@ test('the provider artifacts were actually applied inside the workspace allowlis
 test('the durable event and usage trail records the executed provider and model', () => {
   const records = taskRecords(taskId);
   const usage = records.usage.at(-1);
-  assert.equal(usage.provider, 'openai');
-  assert.equal(usage.mode, 'api');
+  assert.equal(usage.provider, 'codex');
+  assert.equal(usage.mode, 'cli');
   // The executed model is recorded on the provider attempt, which is the canonical
   // "what actually ran" record; provider_usage stores only provider/mode/tokens.
   const executed = JSON.parse(records.providerAttempts.at(-1).response_packet);
@@ -172,15 +199,16 @@ test('the completed result is observable through the API and leaks no credential
   const response = await fetch(`${BASE}/api/tasks/${taskId}`, { headers: ADMIN });
   assert.equal(response.status, 200);
   const text = await response.text();
-  assert.ok(!text.includes(process.env.OPENAI_API_KEY), 'the API response must not contain the provider credential');
+  assert.ok(!text.includes('e2e-proof-credential'), 'the API response must not contain provider credential material');
   const body = JSON.parse(text);
   assert.equal(body.task.status, 'completed');
 });
 
 test('a restarted worker sees the durable completed state rather than re-running the task', async () => {
-  const before = outbound.length;
+  const before = codexInvocations.length;
   await startWorker({ once: true });
-  assert.equal(outbound.length, before, 'a completed task is not re-dispatched after restart');
+  const lines = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean);
+  assert.equal(lines.length, before, 'a completed task is not re-dispatched after restart');
   assert.equal(getTask(taskId).status, 'completed');
 });
 
