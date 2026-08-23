@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, prepareCodexDispatch, finishCodexDispatch, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
+import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, prepareCodexDispatch, finishCodexDispatch, finishCodexDispatchWithUsage, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
@@ -15,10 +15,12 @@ const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider
 const MAX_RETRIES = 2;
 const HIGH_RISK_ACTION = 'high_risk_execution';
 
-export async function processTask(task) {
+export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null } = {}) {
+  const ownership = workerId && claimToken ? { workerId, claimToken } : null;
+  const move = (status, patch = {}) => transition(task.id, status, patch, ownership);
   const workspace = getWorkspace(task.workspace_id);
-  if (!workspace) return transition(task.id, 'failed', { error: 'Workspace not found' });
-  if (await shouldStop(task.id)) return;
+  if (!workspace) return move('failed', { error: 'Workspace not found' });
+  if (await shouldStop(task.id, ownership)) return;
 
   try {
     const authority = task.authority_class || (task.source_channel === 'telegram' ? 'telegram' : 'authenticated_admin');
@@ -26,10 +28,10 @@ export async function processTask(task) {
     if (task.policy_decision === 'denied' || !ingress.allowed) {
       recordEvidence(task.id, 'policy_denial', { reason: ingress.reason, actionClass: task.action_class || ingress.actionClass });
       recordTaskEvent(task.id, 'policy.denied', { status: 'failed', reason: ingress.reason, actionClass: task.action_class || ingress.actionClass });
-      return transition(task.id, 'failed', { error: ingress.reason, summary: 'Denied by Blackspire policy' });
+      return move('failed', { error: ingress.reason, summary: 'Denied by Blackspire policy' });
     }
     const approval = evaluateApproval(task);
-    if (approval.status === 'blocked') return transition(task.id, 'failed', { error: approval.reason });
+    if (approval.status === 'blocked') return move('failed', { error: approval.reason });
     if (approval.status === 'pending') {
       recordApprovalPause(task.id, approval.reason);
       return;
@@ -44,7 +46,7 @@ export async function processTask(task) {
       const testAuth = authorizeReadOnlyTestTask(workspace);
       if (!testAuth.ok) {
         recordEvidence(task.id, 'mock_acceptance_denied', { reason: testAuth.reason });
-        return transition(task.id, 'failed', { error: `bounded mock acceptance path denied: ${testAuth.reason}` });
+        return move('failed', { error: `bounded mock acceptance path denied: ${testAuth.reason}` });
       }
       return processReadOnlyTestTask(task, workspace);
     }
@@ -53,37 +55,39 @@ export async function processTask(task) {
     const hermesRequest = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: workspace.enabled_tools || ['read','status'], timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 30_000) });
     const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: hermesRequest.deadline, phase: 'hermes' });
     recordEvidence(task.id, hermesGuard.ok ? 'hermes_selection' : 'hermes_prevented', { allowed: hermesGuard.ok, reason: hermesGuard.reason || 'credential-free Hermes permitted', requestId: hermesRequest.requestId });
-    if (!hermesGuard.ok) return transition(task.id, hermesGuard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: hermesGuard.reason });
+    if (!hermesGuard.ok) return move(hermesGuard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: hermesGuard.reason });
     const hermesResponse = await dispatchHermes(hermesRequest, {
       allowedProviders: allowedProviders(workspace),
       shouldCancel: () => getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled',
     });
 
-    transition(task.id, 'running', { current_stage: 'inspect_workspace' });
-    const context = await stage(task.id, 'inspect_workspace', () => inspectWorkspace(workspace));
-    const plan = await stage(task.id, 'build_plan', () => buildPlan(task, workspace, context));
-    transition(task.id, 'running', { plan });
-    await stage(task.id, 'decompose', () => persistSubtasks(task.id, plan));
-    const selected = await stage(task.id, 'select_provider', () => selectProvider(workspace.provider_policy, { requested: hermesResponse.provider, model: hermesResponse.model }));
+    move('running', { current_stage: 'inspect_workspace' });
+    const context = await stage(task.id, ownership, 'inspect_workspace', () => inspectWorkspace(workspace));
+    const plan = await stage(task.id, ownership, 'build_plan', () => buildPlan(task, workspace, context));
+    move('running', { plan });
+    await stage(task.id, ownership, 'decompose', () => persistSubtasks(task.id, plan));
+    const selected = await stage(task.id, ownership, 'select_provider', () => selectProvider(workspace.provider_policy, { requested: hermesResponse.provider, model: hermesResponse.model }));
     audit(task.id, 'hermes', 'provider.selected', selected);
     recordTaskEvent(task.id, 'provider.selected', { provider: selected.provider, mode: selected.mode });
-    if (remainingBudget(task.id) <= 0) return transition(task.id, 'failed', { error: 'Task budget exhausted before provider execution' });
-    const providerResult = await providerWithRetries(task, workspace, selected, plan, context, hermesRequest);
+    if (remainingBudget(task.id) <= 0) return move('failed', { error: 'Task budget exhausted before provider execution' });
+    const providerResult = await providerWithRetries(task, workspace, selected, plan, context, hermesRequest, { workerId, claimToken });
     if (getTask(task.id)?.status === 'cancelled') return getTask(task.id);
-    if (!providerResult.ok) return transition(task.id, 'failed', { error: providerResult.error || 'provider failed' });
-    if (await shouldStop(task.id)) return;
+    if (providerResult.ownershipLost) return getTask(task.id);
+    if (!providerResult.ok) return move('failed', { error: providerResult.error || 'provider failed' });
+    if (await shouldStop(task.id, ownership)) return;
 
-    const branch = await stage(task.id, 'apply_edits', () => applyProviderEdits(task, workspace, providerResult));
-    const validation = await stage(task.id, 'validate', () => validateWorkspace(task.id, workspace));
-    if (!validation.ok) return transition(task.id, 'failed', { error: validation.stderr || 'validation failed', summary: { validation } });
-    const commit = await stage(task.id, 'commit', () => commitAll(`Hermes task ${task.id}: ${task.request.slice(0, 60)}`, { cwd: workspace.root_path }));
-    const pr = await stage(task.id, 'pull_request', () => createPullRequest({ title: `Hermes task ${task.id}`, body: `Automated Hermes task evidence for ${task.request}`, cwd: workspace.root_path, draft: true }));
+    const branch = await stage(task.id, ownership, 'apply_edits', () => applyProviderEdits(task, workspace, providerResult));
+    const validation = await stage(task.id, ownership, 'validate', () => validateWorkspace(task.id, workspace));
+    if (!validation.ok) return move('failed', { error: validation.stderr || 'validation failed', summary: { validation } });
+    const commit = await stage(task.id, ownership, 'commit', () => commitAll(`Hermes task ${task.id}: ${task.request.slice(0, 60)}`, { cwd: workspace.root_path }));
+    const pr = await stage(task.id, ownership, 'pull_request', () => createPullRequest({ title: `Hermes task ${task.id}`, body: `Automated Hermes task evidence for ${task.request}`, cwd: workspace.root_path, draft: true }));
     const evidence = { context, plan, provider: providerResult.provider, mode: providerResult.mode, branch, validation, commit, pullRequest: pr };
-    await stage(task.id, 'summarize', () => recordEvidence(task.id, 'final', evidence));
-    return transition(task.id, 'completed', { summary: { result: 'completed', changedFiles: branch.changedFiles, validation, commit, pullRequest: pr }, evidence });
+    await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
+    return move('completed', { summary: { result: 'completed', changedFiles: branch.changedFiles, validation, commit, pullRequest: pr }, evidence });
   } catch (error) {
-    audit(task.id, 'hermes', 'task.failed', { error: error.message });
-    return transition(task.id, 'failed', { error: error.message });
+    const result = move('failed', { error: error.message });
+    if (result?.status === 'failed') audit(task.id, 'hermes', 'task.failed', { error: error.message });
+    return result;
   }
 }
 
@@ -112,9 +116,10 @@ async function processReadOnlyTestTask(task, workspace) {
   return transition(task.id, 'completed', { summary: { result: 'status reported', changedFiles: [], provider: result.provider, model: result.model }, evidence });
 }
 
-async function stage(taskId, name, fn) {
-  if (await shouldStop(taskId)) throw new Error('Task stopped');
-  heartbeat(taskId, name);
+async function stage(taskId, ownership, name, fn) {
+  if (await shouldStop(taskId, ownership)) throw new Error('Task stopped');
+  if (ownership && !heartbeat(taskId, name, ownership)) throw new Error('Task claim ownership lost');
+  if (!ownership) heartbeat(taskId, name);
   updateSubtask(taskId, name, 'running');
   audit(taskId, 'hermes', 'stage.started', { stage: name });
   const result = await fn();
@@ -123,13 +128,14 @@ async function stage(taskId, name, fn) {
   return result;
 }
 
-async function shouldStop(taskId) {
+async function shouldStop(taskId, ownership = null) {
   if (getFlag('emergency_stop') === 'active') {
     transition(taskId, 'cancelled', { error: 'Emergency stop active' });
     return true;
   }
   const current = getTask(taskId);
   if (!current || current.status === 'cancelled') return true;
+  if (ownership && (current.worker_id !== ownership.workerId || current.claim_token !== ownership.claimToken)) return true;
   return false;
 }
 
@@ -195,16 +201,16 @@ function persistSubtasks(taskId, plan) {
   return { count: plan.stages.length };
 }
 
-async function providerWithRetries(task, workspace, selected, plan, context, hermesRequest) {
+async function providerWithRetries(task, workspace, selected, plan, context, hermesRequest, { workerId = null, claimToken = null } = {}) {
   let last;
   const maxAttempts = selected.provider === 'codex' ? 1 : MAX_RETRIES;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     if (remainingBudget(task.id) <= 0) return { ok: false, error: 'Task budget exhausted' };
-    if (await shouldStop(task.id)) return { ok: false, error: 'cancelled' };
+    if (await shouldStop(task.id, workerId && claimToken ? { workerId, claimToken } : null)) return { ok: false, ownershipLost: getTask(task.id)?.status !== 'cancelled', error: 'cancelled or claim ownership lost' };
     const guard = guardDispatch({ task, workspace, actorId: taskActor(task), channel: task.source_channel || 'api', selected, deadline: hermesRequest.deadline, idempotencyKey: hermesRequest.idempotencyKey, allowedProviders: allowedProviders(workspace) });
     recordEvidence(task.id, guard.ok ? 'dispatch_attempt' : 'dispatch_prevented', { allowed: guard.ok, reason: guard.reason || 'guard passed', provider: selected.provider, attempt });
     if (!guard.ok) return { ok: false, error: guard.reason };
-    const requestPacket = { taskId: task.id, request: hermesRequest.objective, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference };
+    const requestPacket = { taskId: task.id, request: hermesRequest.objective, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference, dispatchOwnership: workerId && claimToken ? { workerId, claimToken } : null };
     const started = Date.now();
     let codexDispatch = null;
     if (selected.provider === 'codex') {
@@ -217,19 +223,37 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
       recordEvidence(task.id, 'codex_dispatch_started', { attemptId: codexDispatch.attempt.id, provider: 'codex', mode: selected.mode, attempt, idempotencyKey: hermesRequest.idempotencyKey });
     }
     const taskHeartbeatMs = Math.max(10, Number(process.env.HERMES_TASK_HEARTBEAT_INTERVAL_MS || 10_000));
-    const taskHeartbeat = setInterval(() => heartbeat(task.id, 'execute_provider'), taskHeartbeatMs);
+    let leaseLost = false;
+    const renewLease = () => {
+      if (!workerId || !claimToken) return;
+      if (!heartbeat(task.id, 'execute_provider', { workerId, claimToken })) {
+        const current = getTask(task.id);
+        if (current?.status !== 'cancelled') leaseLost = true;
+      }
+    };
+    renewLease();
+    if (leaseLost) return { ok: false, ownershipLost: true, error: 'worker claim ownership lost before provider dispatch' };
+    const taskHeartbeat = setInterval(renewLease, taskHeartbeatMs);
     taskHeartbeat.unref?.();
     let result;
     try {
-      result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline, shouldCancel: () => cancellationRequested(task.id) });
+      result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline, shouldCancel: () => leaseLost || cancellationRequested(task.id) });
     } finally {
       clearInterval(taskHeartbeat);
     }
+    if (workerId && claimToken && (getTask(task.id)?.worker_id !== workerId || getTask(task.id)?.claim_token !== claimToken)) leaseLost = true;
+    if (leaseLost) {
+      recordEvidence(task.id, 'codex_dispatch_ownership_lost', { attemptId: codexDispatch?.attempt?.id || null });
+      return { ok: false, ownershipLost: true, error: 'worker claim ownership lost during provider dispatch' };
+    }
     last = result;
     const responsePacket = { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } };
-    if (selected.provider === 'codex') finishCodexDispatch(task.id, result.ok ? 'completed' : 'failed', { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started });
-    else recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
-    recordUsage(task.id, result.usage || { provider: result.provider, mode: result.mode });
+    const usage = result.usage || { provider: result.provider, mode: result.mode };
+    if (selected.provider === 'codex') finishCodexDispatchWithUsage(task.id, result.ok ? 'completed' : 'failed', { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started, usage });
+    else {
+      recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
+      recordUsage(task.id, usage);
+    }
     if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt, dispatchStatus: result.ok ? 'completed' : 'failed' }); return { ok: false, error: 'cancelled' }; }
     if (result.ok) return result;
     transition(task.id, 'running', { retry_count: attempt });

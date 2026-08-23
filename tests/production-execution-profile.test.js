@@ -192,14 +192,25 @@ test('the opt-in refuses unavailable Codex CLI', () => {
 
 test('production preflight bounds a hanging Codex process tree', () => {
   const hangingBin = path.join(root, 'hanging-bin');
+  const descendantPid = path.join(root, 'probe-descendant.pid');
   fs.mkdirSync(hangingBin, { recursive: true });
-  fs.writeFileSync(path.join(hangingBin, 'codex'), '#!/usr/bin/env bash\nsleep 20\n');
+  fs.writeFileSync(descendantPid, '');
+  fs.chmodSync(descendantPid, 0o666);
+  fs.writeFileSync(path.join(hangingBin, 'codex'), `#!/usr/bin/env bash
+(trap '' TERM; while :; do sleep 1; done) &
+printf '%s' "$!" > ${JSON.stringify(descendantPid)}
+trap 'exit 0' TERM
+while :; do sleep 1; done
+`);
   fs.chmodSync(path.join(hangingBin, 'codex'), 0o755);
   const started = Date.now();
   const result = verify(executionEnv({ PATH: `${hangingBin}${path.delimiter}${process.env.PATH}` }));
   assert.notEqual(result.status, 0);
   assert.ok(Date.now() - started < 5_000, 'hung preflight probe must be TERM/KILL bounded');
   assert.match(result.stderr, /Codex CLI/);
+  const pid = Number(fs.readFileSync(descendantPid, 'utf8'));
+  assert.ok(Number.isInteger(pid) && pid > 0, 'fixture must start a descendant');
+  assert.throws(() => process.kill(pid, 0), /ESRCH/, 'preflight must kill a TERM-ignoring descendant after its leader exits');
 });
 
 test('the opt-in requires Codex home outside protected home', () => {

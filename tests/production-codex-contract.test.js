@@ -13,7 +13,7 @@ process.env.BLACKSPIRE_DB_PATH = path.join(root, 'test.sqlite');
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { activeModes, codexCliAvailable, resolveProviderAvailability, parseCodexCliResult, runCodexCliPacket } = await import('../packages/providers/providers.js');
-const { createTask, prepareCodexDispatch, finishCodexDispatch, recordUsage, taskRecords, monetarySpend } = await import('../packages/task-engine/tasks.js');
+const { createTask, claimNext, heartbeat, transition, prepareCodexDispatch, finishCodexDispatch, finishCodexDispatchWithUsage, recordUsage, taskRecords, monetarySpend, getTask } = await import('../packages/task-engine/tasks.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
 
 const bin = path.join(root, 'bin');
@@ -343,6 +343,79 @@ test('Codex dispatch marker is durable, unique, and transitions the same attempt
   assert.equal(terminal.id, first.attempt.id);
   assert.equal(terminal.status, 'completed');
   assert.equal(taskRecords(task.id).providerAttempts.length, 1);
+});
+
+test('task lease renewal is fenced to the worker and per-claim token that own the claim', () => {
+  for (let queued; (queued = claimNext({ workerId: 'lease-test-drain' }));) transition(queued.id, 'cancelled', {}, { workerId: queued.worker_id, claimToken: queued.claim_token });
+  const task = createTask({ workspaceId: 'lease-test', request: 'inspect', idempotencyKey: 'lease-owner-test' });
+  const claimed = claimNext({ workerId: 'lease-owner' });
+  assert.equal(claimed.id, task.id);
+  const before = claimed.heartbeat_at;
+  assert.equal(heartbeat(task.id, 'execute_provider', { workerId: 'replacement-worker', claimToken: claimed.claim_token }), false);
+  assert.equal(getTask(task.id).heartbeat_at, before);
+  assert.equal(heartbeat(task.id, 'execute_provider', { workerId: 'lease-owner', claimToken: 'wrong-token' }), false);
+  assert.equal(heartbeat(task.id, 'execute_provider', { workerId: 'lease-owner', claimToken: claimed.claim_token }), true);
+});
+
+test('stale reclaim rotates claim identity even when WORKER_ID is reused', () => {
+  for (let queued; (queued = claimNext({ workerId: 'lease-reclaim-drain' }));) transition(queued.id, 'cancelled', {}, { workerId: queued.worker_id, claimToken: queued.claim_token });
+  const task = createTask({ workspaceId: 'lease-reclaim', request: 'inspect', idempotencyKey: 'lease-reclaim-test' });
+  const first = claimNext({ workerId: 'stable-worker-id' });
+  transition(task.id, 'running', { heartbeat_at: '2000-01-01T00:00:00.000Z' }, { workerId: first.worker_id, claimToken: first.claim_token });
+  const second = claimNext({ workerId: 'stable-worker-id', staleAfterSeconds: 1 });
+  assert.equal(second.id, task.id);
+  assert.notEqual(second.claim_token, first.claim_token);
+  assert.equal(heartbeat(task.id, 'old-worker', { workerId: first.worker_id, claimToken: first.claim_token }), false);
+  assert.equal(heartbeat(task.id, 'new-worker', { workerId: second.worker_id, claimToken: second.claim_token }), true);
+});
+
+test('cancelled is an absorbing task state', () => {
+  const task = createTask({ workspaceId: 'cancel-test', request: 'inspect', idempotencyKey: 'cancel-absorbing-test' });
+  transition(task.id, 'cancelled', { error: 'operator cancelled' });
+  transition(task.id, 'failed', { error: 'late provider result' });
+  transition(task.id, 'queued');
+  assert.equal(getTask(task.id).status, 'cancelled');
+  assert.equal(getTask(task.id).error, 'operator cancelled');
+});
+
+test('Codex terminal attempt and usage accounting commit atomically', () => {
+  const task = createTask({ workspaceId: 'atomic-test', request: 'inspect', idempotencyKey: 'atomic-accounting-test' });
+  const prepared = prepareCodexDispatch(task.id, { mode: 'cli', model: 'server-model', requestPacket: { taskId: task.id } });
+  assert.throws(() => finishCodexDispatchWithUsage(task.id, 'failed', {
+    attemptId: prepared.attempt.id,
+    responsePacket: { model: 'server-model' },
+    error: 'cancelled',
+    usage: { provider: 'codex', mode: 'cli', monetaryCostState: 'metered', costCents: null },
+  }), /verified cost/);
+  assert.equal(taskRecords(task.id).providerAttempts[0].status, 'dispatching', 'failed accounting must roll back terminalization');
+  assert.equal(taskRecords(task.id).usage.length, 0);
+  finishCodexDispatchWithUsage(task.id, 'failed', {
+    attemptId: prepared.attempt.id,
+    responsePacket: { model: 'server-model' },
+    error: 'cancelled',
+    usage: { provider: 'codex', mode: 'cli', monetaryCostState: 'subscription_unmetered', costCents: null },
+  });
+  assert.equal(taskRecords(task.id).providerAttempts[0].status, 'failed');
+  assert.equal(taskRecords(task.id).usage[0].monetary_cost_state, 'subscription_unmetered');
+  finishCodexDispatchWithUsage(task.id, 'failed', {
+    attemptId: prepared.attempt.id, responsePacket: { model: 'server-model' }, error: 'cancelled',
+    usage: { provider: 'codex', mode: 'cli', monetaryCostState: 'subscription_unmetered', costCents: null },
+  });
+  assert.equal(taskRecords(task.id).usage.length, 1, 'idempotent finalization must not duplicate accounting');
+});
+
+test('fault injection rolls back both sides of Codex finalization', () => {
+  for (const point of ['after_attempt_update', 'after_usage_insert']) {
+    const task = createTask({ workspaceId: 'atomic-fault', request: point, idempotencyKey: `atomic-${point}` });
+    const prepared = prepareCodexDispatch(task.id, { mode: 'cli', model: 'server-model', requestPacket: { taskId: task.id } });
+    assert.throws(() => finishCodexDispatchWithUsage(task.id, 'completed', {
+      attemptId: prepared.attempt.id, responsePacket: { model: 'server-model' }, latencyMs: 5,
+      usage: { provider: 'codex', mode: 'cli', monetaryCostState: 'subscription_unmetered', costCents: null },
+      faultInjector: (current) => { if (current === point) throw new Error(`injected ${point}`); },
+    }), /injected/);
+    assert.equal(taskRecords(task.id).providerAttempts[0].status, 'dispatching');
+    assert.equal(taskRecords(task.id).usage.length, 0);
+  }
 });
 
 test('Hermes commits the Codex dispatch marker before the child invocation can begin', () => {
