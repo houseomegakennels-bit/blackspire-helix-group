@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-codex-contract-'));
 process.env.BLACKSPIRE_DATA_DIR = root;
@@ -61,21 +63,34 @@ test('nonzero Codex process result is refused even with structured stdout', () =
   assert.equal(parsed.ok, false);
 });
 
-test('Codex spawn args carry server model, workspace cwd, read-only sandbox, and final-output file', () => {
+function fakeChild(run) {
+  return (_cmd, args, options) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => { child.killed = true; child.emit('close', null, 'SIGTERM'); };
+    queueMicrotask(() => run({ child, args, options }));
+    return child;
+  };
+}
+
+test('Codex spawn args carry server model, workspace cwd, read-only sandbox, and final-output file', async () => {
   const workspace = path.join(root, 'workspace-a');
   fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
   const packet = path.join(workspace, '.hermes-task-packets', 'task-1.json');
   fs.writeFileSync(packet, '{}');
   let observed;
-  const result = runCodexCliPacket(packet, {
+  const result = await runCodexCliPacket(packet, {
     workspaceRoot: workspace,
     model: 'MODEL_A',
-    spawnImpl: (_cmd, args, options) => {
+    spawnImpl: fakeChild(({ child, args, options }) => {
       observed = { args, options };
       const final = args[args.indexOf('--output-last-message') + 1];
       fs.writeFileSync(final, JSON.stringify({ artifacts: [], summary: 'ok' }));
-      return { status: 0, stdout: jsonlFinal(), stderr: '' };
-    },
+      child.stdout.end(jsonlFinal());
+      child.stderr.end();
+      child.emit('close', 0, null);
+    }),
   });
   assert.equal(result.ok, true);
   assert.equal(observed.options.cwd, workspace);
@@ -85,36 +100,58 @@ test('Codex spawn args carry server model, workspace cwd, read-only sandbox, and
   assert.equal(observed.args[observed.args.indexOf('--sandbox') + 1], 'read-only');
 });
 
-test('workspace cwd follows the selected workspace and never the service checkout', () => {
+test('workspace cwd follows the selected workspace and never the service checkout', async () => {
   for (const name of ['workspace-a', 'workspace-b']) {
     const workspace = path.join(root, name);
     fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
     const packet = path.join(workspace, '.hermes-task-packets', `${name}.json`);
     fs.writeFileSync(packet, '{}');
     let cwd;
-    runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', spawnImpl: (_cmd, args, options) => {
+    await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', spawnImpl: fakeChild(({ child, args, options }) => {
       cwd = options.cwd;
       fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
-      return { status: 0, stdout: jsonlFinal(), stderr: '' };
-    } });
+      child.stdout.end(jsonlFinal());
+      child.stderr.end();
+      child.emit('close', 0, null);
+    }) });
     assert.equal(cwd, workspace);
     assert.notEqual(cwd, '/opt/blackspire');
   }
 });
 
-test('provider direct workspace mutation is rejected before artifact application', () => {
+test('provider direct workspace mutation is rejected before artifact application', async () => {
   const workspace = path.join(root, 'mutation-workspace');
   fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
   fs.writeFileSync(path.join(workspace, 'tracked.txt'), 'before');
   const packet = path.join(workspace, '.hermes-task-packets', 'task.json');
   fs.writeFileSync(packet, '{}');
-  const result = runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', spawnImpl: (_cmd, args) => {
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', spawnImpl: fakeChild(({ child, args }) => {
     fs.writeFileSync(path.join(workspace, 'tracked.txt'), 'after');
     fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
-    return { status: 0, stdout: jsonlFinal(), stderr: '' };
-  } });
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
   assert.equal(result.ok, false);
   assert.match(result.error, /mutated/);
+});
+
+test('Codex child is terminated at the Hermes deadline', async () => {
+  const workspace = path.join(root, 'timeout-workspace');
+  fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
+  const packet = path.join(workspace, '.hermes-task-packets', 'task.json');
+  fs.writeFileSync(packet, '{}');
+  let killed = false;
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', timeoutMs: 5, spawnImpl: () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => { killed = true; child.emit('close', null, 'SIGTERM'); };
+    return child;
+  } });
+  assert.equal(killed, true);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /deadline exceeded|terminal result|no JSONL/);
 });
 
 test('subscription accounting persists null cost and survives a DB reopen', () => {

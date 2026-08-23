@@ -85,6 +85,9 @@ case "\${1:-}" in
     fi
     ;;
   exec)
+    prompt="\${*: -1}"
+    packet="\${prompt#* at }"
+    packet="\${packet%%. Return*}"
     final=""
     for ((i=1; i<=$#; i++)); do
       if [[ "\${!i}" == "--output-last-message" ]]; then
@@ -93,6 +96,11 @@ case "\${1:-}" in
       fi
     done
     printf '{"argv":%s,"cwd":%s}\\n' "$(node -e 'console.log(JSON.stringify(process.argv.slice(1)))' "$@")" "$(node -e 'console.log(JSON.stringify(process.cwd()))')" >> "${codexLog}"
+    if grep -q 'malformed-codex' "$packet"; then
+      printf '{"type":"thread.started"}\\n'
+      printf 'not-json\\n'
+      exit 0
+    fi
     printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n' > "$final"
     printf '{"type":"thread.started","thread_id":"fixture"}\\n'
     printf '{"type":"turn.started"}\\n'
@@ -226,6 +234,16 @@ test('a restarted worker sees the durable completed state rather than re-running
   const lines = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean);
   assert.equal(lines.length, before, 'a completed task is not re-dispatched after restart');
   assert.equal(getTask(taskId).status, 'completed');
+});
+
+test('a failed production Codex invocation is not retried for the same task', async () => {
+  const before = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
+  const { status, body } = await submit('malformed-codex fixture should fail once', 'production-e2e-malformed');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  const after = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
+  assert.equal(after, before + 1, 'production Codex must not retry a failed subscription invocation');
+  assert.equal(getTask(body.task.id).status, 'failed');
 });
 
 test.after(() => {

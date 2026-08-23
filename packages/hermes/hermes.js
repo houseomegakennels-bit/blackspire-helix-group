@@ -187,7 +187,8 @@ function persistSubtasks(taskId, plan) {
 
 async function providerWithRetries(task, workspace, selected, plan, context, hermesRequest) {
   let last;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+  const maxAttempts = selected.provider === 'codex' ? 1 : MAX_RETRIES;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     if (remainingBudget(task.id) <= 0) return { ok: false, error: 'Task budget exhausted' };
     if (await shouldStop(task.id)) return { ok: false, error: 'cancelled' };
     const guard = guardDispatch({ task, workspace, actorId: taskActor(task), channel: task.source_channel || 'api', selected, deadline: hermesRequest.deadline, idempotencyKey: hermesRequest.idempotencyKey, allowedProviders: allowedProviders(workspace) });

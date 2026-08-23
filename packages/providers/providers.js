@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { id, redact } from '../shared/util.js';
@@ -67,7 +67,7 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
     if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, model: selected.model, started, response: await callOpenAI({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, model: selected.model, started, response: await callAnthropic({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, model: selected.model, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
-    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path), { workspaceRoot: workspace?.root_path, model: selected.model }) });
+    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: await runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path), { workspaceRoot: workspace?.root_path, model: selected.model, timeoutMs }) });
     if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
     return { ok: false, provider: selected.provider || 'unknown', mode: selected.mode || 'unconfigured', artifacts: [], usage: usage(selected, Date.now() - started), error: 'provider is not explicitly configured', raw: null };
   } catch (error) {
@@ -106,7 +106,7 @@ export function runClaudeCodePacket(packetPath) {
   return parseCliResult('claudeCode', 'cli', result);
 }
 
-export function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, spawnImpl = spawnSync } = {}) {
+export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, timeoutMs = 30_000, spawnImpl = spawn } = {}) {
   const available = spawnSync('codex', ['--version'], { encoding: 'utf8' }).status === 0;
   if (!available) return { ok: false, mode: 'unavailable', error: 'Codex CLI is not installed or authenticated', artifacts: [] };
   const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
@@ -116,7 +116,7 @@ export function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(pac
   if (model) args.push('--model', model);
   args.push(`Read the approved task packet at ${packetPath}. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}. Do not modify files.`);
   const before = snapshotWorkspace(cwd);
-  const result = spawnImpl('codex', args, { cwd, encoding: 'utf8', timeout: 600000 });
+  const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1) });
   const parsed = parseCodexCliResult(result, finalPath);
   if (parsed.ok && workspaceMutated(before, snapshotWorkspace(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
   return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
@@ -157,6 +157,40 @@ function parseCliResult(provider, mode, result) {
   } catch {
     return { ok: false, provider, mode, error: 'CLI did not return valid JSON artifacts', artifacts: [], raw: redact(result.stdout) };
   }
+}
+
+function runCliChild(spawnImpl, command, args, { cwd, timeoutMs }) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+    let child;
+    let timer;
+    const finish = (status, signal = null, errorText = '') => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ status, signal, stdout, stderr: timedOut ? `${stderr}\nCodex CLI deadline exceeded`.trim() : (errorText || stderr) });
+    };
+    try {
+      child = spawnImpl(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (error) {
+      finish(1, null, String(error?.message || error));
+      return;
+    }
+    timer = setTimeout(() => {
+      timedOut = true;
+      child.kill?.('SIGTERM');
+      setTimeout(() => child.kill?.('SIGKILL'), 1000).unref?.();
+    }, timeoutMs);
+    child.stdout?.setEncoding?.('utf8');
+    child.stderr?.setEncoding?.('utf8');
+    child.stdout?.on?.('data', (chunk) => { stdout += chunk; });
+    child.stderr?.on?.('data', (chunk) => { stderr += chunk; });
+    child.on?.('error', (error) => finish(1, null, String(error?.message || error)));
+    child.on?.('close', (code, signal) => finish(timedOut ? 124 : (code ?? 1), signal));
+  });
 }
 
 export function parseCodexCliResult(result, finalPath = null) {

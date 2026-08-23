@@ -203,7 +203,7 @@ exit 64
   fs.chmodSync(claude, 0o755);
   const oldPath = process.env.PATH;
   process.env.PATH = bin;
-  assert.equal(runCodexCliPacket(path.join(root, 'packet.json')).artifacts[0].path, 'docs/codex.md');
+  assert.equal((await runCodexCliPacket(path.join(root, 'packet.json'))).artifacts[0].path, 'docs/codex.md');
   assert.equal(runClaudeCodePacket(path.join(root, 'packet.json')).artifacts[0].path, 'docs/claude.md');
   process.env.PATH = oldPath;
   const manual = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'manual', request: 'packet' }, workspace: { root_path: root } });
