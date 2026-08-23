@@ -190,6 +190,18 @@ test('the opt-in refuses unavailable Codex CLI', () => {
   assert.match(result.stderr, /Codex CLI/);
 });
 
+test('production preflight bounds a hanging Codex process tree', () => {
+  const hangingBin = path.join(root, 'hanging-bin');
+  fs.mkdirSync(hangingBin, { recursive: true });
+  fs.writeFileSync(path.join(hangingBin, 'codex'), '#!/usr/bin/env bash\nsleep 20\n');
+  fs.chmodSync(path.join(hangingBin, 'codex'), 0o755);
+  const started = Date.now();
+  const result = verify(executionEnv({ PATH: `${hangingBin}${path.delimiter}${process.env.PATH}` }));
+  assert.notEqual(result.status, 0);
+  assert.ok(Date.now() - started < 5_000, 'hung preflight probe must be TERM/KILL bounded');
+  assert.match(result.stderr, /Codex CLI/);
+});
+
 test('the opt-in requires Codex home outside protected home', () => {
   for (const value of [undefined, '', '/root/.codex', '/home/blackspire/.codex']) {
     const result = verify(executionEnv({ CODEX_HOME: value }));

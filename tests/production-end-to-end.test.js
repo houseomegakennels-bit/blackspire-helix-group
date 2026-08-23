@@ -99,6 +99,7 @@ case "\${1:-}" in
       fi
     done
     printf '{"argv":%s,"cwd":%s,"env":%s}\\n' "$(node -e 'console.log(JSON.stringify(process.argv.slice(1)))' "$@")" "$(node -e 'console.log(JSON.stringify(process.cwd()))')" "$(node -e 'console.log(JSON.stringify({COMMAND_ADMIN_TOKEN:process.env.COMMAND_ADMIN_TOKEN||null,SESSION_SECRET:process.env.SESSION_SECRET||null,GITHUB_TOKEN:process.env.GITHUB_TOKEN||null,OPENAI_API_KEY:process.env.OPENAI_API_KEY||null,ANTHROPIC_API_KEY:process.env.ANTHROPIC_API_KEY||null,CODEX_API_KEY:process.env.CODEX_API_KEY||null,HOME:process.env.HOME||null,PATH:Boolean(process.env.PATH)}))')" >> "${codexLog}"
+    if grep -q 'slow-codex' "$packet"; then sleep 10; fi
     if grep -q 'malformed-codex' "$packet"; then
       printf '{"type":"thread.started"}\\n'
       printf 'not-json\\n'
@@ -257,6 +258,30 @@ test('a failed production Codex invocation is not retried for the same task', as
   const after = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
   assert.equal(after, before + 1, 'production Codex must not retry a failed subscription invocation');
   assert.equal(getTask(body.task.id).status, 'failed');
+});
+
+test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {
+  process.env.HERMES_TASK_HEARTBEAT_INTERVAL_MS = '20';
+  const { status, body } = await submit('slow-codex cancellation proof', 'production-e2e-cancel-running');
+  assert.equal(status, 202);
+  const worker = startWorker({ once: true });
+  let dispatch;
+  for (let i = 0; i < 50 && !dispatch; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    dispatch = taskRecords(body.task.id).providerAttempts.find((row) => row.provider === 'codex');
+  }
+  assert.equal(dispatch?.status, 'dispatching');
+  const firstHeartbeat = getTask(body.task.id).heartbeat_at;
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.notEqual(getTask(body.task.id).heartbeat_at, firstHeartbeat, 'active provider execution must renew the stale-claim lease');
+  const cancelled = await fetch(`${BASE}/api/tasks/${body.task.id}/cancel`, { method: 'POST', headers: ADMIN });
+  assert.equal(cancelled.status, 200);
+  await worker;
+  const records = taskRecords(body.task.id);
+  assert.equal(records.providerAttempts.find((row) => row.provider === 'codex').status, 'failed');
+  assert.equal(records.usage.at(-1).monetary_cost_state, 'subscription_unmetered');
+  assert.equal(getTask(body.task.id).status, 'cancelled');
+  delete process.env.HERMES_TASK_HEARTBEAT_INTERVAL_MS;
 });
 
 test('a stale-recovered task with a Codex dispatch marker is not invoked again', async () => {

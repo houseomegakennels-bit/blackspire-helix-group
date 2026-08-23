@@ -69,6 +69,7 @@ export async function processTask(task) {
     recordTaskEvent(task.id, 'provider.selected', { provider: selected.provider, mode: selected.mode });
     if (remainingBudget(task.id) <= 0) return transition(task.id, 'failed', { error: 'Task budget exhausted before provider execution' });
     const providerResult = await providerWithRetries(task, workspace, selected, plan, context, hermesRequest);
+    if (getTask(task.id)?.status === 'cancelled') return getTask(task.id);
     if (!providerResult.ok) return transition(task.id, 'failed', { error: providerResult.error || 'provider failed' });
     if (await shouldStop(task.id)) return;
 
@@ -215,13 +216,21 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
       }
       recordEvidence(task.id, 'codex_dispatch_started', { attemptId: codexDispatch.attempt.id, provider: 'codex', mode: selected.mode, attempt, idempotencyKey: hermesRequest.idempotencyKey });
     }
-    const result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline, shouldCancel: () => cancellationRequested(task.id) });
-    if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt }); return { ok: false, error: 'cancelled' }; }
+    const taskHeartbeatMs = Math.max(10, Number(process.env.HERMES_TASK_HEARTBEAT_INTERVAL_MS || 10_000));
+    const taskHeartbeat = setInterval(() => heartbeat(task.id, 'execute_provider'), taskHeartbeatMs);
+    taskHeartbeat.unref?.();
+    let result;
+    try {
+      result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline, shouldCancel: () => cancellationRequested(task.id) });
+    } finally {
+      clearInterval(taskHeartbeat);
+    }
     last = result;
     const responsePacket = { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } };
     if (selected.provider === 'codex') finishCodexDispatch(task.id, result.ok ? 'completed' : 'failed', { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started });
     else recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
     recordUsage(task.id, result.usage || { provider: result.provider, mode: result.mode });
+    if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt, dispatchStatus: result.ok ? 'completed' : 'failed' }); return { ok: false, error: 'cancelled' }; }
     if (result.ok) return result;
     transition(task.id, 'running', { retry_count: attempt });
   }
