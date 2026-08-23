@@ -40,7 +40,7 @@ const availableNothing = () => ({ openai: 'unconfigured', anthropic: 'unconfigur
 const productionEnv = (overrides = {}) => ({
   BLACKSPIRE_RUNTIME_MODE: 'production',
   BLACKSPIRE_HERMES_MODE: 'production',
-  BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,claudeCode',
+  BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex',
   ...overrides,
 });
 
@@ -52,13 +52,11 @@ test('production Hermes selects the first server-allowlisted provider the worksp
   assert.equal(selection.mode, 'cli');
 });
 
-test('production Hermes honours server allowlist order over workspace ordering', () => {
-  const selection = resolveProductionProvider({
+test('production Hermes refuses Claude Code until accounting and authentication are reviewed', () => {
+  assert.throws(() => resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: 'claudeCode,codex' }),
     allowedProviders: ['codex', 'claudeCode'], availability: availableEverything,
-  });
-  assert.equal(selection.provider, 'claudeCode');
-  assert.equal(selection.mode, 'cli');
+  }), /Claude Code production execution is disabled/);
 });
 
 test('production Hermes takes its model from server configuration only', () => {
@@ -102,12 +100,11 @@ test('production Hermes fails closed when no allowlisted provider is actually av
   }), /no configured production provider is available/);
 });
 
-test('production Hermes skips an unavailable provider and uses the next available one', () => {
-  const selection = resolveProductionProvider({
+test('production Hermes fails closed when Codex is unavailable rather than using Claude Code', () => {
+  assert.throws(() => resolveProductionProvider({
     env: productionEnv(), allowedProviders: ['codex', 'claudeCode'],
     availability: () => ({ ...availableEverything(), codex: 'manual-handoff' }),
-  });
-  assert.equal(selection.provider, 'claudeCode');
+  }), /no configured production provider is available/);
 });
 
 test('production Hermes never treats a disabled-by-profile provider as available', () => {

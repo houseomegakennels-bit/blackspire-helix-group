@@ -46,7 +46,7 @@ export function selectProvider(policy = {}, { requested = null, model = null } =
   if (requested === 'codex' && modes.codex !== 'manual-handoff') return { provider: 'codex', mode: modes.codex, model };
   if (requested === 'openai' && modes.openai === 'api') return { provider: 'openai', mode: 'api', model };
   if (requested === 'anthropic' && modes.anthropic === 'api') return { provider: 'anthropic', mode: 'api', model };
-  if (requested === 'claudeCode' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli', model };
+  if (requested === 'claudeCode' && process.env.BLACKSPIRE_RUNTIME_MODE !== 'production' && modes.claudeCode === 'cli') return { provider: 'claudeCode', mode: 'cli', model };
   return { provider: requested, mode: 'unconfigured', model };
 }
 
@@ -57,6 +57,9 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
   if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && ['openai', 'anthropic'].includes(selected.provider)) {
     return { ok: false, provider: selected.provider, mode: 'api-disabled-pending-cost-accounting', artifacts: [], usage: usage(selected, 0, { monetaryCostState: 'metered_cost_unavailable' }), error: 'metered API providers require conservative production cost accounting before dispatch', raw: null };
   }
+  if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && selected.provider === 'claudeCode') {
+    return { ok: false, provider: 'claudeCode', mode: 'cli-disabled-pending-accounting', artifacts: [], usage: usage(selected, 0, { monetaryCostState: 'metered_cost_unavailable' }), error: 'Claude Code production execution is disabled until accounting and authentication are independently reviewed', raw: null };
+  }
   const started = Date.now();
   try {
     if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', model: selected.model, started, response: mockResponse(packet) });
@@ -64,7 +67,7 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
     if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, model: selected.model, started, response: await callOpenAI({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, model: selected.model, started, response: await callAnthropic({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, model: selected.model, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
-    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path)) });
+    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path), { workspaceRoot: workspace?.root_path, model: selected.model }) });
     if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
     return { ok: false, provider: selected.provider || 'unknown', mode: selected.mode || 'unconfigured', artifacts: [], usage: usage(selected, Date.now() - started), error: 'provider is not explicitly configured', raw: null };
   } catch (error) {
@@ -103,11 +106,20 @@ export function runClaudeCodePacket(packetPath) {
   return parseCliResult('claudeCode', 'cli', result);
 }
 
-export function runCodexCliPacket(packetPath) {
+export function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, spawnImpl = spawnSync } = {}) {
   const available = spawnSync('codex', ['--version'], { encoding: 'utf8' }).status === 0;
   if (!available) return { ok: false, mode: 'unavailable', error: 'Codex CLI is not installed or authenticated', artifacts: [] };
-  const result = spawnSync('codex', ['exec', '--json', `Read the approved task packet at ${packetPath}. Return JSON artifacts only.`], { encoding: 'utf8', timeout: 600000 });
-  return parseCliResult('codex', 'cli', result);
+  const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
+  const finalPath = path.join(cwd, '.hermes-task-packets', `${path.basename(packetPath, '.json')}.codex-final.json`);
+  fs.mkdirSync(path.dirname(finalPath), { recursive: true });
+  const args = ['exec', '--json', '--sandbox', 'read-only', '--cd', cwd, '--output-last-message', finalPath];
+  if (model) args.push('--model', model);
+  args.push(`Read the approved task packet at ${packetPath}. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}. Do not modify files.`);
+  const before = snapshotWorkspace(cwd);
+  const result = spawnImpl('codex', args, { cwd, encoding: 'utf8', timeout: 600000 });
+  const parsed = parseCodexCliResult(result, finalPath);
+  if (parsed.ok && workspaceMutated(before, snapshotWorkspace(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
+  return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
 }
 
 function mockResponse(packet) {
@@ -145,6 +157,78 @@ function parseCliResult(provider, mode, result) {
   } catch {
     return { ok: false, provider, mode, error: 'CLI did not return valid JSON artifacts', artifacts: [], raw: redact(result.stdout) };
   }
+}
+
+export function parseCodexCliResult(result, finalPath = null) {
+  const events = parseCodexJsonl(result.stdout || '');
+  if (!events.ok) return { ok: false, provider: 'codex', mode: 'cli', error: events.error, artifacts: [] };
+  if (result.status !== 0) return { ok: false, provider: 'codex', mode: 'cli', error: codexError(result, events.records), artifacts: [] };
+  if (!events.terminal) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI JSONL stream did not contain a terminal result', artifacts: [] };
+  const finalText = finalPath && fs.existsSync(finalPath) ? fs.readFileSync(finalPath, 'utf8') : extractFinalMessage(events.records);
+  if (!finalText || finalText.length > 1_000_000) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI final output was missing or truncated', artifacts: [] };
+  try {
+    const parsed = JSON.parse(finalText.trim());
+    if (!Array.isArray(parsed.artifacts) || !parsed.artifacts.every(validArtifact)) throw new Error('invalid artifact schema');
+    return { ok: true, provider: 'codex', mode: 'cli', artifacts: parsed.artifacts, summary: String(parsed.summary || ''), usage: parsed.usage || {} };
+  } catch {
+    return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI final output did not match the artifact schema', artifacts: [] };
+  }
+}
+
+function parseCodexJsonl(stdout) {
+  const lines = String(stdout || '').split(/\r?\n/).filter((line) => line.trim() !== '');
+  if (!lines.length) return { ok: false, error: 'Codex CLI emitted no JSONL events', records: [] };
+  const records = [];
+  for (const line of lines) {
+    try {
+      const record = JSON.parse(line);
+      if (!record || typeof record !== 'object') throw new Error('not object');
+      records.push(record);
+    } catch {
+      return { ok: false, error: 'Codex CLI emitted malformed JSONL', records };
+    }
+  }
+  return { ok: true, records, terminal: records.some((record) => record.type === 'turn.completed' || record.type === 'thread.completed') };
+}
+
+function extractFinalMessage(records) {
+  for (const record of [...records].reverse()) {
+    const text = record?.item?.message?.content?.[0]?.text || record?.item?.text || record?.message?.content?.[0]?.text || record?.message?.text;
+    if (typeof text === 'string' && text.trim()) return text;
+  }
+  return '';
+}
+
+function codexError(result, records) {
+  const eventError = records.find((record) => record.type === 'error' || record.error || record?.item?.type === 'error');
+  return redact(eventError ? JSON.stringify(eventError) : (result.stderr || 'Codex CLI exited nonzero'));
+}
+
+function validArtifact(artifact) {
+  return artifact && typeof artifact === 'object' && typeof artifact.path === 'string' && artifact.path.length > 0 && !path.isAbsolute(artifact.path) && typeof artifact.content === 'string';
+}
+
+function snapshotWorkspace(root) {
+  const entries = new Map();
+  if (!root || !fs.existsSync(root)) return entries;
+  const visit = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      if (name === '.git' || name === '.hermes-task-packets') continue;
+      const full = path.join(dir, name);
+      const relative = path.relative(root, full);
+      const stat = fs.lstatSync(full);
+      if (stat.isDirectory()) visit(full);
+      else entries.set(relative, `${stat.size}:${stat.mtimeMs}`);
+    }
+  };
+  visit(root);
+  return entries;
+}
+
+function workspaceMutated(before, after) {
+  if (before.size !== after.size) return true;
+  for (const [key, value] of before) if (after.get(key) !== value) return true;
+  return false;
 }
 
 function parseModelBody({ ok, provider, mode, body, error }) {

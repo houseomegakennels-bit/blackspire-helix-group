@@ -12,10 +12,10 @@ const UNUSABLE_PROVIDER_MODES = new Set([
   'disabled-by-profile',
   'direct-api-unimplemented',
   'api-disabled-pending-cost-accounting',
+  'cli-disabled-pending-accounting',
 ]);
 const PRODUCTION_PROVIDER_MODE = {
   codex: 'cli',
-  claudeCode: 'cli',
 };
 
 /**
@@ -35,6 +35,7 @@ export function resolveProductionProvider({ env = process.env, allowedProviders 
   const serverAllowlist = String(env.BLACKSPIRE_PRODUCTION_PROVIDERS || '').split(',').map((entry) => entry.trim()).filter(Boolean);
   if (!serverAllowlist.length) throw new Error('production Hermes requires an explicit server provider allowlist');
   if (serverAllowlist.includes('mock')) throw new Error('production Hermes must not fall back to the mock provider');
+  if (serverAllowlist.includes('claudeCode')) throw new Error('Claude Code production execution is disabled pending accounting and authentication review');
 
   const permitted = serverAllowlist.filter((provider) => allowedProviders.includes(provider));
   if (!permitted.length) throw new Error('no provider is permitted by both the server allowlist and workspace policy');

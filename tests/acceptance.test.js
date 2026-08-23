@@ -184,7 +184,20 @@ test('provider adapters are credential-free testable and normalized', async () =
   fs.mkdirSync(bin, { recursive: true });
   const codex = path.join(bin, 'codex');
   const claude = path.join(bin, 'claude');
-  fs.writeFileSync(codex, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo codex; exit 0; fi\necho \'{"artifacts":[{"path":"docs/codex.md","content":"ok"}],"summary":"ok"}\'\n');
+  fs.writeFileSync(codex, `#!/bin/bash
+if [[ "\${1:-}" == "--version" ]]; then echo codex; exit 0; fi
+if [[ "\${1:-}" == "doctor" ]]; then echo '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}'; exit 0; fi
+if [[ "\${1:-}" == "exec" ]]; then
+  final=""
+  for ((i=1; i<=$#; i++)); do
+    if [[ "\${!i}" == "--output-last-message" ]]; then j=$((i+1)); final="\${!j}"; fi
+  done
+  printf '{"artifacts":[{"path":"docs/codex.md","content":"ok"}],"summary":"ok"}\\n' > "$final"
+  printf '{"type":"thread.started"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+  exit 0
+fi
+exit 64
+`);
   fs.writeFileSync(claude, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo claude; exit 0; fi\necho \'{"artifacts":[{"path":"docs/claude.md","content":"ok"}],"summary":"ok"}\'\n');
   fs.chmodSync(codex, 0o755);
   fs.chmodSync(claude, 0o755);

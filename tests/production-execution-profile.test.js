@@ -166,6 +166,12 @@ test('the opt-in refuses metered API providers until cost accounting can enforce
   }
 });
 
+test('the opt-in refuses Claude Code until production accounting is reviewed', () => {
+  const result = verify(executionEnv({ BLACKSPIRE_PROVIDER_MODE: 'claudeCode', BLACKSPIRE_PRODUCTION_PROVIDERS: 'claudeCode' }));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /claudeCode is disabled/);
+});
+
 test('the opt-in refuses Codex direct-api credentials because only CLI execution is implemented', () => {
   const result = verify(executionEnv({ CODEX_API_KEY: 'operator-supplied-credential-0123456789', CODEX_API_ENDPOINT: 'https://codex.example.invalid' }));
   assert.notEqual(result.status, 0);

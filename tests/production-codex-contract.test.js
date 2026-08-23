@@ -1,0 +1,138 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-codex-contract-'));
+process.env.BLACKSPIRE_DATA_DIR = root;
+process.env.BLACKSPIRE_DB_PATH = path.join(root, 'test.sqlite');
+
+const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { parseCodexCliResult, runCodexCliPacket } = await import('../packages/providers/providers.js');
+const { createTask, recordUsage, taskRecords, monetarySpend } = await import('../packages/task-engine/tasks.js');
+const { closeDb } = await import('../packages/task-engine/db.js');
+
+const bin = path.join(root, 'bin');
+fs.mkdirSync(bin, { recursive: true });
+fs.writeFileSync(path.join(bin, 'codex'), `#!/usr/bin/env bash
+case "\${1:-}" in
+  --version) printf 'codex-cli 999.0.0-test\\n' ;;
+  doctor) printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n' ;;
+  *) exit 64 ;;
+esac
+`);
+fs.chmodSync(path.join(bin, 'codex'), 0o755);
+process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
+
+function jsonlFinal(summary = 'ok') {
+  return [
+    { type: 'thread.started', thread_id: 't1' },
+    { type: 'turn.started' },
+    { type: 'item.completed', item: { type: 'message', message: { content: [{ text: 'progress only' }] } } },
+    { type: 'turn.completed' },
+  ].map((event) => JSON.stringify(event)).join('\n') + '\n';
+}
+
+test('real-shaped Codex JSONL is parsed only through the terminal final output', () => {
+  const final = path.join(root, 'final.json');
+  fs.writeFileSync(final, JSON.stringify({ artifacts: [{ path: 'docs/x.md', content: 'ok' }], summary: 'done' }));
+  const parsed = parseCodexCliResult({ status: 0, stdout: jsonlFinal(), stderr: '' }, final);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.summary, 'done');
+  assert.equal(parsed.artifacts[0].path, 'docs/x.md');
+});
+
+test('malformed JSONL is refused', () => {
+  const parsed = parseCodexCliResult({ status: 0, stdout: '{"type":"turn.started"}\nnot-json\n', stderr: '' });
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.error, /malformed JSONL/);
+});
+
+test('missing terminal Codex result is refused', () => {
+  const parsed = parseCodexCliResult({ status: 0, stdout: '{"type":"turn.started"}\n', stderr: '' });
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.error, /terminal result/);
+});
+
+test('nonzero Codex process result is refused even with structured stdout', () => {
+  const parsed = parseCodexCliResult({ status: 1, stdout: `${JSON.stringify({ type: 'error', message: 'bad' })}\n${JSON.stringify({ type: 'turn.completed' })}\n`, stderr: '' });
+  assert.equal(parsed.ok, false);
+});
+
+test('Codex spawn args carry server model, workspace cwd, read-only sandbox, and final-output file', () => {
+  const workspace = path.join(root, 'workspace-a');
+  fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
+  const packet = path.join(workspace, '.hermes-task-packets', 'task-1.json');
+  fs.writeFileSync(packet, '{}');
+  let observed;
+  const result = runCodexCliPacket(packet, {
+    workspaceRoot: workspace,
+    model: 'MODEL_A',
+    spawnImpl: (_cmd, args, options) => {
+      observed = { args, options };
+      const final = args[args.indexOf('--output-last-message') + 1];
+      fs.writeFileSync(final, JSON.stringify({ artifacts: [], summary: 'ok' }));
+      return { status: 0, stdout: jsonlFinal(), stderr: '' };
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(observed.options.cwd, workspace);
+  assert.deepEqual(observed.args.slice(0, 2), ['exec', '--json']);
+  assert.equal(observed.args[observed.args.indexOf('--model') + 1], 'MODEL_A');
+  assert.equal(observed.args[observed.args.indexOf('--cd') + 1], workspace);
+  assert.equal(observed.args[observed.args.indexOf('--sandbox') + 1], 'read-only');
+});
+
+test('workspace cwd follows the selected workspace and never the service checkout', () => {
+  for (const name of ['workspace-a', 'workspace-b']) {
+    const workspace = path.join(root, name);
+    fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
+    const packet = path.join(workspace, '.hermes-task-packets', `${name}.json`);
+    fs.writeFileSync(packet, '{}');
+    let cwd;
+    runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', spawnImpl: (_cmd, args, options) => {
+      cwd = options.cwd;
+      fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+      return { status: 0, stdout: jsonlFinal(), stderr: '' };
+    } });
+    assert.equal(cwd, workspace);
+    assert.notEqual(cwd, '/opt/blackspire');
+  }
+});
+
+test('provider direct workspace mutation is rejected before artifact application', () => {
+  const workspace = path.join(root, 'mutation-workspace');
+  fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, 'tracked.txt'), 'before');
+  const packet = path.join(workspace, '.hermes-task-packets', 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', spawnImpl: (_cmd, args) => {
+    fs.writeFileSync(path.join(workspace, 'tracked.txt'), 'after');
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    return { status: 0, stdout: jsonlFinal(), stderr: '' };
+  } });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
+test('subscription accounting persists null cost and survives a DB reopen', () => {
+  const task = createTask({ workspaceId: 'w', request: 'status', idempotencyKey: 'accounting-1' });
+  recordUsage(task.id, { provider: 'codex', mode: 'cli', latencyMs: 1, inputTokens: 1, outputTokens: 1, costCents: null, monetaryCostState: 'subscription_unmetered' });
+  assert.equal(monetarySpend(task.id), 0);
+  closeDb();
+  const row = taskRecords(task.id).usage.at(-1);
+  assert.equal(row.cost_cents, null);
+  assert.equal(row.monetary_cost_state, 'subscription_unmetered');
+});
+
+test('unknown metered cost cannot be interpreted as zero', () => {
+  const task = createTask({ workspaceId: 'w', request: 'status', idempotencyKey: 'accounting-2' });
+  assert.throws(() => recordUsage(task.id, { provider: 'openai', mode: 'api', latencyMs: 1, costCents: null, monetaryCostState: 'metered' }), /verified cost/);
+});
+
+test.after(() => {
+  closeDb();
+  fs.rmSync(root, { recursive: true, force: true });
+});

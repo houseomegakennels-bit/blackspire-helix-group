@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, taskRecords, recordTaskEvent } from '../task-engine/tasks.js';
+import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
@@ -198,7 +198,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     const result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline });
     if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt }); return { ok: false, error: 'cancelled' }; }
     last = result;
-    recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket: { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath }, error: result.error, latencyMs: Date.now() - started });
+    recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket: { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } }, error: result.error, latencyMs: Date.now() - started });
     recordUsage(task.id, result.usage || { provider: result.provider, mode: result.mode });
     if (result.ok) return result;
     transition(task.id, 'running', { retry_count: attempt });
@@ -219,8 +219,7 @@ function allowedProviders(workspace) {
 
 function remainingBudget(taskId) {
   const task = getTask(taskId);
-  const spent = taskRecords(taskId).usage.reduce((sum, row) => sum + Number(row.cost_cents || 0), 0);
-  return Number(task?.budget_cents || 0) - spent;
+  return Number(task?.budget_cents || 0) - monetarySpend(taskId);
 }
 
 function applyProviderEdits(task, workspace, providerResult) {

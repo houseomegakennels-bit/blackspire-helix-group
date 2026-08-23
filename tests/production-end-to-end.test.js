@@ -85,8 +85,19 @@ case "\${1:-}" in
     fi
     ;;
   exec)
-    printf '{"argv":["exec","--json"]}\\n' >> "${codexLog}"
-    printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n'
+    final=""
+    for ((i=1; i<=$#; i++)); do
+      if [[ "\${!i}" == "--output-last-message" ]]; then
+        j=$((i+1))
+        final="\${!j}"
+      fi
+    done
+    printf '{"argv":%s,"cwd":%s}\\n' "$(node -e 'console.log(JSON.stringify(process.argv.slice(1)))' "$@")" "$(node -e 'console.log(JSON.stringify(process.cwd()))')" >> "${codexLog}"
+    printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n' > "$final"
+    printf '{"type":"thread.started","thread_id":"fixture"}\\n'
+    printf '{"type":"turn.started"}\\n'
+    printf '{"type":"item.completed","item":{"type":"message","message":{"content":[{"text":"progress"}]}}}\\n'
+    printf '{"type":"turn.completed"}\\n'
     ;;
   *)
     exit 64
@@ -156,6 +167,9 @@ test('the worker claims the queued task and reaches the real configured Codex CL
 
 test('the provider record carries the server-chosen model, not a request-supplied one', () => {
   assert.deepEqual(codexInvocations[0].argv.slice(0, 2), ['exec', '--json']);
+  assert.equal(codexInvocations[0].argv[codexInvocations[0].argv.indexOf('--model') + 1], 'server-authoritative-model');
+  assert.equal(codexInvocations[0].argv[codexInvocations[0].argv.indexOf('--sandbox') + 1], 'read-only');
+  assert.equal(codexInvocations[0].cwd, repo);
   const task = getTask(taskId);
   assert.equal(task.status, 'completed', task.error || 'task did not complete');
   const executed = JSON.parse(taskRecords(taskId).providerAttempts.at(-1).response_packet);
@@ -187,6 +201,8 @@ test('the durable event and usage trail records the executed provider and model'
   const usage = records.usage.at(-1);
   assert.equal(usage.provider, 'codex');
   assert.equal(usage.mode, 'cli');
+  assert.equal(usage.cost_cents, null);
+  assert.equal(usage.monetary_cost_state, 'subscription_unmetered');
   // The executed model is recorded on the provider attempt, which is the canonical
   // "what actually ran" record; provider_usage stores only provider/mode/tokens.
   const executed = JSON.parse(records.providerAttempts.at(-1).response_packet);

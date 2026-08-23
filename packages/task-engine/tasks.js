@@ -1,5 +1,5 @@
 import { id, now, redact } from '../shared/util.js';
-import { query, execSql, esc } from './db.js';
+import { query, execSql, esc, run } from './db.js';
 
 export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
@@ -105,11 +105,17 @@ export function updateSubtask(taskId, stage, status, details = {}) {
 }
 
 export function recordProviderAttempt(taskId, attempt) {
-  execSql(`INSERT INTO provider_attempts VALUES (${esc(id('attempt'))},${esc(taskId)},${esc(attempt.provider)},${esc(attempt.mode)},${esc(attempt.status)},${esc(redact(JSON.stringify(attempt.requestPacket || {})))},${esc(redact(JSON.stringify(attempt.responsePacket || {})))},${esc(redact(attempt.error || ''))},${Number(attempt.latencyMs || 0)},${esc(now())});`);
+  const responsePacket = { ...(attempt.responsePacket || {}), accounting: attempt.accounting || attempt.responsePacket?.accounting || null };
+  execSql(`INSERT INTO provider_attempts VALUES (${esc(id('attempt'))},${esc(taskId)},${esc(attempt.provider)},${esc(attempt.mode)},${esc(attempt.status)},${esc(redact(JSON.stringify(attempt.requestPacket || {})))},${esc(redact(JSON.stringify(responsePacket)))},${esc(redact(attempt.error || ''))},${Number(attempt.latencyMs || 0)},${esc(now())});`);
 }
 
 export function recordUsage(taskId, usage) {
-  execSql(`INSERT INTO provider_usage VALUES (${esc(id('usage'))},${esc(taskId)},${esc(usage.provider)},${esc(usage.mode)},${Number(usage.latencyMs || 0)},${Number(usage.inputTokens || 0)},${Number(usage.outputTokens || 0)},${Number(usage.costCents || 0)},${esc(now())});`);
+  const state = normalizeAccountingState(usage.monetaryCostState, usage.costCents);
+  const cost = Number.isFinite(Number(usage.costCents)) && usage.costCents !== null && usage.costCents !== undefined ? Number(usage.costCents) : null;
+  if (state === 'metered' && cost === null) throw new Error('metered provider usage requires a verified cost_cents value');
+  run('INSERT INTO provider_usage(id,task_id,provider,mode,latency_ms,input_tokens,output_tokens,cost_cents,created_at,monetary_cost_state,accounting_metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?)', [
+    id('usage'), taskId, usage.provider, usage.mode, Number(usage.latencyMs || 0), Number(usage.inputTokens || 0), Number(usage.outputTokens || 0), cost, now(), state, redact(JSON.stringify(usage.accountingMetadata || {})),
+  ]);
 }
 
 export function recordChangedFile(taskId, file) {
@@ -180,4 +186,29 @@ export function setFlag(key, value) {
 
 export function getFlag(key) {
   return query(`SELECT value FROM system_flags WHERE key=${esc(key)};`)[0]?.value;
+}
+
+export function monetarySpend(taskId) {
+  return taskRecords(taskId).usage.reduce((sum, row) => {
+    const state = row.monetary_cost_state || legacyAccountingState(row);
+    if (state === 'metered') {
+      if (row.cost_cents === null || row.cost_cents === undefined || row.cost_cents === '') throw new Error('metered provider usage has unknown cost');
+      return sum + Number(row.cost_cents);
+    }
+    if (state === 'subscription_unmetered') return sum;
+    if (state === 'metered_cost_unavailable') throw new Error('metered provider usage has unavailable cost');
+    throw new Error(`unknown provider accounting state: ${state || 'missing'}`);
+  }, 0);
+}
+
+function normalizeAccountingState(state, costCents) {
+  const value = state || (costCents === null || costCents === undefined ? 'metered_cost_unavailable' : 'metered');
+  if (['metered', 'subscription_unmetered', 'metered_cost_unavailable'].includes(value)) return value;
+  return 'metered_cost_unavailable';
+}
+
+function legacyAccountingState(row) {
+  if (row.provider === 'mock' || row.provider === 'manual') return 'metered';
+  if (row.provider === 'codex' && row.mode === 'cli' && row.cost_cents === null) return 'subscription_unmetered';
+  return row.cost_cents === null ? 'metered_cost_unavailable' : 'metered';
 }

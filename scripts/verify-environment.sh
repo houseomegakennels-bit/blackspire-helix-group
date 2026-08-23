@@ -86,8 +86,7 @@ case "$mode" in
             codex --version >/dev/null 2>&1 || fail "allowlisted provider codex requires an executable Codex CLI"
             codex doctor --json >/dev/null 2>&1 || fail "allowlisted provider codex requires authenticated Codex CLI"
             ;;
-          # The Claude Code CLI authenticates itself; there is no credential to inject here.
-          claudeCode) ;;
+          claudeCode) fail "allowlisted provider claudeCode is disabled until production accounting and authentication are independently reviewed" ;;
           *) fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist contains an unknown provider: $entry" ;;
         esac
       done
