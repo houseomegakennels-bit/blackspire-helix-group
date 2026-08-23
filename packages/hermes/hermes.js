@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, prepareCodexDispatch, finishCodexDispatch, finishCodexDispatchWithUsage, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
+import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, prepareCodexDispatch, finishCodexDispatchWithUsage, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
@@ -216,7 +216,12 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     if (selected.provider === 'codex') {
       codexDispatch = prepareCodexDispatch(task.id, { mode: selected.mode, model: selected.model, requestPacket });
       if (!codexDispatch.owned) {
-        if (['dispatching', 'started'].includes(codexDispatch.attempt.status)) finishCodexDispatch(task.id, 'outcome_unknown', { attemptId: codexDispatch.attempt.id, responsePacket: { model: selected.model, accounting: { monetaryCostState: 'subscription_unmetered', costCents: null } }, error: 'Prior Codex dispatch outcome is unknown after task recovery' });
+        if (['dispatching', 'started'].includes(codexDispatch.attempt.status)) finishCodexDispatchWithUsage(task.id, 'outcome_unknown', {
+          attemptId: codexDispatch.attempt.id,
+          responsePacket: { model: selected.model, accounting: { monetaryCostState: 'subscription_unmetered', costCents: null } },
+          error: 'Prior Codex dispatch outcome is unknown after task recovery',
+          usage: { provider: 'codex', mode: codexDispatch.attempt.mode, monetaryCostState: 'subscription_unmetered', costCents: null },
+        });
         recordEvidence(task.id, 'codex_dispatch_replay_prevented', { attemptId: codexDispatch.attempt.id, priorStatus: codexDispatch.attempt.status });
         return { ok: false, error: 'Codex dispatch outcome unknown; operator intervention required; automatic replay refused' };
       }

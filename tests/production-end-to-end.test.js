@@ -308,6 +308,10 @@ test('a stale-recovered task with a Codex dispatch marker is not invoked again',
   assert.equal(getTask(body.task.id).status, 'failed');
   assert.match(getTask(body.task.id).error, /outcome unknown.*automatic replay refused/i);
   assert.equal(taskRecords(body.task.id).providerAttempts.find((row) => row.provider === 'codex').status, 'outcome_unknown');
+  const recoveryUsage = taskRecords(body.task.id).usage;
+  assert.equal(recoveryUsage.length, 1, 'outcome_unknown recovery must atomically persist accounting evidence');
+  assert.equal(recoveryUsage[0].attempt_id, taskRecords(body.task.id).providerAttempts.find((row) => row.provider === 'codex').id);
+  assert.equal(recoveryUsage[0].cost_cents, null);
 });
 
 test.after(() => {
