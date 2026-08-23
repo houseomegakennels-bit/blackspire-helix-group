@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
+import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, prepareCodexDispatch, finishCodexDispatch, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
@@ -54,7 +54,10 @@ export async function processTask(task) {
     const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: hermesRequest.deadline, phase: 'hermes' });
     recordEvidence(task.id, hermesGuard.ok ? 'hermes_selection' : 'hermes_prevented', { allowed: hermesGuard.ok, reason: hermesGuard.reason || 'credential-free Hermes permitted', requestId: hermesRequest.requestId });
     if (!hermesGuard.ok) return transition(task.id, hermesGuard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: hermesGuard.reason });
-    const hermesResponse = await dispatchHermes(hermesRequest, { allowedProviders: allowedProviders(workspace) });
+    const hermesResponse = await dispatchHermes(hermesRequest, {
+      allowedProviders: allowedProviders(workspace),
+      shouldCancel: () => getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled',
+    });
 
     transition(task.id, 'running', { current_stage: 'inspect_workspace' });
     const context = await stage(task.id, 'inspect_workspace', () => inspectWorkspace(workspace));
@@ -202,10 +205,22 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     if (!guard.ok) return { ok: false, error: guard.reason };
     const requestPacket = { taskId: task.id, request: hermesRequest.objective, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference };
     const started = Date.now();
+    let codexDispatch = null;
+    if (selected.provider === 'codex') {
+      codexDispatch = prepareCodexDispatch(task.id, { mode: selected.mode, model: selected.model, requestPacket });
+      if (!codexDispatch.owned) {
+        if (['dispatching', 'started'].includes(codexDispatch.attempt.status)) finishCodexDispatch(task.id, 'outcome_unknown', { attemptId: codexDispatch.attempt.id, responsePacket: { model: selected.model, accounting: { monetaryCostState: 'subscription_unmetered', costCents: null } }, error: 'Prior Codex dispatch outcome is unknown after task recovery' });
+        recordEvidence(task.id, 'codex_dispatch_replay_prevented', { attemptId: codexDispatch.attempt.id, priorStatus: codexDispatch.attempt.status });
+        return { ok: false, error: 'Codex dispatch outcome unknown; operator intervention required; automatic replay refused' };
+      }
+      recordEvidence(task.id, 'codex_dispatch_started', { attemptId: codexDispatch.attempt.id, provider: 'codex', mode: selected.mode, attempt, idempotencyKey: hermesRequest.idempotencyKey });
+    }
     const result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline, shouldCancel: () => cancellationRequested(task.id) });
     if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt }); return { ok: false, error: 'cancelled' }; }
     last = result;
-    recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket: { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } }, error: result.error, latencyMs: Date.now() - started });
+    const responsePacket = { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } };
+    if (selected.provider === 'codex') finishCodexDispatch(task.id, result.ok ? 'completed' : 'failed', { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started });
+    else recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
     recordUsage(task.id, result.usage || { provider: result.provider, mode: result.mode });
     if (result.ok) return result;
     transition(task.id, 'running', { retry_count: attempt });

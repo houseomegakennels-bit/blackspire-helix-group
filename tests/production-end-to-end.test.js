@@ -48,7 +48,7 @@ prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { start } = await import('../apps/api/server.js');
 const { startWorker } = await import('../apps/worker/worker.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
-const { getTask, taskRecords } = await import('../packages/task-engine/tasks.js');
+const { getTask, recordProviderAttempt, taskRecords } = await import('../packages/task-engine/tasks.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
 
 const ADMIN = { authorization: `Bearer ${process.env.COMMAND_ADMIN_TOKEN}`, 'content-type': 'application/json' };
@@ -200,6 +200,7 @@ test('the task completes and its persisted record names the real provider, never
   assert.equal(task.status, 'completed', task.error || 'task did not complete');
   const records = taskRecords(taskId);
   const attempt = records.providerAttempts.at(-1);
+  assert.equal(records.providerAttempts.filter((row) => row.provider === 'codex').length, 1, 'Codex uses one durable attempt lifecycle row');
   assert.equal(attempt.provider, 'codex');
   assert.equal(attempt.mode, 'cli');
   assert.equal(attempt.status, 'completed');
@@ -256,6 +257,32 @@ test('a failed production Codex invocation is not retried for the same task', as
   const after = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
   assert.equal(after, before + 1, 'production Codex must not retry a failed subscription invocation');
   assert.equal(getTask(body.task.id).status, 'failed');
+});
+
+test('a stale-recovered task with a Codex dispatch marker is not invoked again', async () => {
+  const before = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
+  const { status, body } = await submit('recover stale codex dispatch marker', 'production-e2e-stale-marker');
+  assert.equal(status, 202);
+  const staleTask = getTask(body.task.id);
+  recordProviderAttempt(body.task.id, {
+    provider: 'codex',
+    mode: 'cli',
+    status: 'started',
+    requestPacket: {
+      taskId: body.task.id,
+      request: 'recover stale codex dispatch marker',
+      attempt: 1,
+      idempotencyKey: staleTask.idempotency_key,
+    },
+    responsePacket: { accounting: { monetaryCostState: 'subscription_unmetered', costCents: null } },
+    latencyMs: 0,
+  });
+  await startWorker({ once: true });
+  const after = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
+  assert.equal(after, before, 'stale recovery must not re-dispatch a task after a Codex start marker');
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /outcome unknown.*automatic replay refused/i);
+  assert.equal(taskRecords(body.task.id).providerAttempts.find((row) => row.provider === 'codex').status, 'outcome_unknown');
 });
 
 test.after(() => {

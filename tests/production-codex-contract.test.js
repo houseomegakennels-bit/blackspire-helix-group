@@ -12,8 +12,8 @@ process.env.BLACKSPIRE_DB_PATH = path.join(root, 'test.sqlite');
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
-const { activeModes, parseCodexCliResult, runCodexCliPacket } = await import('../packages/providers/providers.js');
-const { createTask, recordUsage, taskRecords, monetarySpend } = await import('../packages/task-engine/tasks.js');
+const { activeModes, codexCliAvailable, resolveProviderAvailability, parseCodexCliResult, runCodexCliPacket } = await import('../packages/providers/providers.js');
+const { createTask, prepareCodexDispatch, finishCodexDispatch, recordUsage, taskRecords, monetarySpend } = await import('../packages/task-engine/tasks.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
 
 const bin = path.join(root, 'bin');
@@ -68,7 +68,7 @@ test('nonzero Codex process result is refused even with structured stdout', () =
   assert.equal(parsed.ok, false);
 });
 
-test('Codex availability probes use the sanitized child environment', () => {
+test('Codex availability probes use the sanitized child environment', async () => {
   const prior = {
     COMMAND_ADMIN_TOKEN: process.env.COMMAND_ADMIN_TOKEN,
     SESSION_SECRET: process.env.SESSION_SECRET,
@@ -80,12 +80,100 @@ test('Codex availability probes use the sanitized child environment', () => {
   process.env.GITHUB_TOKEN = 'secret-github';
   process.env.OPENAI_API_KEY = 'secret-openai';
   try {
+    assert.equal(await codexCliAvailable(), true);
     assert.equal(activeModes().codex, 'cli');
   } finally {
     for (const [key, value] of Object.entries(prior)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
   }
+});
+
+test('production provider availability does not probe disabled Claude Code', async () => {
+  const prior = {
+    BLACKSPIRE_RUNTIME_MODE: process.env.BLACKSPIRE_RUNTIME_MODE,
+    COMMAND_ADMIN_TOKEN: process.env.COMMAND_ADMIN_TOKEN,
+    PATH: process.env.PATH,
+  };
+  const probeBin = path.join(root, 'no-claude-probe-bin');
+  const marker = path.join(root, 'claude-probed');
+  fs.mkdirSync(probeBin, { recursive: true });
+  fs.writeFileSync(path.join(probeBin, 'codex'), fs.readFileSync(path.join(bin, 'codex')));
+  fs.chmodSync(path.join(probeBin, 'codex'), 0o755);
+  fs.writeFileSync(path.join(probeBin, 'claude'), `#!/usr/bin/env bash\nprintf '%s' "\${COMMAND_ADMIN_TOKEN:-missing}" > ${JSON.stringify(marker)}\nexit 0\n`);
+  fs.chmodSync(path.join(probeBin, 'claude'), 0o755);
+  process.env.BLACKSPIRE_RUNTIME_MODE = 'production';
+  process.env.COMMAND_ADMIN_TOKEN = 'secret-admin';
+  process.env.PATH = `${probeBin}${path.delimiter}${prior.PATH}`;
+  try {
+    const modes = await resolveProviderAvailability(['codex']);
+    assert.equal(modes.codex, 'cli');
+    assert.equal(Object.hasOwn(modes, 'claudeCode'), false, 'ineligible providers must not even enter the probe result');
+    assert.equal(fs.existsSync(marker), false, 'production availability must not spawn disabled Claude Code');
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});
+
+test('Codex availability probes are bounded when the CLI hangs', async () => {
+  const priorPath = process.env.PATH;
+  const hangingBin = path.join(root, 'hanging-codex-bin');
+  fs.mkdirSync(hangingBin, { recursive: true });
+  fs.writeFileSync(path.join(hangingBin, 'codex'), '#!/usr/bin/env bash\nsleep 10\n');
+  fs.chmodSync(path.join(hangingBin, 'codex'), 0o755);
+  process.env.PATH = `${hangingBin}${path.delimiter}${priorPath}`;
+  const started = Date.now();
+  try {
+    assert.equal(await codexCliAvailable(), false);
+    assert.ok(Date.now() - started < 5_000, 'hanging Codex probe must be bounded');
+  } finally {
+    process.env.PATH = priorPath;
+  }
+});
+
+function controlledProbe({ hangDoctor = false } = {}) {
+  const calls = [];
+  const spawnImpl = (_cmd, args, options) => {
+    calls.push({ args, options });
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.pid = null;
+    child.kill = () => { queueMicrotask(() => child.emit('close', null, 'SIGTERM')); };
+    queueMicrotask(() => {
+      if (args[0] === '--version') {
+        child.stdout.end('codex-cli test\n'); child.stderr.end(); child.emit('close', 0, null);
+      } else if (!hangDoctor) {
+        child.stdout.end('{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\n'); child.stderr.end(); child.emit('close', 0, null);
+      }
+    });
+    return child;
+  };
+  return { calls, spawnImpl };
+}
+
+test('Codex doctor hangs are bounded and fail closed', async () => {
+  const probe = controlledProbe({ hangDoctor: true });
+  assert.equal(await codexCliAvailable({ spawnImpl: probe.spawnImpl, timeoutMs: 20 }), false);
+  assert.deepEqual(probe.calls.map((call) => call.args[0]), ['--version', 'doctor']);
+});
+
+test('Codex capability verification observes cancellation and deadline controls', async () => {
+  const cancelled = controlledProbe({ hangDoctor: true });
+  assert.equal(await codexCliAvailable({ spawnImpl: cancelled.spawnImpl, timeoutMs: 5_000, shouldCancel: () => true }), false);
+  const deadline = controlledProbe({ hangDoctor: true });
+  assert.equal(await codexCliAvailable({ spawnImpl: deadline.spawnImpl, timeoutMs: 5_000, deadline: new Date(Date.now() + 10).toISOString() }), false);
+});
+
+test('capability verification is bound to CODEX_HOME and production config fingerprint', async () => {
+  const verified = controlledProbe();
+  assert.equal(await codexCliAvailable({ spawnImpl: verified.spawnImpl }), true);
+  assert.equal(activeModes().codex, 'cli');
+  const prior = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = path.join(root, 'different-codex-home');
+  try { assert.equal(activeModes().codex, 'capability-unknown'); } finally { process.env.CODEX_HOME = prior; }
 });
 
 function fakeChild(run) {
@@ -238,6 +326,30 @@ test('subscription accounting persists null cost and survives a DB reopen', () =
 test('unknown metered cost cannot be interpreted as zero', () => {
   const task = createTask({ workspaceId: 'w', request: 'status', idempotencyKey: 'accounting-2' });
   assert.throws(() => recordUsage(task.id, { provider: 'openai', mode: 'api', latencyMs: 1, costCents: null, monetaryCostState: 'metered' }), /verified cost/);
+});
+
+test('Codex dispatch marker is durable, unique, and transitions the same attempt', () => {
+  const task = createTask({ workspaceId: 'dispatch-test', request: 'inspect', idempotencyKey: 'dispatch-marker-test' });
+  const packet = { taskId: task.id, idempotencyKey: task.idempotency_key };
+  const first = prepareCodexDispatch(task.id, { mode: 'cli', model: 'server-model', requestPacket: packet });
+  const concurrent = prepareCodexDispatch(task.id, { mode: 'cli', model: 'server-model', requestPacket: packet });
+  assert.equal(first.owned, true);
+  assert.equal(first.attempt.status, 'dispatching');
+  assert.equal(concurrent.owned, false);
+  assert.equal(concurrent.attempt.id, first.attempt.id);
+  closeDb();
+  assert.equal(taskRecords(task.id).providerAttempts[0].status, 'dispatching');
+  const terminal = finishCodexDispatch(task.id, 'completed', { attemptId: first.attempt.id, responsePacket: { model: 'server-model' } });
+  assert.equal(terminal.id, first.attempt.id);
+  assert.equal(terminal.status, 'completed');
+  assert.equal(taskRecords(task.id).providerAttempts.length, 1);
+});
+
+test('Hermes commits the Codex dispatch marker before the child invocation can begin', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'packages/hermes/hermes.js'), 'utf8');
+  const marker = source.indexOf('prepareCodexDispatch(task.id');
+  const child = source.indexOf('await executeProviderRequest(', marker);
+  assert.ok(marker >= 0 && child > marker, 'durable marker must remain before provider child invocation');
 });
 
 test.after(() => {

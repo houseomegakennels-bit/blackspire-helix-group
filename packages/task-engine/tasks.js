@@ -1,5 +1,5 @@
 import { id, now, redact } from '../shared/util.js';
-import { query, execSql, esc, run } from './db.js';
+import { query, execSql, esc, run, get, transaction } from './db.js';
 
 export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
@@ -107,6 +107,28 @@ export function updateSubtask(taskId, stage, status, details = {}) {
 export function recordProviderAttempt(taskId, attempt) {
   const responsePacket = { ...(attempt.responsePacket || {}), accounting: attempt.accounting || attempt.responsePacket?.accounting || null };
   execSql(`INSERT INTO provider_attempts VALUES (${esc(id('attempt'))},${esc(taskId)},${esc(attempt.provider)},${esc(attempt.mode)},${esc(attempt.status)},${esc(redact(JSON.stringify(attempt.requestPacket || {})))},${esc(redact(JSON.stringify(responsePacket)))},${esc(redact(attempt.error || ''))},${Number(attempt.latencyMs || 0)},${esc(now())});`);
+}
+
+export function prepareCodexDispatch(taskId, attempt) {
+  const attemptId = `codex_dispatch_${taskId}`;
+  const responsePacket = { model: attempt.model || null, accounting: { monetaryCostState: 'subscription_unmetered', costCents: null } };
+  return transaction(() => {
+    const existing = get('SELECT * FROM provider_attempts WHERE id=? OR (task_id=? AND provider=\'codex\') ORDER BY created_at LIMIT 1', [attemptId, taskId]);
+    if (existing) return { owned: false, attempt: existing };
+    run('INSERT INTO provider_attempts(id,task_id,provider,mode,status,request_packet,response_packet,error,latency_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)', [
+      attemptId, taskId, 'codex', attempt.mode, 'dispatching', redact(JSON.stringify(attempt.requestPacket || {})), redact(JSON.stringify(responsePacket)), '', 0, now(),
+    ]);
+    return { owned: true, attempt: get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]) };
+  });
+}
+
+export function finishCodexDispatch(taskId, status, { attemptId = `codex_dispatch_${taskId}`, responsePacket = {}, error = '', latencyMs = 0 } = {}) {
+  if (!['completed', 'failed', 'outcome_unknown'].includes(status)) throw new Error('invalid Codex dispatch terminal status');
+  const result = run('UPDATE provider_attempts SET status=?,response_packet=?,error=?,latency_ms=? WHERE id=? AND status IN (\'dispatching\',\'started\')', [
+    status, redact(JSON.stringify(responsePacket)), redact(error), Number(latencyMs || 0), attemptId,
+  ]);
+  if (Number(result.changes) !== 1) throw new Error('Codex dispatch attempt is missing or already terminal');
+  return get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
 }
 
 export function recordUsage(taskId, usage) {

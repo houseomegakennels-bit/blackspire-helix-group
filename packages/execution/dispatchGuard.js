@@ -39,7 +39,12 @@ export function guardDispatch({ task: suppliedTask, workspace, actorId, channel,
   if (phase === 'provider') {
     const configured = providerConfiguration(selected, { allowedProviders });
     if (!configured.ok) return deny(configured.reason);
-    const duplicate = taskRecords(task.id).providerAttempts.some((row) => row.status === 'completed' && JSON.parse(row.request_packet || '{}').idempotencyKey === idempotencyKey);
+    const duplicate = taskRecords(task.id).providerAttempts.some((row) => {
+      const packet = JSON.parse(row.request_packet || '{}');
+      if (packet.idempotencyKey !== idempotencyKey) return false;
+      if (selected.provider === 'codex' && row.provider === 'codex') return false;
+      return row.status === 'completed';
+    });
     if (duplicate) return deny('duplicate replay');
   }
   return { ok: true, remainingBudgetCents: Number(task.budget_cents) - spent };

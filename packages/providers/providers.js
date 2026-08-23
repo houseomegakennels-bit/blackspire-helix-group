@@ -5,19 +5,25 @@ import path from 'node:path';
 import { id, redact } from '../shared/util.js';
 
 const CODEX_CLI_MAX_STREAM_BYTES = 1_000_000;
+const CODEX_CLI_PROBE_TIMEOUT_MS = 2_000;
+let codexCapability = null;
 
-export function codexCliAvailable() {
-  const env = sanitizedCodexEnvironment(process.env);
-  const version = spawnSync('codex', ['--version'], { encoding: 'utf8', env });
-  if (version.status !== 0) return false;
-  const doctor = spawnSync('codex', ['doctor', '--json'], { encoding: 'utf8', env, timeout: 30_000 });
-  if (doctor.status !== 0) return false;
+export async function codexCliAvailable({ env = process.env, deadline = null, shouldCancel = null, spawnImpl = spawn, timeoutMs = CODEX_CLI_PROBE_TIMEOUT_MS } = {}) {
+  const fingerprint = codexCapabilityFingerprint(env);
+  const version = await runBoundedProbe('codex', ['--version'], { env: sanitizedCodexEnvironment(env), deadline, shouldCancel, spawnImpl, timeoutMs });
+  if (version.status !== 0) { codexCapability = { fingerprint, state: 'unavailable', checkedAt: Date.now() }; return false; }
+  const doctor = await runBoundedProbe('codex', ['doctor', '--json'], { env: sanitizedCodexEnvironment(env), deadline, shouldCancel, spawnImpl, timeoutMs });
+  if (doctor.status !== 0) { codexCapability = { fingerprint, state: 'unavailable', checkedAt: Date.now() }; return false; }
   try {
     const report = JSON.parse(doctor.stdout || '{}');
     const auth = report?.checks?.['auth.credentials'];
-    return auth?.status === 'ok' && /auth is configured/i.test(auth?.summary || '');
+    const available = auth?.status === 'ok' && /auth is configured/i.test(auth?.summary || '');
+    codexCapability = { fingerprint, state: available ? 'verified' : 'unavailable', checkedAt: Date.now() };
+    return available;
   } catch {
-    return /auth is configured/i.test(doctor.stdout);
+    const available = /auth is configured/i.test(doctor.stdout);
+    codexCapability = { fingerprint, state: available ? 'verified' : 'unavailable', checkedAt: Date.now() };
+    return available;
   }
 }
 
@@ -25,12 +31,23 @@ export function activeModes() {
   if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && process.env.BLACKSPIRE_PROVIDER_MODE === 'manual') {
     return { openai: 'disabled-by-profile', anthropic: 'disabled-by-profile', codex: 'disabled-by-profile', claudeCode: 'disabled-by-profile' };
   }
+  const capabilityVerified = codexCapability?.fingerprint === codexCapabilityFingerprint(process.env) && codexCapability.state === 'verified';
   return {
     openai: process.env.OPENAI_API_KEY ? 'api' : 'unconfigured',
     anthropic: process.env.ANTHROPIC_API_KEY ? 'api' : 'unconfigured',
-    codex: (process.env.CODEX_API_ENDPOINT || process.env.CODEX_API_KEY) ? 'direct-api-unimplemented' : (codexCliAvailable() ? 'cli' : 'manual-handoff'),
-    claudeCode: spawnSync('claude', ['--version'], { encoding: 'utf8' }).status === 0 ? 'cli' : 'unavailable',
+    codex: (process.env.CODEX_API_ENDPOINT || process.env.CODEX_API_KEY) ? 'direct-api-unimplemented' : (capabilityVerified ? 'cli' : 'capability-unknown'),
+    claudeCode: process.env.BLACKSPIRE_RUNTIME_MODE === 'production' ? 'disabled-by-profile' : 'capability-unknown',
   };
+}
+
+export async function resolveProviderAvailability(candidates, options = {}) {
+  const modes = {};
+  for (const provider of candidates) {
+    if (provider === 'codex') modes.codex = await codexCliAvailable(options) ? 'cli' : 'unavailable';
+    else modes[provider] = 'disabled-by-profile';
+    if (modes[provider] === 'cli') break;
+  }
+  return modes;
 }
 
 export function selectProvider(policy = {}, { requested = null, model = null } = {}) {
@@ -117,8 +134,6 @@ export function runClaudeCodePacket(packetPath) {
 }
 
 export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null } = {}) {
-  const available = spawnSync('codex', ['--version'], { encoding: 'utf8', env: sanitizedCodexEnvironment(process.env) }).status === 0;
-  if (!available) return { ok: false, mode: 'unavailable', error: 'Codex CLI is not installed or authenticated', artifacts: [] };
   const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
   const finalPath = path.join(providerRuntimeDir('hermes-codex-results'), `${path.basename(packetPath, '.json')}.codex-final.json`);
   fs.mkdirSync(path.dirname(finalPath), { recursive: true });
@@ -173,7 +188,7 @@ function parseCliResult(provider, mode, result) {
   }
 }
 
-function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = null }) {
+function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = null, env = sanitizedCodexEnvironment(process.env) }) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -193,14 +208,19 @@ function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = 
       resolve({ status, signal, stdout, stderr: stderrText });
     };
     try {
-      child = spawnImpl(command, args, { cwd, env: sanitizedCodexEnvironment(process.env), stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) {
       finish(1, null, String(error?.message || error));
       return;
     }
     const terminate = () => {
-      child.kill?.('SIGTERM');
-      setTimeout(() => child.kill?.('SIGKILL'), 1000).unref?.();
+      if (Number.isInteger(child.pid) && child.pid > 0) {
+        try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill?.('SIGTERM'); }
+        setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill?.('SIGKILL'); } }, 1000).unref?.();
+      } else {
+        child.kill?.('SIGTERM');
+        setTimeout(() => child.kill?.('SIGKILL'), 1000).unref?.();
+      }
     };
     timer = setTimeout(() => {
       timedOut = true;
@@ -253,6 +273,16 @@ function sanitizedCodexEnvironment(source) {
   };
   for (const [key, value] of Object.entries(env)) if (!value) delete env[key];
   return env;
+}
+
+function codexCapabilityFingerprint(env) {
+  return JSON.stringify([env.PATH || '', env.CODEX_HOME || '', env.BLACKSPIRE_RUNTIME_MODE || '', env.BLACKSPIRE_PRODUCTION_EXECUTION || '']);
+}
+
+function runBoundedProbe(command, args, { env, deadline, shouldCancel, spawnImpl, timeoutMs }) {
+  const deadlineMs = deadline ? Date.parse(deadline) - Date.now() : timeoutMs;
+  const bound = Math.max(1, Math.min(timeoutMs, Number.isFinite(deadlineMs) ? deadlineMs : timeoutMs));
+  return runCliChild(spawnImpl, command, args, { cwd: process.cwd(), env, timeoutMs: bound, shouldCancel });
 }
 
 function codexHomeReady(value) {

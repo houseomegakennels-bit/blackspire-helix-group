@@ -44,71 +44,82 @@ const productionEnv = (overrides = {}) => ({
   ...overrides,
 });
 
-test('production Hermes selects the first server-allowlisted provider the workspace also permits', () => {
-  const selection = resolveProductionProvider({
+test('production Hermes selects the first server-allowlisted provider the workspace also permits', async () => {
+  const selection = await resolveProductionProvider({
     env: productionEnv(), allowedProviders: ['codex', 'claudeCode'], availability: availableEverything,
   });
   assert.equal(selection.provider, 'codex');
   assert.equal(selection.mode, 'cli');
 });
 
-test('production Hermes refuses Claude Code until accounting and authentication are reviewed', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production availability receives only jointly permitted supported candidates in server order', async () => {
+  let observed;
+  const selection = await resolveProductionProvider({
+    env: productionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,openai' }),
+    allowedProviders: ['openai', 'codex'],
+    availability: (candidates) => { observed = candidates; return { codex: 'cli' }; },
+  });
+  assert.deepEqual(observed, ['codex']);
+  assert.equal(selection.provider, 'codex');
+});
+
+test('production Hermes refuses Claude Code until accounting and authentication are reviewed', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: 'claudeCode,codex' }),
     allowedProviders: ['codex', 'claudeCode'], availability: availableEverything,
   }), /Claude Code production execution is disabled/);
 });
 
-test('production Hermes takes its model from server configuration only', () => {
-  const selection = resolveProductionProvider({
+test('production Hermes takes its model from server configuration only', async () => {
+  const selection = await resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_PRODUCTION_MODEL: 'gpt-5.1' }),
     allowedProviders: ['codex'], availability: availableEverything,
   });
   assert.equal(selection.model, 'gpt-5.1');
 });
 
-test('production Hermes refuses to run without an explicit server provider allowlist', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes refuses to run without an explicit server provider allowlist', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: '' }),
     allowedProviders: ['codex'], availability: availableEverything,
   }), /explicit server provider allowlist/);
 });
 
-test('production Hermes refuses a mock fallback in the server allowlist', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes refuses a mock fallback in the server allowlist', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: 'mock,openai' }),
     allowedProviders: ['mock', 'codex'], availability: availableEverything,
   }), /must not fall back to the mock provider/);
 });
 
-test('production Hermes refuses to run outside production runtime mode', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes refuses to run outside production runtime mode', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_RUNTIME_MODE: 'mock' }),
     allowedProviders: ['codex'], availability: availableEverything,
   }), /production runtime mode/);
 });
 
-test('production Hermes fails closed when workspace policy permits none of the allowlist', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes fails closed when workspace policy permits none of the allowlist', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv(), allowedProviders: ['anthropic'], availability: availableEverything,
   }), /permitted by both/);
 });
 
-test('production Hermes fails closed when no allowlisted provider is actually available', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes fails closed when no allowlisted provider is actually available', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv(), allowedProviders: ['codex', 'claudeCode'], availability: availableNothing,
-  }), /no configured production provider is available/);
+  }), /no provider is permitted by both|no configured production provider is available/);
 });
 
-test('production Hermes fails closed when Codex is unavailable rather than using Claude Code', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes fails closed when Codex is unavailable rather than using Claude Code', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv(), allowedProviders: ['codex', 'claudeCode'],
     availability: () => ({ ...availableEverything(), codex: 'manual-handoff' }),
   }), /no configured production provider is available/);
 });
 
-test('production Hermes never treats a disabled-by-profile provider as available', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes never treats a disabled-by-profile provider as available', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv(), allowedProviders: ['codex', 'claudeCode'],
     availability: () => ({ codex: 'disabled-by-profile', claudeCode: 'disabled-by-profile' }),
   }), /no configured production provider is available/);
@@ -152,15 +163,15 @@ test('task text cannot change the server-selected production model', async () =>
   assert.equal(response.model, 'server-selected-model');
 });
 
-test('production Hermes refuses metered API providers until cost accounting can enforce the ceiling', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes refuses metered API providers until cost accounting can enforce the ceiling', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: 'openai,anthropic' }),
     allowedProviders: ['openai', 'anthropic'], availability: availableEverything,
-  }), /no configured production provider is available/);
+  }), /no provider is permitted by both|no configured production provider is available/);
 });
 
-test('production Hermes refuses unimplemented Codex direct-api mode', () => {
-  assert.throws(() => resolveProductionProvider({
+test('production Hermes refuses unimplemented Codex direct-api mode', async () => {
+  await assert.rejects(() => resolveProductionProvider({
     env: productionEnv({ BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex' }),
     allowedProviders: ['codex'], availability: () => ({ codex: 'direct-api-unimplemented' }),
   }), /no configured production provider is available/);

@@ -1,5 +1,5 @@
 import { mockHermesResponse, validateHermesRequest, validateHermesResponse } from './contract.js';
-import { activeModes } from '../providers/providers.js';
+import { resolveProviderAvailability } from '../providers/providers.js';
 
 // Provider "modes" that mean the provider cannot actually execute anything.
 // Production selection treats every one of these as unavailable so a
@@ -29,7 +29,7 @@ const PRODUCTION_PROVIDER_MODE = {
  * own provider. Selection is the intersection of both lists, in server order,
  * restricted to providers that are actually available right now.
  */
-export function resolveProductionProvider({ env = process.env, allowedProviders = [], availability = activeModes } = {}) {
+export async function resolveProductionProvider({ env = process.env, allowedProviders = [], availability = resolveProviderAvailability, deadline = null, shouldCancel = null } = {}) {
   if (env.BLACKSPIRE_RUNTIME_MODE !== 'production') throw new Error('production Hermes requires production runtime mode');
 
   const serverAllowlist = String(env.BLACKSPIRE_PRODUCTION_PROVIDERS || '').split(',').map((entry) => entry.trim()).filter(Boolean);
@@ -37,10 +37,10 @@ export function resolveProductionProvider({ env = process.env, allowedProviders 
   if (serverAllowlist.includes('mock')) throw new Error('production Hermes must not fall back to the mock provider');
   if (serverAllowlist.includes('claudeCode')) throw new Error('Claude Code production execution is disabled pending accounting and authentication review');
 
-  const permitted = serverAllowlist.filter((provider) => allowedProviders.includes(provider));
+  const permitted = serverAllowlist.filter((provider) => allowedProviders.includes(provider) && PRODUCTION_PROVIDER_MODE[provider]);
   if (!permitted.length) throw new Error('no provider is permitted by both the server allowlist and workspace policy');
 
-  const modes = availability() || {};
+  const modes = await availability(permitted, { env, deadline, shouldCancel }) || {};
   const provider = permitted.find((candidate) => {
     if (!modes[candidate] || UNUSABLE_PROVIDER_MODES.has(modes[candidate])) return false;
     const requiredMode = PRODUCTION_PROVIDER_MODE[candidate];
@@ -71,12 +71,12 @@ function productionHermesResponse(request, selection) {
   };
 }
 
-export async function dispatchHermes(request, { env = process.env, fetchImpl = fetch, allowedProviders = ['mock'], availability = activeModes } = {}) {
+export async function dispatchHermes(request, { env = process.env, fetchImpl = fetch, allowedProviders = ['mock'], availability = resolveProviderAvailability, shouldCancel = null } = {}) {
   validateHermesRequest(request);
   const mode = env.BLACKSPIRE_HERMES_MODE || 'mock';
   let raw;
   if (mode === 'mock') raw = mockHermesResponse(request);
-  else if (mode === 'production') raw = productionHermesResponse(request, resolveProductionProvider({ env, allowedProviders, availability }));
+  else if (mode === 'production') raw = productionHermesResponse(request, await resolveProductionProvider({ env, allowedProviders, availability, deadline: request.deadline, shouldCancel }));
   else if (mode === 'restricted-test') {
     const endpoint = new URL(env.RESTRICTED_HERMES_URL || '');
     if (!['127.0.0.1','localhost','::1'].includes(endpoint.hostname) || endpoint.protocol !== 'http:') throw new Error('restricted Hermes must be credential-free loopback HTTP');
