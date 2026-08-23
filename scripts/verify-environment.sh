@@ -6,6 +6,12 @@ minimum_node="22.5.0"
 
 fail() { printf 'environment verification failed: %s\n' "$1" >&2; exit 1; }
 has_value() { [[ -n "${!1:-}" ]]; }
+codex_env() {
+  env -u COMMAND_ADMIN_TOKEN -u SESSION_SECRET -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
+    -u CODEX_API_KEY -u CODEX_API_ENDPOINT -u GITHUB_TOKEN -u GH_TOKEN \
+    -u TELEGRAM_BOT_TOKEN -u TELEGRAM_WEBHOOK_SECRET \
+    HOME="${CODEX_HOME}" XDG_CONFIG_HOME="${CODEX_HOME}" XDG_DATA_HOME="${CODEX_HOME}" CODEX_HOME="${CODEX_HOME}" "$@"
+}
 
 # Resolve the interpreter deterministically rather than through PATH. This runs as the systemd
 # ExecStartPre, where PATH would otherwise resolve the distribution's Node 18 and this check would
@@ -82,9 +88,15 @@ case "$mode" in
           codex)
             allowed_codex=true
             { ! has_value CODEX_API_KEY && ! has_value CODEX_API_ENDPOINT; } || fail "Codex direct-api is not implemented; production Codex requires authenticated Codex CLI with no CODEX_API_KEY or CODEX_API_ENDPOINT"
+            [[ -n "${CODEX_HOME:-}" ]] || fail "allowlisted provider codex requires CODEX_HOME outside protected home"
+            [[ "${CODEX_HOME}" = /* ]] || fail "CODEX_HOME must be an absolute path"
+            case "${CODEX_HOME}" in
+              /root|/root/*|/home|/home/*) fail "CODEX_HOME must not be under a protected home directory" ;;
+            esac
+            [[ -d "${CODEX_HOME}" && -r "${CODEX_HOME}" && -w "${CODEX_HOME}" ]] || fail "CODEX_HOME must be an existing readable and writable Codex state directory"
             command -v codex >/dev/null 2>&1 || fail "allowlisted provider codex requires the Codex CLI"
-            codex --version >/dev/null 2>&1 || fail "allowlisted provider codex requires an executable Codex CLI"
-            codex doctor --json >/dev/null 2>&1 || fail "allowlisted provider codex requires authenticated Codex CLI"
+            codex_env codex --version >/dev/null 2>&1 || fail "allowlisted provider codex requires an executable Codex CLI"
+            codex_env codex doctor --json >/dev/null 2>&1 || fail "allowlisted provider codex requires authenticated Codex CLI"
             ;;
           claudeCode) fail "allowlisted provider claudeCode is disabled until production accounting and authentication are independently reviewed" ;;
           *) fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist contains an unknown provider: $entry" ;;

@@ -33,14 +33,19 @@ assert.ok(disposableBase, 'no writable disposable base directory outside /tmp is
 const root = fs.mkdtempSync(path.join(disposableBase, 'blackspire-production-execution-'));
 const dbDir = path.join(root, 'database');
 const workspaceRoot = path.join(root, 'workspace');
+const codexHome = path.join(root, 'codex-home');
 const binDir = path.join(root, 'bin');
 fs.mkdirSync(dbDir, { recursive: true });
 fs.mkdirSync(binDir, { recursive: true });
+fs.mkdirSync(codexHome, { recursive: true });
 fs.mkdirSync(path.join(workspaceRoot, 'apps'), { recursive: true });
 fs.mkdirSync(path.join(workspaceRoot, 'packages'), { recursive: true });
 fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'w', type: 'module' }));
 fs.writeFileSync(path.join(binDir, 'codex'), `#!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
+  exit 66
+fi
 case "\${1:-}" in
   --version) printf 'codex-cli 999.0.0-test\\n' ;;
   doctor) [[ "\${2:-}" == "--json" ]] && printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n' || printf 'auth is configured\\n' ;;
@@ -60,7 +65,7 @@ const childUsername = runningAsRoot
   : os.userInfo().username;
 const spawnOptions = runningAsRoot ? { uid: UNPRIVILEGED_UID, gid: UNPRIVILEGED_UID } : {};
 if (runningAsRoot) {
-  for (const dir of [root, dbDir, workspaceRoot, binDir]) {
+  for (const dir of [root, dbDir, workspaceRoot, codexHome, binDir]) {
     spawnSync('chown', ['-R', `${UNPRIVILEGED_UID}:${UNPRIVILEGED_UID}`, dir]);
     fs.chmodSync(dir, 0o755);
   }
@@ -83,6 +88,7 @@ function baseEnv(overrides = {}) {
     BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_DB_PATH: path.join(dbDir, 'command.sqlite'),
     BLACKSPIRE_WORKSPACE_ROOT: workspaceRoot,
+    CODEX_HOME: codexHome,
     COMMAND_ADMIN_TOKEN: 'x'.repeat(32),
     SESSION_SECRET: 'y'.repeat(40),
     ...overrides,
@@ -184,6 +190,14 @@ test('the opt-in refuses unavailable Codex CLI', () => {
   assert.match(result.stderr, /Codex CLI/);
 });
 
+test('the opt-in requires Codex home outside protected home', () => {
+  for (const value of [undefined, '', '/root/.codex', '/home/blackspire/.codex']) {
+    const result = verify(executionEnv({ CODEX_HOME: value }));
+    assert.notEqual(result.status, 0, `CODEX_HOME ${JSON.stringify(value)} must be refused`);
+    assert.match(result.stderr, /CODEX_HOME/);
+  }
+});
+
 test('the opt-in still refuses a credential that is not for an allowlisted provider', () => {
   const result = verify(executionEnv({ OPENAI_API_KEY: 'operator-supplied-credential-0123456789' }));
   assert.notEqual(result.status, 0, 'an unallowlisted credential must not be loaded into production');
@@ -207,7 +221,7 @@ test('the opt-in does not relax the unrelated production boundaries', () => {
 test('the documented production profile carries the opt-in, disabled, with its required keys', () => {
   const profile = fs.readFileSync('scripts/production-profile.env.example', 'utf8');
   assert.match(profile, /^BLACKSPIRE_PRODUCTION_EXECUTION=disabled$/m, 'the profile ships the opt-in explicitly disabled');
-  for (const key of ['BLACKSPIRE_PRODUCTION_PROVIDERS', 'BLACKSPIRE_PRODUCTION_MODEL']) {
+  for (const key of ['BLACKSPIRE_PRODUCTION_PROVIDERS', 'BLACKSPIRE_PRODUCTION_MODEL', 'CODEX_HOME']) {
     assert.ok(profile.includes(key), `the profile documents ${key}`);
   }
   assert.ok(!/^OPENAI_API_KEY=\S/m.test(profile), 'the profile never commits a provider credential');

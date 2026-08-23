@@ -111,6 +111,27 @@ test('production provider dispatch requires the explicit runtime execution opt-i
   });
 });
 
+test('production Codex dispatch requires a usable non-home CODEX_HOME at runtime', async () => {
+  await withEnv({ BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', CODEX_HOME: undefined }, async () => {
+    const result = await executeProviderRequest({
+      selected: { provider: 'codex', mode: 'cli', model: 'server-authoritative-model' },
+      packet: { taskId: 'codex-home', request: 'status' },
+      workspace: { root_path: '.' },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /CODEX_HOME outside protected home/);
+  });
+  await withEnv({ BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', CODEX_HOME: '/root/.codex' }, async () => {
+    const result = await executeProviderRequest({
+      selected: { provider: 'codex', mode: 'cli', model: 'server-authoritative-model' },
+      packet: { taskId: 'codex-home-root', request: 'status' },
+      workspace: { root_path: '.' },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /CODEX_HOME outside protected home/);
+  });
+});
+
 test('callOpenAI and callAnthropic still refuse to run unconfigured', async () => {
   await withEnv({ OPENAI_API_KEY: undefined }, async () => {
     assert.equal((await callOpenAI({ prompt: 'x' })).ok, false);

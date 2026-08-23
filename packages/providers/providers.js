@@ -7,9 +7,10 @@ import { id, redact } from '../shared/util.js';
 const CODEX_CLI_MAX_STREAM_BYTES = 1_000_000;
 
 export function codexCliAvailable() {
-  const version = spawnSync('codex', ['--version'], { encoding: 'utf8' });
+  const env = sanitizedCodexEnvironment(process.env);
+  const version = spawnSync('codex', ['--version'], { encoding: 'utf8', env });
   if (version.status !== 0) return false;
-  const doctor = spawnSync('codex', ['doctor', '--json'], { encoding: 'utf8', timeout: 30_000 });
+  const doctor = spawnSync('codex', ['doctor', '--json'], { encoding: 'utf8', env, timeout: 30_000 });
   if (doctor.status !== 0) return false;
   try {
     const report = JSON.parse(doctor.stdout || '{}');
@@ -66,6 +67,9 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
   if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && selected.provider === 'claudeCode') {
     return { ok: false, provider: 'claudeCode', mode: 'cli-disabled-pending-accounting', artifacts: [], usage: usage(selected, 0, { monetaryCostState: 'metered_cost_unavailable' }), error: 'Claude Code production execution is disabled until accounting and authentication are independently reviewed', raw: null };
   }
+  if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && selected.provider === 'codex' && !codexHomeReady(process.env.CODEX_HOME)) {
+    return { ok: false, provider: 'codex', mode: 'cli-disabled-by-profile', artifacts: [], usage: usage(selected, 0), error: 'production Codex execution requires CODEX_HOME outside protected home', raw: null };
+  }
   const started = Date.now();
   try {
     if (selected.provider === 'mock') return normalizeProviderResult({ provider: 'mock', mode: 'mock', model: selected.model, started, response: mockResponse(packet) });
@@ -113,7 +117,7 @@ export function runClaudeCodePacket(packetPath) {
 }
 
 export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null } = {}) {
-  const available = spawnSync('codex', ['--version'], { encoding: 'utf8' }).status === 0;
+  const available = spawnSync('codex', ['--version'], { encoding: 'utf8', env: sanitizedCodexEnvironment(process.env) }).status === 0;
   if (!available) return { ok: false, mode: 'unavailable', error: 'Codex CLI is not installed or authenticated', artifacts: [] };
   const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
   const finalPath = path.join(providerRuntimeDir('hermes-codex-results'), `${path.basename(packetPath, '.json')}.codex-final.json`);
@@ -234,20 +238,40 @@ function appendBounded(current, chunk, onExceeded) {
 }
 
 function sanitizedCodexEnvironment(source) {
+  const codexHome = source.CODEX_HOME || '';
   const env = {
     PATH: source.PATH || process.env.PATH || '',
-    HOME: source.HOME || process.env.HOME || '',
+    HOME: codexHome || source.HOME || process.env.HOME || '',
     USER: source.USER || process.env.USER || '',
     LOGNAME: source.LOGNAME || process.env.LOGNAME || '',
     SHELL: source.SHELL || process.env.SHELL || '',
     TERM: source.TERM || 'dumb',
     TMPDIR: source.TMPDIR || os.tmpdir(),
-    XDG_CONFIG_HOME: source.XDG_CONFIG_HOME || '',
-    XDG_DATA_HOME: source.XDG_DATA_HOME || '',
-    CODEX_HOME: source.CODEX_HOME || '',
+    XDG_CONFIG_HOME: codexHome || source.XDG_CONFIG_HOME || '',
+    XDG_DATA_HOME: codexHome || source.XDG_DATA_HOME || '',
+    CODEX_HOME: codexHome,
   };
   for (const [key, value] of Object.entries(env)) if (!value) delete env[key];
   return env;
+}
+
+function codexHomeReady(value) {
+  if (!value || !path.isAbsolute(value)) return false;
+  const resolved = path.resolve(value);
+  if (resolved === '/root' || resolved.startsWith('/root/') || resolved === '/home' || resolved.startsWith('/home/')) return false;
+  try {
+    const stat = fs.statSync(resolved);
+    fs.accessSync(resolved, fs.constants.R_OK | fs.constants.W_OK);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function readBoundedFinalOutput(finalPath) {
+  const stat = fs.statSync(finalPath);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > CODEX_CLI_MAX_STREAM_BYTES) return '';
+  return fs.readFileSync(finalPath, 'utf8');
 }
 
 export function parseCodexCliResult(result, finalPath = null) {
@@ -255,8 +279,8 @@ export function parseCodexCliResult(result, finalPath = null) {
   if (!events.ok) return { ok: false, provider: 'codex', mode: 'cli', error: events.error, artifacts: [] };
   if (result.status !== 0) return { ok: false, provider: 'codex', mode: 'cli', error: codexError(result, events.records), artifacts: [] };
   if (!events.terminal) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI JSONL stream did not contain a terminal result', artifacts: [] };
-  const finalText = finalPath && fs.existsSync(finalPath) ? fs.readFileSync(finalPath, 'utf8') : extractFinalMessage(events.records);
-  if (!finalText || finalText.length > 1_000_000) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI final output was missing or truncated', artifacts: [] };
+  const finalText = finalPath && fs.existsSync(finalPath) ? readBoundedFinalOutput(finalPath) : extractFinalMessage(events.records);
+  if (!finalText || Buffer.byteLength(finalText) > CODEX_CLI_MAX_STREAM_BYTES) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI final output was missing or truncated', artifacts: [] };
   try {
     const parsed = JSON.parse(finalText.trim());
     if (!Array.isArray(parsed.artifacts) || !parsed.artifacts.every(validArtifact)) throw new Error('invalid artifact schema');

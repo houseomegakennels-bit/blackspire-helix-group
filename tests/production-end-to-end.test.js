@@ -32,6 +32,8 @@ process.env.BLACKSPIRE_HERMES_MODE = 'production';
 process.env.BLACKSPIRE_PRODUCTION_PROVIDERS = 'codex';
 process.env.BLACKSPIRE_PRODUCTION_MODEL = 'server-authoritative-model';
 process.env.BLACKSPIRE_PRODUCTION_EXECUTION = 'enabled';
+process.env.CODEX_HOME = path.join(root, 'codex-home');
+fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });
 delete process.env.OPENAI_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.CODEX_API_KEY;

@@ -12,13 +12,18 @@ process.env.BLACKSPIRE_DB_PATH = path.join(root, 'test.sqlite');
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
-const { parseCodexCliResult, runCodexCliPacket } = await import('../packages/providers/providers.js');
+const { activeModes, parseCodexCliResult, runCodexCliPacket } = await import('../packages/providers/providers.js');
 const { createTask, recordUsage, taskRecords, monetarySpend } = await import('../packages/task-engine/tasks.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
 
 const bin = path.join(root, 'bin');
 fs.mkdirSync(bin, { recursive: true });
+process.env.CODEX_HOME = path.join(root, 'codex-home');
+fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });
 fs.writeFileSync(path.join(bin, 'codex'), `#!/usr/bin/env bash
+if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
+  exit 66
+fi
 case "\${1:-}" in
   --version) printf 'codex-cli 999.0.0-test\\n' ;;
   doctor) printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n' ;;
@@ -61,6 +66,26 @@ test('missing terminal Codex result is refused', () => {
 test('nonzero Codex process result is refused even with structured stdout', () => {
   const parsed = parseCodexCliResult({ status: 1, stdout: `${JSON.stringify({ type: 'error', message: 'bad' })}\n${JSON.stringify({ type: 'turn.completed' })}\n`, stderr: '' });
   assert.equal(parsed.ok, false);
+});
+
+test('Codex availability probes use the sanitized child environment', () => {
+  const prior = {
+    COMMAND_ADMIN_TOKEN: process.env.COMMAND_ADMIN_TOKEN,
+    SESSION_SECRET: process.env.SESSION_SECRET,
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  };
+  process.env.COMMAND_ADMIN_TOKEN = 'secret-admin';
+  process.env.SESSION_SECRET = 'secret-session';
+  process.env.GITHUB_TOKEN = 'secret-github';
+  process.env.OPENAI_API_KEY = 'secret-openai';
+  try {
+    assert.equal(activeModes().codex, 'cli');
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
 });
 
 function fakeChild(run) {
@@ -190,6 +215,14 @@ test('Codex stdout and stderr capture is bounded', async () => {
   assert.equal(killed, true);
   assert.equal(result.ok, false);
   assert.match(result.error, /output exceeded|terminal result|no JSONL/);
+});
+
+test('Codex final-output files are size checked before parsing', () => {
+  const final = path.join(root, 'oversized-final.json');
+  fs.writeFileSync(final, 'x'.repeat(1_100_000));
+  const parsed = parseCodexCliResult({ status: 0, stdout: jsonlFinal(), stderr: '' }, final);
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.error, /missing or truncated/);
 });
 
 test('subscription accounting persists null cost and survives a DB reopen', () => {

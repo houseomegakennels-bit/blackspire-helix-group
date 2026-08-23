@@ -262,7 +262,9 @@ if (unit === null) {
     // The real-provider-execution opt-in. It must be stated explicitly in the profile, so an
     // operator reading the profile can see whether this deployment can reach a paid provider
     // instead of having to infer it from an absent variable.
-    'BLACKSPIRE_PRODUCTION_EXECUTION'];
+    'BLACKSPIRE_PRODUCTION_EXECUTION',
+    // Required for production Codex execution because ProtectHome=yes blocks ~/.codex.
+    'CODEX_HOME'];
   const missingKeys = requiredKeys.filter((key) => !new RegExp(`^${key}=`, 'm').test(profile));
   record('profile-required-keys', missingKeys.length === 0, 'source',
     missingKeys.length === 0 ? 'production profile documents every required key'
