@@ -129,6 +129,12 @@ async function shouldStop(taskId) {
   return false;
 }
 
+function cancellationRequested(taskId) {
+  if (getFlag('emergency_stop') === 'active') return true;
+  const current = getTask(taskId);
+  return !current || current.status === 'cancelled';
+}
+
 function requiresApproval(task) {
   const actionClass = task.action_class || classifyRequest(task.request).actionClass;
   return decide(actionClass).requiresApproval;
@@ -196,7 +202,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     if (!guard.ok) return { ok: false, error: guard.reason };
     const requestPacket = { taskId: task.id, request: hermesRequest.objective, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference };
     const started = Date.now();
-    const result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline });
+    const result = await executeProviderRequest({ selected, packet: requestPacket, workspace, deadline: hermesRequest.deadline, shouldCancel: () => cancellationRequested(task.id) });
     if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt }); return { ok: false, error: 'cancelled' }; }
     last = result;
     recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket: { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } }, error: result.error, latencyMs: Date.now() - started });

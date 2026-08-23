@@ -86,7 +86,7 @@ test('production metered API dispatch is refused before outbound fetch', async (
   let called = false;
   globalThis.fetch = async () => { called = true; throw new Error('must not fetch'); };
   try {
-    const result = await withEnv({ BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PROVIDER_MODE: 'openai', OPENAI_API_KEY: 'test-openai' }, () => executeProviderRequest({
+    const result = await withEnv({ BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PROVIDER_MODE: 'openai', BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', OPENAI_API_KEY: 'test-openai' }, () => executeProviderRequest({
       selected: { provider: 'openai', mode: 'api', model: 'server-authoritative-model' },
       packet: { request: 'x' },
     }));
@@ -97,6 +97,18 @@ test('production metered API dispatch is refused before outbound fetch', async (
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test('production provider dispatch requires the explicit runtime execution opt-in', async () => {
+  await withEnv({ BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_PRODUCTION_EXECUTION: 'disabled' }, async () => {
+    const result = await executeProviderRequest({
+      selected: { provider: 'codex', mode: 'cli', model: 'server-authoritative-model' },
+      packet: { taskId: 'opt-in', request: 'status' },
+      workspace: { root_path: '.' },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /BLACKSPIRE_PRODUCTION_EXECUTION=enabled/);
+  });
 });
 
 test('callOpenAI and callAnthropic still refuse to run unconfigured', async () => {

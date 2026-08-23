@@ -1,7 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { id, redact } from '../shared/util.js';
+
+const CODEX_CLI_MAX_STREAM_BYTES = 1_000_000;
 
 export function codexCliAvailable() {
   const version = spawnSync('codex', ['--version'], { encoding: 'utf8' });
@@ -50,9 +53,12 @@ export function selectProvider(policy = {}, { requested = null, model = null } =
   return { provider: requested, mode: 'unconfigured', model };
 }
 
-export async function executeProviderRequest({ selected, packet, workspace, deadline = null }) {
+export async function executeProviderRequest({ selected, packet, workspace, deadline = null, shouldCancel = null }) {
   if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && process.env.BLACKSPIRE_PROVIDER_MODE === 'manual' && selected.provider !== 'manual') {
     return { ok: false, provider: selected.provider || 'unknown', mode: 'disabled-by-profile', artifacts: [], usage: usage(selected, 0), error: 'external providers are disabled by the production profile', raw: null };
+  }
+  if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && selected.provider !== 'manual' && process.env.BLACKSPIRE_PRODUCTION_EXECUTION !== 'enabled') {
+    return { ok: false, provider: selected.provider || 'unknown', mode: 'disabled-by-profile', artifacts: [], usage: usage(selected, 0), error: 'production provider execution requires BLACKSPIRE_PRODUCTION_EXECUTION=enabled', raw: null };
   }
   if (process.env.BLACKSPIRE_RUNTIME_MODE === 'production' && ['openai', 'anthropic'].includes(selected.provider)) {
     return { ok: false, provider: selected.provider, mode: 'api-disabled-pending-cost-accounting', artifacts: [], usage: usage(selected, 0, { monetaryCostState: 'metered_cost_unavailable' }), error: 'metered API providers require conservative production cost accounting before dispatch', raw: null };
@@ -67,7 +73,7 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
     if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, model: selected.model, started, response: await callOpenAI({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, model: selected.model, started, response: await callAnthropic({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, model: selected.model, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
-    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: await runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path), { workspaceRoot: workspace?.root_path, model: selected.model, timeoutMs }) });
+    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: await runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path, { external: true }), { workspaceRoot: workspace?.root_path, model: selected.model, timeoutMs, shouldCancel }) });
     if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
     return { ok: false, provider: selected.provider || 'unknown', mode: selected.mode || 'unconfigured', artifacts: [], usage: usage(selected, Date.now() - started), error: 'provider is not explicitly configured', raw: null };
   } catch (error) {
@@ -106,17 +112,17 @@ export function runClaudeCodePacket(packetPath) {
   return parseCliResult('claudeCode', 'cli', result);
 }
 
-export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, timeoutMs = 30_000, spawnImpl = spawn } = {}) {
+export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null } = {}) {
   const available = spawnSync('codex', ['--version'], { encoding: 'utf8' }).status === 0;
   if (!available) return { ok: false, mode: 'unavailable', error: 'Codex CLI is not installed or authenticated', artifacts: [] };
   const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
-  const finalPath = path.join(cwd, '.hermes-task-packets', `${path.basename(packetPath, '.json')}.codex-final.json`);
+  const finalPath = path.join(providerRuntimeDir('hermes-codex-results'), `${path.basename(packetPath, '.json')}.codex-final.json`);
   fs.mkdirSync(path.dirname(finalPath), { recursive: true });
   const args = ['exec', '--json', '--sandbox', 'read-only', '--cd', cwd, '--output-last-message', finalPath];
   if (model) args.push('--model', model);
   args.push(`Read the approved task packet at ${packetPath}. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}. Do not modify files.`);
   const before = snapshotWorkspace(cwd);
-  const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1) });
+  const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
   const parsed = parseCodexCliResult(result, finalPath);
   if (parsed.ok && workspaceMutated(before, snapshotWorkspace(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
   return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
@@ -132,12 +138,16 @@ function manualPacket(packet, workspaceRoot = '.') {
   return { ok: true, provider: 'manual', mode: 'handoff', summary: `Manual task packet written to ${packetPath}`, artifacts: [], manualPacketPath: packetPath, usage: { inputTokens: 0, outputTokens: 0, costCents: 0 } };
 }
 
-function writeTaskPacket(packet, workspaceRoot = '.') {
-  const dir = path.resolve(workspaceRoot || '.', '.hermes-task-packets');
+function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {}) {
+  const dir = external ? providerRuntimeDir('hermes-task-packets') : path.resolve(workspaceRoot || '.', '.hermes-task-packets');
   fs.mkdirSync(dir, { recursive: true });
   const packetPath = path.join(dir, `${packet.taskId || id('task')}.json`);
   fs.writeFileSync(packetPath, JSON.stringify(packet, null, 2));
   return packetPath;
+}
+
+function providerRuntimeDir(name) {
+  return path.resolve(process.env.BLACKSPIRE_DATA_DIR || os.tmpdir(), name);
 }
 
 function normalizeProviderResult({ provider, mode, model = null, started, response }) {
@@ -159,38 +169,85 @@ function parseCliResult(provider, mode, result) {
   }
 }
 
-function runCliChild(spawnImpl, command, args, { cwd, timeoutMs }) {
+function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = null }) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let settled = false;
     let timedOut = false;
+    let cancelled = false;
+    let outputExceeded = false;
     let child;
     let timer;
+    let cancelTimer;
     const finish = (status, signal = null, errorText = '') => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      resolve({ status, signal, stdout, stderr: timedOut ? `${stderr}\nCodex CLI deadline exceeded`.trim() : (errorText || stderr) });
+      if (cancelTimer) clearInterval(cancelTimer);
+      const stderrText = outputExceeded ? `${stderr}\nCodex CLI output exceeded limit`.trim() : cancelled ? `${stderr}\nCodex CLI cancelled by task controls`.trim() : timedOut ? `${stderr}\nCodex CLI deadline exceeded`.trim() : (errorText || stderr);
+      resolve({ status, signal, stdout, stderr: stderrText });
     };
     try {
-      child = spawnImpl(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawnImpl(command, args, { cwd, env: sanitizedCodexEnvironment(process.env), stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) {
       finish(1, null, String(error?.message || error));
       return;
     }
-    timer = setTimeout(() => {
-      timedOut = true;
+    const terminate = () => {
       child.kill?.('SIGTERM');
       setTimeout(() => child.kill?.('SIGKILL'), 1000).unref?.();
+    };
+    timer = setTimeout(() => {
+      timedOut = true;
+      terminate();
     }, timeoutMs);
+    if (typeof shouldCancel === 'function') {
+      cancelTimer = setInterval(() => {
+        try {
+          if (!settled && shouldCancel()) {
+            cancelled = true;
+            terminate();
+          }
+        } catch (error) {
+          cancelled = true;
+          stderr = `${stderr}\n${String(error?.message || error)}`.trim();
+          terminate();
+        }
+      }, 250);
+      cancelTimer.unref?.();
+    }
     child.stdout?.setEncoding?.('utf8');
     child.stderr?.setEncoding?.('utf8');
-    child.stdout?.on?.('data', (chunk) => { stdout += chunk; });
-    child.stderr?.on?.('data', (chunk) => { stderr += chunk; });
+    child.stdout?.on?.('data', (chunk) => { stdout = appendBounded(stdout, chunk, () => { outputExceeded = true; terminate(); }); });
+    child.stderr?.on?.('data', (chunk) => { stderr = appendBounded(stderr, chunk, () => { outputExceeded = true; terminate(); }); });
     child.on?.('error', (error) => finish(1, null, String(error?.message || error)));
-    child.on?.('close', (code, signal) => finish(timedOut ? 124 : (code ?? 1), signal));
+    child.on?.('close', (code, signal) => finish(outputExceeded || cancelled || timedOut ? 124 : (code ?? 1), signal));
   });
+}
+
+function appendBounded(current, chunk, onExceeded) {
+  const next = current + chunk.toString();
+  if (Buffer.byteLength(next) <= CODEX_CLI_MAX_STREAM_BYTES) return next;
+  onExceeded();
+  return next.slice(0, CODEX_CLI_MAX_STREAM_BYTES);
+}
+
+function sanitizedCodexEnvironment(source) {
+  const env = {
+    PATH: source.PATH || process.env.PATH || '',
+    HOME: source.HOME || process.env.HOME || '',
+    USER: source.USER || process.env.USER || '',
+    LOGNAME: source.LOGNAME || process.env.LOGNAME || '',
+    SHELL: source.SHELL || process.env.SHELL || '',
+    TERM: source.TERM || 'dumb',
+    TMPDIR: source.TMPDIR || os.tmpdir(),
+    XDG_CONFIG_HOME: source.XDG_CONFIG_HOME || '',
+    XDG_DATA_HOME: source.XDG_DATA_HOME || '',
+    CODEX_HOME: source.CODEX_HOME || '',
+  };
+  for (const [key, value] of Object.entries(env)) if (!value) delete env[key];
+  return env;
 }
 
 export function parseCodexCliResult(result, finalPath = null) {

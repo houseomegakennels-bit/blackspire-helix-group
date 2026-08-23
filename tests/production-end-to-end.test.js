@@ -31,6 +31,7 @@ process.env.BLACKSPIRE_RUNTIME_MODE = 'production';
 process.env.BLACKSPIRE_HERMES_MODE = 'production';
 process.env.BLACKSPIRE_PRODUCTION_PROVIDERS = 'codex';
 process.env.BLACKSPIRE_PRODUCTION_MODEL = 'server-authoritative-model';
+process.env.BLACKSPIRE_PRODUCTION_EXECUTION = 'enabled';
 delete process.env.OPENAI_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.CODEX_API_KEY;
@@ -95,7 +96,7 @@ case "\${1:-}" in
         final="\${!j}"
       fi
     done
-    printf '{"argv":%s,"cwd":%s}\\n' "$(node -e 'console.log(JSON.stringify(process.argv.slice(1)))' "$@")" "$(node -e 'console.log(JSON.stringify(process.cwd()))')" >> "${codexLog}"
+    printf '{"argv":%s,"cwd":%s,"env":%s}\\n' "$(node -e 'console.log(JSON.stringify(process.argv.slice(1)))' "$@")" "$(node -e 'console.log(JSON.stringify(process.cwd()))')" "$(node -e 'console.log(JSON.stringify({COMMAND_ADMIN_TOKEN:process.env.COMMAND_ADMIN_TOKEN||null,SESSION_SECRET:process.env.SESSION_SECRET||null,GITHUB_TOKEN:process.env.GITHUB_TOKEN||null,OPENAI_API_KEY:process.env.OPENAI_API_KEY||null,ANTHROPIC_API_KEY:process.env.ANTHROPIC_API_KEY||null,CODEX_API_KEY:process.env.CODEX_API_KEY||null,HOME:process.env.HOME||null,PATH:Boolean(process.env.PATH)}))')" >> "${codexLog}"
     if grep -q 'malformed-codex' "$packet"; then
       printf '{"type":"thread.started"}\\n'
       printf 'not-json\\n'
@@ -178,6 +179,13 @@ test('the provider record carries the server-chosen model, not a request-supplie
   assert.equal(codexInvocations[0].argv[codexInvocations[0].argv.indexOf('--model') + 1], 'server-authoritative-model');
   assert.equal(codexInvocations[0].argv[codexInvocations[0].argv.indexOf('--sandbox') + 1], 'read-only');
   assert.equal(codexInvocations[0].cwd, repo);
+  assert.equal(codexInvocations[0].env.COMMAND_ADMIN_TOKEN, null);
+  assert.equal(codexInvocations[0].env.SESSION_SECRET, null);
+  assert.equal(codexInvocations[0].env.GITHUB_TOKEN, null);
+  assert.equal(codexInvocations[0].env.OPENAI_API_KEY, null);
+  assert.equal(codexInvocations[0].env.ANTHROPIC_API_KEY, null);
+  assert.equal(codexInvocations[0].env.CODEX_API_KEY, null);
+  assert.equal(codexInvocations[0].env.PATH, true);
   const task = getTask(taskId);
   assert.equal(task.status, 'completed', task.error || 'task did not complete');
   const executed = JSON.parse(taskRecords(taskId).providerAttempts.at(-1).response_packet);
@@ -202,6 +210,8 @@ test('the provider artifacts were actually applied inside the workspace allowlis
   assert.match(fs.readFileSync(written, 'utf8'), /Written by the configured Codex CLI provider/);
   const changed = taskRecords(taskId).changedFiles.map((row) => row.path);
   assert.ok(changed.some((file) => file.includes('docs/production-proof.md')), `changed files: ${changed.join(',')}`);
+  assert.ok(!changed.some((file) => file.includes('.hermes-task-packets')), `control files leaked into changed files: ${changed.join(',')}`);
+  assert.doesNotMatch(git(['status', '--porcelain', '-uall'], repo), /\.hermes-task-packets/);
 });
 
 test('the durable event and usage trail records the executed provider and model', () => {

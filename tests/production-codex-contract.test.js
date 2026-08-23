@@ -154,6 +154,44 @@ test('Codex child is terminated at the Hermes deadline', async () => {
   assert.match(result.error, /deadline exceeded|terminal result|no JSONL/);
 });
 
+test('Codex child is terminated when task controls cancel', async () => {
+  const workspace = path.join(root, 'cancel-workspace');
+  fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
+  const packet = path.join(workspace, '.hermes-task-packets', 'task.json');
+  fs.writeFileSync(packet, '{}');
+  let killed = false;
+  let checks = 0;
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', timeoutMs: 5_000, shouldCancel: () => ++checks > 1, spawnImpl: () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => { killed = true; child.emit('close', null, 'SIGTERM'); };
+    return child;
+  } });
+  assert.equal(killed, true);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /cancelled|terminal result|no JSONL/);
+});
+
+test('Codex stdout and stderr capture is bounded', async () => {
+  const workspace = path.join(root, 'verbose-workspace');
+  fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });
+  const packet = path.join(workspace, '.hermes-task-packets', 'task.json');
+  fs.writeFileSync(packet, '{}');
+  let killed = false;
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', timeoutMs: 5_000, spawnImpl: () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => { killed = true; child.emit('close', null, 'SIGTERM'); };
+    queueMicrotask(() => child.stdout.write('x'.repeat(1_100_000)));
+    return child;
+  } });
+  assert.equal(killed, true);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /output exceeded|terminal result|no JSONL/);
+});
+
 test('subscription accounting persists null cost and survives a DB reopen', () => {
   const task = createTask({ workspaceId: 'w', request: 'status', idempotencyKey: 'accounting-1' });
   recordUsage(task.id, { provider: 'codex', mode: 'cli', latencyMs: 1, inputTokens: 1, outputTokens: 1, costCents: null, monetaryCostState: 'subscription_unmetered' });
