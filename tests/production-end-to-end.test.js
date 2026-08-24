@@ -129,6 +129,11 @@ case "\${1:-}" in
       printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
       exit 0
     fi
+    if grep -q 'alias-duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"./docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Aliased duplicate proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
     printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n' > "$final"
     printf '{"type":"thread.started","thread_id":"fixture"}\\n'
     printf '{"type":"turn.started"}\\n'
@@ -365,6 +370,16 @@ test('duplicate artifact paths are rejected before branch creation', async () =>
   assert.match(getTask(body.task.id).error, /duplicate edit path/i);
   assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
   assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+});
+
+test('canonical-path aliases are duplicate artifacts and cannot change branches', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('alias-duplicate-artifact mutation', 'production-e2e-alias-duplicate');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /duplicate edit path/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
 });
 
 test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {

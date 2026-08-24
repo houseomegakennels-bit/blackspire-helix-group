@@ -87,15 +87,6 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
       await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
       return move('completed', { summary: { result: providerResult.summary || 'Read-only task completed', changedFiles: [], provider: providerResult.provider, model: providerResult.model || null }, evidence });
     }
-    const currentWorkspaceChanges = inspectChangedFiles({ cwd: workspace.root_path });
-    if (currentWorkspaceChanges.length !== 0) {
-      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace was not clean immediately before artifact application', paths: currentWorkspaceChanges.map((file) => file.path) });
-      return move('failed', { error: 'Workspace must be clean before applying provider artifacts' });
-    }
-    if (!artifactsWouldChangeWorkspace(providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths })) {
-      recordEvidence(task.id, 'artifact_application_refused', { reason: 'provider artifacts were byte-identical to the workspace', provider: providerResult.provider });
-      return move('failed', { error: 'Provider artifacts produced no workspace delta' });
-    }
     if (await shouldStop(task.id, ownership)) return;
 
     const branch = await stage(task.id, ownership, 'apply_edits', () => applyProviderEdits(task, workspace, providerResult));
@@ -310,6 +301,9 @@ function remainingBudget(taskId) {
 }
 
 function applyProviderEdits(task, workspace, providerResult) {
+  const currentWorkspaceChanges = inspectChangedFiles({ cwd: workspace.root_path });
+  if (currentWorkspaceChanges.length !== 0) throw new Error('Workspace must be clean before applying provider artifacts');
+  if (!artifactsWouldChangeWorkspace(providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths })) throw new Error('Provider artifacts produced no workspace delta');
   const branchName = `hermes/${task.id}`;
   const branch = createTaskBranch(branchName, { cwd: workspace.root_path });
   if (!branch.ok) throw new Error(branch.stderr || 'failed to create task branch');

@@ -39,8 +39,10 @@ export function applyEdits(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
 export function artifactsWouldChangeWorkspace(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
   const seen = new Set();
   for (const edit of edits || []) {
-    if (seen.has(edit.path)) throw new Error(`Duplicate edit path: ${edit.path}`);
-    seen.add(edit.path);
+    if (!isPathAllowed(edit.path, allowedPaths)) throw new Error(`Edit path not allowed: ${edit.path}`);
+    const target = assertInsideWorkspace(edit.path, cwd);
+    if (seen.has(target)) throw new Error(`Duplicate edit path: ${edit.path}`);
+    seen.add(target);
   }
   return (edits || []).some((edit) => {
     if (!isPathAllowed(edit.path, allowedPaths)) throw new Error(`Edit path not allowed: ${edit.path}`);
