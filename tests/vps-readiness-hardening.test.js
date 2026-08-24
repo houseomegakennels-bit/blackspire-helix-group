@@ -368,7 +368,11 @@ test('worker preflight validates the bind contract without claiming the API port
   assert.match(api.stderr, /already in use/, 'API preflight must retain exclusive port ownership');
   const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], env);
   assert.doesNotMatch(worker.stderr, /already in use/, 'worker restart must not be blocked by the healthy API listener');
-  assert.match(worker.stderr, /production runtime must not run as root/, 'the worker fixture must reach the final root boundary');
+  if (process.getuid() === 0) {
+    assert.match(worker.stderr, /production runtime must not run as root/, 'the worker fixture must reach the final root boundary');
+  } else {
+    assert.equal(worker.status, 0, `a non-root worker must accept the otherwise valid profile: ${worker.stderr}`);
+  }
 });
 
 // ---------------------------------------------------------------------------
