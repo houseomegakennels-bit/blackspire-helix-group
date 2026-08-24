@@ -147,7 +147,7 @@ async function route(req, res) {
     if (u.pathname === '/api/stop' && req.method === 'POST') {
       const limit = checkLimit(req, 'stop', 5, 60000); if (!limit.allowed) return limited(res, limit);
       const body = await readJson(req);
-      if (!authorizeWorkspaceRequest(auth, body.workspaceId, 'task.execute')) return json(res, 404, { error: 'not found' });
+      if (!authorizeGlobalRuntimeControl(auth, body.workspaceId)) return json(res, 404, { error: 'not found' });
       emergencyStopMemory = true;
       setFlag('emergency_stop', 'active');
       audit(null, 'administrator', 'emergency_stop.activated');
@@ -157,7 +157,7 @@ async function route(req, res) {
       const limit = checkLimit(req, 'stop-reset', 3, 60000); if (!limit.allowed) return limited(res, limit);
       if (auth.mode !== 'session' || req.headers['x-confirmation-token'] !== `${auth.session.csrfToken}:RESET`) return json(res, 403, { error: 'fresh session confirmation required' });
       const body = await readJson(req);
-      if (!authorizeWorkspaceRequest(auth, body.workspaceId, 'task.execute')) return json(res, 404, { error: 'not found' });
+      if (!authorizeGlobalRuntimeControl(auth, body.workspaceId)) return json(res, 404, { error: 'not found' });
       emergencyStopMemory = false;
       setFlag('emergency_stop', 'inactive');
       audit(null, 'administrator', 'emergency_stop.reset');
@@ -196,6 +196,12 @@ function authorizeWorkspaceRequest(auth, workspaceId, permission) {
   if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(workspaceId)) return false;
   const principal = requestPrincipal(auth);
   return Boolean(principal && requireWorkspacePermission(principal, workspaceId, permission).allowed);
+}
+
+function authorizeGlobalRuntimeControl(auth, selectedWorkspaceId) {
+  const workspaces = listWorkspaces();
+  return workspaces.some((workspace) => workspace.id === selectedWorkspaceId) &&
+    workspaces.length > 0 && workspaces.every((workspace) => authorizeWorkspaceRequest(auth, workspace.id, 'task.execute'));
 }
 
 function outcomeEvaluationRoute(res, auth, evaluationId) {
@@ -340,6 +346,7 @@ async function createTaskRoute(req, res, auth) {
   if (!request || request.length > 4000) return json(res, 422, { error: 'request is required and must be under 4000 characters' });
   const decision = evaluateRequestPolicy({ request, channel: 'api', authority: 'authenticated_admin' });
   const task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  if (task.workspace_id !== workspaceId) return json(res, 404, { error: 'not found' });
   return json(res, decision.allowed ? 202 : 403, decision.allowed ? { task } : { task, denied: true, error: decision.reason });
 }
 

@@ -72,6 +72,9 @@ test('creation and unified input enforce the target workspace before mutation', 
   assert.equal((await request('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', request: 'inspect A now' }) })).status, 202);
   assert.equal((await request('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-b', request: 'inspect B now' }) })).status, 404);
   assert.equal((await request('/api/unified-input', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-b', text: 'inspect B now' }) })).status, 404);
+  assert.equal((await request('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', request: 'replay B key', idempotencyKey: 'route-task-b' }) })).status, 404);
+  assert.equal((await request('/api/unified-input', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', text: 'replay B input key', idempotencyKey: 'route-conv-b' }) })).status, 404);
+  assert.equal((await request('/api/unified-input', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', text: 'reuse B channel binding', channelKey: 'fixture-b', idempotencyKey: 'route-channel-substitution' }) })).status, 404);
   const after = await (await request('/api/tasks')).json();
   assert.equal(after.tasks.length, before.tasks.length + 1);
 });
@@ -89,6 +92,11 @@ test('execute, approval, cancellation, and runtime operations cannot substitute 
   assert.equal((await request('/api/hermes/runtime?workspaceId=workspace-b')).status, 404);
   assert.equal((await request('/api/hermes/runtime?workspaceId=absent')).status, 404);
   assert.equal((await request('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-b' }) })).status, 404);
+  assert.equal((await request('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a' }) })).status, 404, 'one workspace grant cannot activate a global stop');
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'workspace-authz-test-token' }) });
+  const loginBody = await login.json();
+  const cookies = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+  assert.equal((await fetch(`${base}/api/stop/reset`, { method: 'POST', headers: { cookie: cookies, 'content-type': 'application/json', 'x-csrf-token': loginBody.csrfToken, 'x-confirmation-token': `${loginBody.csrfToken}:RESET` }, body: JSON.stringify({ workspaceId: 'workspace-a' }) })).status, 404, 'one workspace grant cannot reset a global stop');
 });
 
 test('a read-only workspace grant cannot create, execute, approve, cancel, or inspect runtime', async () => {

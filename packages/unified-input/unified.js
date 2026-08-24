@@ -16,8 +16,10 @@ export function createUnifiedInput({ channel, actorId, channelKey, conversationI
   if (getFlag('emergency_stop') === 'active') return { error: 'emergency stop active', status: 423 };
 
   const key = String(idempotencyKey || id('idem'));
-  const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
-  if (duplicate) return responseFor(duplicate.conversation_id, duplicate.id, duplicate.task_id, duplicate.task_status, true, duplicate.policy_status === 'denied' ? denialReason(channel) : null);
+  const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
+  if (duplicate) return duplicate.workspace_id === workspaceId
+    ? responseFor(duplicate.conversation_id, duplicate.id, duplicate.task_id, duplicate.task_status, true, duplicate.policy_status === 'denied' ? denialReason(channel) : null)
+    : { error: 'input not found', status: 404 };
 
   const conversation = resolveConversation({ conversationId, workspaceId, channel, channelKey, metadata });
   if (conversation.error) return conversation;
@@ -43,6 +45,7 @@ function resolveConversation({ conversationId, workspaceId, channel, channelKey,
   if (!conversation && channelKey) {
     conversation = query(`SELECT c.* FROM conversations c JOIN conversation_bindings b ON b.conversation_id=c.id WHERE b.channel=${esc(channel)} AND b.channel_key=${esc(String(channelKey))};`)[0];
   }
+  if (conversation && conversation.workspace_id !== workspaceId) return { error: 'conversation not found', status: 404 };
   if (!conversation) {
     conversation = { id: id('conv'), workspace_id: workspaceId, status: 'active', created_at: now(), updated_at: now() };
     execSql(`INSERT INTO conversations VALUES (${Object.values(conversation).map(esc).join(',')});`);

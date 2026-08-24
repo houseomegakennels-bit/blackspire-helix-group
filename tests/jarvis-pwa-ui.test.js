@@ -211,6 +211,12 @@ test('submission uses idempotency keys and blocks double submit', () => {
   assert.match(source, /store\.inflight/);
 });
 
+test('emergency controls send the active workspace selected by the operator', () => {
+  assert.match(source, /stop: \(\) => api\.request\('\/api\/stop',[\s\S]*activeWorkspaceId\(\)/);
+  assert.match(source, /stopReset: \(\) => api\.request\('\/api\/stop\/reset',[\s\S]*activeWorkspaceId\(\)/);
+  assert.doesNotMatch(source, /store\.workspaceId/);
+});
+
 /* ---------- service worker safety ---------- */
 
 test('service worker never caches API, auth, or privileged responses', () => {
