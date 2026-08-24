@@ -383,13 +383,15 @@ test('stale reclaim rotates claim identity even when WORKER_ID is reused', () =>
   assert.equal(heartbeat(task.id, 'new-worker', { workerId: second.worker_id, claimToken: second.claim_token }), true);
 });
 
-test('cancelled is an absorbing task state', () => {
-  const task = createTask({ workspaceId: 'cancel-test', request: 'inspect', idempotencyKey: 'cancel-absorbing-test' });
-  transition(task.id, 'cancelled', { error: 'operator cancelled' });
-  transition(task.id, 'failed', { error: 'late provider result' });
-  transition(task.id, 'queued');
-  assert.equal(getTask(task.id).status, 'cancelled');
-  assert.equal(getTask(task.id).error, 'operator cancelled');
+test('cancelled absorbs both late provider completion and failure', () => {
+  for (const lateStatus of ['completed', 'failed']) {
+    const task = createTask({ workspaceId: 'cancel-test', request: 'inspect', idempotencyKey: `cancel-absorbing-${lateStatus}` });
+    transition(task.id, 'cancelled', { error: 'operator cancelled' });
+    transition(task.id, lateStatus, { error: `late provider ${lateStatus}` });
+    transition(task.id, 'queued');
+    assert.equal(getTask(task.id).status, 'cancelled', lateStatus);
+    assert.equal(getTask(task.id).error, 'operator cancelled', lateStatus);
+  }
 });
 
 test('Codex terminal attempt and usage accounting commit atomically', () => {

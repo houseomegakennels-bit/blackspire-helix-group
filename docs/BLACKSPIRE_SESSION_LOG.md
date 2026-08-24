@@ -15,6 +15,7 @@
 - **Provider attempt:** `codex_dispatch_task_ef214bac982b88a0`, observed `dispatching` at `2026-08-24T14:53:13.071Z`; cancellation was submitted at `2026-08-24T14:53:13.122Z`, 51 ms after the observed marker. The attempt finalized `failed` after 320 ms and durable `codex_dispatch_started` plus `late_response_ignored` evidence remained.
 - **Claim behavior:** the task retained its single worker/claim ownership record; no replacement claim or attempt appeared. **Final task:** `cancelled`; **usage/accounting:** `subscription_unmetered`, NULL cost, atomically linked to the attempt; **restart:** none during this case; **replay count:** 1 total attempt.
 - Three seconds after settlement the task was still cancelled with retry count 0, no task-specific process remained, the worker was idle on generation `fc3ffd52173e4994a385c3238f85c72b`, and public health remained healthy. No `task.failed` or `task.completed` terminal overwrite occurred.
+- This live case is also the cancel-vs-failure acceptance: provider termination finalized the attempt as failed after cancellation had won, while the task stayed cancelled. The deterministic absorbing-state fixture now exercises both late `completed` and late `failed` transitions independently; the focused Codex contract suite passed 27/27. Cancel-vs-completion is therefore accepted through the deterministic production-state harness rather than an unreliable attempt to race a real provider within a sub-millisecond database window.
 
 ### Stale undispatched claim recovery and old-claim rejection — PASS
 
