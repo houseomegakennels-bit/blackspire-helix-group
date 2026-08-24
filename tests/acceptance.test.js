@@ -24,7 +24,7 @@ const { upsertWorkspace } = await import('../packages/workspace-registry/workspa
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
 const { runAllowed } = await import('../packages/execution/runner.js');
 const { decide } = await import('../packages/policy/policy.js');
-const { applyEdits, commitAll, commitArtifacts, createPullRequest } = await import('../packages/github/github.js');
+const { applyEdits, artifactsWouldChangeWorkspace, commitAll, commitArtifacts, createPullRequest } = await import('../packages/github/github.js');
 const { callOpenAI, callAnthropic, runCodexCliPacket, runClaudeCodePacket, executeProviderRequest } = await import('../packages/providers/providers.js');
 
 function git(args, cwd) {
@@ -258,6 +258,23 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.equal(git(['status', '--porcelain'], dir), '');
   fs.rmSync(separateControl, { recursive: true });
   fs.rmSync(separateWork, { recursive: true });
+  const prospectiveControl = [
+    { path: 'control/objects/placeholder', content: '' },
+    { path: 'control/refs/placeholder', content: '' },
+    { path: 'control/config', content: '[core]\nrepositoryformatversion = 0\nbare = false\n' },
+    { path: 'control/HEAD', content: 'ref: refs/heads/main\n' },
+  ];
+  assert.throws(() => artifactsWouldChangeWorkspace(prospectiveControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(prospectiveControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control')), false);
+  assert.equal(git(['status', '--porcelain'], dir), '');
+  fs.mkdirSync(path.join(dir, 'control', 'objects'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'control', 'refs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'control', 'config'), '[core]\nrepositoryformatversion = 0\nbare = false\n');
+  assert.throws(() => applyEdits([{ path: 'control/HEAD', content: 'ref: refs/heads/main\n' }], { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control', 'HEAD')), false);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  assert.equal(git(['status', '--porcelain'], dir), '');
   fs.mkdirSync(path.join(dir, 'docs', 'legitimate'));
   fs.writeFileSync(path.join(dir, 'docs', 'legitimate', 'existing.md'), 'before\n');
   fs.symlinkSync('legitimate/existing.md', path.join(dir, 'docs', 'legitimate-link'));

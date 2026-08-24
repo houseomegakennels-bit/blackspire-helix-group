@@ -2,8 +2,8 @@
 
 ## Immediate PR #115 closure (2026-08-24 UTC)
 
-1. Push the checkpointed Git-identity artifact boundary correction and record its exact remote SHA.
-2. Wait for exact-head CI, then request one focused Codex review of the new head; do not duplicate review on an unchanged SHA.
+1. Push the validated checkpoint carrying the prospective Git-control projection correction found in exact-head review of `25f89d717830489821ed4733b3ae588bd9aecda0`.
+2. Wait for exact-head CI, then request one focused Codex review of the changed head; do not duplicate review on an unchanged SHA.
 3. Merge only after required checks and review are clean, using expected-head protection, then verify the reviewed tree landed on main.
 4. Immediately inspect the persisted successful provider attempt for `task_61a88e75d88dbcd1` read-only and implement the canonical result-display contract without replaying the historical task.
 

@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { redact } from '../shared/util.js';
 import { assertInsideWorkspace } from '../execution/runner.js';
@@ -24,6 +25,7 @@ export function createTaskBranch(branch, { cwd = '.' } = {}) {
 }
 
 export function applyEdits(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
+  assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths);
   const changed = [];
   for (const edit of edits || []) {
     const relative = edit.path;
@@ -37,6 +39,7 @@ export function applyEdits(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
 }
 
 export function artifactsWouldChangeWorkspace(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
+  assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths);
   const seen = new Set();
   for (const edit of edits || []) {
     if (!isPathAllowed(edit.path, allowedPaths)) throw new Error(`Edit path not allowed: ${edit.path}`);
@@ -51,6 +54,51 @@ export function artifactsWouldChangeWorkspace(edits, { cwd = '.', allowedPaths =
       if (error?.code === 'ENOENT') return true;
       throw error;
     }
+  });
+}
+
+function assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths) {
+  const realRoot = fs.realpathSync(cwd);
+  const proposed = (edits || []).map((edit) => ({ edit, target: canonicalArtifactTarget(edit.path, cwd, allowedPaths) }));
+  const candidates = new Set();
+  for (const { target } of proposed) {
+    for (let candidate = path.dirname(target); candidate !== realRoot && isInside(realRoot, candidate); candidate = path.dirname(candidate)) {
+      candidates.add(candidate);
+    }
+  }
+  for (const candidate of candidates) {
+    const projection = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-artifact-git-'));
+    try {
+      if (pathEntryExists(candidate)) copyBoundedProjection(candidate, projection);
+      for (const { edit, target } of proposed) {
+        if (!isInside(candidate, target)) continue;
+        const relative = path.relative(candidate, target);
+        const projectedTarget = path.join(projection, relative);
+        fs.mkdirSync(path.dirname(projectedTarget), { recursive: true });
+        fs.writeFileSync(projectedTarget, String(edit.content ?? ''), 'utf8');
+      }
+      const result = spawnSync('git', ['rev-parse', '--is-inside-git-dir'], { cwd: projection, encoding: 'utf8' });
+      if (result.status === 0 && result.stdout.trim() === 'true') throw new Error('Artifact set creates Git control data');
+    } finally {
+      fs.rmSync(projection, { recursive: true, force: true });
+    }
+  }
+}
+
+function copyBoundedProjection(source, destination) {
+  let entries = 0;
+  let bytes = 0;
+  fs.cpSync(source, destination, {
+    recursive: true,
+    dereference: false,
+    filter(entry) {
+      const stat = fs.lstatSync(entry);
+      entries += 1;
+      if (stat.isFile()) bytes += stat.size;
+      if (entries > 20_000 || bytes > 64 * 1024 * 1024) throw new Error('Artifact repository projection exceeds safety limit');
+      if (!stat.isDirectory() && !stat.isFile() && !stat.isSymbolicLink()) throw new Error('Artifact repository projection contains unsupported entry');
+      return true;
+    },
   });
 }
 
