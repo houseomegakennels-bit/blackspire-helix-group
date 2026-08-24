@@ -63,3 +63,9 @@ Both historical databases remain preserved as read-only reconciliation sources. 
 An empty `/opt/blackspire-command/shared/codex-home` now exists as `0700 blackspire:blackspire`, outside `ProtectHome` and inside the reviewed service writable path. A service-equivalent empty-environment invocation can execute the installed `codex-cli 0.149.0` binary with that `CODEX_HOME`.
 
 No credential file was inspected or copied, no login status or authentication content was printed, and the production environment still does not set `CODEX_HOME`. The directory is therefore **prepared but unauthenticated and unconfigured**. Credential-owner login or a separately reviewed transfer mechanism plus the bounded sanitized capability probe remain deployment blockers.
+
+## Telegram source authority blocker
+
+Current main's Telegram bridge must not be activated in production. An allowlisted Telegram user can select a workspace held only in an in-memory map and call `createUnifiedInput` with `authority: 'telegram'` without resolving a persisted principal or checking the #104 workspace grant. Conversation selection, deduplication memory, and polling offset are also process-local. The durable unified-input idempotency row limits duplicate task creation after it reaches the database, but it does not establish Telegram identity or workspace authority.
+
+Historical PR #86 adds useful bounded transport behavior but does not close this authority boundary and has stale ancestry. Its transport patch may be recovered only after a persisted Telegram-user-to-principal mapping, grant checks before every disclosure/mutation, and durable polling/workspace/context state are implemented and tested. Telegram remains disconnected from production.

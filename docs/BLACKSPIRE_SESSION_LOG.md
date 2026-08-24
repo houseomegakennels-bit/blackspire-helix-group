@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — Telegram production activation blocked on canonical authority
+
+- Current main was traced from `handleTelegramUpdate` to `createUnifiedInput`: the numeric allowlist is the only identity gate, selected workspace/conversation and polling offset are in memory, and no persisted #104 principal/grant is resolved before task creation or channel reads.
+- Historical PR #86 contains useful bounded transport mechanics but does not close this authorization boundary and has stale ancestry. It remains unmerged and production Telegram remains disconnected. No token, message content, production database, service, or network state was inspected or changed.
+
+
 ## 2026-08-24 — Current VPS read-only audit (Codex)
 
 - Recorded the actual host state without mutation: public Jarvis still proxies to staging release `f0a7b66` on 8788; legacy July Docker API/worker containers own wildcard 8787 and a separate named database volume; canonical production systemd is inactive with only the historical API unit installed; worker/target units and `current` are absent. The configured production database target is absent. Read-only schema/count inspection found one workspace/28 tasks in staging and one workspace/15 tasks in Docker; both lack the merged principal, grant, and usage-ledger tables. Public health/readiness lack deployment and worker-generation evidence and report production providers disabled. Configuration inspection was limited to file metadata and key presence: no operator principal ID, production provider enablement, or `CODEX_HOME` is configured, and no secret value or Codex authentication state was read or recorded. Deployment remains blocked pending reviewed topology merge, database selection/migration, authorization provisioning, private service auth, backup/rollback evidence, exact-main release, Gate 4 readiness, and real Jarvis-to-Codex proof.

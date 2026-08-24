@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Telegram canonical-intake blocker (2026-08-24 UTC)
+
+Current main still treats the Telegram allowlist as execution authority: workspace/conversation/update state is process-local and task creation does not resolve a persisted #104 principal/grant. Old PR #86 improves transport reliability but does not repair this boundary and must not be merged or activated directly. Production Telegram stays disconnected until persisted identity mapping, workspace authorization, durable offset/dedupe/context state, and negative cross-workspace tests exist.
+
 ## Read-only live VPS audit (2026-08-24 UTC)
 
 The public Jarvis domain still routes to the historical staging API on loopback port 8788. Canonical production systemd is inactive: only the historical API unit is installed, while the worker unit and target are absent and `/opt/blackspire-command/current` does not exist. Legacy July Docker API/worker containers still own wildcard port 8787 and a separate named database volume. The configured production database target is absent; the staging and Docker databases both predate the merged authorization/accounting schema. Public health/readiness omit current deployment and worker-generation evidence and report production providers disabled. The production environment has no configured operator principal ID or `CODEX_HOME`. Full sanitized evidence and blockers are recorded in `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`; no live state was mutated.
