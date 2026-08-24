@@ -54,6 +54,10 @@ test('application startup accepts only the coherent enabled Codex profile', () =
     { BLACKSPIRE_PROVIDER_MODE: 'manual' },
     { BLACKSPIRE_HERMES_MODE: 'restricted' },
     { BLACKSPIRE_PRODUCTION_PROVIDERS: '' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabledd', BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', BLACKSPIRE_PRODUCTION_PROVIDERS: '' },
+    { BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,mock' },
+    { BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,' },
+    { BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,unknown' },
   ]) assert.equal(requireProductionSafeConfig({ ...enabled, ...overrides }, dirs()).ok, false);
 });
 
