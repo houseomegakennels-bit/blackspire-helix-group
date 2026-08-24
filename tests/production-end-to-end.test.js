@@ -144,6 +144,16 @@ case "\${1:-}" in
       printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
       exit 0
     fi
+    if grep -q 'allowed-path-symlink-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/internal-alias/victim.md","content":"must not cross allowlist\\\\n"}],"summary":"Allowlist escape proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'unicode-path-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/café.md","content":"unicode path accepted\\\\n"}],"summary":"Unicode path proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
     if grep -q 'duplicate-artifact' "$packet"; then
       printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Duplicate path proposal."}\\n' > "$final"
       printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
@@ -424,6 +434,32 @@ test('artifact targets cannot escape through a workspace symlink', async () => {
   assert.match(getTask(body.task.id).error, /escapes workspace/i);
   assert.equal(fs.existsSync(path.join(outside, 'escape.md')), false);
   assert.equal(git(['branch', '--show-current'], repo), beforeBranch);
+});
+
+test('artifact targets cannot escape the physical allowed path through an internal symlink', async () => {
+  fs.mkdirSync(path.join(repo, 'packages'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'packages', 'victim.md'), 'protected baseline\n');
+  fs.symlinkSync('../packages', path.join(repo, 'docs', 'internal-alias'));
+  git(['add', 'packages/victim.md', 'docs/internal-alias'], repo);
+  git(['commit', '-m', 'add internal allowlist alias fixture'], repo);
+  const beforeBranch = git(['branch', '--show-current'], repo);
+  const { status, body } = await submit('allowed-path-symlink-artifact mutation', 'production-e2e-allowed-path-symlink');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /not allowed after symlink resolution/i);
+  assert.equal(fs.readFileSync(path.join(repo, 'packages', 'victim.md'), 'utf8'), 'protected baseline\n');
+  assert.equal(git(['branch', '--show-current'], repo), beforeBranch);
+});
+
+test('Unicode artifact paths survive raw status comparison and commit exactly', async () => {
+  const { status, body } = await submit('unicode-path-artifact mutation', 'production-e2e-unicode-path');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'completed', getTask(body.task.id).error);
+  assert.equal(fs.readFileSync(path.join(repo, 'docs', 'café.md'), 'utf8'), 'unicode path accepted\n');
+  const committedPaths = spawnSync('git', ['ls-tree', '-r', '--name-only', '-z', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.split('\0');
+  assert.ok(committedPaths.includes('docs/café.md'));
 });
 
 test('validation-time unrelated changes are refused and never committed', async () => {

@@ -28,7 +28,7 @@ export function applyEdits(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
   for (const edit of edits || []) {
     const relative = edit.path;
     if (!isPathAllowed(relative, allowedPaths)) throw new Error(`Edit path not allowed: ${relative}`);
-    const target = canonicalArtifactTarget(relative, cwd);
+    const target = canonicalArtifactTarget(relative, cwd, allowedPaths);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, String(edit.content ?? ''), 'utf8');
     changed.push({ path: path.relative(fs.realpathSync(cwd), target).replaceAll(path.sep, '/'), status: 'modified' });
@@ -40,13 +40,13 @@ export function artifactsWouldChangeWorkspace(edits, { cwd = '.', allowedPaths =
   const seen = new Set();
   for (const edit of edits || []) {
     if (!isPathAllowed(edit.path, allowedPaths)) throw new Error(`Edit path not allowed: ${edit.path}`);
-    const target = canonicalArtifactTarget(edit.path, cwd);
+    const target = canonicalArtifactTarget(edit.path, cwd, allowedPaths);
     if (seen.has(target)) throw new Error(`Duplicate edit path: ${edit.path}`);
     seen.add(target);
   }
   return (edits || []).some((edit) => {
     if (!isPathAllowed(edit.path, allowedPaths)) throw new Error(`Edit path not allowed: ${edit.path}`);
-    const target = canonicalArtifactTarget(edit.path, cwd);
+    const target = canonicalArtifactTarget(edit.path, cwd, allowedPaths);
     try { return fs.readFileSync(target, 'utf8') !== String(edit.content ?? ''); } catch (error) {
       if (error?.code === 'ENOENT') return true;
       throw error;
@@ -55,9 +55,19 @@ export function artifactsWouldChangeWorkspace(edits, { cwd = '.', allowedPaths =
 }
 
 export function inspectChangedFiles({ cwd = '.' } = {}) {
-  const output = git(['status', '--porcelain', '-uall'], cwd).stdout.trim();
+  const result = spawnSync('git', ['status', '--porcelain=v1', '-z', '-uall'], { cwd, encoding: 'utf8' });
+  if (result.status !== 0) throw new Error('Unable to inspect workspace changes');
+  const output = String(result.stdout || '');
   if (!output) return [];
-  return output.split('\n').map((line) => ({ status: line.slice(0, 2).trim() || 'modified', path: line.slice(3).trim() }));
+  const fields = output.split('\0');
+  const changed = [];
+  for (let index = 0; index < fields.length && fields[index]; index += 1) {
+    const field = fields[index];
+    const status = field.slice(0, 2).trim() || 'modified';
+    changed.push({ status, path: field.slice(3) });
+    if (status.startsWith('R') || status.startsWith('C')) index += 1;
+  }
+  return changed;
 }
 
 export function isProtectedBranch(branch, protectedBranches = ['main', 'master', 'work']) {
@@ -80,7 +90,7 @@ export function commitArtifacts(message, edits, { cwd = '.', allowedPaths = ['.'
   const realRoot = fs.realpathSync(cwd);
   for (const edit of edits || []) {
     if (!isPathAllowed(edit.path, allowedPaths)) throw new Error(`Edit path not allowed: ${edit.path}`);
-    const target = canonicalArtifactTarget(edit.path, cwd);
+    const target = canonicalArtifactTarget(edit.path, cwd, allowedPaths);
     const relative = path.relative(realRoot, target).replaceAll(path.sep, '/');
     if (targets.has(relative)) throw new Error(`Duplicate edit path: ${edit.path}`);
     if (fs.readFileSync(target, 'utf8') !== String(edit.content ?? '')) throw new Error(`Artifact changed after validation: ${relative}`);
@@ -133,21 +143,33 @@ function isPathAllowed(filePath, allowedPaths) {
   });
 }
 
-function canonicalArtifactTarget(filePath, cwd) {
+function canonicalArtifactTarget(filePath, cwd, allowedPaths) {
   const lexicalTarget = assertInsideWorkspace(filePath, cwd);
   const realRoot = fs.realpathSync(cwd);
+  const target = resolvePhysicalTarget(lexicalTarget, filePath);
+  if (!isInside(realRoot, target)) throw new Error(`Artifact path escapes workspace: ${filePath}`);
+  const allowedRoots = allowedPaths.includes('.')
+    ? [realRoot]
+    : allowedPaths.map((allowed) => resolvePhysicalTarget(assertInsideWorkspace(allowed, cwd), allowed));
+  if (!allowedRoots.some((allowedRoot) => isInside(allowedRoot, target))) throw new Error(`Edit path not allowed after symlink resolution: ${filePath}`);
+  return target;
+}
+
+function resolvePhysicalTarget(lexicalTarget, displayPath) {
   let existing = lexicalTarget;
   const suffix = [];
   while (!pathEntryExists(existing)) {
     const parent = path.dirname(existing);
-    if (parent === existing) throw new Error(`Artifact parent unavailable: ${filePath}`);
+    if (parent === existing) throw new Error(`Artifact parent unavailable: ${displayPath}`);
     suffix.unshift(path.basename(existing));
     existing = parent;
   }
-  const target = path.resolve(fs.realpathSync(existing), ...suffix);
-  const relative = path.relative(realRoot, target);
-  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`Artifact path escapes workspace: ${filePath}`);
-  return target;
+  return path.resolve(fs.realpathSync(existing), ...suffix);
+}
+
+function isInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
 function pathEntryExists(target) {
