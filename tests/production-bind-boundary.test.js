@@ -630,6 +630,13 @@ test('the production supervisor and the API server agree on host and port', asyn
   assert.doesNotMatch(server, /listen\(port, host/, 'the server must not bind unresolved arguments');
 });
 
+test('the production supervisor requires one explicit role and only the API probes the port', () => {
+  const source = fs.readFileSync('scripts/production-supervisor.js', 'utf8');
+  assert.match(source, /process\.argv\.length === 3/);
+  assert.match(source, /role === 'api' \? await probePortAvailable/);
+  assert.match(source, /role === 'api' \? 'apps\/api\/server\.js' : 'apps\/worker\/worker\.js'/);
+});
+
 // The supervisor verifies the whole runtime before it ever probes the port, and reports every
 // failed requirement together. A fixture that trips an earlier requirement would therefore exit
 // nonzero without reaching the check under test, so each supervisor test below states which
@@ -881,7 +888,7 @@ test('systemd independently supervises the API and existing worker under one tar
   assert.match(unit, /8788/, 'the unit must document that restricted staging keeps 8788');
 });
 
-test('production logs are isolated to one systemd-owned file and rotation never targets Docker-wide logs', () => {
+test('production logs are isolated by service and rotation never targets Docker-wide logs', () => {
   const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
   assert.match(unit, /^LogsDirectory=blackspire-command$/m);
   assert.match(unit, /^LogsDirectoryMode=0750$/m);

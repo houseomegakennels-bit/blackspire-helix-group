@@ -11,7 +11,7 @@ function fatal(reason, errors) {
   process.exit(1);
 }
 
-const roleArgument = process.argv[2] || '';
+const roleArgument = process.argv.length === 3 ? process.argv[2] : '';
 const role = roleArgument === '--api-only' ? 'api' : roleArgument === '--worker-only' ? 'worker' : null;
 if (!role) fatal('production service role verification failed', ['expected exactly --api-only or --worker-only']);
 
