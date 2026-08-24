@@ -37,6 +37,12 @@
 - An isolated task submission while halted returned HTTP 423 `emergency stop active` and created no task. The existing authenticated session then supplied the fresh CSRF-bound reset confirmation; reset returned inactive and generation-fenced readiness recovered with the worker idle.
 - **Final runtime state:** resumed/ready; **usage/accounting:** none; **replay count:** 0. No provider attempt or external work was created during the halted interval.
 
+### Rollback rehearsal — PASS (isolated reviewed harness)
+
+- Ran the current-main Gate 4 preparation/rollback, activation-generation, and release-evidence suites together under Node 22.23.1: **61/61 passed**. This is the repository's intended non-destructive proof and avoided a gratuitous public traffic rollback.
+- Cases covered successful unit restoration, originally absent units, second-unit and daemon-reload failure compensation, preservation of non-unit state until unit restoration succeeds, lossless workspace/staging paths, distinct verified same-environment schema-compatible rollback identity, stale generation refusal, API/worker death during activation, malformed/unhealthy readiness, and bounded/hung probes.
+- **Production involvement:** none; public nginx, current production symlink, services, database, and historical sources were unchanged. Earlier real activation failures already exercised stop-before-release-switch compensation during the canonical cutover; this rehearsal adds deterministic failure coverage without creating an outage.
+
 ## 2026-08-24 — Canonical production cutover and real Codex completion (Codex)
 
 - Integrated the existing current-main lanes in dependency order: topology PR #105, immutable Actions PR #107, independent release evidence PR #109, PWA observability PR #108, and truthful VPS audit PR #106. Follow-up PRs #110-#113 corrected live-discovered Codex readiness and coherent runtime-profile defects with focused regression coverage and exact CI before deployment.
