@@ -139,6 +139,11 @@ case "\${1:-}" in
       printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
       exit 0
     fi
+    if grep -q 'symlink-escape-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/outside/escape.md","content":"must not escape\\\\n"}],"summary":"Escape proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
     if grep -q 'duplicate-artifact' "$packet"; then
       printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Duplicate path proposal."}\\n' > "$final"
       printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
@@ -403,6 +408,22 @@ test('symlink aliases are duplicate artifacts and cannot change branches', async
   assert.equal(getTask(body.task.id).status, 'failed');
   assert.match(getTask(body.task.id).error, /duplicate edit path/i);
   assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+});
+
+test('artifact targets cannot escape through a workspace symlink', async () => {
+  const outside = path.join(root, 'outside-artifacts');
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(repo, 'docs', 'outside'));
+  git(['add', 'docs/outside'], repo);
+  git(['commit', '-m', 'add escaping alias fixture'], repo);
+  const beforeBranch = git(['branch', '--show-current'], repo);
+  const { status, body } = await submit('symlink-escape-artifact mutation', 'production-e2e-symlink-escape');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /escapes workspace/i);
+  assert.equal(fs.existsSync(path.join(outside, 'escape.md')), false);
+  assert.equal(git(['branch', '--show-current'], repo), beforeBranch);
 });
 
 test('validation-time unrelated changes are refused and never committed', async () => {

@@ -138,7 +138,7 @@ function canonicalArtifactTarget(filePath, cwd) {
   const realRoot = fs.realpathSync(cwd);
   let existing = lexicalTarget;
   const suffix = [];
-  while (!fs.existsSync(existing)) {
+  while (!pathEntryExists(existing)) {
     const parent = path.dirname(existing);
     if (parent === existing) throw new Error(`Artifact parent unavailable: ${filePath}`);
     suffix.unshift(path.basename(existing));
@@ -148,6 +148,13 @@ function canonicalArtifactTarget(filePath, cwd) {
   const relative = path.relative(realRoot, target);
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`Artifact path escapes workspace: ${filePath}`);
   return target;
+}
+
+function pathEntryExists(target) {
+  try { fs.lstatSync(target); return true; } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
 }
 
 function git(args, cwd) {
