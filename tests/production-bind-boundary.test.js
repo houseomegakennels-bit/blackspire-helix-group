@@ -879,6 +879,7 @@ test('systemd independently supervises the API and existing worker under one tar
   assert.match(unit, /ExecStartPre=.*verify-environment\.sh vps-production/);
   assert.match(unit, /ExecStart=.*production-supervisor\.js --api-only/);
   assert.match(worker, /ExecStart=.*production-supervisor\.js --worker-only/);
+  assert.match(worker, /ExecStartPre=.*verify-environment\.sh vps-production worker/);
   assert.match(worker, /^TimeoutStopSec=35$/m, 'worker receives enough time for its bounded drain');
   assert.match(target, /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m);
   assert.match(unit, /^PartOf=blackspire-command\.target$/m);

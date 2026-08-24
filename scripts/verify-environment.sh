@@ -2,6 +2,7 @@
 set -euo pipefail
 
 mode="${1:-${BLACKSPIRE_ENVIRONMENT:-development}}"
+runtime_role="${2:-api}"
 minimum_node="22.5.0"
 
 fail() { printf 'environment verification failed: %s\n' "$1" >&2; exit 1; }
@@ -52,6 +53,7 @@ case "$mode" in
     done
     ;;
   vps-production)
+    [[ "$runtime_role" == "api" || "$runtime_role" == "worker" ]] || fail "production runtime role must be api or worker"
     [[ "${NODE_ENV:-}" == "production" ]] || fail "production requires NODE_ENV=production"
     [[ "${BLACKSPIRE_RUNTIME_MODE:-}" == "production" ]] || fail "production requires BLACKSPIRE_RUNTIME_MODE=production"
     [[ "${BLACKSPIRE_STATE_OWNER:-}" == "vps-production" ]] || fail "production state owner must be vps-production"
@@ -139,7 +141,7 @@ case "$mode" in
     (( port != 8787 )) || fail "PORT 8787 is reserved by the existing API/worker listener"
     (( port != 8788 )) || fail "PORT 8788 is reserved by restricted staging"
     # Read-only conflict detection: refuse an occupied port without touching its owner.
-    if command -v ss >/dev/null 2>&1; then
+    if [[ "$runtime_role" == "api" ]] && command -v ss >/dev/null 2>&1; then
       if ss -lnt 2>/dev/null | awk -v p=":$port" 'NR>1 && $4 ~ (p "$") { found=1 } END { exit found ? 0 : 1 }'; then
         fail "PORT $port is already in use; refusing to start"
       fi

@@ -358,6 +358,19 @@ test('verify-environment.sh vps-production rejects an invalid port before the ro
   assert.doesNotMatch(r.stderr, /production runtime must not run as root/, 'the port must be refused before the root check');
 });
 
+test('worker preflight validates the bind contract without claiming the API port', () => {
+  const fakeBin = path.join(productionRoot, 'fake-bin-occupied-port');
+  fs.mkdirSync(fakeBin, { recursive: true });
+  const fakeSs = path.join(fakeBin, 'ss');
+  fs.writeFileSync(fakeSs, '#!/usr/bin/env bash\nprintf "State Recv-Q Send-Q Local Address:Port Peer Address:Port\\nLISTEN 0 1 127.0.0.1:%s 0.0.0.0:*\\n" "$PORT"\n', { mode: 0o755 });
+  const env = preflightEnv({ PATH: `${fakeBin}:${process.env.PATH}` });
+  const api = run('scripts/verify-environment.sh', ['vps-production', 'api'], env);
+  assert.match(api.stderr, /already in use/, 'API preflight must retain exclusive port ownership');
+  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], env);
+  assert.doesNotMatch(worker.stderr, /already in use/, 'worker restart must not be blocked by the healthy API listener');
+  assert.match(worker.stderr, /production runtime must not run as root/, 'the worker fixture must reach the final root boundary');
+});
+
 // ---------------------------------------------------------------------------
 // BLACKSPIRE_WORKSPACE_ROOT preflight contract
 //
