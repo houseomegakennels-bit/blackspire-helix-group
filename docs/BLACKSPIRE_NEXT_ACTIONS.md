@@ -2,6 +2,8 @@
 
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 
+0. **IN PROGRESS — Jarvis canonical operator observability.** After production API/worker topology merges, rebase this focused slice onto current main, complete deterministic task-state/offline/approval fixtures, obtain exact-head review and CI, and merge before deployment. Preserve server authority for principal, workspace, provider, model, readiness, and task state; never offer automatic replay for `outcome_unknown`.
+
 1. Complete exact-head adversarial review, CI, and merge of `fix/workspace-authorization`, emphasizing cross-workspace IDOR, task-ID substitution, approval/evidence/conversation leakage, permission confusion, and runtime bypass.
 2. Provision and verify the configured production operator principal and active workspace grants as a separately controlled database operation before activation; configuration never substitutes for a persisted grant.
 3. Repair and verify canonical API/worker service topology, then complete PWA observability, Telegram canonical intake, and release integrity before rollback-safe deployment.

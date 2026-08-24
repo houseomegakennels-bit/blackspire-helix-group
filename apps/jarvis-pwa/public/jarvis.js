@@ -99,7 +99,7 @@ const canonicalSyncStale = (lastSync, pollMs, currentTime = Date.now()) =>
 
 /* ---------- app state (memory only; refresh recovery via URL hash) ---------- */
 const store = {
-  authed: false, csrfToken: '',
+  authed: false, csrfToken: '', principalId: '', sessionExpiresAt: null,
   view: 'command', conversationId: '', taskId: '',
   conversation: null, tasks: [], workspaces: [],
   health: null, ready: null, testMode: null,
@@ -602,6 +602,9 @@ async function loadApprovalHistory() {
 }
 
 function render() {
+  byId('sessionIdentity').textContent = store.authed
+    ? 'Canonical principal: ' + (store.principalId || 'unavailable') + (store.sessionExpiresAt ? ' · session expires ' + fmtTime(store.sessionExpiresAt) : '')
+    : 'Canonical principal: not authenticated';
   renderNav(); renderViews(); renderCore(); renderStatus(store.health);
   if (!store.authed) return;
   if (store.view === 'command') { renderCurrentTask(); renderAttribution(); renderRecentConversations(); }
@@ -759,6 +762,8 @@ function downloadExport(format) {
 async function checkSession() {
   const { body } = await api.session();
   store.authed = Boolean(body.authenticated);
+  store.principalId = store.authed && typeof body.principalId === 'string' ? body.principalId : '';
+  store.sessionExpiresAt = store.authed ? body.expiresAt || null : null;
   if (body.csrfToken) store.csrfToken = body.csrfToken;
   if (!store.authed && store.csrfToken) setNotice('sessionNotice', 'Session expired or not signed in. Enter the admin token to continue.');
   return store.authed;
@@ -769,13 +774,14 @@ async function login() {
   input.value = '';
   if (!response.ok) { setNotice('sessionNotice', response.status === 429 ? 'Too many attempts — wait a minute and retry.' : 'Sign-in failed. Check the admin token.'); return; }
   store.csrfToken = body.csrfToken || ''; store.authed = true;
+  await checkSession();
   setNotice('sessionNotice', '');
   toast('Signed in.');
   await refreshAll();
 }
 async function logout() {
   await api.logout();
-  store.authed = false; store.csrfToken = ''; store.conversation = null; store.tasks = [];
+  store.authed = false; store.csrfToken = ''; store.principalId = ''; store.sessionExpiresAt = null; store.conversation = null; store.tasks = [];
   setNotice('sessionNotice', 'Signed out.');
   render();
 }

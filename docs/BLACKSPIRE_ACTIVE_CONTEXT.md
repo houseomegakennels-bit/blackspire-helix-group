@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Jarvis canonical operator observability in progress (2026-08-24 UTC)
+
+The PWA observability branch renders server-authoritative readiness, worker heartbeat/generation state, provider/model evidence, and `outcome_unknown` as a terminal operator-review state with automatic retry blocked. The authenticated session surface now returns only the persisted principal bound by the server to the session, and Jarvis displays that principal and session expiry without accepting browser-supplied identity. Focused PWA/API validation passes 44/44. This branch is not merged or deployed; production and live Jarvis-to-Codex execution remain unverified.
+
 ## Workspace authorization remediation in review (2026-08-24 UTC)
 
 PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.

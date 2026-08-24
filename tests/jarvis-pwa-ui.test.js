@@ -162,6 +162,13 @@ test('System view renders fresh server-authoritative readiness and worker heartb
   assert.match(appScript, /if \(store\.view === 'system'\) \{ const \{ body \} = await api\.ready/, 'readiness refreshes on every System poll');
 });
 
+test('session identity is displayed only from the server-bound canonical principal', () => {
+  assert.match(html, /id="sessionIdentity"/);
+  assert.match(appScript, /body\.principalId/);
+  assert.doesNotMatch(appScript, /principalId\s*:\s*(?:byId|document|localStorage|sessionStorage)/,
+    'the browser cannot nominate a principal');
+});
+
 test('Telegram delivery states are all representable', () => {
   for (const label of ['Delivery pending', 'Retrying delivery', 'Delivered', 'Delivery failed \\(terminal\\)']) assert.match(source, new RegExp(label));
 });
@@ -302,6 +309,17 @@ test('web manifest is a valid installable Blackspire identity', () => {
 
 let conversationId = '';
 let taskId = '';
+
+test('authenticated browser session reports its server-bound canonical principal', async () => {
+  const login = await fetch('http://localhost:8899/api/auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'jarvis-ui-token' }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+  const session = await (await fetch('http://localhost:8899/api/auth/session', { headers: { cookie } })).json();
+  assert.equal(session.authenticated, true);
+  assert.equal(session.principalId, 'jarvis-route-admin');
+});
 
 test('command submission creates one canonical conversation and task', async () => {
   const response = await fetch('http://localhost:8899/api/unified-input', { method: 'POST', headers: bearer, body: JSON.stringify({ text: 'Report status without changing files.', idempotencyKey: 'ui-suite-1' }) });
