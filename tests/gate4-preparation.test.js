@@ -367,6 +367,20 @@ test('the checklist and the script agree on the authorization boundary', () => {
     /rm -f \/etc\/logrotate\.d\/blackspire-command/,
     'the checklist must roll back the log-rotation policy created by preparation',
   );
+  const firstMutation = before.indexOf('rm -f /etc/blackspire/command.env');
+  assert.ok(firstMutation > 0, 'the checklist must define its first rollback mutation');
+  for (const required of [
+    'missing safe complete snapshot marker',
+    'missing or ambiguous trusted before-state',
+    'unsafe rollback destination: /etc/blackspire/command.env',
+    'unsafe rollback destination: /opt/blackspire-command/shared/workspace',
+    'unsafe rollback destination: /etc/logrotate.d/blackspire-command',
+  ]) {
+    assert.ok(before.indexOf(required) >= 0 && before.indexOf(required) < firstMutation,
+      `${required} must precede the first documented rollback mutation`);
+  }
+  assert.match(before, /install -T -o root -g root -m 0644/, 'the checklist must restore units without directory reinterpretation');
+  assert.match(before, /rm -f -- "\$unit_path"/, 'the checklist removes a unit only from trusted absent before-state');
   for (const verb of ['systemctl start', 'systemctl enable', 'release-switch.sh']) {
     assert.equal(before.includes(verb), false, `${verb} must not be documented as preparation`);
   }

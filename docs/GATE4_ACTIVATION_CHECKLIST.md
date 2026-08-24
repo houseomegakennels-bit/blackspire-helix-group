@@ -169,11 +169,55 @@ Preparation never started production, so undoing it is just removing what it cre
 immutable and are never deleted as part of a rollback.
 
 ```sh
+unit_backup_dir=/var/backups/blackspire-command/gate4-<approved-sha>
+test -f "$unit_backup_dir/.complete" && test ! -L "$unit_backup_dir/.complete" || {
+  echo 'missing safe complete snapshot marker; refusing rollback' >&2; exit 1;
+}
+for unit_path in /etc/systemd/system/blackspire-command.service \
+  /etc/systemd/system/blackspire-command-worker.service \
+  /etc/systemd/system/blackspire-command.target; do
+  unit_base="$(basename -- "$unit_path")"
+  if test -e "$unit_path" || test -L "$unit_path"; then
+    test -f "$unit_path" && test ! -L "$unit_path" || {
+      echo "unsafe rollback destination: $unit_path" >&2; exit 1;
+    }
+  fi
+  backup_present=0; absent_present=0
+  test -f "$unit_backup_dir/$unit_base" && test ! -L "$unit_backup_dir/$unit_base" && backup_present=1
+  test -f "$unit_backup_dir/$unit_base.absent" && test ! -L "$unit_backup_dir/$unit_base.absent" && absent_present=1
+  if test "$((backup_present + absent_present))" -ne 1; then
+    echo "missing or ambiguous trusted before-state for $unit_path; refusing rollback" >&2; exit 1
+  fi
+done
+if test -e /etc/blackspire/command.env || test -L /etc/blackspire/command.env; then
+  test -f /etc/blackspire/command.env && test ! -L /etc/blackspire/command.env || {
+    echo 'unsafe rollback destination: /etc/blackspire/command.env' >&2; exit 1;
+  }
+fi
+if test -e /opt/blackspire-command/shared/workspace || test -L /opt/blackspire-command/shared/workspace; then
+  test -d /opt/blackspire-command/shared/workspace && test ! -L /opt/blackspire-command/shared/workspace || {
+    echo 'unsafe rollback destination: /opt/blackspire-command/shared/workspace' >&2; exit 1;
+  }
+fi
+if test -e /etc/logrotate.d/blackspire-command || test -L /etc/logrotate.d/blackspire-command; then
+  test -f /etc/logrotate.d/blackspire-command && test ! -L /etc/logrotate.d/blackspire-command || {
+    echo 'unsafe rollback destination: /etc/logrotate.d/blackspire-command' >&2; exit 1;
+  }
+fi
+# Only after every evidence record and destination is valid may rollback mutate prepared state.
 rm -f /etc/blackspire/command.env
 rm -rf /opt/blackspire-command/shared/workspace
 rm -f /etc/logrotate.d/blackspire-command
-# Restore each definition from $unit_backup_dir, or remove it only when its matching `.absent`
-# marker proves it did not exist. Refuse rollback if either form of before-state evidence is absent.
+for unit_path in /etc/systemd/system/blackspire-command.service \
+  /etc/systemd/system/blackspire-command-worker.service \
+  /etc/systemd/system/blackspire-command.target; do
+  unit_base="$(basename -- "$unit_path")"
+  if test -f "$unit_backup_dir/$unit_base"; then
+    install -T -o root -g root -m 0644 "$unit_backup_dir/$unit_base" "$unit_path"
+  else
+    rm -f -- "$unit_path"
+  fi
+done
 systemctl daemon-reload
 ```
 
