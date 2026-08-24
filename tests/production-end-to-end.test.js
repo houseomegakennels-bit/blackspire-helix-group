@@ -334,6 +334,21 @@ test('a non-empty artifact that produces no workspace delta cannot complete', as
   assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
 });
 
+test('a mutation task refuses a dirty baseline instead of attributing unrelated files to its artifacts', async () => {
+  const dirtyPath = path.join(repo, 'docs', 'unrelated-dirty.md');
+  fs.writeFileSync(dirtyPath, 'unrelated operator content\n');
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('identical-artifact with dirty baseline', 'production-e2e-dirty-identical');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /workspace must be clean/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+  assert.ok(fs.existsSync(dirtyPath));
+  fs.rmSync(dirtyPath);
+});
+
 test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {
   process.env.HERMES_TASK_HEARTBEAT_INTERVAL_MS = '20';
   const { status, body } = await submit('slow-codex cancellation proof', 'production-e2e-cancel-running');

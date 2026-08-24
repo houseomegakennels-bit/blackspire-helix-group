@@ -87,6 +87,10 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
       await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
       return move('completed', { summary: { result: providerResult.summary || 'Read-only task completed', changedFiles: [], provider: providerResult.provider, model: providerResult.model || null }, evidence });
     }
+    if (context.changedFiles.length !== 0) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace was not clean before artifact application', paths: context.changedFiles.map((file) => file.path) });
+      return move('failed', { error: 'Workspace must be clean before applying provider artifacts' });
+    }
     if (await shouldStop(task.id, ownership)) return;
 
     const branch = await stage(task.id, ownership, 'apply_edits', () => applyProviderEdits(task, workspace, providerResult));
@@ -198,7 +202,7 @@ function inspectWorkspace(workspace) {
   const repositoryPolicy = decide('repository', { repository: workspace.github_repository, allowlist: [workspace.github_repository] });
   if (!repositoryPolicy.allowed) throw new Error(repositoryPolicy.reason);
   const metadata = getRepositoryMetadata({ cwd: workspace.root_path });
-  return { metadata, allowedPaths: workspace.allowed_paths, buildCommands: workspace.build_commands, root: path.resolve(workspace.root_path) };
+  return { metadata, allowedPaths: workspace.allowed_paths, buildCommands: workspace.build_commands, root: path.resolve(workspace.root_path), changedFiles: inspectChangedFiles({ cwd: workspace.root_path }) };
 }
 
 function buildPlan(task, workspace, context) {

@@ -173,7 +173,11 @@ async function handleVoiceNote({ file, mime, buffer, storedPath, chatId, workspa
     return send(`Voice note transcription failed: ${transcription.reason}. The failure was recorded for administrator follow-up.`);
   }
   const parsed = transcription.text.match(/^(read|write)\s*:\s*([\s\S]+)$/i);
-  if (!parsed) return send('Voice task needs an explicit intent. Begin the transcription with “read:” or “write:”.');
+  if (!parsed) {
+    const attachmentId = recordAttachment({ workspaceId, chatId, fileId: file.file_id, fileName: `${file.file_id}.oga`, mimeType: mime, sizeBytes: buffer.length, kind: 'voice', storedPath, textExcerpt: transcription.text, transcriptionStatus: 'intent_rejected' });
+    audit(null, 'telegram', 'attachment.voice_intent_rejected', { attachmentId });
+    return send('Voice task needs an explicit intent. Begin the transcription with “read:” or “write:”.');
+  }
   const result = createUnifiedInput({ channel: 'telegram', actorId: String(chatId), channelKey: String(chatId), workspaceId, text: parsed[2], idempotencyKey: `telegram:voice:${chatId}:${file.file_id}`, metadata: { chatId, attachment: true }, authority: 'telegram', executionIntent: parsed[1].toLowerCase() === 'read' ? 'read_only' : 'workspace_mutation' });
   const attachmentId = recordAttachment({ taskId: result.taskId || null, workspaceId, chatId, fileId: file.file_id, fileName: `${file.file_id}.oga`, mimeType: mime, sizeBytes: buffer.length, kind: 'voice', storedPath, textExcerpt: transcription.text, transcriptionStatus: 'ok' });
   audit(result.taskId || null, 'telegram', 'attachment.voice_transcribed', { attachmentId });
