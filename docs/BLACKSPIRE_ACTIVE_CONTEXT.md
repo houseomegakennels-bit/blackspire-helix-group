@@ -6,6 +6,8 @@ The public Jarvis domain still routes to the historical staging API on loopback 
 
 Root-only online safety snapshots now preserve both historical databases with verified SHA-256 sidecars. Disposable copies of both migrate cleanly to the current schema with integrity and foreign-key checks passing, and minimum operator provisioning is idempotent with cross-workspace/provider/management escalation denied. Because only the workspace ID overlaps while operational histories are distinct, no automatic merge or authority decision was made. These online snapshots do not replace the required writer-stopped cutover backups.
 
+An empty private service home for Codex is prepared at `/opt/blackspire-command/shared/codex-home` with `0700 blackspire:blackspire`; the service identity can execute Codex 0.149.0 with that location under an empty environment. It contains no copied credentials, is not configured in production, and has not passed an authenticated capability probe.
+
 ## Workspace authorization remediation in review (2026-08-24 UTC)
 
 PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.

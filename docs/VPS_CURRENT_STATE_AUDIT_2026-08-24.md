@@ -20,7 +20,7 @@ This is an observation, not deployment evidence. No service, container, database
 - The canonical shared staging database path exists under `/opt/blackspire-command/shared/database/staging/` with its WAL/SHM files.
 - The legacy Docker runtime uses its own named volume at `/var/lib/docker/volumes/blackspire_command-data/_data`.
 - `/etc/blackspire/command.env` exists with restrictive `0640 root:blackspire` metadata. Only key presence was inspected; no value was recorded.
-- `BLACKSPIRE_DB_PATH`, `BLACKSPIRE_WORKSPACE_ROOT`, `BIND_HOST`, and `PORT` are configured. `BLACKSPIRE_OPERATOR_PRINCIPAL_ID`, production execution/provider keys, and `CODEX_HOME` were not present.
+- `BLACKSPIRE_DB_PATH`, `BLACKSPIRE_WORKSPACE_ROOT`, `BIND_HOST`, and `PORT` are configured. `BLACKSPIRE_OPERATOR_PRINCIPAL_ID`, production execution/provider keys, and `CODEX_HOME` were not present at audit time.
 - The configured production database target does not exist. The staging database has one workspace and 28 tasks; the legacy Docker database has one workspace and 15 tasks. Both predate the merged authorization/accounting schema and lack `auth_principals`, `auth_workspace_grants`, and `usage_ledger`. Counts were read through SQLite read-only mode; no row contents were recorded.
 
 ## Public truthfulness gap
@@ -55,3 +55,9 @@ The dedicated migration command succeeded independently on disposable copies of 
 The existing provisioning CLI then applied an explicit rehearsal admin principal plus a service-role minimum grant on each disposable migrated copy. Exact repeat was idempotent. Authorization allowed only `workspace.read`, `task.read`, `task.create`, `task.execute`, `approval.grant`, and `runtime.read`; it denied another workspace, `provider.use.development`, and `workspace.manage`. No rehearsal identifier or grant was written to a live database or environment.
 
 The authoritative database decision remains open. Evidence supports preserving both histories and either selecting one explicitly or starting a clean production database; it does not support an implicit union. A writer-stopped backup of each source remains mandatory immediately before any cutover or migration.
+
+## Codex service-home preparation
+
+An empty `/opt/blackspire-command/shared/codex-home` now exists as `0700 blackspire:blackspire`, outside `ProtectHome` and inside the reviewed service writable path. A service-equivalent empty-environment invocation can execute the installed `codex-cli 0.149.0` binary with that `CODEX_HOME`.
+
+No credential file was inspected or copied, no login status or authentication content was printed, and the production environment still does not set `CODEX_HOME`. The directory is therefore **prepared but unauthenticated and unconfigured**. Credential-owner login or a separately reviewed transfer mechanism plus the bounded sanitized capability probe remain deployment blockers.

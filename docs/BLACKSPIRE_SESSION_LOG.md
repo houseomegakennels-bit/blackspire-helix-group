@@ -8,6 +8,10 @@
 
 - Used the reviewed WAL-aware backup command to create `0600 root:root` online safety snapshots of both staging and Docker database sources, each with a verified SHA-256 sidecar. Live writers stayed available, so these are explicitly preliminary and do not replace writer-stopped cutover backups. Sanitized comparison found integrity `ok`, zero foreign-key violations, one shared workspace ID, and no other ID overlap; staging and Docker histories are distinct and were not merged. The dedicated migration command succeeded on disposable copies of both, preserving original counts and producing zero missing schema objects. The existing authorization CLI then idempotently provisioned a disposable minimum operator grant; required workspace/task/approval/runtime checks allowed, while another workspace, development provider, and workspace management denied. No live database, environment, service, proxy, container, credential, or Codex state changed.
 
+## 2026-08-24 — Private Codex service-home preparation (Codex)
+
+- Created an empty `/opt/blackspire-command/shared/codex-home` as `0700 blackspire:blackspire`, outside protected home and inside the reviewed writable service tree. The `blackspire` identity executes `codex-cli 0.149.0` with that location under an empty environment. No auth file was inspected/copied and no login state was printed. Production configuration remains unchanged, so authenticated capability is still unverified and deployment remains blocked on credential-owner login/approved transfer plus a bounded sanitized service-equivalent probe.
+
 ## 2026-08-24 — PR #103 merged and workspace route authorization implemented (Codex)
 
 - Recovered no valuable local work newer than PR #103 exact head `dae91962f992016cf0dcde823643bad42130952a`. Verified exact-head Actions, Vercel, and clean adversarial Codex review; reproduced 54 focused ownership/Codex/preflight checks; answered and resolved the four outdated P1 threads individually; and merged with expected-head protection as `029376c4e47451c6426eb4cbf7c3f9e622a2170b`. The merge tree is byte-identical to the reviewed head. No deployment or real provider smoke occurred.
