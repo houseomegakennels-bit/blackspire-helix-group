@@ -1,0 +1,118 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createReleaseEvidence, writeReleaseEvidence, loadReleaseEvidence, verifyReleaseEvidence, serializeReleaseEvidence, verifyRollbackReleaseEvidence, createOperatorReleaseReport, computeArtifactDigest } from '../packages/shared/release-evidence.js';
+
+const A='a'.repeat(40), B='b'.repeat(40);
+function artifact(commit=A, environment='staging') { const root=fs.mkdtempSync(path.join(os.tmpdir(),'blackspire-release-evidence-')); fs.writeFileSync(path.join(root,'COMMIT_SHA'),`${commit}\n`); fs.writeFileSync(path.join(root,'package.json'),'{"name":"blackspire","version":"1.2.3"}\n'); fs.mkdirSync(path.join(root,'apps')); fs.writeFileSync(path.join(root,'apps','server.js'),'export const ready=true;\n'); const input={commitSha:commit,expectedEnvironment:environment,buildTimestamp:'2026-08-10T12:00:00.000Z',sourceRef:'refs/heads/release',buildId:'123.1',ciProvider:'github-actions',ciRunId:'123',artifactName:`blackspire-${commit}`,packageVersion:'1.2.3',nodeVersion:'v22.23.1',repository:'houseomegakennels-bit/blackspire-helix-group'}; return {root,input}; }
+function verified(item) { const manifest=writeReleaseEvidence(item.root,item.input); return {manifest,result:verifyReleaseEvidence({artifactRoot:item.root,packagedCommitSha:item.input.commitSha,expectedCommitSha:item.input.commitSha,expectedEnvironment:item.input.expectedEnvironment,deploymentRecord:{commitSha:item.input.commitSha,artifactDigest:manifest.artifact.digest,environment:item.input.expectedEnvironment}})}; }
+
+test('identical payload and inputs produce identical evidence independent of directory',()=>{const one=artifact(),two=artifact();const a=createReleaseEvidence({...one.input,artifactRoot:one.root}),b=createReleaseEvidence({...two.input,artifactRoot:two.root});assert.deepEqual(a,b);fs.rmSync(one.root,{recursive:true});fs.rmSync(two.root,{recursive:true});});
+test('manifest binds commit, environment, CI identity, package runtime, and exact artifact tree',()=>{const item=artifact();const {result}=verified(item);assert.equal(result.state,'VERIFIED');const safe=serializeReleaseEvidence(result);assert.equal(safe.commitSha,A);assert.equal(safe.expectedEnvironment,'staging');assert.equal(safe.ciProvider,'github-actions');assert.match(safe.artifactDigest,/^[a-f0-9]{64}$/);fs.rmSync(item.root,{recursive:true});});
+test('artifact mutation after packaging is a mismatch',()=>{const item=artifact();const {manifest}=verified(item);fs.appendFileSync(path.join(item.root,'apps/server.js'),'tampered\n');const result=verifyReleaseEvidence({artifactRoot:item.root,packagedCommitSha:A,expectedEnvironment:'staging',deploymentRecord:{commitSha:A,artifactDigest:manifest.artifact.digest,environment:'staging'}});assert.equal(result.state,'MISMATCH');assert.ok(result.reasons.includes('ARTIFACT_DIGEST_MISMATCH'));fs.rmSync(item.root,{recursive:true});});
+test('missing, malformed, duplicate, wrong commit and wrong environment evidence fail closed',()=>{const missing=artifact();assert.equal(loadReleaseEvidence(missing.root).state,'MISSING');fs.writeFileSync(path.join(missing.root,'RELEASE_EVIDENCE.json'),'{bad');assert.equal(loadReleaseEvidence(missing.root).state,'INVALID');fs.rmSync(missing.root,{recursive:true});const item=artifact();verified(item);assert.throws(()=>writeReleaseEvidence(item.root,item.input),/already exists/);const wrong=verifyReleaseEvidence({artifactRoot:item.root,packagedCommitSha:B,expectedCommitSha:B,expectedEnvironment:'production',deploymentRecord:{commitSha:B,artifactDigest:'0'.repeat(64),environment:'production'}});assert.equal(wrong.state,'MISMATCH');assert.ok(wrong.reasons.includes('COMMIT_MISMATCH'));assert.ok(wrong.reasons.includes('ENVIRONMENT_MISMATCH'));fs.rmSync(item.root,{recursive:true});});
+test('runtime override and missing deployment record never become verified',()=>{const item=artifact();writeReleaseEvidence(item.root,item.input);const override=verifyReleaseEvidence({artifactRoot:item.root,packagedCommitSha:A,expectedEnvironment:'staging',runtimeOverrideSha:B});assert.equal(override.state,'MISMATCH');assert.ok(override.reasons.includes('UNTRUSTED_RUNTIME_OVERRIDE'));const absent=verifyReleaseEvidence({artifactRoot:item.root,packagedCommitSha:A,expectedEnvironment:'staging'});assert.equal(absent.state,'UNVERIFIED');assert.equal(absent.reasonCode,'DEPLOYMENT_RECORD_MISSING');fs.rmSync(item.root,{recursive:true});});
+test('missing required build metadata never becomes verified',()=>{for(const field of ['repository','buildId','artifactName','packageVersion','nodeVersion','ciProvider','ciRunId']){const item=artifact();item.input[field]=null;const manifest=writeReleaseEvidence(item.root,item.input);const result=verifyReleaseEvidence({artifactRoot:item.root,packagedCommitSha:A,expectedEnvironment:'staging',deploymentRecord:{commitSha:A,artifactDigest:manifest.artifact.digest,environment:'staging'}});assert.equal(result.state,'UNVERIFIED',field);assert.ok(result.reasons.includes('BUILD_METADATA_MISSING'),field);fs.rmSync(item.root,{recursive:true});}});
+test('same package version cannot conceal a different commit',()=>{const one=artifact(A),two=artifact(B);const a=verified(one),b=verified(two);assert.equal(a.result.manifest.runtime.packageVersion,b.result.manifest.runtime.packageVersion);assert.notEqual(a.result.manifest.commitSha,b.result.manifest.commitSha);assert.notEqual(a.result.manifest.artifact.digest,b.result.manifest.artifact.digest);fs.rmSync(one.root,{recursive:true});fs.rmSync(two.root,{recursive:true});});
+test('rollback requires prior verified retrievable same-environment schema-compatible evidence and operator authority',()=>{const current=artifact(A),prior=artifact(B);const c=verified(current).result,p=verified(prior).result;const ok=verifyRollbackReleaseEvidence({candidate:p,current:c,schemaCompatible:true,artifactAvailable:true});assert.equal(ok.state,'VERIFIED');assert.equal(ok.operatorAuthorizationRequired,true);for(const change of [{artifactAvailable:false},{schemaCompatible:false}])assert.equal(verifyRollbackReleaseEvidence({candidate:p,current:c,schemaCompatible:true,artifactAvailable:true,...change}).state,'INVALID');const cross=artifact(B,'production'),crossResult=verified(cross).result;assert.ok(verifyRollbackReleaseEvidence({candidate:crossResult,current:c,schemaCompatible:true,artifactAvailable:true}).reasons.includes('ROLLBACK_ENVIRONMENT_MISMATCH'));for(const item of [current,prior,cross])fs.rmSync(item.root,{recursive:true});});
+test('operator report is bounded, read-only, redacted by construction, and never acts',()=>{const item=artifact();const actual=verified(item).result;actual.manifest.token='must-not-leak';const report=createOperatorReleaseReport({expected:actual,actual,postDeploy:{classification:'proceed'},rollback:{state:'VERIFIED',operatorAuthorizationRequired:true,reasons:[]},health:'healthy'});assert.equal(report.classification,'VERIFIED_RELEASE');assert.equal(report.automaticActionTaken,false);assert.equal(JSON.stringify(report).includes('must-not-leak'),false);fs.rmSync(item.root,{recursive:true});});
+
+// The negative tests above each perturb SEVERAL inputs at once, so a co-occurring reason
+// masks any single guard: deleting the manifest self-integrity check, the symlink
+// rejection, the expectedEnvironment comparison, the deploymentRecord digest binding, or
+// the rollback candidate-state check all left this suite green. Each test below isolates
+// exactly ONE guard so its removal is observable.
+
+test('a manifest field altered without resealing its evidence digest is INVALID', () => {
+  const item = artifact();
+  writeReleaseEvidence(item.root, item.input);
+  const file = path.join(item.root, 'RELEASE_EVIDENCE.json');
+  const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // Structurally valid in every other respect -- only the digest no longer covers the content.
+  manifest.expectedEnvironment = 'production';
+  fs.writeFileSync(file, `${JSON.stringify(manifest)}\n`);
+  const loaded = loadReleaseEvidence(item.root);
+  assert.equal(loaded.state, 'INVALID');
+  assert.equal(loaded.reasonCode, 'MANIFEST_INVALID');
+  assert.equal(loaded.manifest, null);
+  // And the same forgery cannot reach a verified verdict through the full verifier.
+  assert.equal(verifyReleaseEvidence({ artifactRoot: item.root, packagedCommitSha: A, expectedEnvironment: 'production',
+    deploymentRecord: { commitSha: A, artifactDigest: '0'.repeat(64), environment: 'production' } }).state, 'INVALID');
+  fs.rmSync(item.root, { recursive: true });
+});
+
+test('a symlink inside the artifact is refused rather than silently followed or skipped', () => {
+  const item = artifact();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-outside-'));
+  fs.writeFileSync(path.join(outside, 'target.txt'), 'attacker controlled\n');
+  fs.symlinkSync(path.join(outside, 'target.txt'), path.join(item.root, 'apps', 'linked.js'));
+  // A followed symlink would digest foreign bytes; a skipped one would leave the payload
+  // outside digest coverage entirely. Both are refused.
+  assert.throws(() => computeArtifactDigest(item.root), /unsupported file type/);
+  assert.throws(() => writeReleaseEvidence(item.root, item.input), /unsupported file type/);
+  fs.rmSync(item.root, { recursive: true });
+  fs.rmSync(outside, { recursive: true });
+});
+
+test('the expectedEnvironment argument alone rejects an artifact built for another environment', () => {
+  const item = artifact(A, 'staging');
+  const manifest = writeReleaseEvidence(item.root, item.input);
+  // Everything else agrees with the manifest -- including the deployment record's own
+  // environment -- so only the caller's expectedEnvironment can produce the mismatch.
+  const result = verifyReleaseEvidence({ artifactRoot: item.root, packagedCommitSha: A, expectedCommitSha: A,
+    expectedEnvironment: 'production',
+    deploymentRecord: { commitSha: A, artifactDigest: manifest.artifact.digest, environment: 'staging' } });
+  assert.equal(result.state, 'MISMATCH');
+  assert.ok(result.reasons.includes('ENVIRONMENT_MISMATCH'));
+  fs.rmSync(item.root, { recursive: true });
+});
+
+test('a deployment record whose artifact digest disagrees with the manifest is a mismatch', () => {
+  const item = artifact();
+  writeReleaseEvidence(item.root, item.input);
+  // Commit and environment agree, and the packaged tree is untouched, so the recomputed
+  // digest matches the manifest. Only the deployment record's digest binding can fail.
+  const result = verifyReleaseEvidence({ artifactRoot: item.root, packagedCommitSha: A, expectedCommitSha: A,
+    expectedEnvironment: 'staging',
+    deploymentRecord: { commitSha: A, artifactDigest: '0'.repeat(64), environment: 'staging' } });
+  assert.equal(result.state, 'MISMATCH');
+  assert.ok(result.reasons.includes('ARTIFACT_DIGEST_MISMATCH'));
+  fs.rmSync(item.root, { recursive: true });
+});
+
+test('a rollback candidate that is not itself VERIFIED is refused even when everything else agrees', () => {
+  const current = artifact(A), prior = artifact(B);
+  const c = verified(current).result, p = verified(prior).result;
+  assert.equal(verifyRollbackReleaseEvidence({ candidate: p, current: c, schemaCompatible: true, artifactAvailable: true }).state, 'VERIFIED');
+  // Identical manifest, environment, and commit -- only the candidate's own verdict differs.
+  for (const state of ['UNVERIFIED', 'MISMATCH', 'MISSING', 'INVALID']) {
+    const degraded = { ...p, state };
+    const result = verifyRollbackReleaseEvidence({ candidate: degraded, current: c, schemaCompatible: true, artifactAvailable: true });
+    assert.equal(result.state, 'INVALID', state);
+    assert.ok(result.reasons.includes('ROLLBACK_ARTIFACT_MISSING'), state);
+  }
+  for (const item of [current, prior]) fs.rmSync(item.root, { recursive: true });
+});
+
+test('a rollback candidate must be a different, well-formed commit from the current release', () => {
+  // Rolling "back" to the release you are already running is not a rollback, and a malformed
+  // candidate SHA is not a target. Both were unpinned: deleting the check left the suite green.
+  const current = artifact(A), prior = artifact(B);
+  const c = verified(current).result, p = verified(prior).result;
+  assert.equal(verifyRollbackReleaseEvidence({ candidate: p, current: c, schemaCompatible: true, artifactAvailable: true }).state, 'VERIFIED');
+
+  // Same commit as the current release -- everything else agrees.
+  const same = verifyRollbackReleaseEvidence({ candidate: c, current: c, schemaCompatible: true, artifactAvailable: true });
+  assert.equal(same.state, 'INVALID');
+  assert.ok(same.reasons.includes('COMMIT_MISMATCH'));
+
+  // Malformed candidate commit.
+  const malformed = { ...p, manifest: { ...p.manifest, commitSha: 'not-a-sha' } };
+  const refused = verifyRollbackReleaseEvidence({ candidate: malformed, current: c, schemaCompatible: true, artifactAvailable: true });
+  assert.equal(refused.state, 'INVALID');
+  assert.ok(refused.reasons.includes('COMMIT_MISMATCH'));
+
+  for (const item of [current, prior]) fs.rmSync(item.root, { recursive: true });
+});
