@@ -107,6 +107,13 @@ case "\${1:-}" in
       printf 'not-json\\n'
       exit 0
     fi
+    if grep -q 'empty-artifacts' "$packet"; then
+      printf '{"artifacts":[],"summary":"sandbox could not inspect the requested file"}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n'
+      printf '{"type":"turn.started"}\\n'
+      printf '{"type":"turn.completed"}\\n'
+      exit 0
+    fi
     printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n' > "$final"
     printf '{"type":"thread.started","thread_id":"fixture"}\\n'
     printf '{"type":"turn.started"}\\n'
@@ -260,6 +267,18 @@ test('a failed production Codex invocation is not retried for the same task', as
   const after = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
   assert.equal(after, before + 1, 'production Codex must not retry a failed subscription invocation');
   assert.equal(getTask(body.task.id).status, 'failed');
+});
+
+test('a workspace mutation cannot complete when Codex returns no artifacts', async () => {
+  const { status, body } = await submit('Add empty-artifacts proof to `docs/production-proof.md`', 'production-e2e-empty-artifacts');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /no artifacts for a workspace mutation task/i);
+  const records = taskRecords(body.task.id);
+  assert.equal(records.providerAttempts.at(-1).status, 'completed', 'provider output is terminal even though Hermes refuses it');
+  assert.equal(records.changedFiles.length, 0);
+  assert.ok(records.evidence.some((row) => row.kind === 'artifact_application_refused'));
 });
 
 test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {

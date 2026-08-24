@@ -901,6 +901,8 @@ test('systemd independently supervises the API and existing worker under one tar
   assert.match(worker, /^TimeoutStopSec=35$/m, 'worker receives enough time for its bounded drain');
   assert.match(worker, /^KillMode=mixed$/m, 'only the supervisor receives the first drain signal');
   assert.match(unit, /^KillMode=mixed$/m, 'only the API supervisor receives the first drain signal');
+  assert.match(worker, /^RestrictNamespaces=user mnt pid ipc uts net cgroup$/m, 'the worker must permit namespace primitives required by the Codex bubblewrap sandbox');
+  assert.match(unit, /^RestrictNamespaces=yes$/m, 'the API does not spawn Codex and keeps namespace creation disabled');
   assert.match(target, /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m);
   assert.match(unit, /^PartOf=blackspire-command\.target$/m);
   assert.match(worker, /^PartOf=blackspire-command\.target$/m);

@@ -40,7 +40,11 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
-RestrictNamespaces=yes
+# Codex's read-only Linux sandbox is bubblewrap-based and requires namespace creation. The worker
+# must permit those kernel primitives so the provider can enter its stricter child sandbox; the API
+# retains RestrictNamespaces=yes, and NoNewPrivileges, an empty capability set, ProtectSystem=strict,
+# ProtectHome=yes, and the shared-tree-only write allowlist remain enforced around this service.
+RestrictNamespaces=user mnt pid ipc uts net cgroup
 CapabilityBoundingSet=
 AmbientCapabilities=
 

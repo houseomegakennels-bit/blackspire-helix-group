@@ -74,6 +74,10 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     if (getTask(task.id)?.status === 'cancelled') return getTask(task.id);
     if (providerResult.ownershipLost) return getTask(task.id);
     if (!providerResult.ok) return move('failed', { error: providerResult.error || 'provider failed' });
+    if (requiresWorkspaceMutation(task.request) && providerResult.artifacts.length === 0) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace mutation task returned no artifacts', provider: providerResult.provider });
+      return move('failed', { error: 'Provider returned no artifacts for a workspace mutation task' });
+    }
     if (await shouldStop(task.id, ownership)) return;
 
     const branch = await stage(task.id, ownership, 'apply_edits', () => applyProviderEdits(task, workspace, providerResult));
@@ -148,6 +152,14 @@ function cancellationRequested(taskId) {
 function requiresApproval(task) {
   const actionClass = task.action_class || classifyRequest(task.request).actionClass;
   return decide(actionClass).requiresApproval;
+}
+
+// A provider may truthfully return no artifacts for a read-only status request, but an imperative
+// workspace mutation cannot be reported as completed with an empty edit set. Keep this deliberately
+// narrow and anchored at the beginning of the operator objective so negative clauses such as
+// "make no file changes" do not turn a read-only task into a mutation task.
+export function requiresWorkspaceMutation(request) {
+  return /^(?:please\s+)?(?:add|append|create|edit|modify|rename|replace|update|write)\b/i.test(String(request || '').trim());
 }
 
 // Approvals are persisted state, not a per-run regex check: once an approval is recorded for a task,
