@@ -1,8 +1,12 @@
 # Blackspire Active Context
 
-## PR #105 final review correction in progress (2026-08-24 UTC)
+## Current-main GitHub Action pin recovery (2026-08-24 UTC)
 
-The current correction requires successful target shutdown before release rollback can switch `current`, requires root-owned non-group/world-writable installed API/worker/target definitions, and reports unexpected child crash signals during a requested drain as nonzero while accepting only the signal the supervisor actually forwarded. The new regressions pass; no production state changed. The branch remains unmerged and undeployed pending focused validation, publication, CI, and another exact-head review.
+The useful three-file patch from stale PR #96 has been reconstructed on current main and expanded to cover the previously omitted Book Studio workflow. Checkout v7.0.1, setup-node v7.0.0, and upload-artifact v7.0.1 tags were independently resolved against their official Git repositories and every workflow use is pinned to the resulting commit SHA. A repository-wide test rejects mutable major tags and unexpected pins; focused validation passes 8/8. The branch is not merged.
+
+## API/worker service topology merged (2026-08-24 UTC)
+
+PR #105 merged as `1724f7ecd5713edfc222e5e3cfadc81913af0033` from exact head `f6a6253aa60f30d9169d6e6a13892b501a5ed9ea` after green CI and independent verification of its three final corrections. The reviewed topology remains uninstalled and undeployed; public Jarvis still targets historical staging.
 
 ## API/worker service topology in progress (2026-08-24 UTC)
 

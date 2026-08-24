@@ -1,5 +1,7 @@
 # Blackspire Next Actions
 
+0. **IN PROGRESS — release-integrity recovery.** The independent action-pin slice from stale PR #96 is rebuilt and focused-tested on current main. Publish and validate it independently; keep the larger #97 release-evidence and #98 artifact-identity recovery separate, and integrate base-first after production topology lands.
+
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 
 1. **DONE:** workspace authorization merged in PR #104 at `31a716961b174496e5d343a8e4586017204b4990` from reviewed head `5e877a8e6f7ff2af11c61e76bb1234b8623e50b7`.
