@@ -89,7 +89,7 @@ git -C /opt/blackspire-command/shared/workspace checkout --detach <approved-sha>
 chown -R blackspire:blackspire /opt/blackspire-command/shared/workspace
 
 # 3. Immutable release for the approved SHA (builds it; does not activate it)
-bash scripts/release-create.sh <approved-sha>
+BLACKSPIRE_STATE_OWNER=vps-production bash scripts/release-create.sh <approved-sha>
 
 # 4. Production backup, through the pinned interpreter
 npm run db:backup -- /opt/blackspire-command/shared/backups

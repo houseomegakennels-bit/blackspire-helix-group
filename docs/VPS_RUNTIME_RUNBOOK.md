@@ -38,6 +38,13 @@ The command permits only the exact lowercase value `true`. Every other value, in
 
 ## Release and rollback
 
+`BLACKSPIRE_STATE_OWNER` must be exported for both `release-create.sh` and `release-switch.sh`. The
+release manifest is sealed with the environment that owner names, and `release-switch.sh` records the
+same environment in the release's deployment record and refuses to make the release current unless the
+two agree. A release built without an owner is sealed `unassigned` and will be refused at startup on
+`vps-staging` and `vps-production`; set `BLACKSPIRE_EXPECTED_ENVIRONMENT` explicitly only to override
+that derivation deliberately.
+
 Use `release-create.sh` to archive an exact full SHA into `releases/<sha>` and `release-switch.sh` to atomically update `current`. Keep `current` and the prior completed release until health checks pass. `release-rollback.sh <known-good-sha>` changes only the symlink; it does not rewrite Git history. Persistent database, evidence, and backup paths live under `shared/`, never inside a release.
 
 The privileged release creator accepts only a clean, non-root absolute release root (no `.`/`..` traversal or repeated separators), rejects symlinked ancestors before account/ownership work, then brings both that root and its `releases/` parent to the exact `root:blackspire` / `0755` contract. Every completed `releases/<full-sha>` tree is also `root:blackspire`: directories and archived executable files are mode `0755`; ordinary files, including `COMMIT_SHA` and `.release-complete`, are mode `0644`. Safe review/development metadata (`.agents`, `.claude`, `.devcontainer`, `.github`, `.githooks`, `.vscode`, `AGENTS.md`, and `tests`) is not archived into a release. One shared validator serves create, explicit preflight, switch, and rollback: every symlink must resolve to an existing canonical target inside that release; dangling links, loops, escapes, and symlinked ancestors fail closed. The completion marker is created with no-clobber semantics only after copy, containment/type, ownership, and mode validation succeed; its pre-existence or symlink status fails creation.

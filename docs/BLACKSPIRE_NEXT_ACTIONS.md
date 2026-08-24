@@ -4,6 +4,8 @@
 
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 
+0. **IN REVIEW — current-main release evidence reconstruction.** Reconciled `fix/release-evidence-current-main` onto post-#105/#107 main; preserve #105's Gate 4 semantics and #107's immutable pins, run focused release/topology integration tests, obtain exact-head CI and review, and merge before building a production candidate. Do not merge historical PR #97 or #98 directly.
+
 1. **DONE:** workspace authorization merged in PR #104 at `31a716961b174496e5d343a8e4586017204b4990` from reviewed head `5e877a8e6f7ff2af11c61e76bb1234b8623e50b7`.
 2. Provision and verify the configured production operator principal and active workspace grants as a separately controlled database operation before activation; configuration never substitutes for a persisted grant.
 3. Complete full validation and exact-head review of `fix/api-worker-service-topology` candidate `7c475b63c6ca2c2b456bfc3fbd3a8727c34a6c39`, whose bounded activation waiter now fences readiness to current API/worker systemd invocations; merge only after CI/Vercel and stale-heartbeat adversarial review pass. Then complete PWA observability, Telegram canonical intake, and release integrity before rollback-safe deployment.

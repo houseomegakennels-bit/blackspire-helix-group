@@ -1,8 +1,12 @@
 # Blackspire Active Context
 
+## Current-main release evidence reconstruction (2026-08-24 UTC)
+
+The corrected unique #97 release-evidence series and #98 artifact cross-check are reconstructed on current main without their stale duplicated ancestry. The recovered contract passes 116 focused release/rollback tests. Its CI cross-check now independently hashes the packaged tree and binds repository plus environment instead of copying the manifest digest and comparing that value back to its source; focused CI/evidence/deployment-record validation passes 36/36, including a real post-package mutation rejection. The lane is reconciled onto post-#105/#107 main and remains unmerged pending exact-head validation.
+
 ## Current-main GitHub Action pin recovery (2026-08-24 UTC)
 
-The useful three-file patch from stale PR #96 has been reconstructed on current main and expanded to cover the previously omitted Book Studio workflow. Checkout v7.0.1, setup-node v7.0.0, and upload-artifact v7.0.1 tags were independently resolved against their official Git repositories and every workflow use is pinned to the resulting commit SHA. A repository-wide test rejects mutable major tags and unexpected pins; focused validation passes 8/8. The branch is not merged.
+The useful three-file patch from stale PR #96 was reconstructed on current main, expanded to Book Studio, and merged in PR #107 as `e54d4b0b5337b76bbd5266ef3f74c28aac0dde0d`.
 
 ## API/worker service topology merged (2026-08-24 UTC)
 

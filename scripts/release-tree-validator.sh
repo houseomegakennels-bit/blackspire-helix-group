@@ -85,3 +85,20 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   [[ -n "$root" ]] || root=/
   release_validate_completed_release "$root" "$commit"
 fi
+
+# The manifest is sealed with the environment the release is BUILT for, and startup compares it
+# against the environment the host claims. Defaulting to 'unassigned' meant the documented
+# procedure -- a bare `release-create.sh <sha>` on the VPS, as in VPS_RUNTIME_RUNBOOK.md and
+# GATE4_ACTIVATION_CHECKLIST.md -- sealed 'unassigned' while the host said 'production', so the
+# release was refused at startup. Derive it from the same state owner the runtime uses, and keep
+# 'unassigned' only when the host genuinely declares no owner.
+release_expected_environment() {
+  case "${BLACKSPIRE_STATE_OWNER:-}" in
+    vps-production) printf 'production' ;;
+    vps-staging) printf 'staging' ;;
+    vps-disposable-staging) printf 'disposable-staging' ;;
+    codespace-disposable) printf 'development' ;;
+    iphone-test-disposable) printf 'test' ;;
+    *) printf 'unassigned' ;;
+  esac
+}
