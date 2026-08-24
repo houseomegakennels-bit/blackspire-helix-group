@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — first live Jarvis task stopped before Codex dispatch (Codex)
+
+- Public Jarvis authenticated a session bound to persisted principal `blackspire-operator`, returned its expiration and authorized `blackspire-command` workspace, persisted read-only task `task_1470cfb8c1e6da17`, queued it, and the current worker claimed it.
+- Provider discovery failed before dispatch because the runtime Codex capability probe still treated the aggregate nonzero doctor exit as unavailable and depended on obsolete summary text. The task ended failed with no provider attempt, no external Codex child, and no replay ambiguity.
+- The correction aligns runtime discovery with startup readiness: a completed probe may have unrelated doctor failures, but schema version, authentication, HTTP transport, and websocket transport must all be explicitly healthy; timeout/cancellation/output bounds/signals/malformed JSON still fail closed.
+
 ## 2026-08-24 — runtime-profile exact-head review corrections (Codex)
 
 - Exact-head review of PR #112 found two P2 divergences from the shell gate: misspelled execution modes fell into the disabled branch, and allowlists containing Codex plus mock, unknown, or empty entries passed an incomplete membership check.

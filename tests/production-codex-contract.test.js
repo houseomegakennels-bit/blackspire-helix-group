@@ -26,7 +26,7 @@ if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITH
 fi
 case "\${1:-}" in
   --version) printf 'codex-cli 999.0.0-test\\n' ;;
-  doctor) printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n' ;;
+  doctor) printf '{"schemaVersion":1,"checks":{"auth.credentials":{"status":"ok"},"network.provider_reachability":{"status":"ok"},"network.websocket_reachability":{"status":"ok"},"installation":{"status":"fail"}}}\\n'; exit "\${TEST_CODEX_DOCTOR_EXIT:-0}" ;;
   *) exit 64 ;;
 esac
 `);
@@ -146,7 +146,7 @@ function controlledProbe({ hangDoctor = false } = {}) {
       if (args[0] === '--version') {
         child.stdout.end('codex-cli test\n'); child.stderr.end(); child.emit('close', 0, null);
       } else if (!hangDoctor) {
-        child.stdout.end('{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\n'); child.stderr.end(); child.emit('close', 0, null);
+        child.stdout.end('{"schemaVersion":1,"checks":{"auth.credentials":{"status":"ok"},"network.provider_reachability":{"status":"ok"},"network.websocket_reachability":{"status":"ok"},"installation":{"status":"fail"}}}\n'); child.stderr.end(); child.emit('close', 0, null);
       }
     });
     return child;
@@ -158,6 +158,20 @@ test('Codex doctor hangs are bounded and fail closed', async () => {
   const probe = controlledProbe({ hangDoctor: true });
   assert.equal(await codexCliAvailable({ spawnImpl: probe.spawnImpl, timeoutMs: 20 }), false);
   assert.deepEqual(probe.calls.map((call) => call.args[0]), ['--version', 'doctor']);
+});
+
+test('Codex capability accepts healthy auth and transports despite unrelated doctor exit failure', async () => {
+  const probe = controlledProbe();
+  const original = probe.spawnImpl;
+  probe.spawnImpl = (command, args, options) => {
+    const child = original(command, args, options);
+    if (args[0] === 'doctor') {
+      const emit = child.emit.bind(child);
+      child.emit = (event, code, signal) => emit(event, event === 'close' ? 17 : code, signal);
+    }
+    return child;
+  };
+  assert.equal(await codexCliAvailable({ spawnImpl: probe.spawnImpl }), true);
 });
 
 test('Codex capability verification observes cancellation and deadline controls', async () => {
