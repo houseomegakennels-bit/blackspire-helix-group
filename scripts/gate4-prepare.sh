@@ -360,7 +360,7 @@ PREPARATION (safe, reversible, no activation)
      The checker above fails closed if an installed definition differs; inspect that difference
      before replacing any existing file:
        install -d -o root -g root -m 0700 "\$(dirname -- $unit_backup_dir)"
-       mkdir -m 0700 -- $unit_backup_dir
+       mkdir -m 0700 -- $unit_backup_dir || { echo 'unit snapshot already exists; refusing overwrite' >&2; exit 1; }
        chown root:root -- $unit_backup_dir
        for unit_path in $api_unit_file $worker_unit_file $target_file; do
          unit_base="\$(basename -- "\$unit_path")"
@@ -400,7 +400,7 @@ VALIDATION (read-only, proves preparation is correct)
   systemctl show $target_name $api_unit_name $worker_unit_name -p ActiveState -p UnitFileState -p MainPID
 
 ROLLBACK OF PREPARATION (safe; production was never started)
-  test -f $unit_backup_dir/.complete && test ! -L $unit_backup_dir/.complete
+  test -f $unit_backup_dir/.complete && test ! -L $unit_backup_dir/.complete || { echo 'missing safe complete snapshot marker; refusing rollback' >&2; exit 1; }
   # Validate the complete snapshot before mutating the first installed definition.
   for unit_path in $api_unit_file $worker_unit_file $target_file; do
     unit_base="\$(basename -- "\$unit_path")"
