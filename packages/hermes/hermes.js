@@ -87,8 +87,9 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
       await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
       return move('completed', { summary: { result: providerResult.summary || 'Read-only task completed', changedFiles: [], provider: providerResult.provider, model: providerResult.model || null }, evidence });
     }
-    if (context.changedFiles.length !== 0) {
-      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace was not clean before artifact application', paths: context.changedFiles.map((file) => file.path) });
+    const currentWorkspaceChanges = inspectChangedFiles({ cwd: workspace.root_path });
+    if (currentWorkspaceChanges.length !== 0) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace was not clean immediately before artifact application', paths: currentWorkspaceChanges.map((file) => file.path) });
       return move('failed', { error: 'Workspace must be clean before applying provider artifacts' });
     }
     if (!artifactsWouldChangeWorkspace(providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths })) {

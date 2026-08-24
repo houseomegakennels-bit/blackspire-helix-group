@@ -124,6 +124,11 @@ case "\${1:-}" in
       printf '{"type":"thread.started","thread_id":"fixture"}\n{"type":"turn.started"}\n{"type":"turn.completed"}\n'
       exit 0
     fi
+    if grep -q 'duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Duplicate path proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
     printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n' > "$final"
     printf '{"type":"thread.started","thread_id":"fixture"}\\n'
     printf '{"type":"turn.started"}\\n'
@@ -349,6 +354,17 @@ test('a mutation task refuses a dirty baseline instead of attributing unrelated 
   assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
   assert.ok(fs.existsSync(dirtyPath));
   fs.rmSync(dirtyPath);
+});
+
+test('duplicate artifact paths are rejected before branch creation', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('duplicate-artifact mutation', 'production-e2e-duplicate-artifact');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /duplicate edit path/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
 });
 
 test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {
