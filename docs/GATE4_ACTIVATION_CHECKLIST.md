@@ -37,10 +37,12 @@ None of these may be generated, invented, or defaulted by tooling.
 
 Verified automatically by the checker:
 
-1. **Source contract** — `npm run production:preflight` reports `ok=true source=21/21 deployment=2/2`.
-2. **Production inactive** — the unit is `inactive`/`disabled` throughout preparation.
-3. **Installed unit** — `/etc/systemd/system/blackspire-command.service` is byte-identical to
-   `ops/runtime-ownership/blackspire-command.service`.
+1. **Source contract** — `npm run production:preflight` reports every source check ready.
+2. **Production inactive** — the API unit, worker unit, and coordination target are all inactive
+   throughout preparation.
+3. **Installed topology** — the installed `blackspire-command.service`,
+   `blackspire-command-worker.service`, and `blackspire-command.target` are each byte-identical to
+   their reviewed templates in `ops/runtime-ownership/`.
 4. **Environment file** — exists as a regular file, `root:blackspire` mode `0640`, declaring every
    required key and carrying no provider or Telegram credentials. The reviewed profile pins
    `BLACKSPIRE_RUNTIME_USER=blackspire`, startup timeout `30`, and health timeout `5`, matching the
@@ -90,7 +92,18 @@ bash scripts/release-create.sh <approved-sha>
 # 4. Production backup, through the pinned interpreter
 npm run db:backup -- /opt/blackspire-command/shared/backups
 
-# 5. Reviewed log rotation, installed without replacing an existing policy
+# 5. Record the before-state of all three installed definitions, install the reviewed topology,
+# and reload definitions only (this does not start or enable anything)
+systemctl cat blackspire-command.service blackspire-command-worker.service blackspire-command.target
+install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command.service \
+  /etc/systemd/system/blackspire-command.service
+install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command-worker.service \
+  /etc/systemd/system/blackspire-command-worker.service
+install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command.target \
+  /etc/systemd/system/blackspire-command.target
+systemctl daemon-reload
+
+# 6. Reviewed log rotation, installed without replacing an existing policy
 test ! -e /etc/logrotate.d/blackspire-command && \
   test ! -L /etc/logrotate.d/blackspire-command
 install -o root -g root -m 0644 \
@@ -115,7 +128,8 @@ sudo -u blackspire bash -c \
   'set -a; . /etc/blackspire/command.env; set +a; exec bash scripts/verify-environment.sh vps-production'
 npm run production:preflight:host
 BLACKSPIRE_GATE4_APPROVED_SHA=<sha> bash scripts/gate4-prepare.sh --validate-only
-systemctl show blackspire-command.service -p ActiveState -p UnitFileState -p MainPID
+systemctl show blackspire-command.target blackspire-command.service blackspire-command-worker.service \
+  -p ActiveState -p UnitFileState -p MainPID
 ```
 
 Source the environment file rather than passing values as arguments; arguments are visible in the
@@ -153,13 +167,13 @@ automation — including `scripts/gate4-prepare.sh` — may perform any of it.
 ```sh
 # OPERATOR ONLY, AFTER GATE 4 IS AUTHORIZED
 bash scripts/release-switch.sh <approved-sha>      # switches the production current symlink
-systemctl start blackspire-command.service
-systemctl enable blackspire-command.service        # only after a clean start is verified
+systemctl start blackspire-command.target
+systemctl enable blackspire-command.target         # only after a clean API+worker start is verified
 BIND_HOST=127.0.0.1 PORT=<reviewed-port> bash scripts/health-check.sh
 
 # ACTIVATION ROLLBACK, OPERATOR ONLY
-systemctl stop blackspire-command.service
-systemctl disable blackspire-command.service
+systemctl stop blackspire-command.target
+systemctl disable blackspire-command.target
 bash scripts/release-rollback.sh <known-good-sha>
 ```
 

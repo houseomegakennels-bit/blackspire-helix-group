@@ -51,7 +51,12 @@ function makeHost({ envFile = true, workspace = true, releases = ['a'.repeat(40)
   }
   const logrotatePath = path.join(home, 'logrotate.conf');
   if (logrotate) fs.copyFileSync('ops/blackspire-command-logrotate.conf', logrotatePath);
-  return { home, releaseRoot, workspaceRoot, envPath, logrotatePath };
+  return {
+    home, releaseRoot, workspaceRoot, envPath, logrotatePath,
+    apiUnitPath: path.join(home, 'blackspire-command.service'),
+    workerUnitPath: path.join(home, 'blackspire-command-worker.service'),
+    targetPath: path.join(home, 'blackspire-command.target'),
+  };
 }
 
 function run(host, { args = [], env = {} } = {}) {
@@ -66,7 +71,11 @@ function run(host, { args = [], env = {} } = {}) {
       // A unit name that cannot exist, so the checker queries systemd about a nonexistent unit
       // rather than the real production one. systemd reports inactive for unknown units.
       BLACKSPIRE_GATE4_UNIT_NAME: 'blackspire-gate4-fixture-nonexistent.service',
-      BLACKSPIRE_GATE4_UNIT_FILE: path.join(host.home, 'absent.service'),
+      BLACKSPIRE_GATE4_WORKER_UNIT_NAME: 'blackspire-gate4-worker-fixture-nonexistent.service',
+      BLACKSPIRE_GATE4_TARGET_NAME: 'blackspire-gate4-fixture-nonexistent.target',
+      BLACKSPIRE_GATE4_API_UNIT_FILE: host.apiUnitPath,
+      BLACKSPIRE_GATE4_WORKER_UNIT_FILE: host.workerUnitPath,
+      BLACKSPIRE_GATE4_TARGET_FILE: host.targetPath,
       ...env,
     },
   });
@@ -255,6 +264,24 @@ test('gate4-prepare reports missing log rotation as outstanding', () => {
   assert.equal(findings(host, { env: { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) } }).state('log-rotation'), 'PENDING');
 });
 
+test('gate4-prepare requires byte-identical API, worker, and target definitions', () => {
+  const host = makeHost();
+  const approved = { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) };
+  assert.equal(findings(host, { env: approved }).state('installed-api-unit'), 'PENDING');
+  assert.equal(findings(host, { env: approved }).state('installed-worker-unit'), 'PENDING');
+  assert.equal(findings(host, { env: approved }).state('installed-runtime-target'), 'PENDING');
+
+  fs.copyFileSync('ops/runtime-ownership/blackspire-command.service', host.apiUnitPath);
+  fs.copyFileSync('ops/runtime-ownership/blackspire-command-worker.service', host.workerUnitPath);
+  fs.copyFileSync('ops/runtime-ownership/blackspire-command.target', host.targetPath);
+  assert.equal(findings(host, { env: approved }).state('installed-api-unit'), 'READY');
+  assert.equal(findings(host, { env: approved }).state('installed-worker-unit'), 'READY');
+  assert.equal(findings(host, { env: approved }).state('installed-runtime-target'), 'READY');
+
+  fs.appendFileSync(host.workerUnitPath, '# drift\n');
+  assert.equal(findings(host, { env: approved }).state('installed-worker-unit'), 'FAILED');
+});
+
 test('gate4-prepare rejects an installed policy that differs from the reviewed rotation policy', () => {
   const host = makeHost();
   fs.writeFileSync(host.logrotatePath, '/var/lib/docker/containers/*/*-json.log { rotate 1 }\n');
@@ -304,7 +331,12 @@ test('the plan separates preparation from activation and executes nothing', () =
   assert.match(preparation, /test ! -e .*workspace && test ! -L .*workspace/);
   assert.match(preparation, /test ! -e .*logrotate\.conf && test ! -L .*logrotate\.conf/);
   assert.match(preparation, /install -o root -g root -m 0644[\s\\]+.*blackspire-command-logrotate\.conf/);
+  assert.match(preparation, /blackspire-command-worker\.service/);
+  assert.match(preparation, /blackspire-command\.target/);
+  assert.match(preparation, /systemctl daemon-reload/);
   assert.match(preparation, /checkout --detach \$\{BLACKSPIRE_GATE4_APPROVED_SHA\}/);
+  assert.match(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.target/);
+  assert.doesNotMatch(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.service/);
   assert.equal(snapshot(host.home), before, 'printing the plan must not change anything');
 });
 

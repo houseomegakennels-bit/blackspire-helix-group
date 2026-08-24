@@ -49,8 +49,12 @@ esac
 release_root="${BLACKSPIRE_RELEASE_ROOT:-/opt/blackspire-command}"
 release_root="${release_root%/}"
 env_file="${BLACKSPIRE_PRODUCTION_ENV_FILE:-/etc/blackspire/command.env}"
-unit_name="${BLACKSPIRE_GATE4_UNIT_NAME:-blackspire-command.service}"
-unit_file="${BLACKSPIRE_GATE4_UNIT_FILE:-/etc/systemd/system/${unit_name}}"
+api_unit_name="${BLACKSPIRE_GATE4_API_UNIT_NAME:-${BLACKSPIRE_GATE4_UNIT_NAME:-blackspire-command.service}}"
+worker_unit_name="${BLACKSPIRE_GATE4_WORKER_UNIT_NAME:-blackspire-command-worker.service}"
+target_name="${BLACKSPIRE_GATE4_TARGET_NAME:-blackspire-command.target}"
+api_unit_file="${BLACKSPIRE_GATE4_API_UNIT_FILE:-${BLACKSPIRE_GATE4_UNIT_FILE:-/etc/systemd/system/${api_unit_name}}}"
+worker_unit_file="${BLACKSPIRE_GATE4_WORKER_UNIT_FILE:-/etc/systemd/system/${worker_unit_name}}"
+target_file="${BLACKSPIRE_GATE4_TARGET_FILE:-/etc/systemd/system/${target_name}}"
 systemctl_bin="${BLACKSPIRE_GATE4_SYSTEMCTL:-systemctl}"
 logrotate_file="${BLACKSPIRE_GATE4_LOGROTATE_FILE:-/etc/logrotate.d/blackspire-command}"
 runtime_user="${BLACKSPIRE_GATE4_RUNTIME_USER:-blackspire}"
@@ -107,26 +111,42 @@ fi
 # An assertion, not an action. If production is already running, this preparation run is being
 # performed against an activated host and its conclusions would be misleading.
 if command -v "$systemctl_bin" >/dev/null 2>&1; then
-  active_state="$("$systemctl_bin" show "$unit_name" -p ActiveState --value 2>/dev/null || echo unknown)"
-  unit_state="$("$systemctl_bin" show "$unit_name" -p UnitFileState --value 2>/dev/null || echo unknown)"
-  if [[ "$active_state" == inactive || "$active_state" == failed ]]; then
-    record production-inactive READY "production is $active_state (unit file state: ${unit_state:-unknown})"
+  active_units=""
+  inactive_states=""
+  for checked_unit in "$api_unit_name" "$worker_unit_name" "$target_name"; do
+    active_state="$("$systemctl_bin" show "$checked_unit" -p ActiveState --value 2>/dev/null || echo unknown)"
+    unit_state="$("$systemctl_bin" show "$checked_unit" -p UnitFileState --value 2>/dev/null || echo unknown)"
+    if [[ "$active_state" == inactive || "$active_state" == failed ]]; then
+      inactive_states+="${inactive_states:+; }$checked_unit=$active_state/${unit_state:-unknown}"
+    else
+      active_units+="${active_units:+; }$checked_unit=$active_state"
+    fi
+  done
+  if [[ -z "$active_units" ]]; then
+    record production-inactive READY "API, worker, and target are inactive ($inactive_states)"
   else
-    record production-inactive FAILED "production must be inactive during preparation but is $active_state"
+    record production-inactive FAILED "production must be inactive during preparation but found $active_units"
   fi
 else
-  record production-inactive MANUAL 'systemctl is unavailable here; confirm production is inactive and disabled on the host'
+  record production-inactive MANUAL 'systemctl is unavailable here; confirm the API, worker, and target are inactive and disabled on the host'
 fi
 
-if [[ -f "$unit_file" && ! -L "$unit_file" ]]; then
-  if cmp -s "$unit_file" "$repo_root/ops/runtime-ownership/blackspire-command.service"; then
-    record installed-unit READY 'the installed unit is byte-identical to the reviewed template'
+check_installed_unit() {
+  local finding_id="$1" installed_file="$2" template_file="$3" description="$4"
+  if [[ -f "$installed_file" && ! -L "$installed_file" ]]; then
+    if cmp -s "$installed_file" "$repo_root/ops/runtime-ownership/$template_file"; then
+      record "$finding_id" READY "the installed $description is byte-identical to the reviewed template"
+    else
+      record "$finding_id" FAILED "the installed $description differs from the reviewed template; reinstall it before Gate 4"
+    fi
   else
-    record installed-unit FAILED 'the installed unit differs from the reviewed template; reinstall it before Gate 4'
+    record "$finding_id" PENDING "the reviewed $description is not installed as a regular file"
   fi
-else
-  record installed-unit PENDING 'the reviewed production unit is not installed as a regular file'
-fi
+}
+
+check_installed_unit installed-api-unit "$api_unit_file" blackspire-command.service 'API unit'
+check_installed_unit installed-worker-unit "$worker_unit_file" blackspire-command-worker.service 'worker unit'
+check_installed_unit installed-runtime-target "$target_file" blackspire-command.target 'runtime target'
 
 # --- Operator-supplied environment file ------------------------------------------------------
 
@@ -335,11 +355,21 @@ PREPARATION (safe, reversible, no activation)
      pinned interpreter: scripts/backup.js imports node:sqlite, which this host's PATH node (18.x)
      does not have.
        npm run db:backup -- $release_root/shared/backups
-  5. Install the reviewed log-rotation policy without replacing an existing policy:
+  5. Install the reviewed API, worker, and coordination target definitions, then reload systemd.
+     The checker above fails closed if an installed definition differs; inspect that difference
+     before replacing any existing file:
+       install -o root -g root -m 0644 \\
+         $repo_root/ops/runtime-ownership/blackspire-command.service $api_unit_file
+       install -o root -g root -m 0644 \\
+         $repo_root/ops/runtime-ownership/blackspire-command-worker.service $worker_unit_file
+       install -o root -g root -m 0644 \\
+         $repo_root/ops/runtime-ownership/blackspire-command.target $target_file
+       systemctl daemon-reload
+  6. Install the reviewed log-rotation policy without replacing an existing policy:
        test ! -e $logrotate_file && test ! -L $logrotate_file
        install -o root -g root -m 0644 \\
          $repo_root/ops/blackspire-command-logrotate.conf $logrotate_file
-  6. Re-run this checker to review the remaining prerequisites. It deliberately stays nonzero
+  7. Re-run this checker to review the remaining prerequisites. It deliberately stays nonzero
      while authorization and activation remain beyond the boundary:
        BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \\
          bash scripts/gate4-prepare.sh --validate-only
@@ -352,12 +382,15 @@ VALIDATION (read-only, proves preparation is correct)
   npm run production:preflight:host
   BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \\
     bash $repo_root/scripts/gate4-prepare.sh --validate-only
-  systemctl show $unit_name -p ActiveState -p UnitFileState -p MainPID
+  systemctl show $target_name $api_unit_name $worker_unit_name -p ActiveState -p UnitFileState -p MainPID
 
 ROLLBACK OF PREPARATION (safe; production was never started)
   rm -f $env_file
   rm -rf $workspace_root
   rm -f $logrotate_file
+  # Restore each unit definition from its recorded pre-preparation backup. Remove a definition
+  # only when the before-state evidence proves it did not exist; never erase an unknown prior unit.
+  systemctl daemon-reload
   # releases are immutable and are never deleted as part of a rollback
 
 --- AUTHORIZATION BOUNDARY -------------------------------------------------------------------
@@ -367,14 +400,14 @@ automation acting on this report.
 
 ACTIVATION (operator only, after Gate 4 is authorized)
   bash scripts/release-switch.sh \${BLACKSPIRE_GATE4_APPROVED_SHA}
-  systemctl start $unit_name
-  systemctl enable $unit_name        # only after a clean start is verified
+  systemctl start $target_name
+  systemctl enable $target_name        # only after a clean API+worker start is verified
   # health-check has no default target and fails closed without one; name the loopback port.
   BIND_HOST=127.0.0.1 PORT=<reviewed-port> bash scripts/health-check.sh
 
 ACTIVATION ROLLBACK (operator only)
-  systemctl stop $unit_name
-  systemctl disable $unit_name
+  systemctl stop $target_name
+  systemctl disable $target_name
   bash scripts/release-rollback.sh <known-good-sha>
 PLAN
 }
