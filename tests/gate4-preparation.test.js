@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 
 const repo = path.resolve(import.meta.dirname, '..');
 const script = path.join(repo, 'scripts', 'gate4-prepare.sh');
+const rollbackScript = path.join(repo, 'scripts', 'gate4-rollback-preparation.sh');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-gate4-'));
 
 // A host fixture: disposable stand-ins for every path the checker reads, so no case can touch the
@@ -339,15 +340,8 @@ test('the plan separates preparation from activation and executes nothing', () =
   assert.match(preparation, /\.absent/, 'rollback records definitions proven absent before preparation');
   assert.match(preparation, /\.complete/, 'rollback requires a complete snapshot marker');
   assert.match(preparation, /refusing unsafe installed unit path/, 'symlinked or non-regular installed units fail closed');
-  assert.match(preparation, /missing or ambiguous trusted before-state/, 'rollback validates exactly one record for every unit before restoring any');
-  assert.match(preparation, /unsafe rollback destination/, 'rollback validates every destination before removing prepared state');
-  for (const destination of [host.envPath, host.workspaceRoot, host.logrotatePath]) {
-    assert.ok(preparation.indexOf(`unsafe rollback destination: ${destination}`) < preparation.indexOf('rm -f ' + host.envPath),
-      `${destination} must be validated before the first rollback mutation`);
-  }
-  assert.match(preparation, /install -T -o root -g root -m 0644/, 'restore cannot reinterpret a destination as a directory');
-  assert.ok(preparation.indexOf('test -f ' + path.join('/var/backups/blackspire-command', `gate4-${'a'.repeat(40)}`, '.complete')) < preparation.indexOf('rm -f ' + host.envPath),
-    'all rollback evidence is validated before any prepared resource is removed');
+  assert.match(preparation, /BLACKSPIRE_GATE4_APPROVED_SHA=\$\{BLACKSPIRE_GATE4_APPROVED_SHA\}[\s\\]+bash .*gate4-rollback-preparation\.sh/,
+    'the generated plan must call the canonical tested rollback helper');
   assert.match(preparation, /systemctl daemon-reload/);
   assert.match(preparation, /checkout --detach \$\{BLACKSPIRE_GATE4_APPROVED_SHA\}/);
   assert.match(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.target/);
@@ -362,28 +356,12 @@ test('the checklist and the script agree on the authorization boundary', () => {
   const boundary = checklist.indexOf('## Authorization boundary');
   assert.ok(boundary > 0, 'the checklist must define the boundary');
   const before = checklist.slice(0, boundary);
-  assert.match(
-    before,
-    /rm -f \/etc\/logrotate\.d\/blackspire-command/,
-    'the checklist must roll back the log-rotation policy created by preparation',
-  );
-  const firstMutation = before.indexOf('repair_dir="$(mktemp -d /etc/systemd/system/.blackspire-gate4-repair.XXXXXX)"');
-  assert.ok(firstMutation > 0, 'the checklist must define its first rollback mutation');
-  for (const required of [
-    'missing safe complete snapshot marker',
-    'missing or ambiguous trusted before-state',
-    'unsafe rollback destination: /etc/blackspire/command.env',
-    'unsafe rollback destination: /opt/blackspire-command/shared/workspace',
-    'unsafe rollback destination: /etc/logrotate.d/blackspire-command',
-  ]) {
-    assert.ok(before.indexOf(required) >= 0 && before.indexOf(required) < firstMutation,
-      `${required} must precede the first documented rollback mutation`);
-  }
-  assert.match(before, /install -T -o root -g root -m 0644/, 'the checklist must restore units without directory reinterpretation');
-  assert.match(before, /rm -f -- "\$unit_path"/, 'the checklist removes a unit only from trusted absent before-state');
-  assert.match(before, /trap repair_prepared_units ERR/, 'a failed unit restore must arm compensation');
-  assert.ok(before.indexOf('systemctl daemon-reload\ntrap - ERR') < before.indexOf('rm -f /etc/blackspire/command.env'),
-    'prepared non-unit state is removed only after every unit restore succeeds');
+  assert.match(before, /BLACKSPIRE_GATE4_APPROVED_SHA=<approved-sha> bash scripts\/gate4-rollback-preparation\.sh/,
+    'the checklist must call the same canonical tested rollback helper');
+  const rollbackSource = fs.readFileSync(rollbackScript, 'utf8');
+  assert.match(rollbackSource, /missing or ambiguous trusted before-state/);
+  assert.match(rollbackSource, /unsafe rollback destination/);
+  assert.match(rollbackSource, /trap compensate ERR/);
   for (const verb of ['systemctl start', 'systemctl enable', 'release-switch.sh']) {
     assert.equal(before.includes(verb), false, `${verb} must not be documented as preparation`);
   }
@@ -405,4 +383,59 @@ test('gate4-prepare is registered in the trusted test and script inventory surfa
   assert.match(preflight, /entry\.isFile\(\) && entry\.name\.endsWith\('\.sh'\)/);
   assert.match(preflight, /collectShellScripts\('scripts'\)/);
   assert.equal(path.extname(script), '.sh');
+});
+
+function rollbackFixture({ failUnit = '', failReload = false, absentTarget = false } = {}) {
+  const root = fs.mkdtempSync(path.join(scratch, 'rollback-'));
+  const units = ['api.service', 'worker.service', 'command.target'].map((name) => path.join(root, name));
+  const backup = path.join(root, 'backup');
+  fs.mkdirSync(backup);
+  fs.writeFileSync(path.join(backup, '.complete'), '');
+  units.forEach((unit, index) => {
+    fs.writeFileSync(unit, `prepared-${index}`);
+    const base = path.basename(unit);
+    if (absentTarget && index === 2) fs.writeFileSync(path.join(backup, `${base}.absent`), '');
+    else fs.writeFileSync(path.join(backup, base), `original-${index}`);
+  });
+  const envPath = path.join(root, 'command.env');
+  const workspaceRoot = path.join(root, 'workspace');
+  const logrotatePath = path.join(root, 'logrotate');
+  fs.writeFileSync(envPath, 'prepared'); fs.mkdirSync(workspaceRoot); fs.writeFileSync(logrotatePath, 'prepared');
+  const systemctl = path.join(root, 'systemctl');
+  fs.writeFileSync(systemctl, `#!/bin/sh\n${failReload ? 'exit 71' : 'exit 0'}\n`); fs.chmodSync(systemctl, 0o755);
+  const installer = path.join(root, 'install');
+  const failureClause = failUnit ? `case \"$arg\" in *${failUnit}) exit 72;; esac\n` : '';
+  fs.writeFileSync(installer, `#!/bin/sh\nfor arg do :; done\n${failureClause}exec /usr/bin/install \"$@\"\n`); fs.chmodSync(installer, 0o755);
+  const env = { ...process.env, BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40), BLACKSPIRE_PRODUCTION_ENV_FILE: envPath,
+    BLACKSPIRE_WORKSPACE_ROOT: workspaceRoot, BLACKSPIRE_GATE4_LOGROTATE_FILE: logrotatePath,
+    BLACKSPIRE_GATE4_API_UNIT_FILE: units[0], BLACKSPIRE_GATE4_WORKER_UNIT_FILE: units[1],
+    BLACKSPIRE_GATE4_TARGET_FILE: units[2], BLACKSPIRE_GATE4_UNIT_BACKUP_DIR: backup,
+    BLACKSPIRE_GATE4_SYSTEMCTL: systemctl, BLACKSPIRE_GATE4_INSTALL_BIN: installer };
+  return { root, units, envPath, workspaceRoot, logrotatePath, env };
+}
+
+test('failed second unit restore compensates the first and preserves every non-unit path', () => {
+  const fixture = rollbackFixture({ failUnit: 'worker.service' });
+  const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  fixture.units.forEach((unit, index) => assert.equal(fs.readFileSync(unit, 'utf8'), `prepared-${index}`));
+  for (const item of [fixture.envPath, fixture.workspaceRoot, fixture.logrotatePath]) assert.equal(fs.existsSync(item), true);
+});
+
+test('daemon-reload failure compensates all units and preserves non-unit state', () => {
+  const fixture = rollbackFixture({ failReload: true });
+  const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  fixture.units.forEach((unit, index) => assert.equal(fs.readFileSync(unit, 'utf8'), `prepared-${index}`));
+  for (const item of [fixture.envPath, fixture.workspaceRoot, fixture.logrotatePath]) assert.equal(fs.existsSync(item), true);
+});
+
+test('successful rollback restores present units, removes originally absent units, then deletes prepared state', () => {
+  const fixture = rollbackFixture({ absentTarget: true });
+  const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(fixture.units[0], 'utf8'), 'original-0');
+  assert.equal(fs.readFileSync(fixture.units[1], 'utf8'), 'original-1');
+  assert.equal(fs.existsSync(fixture.units[2]), false);
+  for (const item of [fixture.envPath, fixture.workspaceRoot, fixture.logrotatePath]) assert.equal(fs.existsSync(item), false);
 });

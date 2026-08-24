@@ -400,46 +400,10 @@ VALIDATION (read-only, proves preparation is correct)
   systemctl show $target_name $api_unit_name $worker_unit_name -p ActiveState -p UnitFileState -p MainPID
 
 ROLLBACK OF PREPARATION (safe; production was never started)
-  test -f $unit_backup_dir/.complete && test ! -L $unit_backup_dir/.complete || { echo 'missing safe complete snapshot marker; refusing rollback' >&2; exit 1; }
-  # Validate the complete snapshot before mutating the first installed definition.
-  for unit_path in $api_unit_file $worker_unit_file $target_file; do
-    unit_base="\$(basename -- "\$unit_path")"
-    if test -e "\$unit_path" || test -L "\$unit_path"; then
-      test -f "\$unit_path" && test ! -L "\$unit_path" || { echo "unsafe rollback destination: \$unit_path" >&2; exit 1; }
-    fi
-    backup_present=0; absent_present=0
-    test -f "$unit_backup_dir/\$unit_base" && test ! -L "$unit_backup_dir/\$unit_base" && backup_present=1
-    test -f "$unit_backup_dir/\$unit_base.absent" && test ! -L "$unit_backup_dir/\$unit_base.absent" && absent_present=1
-    if test "\$((backup_present + absent_present))" -ne 1; then
-      echo "missing or ambiguous trusted before-state for \$unit_path; refusing rollback" >&2; exit 1
-    fi
-  done
-  # Preparation creates these three paths from an absent before-state. Validate every removal
-  # destination before deleting any of them, so drift to a directory, symlink, or special file
-  # cannot turn rollback into a partial mutation.
-  if test -e $env_file || test -L $env_file; then
-    test -f $env_file && test ! -L $env_file || { echo 'unsafe rollback destination: $env_file' >&2; exit 1; }
-  fi
-  if test -e $workspace_root || test -L $workspace_root; then
-    test -d $workspace_root && test ! -L $workspace_root || { echo 'unsafe rollback destination: $workspace_root' >&2; exit 1; }
-  fi
-  if test -e $logrotate_file || test -L $logrotate_file; then
-    test -f $logrotate_file && test ! -L $logrotate_file || { echo 'unsafe rollback destination: $logrotate_file' >&2; exit 1; }
-  fi
-  # Only after every rollback input is valid may any prepared state be removed or replaced.
-  rm -f $env_file
-  rm -rf $workspace_root
-  rm -f $logrotate_file
-  for unit_path in $api_unit_file $worker_unit_file $target_file; do
-    unit_base="\$(basename -- "\$unit_path")"
-    if test -f "$unit_backup_dir/\$unit_base"; then
-      install -T -o root -g root -m 0644 "$unit_backup_dir/\$unit_base" "\$unit_path"
-    else
-      rm -f -- "\$unit_path"
-    fi
-  done
-  systemctl daemon-reload
-  # releases are immutable and are never deleted as part of a rollback
+  BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \
+    bash $repo_root/scripts/gate4-rollback-preparation.sh
+  # The helper validates all evidence/destinations, compensates failed unit restore/reload, and
+  # never deletes immutable releases.
 
 --- AUTHORIZATION BOUNDARY -------------------------------------------------------------------
 Everything above is preparation. Everything below is Gate 4 activation and requires a separate,
