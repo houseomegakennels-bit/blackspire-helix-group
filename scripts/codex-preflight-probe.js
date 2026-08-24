@@ -27,7 +27,15 @@ const result = await runContainedProcess(args[0], args.slice(1), {
   onStdout: bounded('stdout'),
   onStderr: bounded('stderr'),
 });
-const contained = !overflow && result.processGroupTerminated && result.remainingDescendants === 0;
+const contained = !overflow
+  && result.processGroupTerminated
+  && result.remainingDescendants === 0
+  && result.outputDrained
+  && !result.timedOut
+  && !result.cleanupRequired
+  && !result.forced
+  && result.interruptedSignal === null
+  && result.spawnError === null;
 let authenticatedDoctor = false;
 if (contained && requireAuthenticatedDoctor) {
   try {
