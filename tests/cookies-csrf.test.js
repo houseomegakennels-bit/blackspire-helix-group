@@ -4,16 +4,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-cookies-'));
 
 function migrateDatabase(dbPath) {
   prepareDisposableDatabase(dbPath);
+  const database = new DatabaseSync(dbPath);
+  const now = Date.now();
+  database.prepare('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run('web-route-admin', 'admin', 'web-route-admin', 'bearer', null, 'active', now, null, null, null, 1, now);
+  database.prepare('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run('web-route-grant', 'web-route-admin', 'blackspire-command', 'service', '["approval.grant","runtime.read","task.create","task.execute","task.read","workspace.read"]', 'active', 1, null, now, null, null, 'test', 1, now);
+  database.close();
 }
 
 function bootApi(env, port) {
-  const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, ...env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, ...env, BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'web-route-admin', PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
   return child;
 }
 

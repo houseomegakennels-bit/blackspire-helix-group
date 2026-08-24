@@ -14,6 +14,8 @@ process.env.PORT = '8930';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['blackspire-command']);
 const { classifyRequest, evaluateRequestPolicy } = await import('../packages/policy/policy.js');
 const { createUnifiedInput, getConversation } = await import('../packages/unified-input/unified.js');
 const { getTask, taskRecords, deliveryRecords } = await import('../packages/task-engine/tasks.js');

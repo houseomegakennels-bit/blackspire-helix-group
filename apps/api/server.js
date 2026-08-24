@@ -19,7 +19,7 @@ import { conversationEvents } from '../../packages/task-engine/tasks.js';
 import { requireSafeTestMode, isSameOrigin, testModeAllowsRequest, publicTestModeStatus } from '../../packages/shared/testMode.js';
 import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
 import { assertSchemaCompatible, closeDb } from '../../packages/task-engine/db.js';
-import { resolveAdminBearer, resolveBoundSession } from '../../packages/shared/authorization.js';
+import { resolveAdminBearer, resolveBoundSession, requireWorkspacePermission } from '../../packages/shared/authorization.js';
 import { readOutcomeEvaluation } from '../../packages/hermes-orchestrator/outcome.js';
 import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorecard.js';
 import { readMemoryCandidateReview, readMemoryCandidateRereview, listMemoryCandidateReviewQueue } from '../../packages/hermes-orchestrator/memory-review.js';
@@ -109,7 +109,11 @@ async function route(req, res) {
     if (u.pathname === '/api/test-mode/telegram-input' && req.method === 'POST') return testTelegramInput(req, res);
     if (u.pathname === '/api/test-mode/queued-task' && req.method === 'POST') return testQueuedTask(req, res);
     if (u.pathname === '/api/test-mode/delivery-failure' && req.method === 'POST') return testDeliveryFailure(req, res);
-    if (u.pathname === '/api/hermes/runtime' && req.method === 'GET') return json(res, 200, buildHermesRuntimeStatus());
+    if (u.pathname === '/api/hermes/runtime' && req.method === 'GET') {
+      const workspaceId = u.searchParams.get('workspaceId');
+      if (!workspaceId || !authorizeWorkspaceRequest(auth, workspaceId, 'runtime.read')) return json(res, 404, { error: 'not found' });
+      return json(res, 200, buildHermesRuntimeStatus(process.env, workspaceId));
+    }
     const evaluationMatch = u.pathname.match(/^\/api\/hermes\/evaluations\/([A-Za-z0-9._:-]{1,128})$/);
     if (evaluationMatch && req.method === 'GET') return outcomeEvaluationRoute(res, auth, evaluationMatch[1]);
     const scorecardMatch = u.pathname.match(/^\/api\/hermes\/scorecards\/([A-Za-z0-9._:-]{1,128})$/);
@@ -120,28 +124,30 @@ async function route(req, res) {
     if (memoryRereviewMatch && req.method === 'GET') return memoryCandidateRereviewRoute(res, auth, memoryRereviewMatch[1]);
     const memoryQueueMatch = u.pathname.match(/^\/api\/hermes\/workspaces\/([A-Za-z0-9._:-]{1,128})\/memory-candidate-review-queue$/);
     if (memoryQueueMatch && req.method === 'GET') return memoryCandidateReviewQueueRoute(req, res, auth, u, memoryQueueMatch[1]);
-    if (u.pathname === '/api/workspaces') return json(res, 200, { workspaces: TEST_MODE.enabled ? [getWorkspace(TEST_MODE.workspaceId)] : listWorkspaces() });
-    if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => !TEST_MODE.enabled || task.workspace_id === TEST_MODE.workspaceId) });
-    if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res);
+    if (u.pathname === '/api/workspaces' && req.method === 'GET') return json(res, 200, { workspaces: listWorkspaces().filter((workspace) => authorizeWorkspaceRequest(auth, workspace.id, 'workspace.read')) });
+    if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read')) });
+    if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res, auth);
     if (u.pathname === '/api/unified-input' && req.method === 'POST') return unifiedInputRoute(req, res, auth);
 
     const conversationMatch = u.pathname.match(/^\/api\/conversations\/([^/]+)(?:\/(events))?$/);
     if (conversationMatch && req.method === 'GET') {
       const conversation = getConversation(conversationMatch[1]);
       if (!conversation) return json(res, 404, { error: 'conversation not found' });
-      if (TEST_MODE.enabled && conversation.conversation.workspace_id !== TEST_MODE.workspaceId) return json(res, 404, { error: 'conversation not found' });
+      if (!authorizeWorkspaceRequest(auth, conversation.conversation.workspace_id, 'task.read')) return json(res, 404, { error: 'conversation not found' });
       if (conversationMatch[2] === 'events') return json(res, 200, { conversationId: conversationMatch[1], events: conversationEvents(conversationMatch[1], u.searchParams.get('after') || '') });
       return json(res, 200, conversation);
     }
 
     const exportMatch = u.pathname.match(/^\/api\/tasks\/([^/]+)\/export\.(json|md)$/);
-    if (exportMatch) return exportTask(res, exportMatch[1], exportMatch[2]);
+    if (exportMatch && req.method === 'GET') return exportTask(res, auth, exportMatch[1], exportMatch[2]);
 
     const match = u.pathname.match(/^\/api\/tasks\/([^/]+)(?:\/(logs|approvals|approve|reject|pause|resume|cancel))?$/);
-    if (match) return taskRoute(req, res, match);
+    if (match) return taskRoute(req, res, auth, match);
 
     if (u.pathname === '/api/stop' && req.method === 'POST') {
       const limit = checkLimit(req, 'stop', 5, 60000); if (!limit.allowed) return limited(res, limit);
+      const body = await readJson(req);
+      if (!authorizeGlobalRuntimeControl(auth, body.workspaceId)) return json(res, 404, { error: 'not found' });
       emergencyStopMemory = true;
       setFlag('emergency_stop', 'active');
       audit(null, 'administrator', 'emergency_stop.activated');
@@ -150,6 +156,8 @@ async function route(req, res) {
     if (u.pathname === '/api/stop/reset' && req.method === 'POST') {
       const limit = checkLimit(req, 'stop-reset', 3, 60000); if (!limit.allowed) return limited(res, limit);
       if (auth.mode !== 'session' || req.headers['x-confirmation-token'] !== `${auth.session.csrfToken}:RESET`) return json(res, 403, { error: 'fresh session confirmation required' });
+      const body = await readJson(req);
+      if (!authorizeGlobalRuntimeControl(auth, body.workspaceId)) return json(res, 404, { error: 'not found' });
       emergencyStopMemory = false;
       setFlag('emergency_stop', 'inactive');
       audit(null, 'administrator', 'emergency_stop.reset');
@@ -172,14 +180,33 @@ async function route(req, res) {
 // canonical principal, and a request cannot nominate one.  A deployment must explicitly map its
 // already-authenticated administrator bearer path to an existing canonical admin principal.
 function configuredEvaluationAdminPrincipal() {
-  const configuredPrincipalId = process.env.BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID;
+  const configuredPrincipalId = process.env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID || process.env.BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID;
   return typeof configuredPrincipalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(configuredPrincipalId)
     ? resolveAdminBearer(configuredPrincipalId) : null;
 }
 
-function outcomeEvaluationRoute(res, auth, evaluationId) {
+function requestPrincipal(auth) {
   const configuredPrincipal = configuredEvaluationAdminPrincipal();
   const principal = auth.mode === 'bearer' ? configuredPrincipal : auth.mode === 'session' ? resolveBoundSession(auth.session) : null;
+  return configuredPrincipal && principal?.principalId === configuredPrincipal.principalId ? principal : null;
+}
+
+function authorizeWorkspaceRequest(auth, workspaceId, permission) {
+  if (TEST_MODE.enabled) return workspaceId === TEST_MODE.workspaceId;
+  if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(workspaceId)) return false;
+  const principal = requestPrincipal(auth);
+  return Boolean(principal && requireWorkspacePermission(principal, workspaceId, permission).allowed);
+}
+
+function authorizeGlobalRuntimeControl(auth, selectedWorkspaceId) {
+  const workspaces = listWorkspaces();
+  return workspaces.some((workspace) => workspace.id === selectedWorkspaceId) &&
+    workspaces.length > 0 && workspaces.every((workspace) => authorizeWorkspaceRequest(auth, workspace.id, 'task.execute'));
+}
+
+function outcomeEvaluationRoute(res, auth, evaluationId) {
+  const configuredPrincipal = configuredEvaluationAdminPrincipal();
+  const principal = requestPrincipal(auth);
   // A session can use this read surface only when the server bound it to the configured admin
   // principal at login.  A browser cannot nominate a different principal or workspace.
   if (!configuredPrincipal || !principal || principal.principalId !== configuredPrincipal.principalId) return json(res, 403, { error: 'evaluation authorization unavailable' });
@@ -309,26 +336,31 @@ async function testDeliveryFailure(req, res) {
   return json(res, 200, { ok: true, failuresRemaining: attempts });
 }
 
-async function createTaskRoute(req, res) {
+async function createTaskRoute(req, res, auth) {
   const limit = checkLimit(req, 'task-create', Number(process.env.TASK_RATE_LIMIT || 20), 60000); if (!limit.allowed) return limited(res, limit);
   if (emergencyStopMemory || getFlag('emergency_stop') === 'active') return json(res, 423, { error: 'emergency stop active' });
   const body = await readJson(req);
+  const workspaceId = body.workspaceId || 'blackspire-command';
+  if (!authorizeWorkspaceRequest(auth, workspaceId, 'task.create')) return json(res, 404, { error: 'not found' });
   const request = String(body.request || '').trim();
   if (!request || request.length > 4000) return json(res, 422, { error: 'request is required and must be under 4000 characters' });
   const decision = evaluateRequestPolicy({ request, channel: 'api', authority: 'authenticated_admin' });
-  const task = createTask({ workspaceId: body.workspaceId || 'blackspire-command', request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  const task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  if (task.workspace_id !== workspaceId) return json(res, 404, { error: 'not found' });
   return json(res, decision.allowed ? 202 : 403, decision.allowed ? { task } : { task, denied: true, error: decision.reason });
 }
 
 async function unifiedInputRoute(req, res, auth) {
   const limit = checkLimit(req, 'unified-input', Number(process.env.TASK_RATE_LIMIT || 20), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
+  const workspaceId = TEST_MODE.enabled ? TEST_MODE.workspaceId : (body.workspaceId || 'blackspire-command');
+  if (!authorizeWorkspaceRequest(auth, workspaceId, 'task.create')) return json(res, 404, { error: 'not found' });
   const result = createUnifiedInput({
     channel: TEST_MODE.enabled ? 'jarvis' : (body.channel === 'api' ? 'api' : 'jarvis'),
     actorId: TEST_MODE.enabled ? TEST_MODE.testActor : (auth.session?.sessionId || auth.mode),
     channelKey: TEST_MODE.enabled ? `test-session:${TEST_MODE.testActor}` : (body.channelKey || auth.session?.sessionId || `bearer:${clientIp(req)}`),
     conversationId: body.conversationId || null,
-    workspaceId: TEST_MODE.enabled ? TEST_MODE.workspaceId : (body.workspaceId || 'blackspire-command'),
+    workspaceId,
     text: body.text || body.request,
     idempotencyKey: body.idempotencyKey || id('idem'),
     authority: TEST_MODE.enabled ? 'test_operator' : 'authenticated_admin',
@@ -336,10 +368,13 @@ async function unifiedInputRoute(req, res, auth) {
   return json(res, result.status && result.status >= 400 ? result.status : (result.denied ? 403 : 202), result);
 }
 
-function taskRoute(req, res, match) {
+function taskRoute(req, res, auth, match) {
   const task = getTask(match[1]);
   if (!task) return json(res, 404, { error: 'not found' });
-  if (TEST_MODE.enabled && task.workspace_id !== TEST_MODE.workspaceId) return json(res, 404, { error: 'not found' });
+  const isRead = !match[2] || ['logs', 'approvals'].includes(match[2]);
+  if ((isRead && req.method !== 'GET') || (!isRead && req.method !== 'POST')) return json(res, 404, { error: 'not found' });
+  const permission = ['approve', 'reject'].includes(match[2]) ? 'approval.grant' : ['pause', 'resume', 'cancel'].includes(match[2]) ? 'task.execute' : 'task.read';
+  if (!authorizeWorkspaceRequest(auth, task.workspace_id, permission)) return json(res, 404, { error: 'not found' });
   if (!match[2]) return json(res, 200, { task });
   if (match[2] === 'logs') return json(res, 200, { logs: logs(task.id) });
   if (match[2] === 'approvals') return json(res, 200, { approvals: taskRecords(task.id).approvals });
@@ -398,7 +433,9 @@ function buildEvidenceBundle(taskId) {
   };
 }
 
-function exportTask(res, taskId, format) {
+function exportTask(res, auth, taskId, format) {
+  const task = getTask(taskId);
+  if (!task || !authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read')) return json(res, 404, { error: 'task not found' });
   const bundle = buildEvidenceBundle(taskId);
   if (!bundle) return json(res, 404, { error: 'task not found' });
   const redacted = redact(JSON.stringify(bundle, null, 2));
@@ -448,10 +485,13 @@ export function start(port, host) {
   }
   const validation = requireProductionSafeConfig();
   const identityValidation = validateDeploymentIdentityForStartup(deploymentIdentityProvider.get());
-  startupConfigValidation = { ok: validation.ok && identityValidation.ok, deploymentIdentity: identityValidation };
-  if ((process.env.NODE_ENV === 'production' && !validation.ok) || !identityValidation.ok) {
-    console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors, deploymentIdentityReasonCode: identityValidation.reasonCode }));
-    throw new Error(`production configuration refused: ${[...validation.errors, ...(identityValidation.ok ? [] : [`deployment identity ${identityValidation.reasonCode}`])].join('; ')}`);
+  const operatorPrincipalValid = process.env.NODE_ENV !== 'production' || Boolean(configuredEvaluationAdminPrincipal());
+  const configErrors = [...validation.errors, ...(operatorPrincipalValid ? [] : ['canonical operator principal is unavailable'])];
+  const startupErrors = [...configErrors, ...(identityValidation.ok ? [] : [`deployment identity ${identityValidation.reasonCode}`])];
+  startupConfigValidation = { ok: validation.ok && identityValidation.ok && operatorPrincipalValid, operatorPrincipal: operatorPrincipalValid, deploymentIdentity: identityValidation };
+  if ((process.env.NODE_ENV === 'production' && (!validation.ok || !operatorPrincipalValid)) || !identityValidation.ok) {
+    console.error(JSON.stringify({ service: 'api', fatal: true, errors: configErrors, deploymentIdentityReasonCode: identityValidation.reasonCode }));
+    throw new Error(`production configuration refused: ${startupErrors.join('; ')}`);
   }
   // The canonical bind contract decides host and port. Explicit arguments stay supported for
   // in-process tests and the restricted staging launcher, but a production profile is always
@@ -529,7 +569,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
   const checks = {
     lifecycle: lifecyclePhase === 'ready',
     database: database === 'compatible',
-    productionConfig: startupConfigValidation.ok === true,
+    productionConfig: startupConfigValidation.ok === true && (process.env.NODE_ENV !== 'production' || Boolean(configuredEvaluationAdminPrincipal())),
     worker: worker.ok,
     scheduler: scheduler.ok,
     deploymentIdentity: validateDeploymentIdentityForStartup(deploymentIdentityProvider.get()).ok,

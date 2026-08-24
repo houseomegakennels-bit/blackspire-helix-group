@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-08-24 — Operator HTTP authority is the persisted workspace grant
+
+Successful bearer or cookie authentication identifies a server-configured canonical principal but grants no workspace authority by itself. Every persisted-workspace operator route derives the target workspace from canonical server state where possible, requests the route-specific canonical permission, and revalidates the active persisted grant. Lists filter unauthorized rows; object reads and mutations collapse absence and denial to the existing 404-like privacy response. Production requires an explicit canonical operator principal ID, but that configuration value cannot replace a persisted active grant.
+
 ## 2026-08-17 — Production Codex uses authenticated CLI; metered APIs wait for real cost accounting
 
 Production execution may not treat unknown monetary spend as zero. OpenAI and Anthropic API usage bodies do not provide a reliable cent value in this branch, and Claude Code production accounting/authentication is not yet reviewed, so production preflight and Hermes provider selection refuse those providers until a conservative reservation/reconciliation contract can enforce task ceilings before dispatch. The authenticated Codex CLI is a different accounting class: it uses the operator's ChatGPT subscription/session auth and durably records `subscription_unmetered` with NULL `cost_cents`, not a fabricated `costCents: 0` metered value. Codex direct-api is not implemented, so any `CODEX_API_KEY` or `CODEX_API_ENDPOINT` production configuration is refused before startup rather than blessed and then failed per task.

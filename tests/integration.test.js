@@ -11,6 +11,8 @@ fs.rmSync('.blackspire-command/integration.sqlite-wal', { force: true });
 fs.rmSync('.blackspire-command/integration.sqlite-shm', { force: true });
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['blackspire-command']);
 const { start } = await import('../apps/api/server.js');
 const { handleTelegramUpdate, sendTelegramMessage, runPolling } = await import('../apps/telegram/bot.js');
 const { callOpenAI, callAnthropic } = await import('../packages/providers/providers.js');
@@ -19,7 +21,7 @@ const { createPullRequest } = await import('../packages/github/github.js');
 let server;
 test('start api', async () => {
   server = start(8791, undefined, { exitOnListenError: false });
-  await fetch('http://localhost:8791/api/stop/reset', { method: 'POST', headers: { authorization: 'Bearer dev-admin-token-change-me' } });
+  await fetch('http://localhost:8791/api/stop/reset', { method: 'POST', headers: { authorization: 'Bearer dev-admin-token-change-me', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'blackspire-command' }) });
   assert.ok(server);
 });
 
@@ -77,7 +79,7 @@ test('provider API adapters report missing credentials without pretending to run
 });
 
 test('emergency stop prevents new work', async () => {
-  await fetch('http://localhost:8791/api/stop', { method: 'POST', headers: { authorization: 'Bearer dev-admin-token-change-me' } });
+  await fetch('http://localhost:8791/api/stop', { method: 'POST', headers: { authorization: 'Bearer dev-admin-token-change-me', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'blackspire-command' }) });
   const response = await fetch('http://localhost:8791/api/tasks', { method: 'POST', headers: { authorization: 'Bearer dev-admin-token-change-me', 'content-type': 'application/json' }, body: JSON.stringify({ request: 'blocked' }) });
   assert.equal(response.status, 423);
 });

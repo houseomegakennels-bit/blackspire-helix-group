@@ -37,7 +37,7 @@ function principal(workspaceId, permissions = ['evaluation.read', 'evaluation.co
   return authz.resolveAdminBearer(principalId);
 }
 function workspace(id) { upsertWorkspace({ id, name: id, githubRepository: 'local/m3c', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root }); }
-function task(id, nonce = '') { const i = createUnifiedInput({ channel: 'jarvis', actorId: 'm3crr-user', channelKey: 'm3crr-user', workspaceId: id, text: 'report current status', idempotencyKey: `m3crr-${id}-${nonce}` }); return getTask(i.taskId); }
+function task(id, nonce = '') { const i = createUnifiedInput({ channel: 'jarvis', actorId: 'm3crr-user', channelKey: `m3crr-user-${id}`, workspaceId: id, text: 'report current status', idempotencyKey: `m3crr-${id}-${nonce}` }); return getTask(i.taskId); }
 function withoutImmutability(tables, callback) {
   const marks = tables.map(() => '?').join(',');
   const triggers = all(`SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name IN (${marks}) ORDER BY name`, tables);

@@ -14,6 +14,8 @@ process.env.HERMES_TEST_PROVIDER = 'mock';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['blackspire-command'], { principalId: 'jarvis-route-admin' });
 const { start } = await import('../apps/api/server.js');
 
 const html = fs.readFileSync('apps/jarvis-pwa/public/index.html', 'utf8');
@@ -207,6 +209,12 @@ test('submission uses idempotency keys and blocks double submit', () => {
   assert.match(source, /idempotencyKey/);
   assert.match(source, /crypto\.randomUUID/);
   assert.match(source, /store\.inflight/);
+});
+
+test('emergency controls send the active workspace selected by the operator', () => {
+  assert.match(source, /stop: \(\) => api\.request\('\/api\/stop',[\s\S]*activeWorkspaceId\(\)/);
+  assert.match(source, /stopReset: \(\) => api\.request\('\/api\/stop\/reset',[\s\S]*activeWorkspaceId\(\)/);
+  assert.doesNotMatch(source, /store\.workspaceId/);
 });
 
 /* ---------- service worker safety ---------- */

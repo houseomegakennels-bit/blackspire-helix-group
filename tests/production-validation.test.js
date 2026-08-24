@@ -15,6 +15,7 @@ const { requireProductionSafeConfig } = await import('../packages/shared/securit
 function validEnv(overrides = {}) {
   return {
     NODE_ENV: 'production',
+    BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'production-operator',
     COMMAND_ADMIN_TOKEN: 'a'.repeat(32),
     SESSION_SECRET: 'b'.repeat(40),
     SECURE_COOKIES: 'true',
@@ -42,6 +43,11 @@ test('valid production configuration passes with zero errors', () => {
 test('rejects a missing or placeholder admin token', () => {
   assert.match(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: 'dev-admin-token-change-me' }), dirs()).errors.join(), /COMMAND_ADMIN_TOKEN/);
   assert.equal(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: '' }), dirs()).ok, false);
+});
+
+test('rejects a missing or malformed canonical operator principal', () => {
+  assert.match(requireProductionSafeConfig(validEnv({ BLACKSPIRE_OPERATOR_PRINCIPAL_ID: '' }), dirs()).errors.join(), /BLACKSPIRE_OPERATOR_PRINCIPAL_ID/);
+  assert.match(requireProductionSafeConfig(validEnv({ BLACKSPIRE_OPERATOR_PRINCIPAL_ID: '../operator' }), dirs()).errors.join(), /BLACKSPIRE_OPERATOR_PRINCIPAL_ID/);
 });
 
 test('rejects a weak (short) admin token', () => {

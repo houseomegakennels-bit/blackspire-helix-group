@@ -45,6 +45,8 @@ delete process.env.UNIFIED_IPHONE_TEST_MODE;
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['production-e2e']);
 const { start } = await import('../apps/api/server.js');
 const { startWorker } = await import('../apps/worker/worker.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');

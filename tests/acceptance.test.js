@@ -14,6 +14,8 @@ process.env.TELEGRAM_ALLOWED_USERS = '1001';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['blackspire-command', 'accept-code']);
 const { execSql, query, closeDb } = await import('../packages/task-engine/db.js');
 const { createTask, getTask, transition, claimNext, heartbeat, createSubtasks, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, taskRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { start } = await import('../apps/api/server.js');
@@ -111,9 +113,9 @@ test('API auth, invalid payloads, oversized payloads, health/readiness/task endp
   assert.equal((await (await fetch(`http://localhost:8892/api/tasks/${task.id}/pause`, { method: 'POST', headers: { authorization: 'Bearer accept-token' } })).json()).task.status, 'waiting_for_approval');
   assert.equal((await (await fetch(`http://localhost:8892/api/tasks/${task.id}/resume`, { method: 'POST', headers: { authorization: 'Bearer accept-token' } })).json()).task.status, 'queued');
   assert.equal((await (await fetch(`http://localhost:8892/api/tasks/${task.id}/cancel`, { method: 'POST', headers: { authorization: 'Bearer accept-token' } })).json()).task.status, 'cancelled');
-  assert.equal((await fetch('http://localhost:8892/api/stop', { method: 'POST', headers: { authorization: 'Bearer accept-token' } })).status, 200);
+  assert.equal((await fetch('http://localhost:8892/api/stop', { method: 'POST', headers: { authorization: 'Bearer accept-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'blackspire-command' }) })).status, 200);
   assert.equal((await fetch('http://localhost:8892/api/tasks', { method: 'POST', headers: { authorization: 'Bearer accept-token', 'content-type': 'application/json' }, body: JSON.stringify({ request: 'blocked' }) })).status, 423);
-  { const login = await fetch('http://localhost:8892/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': 'accept-reset' }, body: JSON.stringify({ adminToken: 'accept-token' }) }); const b = await login.json(); const c = login.headers.get('set-cookie').split(',').map((v) => v.split(';')[0]).join('; '); assert.equal((await fetch('http://localhost:8892/api/stop/reset', { method: 'POST', headers: { cookie: c, 'x-csrf-token': b.csrfToken, 'x-confirmation-token': `${b.csrfToken}:RESET` } })).status, 200); }
+  { const login = await fetch('http://localhost:8892/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': 'accept-reset' }, body: JSON.stringify({ adminToken: 'accept-token' }) }); const b = await login.json(); const c = login.headers.get('set-cookie').split(',').map((v) => v.split(';')[0]).join('; '); assert.equal((await fetch('http://localhost:8892/api/stop/reset', { method: 'POST', headers: { cookie: c, 'x-csrf-token': b.csrfToken, 'x-confirmation-token': `${b.csrfToken}:RESET`, 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'blackspire-command' }) })).status, 200); }
 });
 
 test('worker atomic claim, heartbeat, stale recovery, cancellation, and emergency stop behavior', async () => {
@@ -247,7 +249,7 @@ test('Telegram local bridge covers allowlist, duplicates, commands, chunking, es
 });
 
 test('Jarvis PWA assets are valid and mobile workflows are not desktop-only', async () => {
-  { const login = await fetch('http://localhost:8892/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': 'jarvis-reset' }, body: JSON.stringify({ adminToken: 'accept-token' }) }); const b = await login.json(); const c = login.headers.get('set-cookie').split(',').map((v) => v.split(';')[0]).join('; '); await fetch('http://localhost:8892/api/stop/reset', { method: 'POST', headers: { cookie: c, 'x-csrf-token': b.csrfToken, 'x-confirmation-token': `${b.csrfToken}:RESET` } }); }
+  { const login = await fetch('http://localhost:8892/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': 'jarvis-reset' }, body: JSON.stringify({ adminToken: 'accept-token' }) }); const b = await login.json(); const c = login.headers.get('set-cookie').split(',').map((v) => v.split(';')[0]).join('; '); await fetch('http://localhost:8892/api/stop/reset', { method: 'POST', headers: { cookie: c, 'x-csrf-token': b.csrfToken, 'x-confirmation-token': `${b.csrfToken}:RESET`, 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'blackspire-command' }) }); }
   const html = await (await fetch('http://localhost:8892/jarvis')).text();
   // Script and style are externalized for CSP; read them from disk since serving
   // them is the control plane's concern, not this acceptance check's.

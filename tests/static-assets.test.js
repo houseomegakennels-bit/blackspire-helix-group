@@ -6,6 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-static-'));
 process.env.BLACKSPIRE_DB_PATH = path.join(root, 'static.sqlite');
@@ -247,10 +248,18 @@ test('production CSP does not permit inline script or style', async () => {
   // assert it against a real production-mode boot rather than this test server.
   const dbPath = path.join(root, 'prod-csp.sqlite');
   prepareDisposableDatabase(dbPath);
+  const authorityDb = new DatabaseSync(dbPath);
+  const issuedAt = Date.now() - 1000;
+  try {
+    authorityDb.prepare('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(
+      'static-asset-operator', 'admin', 'static-asset-operator', 'bearer', null, 'active', issuedAt, null, null, null, 1, issuedAt,
+    );
+  } finally { authorityDb.close(); }
   const child = spawn(process.execPath, ['apps/api/server.js'], {
     env: {
       ...process.env,
       NODE_ENV: 'production',
+      BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'static-asset-operator',
       PORT: '8901',
       BLACKSPIRE_DB_PATH: dbPath,
       COMMAND_ADMIN_TOKEN: crypto.randomBytes(24).toString('hex'),

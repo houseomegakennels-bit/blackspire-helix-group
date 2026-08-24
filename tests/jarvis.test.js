@@ -13,6 +13,8 @@ process.env.HERMES_TEST_PROVIDER = 'mock';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['blackspire-command']);
 const { start } = await import('../apps/api/server.js');
 
 let server;
