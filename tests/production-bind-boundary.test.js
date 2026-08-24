@@ -19,15 +19,25 @@ import {
 } from '../packages/shared/bind.js';
 import { verifyVpsRuntime } from '../packages/shared/security.js';
 import { childExitStatus } from '../packages/shared/supervisor-exit.js';
+import { installedUnitMetadataSafe } from '../packages/shared/installed-unit.js';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const node = process.execPath;
 
 test('supervisor preserves a worker drain failure during requested shutdown', () => {
   assert.equal(childExitStatus(0, { code: 1, signal: null, stopping: true }), 1);
-  assert.equal(childExitStatus(0, { code: null, signal: 'SIGTERM', stopping: true }), 0);
+  assert.equal(childExitStatus(0, { code: null, signal: 'SIGTERM', stopping: true, forwardedSignal: 'SIGTERM' }), 0);
+  assert.equal(childExitStatus(0, { code: null, signal: 'SIGABRT', stopping: true, forwardedSignal: 'SIGTERM' }), 1);
   assert.equal(childExitStatus(0, { code: null, signal: 'SIGKILL', stopping: false }), 1);
   assert.equal(childExitStatus(2, { code: 0, signal: null, stopping: true }), 2);
+});
+
+test('installed unit metadata requires root ownership and rejects runtime-writable definitions', () => {
+  const stat = (uid, mode) => ({ uid, mode, isFile: () => true, isSymbolicLink: () => false });
+  assert.equal(installedUnitMetadataSafe(stat(0, 0o100644)), true);
+  assert.equal(installedUnitMetadataSafe(stat(1000, 0o100644)), false);
+  assert.equal(installedUnitMetadataSafe(stat(0, 0o100664)), false);
+  assert.equal(installedUnitMetadataSafe(stat(0, 0o100646)), false);
 });
 
 // Real host locations this suite must never read, create, chmod, chown, or remove. The production

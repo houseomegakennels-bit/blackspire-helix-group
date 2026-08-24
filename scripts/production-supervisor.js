@@ -45,15 +45,17 @@ const childEnvironment = { ...process.env, BIND_HOST: bind.host, PORT: String(bi
 const entrypoint = role === 'api' ? 'apps/api/server.js' : 'apps/worker/worker.js';
 const children = [spawn(process.execPath, [entrypoint], { stdio: 'inherit', env: childEnvironment })];
 let stopping = false;
+let forwardedSignal = null;
 function stop(signal = 'SIGTERM') {
   if (stopping) return;
   stopping = true;
+  forwardedSignal = signal;
   for (const child of children) child.kill(signal);
 }
 process.on('SIGTERM', () => stop('SIGTERM'));
 process.on('SIGINT', () => stop('SIGINT'));
 for (const child of children) child.on('exit', (code, signal) => {
-  process.exitCode = childExitStatus(process.exitCode, { code, signal, stopping });
+  process.exitCode = childExitStatus(process.exitCode, { code, signal, stopping, forwardedSignal });
   if (!stopping) stop('SIGTERM');
   if (children.every((entry) => entry.exitCode !== null || entry.signalCode)) process.exit(process.exitCode || 0);
 });

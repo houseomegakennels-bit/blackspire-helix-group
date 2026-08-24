@@ -195,7 +195,12 @@ activation_failed() {
   set +e
   systemctl disable blackspire-command.target
   systemctl stop blackspire-command.target
-  bash scripts/release-rollback.sh "$rollback_sha"
+  stop_rc=$?
+  if (( stop_rc == 0 )); then
+    bash scripts/release-rollback.sh "$rollback_sha"
+  else
+    echo 'activation rollback refused release switch because target shutdown failed' >&2
+  fi
   exit 1
 }
 trap activation_failed ERR

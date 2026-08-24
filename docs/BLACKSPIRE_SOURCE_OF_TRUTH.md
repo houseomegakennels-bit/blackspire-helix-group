@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## PR #105 exact-head review correction in progress (2026-08-24 UTC)
+
+Fresh review of exact `bd24ccc1341f4a87deaa1c5156f4d202ba298f41` found three further material defects: release rollback could switch while target shutdown failed, strict preflight accepted non-root/runtime-writable unit definitions, and an unexpected child signal during requested shutdown could be reported clean. The current narrow correction gates release switching on successful target stop, requires root-owned non-group/world-writable installed definitions, and distinguishes the signal actually forwarded by the supervisor from crashes during drain. New focused regressions pass. This correction is not yet committed, independently reviewed, merged, installed, or deployed.
+
 ## Production Hermes and workspace authorization merged; service topology in progress (2026-08-24 UTC)
 
 PR #103 merged as `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from independently reviewed exact head `dae91962f992016cf0dcde823643bad42130952a`. Actions and Vercel were green, the exact-head adversarial Codex review reported no major issues, and the four superseded P1 threads were individually verified and resolved. The merge tree is byte-identical to the reviewed head. This proves the production Codex source path is merged; production deployment and a real Jarvis-pipeline Codex smoke remain unverified.

@@ -422,7 +422,12 @@ ACTIVATION (operator only, after Gate 4 is authorized)
     set +e
     systemctl disable $target_name
     systemctl stop $target_name
-    bash scripts/release-rollback.sh "\$rollback_sha"
+    stop_rc=\$?
+    if (( stop_rc == 0 )); then
+      bash scripts/release-rollback.sh "\$rollback_sha"
+    else
+      echo 'activation rollback refused release switch because target shutdown failed' >&2
+    fi
     exit 1
   }
   trap activation_failed ERR

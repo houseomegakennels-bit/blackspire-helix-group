@@ -363,7 +363,8 @@ test('the plan separates preparation from activation and executes nothing', () =
   assert.ok(activation.indexOf('systemctl start') < activation.indexOf('wait-production-ready.sh'));
   assert.ok(activation.indexOf('wait-production-ready.sh') < activation.indexOf('systemctl enable'));
   assert.match(activation, /wait-production-ready\.sh http:\/\/127\.0\.0\.1:<reviewed-port> .*\.service .*\.service 60 1/);
-  assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*release-rollback\.sh/);
+  assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*stop_rc[\s\S]*if \(\( stop_rc == 0 \)\)[\s\S]*release-rollback\.sh/,
+    'release rollback must require successful target shutdown');
   assert.equal(snapshot(host.home), before, 'printing the plan must not change anything');
 });
 
@@ -394,7 +395,8 @@ test('the checklist and the script agree on the authorization boundary', () => {
   assert.match(readinessWaiter, /dependencies\?\.worker\?\.generationId/);
   assert.match(readinessWaiter, /final_api_generation.*api_generation/);
   assert.match(readinessWaiter, /deadline_ms/);
-  assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*release-rollback\.sh/);
+  assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*stop_rc[\s\S]*if \(\( stop_rc == 0 \)\)[\s\S]*release-rollback\.sh/,
+    'checklist release rollback must require successful target shutdown');
 });
 
 test('the reviewed profile example never ships a real secret', () => {

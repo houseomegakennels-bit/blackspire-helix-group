@@ -1,5 +1,9 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — PR #105 exact-head review corrections (Codex)
+
+- Fresh review of exact `bd24ccc1341f4a87deaa1c5156f4d202ba298f41` found three material defects before merge: activation compensation could switch the release after target stop failed; strict preflight accepted byte-identical installed definitions with unsafe ownership/mode; and the supervisor treated an unexpected crash signal during requested drain as clean. The narrow correction requires successful target shutdown before release switching, validates root ownership plus no group/world writes for all installed definitions, and accepts only the exact signal forwarded by the supervisor. New regressions cover all three. Gate 4/readiness/preflight focused execution passed 94/97; the three failures are the documented root-worktree supervisor child fixtures that cannot traverse `/root`, while the same file's new unit regressions pass. No host unit, release, service, production state, provider, Telegram, or credential was touched.
+
 ## 2026-08-24 — PR #105 activation fenced to current service generations (Codex)
 
 - Timeout recovery found no unpublished PR #105 work newer than remote `3ec3e5a3ebdfb6fe81b51071b44ef4243b82b5fa`. The stale-heartbeat defect was reproduced in a disposable activation fixture: the stable worker ID and fresh heartbeat could belong to a prior process while systemd had started a different invocation. Candidate `7c475b63c6ca2c2b456bfc3fbd3a8727c34a6c39` records systemd's bounded non-secret `INVOCATION_ID` in worker heartbeat state and safely exposes it through readiness.

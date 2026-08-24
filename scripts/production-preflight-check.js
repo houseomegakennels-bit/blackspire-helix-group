@@ -21,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PROTECTED_PORTS, PRODUCTION_BIND_HOST, PRODUCTION_PORT_CANDIDATES } from '../packages/shared/bind.js';
+import { installedUnitMetadataSafe } from '../packages/shared/installed-unit.js';
 
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const asJson = process.argv.includes('--json');
@@ -368,11 +369,11 @@ for (const [id, installedPath, reviewed] of [
   let installedIsRegular = false;
   try {
     const installedStat = fs.lstatSync(installedPath);
-    installedIsRegular = installedStat.isFile() && !installedStat.isSymbolicLink();
+    installedIsRegular = installedUnitMetadataSafe(installedStat);
     if (installedIsRegular) installed = fs.readFileSync(installedPath, 'utf8');
   } catch { installed = null; }
   if (installed === null) {
-    record(id, false, 'deployment', `${installedPath} is absent, symlinked, or non-regular and must be installed as a regular file before activation`);
+    record(id, false, 'deployment', `${installedPath} is absent or is not a root-owned, non-group/world-writable regular file and must be safely installed before activation`);
   } else if (reviewed !== null && installed === reviewed) {
     record(id, true, 'deployment', `${installedPath} matches the reviewed template`);
   } else {

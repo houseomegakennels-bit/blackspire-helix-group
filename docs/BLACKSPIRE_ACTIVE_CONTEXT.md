@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## PR #105 final review correction in progress (2026-08-24 UTC)
+
+The current correction requires successful target shutdown before release rollback can switch `current`, requires root-owned non-group/world-writable installed API/worker/target definitions, and reports unexpected child crash signals during a requested drain as nonzero while accepting only the signal the supervisor actually forwarded. The new regressions pass; no production state changed. The branch remains unmerged and undeployed pending focused validation, publication, CI, and another exact-head review.
+
 ## API/worker service topology in progress (2026-08-24 UTC)
 
 PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b`; PR #104 workspace authorization is merged at `31a716961b174496e5d343a8e4586017204b4990` from reviewed head `5e877a8e6f7ff2af11c61e76bb1234b8623e50b7`. Production and a real Jarvis-pipeline Codex smoke remain unverified.
