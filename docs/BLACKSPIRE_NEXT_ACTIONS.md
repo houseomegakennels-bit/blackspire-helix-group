@@ -1,5 +1,15 @@
 # Blackspire Next Actions
 
+## Post-live acceptance work (2026-08-24 UTC)
+
+1. Run the rendered mobile PWA journey when an approved browser executable is available; the public HTML, manifest, service worker, viewport, and state/error copy have been inspected, but a visual touch-layout pass is not yet evidence-backed.
+2. Exercise the remaining live destructive acceptance matrix with isolated tasks: cancel before/during dispatch and completion/failure races, stale undispatched recovery and old-claim rejection, dispatch-crash `outcome_unknown` with no replay, restart while halted, and rollback rehearsal. Preserve the completed real task and historical databases.
+3. Run one controlled write test only in a disposable repository/worktree: Codex stays provider-side read-only and Hermes alone validates/applies the harmless documentation artifact.
+4. Add operational monitoring/alerts for public readiness, worker heartbeat generation, task backlog, `outcome_unknown`, and unit restart rate. Resolve Vercel preview quota separately; the current public PWA is served by the canonical VPS runtime.
+5. Keep Telegram dry-run/disconnected until canonical persisted identity mapping, authorization, durable offset/dedupe/context, and negative cross-workspace tests exist. Telegram is not part of the proven PWA live path.
+
+The former deployment blockers below are retained as historical context; database selection, writer-stopped backups, operator grants, service-compatible authenticated `CODEX_HOME`, reviewed units, Gate 4 activation, nginx cutover, and a real read-only Jarvis-to-Codex completion are now done.
+
 0. **BLOCKED — Telegram canonical authority.** Do not activate or directly merge historical PR #86. First bind each accepted Telegram identity to a persisted canonical principal, require active workspace grants before reads or writes, and persist polling offset, dedupe, selected workspace, and conversation context. Then recover only the still-useful bounded timeout/retry/ordering/chunking behavior.
 
 0. **BLOCKED BEFORE DEPLOYMENT — reconcile observed VPS runtime.** Initial production will use a deliberately clean database created by the reviewed migration path at the configured canonical target; do not promote or merge either historical database. Take writer-stopped cutover backups of both preserved sources, provision the real persisted operator/grant in the new database, authenticate and configure the prepared private service `CODEX_HOME` without exposing credentials, record rollback evidence, install the now-merged reviewed three-unit topology, and switch nginx only after activation-generation readiness succeeds. See `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`.
