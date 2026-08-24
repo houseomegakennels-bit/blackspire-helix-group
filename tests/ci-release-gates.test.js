@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { computeArtifactDigest, writeReleaseEvidence } from '../packages/shared/release-evidence.js';
 
 const workflow = fs.readFileSync('.github/workflows/blackspire-ci.yml', 'utf8');
+const workflowDirectory = '.github/workflows';
 const validator = path.resolve('scripts/ci-validate-whitespace-range.sh');
 
 function git(root, ...args) {
@@ -134,4 +135,23 @@ test('CI release artifact verifier independently detects package-tree mutation',
   assert.notEqual(rejected.status, 0);
   assert.match(rejected.stderr, /release artifact verification failed/);
   assert.notEqual(computeArtifactDigest(artifact), manifest.artifact.digest);
+});
+
+test('official JavaScript actions are immutable across every repository workflow', () => {
+  const workflows = fs.readdirSync(workflowDirectory)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .map((name) => fs.readFileSync(path.join(workflowDirectory, name), 'utf8'))
+    .join('\n');
+  assert.doesNotMatch(workflows, /actions\/(?:checkout|setup-node|upload-artifact)@v\d+/,
+    'mutable major tags must not control reviewed workflows');
+  const expected = new Map([
+    ['checkout', '3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'],
+    ['setup-node', '820762786026740c76f36085b0efc47a31fe5020 # v7.0.0'],
+    ['upload-artifact', '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1'],
+  ]);
+  for (const match of workflows.matchAll(/actions\/(checkout|setup-node|upload-artifact)@([^\s]+)/g)) {
+    assert.equal(`${match[2]} ${match.input.slice(match.index + match[0].length).split('\n', 1)[0].trim()}`,
+      expected.get(match[1]), `unexpected immutable pin for actions/${match[1]}`);
+  }
+  for (const action of expected.keys()) assert.match(workflows, new RegExp(`actions/${action}@`), `actions/${action} inventory is unexpectedly empty`);
 });

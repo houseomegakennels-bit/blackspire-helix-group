@@ -147,6 +147,8 @@ test('production wrapper never runs or fabricates a migration permission', () =>
   const text = fs.readFileSync('scripts/start-production.sh', 'utf8');
   assert.doesNotMatch(text, /scripts\/migrate\.js/);
   assert.doesNotMatch(text, /BLACKSPIRE_RUN_MIGRATIONS/);
+  assert.match(text, /service_role="\$\{1:-\}"/, 'production startup must require an explicit service role');
+  assert.doesNotMatch(text, /service_role="\$\{1:-api\}"/, 'omitting a role must never silently omit the worker');
 });
 
 test('schema-writing code and migration permission stay inside the dedicated command boundary', () => {

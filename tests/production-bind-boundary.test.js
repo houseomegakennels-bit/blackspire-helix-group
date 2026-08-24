@@ -18,9 +18,27 @@ import {
   PRODUCTION_PORT_CANDIDATES,
 } from '../packages/shared/bind.js';
 import { verifyVpsRuntime } from '../packages/shared/security.js';
+import { childExitStatus } from '../packages/shared/supervisor-exit.js';
+import { installedUnitMetadataSafe } from '../packages/shared/installed-unit.js';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const node = process.execPath;
+
+test('supervisor preserves a worker drain failure during requested shutdown', () => {
+  assert.equal(childExitStatus(0, { code: 1, signal: null, stopping: true }), 1);
+  assert.equal(childExitStatus(0, { code: null, signal: 'SIGTERM', stopping: true, forwardedSignal: 'SIGTERM' }), 0);
+  assert.equal(childExitStatus(0, { code: null, signal: 'SIGABRT', stopping: true, forwardedSignal: 'SIGTERM' }), 1);
+  assert.equal(childExitStatus(0, { code: null, signal: 'SIGKILL', stopping: false }), 1);
+  assert.equal(childExitStatus(2, { code: 0, signal: null, stopping: true }), 2);
+});
+
+test('installed unit metadata requires root ownership and rejects runtime-writable definitions', () => {
+  const stat = (uid, mode) => ({ uid, mode, isFile: () => true, isSymbolicLink: () => false });
+  assert.equal(installedUnitMetadataSafe(stat(0, 0o100644)), true);
+  assert.equal(installedUnitMetadataSafe(stat(1000, 0o100644)), false);
+  assert.equal(installedUnitMetadataSafe(stat(0, 0o100664)), false);
+  assert.equal(installedUnitMetadataSafe(stat(0, 0o100646)), false);
+});
 
 // Real host locations this suite must never read, create, chmod, chown, or remove. The production
 // runtime verifier calls mkdir on whatever release root it is handed, so a fixture pointing at a
@@ -87,6 +105,7 @@ function productionEnv(overrides = {}) {
     PORT: '8789',
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30',
     BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',
     BLACKSPIRE_RUNTIME_USER: 'blackspire',
     BLACKSPIRE_RELEASE_ROOT: disposableReleaseRoot,
     BLACKSPIRE_DB_PATH: disposableDbPath,
@@ -630,12 +649,19 @@ test('the production supervisor and the API server agree on host and port', asyn
   assert.doesNotMatch(server, /listen\(port, host/, 'the server must not bind unresolved arguments');
 });
 
+test('the production supervisor requires one explicit role and only the API probes the port', () => {
+  const source = fs.readFileSync('scripts/production-supervisor.js', 'utf8');
+  assert.match(source, /process\.argv\.length === 3/);
+  assert.match(source, /role === 'api' \? await probePortAvailable/);
+  assert.match(source, /role === 'api' \? 'apps\/api\/server\.js' : 'apps\/worker\/worker\.js'/);
+});
+
 // The supervisor verifies the whole runtime before it ever probes the port, and reports every
 // failed requirement together. A fixture that trips an earlier requirement would therefore exit
 // nonzero without reaching the check under test, so each supervisor test below states which
 // documented reason it expects and rejects the others by name.
 function runSupervisor(env, spawnOptions = {}) {
-  return spawnSync(node, ['scripts/production-supervisor.js'], {
+  return spawnSync(node, ['scripts/production-supervisor.js', '--api-only'], {
     cwd: process.cwd(), encoding: 'utf8', timeout: 20000, env, ...spawnOptions,
   });
 }
@@ -864,15 +890,27 @@ test('the reverse-proxy template targets the loopback production port and never 
   assert.doesNotMatch(conf, /listen\s+0\.0\.0\.0:8789/);
 });
 
-test('the systemd unit runs the preflight and the supervisor, and documents the port boundary', () => {
+test('systemd independently supervises the API and existing worker under one target', () => {
   const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const worker = fs.readFileSync('ops/runtime-ownership/blackspire-command-worker.service', 'utf8');
+  const target = fs.readFileSync('ops/runtime-ownership/blackspire-command.target', 'utf8');
   assert.match(unit, /ExecStartPre=.*verify-environment\.sh vps-production/);
-  assert.match(unit, /ExecStart=.*production-supervisor\.js/);
+  assert.match(unit, /ExecStart=.*production-supervisor\.js --api-only/);
+  assert.match(worker, /ExecStart=.*production-supervisor\.js --worker-only/);
+  assert.match(worker, /ExecStartPre=.*verify-environment\.sh vps-production worker/);
+  assert.match(worker, /^TimeoutStopSec=35$/m, 'worker receives enough time for its bounded drain');
+  assert.match(worker, /^KillMode=mixed$/m, 'only the supervisor receives the first drain signal');
+  assert.match(unit, /^KillMode=mixed$/m, 'only the API supervisor receives the first drain signal');
+  assert.match(target, /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m);
+  assert.match(unit, /^PartOf=blackspire-command\.target$/m);
+  assert.match(worker, /^PartOf=blackspire-command\.target$/m);
+  assert.doesNotMatch(unit, /Requires=blackspire-command-worker/, 'worker failure must not terminate the API');
+  assert.doesNotMatch(worker, /Requires=blackspire-command\.service/, 'API failure must not terminate the worker');
   assert.match(unit, /BIND_HOST=127\.0\.0\.1/);
   assert.match(unit, /8788/, 'the unit must document that restricted staging keeps 8788');
 });
 
-test('production logs are isolated to one systemd-owned file and rotation never targets Docker-wide logs', () => {
+test('production logs are isolated by service and rotation never targets Docker-wide logs', () => {
   const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
   assert.match(unit, /^LogsDirectory=blackspire-command$/m);
   assert.match(unit, /^LogsDirectoryMode=0750$/m);
@@ -1058,6 +1096,7 @@ test('the approved production profile pins loopback and an explicit non-conflict
   assert.ok(port, 'the profile must set an explicit port');
   assert.equal(PROTECTED_PORTS.includes(Number(port[1])), false, 'the profile must not use a protected port');
   assert.equal(port[1], '8789');
+  assert.match(profile, /^BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true$/m);
 });
 
 test('the production preflight passes the source contract and is machine-readable', () => {
@@ -1108,6 +1147,9 @@ test('the production preflight detects a stale installed unit as a deployment fi
   const installed = report.findings.find((finding) => finding.id === 'installed-unit');
   assert.ok(installed, 'the preflight must report installed-unit drift');
   assert.equal(installed.class, 'deployment', 'installed-unit drift is a deployment follow-up, not a source defect');
+  const preflightSource = fs.readFileSync('scripts/production-preflight-check.js', 'utf8');
+  assert.match(preflightSource, /\['installed-unit', INSTALLED_UNIT_PATH, unit\]/,
+    'the API unit must use the same absent-or-drifted failure loop as worker and target');
 });
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));

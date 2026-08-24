@@ -1,0 +1,48 @@
+# Blackspire Command — durable queue worker (REVIEW TEMPLATE, NOT INSTALLED)
+
+[Unit]
+Description=Blackspire Command worker (durable production runtime)
+After=network-online.target
+Wants=network-online.target
+PartOf=blackspire-command.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=blackspire
+Group=blackspire
+WorkingDirectory=/opt/blackspire-command/current
+EnvironmentFile=/etc/blackspire/command.env
+Environment=PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
+Environment=BLACKSPIRE_NODE_BIN=/opt/nodejs/node-v22.23.1-linux-x64/bin/node
+ExecStartPre=/usr/bin/env bash scripts/verify-environment.sh vps-production worker
+ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node scripts/production-supervisor.js --worker-only
+LogsDirectory=blackspire-command
+LogsDirectoryMode=0750
+UMask=0027
+StandardOutput=append:/var/log/blackspire-command/worker.log
+StandardError=append:/var/log/blackspire-command/worker.log
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=35
+# systemd signals only the supervisor initially; it forwards one SIGTERM to the worker for its
+# bounded drain. At timeout, mixed mode still kills the full cgroup so descendants cannot escape.
+KillMode=mixed
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/blackspire-command/shared
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=blackspire-command.target
