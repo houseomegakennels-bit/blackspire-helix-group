@@ -30,6 +30,8 @@ const UNIT_PATH = 'ops/runtime-ownership/blackspire-command.service';
 const WORKER_UNIT_PATH = 'ops/runtime-ownership/blackspire-command-worker.service';
 const TARGET_PATH = 'ops/runtime-ownership/blackspire-command.target';
 const INSTALLED_UNIT_PATH = '/etc/systemd/system/blackspire-command.service';
+const INSTALLED_WORKER_UNIT_PATH = '/etc/systemd/system/blackspire-command-worker.service';
+const INSTALLED_TARGET_PATH = '/etc/systemd/system/blackspire-command.target';
 const NODE_BIN_LIB = 'scripts/lib/node-bin.sh';
 
 // Shell scripts are discovered rather than listed, so a newly added production script is covered
@@ -366,6 +368,21 @@ if (unit === null) {
   } else {
     record('installed-unit', false, 'deployment',
       'installed unit differs from the reviewed template and must be reinstalled before daemon-reload and start');
+  }
+}
+
+for (const [id, installedPath, reviewed] of [
+  ['installed-worker-unit', INSTALLED_WORKER_UNIT_PATH, workerUnit],
+  ['installed-runtime-target', INSTALLED_TARGET_PATH, runtimeTarget],
+]) {
+  let installed = null;
+  try { installed = fs.readFileSync(installedPath, 'utf8'); } catch { installed = null; }
+  if (installed === null) {
+    record(id, false, 'deployment', `${installedPath} is absent and must be installed before daemon-reload and activation`);
+  } else if (reviewed !== null && installed === reviewed) {
+    record(id, true, 'deployment', `${installedPath} matches the reviewed template`);
+  } else {
+    record(id, false, 'deployment', `${installedPath} differs from the reviewed template`);
   }
 }
 
