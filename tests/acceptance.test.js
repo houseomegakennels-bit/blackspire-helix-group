@@ -229,11 +229,23 @@ test('Git workflow and workspace isolation/security controls', async () => {
   fs.chmodSync(hook, 0o755);
   assert.throws(() => applyEdits([{ path: '.git/hooks/pre-commit', content: 'replaced' }], { cwd: dir, allowedPaths: ['.'] }), /Git control|not allowed/i);
   assert.throws(() => applyEdits([{ path: 'docs/nested/.git', content: 'replaced' }], { cwd: dir, allowedPaths: ['.'] }), /Git control|not allowed/i);
+  fs.mkdirSync(path.join(dir, 'nested', '.git'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'nested', '.git', 'config'), 'nested control\n');
+  fs.symlinkSync('../nested/.git/config', path.join(dir, 'docs', 'nested-control'));
+  assert.throws(() => applyEdits([{ path: 'docs/nested-control', content: 'replaced' }], { cwd: dir, allowedPaths: ['.'] }), /nested Git control/i);
+  assert.equal(fs.readFileSync(path.join(dir, 'nested', '.git', 'config'), 'utf8'), 'nested control\n');
+  fs.rmSync(path.join(dir, 'docs', 'nested-control'));
+  fs.rmSync(path.join(dir, 'nested'), { recursive: true });
   const approved = [{ path: 'docs/hook-proof.md', content: 'approved only\n' }];
   applyEdits(approved, { cwd: dir, allowedPaths: ['docs'] });
   assert.equal(commitArtifacts('hook-isolated commit', approved, { cwd: dir, allowedPaths: ['docs'] }).ok, true);
   assert.equal(fs.existsSync(path.join(dir, 'docs', 'hook-injected.md')), false);
   assert.doesNotMatch(git(['show', '--name-only', '--format=', 'HEAD'], dir), /hook-injected/);
+  const modeBound = [{ path: 'docs/hook-proof.md', content: 'mode must remain data-only\n' }];
+  applyEdits(modeBound, { cwd: dir, allowedPaths: ['docs'] });
+  fs.chmodSync(path.join(dir, 'docs', 'hook-proof.md'), 0o755);
+  assert.throws(() => commitArtifacts('mode mutation refused', modeBound, { cwd: dir, allowedPaths: ['docs'] }), /unexpected artifact mode/i);
+  git(['restore', '--staged', '--worktree', 'docs/hook-proof.md'], dir);
   assert.equal(createPullRequest({ title: 'No credentials', body: 'packet', cwd: dir }).mode, 'task-packet');
 });
 

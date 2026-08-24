@@ -1110,3 +1110,8 @@
 
 - Exact-head review reproduced a nested submodule `.git` control-file overwrite and a concurrent shared-index writer widening the commit after final staged-byte verification. `.git` is now rejected as any normalized path component, while physical parent-repository Git-directory exclusion remains in force.
 - Hermes writes the staged index to an immutable tree, verifies that tree's exact changed-path set and blob bytes against approved artifacts, creates a commit directly from that tree, and atomically advances only the current task branch with the expected old parent. A concurrent later shared-index mutation cannot alter the committed tree; a concurrent branch update makes `update-ref` fail closed. Focused acceptance plus production end-to-end validation passes 35/35 under Node 22.23.1. No production mutation or deployment occurred.
+
+## 2026-08-24 — Post-live mutation-boundary eleventh review corrections (Codex)
+
+- Exact-head review found that a symlink could physically resolve into a nested repository's `.git` even when its lexical path had no `.git` component, and that an index-only executable-bit mutation could preserve approved bytes while changing the immutable tree entry mode. Physical workspace-relative targets now reject every `.git` component after resolution. Each immutable tree entry must match the parent tree's mode, or `100644` for a new artifact, in addition to matching approved path and bytes.
+- Fixtures prove a symlink into `nested/.git/config` cannot change nested control data and an executable-bit mutation is refused. Focused acceptance plus production end-to-end validation passes 35/35 under Node 22.23.1. No production mutation or deployment occurred.

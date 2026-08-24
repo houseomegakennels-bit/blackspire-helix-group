@@ -86,6 +86,8 @@ export function commitAll(message, { cwd = '.', protectedBranches = ['main', 'ma
 export function commitArtifacts(message, edits, { cwd = '.', allowedPaths = ['.'], protectedBranches = ['main', 'master', 'work'] } = {}) {
   const branch = git(['branch', '--show-current'], cwd).stdout.trim();
   if (isProtectedBranch(branch, protectedBranches)) return { ok: false, code: null, stdout: '', stderr: `Refusing to commit directly on protected branch ${branch}` };
+  const parent = git(['rev-parse', 'HEAD'], cwd);
+  if (parent.code !== 0 || !/^[a-f0-9]{40,64}$/.test(parent.stdout.trim())) return { ok: false, ...parent };
   const targets = new Map();
   const realRoot = fs.realpathSync(cwd);
   for (const edit of edits || []) {
@@ -112,8 +114,6 @@ export function commitArtifacts(message, edits, { cwd = '.', allowedPaths = ['.'
     const indexed = spawnSync('git', ['show', `:${relative}`], { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     if (indexed.status !== 0 || indexed.stdout !== expected) throw new Error(`Staged artifact does not match approved content: ${relative}`);
   }
-  const parent = git(['rev-parse', 'HEAD'], cwd);
-  if (parent.code !== 0 || !/^[a-f0-9]{40,64}$/.test(parent.stdout.trim())) return { ok: false, ...parent };
   const writtenTree = git(['write-tree'], cwd);
   const tree = writtenTree.stdout.trim();
   if (writtenTree.code !== 0 || !/^[a-f0-9]{40,64}$/.test(tree)) return { ok: false, ...writtenTree };
@@ -125,6 +125,8 @@ export function commitArtifacts(message, edits, { cwd = '.', allowedPaths = ['.'
   for (const [relative, expected] of targets) {
     const blob = spawnSync('git', ['show', `${tree}:${relative}`], { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     if (blob.status !== 0 || blob.stdout !== expected) throw new Error(`Immutable commit tree has unexpected artifact content: ${relative}`);
+    const expectedMode = treeEntryMode(parent.stdout.trim(), relative, cwd) || '100644';
+    if (treeEntryMode(tree, relative, cwd) !== expectedMode) throw new Error(`Immutable commit tree has unexpected artifact mode: ${relative}`);
   }
   const commit = git(['commit-tree', tree, '-p', parent.stdout.trim(), '-m', message], cwd);
   const commitId = commit.stdout.trim();
@@ -167,6 +169,8 @@ function canonicalArtifactTarget(filePath, cwd, allowedPaths) {
   const realRoot = fs.realpathSync(cwd);
   const target = resolvePhysicalTarget(lexicalTarget, filePath);
   if (!isInside(realRoot, target)) throw new Error(`Artifact path escapes workspace: ${filePath}`);
+  const physicalRelative = path.relative(realRoot, target);
+  if (physicalRelative.split(path.sep).includes('.git')) throw new Error(`Artifact path targets nested Git control data: ${filePath}`);
   const gitDirectoryResult = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd, encoding: 'utf8' });
   if (gitDirectoryResult.status !== 0) throw new Error('Workspace Git directory unavailable');
   const gitDirectory = fs.realpathSync(gitDirectoryResult.stdout.trim());
@@ -200,6 +204,13 @@ function pathEntryExists(target) {
     if (error?.code === 'ENOENT') return false;
     throw error;
   }
+}
+
+function treeEntryMode(treeish, relative, cwd) {
+  const result = spawnSync('git', ['ls-tree', '-z', treeish, '--', relative], { cwd, encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`Unable to inspect immutable tree entry: ${relative}`);
+  const match = String(result.stdout || '').match(/^([0-7]{6})\s/);
+  return match?.[1] || null;
 }
 
 function git(args, cwd) {
