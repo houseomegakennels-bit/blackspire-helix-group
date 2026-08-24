@@ -1,6 +1,8 @@
 # Blackspire Next Actions
 
-0. **IN PROGRESS — release-integrity recovery.** The independent action-pin slice from stale PR #96 is rebuilt and focused-tested on current main. Publish and validate it independently; keep the larger #97 release-evidence and #98 artifact-identity recovery separate, and integrate base-first after production topology lands.
+0. **BLOCKED — Telegram canonical authority.** Do not activate or directly merge historical PR #86. First bind each accepted Telegram identity to a persisted canonical principal, require active workspace grants before reads or writes, and persist polling offset, dedupe, selected workspace, and conversation context. Then recover only the still-useful bounded timeout/retry/ordering/chunking behavior.
+
+0. **BLOCKED BEFORE DEPLOYMENT — reconcile observed VPS runtime.** Initial production will use a deliberately clean database created by the reviewed migration path at the configured canonical target; do not promote or merge either historical database. Take writer-stopped cutover backups of both preserved sources, provision the real persisted operator/grant in the new database, authenticate and configure the prepared private service `CODEX_HOME` without exposing credentials, record rollback evidence, install the now-merged reviewed three-unit topology, and switch nginx only after activation-generation readiness succeeds. See `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`.
 
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 

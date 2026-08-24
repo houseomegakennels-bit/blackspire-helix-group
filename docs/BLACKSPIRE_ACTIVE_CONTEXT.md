@@ -1,8 +1,22 @@
 # Blackspire Active Context
 
+## Telegram canonical-intake blocker (2026-08-24 UTC)
+
+Current main still treats the Telegram allowlist as execution authority: workspace/conversation/update state is process-local and task creation does not resolve a persisted #104 principal/grant. Old PR #86 improves transport reliability but does not repair this boundary and must not be merged or activated directly. Production Telegram stays disconnected until persisted identity mapping, workspace authorization, durable offset/dedupe/context state, and negative cross-workspace tests exist.
+
+## Read-only live VPS audit (2026-08-24 UTC)
+
+The public Jarvis domain still routes to the historical staging API on loopback port 8788. Canonical production systemd is inactive: only the historical API unit is installed, while the worker unit and target are absent and `/opt/blackspire-command/current` does not exist. Legacy July Docker API/worker containers still own wildcard port 8787 and a separate named database volume. The configured production database target is absent; the staging and Docker databases both predate the merged authorization/accounting schema. Public health/readiness omit current deployment and worker-generation evidence and report production providers disabled. The production environment has no configured operator principal ID or `CODEX_HOME`. Full sanitized evidence and blockers are recorded in `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`; no live state was mutated.
+
+Root-only online safety snapshots now preserve both historical databases with verified SHA-256 sidecars. Disposable copies of both migrate cleanly to the current schema with integrity and foreign-key checks passing, and minimum operator provisioning is idempotent with cross-workspace/provider/management escalation denied. Initial production will use a deliberately clean database created by the reviewed migration path at the configured canonical target; neither legacy database will be promoted or merged. Staging's 21 stale claimed queued tasks and Docker's old accounting plus a pending approval on a cancelled task make implicit promotion unsafe. Both histories remain preserved, and these online snapshots do not replace required writer-stopped cutover backups.
+
+The selected clean-database path now has its own disposable rehearsal: current migrations produced integrity `ok`, zero foreign-key violations, and a complete schema with one seeded workspace and no tasks. Minimum provisioning was idempotent and denied cross-workspace, provider, and management escalation. The rehearsal database is not the production target.
+
+An empty private service home for Codex is prepared at `/opt/blackspire-command/shared/codex-home` with `0700 blackspire:blackspire`; the service identity can execute Codex 0.149.0 with that location under an empty environment. It contains no copied credentials, is not configured in production, and has not passed an authenticated capability probe.
+
 ## Jarvis canonical operator observability in progress (2026-08-24 UTC)
 
-The PWA observability branch renders server-authoritative health and readiness distinctly, including degraded and unreachable API states; worker state, heartbeat age, and a shortened non-secret systemd generation identifier; provider/model evidence; and `outcome_unknown` as a terminal operator-review state with automatic retry blocked. The authenticated session surface returns only the persisted principal bound by the server to the session, and Jarvis displays that principal and session expiry without accepting browser-supplied identity. Deterministic UI fixtures cover healthy/degraded/offline API, ready/not-ready, stale/stopped/current-generation worker state, every canonical task state, and the no-replay unknown-outcome contract. Focused PWA/API validation passes 45/45. This branch is not merged or deployed; production and live Jarvis-to-Codex execution remain unverified.
+PR #108 merged as `6f29753b014d5394ff298bdbf6c980f5bee942ac`. Jarvis now renders server-authoritative principal/session, health/readiness, degraded/offline API, worker heartbeat/generation, canonical task states, and explicit `outcome_unknown` no-replay semantics. Production and live Jarvis-to-Codex execution remain unverified.
 
 ## Current-main release evidence reconstruction (2026-08-24 UTC)
 
