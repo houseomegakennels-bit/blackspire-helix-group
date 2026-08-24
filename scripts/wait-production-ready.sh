@@ -38,10 +38,11 @@ while (( $(date +%s%3N) < deadline_ms )); do
   worker_state="$(unit_state "$worker_unit" || true)"
   read -r api_active api_generation <<<"$api_state"
   read -r worker_active worker_generation <<<"$worker_state"
-  if [[ "$api_active" == active && "$worker_active" == active && "$worker_generation" =~ ^[a-f0-9]{32}$ ]]; then
+  if [[ "$api_active" == active && "$api_generation" =~ ^[a-f0-9]{32}$ && "$worker_active" == active && "$worker_generation" =~ ^[a-f0-9]{32}$ ]]; then
     remaining_ms=$(( deadline_ms - $(date +%s%3N) ))
     (( remaining_ms > 0 )) || break
-    request_seconds="$(awk -v ms="$remaining_ms" 'BEGIN { v=ms/1000; if (v>2) v=2; if (v<0.05) v=0.05; printf "%.3f", v }')"
+    # Two requests share the remaining budget; neither may consume the whole deadline by itself.
+    request_seconds="$(awk -v ms="$remaining_ms" 'BEGIN { v=ms/2000; if (v>2) v=2; if (v<0.01) v=0.01; printf "%.3f", v }')"
     health="$(curl --fail --silent --show-error --max-time "$request_seconds" --max-filesize 65536 "$base_url/health" 2>/dev/null || true)"
     ready="$(curl --fail --silent --show-error --max-time "$request_seconds" --max-filesize 65536 "$base_url/ready" 2>/dev/null || true)"
     if HEALTH_JSON="$health" READY_JSON="$ready" EXPECTED_GENERATION="$worker_generation" "$node_bin" -e '
@@ -58,7 +59,7 @@ while (( $(date +%s%3N) < deadline_ms )); do
       final_worker_state="$(unit_state "$worker_unit" || true)"
       read -r final_api_active final_api_generation <<<"$final_api_state"
       read -r final_worker_active final_worker_generation <<<"$final_worker_state"
-      if [[ "$final_api_active" == active && "$final_worker_active" == active && "$final_worker_generation" == "$worker_generation" ]]; then
+      if [[ "$final_api_active" == active && "$final_api_generation" == "$api_generation" && "$final_worker_active" == active && "$final_worker_generation" == "$worker_generation" ]]; then
         echo 'BLACKSPIRE ACTIVATION-SPECIFIC READINESS OK'
         exit 0
       fi

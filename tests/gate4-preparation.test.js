@@ -388,6 +388,7 @@ test('the checklist and the script agree on the authorization boundary', () => {
   assert.match(readinessWaiter, /ActiveState/);
   assert.match(readinessWaiter, /InvocationID/);
   assert.match(readinessWaiter, /dependencies\?\.worker\?\.generationId/);
+  assert.match(readinessWaiter, /final_api_generation.*api_generation/);
   assert.match(readinessWaiter, /deadline_ms/);
   assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*release-rollback\.sh/);
 });
