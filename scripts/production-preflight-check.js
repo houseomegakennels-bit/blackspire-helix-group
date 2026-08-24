@@ -364,9 +364,14 @@ for (const [id, installedPath, reviewed] of [
   ['installed-runtime-target', INSTALLED_TARGET_PATH, runtimeTarget],
 ]) {
   let installed = null;
-  try { installed = fs.readFileSync(installedPath, 'utf8'); } catch { installed = null; }
+  let installedIsRegular = false;
+  try {
+    const installedStat = fs.lstatSync(installedPath);
+    installedIsRegular = installedStat.isFile() && !installedStat.isSymbolicLink();
+    if (installedIsRegular) installed = fs.readFileSync(installedPath, 'utf8');
+  } catch { installed = null; }
   if (installed === null) {
-    record(id, false, 'deployment', `${installedPath} is absent and must be installed before daemon-reload and activation`);
+    record(id, false, 'deployment', `${installedPath} is absent, symlinked, or non-regular and must be installed as a regular file before activation`);
   } else if (reviewed !== null && installed === reviewed) {
     record(id, true, 'deployment', `${installedPath} matches the reviewed template`);
   } else {

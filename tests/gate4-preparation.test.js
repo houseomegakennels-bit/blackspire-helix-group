@@ -335,9 +335,11 @@ test('the plan separates preparation from activation and executes nothing', () =
   assert.match(preparation, /blackspire-command-worker\.service/);
   assert.match(preparation, /blackspire-command\.target/);
   assert.match(preparation, /gate4-[a-f0-9]{40}/, 'the unit backup is bound to the approved SHA');
+  assert.match(preparation, /test ! -e .*unit-before|test ! -e .*gate4-/, 'a same-SHA retry cannot overwrite the first snapshot');
   assert.match(preparation, /\.absent/, 'rollback records definitions proven absent before preparation');
+  assert.match(preparation, /\.complete/, 'rollback requires a complete snapshot marker');
   assert.match(preparation, /refusing unsafe installed unit path/, 'symlinked or non-regular installed units fail closed');
-  assert.match(preparation, /missing trusted before-state/, 'rollback fails closed without a matching backup or absence marker');
+  assert.match(preparation, /missing or ambiguous trusted before-state/, 'rollback validates exactly one record for every unit before restoring any');
   assert.match(preparation, /systemctl daemon-reload/);
   assert.match(preparation, /checkout --detach \$\{BLACKSPIRE_GATE4_APPROVED_SHA\}/);
   assert.match(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.target/);

@@ -359,6 +359,7 @@ PREPARATION (safe, reversible, no activation)
   5. Install the reviewed API, worker, and coordination target definitions, then reload systemd.
      The checker above fails closed if an installed definition differs; inspect that difference
      before replacing any existing file:
+       test ! -e $unit_backup_dir && test ! -L $unit_backup_dir
        install -d -o root -g root -m 0700 $unit_backup_dir
        for unit_path in $api_unit_file $worker_unit_file $target_file; do
          unit_base="\$(basename -- "\$unit_path")"
@@ -370,6 +371,7 @@ PREPARATION (safe, reversible, no activation)
            echo "refusing unsafe installed unit path: \$unit_path" >&2; exit 1
          fi
        done
+       install -o root -g root -m 0600 /dev/null $unit_backup_dir/.complete
        install -o root -g root -m 0644 \\
          $repo_root/ops/runtime-ownership/blackspire-command.service $api_unit_file
        install -o root -g root -m 0644 \\
@@ -400,14 +402,23 @@ ROLLBACK OF PREPARATION (safe; production was never started)
   rm -f $env_file
   rm -rf $workspace_root
   rm -f $logrotate_file
+  test -f $unit_backup_dir/.complete && test ! -L $unit_backup_dir/.complete
+  # Validate the complete snapshot before mutating the first installed definition.
   for unit_path in $api_unit_file $worker_unit_file $target_file; do
     unit_base="\$(basename -- "\$unit_path")"
-    if test -f "$unit_backup_dir/\$unit_base" && test ! -L "$unit_backup_dir/\$unit_base"; then
+    backup_present=0; absent_present=0
+    test -f "$unit_backup_dir/\$unit_base" && test ! -L "$unit_backup_dir/\$unit_base" && backup_present=1
+    test -f "$unit_backup_dir/\$unit_base.absent" && test ! -L "$unit_backup_dir/\$unit_base.absent" && absent_present=1
+    if test "\$((backup_present + absent_present))" -ne 1; then
+      echo "missing or ambiguous trusted before-state for \$unit_path; refusing rollback" >&2; exit 1
+    fi
+  done
+  for unit_path in $api_unit_file $worker_unit_file $target_file; do
+    unit_base="\$(basename -- "\$unit_path")"
+    if test -f "$unit_backup_dir/\$unit_base"; then
       install -o root -g root -m 0644 "$unit_backup_dir/\$unit_base" "\$unit_path"
-    elif test -f "$unit_backup_dir/\$unit_base.absent" && test ! -L "$unit_backup_dir/\$unit_base.absent"; then
-      rm -f -- "\$unit_path"
     else
-      echo "missing trusted before-state for \$unit_path; refusing rollback" >&2; exit 1
+      rm -f -- "\$unit_path"
     fi
   done
   systemctl daemon-reload

@@ -95,6 +95,7 @@ npm run db:backup -- /opt/blackspire-command/shared/backups
 # 5. Record the before-state of all three installed definitions, install the reviewed topology,
 # and reload definitions only (this does not start or enable anything)
 unit_backup_dir=/var/backups/blackspire-command/gate4-<approved-sha>
+test ! -e "$unit_backup_dir" && test ! -L "$unit_backup_dir"
 install -d -o root -g root -m 0700 "$unit_backup_dir"
 for unit_path in /etc/systemd/system/blackspire-command.service \
   /etc/systemd/system/blackspire-command-worker.service \
@@ -108,6 +109,7 @@ for unit_path in /etc/systemd/system/blackspire-command.service \
     echo "refusing unsafe installed unit path: $unit_path" >&2; exit 1
   fi
 done
+install -o root -g root -m 0600 /dev/null "$unit_backup_dir/.complete"
 install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command.service \
   /etc/systemd/system/blackspire-command.service
 install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command-worker.service \
