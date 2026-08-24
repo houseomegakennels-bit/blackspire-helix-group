@@ -29,15 +29,22 @@ const fmtDuration = (a, b) => {
 /* ---------- status vocabulary (single source, color never alone) ---------- */
 const STATUS = {
   queued: { label: 'Queued', tone: 'warn', core: 'processing' },
+  planning: { label: 'Planning', tone: 'ion', core: 'processing' },
   running: { label: 'Processing', tone: 'ion', core: 'processing' },
   waiting_for_approval: { label: 'Awaiting approval', tone: 'warn', core: 'approval' },
+  validating: { label: 'Validating', tone: 'ion', core: 'processing' },
   completed: { label: 'Completed', tone: 'ok', core: 'completed' },
   failed: { label: 'Failed', tone: 'bad', core: 'denied' },
   cancelled: { label: 'Cancelled', tone: 'muted', core: 'cancelled' },
+  outcome_unknown: { label: 'Execution outcome unknown', tone: 'warn', core: 'approval' },
 };
+const canonicalTaskStatus = (task) => (task?.providerAttribution || []).some((attempt) => attempt.status === 'outcome_unknown')
+  ? 'outcome_unknown'
+  : task?.status;
 const statusInfo = (task) => {
   if (!task) return { label: '—', tone: 'muted', core: 'dormant' };
-  const base = STATUS[task.status] || { label: 'Unknown state', tone: 'muted', core: 'dormant' };
+  const status = canonicalTaskStatus(task);
+  const base = STATUS[status] || { label: 'Unknown state', tone: 'muted', core: 'dormant' };
   if (task.status === 'failed' && task.policy_decision === 'denied') return { label: 'Denied by policy', tone: 'bad', core: 'denied' };
   return base;
 };
@@ -47,12 +54,15 @@ const EVENT_LABELS = {
   'policy.denied': ['Policy denied', 'bad'],
   'task.created': ['Task created', 'ion'],
   'task.queued': ['Task queued', 'warn'],
+  'task.planning': ['Task planning', 'ion'],
   'task.running': ['Task processing', 'ion'],
   'task.waiting_for_approval': ['Awaiting approval', 'warn'],
+  'task.validating': ['Task validating', 'ion'],
   'hermes.selected': ['Hermes selected', 'ion'],
   'provider.selected': ['Provider selected', 'ion'],
   'task.completed': ['Task completed', 'ok'],
   'task.failed': ['Task failed', 'bad'],
+  'task.outcome_unknown': ['Execution outcome unknown', 'warn'],
   'task.cancellation_requested': ['Cancellation requested', 'warn'],
   'task.cancellation_cleanup': ['Cancellation cleanup', 'warn'],
   'task.cancelled': ['Task cancelled', 'muted'],
@@ -224,7 +234,7 @@ const currentTask = () => {
   const list = (store.conversation?.tasks || []).filter(taskInActiveWorkspace);
   return list.find((t) => t.id === store.taskId) || list[list.length - 1] || store.tasks.filter(taskInActiveWorkspace).find((t) => t.id === store.taskId) || null;
 };
-const cancellable = (task) => Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
+const cancellable = (task) => Boolean(task && !['completed', 'failed', 'cancelled', 'outcome_unknown'].includes(canonicalTaskStatus(task)));
 const latestAttribution = (task) => (task?.providerAttribution || []).slice(-1)[0] || null;
 const activeWorkspaceId = () => byId('workspace')?.value || '';
 function taskInActiveWorkspace(task) {
@@ -244,7 +254,9 @@ function coreStateFor() {
   const task = currentTask();
   if (task) {
     const info = statusInfo(task);
-    const detail = { processing: 'Hermes is working within Blackspire constraints.', approval: 'A decision is required in the Approval center.', completed: 'Canonical state is stable.', denied: 'Blackspire policy locked this request.', cancelled: 'The orbit wound down safely.' }[info.core];
+    const detail = canonicalTaskStatus(task) === 'outcome_unknown'
+      ? 'Automatic retry is blocked. Operator review is required before any new execution.'
+      : { processing: 'Hermes is working within Blackspire constraints.', approval: 'A decision is required in the Approval center.', completed: 'Canonical state is stable.', denied: 'Blackspire policy locked this request.', cancelled: 'The orbit wound down safely.' }[info.core];
     return [info.core, info.label, detail || 'Awaiting your command.'];
   }
   return ['dormant', 'Dormant', 'Awaiting your command.'];
@@ -408,7 +420,7 @@ function renderTaskDetail() {
   set('taskProvider', attr ? attr.provider + (attr.model ? ' / ' + attr.model : attr.mode ? ' / ' + attr.mode : '') : null);
   set('taskBudget', task?.budget_cents != null ? task.budget_cents + '¢' : null);
   const startedAt = task ? eventTime(task.id, 'task.running') || task.created_at : '';
-  const completedAt = task ? eventTime(task.id, 'task.completed', 'task.failed', 'task.cancelled') : '';
+  const completedAt = task ? eventTime(task.id, 'task.completed', 'task.failed', 'task.cancelled', 'task.outcome_unknown') : '';
   set('taskStarted', startedAt ? fmtTime(startedAt) : null);
   set('taskCompleted', completedAt ? fmtTime(completedAt) : null);
   set('taskUpdated', task ? fmtTime(task.updated_at) : null);
@@ -416,7 +428,8 @@ function renderTaskDetail() {
   set('taskIdem', task?.idempotency_key);
   set('taskRequest', task?.request);
   let outcome = '—';
-  if (task?.error) outcome = String(task.error);
+  if (canonicalTaskStatus(task) === 'outcome_unknown') outcome = 'AUTOMATIC RETRY BLOCKED · OPERATOR REVIEW REQUIRED';
+  else if (task?.error) outcome = String(task.error);
   else if (task?.summary) { try { const s = JSON.parse(task.summary); outcome = s.result || task.summary; } catch { outcome = String(task.summary); } }
   set('taskOutcome', outcome);
   byId('cancelBtn').disabled = !cancellable(task);
@@ -515,6 +528,7 @@ function renderSystem() {
   const identity = deploymentIdentity(h);
   const stale = canonicalSyncStale(store.lastSync, store.pollMs);
   byId('sysApi').textContent = h?.ok ? 'Healthy' : store.offline ? 'Unreachable' : '—';
+  byId('sysReady').textContent = r ? (r.ok ? 'Ready' : 'Not ready') : '—';
   byId('sysLink').textContent = store.offline ? 'Offline — reconnecting with backoff' : 'Connected';
   byId('sysStop').textContent = h ? (h.emergencyStop ? 'ACTIVE' : 'Inactive') : '—';
   byId('sysSafeMode').textContent = 'Not reported by control plane';
@@ -529,6 +543,11 @@ function renderSystem() {
   byId('sysPolling').textContent = document.hidden ? 'paused (page hidden)' : 'every ' + Math.round(store.pollMs / 100) / 10 + 's';
   byId('sysSync').textContent = store.lastSync ? fmtTime(store.lastSync) : '—';
   byId('sysPwa').textContent = store.swWaiting ? 'Update ready — reload to apply' : 'Current';
+  const worker = r?.dependencies?.worker || h?.dependencies?.worker;
+  const heartbeat = Number.isFinite(worker?.heartbeatAgeMs) ? ' · heartbeat ' + Math.round(worker.heartbeatAgeMs / 1000) + 's ago' : '';
+  byId('sysHermes').textContent = worker
+    ? (worker.required ? (worker.ok ? 'Worker ' + worker.state : 'Worker unavailable · ' + worker.state) : 'Worker not required · ' + worker.state) + heartbeat
+    : 'Worker state not reported';
   const deploymentBar = byId('deploymentBar');
   deploymentBar.classList.toggle('verified', identity.verified);
   deploymentBar.textContent = identity.verified
@@ -638,7 +657,7 @@ async function refreshAll() {
         }
         else if (response.status === 404) { store.conversation = null; }
       }
-      if (store.view === 'system' && !store.ready) { const { body } = await api.ready(signal); store.ready = body; }
+      if (store.view === 'system') { const { body } = await api.ready(signal); store.ready = body; }
     }
     store.lastSync = new Date().toISOString();
     store.pollMs = 2500;

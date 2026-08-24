@@ -115,16 +115,51 @@ test('all seven screens exist as views', () => {
 });
 
 test('canonical status vocabulary is complete and color-independent', () => {
-  for (const label of ['Queued', 'Processing', 'Awaiting approval', 'Completed', 'Failed', 'Cancelled', 'Denied by policy']) {
+  for (const label of ['Queued', 'Planning', 'Processing', 'Awaiting approval', 'Validating', 'Completed', 'Failed', 'Cancelled', 'Denied by policy', 'Execution outcome unknown']) {
     assert.match(source, new RegExp(label), `missing status label: ${label}`);
   }
 });
 
 test('known event types have labels and unknown events degrade safely', () => {
-  for (const type of ['input.received', 'policy.allowed', 'policy.denied', 'task.queued', 'task.running', 'hermes.selected', 'provider.selected', 'task.completed', 'task.failed', 'task.cancellation_requested', 'task.cancellation_cleanup', 'task.cancelled', 'approval.required', 'approval.granted', 'approval.denied', 'delivery.pending', 'delivery.retry_wait', 'delivery.delivered', 'delivery.terminal_failed']) {
+  for (const type of ['input.received', 'policy.allowed', 'policy.denied', 'task.queued', 'task.planning', 'task.running', 'task.validating', 'hermes.selected', 'provider.selected', 'task.completed', 'task.failed', 'task.outcome_unknown', 'task.cancellation_requested', 'task.cancellation_cleanup', 'task.cancelled', 'approval.required', 'approval.granted', 'approval.denied', 'delivery.pending', 'delivery.retry_wait', 'delivery.delivered', 'delivery.terminal_failed']) {
     assert.match(source, new RegExp(type.replace('.', '\\.')), `missing event type: ${type}`);
   }
   assert.match(source, /System event/, 'unknown events render as sanitized generic entries');
+});
+
+test('unknown Codex outcomes are terminal, distinct, and never invite automatic retry', () => {
+  assert.match(appScript, /attempt\.status === 'outcome_unknown'/, 'provider attempt evidence drives the display state');
+  assert.match(appScript, /AUTOMATIC RETRY BLOCKED · OPERATOR REVIEW REQUIRED/);
+  assert.match(appScript, /\['completed', 'failed', 'cancelled', 'outcome_unknown'\]/, 'unknown outcome disables cancellation/resubmission affordances');
+  assert.doesNotMatch(appScript, /outcome_unknown[^\n]*(?:retryTask|submitCommand)/, 'unknown outcomes never trigger execution');
+});
+
+test('canonical task-state helpers obey deterministic terminal and in-flight fixtures', () => {
+  const helperSource = appScript.slice(0, appScript.indexOf('/* ---------- Helix Core state ---------- */'))
+    + '\nglobalThis.__taskState = { canonicalTaskStatus, statusInfo, cancellable };';
+  const context = {
+    document: { getElementById: () => null },
+    window: { addEventListener() {} },
+    location: { hash: '' },
+    console,
+  };
+  vm.runInNewContext(helperSource, context, { filename: 'jarvis-task-state.js' });
+  const helpers = context.__taskState;
+  for (const status of ['queued', 'planning', 'running', 'waiting_for_approval', 'validating']) {
+    assert.equal(helpers.cancellable({ status }), true, `${status} remains cancellable`);
+  }
+  for (const status of ['completed', 'failed', 'cancelled']) assert.equal(helpers.cancellable({ status }), false);
+  const escaped = { status: 'failed', providerAttribution: [{ provider: 'codex', status: 'outcome_unknown' }] };
+  assert.equal(helpers.canonicalTaskStatus(escaped), 'outcome_unknown');
+  assert.equal(helpers.statusInfo(escaped).label, 'Execution outcome unknown');
+  assert.equal(helpers.cancellable(escaped), false);
+});
+
+test('System view renders fresh server-authoritative readiness and worker heartbeat state', () => {
+  assert.match(html, /id="sysReady"/);
+  assert.match(appScript, /r\?\.dependencies\?\.worker \|\| h\?\.dependencies\?\.worker/);
+  assert.match(appScript, /heartbeatAgeMs/);
+  assert.match(appScript, /if \(store\.view === 'system'\) \{ const \{ body \} = await api\.ready/, 'readiness refreshes on every System poll');
 });
 
 test('Telegram delivery states are all representable', () => {
