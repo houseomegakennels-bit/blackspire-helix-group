@@ -8,14 +8,20 @@ function safeWorkerId(value) {
   return workerId;
 }
 
-export function recordWorkerHeartbeat({ workerId, phase, taskId = null, startedAt, now = new Date() }) {
+function safeGenerationId(value) {
+  const generationId = String(value || '');
+  return /^[a-f0-9]{32}$/.test(generationId) ? generationId : null;
+}
+
+export function recordWorkerHeartbeat({ workerId, phase, taskId = null, startedAt, generationId = process.env.INVOCATION_ID, now = new Date() }) {
   const id = safeWorkerId(workerId);
   const timestamp = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
   const record = {
-    version: 1,
+    version: 2,
     phase,
     heartbeatAt: timestamp,
     startedAt: startedAt || timestamp,
+    generationId: safeGenerationId(generationId),
     activeTask: Boolean(taskId),
   };
   setFlag(`${WORKER_KEY_PREFIX}${id}`, JSON.stringify(record));
@@ -45,6 +51,7 @@ export function workerRuntimeStatus({
     heartbeatAgeMs: ageMs,
     activeTask: Boolean(record?.activeTask),
     restartDetected: Boolean(record && record.phase !== 'stopped' && !fresh),
+    generationId: safeGenerationId(record?.generationId),
   };
 }
 

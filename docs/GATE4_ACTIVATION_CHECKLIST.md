@@ -37,10 +37,13 @@ None of these may be generated, invented, or defaulted by tooling.
 
 Verified automatically by the checker:
 
-1. **Source contract** — `npm run production:preflight` reports `ok=true source=21/21 deployment=2/2`.
-2. **Production inactive** — the unit is `inactive`/`disabled` throughout preparation.
-3. **Installed unit** — `/etc/systemd/system/blackspire-command.service` is byte-identical to
-   `ops/runtime-ownership/blackspire-command.service`.
+1. **Source contract** — `npm run production:preflight` reports every source check ready.
+2. **Production inactive and disabled** — the API unit, worker unit, and coordination target are
+   inactive throughout preparation and none is enabled or linked. This refuses a legacy
+   `multi-user.target.wants` API link that could boot the API without its worker.
+3. **Installed topology** — the installed `blackspire-command.service`,
+   `blackspire-command-worker.service`, and `blackspire-command.target` are each byte-identical to
+   their reviewed templates in `ops/runtime-ownership/`.
 4. **Environment file** — exists as a regular file, `root:blackspire` mode `0640`, declaring every
    required key and carrying no provider or Telegram credentials. The reviewed profile pins
    `BLACKSPIRE_RUNTIME_USER=blackspire`, startup timeout `30`, and health timeout `5`, matching the
@@ -70,6 +73,7 @@ paths already substituted.
 
 ```sh
 # 1. Environment file, created with its final ownership and mode in one step
+set -euo pipefail
 test ! -e /etc/blackspire/command.env && test ! -L /etc/blackspire/command.env
 install -o root -g blackspire -m 0640 \
   scripts/production-profile.env.example /etc/blackspire/command.env
@@ -90,7 +94,34 @@ bash scripts/release-create.sh <approved-sha>
 # 4. Production backup, through the pinned interpreter
 npm run db:backup -- /opt/blackspire-command/shared/backups
 
-# 5. Reviewed log rotation, installed without replacing an existing policy
+# 5. Record the before-state of all three installed definitions, install the reviewed topology,
+# and reload definitions only (this does not start or enable anything)
+unit_backup_dir=/var/backups/blackspire-command/gate4-<approved-sha>
+install -d -o root -g root -m 0700 "$(dirname -- "$unit_backup_dir")"
+mkdir -m 0700 -- "$unit_backup_dir" || { echo 'snapshot exists; refusing overwrite' >&2; exit 1; }
+chown root:root -- "$unit_backup_dir"
+for unit_path in /etc/systemd/system/blackspire-command.service \
+  /etc/systemd/system/blackspire-command-worker.service \
+  /etc/systemd/system/blackspire-command.target; do
+  unit_base="$(basename -- "$unit_path")"
+  if test -f "$unit_path" && test ! -L "$unit_path"; then
+    install -o root -g root -m 0600 "$unit_path" "$unit_backup_dir/$unit_base"
+  elif test ! -e "$unit_path" && test ! -L "$unit_path"; then
+    install -o root -g root -m 0600 /dev/null "$unit_backup_dir/$unit_base.absent"
+  else
+    echo "refusing unsafe installed unit path: $unit_path" >&2; exit 1
+  fi
+done
+install -o root -g root -m 0600 /dev/null "$unit_backup_dir/.complete"
+install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command.service \
+  /etc/systemd/system/blackspire-command.service
+install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command-worker.service \
+  /etc/systemd/system/blackspire-command-worker.service
+install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command.target \
+  /etc/systemd/system/blackspire-command.target
+systemctl daemon-reload
+
+# 6. Reviewed log rotation, installed without replacing an existing policy
 test ! -e /etc/logrotate.d/blackspire-command && \
   test ! -L /etc/logrotate.d/blackspire-command
 install -o root -g root -m 0644 \
@@ -115,7 +146,8 @@ sudo -u blackspire bash -c \
   'set -a; . /etc/blackspire/command.env; set +a; exec bash scripts/verify-environment.sh vps-production'
 npm run production:preflight:host
 BLACKSPIRE_GATE4_APPROVED_SHA=<sha> bash scripts/gate4-prepare.sh --validate-only
-systemctl show blackspire-command.service -p ActiveState -p UnitFileState -p MainPID
+systemctl show blackspire-command.target blackspire-command.service blackspire-command-worker.service \
+  -p ActiveState -p UnitFileState -p MainPID
 ```
 
 Source the environment file rather than passing values as arguments; arguments are visible in the
@@ -139,10 +171,13 @@ Preparation never started production, so undoing it is just removing what it cre
 immutable and are never deleted as part of a rollback.
 
 ```sh
-rm -f /etc/blackspire/command.env
-rm -rf /opt/blackspire-command/shared/workspace
-rm -f /etc/logrotate.d/blackspire-command
+BLACKSPIRE_GATE4_APPROVED_SHA=<approved-sha> bash scripts/gate4-rollback-preparation.sh
 ```
+
+The helper validates the complete snapshot and every destination before mutation. It stages the
+prepared unit definitions on the unit filesystem, restores every unit, and reloads systemd before
+staging non-unit state for deletion. Any unit restore or daemon-reload failure compensates all
+earlier unit changes back to the prepared state and exits nonzero.
 
 ## Authorization boundary
 
@@ -152,14 +187,33 @@ automation — including `scripts/gate4-prepare.sh` — may perform any of it.
 
 ```sh
 # OPERATOR ONLY, AFTER GATE 4 IS AUTHORIZED
-bash scripts/release-switch.sh <approved-sha>      # switches the production current symlink
-systemctl start blackspire-command.service
-systemctl enable blackspire-command.service        # only after a clean start is verified
-BIND_HOST=127.0.0.1 PORT=<reviewed-port> bash scripts/health-check.sh
+set -euo pipefail
+approved_sha=<approved-sha>
+rollback_sha=<known-good-sha>
+activation_failed() {
+  trap - ERR
+  set +e
+  systemctl disable blackspire-command.target
+  systemctl stop blackspire-command.target
+  stop_rc=$?
+  if (( stop_rc == 0 )); then
+    bash scripts/release-rollback.sh "$rollback_sha"
+  else
+    echo 'activation rollback refused release switch because target shutdown failed' >&2
+  fi
+  exit 1
+}
+trap activation_failed ERR
+bash scripts/release-switch.sh "$approved_sha"    # switches the production current symlink
+systemctl start blackspire-command.target
+bash scripts/wait-production-ready.sh http://127.0.0.1:<reviewed-port> \
+  blackspire-command.service blackspire-command-worker.service 60 1
+systemctl enable blackspire-command.target         # persist boot activation only after health/readiness pass
+trap - ERR
 
 # ACTIVATION ROLLBACK, OPERATOR ONLY
-systemctl stop blackspire-command.service
-systemctl disable blackspire-command.service
+systemctl stop blackspire-command.target
+systemctl disable blackspire-command.target
 bash scripts/release-rollback.sh <known-good-sha>
 ```
 

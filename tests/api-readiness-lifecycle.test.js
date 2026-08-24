@@ -56,6 +56,17 @@ test('required worker heartbeat makes readiness fail closed when missing or stal
   delete process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT;
 });
 
+test('readiness safely exposes the worker systemd generation without accepting malformed identity', async (t) => {
+  t.after(() => { delete process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT; });
+  process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT = 'true';
+  const { recordWorkerHeartbeat } = await import('../packages/task-engine/runtime-status.js');
+  const generationId = 'a'.repeat(32);
+  recordWorkerHeartbeat({ workerId: 'worker-local', phase: 'idle', generationId });
+  assert.equal(readinessSnapshot().dependencies.worker.generationId, generationId);
+  recordWorkerHeartbeat({ workerId: 'worker-local', phase: 'idle', generationId: 'not-systemd-identity' });
+  assert.equal(readinessSnapshot().dependencies.worker.generationId, null);
+});
+
 test('liveness ok reflects dependency state instead of asserting itself', async (t) => {
   t.after(() => { delete process.env.BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT; });
   // Baseline: with no dependency required, a healthy process still reports ok.
