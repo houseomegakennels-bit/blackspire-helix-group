@@ -30,6 +30,13 @@
 - The stranded task lease alone was aged beyond 300 seconds. Recovery found the existing marker, finalized it as `outcome_unknown`, atomically persisted `subscription_unmetered` with NULL cost, recorded `codex_dispatch_replay_prevented`, and failed the task with operator-intervention-required semantics.
 - **Final task:** `failed` with canonical attempt state `outcome_unknown`; **claim behavior:** replacement generation reclaimed the stale lease; **restart:** worker crash/restart; **replay count:** 1 total attempt. After an additional three-second poll window retry count remained 0, attempt count remained 1, replay-prevented evidence count remained 1, and the public worker was idle/healthy.
 
+### Restart while halted — PASS
+
+- **Task ID/provider attempt:** none; **start:** after the outcome-unknown case; **expected:** the persisted emergency stop survives independent service restarts, blocks new dispatchable work, and clears only through explicit authenticated resume.
+- Halt returned active before restart. Worker generation changed from `2a6662f968cc4ca18274f2be211b4644` to `c3dfb81c01f64d32bfcad12029bef122`; API generation changed from `690942f0c7cf420aa3e6e2e4d0f748c6` to `1dc11bc3e3294f44b06ee1e793c55c18`. Health still reported emergency stop active after both restarts.
+- An isolated task submission while halted returned HTTP 423 `emergency stop active` and created no task. The existing authenticated session then supplied the fresh CSRF-bound reset confirmation; reset returned inactive and generation-fenced readiness recovered with the worker idle.
+- **Final runtime state:** resumed/ready; **usage/accounting:** none; **replay count:** 0. No provider attempt or external work was created during the halted interval.
+
 ## 2026-08-24 — Canonical production cutover and real Codex completion (Codex)
 
 - Integrated the existing current-main lanes in dependency order: topology PR #105, immutable Actions PR #107, independent release evidence PR #109, PWA observability PR #108, and truthful VPS audit PR #106. Follow-up PRs #110-#113 corrected live-discovered Codex readiness and coherent runtime-profile defects with focused regression coverage and exact CI before deployment.
