@@ -1,5 +1,14 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — Post-live destructive race acceptance (Codex)
+
+### Cancel before dispatch — PASS
+
+- **Task ID:** `task_e6fc0967f79f895f`; **start:** `2026-08-24T14:51:39Z`; **expected:** cancellation before provider launch is absorbing and cannot later be resurrected.
+- The independently supervised worker was stopped while the API remained active, the isolated read-only task was accepted as queued, and cancellation returned `cancelled` before the worker restarted. The task was never claimed: worker ID, claim token, claim/heartbeat timestamps, and current stage remained empty.
+- **Provider attempt ID/state:** none; **usage/accounting:** no rows; **restart:** worker restarted and generation changed to `fc3ffd52173e4994a385c3238f85c72b`; **replay count:** 0.
+- After generation-fenced readiness passed and the replacement worker had polled for three seconds, the final task state remained `cancelled`, retry count remained 0, and public readiness was healthy. No Codex child or external dispatch marker existed.
+
 ## 2026-08-24 — Canonical production cutover and real Codex completion (Codex)
 
 - Integrated the existing current-main lanes in dependency order: topology PR #105, immutable Actions PR #107, independent release evidence PR #109, PWA observability PR #108, and truthful VPS audit PR #106. Follow-up PRs #110-#113 corrected live-discovered Codex readiness and coherent runtime-profile defects with focused regression coverage and exact CI before deployment.
