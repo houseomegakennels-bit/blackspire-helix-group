@@ -79,7 +79,7 @@ export function commitAll(message, { cwd = '.', protectedBranches = ['main', 'ma
   if (isProtectedBranch(branch, protectedBranches)) return { ok: false, code: null, stdout: '', stderr: `Refusing to commit directly on protected branch ${branch}` };
   ensureGitIdentity({ cwd });
   git(['add', '.'], cwd);
-  const result = git(['commit', '-m', message], cwd);
+  const result = git(['-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '-m', message], cwd);
   return { ok: result.code === 0, ...result };
 }
 
@@ -112,7 +112,7 @@ export function commitArtifacts(message, edits, { cwd = '.', allowedPaths = ['.'
     const indexed = spawnSync('git', ['show', `:${relative}`], { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     if (indexed.status !== 0 || indexed.stdout !== expected) throw new Error(`Staged artifact does not match approved content: ${relative}`);
   }
-  const result = git(['commit', '-m', message], cwd);
+  const result = git(['-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '-m', message], cwd);
   return { ok: result.code === 0, ...result };
 }
 
@@ -136,6 +136,7 @@ function isPathAllowed(filePath, allowedPaths) {
   if (input.startsWith('/')) return false;
   const normalized = path.posix.normalize(input);
   if (normalized === '..' || normalized.startsWith('../')) return false;
+  if (normalized === '.git' || normalized.startsWith('.git/')) return false;
   if (allowedPaths.includes('.')) return true;
   return allowedPaths.some((entry) => {
     const allowed = String(entry).replace(/^\.\/?/, '').replace(/\/$/, '');
@@ -148,6 +149,10 @@ function canonicalArtifactTarget(filePath, cwd, allowedPaths) {
   const realRoot = fs.realpathSync(cwd);
   const target = resolvePhysicalTarget(lexicalTarget, filePath);
   if (!isInside(realRoot, target)) throw new Error(`Artifact path escapes workspace: ${filePath}`);
+  const gitDirectoryResult = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd, encoding: 'utf8' });
+  if (gitDirectoryResult.status !== 0) throw new Error('Workspace Git directory unavailable');
+  const gitDirectory = fs.realpathSync(gitDirectoryResult.stdout.trim());
+  if (isInside(gitDirectory, target)) throw new Error(`Artifact path targets Git control data: ${filePath}`);
   const allowedRoots = allowedPaths.includes('.')
     ? [realRoot]
     : allowedPaths.map((allowed) => resolvePhysicalTarget(assertInsideWorkspace(allowed, cwd), allowed));

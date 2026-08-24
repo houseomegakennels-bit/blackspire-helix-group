@@ -1100,3 +1100,8 @@
 
 - Exact-head review found that a symlink target could remain inside the workspace while escaping a narrower physical `allowed_paths` root, and that line-oriented porcelain parsing quoted non-ASCII paths so an approved Unicode artifact was falsely classified as unrelated after application. Physical target validation now requires containment within a physically resolved allowed root as well as the real workspace root. Workspace status uses NUL-delimited porcelain output without Git path quoting and handles rename/copy records explicitly.
 - Deterministic end-to-end regressions prove an internal `docs` symlink cannot write into an unapproved sibling directory and a `docs/café.md` artifact is staged and committed exactly. Production end-to-end validation passes 24/24 under Node 22.23.1. No production mutation or deployment occurred.
+
+## 2026-08-24 — Post-live mutation-boundary ninth review corrections (Codex)
+
+- Exact-head review reproduced a pre-commit hook widening the already-verified index and an artifact modifying `.git/hooks/pre-commit` when the workspace allowlist was `.`. Hermes commits now override `core.hooksPath` to `/dev/null` and use `--no-verify`. Artifact validation rejects lexical `.git` targets and any physical target inside the repository's resolved Git directory, including indirection through symlinks.
+- A real executable pre-commit fixture attempts to create and stage an unrelated file; the Hermes artifact commit contains only approved content and the hook never runs. A direct `.git/hooks/pre-commit` artifact is refused. Focused acceptance plus production end-to-end validation passes 35/35 under Node 22.23.1. No production mutation or deployment occurred.

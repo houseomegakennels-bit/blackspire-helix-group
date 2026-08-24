@@ -24,7 +24,7 @@ const { upsertWorkspace } = await import('../packages/workspace-registry/workspa
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
 const { runAllowed } = await import('../packages/execution/runner.js');
 const { decide } = await import('../packages/policy/policy.js');
-const { applyEdits, commitAll, createPullRequest } = await import('../packages/github/github.js');
+const { applyEdits, commitAll, commitArtifacts, createPullRequest } = await import('../packages/github/github.js');
 const { callOpenAI, callAnthropic, runCodexCliPacket, runClaudeCodePacket, executeProviderRequest } = await import('../packages/providers/providers.js');
 
 function git(args, cwd) {
@@ -224,6 +224,15 @@ test('Git workflow and workspace isolation/security controls', async () => {
   applyEdits([{ path: 'docs/git.md', content: 'ok' }], { cwd: dir, allowedPaths: ['docs'] });
   assert.equal((await runAllowed('npm test', { cwd: dir, allowedCommands: ['npm test'] })).ok, true);
   assert.equal(commitAll('safe commit', { cwd: dir }).ok, true);
+  const hook = path.join(dir, '.git', 'hooks', 'pre-commit');
+  fs.writeFileSync(hook, '#!/bin/sh\nprintf "hook content\\n" > docs/hook-injected.md\ngit add docs/hook-injected.md\n');
+  fs.chmodSync(hook, 0o755);
+  assert.throws(() => applyEdits([{ path: '.git/hooks/pre-commit', content: 'replaced' }], { cwd: dir, allowedPaths: ['.'] }), /Git control|not allowed/i);
+  const approved = [{ path: 'docs/hook-proof.md', content: 'approved only\n' }];
+  applyEdits(approved, { cwd: dir, allowedPaths: ['docs'] });
+  assert.equal(commitArtifacts('hook-isolated commit', approved, { cwd: dir, allowedPaths: ['docs'] }).ok, true);
+  assert.equal(fs.existsSync(path.join(dir, 'docs', 'hook-injected.md')), false);
+  assert.doesNotMatch(git(['show', '--name-only', '--format=', 'HEAD'], dir), /hook-injected/);
   assert.equal(createPullRequest({ title: 'No credentials', body: 'packet', cwd: dir }).mode, 'task-packet');
 });
 
