@@ -54,7 +54,9 @@ The dedicated migration command succeeded independently on disposable copies of 
 
 The existing provisioning CLI then applied an explicit rehearsal admin principal plus a service-role minimum grant on each disposable migrated copy. Exact repeat was idempotent. Authorization allowed only `workspace.read`, `task.read`, `task.create`, `task.execute`, `approval.grant`, and `runtime.read`; it denied another workspace, `provider.use.development`, and `workspace.manage`. No rehearsal identifier or grant was written to a live database or environment.
 
-The authoritative database decision remains open. Evidence supports preserving both histories and either selecting one explicitly or starting a clean production database; it does not support an implicit union. A writer-stopped backup of each source remains mandatory immediately before any cutover or migration.
+Initial production will initialize a deliberately clean canonical database at the configured production target through the reviewed migration path after the exact deployment main SHA is finalized. Neither historical database will be promoted or automatically merged. Staging has 21 stale claimed queued tasks that recovery could execute; Docker has old accounting plus a pending approval attached to a cancelled task. Only the workspace ID overlaps, and the configured production target has never existed. Either legacy source is therefore unsafe as implicit production authority.
+
+Both historical databases remain preserved as read-only reconciliation sources. Writer-stopped, checksum-verified backups remain mandatory immediately before retiring either writer or cutting over. Any later import or retention decision requires a separately reviewed record-level migration plan.
 
 ## Codex service-home preparation
 

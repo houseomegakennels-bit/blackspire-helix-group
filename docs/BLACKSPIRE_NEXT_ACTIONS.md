@@ -1,6 +1,6 @@
 # Blackspire Next Actions
 
-0. **BLOCKED BEFORE DEPLOYMENT — reconcile observed VPS runtime.** Verified online safety snapshots and disposable migration/provisioning rehearsals now preserve and exercise both July database sources. Select the authoritative production database without implicit record merging, take writer-stopped cutover backups, provision the real persisted operator/grant only after selection, authenticate and configure the prepared private service `CODEX_HOME` without exposing credentials, record rollback evidence, install the reviewed three-unit topology only after PR #105 merges, and switch nginx only after activation-generation readiness succeeds. See `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`.
+0. **BLOCKED BEFORE DEPLOYMENT — reconcile observed VPS runtime.** Initial production will use a deliberately clean database created by the reviewed migration path at the configured canonical target; do not promote or merge either historical database. Take writer-stopped cutover backups of both preserved sources, provision the real persisted operator/grant in the new database, authenticate and configure the prepared private service `CODEX_HOME` without exposing credentials, record rollback evidence, install the reviewed three-unit topology only after PR #105 merges, and switch nginx only after activation-generation readiness succeeds. See `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`.
 
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 
