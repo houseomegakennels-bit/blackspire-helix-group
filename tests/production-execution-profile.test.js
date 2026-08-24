@@ -48,7 +48,11 @@ if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITH
 fi
 case "\${1:-}" in
   --version) printf 'codex-cli 999.0.0-test\\n' ;;
-  doctor) [[ "\${2:-}" == "--json" ]] && printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n' || printf 'auth is configured\\n' ;;
+  doctor)
+    [[ "\${2:-}" == "--json" ]] || exit 64
+    printf '{"schemaVersion":1,"checks":{"auth.credentials":{"status":"%s"},"network.provider_reachability":{"status":"ok"},"network.websocket_reachability":{"status":"ok"},"installation":{"status":"fail"},"updates.status":{"status":"fail"}}}\\n' "\${TEST_CODEX_AUTH_STATUS:-ok}"
+    exit "\${TEST_CODEX_DOCTOR_EXIT:-0}"
+    ;;
   *) exit 64 ;;
 esac
 `);
@@ -135,6 +139,17 @@ test('an unrecognized value for the execution opt-in fails closed', () => {
 test('a coherent explicit opt-in authorizes real provider execution', () => {
   const result = verify(executionEnv());
   assert.equal(result.status, 0, `the coherent opt-in must pass: ${result.stderr}`);
+});
+
+test('Codex readiness accepts healthy auth and transport despite unrelated doctor failures', () => {
+  const result = verify(executionEnv({ TEST_CODEX_DOCTOR_EXIT: '17' }));
+  assert.equal(result.status, 0, `installation/update diagnostics must not override healthy provider readiness: ${result.stderr}`);
+});
+
+test('Codex readiness fails closed when doctor authentication is unhealthy', () => {
+  const result = verify(executionEnv({ TEST_CODEX_AUTH_STATUS: 'fail' }));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /authenticated Codex CLI and reachable provider transport/);
 });
 
 test('the opt-in refuses a Hermes mode that cannot reach a provider', () => {
