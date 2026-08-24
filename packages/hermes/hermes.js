@@ -4,7 +4,7 @@ import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
 import { classifyRequest, decide, evaluateRequestPolicy } from '../policy/policy.js';
-import { createTaskBranch, applyEdits, artifactsWouldChangeWorkspace, inspectChangedFiles, commitAll, createPullRequest, getRepositoryMetadata } from '../github/github.js';
+import { createTaskBranch, applyEdits, artifactsWouldChangeWorkspace, inspectChangedFiles, commitArtifacts, createPullRequest, getRepositoryMetadata } from '../github/github.js';
 import { query, esc } from '../task-engine/db.js';
 import { createHermesRequest } from './contract.js';
 import { dispatchHermes } from './adapter.js';
@@ -96,7 +96,7 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     }
     const validation = await stage(task.id, ownership, 'validate', () => validateWorkspace(task.id, workspace));
     if (!validation.ok) return move('failed', { error: validation.stderr || 'validation failed', summary: { validation } });
-    const commit = await stage(task.id, ownership, 'commit', () => commitAll(`Hermes task ${task.id}: ${task.request.slice(0, 60)}`, { cwd: workspace.root_path }));
+    const commit = await stage(task.id, ownership, 'commit', () => commitArtifacts(`Hermes task ${task.id}: ${task.request.slice(0, 60)}`, providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths }));
     if (!commit.ok) return move('failed', { error: commit.stderr || 'workspace mutation commit failed' });
     const pr = await stage(task.id, ownership, 'pull_request', () => createPullRequest({ title: `Hermes task ${task.id}`, body: `Automated Hermes task evidence for ${task.request}`, cwd: workspace.root_path, draft: true }));
     const evidence = { context, plan, provider: providerResult.provider, mode: providerResult.mode, branch, validation, commit, pullRequest: pr };

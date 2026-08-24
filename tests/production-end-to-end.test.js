@@ -124,13 +124,23 @@ case "\${1:-}" in
       printf '{"type":"thread.started","thread_id":"fixture"}\n{"type":"turn.started"}\n{"type":"turn.completed"}\n'
       exit 0
     fi
-    if grep -q 'duplicate-artifact' "$packet"; then
-      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Duplicate path proposal."}\\n' > "$final"
+    if grep -q 'alias-duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"./docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Aliased duplicate proposal."}\\n' > "$final"
       printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
       exit 0
     fi
-    if grep -q 'alias-duplicate-artifact' "$packet"; then
-      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"./docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Aliased duplicate proposal."}\\n' > "$final"
+    if grep -q 'symlink-duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/alias.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Symlink duplicate proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'validation-race-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"validated replacement\\\\n"}],"summary":"Validation race proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Duplicate path proposal."}\\n' > "$final"
       printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
       exit 0
     fi
@@ -380,6 +390,47 @@ test('canonical-path aliases are duplicate artifacts and cannot change branches'
   assert.equal(getTask(body.task.id).status, 'failed');
   assert.match(getTask(body.task.id).error, /duplicate edit path/i);
   assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+});
+
+test('symlink aliases are duplicate artifacts and cannot change branches', async () => {
+  fs.symlinkSync('production-proof.md', path.join(repo, 'docs', 'alias.md'));
+  git(['add', 'docs/alias.md'], repo);
+  git(['commit', '-m', 'add in-workspace alias fixture'], repo);
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('symlink-duplicate-artifact mutation', 'production-e2e-symlink-duplicate');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /duplicate edit path/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+});
+
+test('validation-time unrelated changes are refused and never committed', async () => {
+  const contaminator = path.join(binDir, 'contaminate-build');
+  fs.writeFileSync(contaminator, '#!/bin/sh\nprintf "external change\\n" > docs/validation-race.md\n');
+  fs.chmodSync(contaminator, 0o755);
+  upsertWorkspace({
+    id: 'production-e2e', name: 'Production E2E', description: 'production end-to-end proof',
+    githubRepository: 'local/production-e2e', defaultBranch: 'main', allowedPaths: ['docs'],
+    buildCommands: ['contaminate-build'], providerPolicy: { preferred: ['codex'] }, riskLevel: 'low',
+    budgetCents: 500, secretReferences: [], enabledTools: ['read', 'status', 'write_branch'],
+    lastHealthStatus: 'ok', rootPath: repo,
+  });
+  const { status, body } = await submit('validation-race-artifact mutation', 'production-e2e-validation-race');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /outside the approved artifacts/i);
+  assert.doesNotMatch(git(['show', '--name-only', '--format=', 'HEAD'], repo), /validation-race\.md/);
+  fs.rmSync(path.join(repo, 'docs', 'validation-race.md'));
+  fs.rmSync(contaminator);
+  upsertWorkspace({
+    id: 'production-e2e', name: 'Production E2E', description: 'production end-to-end proof',
+    githubRepository: 'local/production-e2e', defaultBranch: 'main', allowedPaths: ['docs'],
+    buildCommands: ['true'], providerPolicy: { preferred: ['codex'] }, riskLevel: 'low',
+    budgetCents: 500, secretReferences: [], enabledTools: ['read', 'status', 'write_branch'],
+    lastHealthStatus: 'ok', rootPath: repo,
+  });
 });
 
 test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {
