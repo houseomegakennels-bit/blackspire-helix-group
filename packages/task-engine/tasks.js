@@ -5,17 +5,18 @@ export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
 }
 
-export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
+export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'workspace_mutation', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
+  if (!['read_only', 'workspace_mutation'].includes(executionIntent)) throw new Error('invalid task execution intent');
   const existing = idempotencyKey && query(`SELECT * FROM tasks WHERE idempotency_key=${esc(idempotencyKey)};`)[0];
   if (existing) return existing;
   const task = {
     id: id('task'), workspace_id: workspaceId, request, status: initialStatus, idempotency_key: idempotencyKey || id('idem'), provider: null,
     plan: null, summary: initialSummary, error: initialError, budget_cents: budgetCents, retry_count: 0, created_at: now(), updated_at: now(),
     worker_id: null, claim_token: null, claimed_at: null, heartbeat_at: null, current_stage: null, evidence: null,
-    conversation_id: conversationId, input_id: inputId, source_channel: sourceChannel, actor_id: actorId, action_class: actionClass, authority_class: authorityClass, policy_decision: policyDecision,
+    conversation_id: conversationId, input_id: inputId, source_channel: sourceChannel, actor_id: actorId, action_class: actionClass, authority_class: authorityClass, policy_decision: policyDecision, execution_intent: executionIntent,
   };
   execSql(`INSERT INTO tasks(${Object.keys(task).join(',')}) VALUES (${Object.values(task).map(esc).join(',')});`);
-  audit(task.id, 'system', 'task.created', { request, workspaceId, status: initialStatus, actionClass, authorityClass, policyDecision });
+  audit(task.id, 'system', 'task.created', { request, workspaceId, status: initialStatus, actionClass, authorityClass, policyDecision, executionIntent });
   recordTaskEvent(task.id, initialEventType || `task.${initialStatus}`, { status: initialStatus, sourceChannel, actionClass, ...initialEventPayload });
   return getTask(task.id);
 }

@@ -58,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_decisions_lookup ON auth_decisions(principal
 CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_principals_identity_unique ON auth_principals(type,actor_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_grants_scope_version_unique ON auth_workspace_grants(principal_id,workspace_id,version);`);
   ensureColumn('sessions', 'principal_id', 'TEXT');
+  ensureColumn('tasks', 'execution_intent', "TEXT NOT NULL DEFAULT 'workspace_mutation' CHECK(execution_intent IN ('read_only','workspace_mutation'))");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_principal ON sessions(principal_id);`);
   // --- Hermes Intelligence Layer (Milestone 1) ---
   // Additive, mock-only orchestration + learning foundation. These tables record structured

@@ -152,10 +152,10 @@ upsertWorkspace({
 const server = start(8907, undefined, { exitOnListenError: false });
 await fetch(`${BASE}/api/stop/reset`, { method: 'POST', headers: ADMIN });
 
-async function submit(request, idempotencyKey) {
+async function submit(request, idempotencyKey, executionIntent = 'workspace_mutation') {
   const response = await fetch(`${BASE}/api/tasks`, {
     method: 'POST', headers: ADMIN,
-    body: JSON.stringify({ workspaceId: 'production-e2e', request, idempotencyKey }),
+    body: JSON.stringify({ workspaceId: 'production-e2e', request, idempotencyKey, executionIntent }),
   });
   return { status: response.status, body: await response.json() };
 }
@@ -269,16 +269,34 @@ test('a failed production Codex invocation is not retried for the same task', as
   assert.equal(getTask(body.task.id).status, 'failed');
 });
 
-test('a workspace mutation cannot complete when Codex returns no artifacts', async () => {
-  const { status, body } = await submit('Add empty-artifacts proof to `docs/production-proof.md`', 'production-e2e-empty-artifacts');
+test('the persisted mutation contract rejects empty artifacts regardless of objective wording', async () => {
+  for (const [index, request] of [
+    'Fix empty-artifacts behavior',
+    'Implement empty-artifacts behavior',
+    'Remove empty-artifacts text',
+    'In README, add empty-artifacts proof',
+  ].entries()) {
+    const { status, body } = await submit(request, `production-e2e-empty-artifacts-${index}`);
+    assert.equal(status, 202);
+    assert.equal(body.task.execution_intent, 'workspace_mutation');
+    await startWorker({ once: true });
+    assert.equal(getTask(body.task.id).status, 'failed');
+    assert.match(getTask(body.task.id).error, /no artifacts for a workspace mutation task/i);
+    const records = taskRecords(body.task.id);
+    assert.equal(records.providerAttempts.at(-1).status, 'completed', 'provider output is terminal even though Hermes refuses it');
+    assert.equal(records.changedFiles.length, 0);
+    assert.ok(records.evidence.some((row) => row.kind === 'artifact_application_refused'));
+  }
+});
+
+test('the persisted read-only contract rejects provider artifacts', async () => {
+  const { status, body } = await submit('Inspect status', 'production-e2e-read-only-artifacts', 'read_only');
   assert.equal(status, 202);
+  assert.equal(body.task.execution_intent, 'read_only');
   await startWorker({ once: true });
   assert.equal(getTask(body.task.id).status, 'failed');
-  assert.match(getTask(body.task.id).error, /no artifacts for a workspace mutation task/i);
-  const records = taskRecords(body.task.id);
-  assert.equal(records.providerAttempts.at(-1).status, 'completed', 'provider output is terminal even though Hermes refuses it');
-  assert.equal(records.changedFiles.length, 0);
-  assert.ok(records.evidence.some((row) => row.kind === 'artifact_application_refused'));
+  assert.match(getTask(body.task.id).error, /artifacts for a read-only task/i);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
 });
 
 test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {

@@ -723,7 +723,7 @@ function alignWorkspaceToCanonical(workspaceId) {
 }
 
 /* ---------- submission (idempotent, double-submit safe) ---------- */
-async function submitCommand(text, conversationId, noticeId) {
+async function submitCommand(text, conversationId, noticeId, executionIntent) {
   const trimmed = String(text || '').trim();
   if (!trimmed) { setNotice(noticeId, 'Enter a command first.'); return; }
   if (store.inflight) return;
@@ -732,7 +732,7 @@ async function submitCommand(text, conversationId, noticeId) {
   if (!store.idemKey) store.idemKey = 'jarvis-' + crypto.randomUUID();
   setNotice(noticeId, 'Submitting to Unified Input…');
   try {
-    const { response, body } = await api.submitInput({ text: trimmed, workspaceId: byId('workspace').value || undefined, conversationId: conversationId || undefined, idempotencyKey: store.idemKey });
+    const { response, body } = await api.submitInput({ text: trimmed, workspaceId: byId('workspace').value || undefined, conversationId: conversationId || undefined, idempotencyKey: store.idemKey, executionIntent });
     if (body.taskId) {
       store.conversationId = body.conversationId || store.conversationId;
       store.taskId = body.taskId; selectedTaskId = body.taskId;
@@ -893,8 +893,8 @@ function loadHelixEnhancement() {
 byId('loginBtn').addEventListener('click', login);
 byId('logoutBtn').addEventListener('click', logout);
 byId('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
-byId('sendBtn').addEventListener('click', () => submitCommand(byId('cmd').value, store.conversationId, 'composerNotice'));
-byId('followBtn').addEventListener('click', () => submitCommand(byId('followCmd').value, store.conversationId, 'followNotice'));
+byId('sendBtn').addEventListener('click', () => submitCommand(byId('cmd').value, store.conversationId, 'composerNotice', byId('executionIntent').value));
+byId('followBtn').addEventListener('click', () => submitCommand(byId('followCmd').value, store.conversationId, 'followNotice', byId('followExecutionIntent').value));
 byId('cmd').addEventListener('input', () => { store.idemKey = ''; });
 byId('followCmd').addEventListener('input', () => { store.idemKey = ''; });
 byId('cmd').addEventListener('focus', renderCore);

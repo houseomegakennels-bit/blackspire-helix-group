@@ -353,7 +353,9 @@ async function createTaskRoute(req, res, auth) {
   const request = String(body.request || '').trim();
   if (!request || request.length > 4000) return json(res, 422, { error: 'request is required and must be under 4000 characters' });
   const decision = evaluateRequestPolicy({ request, channel: 'api', authority: 'authenticated_admin' });
-  const task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  const executionIntent = body.executionIntent || 'workspace_mutation';
+  if (!['read_only', 'workspace_mutation'].includes(executionIntent)) return json(res, 422, { error: 'executionIntent must be read_only or workspace_mutation' });
+  const task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', executionIntent, initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
   if (task.workspace_id !== workspaceId) return json(res, 404, { error: 'not found' });
   return json(res, decision.allowed ? 202 : 403, decision.allowed ? { task } : { task, denied: true, error: decision.reason });
 }
@@ -372,6 +374,7 @@ async function unifiedInputRoute(req, res, auth) {
     text: body.text || body.request,
     idempotencyKey: body.idempotencyKey || id('idem'),
     authority: TEST_MODE.enabled ? 'test_operator' : 'authenticated_admin',
+    executionIntent: body.executionIntent || 'workspace_mutation',
   });
   return json(res, result.status && result.status >= 400 ? result.status : (result.denied ? 403 : 202), result);
 }
