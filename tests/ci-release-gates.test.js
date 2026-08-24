@@ -116,12 +116,19 @@ test('CI release artifact verifier independently detects package-tree mutation',
     sourceRef: 'refs/pull/1/merge', buildId: '12345.2', ciProvider: 'github-actions', ciRunId: '12345',
     artifactName: `blackspire-command-${commit}`, packageVersion: '0.1.0', nodeVersion: process.version,
     repository: common.GITHUB_REPOSITORY });
-  fs.writeFileSync(path.join(root, 'build-metadata.json'), `${JSON.stringify({ repository: common.GITHUB_REPOSITORY,
+  const metadata = { repository: common.GITHUB_REPOSITORY,
     environment: 'disposable-staging', commit, tree, artifactDigest: computeArtifactDigest(artifact),
-    node: process.version, runId: '12345', runAttempt: '2' })}\n`);
+    node: process.version, runId: '12345', runAttempt: '2' };
+  const writeMetadata = (value) => fs.writeFileSync(path.join(root, 'build-metadata.json'), `${JSON.stringify(value)}\n`);
+  writeMetadata(metadata);
   const verify = () => spawnSync(process.execPath, ['scripts/verify-ci-release-artifact.js', root],
     { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...common } });
   assert.equal(verify().status, 0);
+  writeMetadata({ ...metadata, repository: 'wrong/repository' });
+  assert.notEqual(verify().status, 0);
+  writeMetadata({ ...metadata, environment: 'production' });
+  assert.notEqual(verify().status, 0);
+  writeMetadata(metadata);
   fs.writeFileSync(path.join(artifact, 'package.json'), '{"version":"tampered"}\n');
   const rejected = verify();
   assert.notEqual(rejected.status, 0);
