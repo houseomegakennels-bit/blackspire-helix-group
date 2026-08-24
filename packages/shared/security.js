@@ -15,12 +15,30 @@ export { createSession, getSession, rotateSession, destroySession, revokeAllSess
 const MIN_NODE_MAJOR = 22;
 const MIN_NODE_MINOR_AT_MIN_MAJOR = 5;
 
+function validateProductionExecutionProfile(env, errors) {
+  const execution = env.BLACKSPIRE_PRODUCTION_EXECUTION || 'disabled';
+  if (!['enabled', 'disabled'].includes(execution)) {
+    errors.push("BLACKSPIRE_PRODUCTION_EXECUTION must be exactly 'enabled' or 'disabled'.");
+    return;
+  }
+  if (execution === 'enabled') {
+    if (env.BLACKSPIRE_PROVIDER_MODE !== 'codex') errors.push('Enabled production execution requires BLACKSPIRE_PROVIDER_MODE=codex.');
+    if (env.BLACKSPIRE_HERMES_MODE !== 'production') errors.push('Enabled production execution requires BLACKSPIRE_HERMES_MODE=production.');
+    const entries = String(env.BLACKSPIRE_PRODUCTION_PROVIDERS || '').replace(/\s/g, '').split(',');
+    if (entries.length === 0 || entries.some((entry) => entry !== 'codex')) {
+      errors.push('Enabled production execution requires a non-empty Codex-only server provider allowlist.');
+    }
+  } else {
+    if (env.BLACKSPIRE_PROVIDER_MODE !== 'manual') errors.push('BLACKSPIRE_PROVIDER_MODE must be manual in the approved no-provider production profile.');
+    if (env.BLACKSPIRE_HERMES_MODE === 'mock') errors.push('BLACKSPIRE_HERMES_MODE=mock is not allowed in production.');
+  }
+}
+
 export function requireProductionSafeConfig(env = process.env, { dbDir = path.dirname(DB_PATH), attachmentsDir = ATTACHMENTS_DIR } = {}) {
   const errors = [];
   if (env.NODE_ENV === 'production') {
     if (env.BLACKSPIRE_RUNTIME_MODE === 'production') {
-      if (env.BLACKSPIRE_PROVIDER_MODE !== 'manual') errors.push('BLACKSPIRE_PROVIDER_MODE must be manual in the approved no-provider production profile.');
-      if (env.BLACKSPIRE_HERMES_MODE === 'mock') errors.push('BLACKSPIRE_HERMES_MODE=mock is not allowed in production.');
+      validateProductionExecutionProfile(env, errors);
       if (env.UNIFIED_IPHONE_TEST_MODE === 'true') errors.push('UNIFIED_IPHONE_TEST_MODE=true is not allowed in production.');
       if (!['', 'dry-run', undefined].includes(env.TELEGRAM_MODE)) errors.push('TELEGRAM_MODE must remain dry-run or unset in the no-provider production profile.');
       for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET']) {
@@ -130,8 +148,7 @@ export function verifyVpsRuntime(env = process.env, {
     errors.push(`BLACKSPIRE_STATE_OWNER must be exactly ${PRODUCTION_STATE_OWNER} for the production runtime.`);
   }
   if (env.UNIFIED_IPHONE_TEST_MODE === 'true') errors.push('Test mode is not allowed in the production runtime.');
-  if (env.BLACKSPIRE_PROVIDER_MODE !== 'manual') errors.push('BLACKSPIRE_PROVIDER_MODE must be manual.');
-  if (env.BLACKSPIRE_HERMES_MODE === 'mock') errors.push('Mock Hermes is not allowed in the production runtime.');
+  validateProductionExecutionProfile(env, errors);
   for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET']) {
     if (env[key]) errors.push(`${key} is forbidden in the production runtime.`);
   }

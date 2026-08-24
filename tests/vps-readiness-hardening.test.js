@@ -237,6 +237,28 @@ test('verifyVpsRuntime accepts a fully valid non-root runtime', () => {
   assert.equal(r.ok, true, r.errors.join('; '));
 });
 
+test('verifyVpsRuntime accepts the explicitly enabled Codex subscription profile', () => {
+  const r = verifyVpsRuntime(runtimeEnv({
+    BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled',
+    BLACKSPIRE_PROVIDER_MODE: 'codex',
+    BLACKSPIRE_HERMES_MODE: 'production',
+    BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex',
+  }), runtimeOpts());
+  assert.equal(r.ok, true, r.errors.join('; '));
+});
+
+test('verifyVpsRuntime keeps a partial production execution opt-in fail-closed', () => {
+  for (const overrides of [
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'production', BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', BLACKSPIRE_PROVIDER_MODE: 'codex', BLACKSPIRE_HERMES_MODE: 'restricted', BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', BLACKSPIRE_PROVIDER_MODE: 'codex', BLACKSPIRE_HERMES_MODE: 'production', BLACKSPIRE_PRODUCTION_PROVIDERS: '' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabledd', BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', BLACKSPIRE_PROVIDER_MODE: 'codex', BLACKSPIRE_HERMES_MODE: 'production', BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,mock' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', BLACKSPIRE_PROVIDER_MODE: 'codex', BLACKSPIRE_HERMES_MODE: 'production', BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled', BLACKSPIRE_PROVIDER_MODE: 'codex', BLACKSPIRE_HERMES_MODE: 'production', BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,unknown' },
+  ]) assert.equal(verifyVpsRuntime(runtimeEnv(overrides), runtimeOpts()).ok, false);
+});
+
 test('verifyVpsRuntime rejects an invalid Node major version', () => {
   const r = verifyVpsRuntime(runtimeEnv(), runtimeOpts({ nodeVersion: '23.1.0' }));
   assert.equal(r.ok, false);

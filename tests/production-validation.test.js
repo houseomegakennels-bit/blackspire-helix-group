@@ -40,6 +40,27 @@ test('valid production configuration passes with zero errors', () => {
   assert.equal(result.ok, true);
 });
 
+test('application startup accepts only the coherent enabled Codex profile', () => {
+  const enabled = validEnv({
+    BLACKSPIRE_RUNTIME_MODE: 'production',
+    BLACKSPIRE_PRODUCTION_EXECUTION: 'enabled',
+    BLACKSPIRE_PROVIDER_MODE: 'codex',
+    BLACKSPIRE_HERMES_MODE: 'production',
+    BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex',
+    TELEGRAM_MODE: 'dry-run',
+  });
+  assert.equal(requireProductionSafeConfig(enabled, dirs()).ok, true);
+  for (const overrides of [
+    { BLACKSPIRE_PROVIDER_MODE: 'manual' },
+    { BLACKSPIRE_HERMES_MODE: 'restricted' },
+    { BLACKSPIRE_PRODUCTION_PROVIDERS: '' },
+    { BLACKSPIRE_PRODUCTION_EXECUTION: 'enabledd', BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', BLACKSPIRE_PRODUCTION_PROVIDERS: '' },
+    { BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,mock' },
+    { BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,' },
+    { BLACKSPIRE_PRODUCTION_PROVIDERS: 'codex,unknown' },
+  ]) assert.equal(requireProductionSafeConfig({ ...enabled, ...overrides }, dirs()).ok, false);
+});
+
 test('rejects a missing or placeholder admin token', () => {
   assert.match(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: 'dev-admin-token-change-me' }), dirs()).errors.join(), /COMMAND_ADMIN_TOKEN/);
   assert.equal(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: '' }), dirs()).ok, false);

@@ -1,5 +1,16 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — runtime-profile exact-head review corrections (Codex)
+
+- Exact-head review of PR #112 found two P2 divergences from the shell gate: misspelled execution modes fell into the disabled branch, and allowlists containing Codex plus mock, unknown, or empty entries passed an incomplete membership check.
+- Both in-process startup gates now share one exact execution enum and the full currently executable Codex-only allowlist grammar. Negative fixtures cover malformed flags, mock/unknown entries, and leading/trailing empty entries; the coherent Codex subscription profile remains accepted.
+
+## 2026-08-24 — Gate 4 runtime-profile refusal reproduced (Codex)
+
+- The first candidate activation could not open systemd append logs because the reviewed log directory did not yet exist. Compensation stopped/disabled the target before rollback; the directory was then created as `blackspire:blackspire` `0750`, matching the reviewed ownership map.
+- The second activation passed `ExecStartPre` but both independent supervisors refused before spawning API/worker children: `verifyVpsRuntime` still required manual provider mode despite the explicit production execution opt-in, and `requireProductionSafeConfig` carried the same stale application-start rule. Compensation again stopped the target successfully before switching `current` to the recorded rollback release. Nginx and public staging were never changed.
+- The correction accepts only the coherent subscription profile (`enabled` + Codex + production Hermes + server allowlist containing Codex), leaves disabled execution manual-only, and does not relax provider credentials, Telegram, test mode, ownership, bind, migration, or secret boundaries.
+
 ## 2026-08-24 — Codex doctor timeout finding reproduced (Codex)
 
 - Exact-head review of PR #110 found one P1 after merge: healthy JSON printed before a timeout could be accepted because parsed readiness did not also require a clean supervisor completion.
