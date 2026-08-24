@@ -93,7 +93,11 @@ async function route(req, res) {
 
     if (u.pathname === '/api/auth/session') {
       const principal = auth.session ? resolveBoundSession(auth.session) : null;
-      const authenticated = auth.mode === 'session' ? Boolean(principal) : auth.ok;
+      // Authentication and execution authorization are separate facts. A valid
+      // persisted session remains authenticated even when no production operator
+      // principal is configured; protected workspace routes still fail closed when
+      // resolveBoundSession() cannot establish current persisted authority.
+      const authenticated = auth.ok;
       return json(res, 200, { authenticated, principalId: principal?.principalId || null, csrfToken: authenticated ? auth.session?.csrfToken : undefined, expiresAt: authenticated ? auth.session?.expiresAt : undefined });
     }
     if (u.pathname === '/api/auth/logout' && req.method === 'POST') { if (auth.session) destroySession(auth.session.sessionId); return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() }); }
