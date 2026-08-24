@@ -46,7 +46,8 @@ compensate() {
   set +e
   for record in "${moved_units[@]}"; do
     rm -f -- "${record%%|*}"
-    mv -T -- "${record#*|}" "${record%%|*}"
+    staged="${record#*|}"
+    [[ "$staged" == *.absent ]] || mv -T -- "$staged" "${record%%|*}"
   done
   for record in "${moved_non_units[@]}"; do mv -T -- "${record#*|}" "${record%%|*}"; done
   for directory in "${staging_dirs[@]}"; do rmdir -- "$directory"; done
@@ -62,6 +63,10 @@ for unit in "${units[@]}"; do
   if [[ -f "$unit" ]]; then
     staged="$repair_dir/$base.prepared"
     mv -T -- "$unit" "$staged"
+    moved_units+=("$unit|$staged")
+  else
+    staged="$repair_dir/$base.absent"
+    : > "$staged"
     moved_units+=("$unit|$staged")
   fi
   if [[ -f "$backup_dir/$base" ]]; then

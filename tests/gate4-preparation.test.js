@@ -311,6 +311,17 @@ test('gate4-prepare never reports Gate 4 as authorized, whatever the environment
   assert.equal(report.ready, false, 'authorization is terminal: the report can never be fully ready');
 });
 
+test('gate4-prepare refuses inactive but enabled legacy units that could boot outside the target', () => {
+  const host = makeHost();
+  const fakeSystemctl = path.join(host.home, 'systemctl-enabled');
+  fs.writeFileSync(fakeSystemctl, '#!/bin/sh\ncase "$*" in *ActiveState*) echo inactive;; *UnitFileState*) echo enabled;; esac\n');
+  fs.chmodSync(fakeSystemctl, 0o755);
+  const { report } = findings(host, { env: { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40), BLACKSPIRE_GATE4_SYSTEMCTL: fakeSystemctl } });
+  const finding = report.findings.find((entry) => entry.id === 'production-inactive');
+  assert.equal(finding.state, 'FAILED');
+  assert.match(finding.detail, /must be disabled before preparation/);
+});
+
 test('the plan separates preparation from activation and executes nothing', () => {
   const host = makeHost();
   const before = snapshot(host.home);
@@ -385,14 +396,14 @@ test('gate4-prepare is registered in the trusted test and script inventory surfa
   assert.equal(path.extname(script), '.sh');
 });
 
-function rollbackFixture({ failUnit = '', failReload = false, absentTarget = false } = {}) {
+function rollbackFixture({ failUnit = '', failReload = false, absentTarget = false, absentPreparedApi = false } = {}) {
   const root = fs.mkdtempSync(path.join(scratch, 'rollback-'));
   const units = ['api.service', 'worker.service', 'command.target'].map((name) => path.join(root, name));
   const backup = path.join(root, 'backup');
   fs.mkdirSync(backup);
   fs.writeFileSync(path.join(backup, '.complete'), '');
   units.forEach((unit, index) => {
-    fs.writeFileSync(unit, `prepared-${index}`);
+    if (!(absentPreparedApi && index === 0)) fs.writeFileSync(unit, `prepared-${index}`);
     const base = path.basename(unit);
     if (absentTarget && index === 2) fs.writeFileSync(path.join(backup, `${base}.absent`), '');
     else fs.writeFileSync(path.join(backup, base), `original-${index}`);
@@ -427,6 +438,16 @@ test('daemon-reload failure compensates all units and preserves non-unit state',
   const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
   assert.notEqual(result.status, 0);
   fixture.units.forEach((unit, index) => assert.equal(fs.readFileSync(unit, 'utf8'), `prepared-${index}`));
+  for (const item of [fixture.envPath, fixture.workspaceRoot, fixture.logrotatePath]) assert.equal(fs.existsSync(item), true);
+});
+
+test('an absent prepared unit stays absent when a later restore fails', () => {
+  const fixture = rollbackFixture({ absentPreparedApi: true, failUnit: 'worker.service' });
+  const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  assert.equal(fs.existsSync(fixture.units[0]), false, 'compensation must restore prepared absence');
+  assert.equal(fs.readFileSync(fixture.units[1], 'utf8'), 'prepared-1');
+  assert.equal(fs.readFileSync(fixture.units[2], 'utf8'), 'prepared-2');
   for (const item of [fixture.envPath, fixture.workspaceRoot, fixture.logrotatePath]) assert.equal(fs.existsSync(item), true);
 });
 

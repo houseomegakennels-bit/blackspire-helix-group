@@ -38,8 +38,9 @@ None of these may be generated, invented, or defaulted by tooling.
 Verified automatically by the checker:
 
 1. **Source contract** — `npm run production:preflight` reports every source check ready.
-2. **Production inactive** — the API unit, worker unit, and coordination target are all inactive
-   throughout preparation.
+2. **Production inactive and disabled** — the API unit, worker unit, and coordination target are
+   inactive throughout preparation and none is enabled or linked. This refuses a legacy
+   `multi-user.target.wants` API link that could boot the API without its worker.
 3. **Installed topology** — the installed `blackspire-command.service`,
    `blackspire-command-worker.service`, and `blackspire-command.target` are each byte-identical to
    their reviewed templates in `ops/runtime-ownership/`.

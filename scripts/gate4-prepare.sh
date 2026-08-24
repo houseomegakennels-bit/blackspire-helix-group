@@ -117,7 +117,9 @@ if command -v "$systemctl_bin" >/dev/null 2>&1; then
   for checked_unit in "$api_unit_name" "$worker_unit_name" "$target_name"; do
     active_state="$("$systemctl_bin" show "$checked_unit" -p ActiveState --value 2>/dev/null || echo unknown)"
     unit_state="$("$systemctl_bin" show "$checked_unit" -p UnitFileState --value 2>/dev/null || echo unknown)"
-    if [[ "$active_state" == inactive || "$active_state" == failed ]]; then
+    if [[ "$unit_state" == enabled || "$unit_state" == enabled-runtime || "$unit_state" == linked || "$unit_state" == linked-runtime ]]; then
+      active_units+="${active_units:+; }$checked_unit=$active_state/$unit_state (must be disabled before preparation)"
+    elif [[ "$active_state" == inactive || "$active_state" == failed ]]; then
       inactive_states+="${inactive_states:+; }$checked_unit=$active_state/${unit_state:-unknown}"
     else
       active_units+="${active_units:+; }$checked_unit=$active_state"
