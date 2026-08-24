@@ -21,6 +21,7 @@ This is an observation, not deployment evidence. No service, container, database
 - The legacy Docker runtime uses its own named volume at `/var/lib/docker/volumes/blackspire_command-data/_data`.
 - `/etc/blackspire/command.env` exists with restrictive `0640 root:blackspire` metadata. Only key presence was inspected; no value was recorded.
 - `BLACKSPIRE_DB_PATH`, `BLACKSPIRE_WORKSPACE_ROOT`, `BIND_HOST`, and `PORT` are configured. `BLACKSPIRE_OPERATOR_PRINCIPAL_ID`, production execution/provider keys, and `CODEX_HOME` were not present.
+- The configured production database target does not exist. The staging database has one workspace and 28 tasks; the legacy Docker database has one workspace and 15 tasks. Both predate the merged authorization/accounting schema and lack `auth_principals`, `auth_workspace_grants`, and `usage_ledger`. Counts were read through SQLite read-only mode; no row contents were recorded.
 
 ## Public truthfulness gap
 
@@ -34,7 +35,7 @@ This is an observation, not deployment evidence. No service, container, database
 1. PR #105 must merge before installing its reviewed API/worker/target topology.
 2. The persisted production operator principal and intended workspace grants must be provisioned and verified.
 3. A private service-accessible `CODEX_HOME` outside protected home must be prepared without exposing credential contents.
-4. The authoritative production database path and legacy Docker-volume disposition must be selected without destroying either state source.
+4. The authoritative production database path and legacy Docker-volume disposition must be selected without destroying either state source. The configured target is absent, and both existing databases require the reviewed migration path before principal/grant provisioning.
 5. A database backup, candidate/rollback SHA record, exact reviewed release, and Gate 4 preparation evidence are required before cutover.
 6. nginx must be switched only after activation-specific API/worker generation readiness succeeds.
 
