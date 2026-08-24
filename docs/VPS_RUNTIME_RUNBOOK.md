@@ -9,8 +9,12 @@ For a separately approved production start, install the supported Node runtime, 
 ```sh
 npm ci --ignore-scripts
 bash scripts/verify-environment.sh vps-production
-npm run start:production
+systemctl start blackspire-command.target
 ```
+
+The target starts both independently supervised services. For bounded diagnostics only, the
+single-role wrappers are `npm run start:production -- api` and
+`npm run start:production -- worker`; a missing role is refused.
 
 The profile requires `NODE_ENV=production`, `BLACKSPIRE_RUNTIME_MODE=production`, state owner `vps-production`, persistent non-`/tmp` storage, authentication configuration, `BLACKSPIRE_PROVIDER_MODE=manual`, restricted Hermes, dry-run Telegram, and no provider or Telegram credentials. It rejects test mode and mock Telegram.
 
@@ -33,6 +37,13 @@ BLACKSPIRE_RUN_MIGRATIONS=true node scripts/migrate.js
 The command permits only the exact lowercase value `true`. Every other value, including absent, empty, `false`, `FALSE`, `0`, `1`, `yes`, whitespace-padded `true`, and malformed values, is denied before mutation. Disposable tests prepare schemas by launching this dedicated command with the flag scoped to that child process only. CI scopes the same flag to its one disposable migration command, and Codespace readiness never runs a migration as ordinary startup. Verify a WAL-safe backup and isolated restore before any future production migration, then run integrity and health checks before resuming writers.
 
 ## Release and rollback
+
+`BLACKSPIRE_STATE_OWNER` must be exported for both `release-create.sh` and `release-switch.sh`. The
+release manifest is sealed with the environment that owner names, and `release-switch.sh` records the
+same environment in the release's deployment record and refuses to make the release current unless the
+two agree. A release built without an owner is sealed `unassigned` and will be refused at startup on
+`vps-staging` and `vps-production`; set `BLACKSPIRE_EXPECTED_ENVIRONMENT` explicitly only to override
+that derivation deliberately.
 
 Use `release-create.sh` to archive an exact full SHA into `releases/<sha>` and `release-switch.sh` to atomically update `current`. Keep `current` and the prior completed release until health checks pass. `release-rollback.sh <known-good-sha>` changes only the symlink; it does not rewrite Git history. Persistent database, evidence, and backup paths live under `shared/`, never inside a release.
 

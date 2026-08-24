@@ -115,16 +115,80 @@ test('all seven screens exist as views', () => {
 });
 
 test('canonical status vocabulary is complete and color-independent', () => {
-  for (const label of ['Queued', 'Processing', 'Awaiting approval', 'Completed', 'Failed', 'Cancelled', 'Denied by policy']) {
+  for (const label of ['Queued', 'Planning', 'Processing', 'Awaiting approval', 'Validating', 'Completed', 'Failed', 'Cancelled', 'Denied by policy', 'Execution outcome unknown']) {
     assert.match(source, new RegExp(label), `missing status label: ${label}`);
   }
 });
 
 test('known event types have labels and unknown events degrade safely', () => {
-  for (const type of ['input.received', 'policy.allowed', 'policy.denied', 'task.queued', 'task.running', 'hermes.selected', 'provider.selected', 'task.completed', 'task.failed', 'task.cancellation_requested', 'task.cancellation_cleanup', 'task.cancelled', 'approval.required', 'approval.granted', 'approval.denied', 'delivery.pending', 'delivery.retry_wait', 'delivery.delivered', 'delivery.terminal_failed']) {
+  for (const type of ['input.received', 'policy.allowed', 'policy.denied', 'task.queued', 'task.planning', 'task.running', 'task.validating', 'hermes.selected', 'provider.selected', 'task.completed', 'task.failed', 'task.outcome_unknown', 'task.cancellation_requested', 'task.cancellation_cleanup', 'task.cancelled', 'approval.required', 'approval.granted', 'approval.denied', 'delivery.pending', 'delivery.retry_wait', 'delivery.delivered', 'delivery.terminal_failed']) {
     assert.match(source, new RegExp(type.replace('.', '\\.')), `missing event type: ${type}`);
   }
   assert.match(source, /System event/, 'unknown events render as sanitized generic entries');
+});
+
+test('unknown Codex outcomes are terminal, distinct, and never invite automatic retry', () => {
+  assert.match(appScript, /attempt\.status === 'outcome_unknown'/, 'provider attempt evidence drives the display state');
+  assert.match(appScript, /AUTOMATIC RETRY BLOCKED · OPERATOR REVIEW REQUIRED/);
+  assert.match(appScript, /\['completed', 'failed', 'cancelled', 'outcome_unknown'\]/, 'unknown outcome disables cancellation/resubmission affordances');
+  assert.doesNotMatch(appScript, /outcome_unknown[^\n]*(?:retryTask|submitCommand)/, 'unknown outcomes never trigger execution');
+});
+
+test('canonical task-state helpers obey deterministic terminal and in-flight fixtures', () => {
+  const helperSource = appScript.slice(0, appScript.indexOf('/* ---------- Helix Core state ---------- */'))
+    + '\nglobalThis.__taskState = { canonicalTaskStatus, statusInfo, cancellable };';
+  const context = {
+    document: { getElementById: () => null },
+    window: { addEventListener() {} },
+    location: { hash: '' },
+    console,
+  };
+  vm.runInNewContext(helperSource, context, { filename: 'jarvis-task-state.js' });
+  const helpers = context.__taskState;
+  for (const status of ['queued', 'planning', 'running', 'waiting_for_approval', 'validating']) {
+    assert.equal(helpers.cancellable({ status }), true, `${status} remains cancellable`);
+  }
+  for (const status of ['completed', 'failed', 'cancelled']) assert.equal(helpers.cancellable({ status }), false);
+  const escaped = { status: 'failed', providerAttribution: [{ provider: 'codex', status: 'outcome_unknown' }] };
+  assert.equal(helpers.canonicalTaskStatus(escaped), 'outcome_unknown');
+  assert.equal(helpers.statusInfo(escaped).label, 'Execution outcome unknown');
+  assert.equal(helpers.cancellable(escaped), false);
+});
+
+test('System view renders fresh server-authoritative readiness and worker heartbeat state', () => {
+  assert.match(html, /id="sysReady"/);
+  assert.match(appScript, /r\?\.dependencies\?\.worker \|\| h\?\.dependencies\?\.worker/);
+  assert.match(appScript, /heartbeatAgeMs/);
+  assert.match(appScript, /generationId/);
+  assert.match(appScript, /if \(store\.view === 'system'\) \{ const \{ body \} = await api\.ready/, 'readiness refreshes on every System poll');
+});
+
+test('system-state helpers distinguish degraded, offline, stale, dead, and current worker generations', () => {
+  const helperSource = appScript.slice(0, appScript.indexOf('/* ---------- Helix Core state ---------- */'))
+    + '\nglobalThis.__systemState = { controlPlaneLabel, readinessLabel, workerLabel };';
+  const context = {
+    document: { getElementById: () => null },
+    window: { addEventListener() {} },
+    location: { hash: '' },
+    console,
+  };
+  vm.runInNewContext(helperSource, context, { filename: 'jarvis-system-state.js' });
+  const helpers = context.__systemState;
+  assert.equal(helpers.controlPlaneLabel({ health: { ok: true }, offline: false }), 'Healthy');
+  assert.equal(helpers.controlPlaneLabel({ health: { ok: false }, offline: false }), 'Degraded');
+  assert.equal(helpers.controlPlaneLabel({ health: { ok: true }, offline: true }), 'Unreachable');
+  assert.equal(helpers.readinessLabel({ ok: false }), 'Not ready');
+  assert.equal(helpers.workerLabel({ required: true, ok: false, state: 'stale', heartbeatAgeMs: 31_400, generationId: 'a'.repeat(32) }),
+    'Worker unavailable · stale · heartbeat 31s ago · generation aaaaaaaa');
+  assert.equal(helpers.workerLabel({ required: true, ok: false, state: 'stopped', heartbeatAgeMs: null, generationId: null }),
+    'Worker unavailable · stopped');
+});
+
+test('session identity is displayed only from the server-bound canonical principal', () => {
+  assert.match(html, /id="sessionIdentity"/);
+  assert.match(appScript, /body\.principalId/);
+  assert.doesNotMatch(appScript, /principalId\s*:\s*(?:byId|document|localStorage|sessionStorage)/,
+    'the browser cannot nominate a principal');
 });
 
 test('Telegram delivery states are all representable', () => {
@@ -267,6 +331,17 @@ test('web manifest is a valid installable Blackspire identity', () => {
 
 let conversationId = '';
 let taskId = '';
+
+test('authenticated browser session reports its server-bound canonical principal', async () => {
+  const login = await fetch('http://localhost:8899/api/auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'jarvis-ui-token' }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+  const session = await (await fetch('http://localhost:8899/api/auth/session', { headers: { cookie } })).json();
+  assert.equal(session.authenticated, true);
+  assert.equal(session.principalId, 'jarvis-route-admin');
+});
 
 test('command submission creates one canonical conversation and task', async () => {
   const response = await fetch('http://localhost:8899/api/unified-input', { method: 'POST', headers: bearer, body: JSON.stringify({ text: 'Report status without changing files.', idempotencyKey: 'ui-suite-1' }) });

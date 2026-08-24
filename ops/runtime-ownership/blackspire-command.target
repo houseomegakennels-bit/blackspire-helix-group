@@ -1,0 +1,9 @@
+# Starts the independently supervised API and worker. Either service may restart or fail without
+# systemd terminating the other; stopping this target intentionally stops both.
+[Unit]
+Description=Blackspire Command API and worker
+Wants=blackspire-command.service blackspire-command-worker.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

@@ -32,7 +32,7 @@ This is an observation, not deployment evidence. No service, container, database
 
 ## Deployment blockers confirmed by observation
 
-1. PR #105 must merge before installing its reviewed API/worker/target topology.
+1. PR #105 has merged, but its reviewed API/worker/target topology is not installed.
 2. The persisted production operator principal and intended workspace grants must be provisioned and verified.
 3. A private service-accessible `CODEX_HOME` outside protected home must be prepared without exposing credential contents.
 4. The authoritative production database path and legacy Docker-volume disposition must be selected without destroying either state source. The configured target is absent, and both existing databases require the reviewed migration path before principal/grant provisioning.

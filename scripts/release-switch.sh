@@ -8,6 +8,9 @@ root="${root%/}"
 source "$(dirname "$0")/release-tree-validator.sh"
 target="$root/releases/$commit"
 release_validate_completed_release "$root" "$commit"
+# Record what is being deployed BEFORE it becomes current, so a release can never be live
+# without the deployment record its own startup identity check requires.
+"$(dirname "$0")/with-node.sh" "$(dirname "$0")/write-deployment-record.js" "$target" >/dev/null
 ln -sfn "$target" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
 printf '%s\n' "$target"

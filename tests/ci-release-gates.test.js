@@ -4,8 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { computeArtifactDigest, writeReleaseEvidence } from '../packages/shared/release-evidence.js';
 
 const workflow = fs.readFileSync('.github/workflows/blackspire-ci.yml', 'utf8');
+const workflowDirectory = '.github/workflows';
 const validator = path.resolve('scripts/ci-validate-whitespace-range.sh');
 
 function git(root, ...args) {
@@ -81,4 +83,75 @@ test('CI publishes commit, tree, runtime, and run identity metadata', () => {
     assert.match(workflow, new RegExp(field.replace(/[{}^$.*+?()[\]\\|]/g, '\\$&')));
   }
   assert.match(workflow, /Upload build metadata[\s\S]*if-no-files-found: error/);
+  assert.match(workflow, /Package immutable release evidence[\s\S]*git archive HEAD/);
+  assert.match(workflow, /release-evidence\.js generate ci-artifacts\/release-package/);
+  assert.match(workflow, /release-evidence\.js verify ci-artifacts\/release-package/);
+  assert.match(workflow, /artifactDigest/);
+  assert.match(workflow, /Cross-check packaged release and CI metadata[\s\S]*verify-ci-release-artifact\.js ci-artifacts/);
+});
+
+test('CI release artifact verifier cross-checks every authoritative identity source', () => {
+  const verifier = fs.readFileSync('scripts/verify-ci-release-artifact.js', 'utf8');
+  for (const field of ['build-metadata.json', 'RELEASE_EVIDENCE.json', 'COMMIT_SHA', 'GITHUB_SHA',
+    'GITHUB_REPOSITORY', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'artifactDigest', 'nodeVersion',
+    'expectedEnvironment', 'repository', 'buildId', 'computeArtifactDigest']) {
+    assert.match(verifier, new RegExp(field.replace(/[{}^$.*+?()[\]\\|]/g, '\\$&')));
+  }
+  assert.match(verifier, /process\.exit\(1\)/);
+  assert.doesNotMatch(workflow, /require\('\.\/ci-artifacts\/release-package\/RELEASE_EVIDENCE\.json'\).*artifact\.digest/,
+    'CI metadata must independently hash the package rather than copy its manifest digest');
+});
+
+test('CI release artifact verifier independently detects package-tree mutation', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-ci-artifact-'));
+  const artifact = path.join(root, 'release-package');
+  fs.mkdirSync(artifact);
+  const commit = git(process.cwd(), 'rev-parse', 'HEAD');
+  const tree = git(process.cwd(), 'rev-parse', 'HEAD^{tree}');
+  fs.writeFileSync(path.join(artifact, 'COMMIT_SHA'), `${commit}\n`);
+  fs.writeFileSync(path.join(artifact, 'package.json'), '{"version":"0.1.0"}\n');
+  const common = { GITHUB_SHA: commit, GITHUB_REPOSITORY: 'houseomegakennels-bit/blackspire-helix-group',
+    GITHUB_RUN_ID: '12345', GITHUB_RUN_ATTEMPT: '2' };
+  const manifest = writeReleaseEvidence(artifact, { artifactRoot: artifact, commitSha: commit,
+    expectedEnvironment: 'disposable-staging', buildTimestamp: '2026-08-24T00:00:00.000Z',
+    sourceRef: 'refs/pull/1/merge', buildId: '12345.2', ciProvider: 'github-actions', ciRunId: '12345',
+    artifactName: `blackspire-command-${commit}`, packageVersion: '0.1.0', nodeVersion: process.version,
+    repository: common.GITHUB_REPOSITORY });
+  const metadata = { repository: common.GITHUB_REPOSITORY,
+    environment: 'disposable-staging', commit, tree, artifactDigest: computeArtifactDigest(artifact),
+    node: process.version, runId: '12345', runAttempt: '2' };
+  const writeMetadata = (value) => fs.writeFileSync(path.join(root, 'build-metadata.json'), `${JSON.stringify(value)}\n`);
+  writeMetadata(metadata);
+  const verify = () => spawnSync(process.execPath, ['scripts/verify-ci-release-artifact.js', root],
+    { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...common } });
+  assert.equal(verify().status, 0);
+  writeMetadata({ ...metadata, repository: 'wrong/repository' });
+  assert.notEqual(verify().status, 0);
+  writeMetadata({ ...metadata, environment: 'production' });
+  assert.notEqual(verify().status, 0);
+  writeMetadata(metadata);
+  fs.writeFileSync(path.join(artifact, 'package.json'), '{"version":"tampered"}\n');
+  const rejected = verify();
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /release artifact verification failed/);
+  assert.notEqual(computeArtifactDigest(artifact), manifest.artifact.digest);
+});
+
+test('official JavaScript actions are immutable across every repository workflow', () => {
+  const workflows = fs.readdirSync(workflowDirectory)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .map((name) => fs.readFileSync(path.join(workflowDirectory, name), 'utf8'))
+    .join('\n');
+  assert.doesNotMatch(workflows, /actions\/(?:checkout|setup-node|upload-artifact)@v\d+/,
+    'mutable major tags must not control reviewed workflows');
+  const expected = new Map([
+    ['checkout', '3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'],
+    ['setup-node', '820762786026740c76f36085b0efc47a31fe5020 # v7.0.0'],
+    ['upload-artifact', '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1'],
+  ]);
+  for (const match of workflows.matchAll(/actions\/(checkout|setup-node|upload-artifact)@([^\s]+)/g)) {
+    assert.equal(`${match[2]} ${match.input.slice(match.index + match[0].length).split('\n', 1)[0].trim()}`,
+      expected.get(match[1]), `unexpected immutable pin for actions/${match[1]}`);
+  }
+  for (const action of expected.keys()) assert.match(workflows, new RegExp(`actions/${action}@`), `actions/${action} inventory is unexpectedly empty`);
 });

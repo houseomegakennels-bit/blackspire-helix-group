@@ -18,7 +18,7 @@ const cases=[
   ['source_equals_target','NO_GO_RESTORE_INVALID'],['schema_drift','NO_GO_SCHEMA_MISMATCH'],['migration_failure','NO_GO_SCHEMA_MISMATCH'],
   ['partial_restore','NO_GO_RESTORE_INVALID'],['missing_required_table','NO_GO_SCHEMA_MISMATCH'],['incorrect_row_count','NO_GO_RESTORE_INVALID'],['extra_row_in_target','NO_GO_RESTORE_INVALID'],['corrupted_row_payload','NO_GO_RESTORE_INVALID'],['corrupted_target_index','NO_GO_RESTORE_INVALID'],
   ['unauthorized','OPERATOR_AUTHORIZATION_REQUIRED'],['queue_not_drained','NO_GO_QUEUE_NOT_DRAINED'],['maintenance_off','NO_GO_QUEUE_NOT_DRAINED'],
-  ['rollback_missing','NO_GO_ROLLBACK_TARGET_INVALID'],['rollback_mismatch','NO_GO_ROLLBACK_TARGET_INVALID'],['interrupted_cutover','NO_GO_RESTORE_INVALID'],['dirty_tree','NO_GO_RESTORE_INVALID'],
+  ['rollback_missing','NO_GO_ROLLBACK_TARGET_INVALID'],['rollback_mismatch','NO_GO_ROLLBACK_TARGET_INVALID'],['rollback_incomplete','NO_GO_ROLLBACK_TARGET_INVALID'],['interrupted_cutover','NO_GO_RESTORE_INVALID'],['dirty_tree','NO_GO_RESTORE_INVALID'],
 ];
 for(const [fault,expected] of cases)test(`${fault} fails closed as ${expected}`,()=>{const report=runDisposableRestoreCutover(options({fault}));assert.equal(report.goNoGo,expected);assert.ok(GO_NO_GO.includes(report.goNoGo));assert.equal(report.automaticActionTaken,false);});
 
@@ -133,4 +133,19 @@ test('an invalid expected commit refuses on the same guard', () => {
   const report = runDisposableRestoreCutover(options({ expectedCommit: 'not-a-sha' }));
   assert.equal(report.goNoGo, 'NO_GO_ROLLBACK_TARGET_INVALID');
   assert.ok(report.unresolvedRisks.includes("commit_identifier_invalid"), JSON.stringify(report.unresolvedRisks));
+});
+
+// An interrupted release leaves the tree present and its evidence intact but without the
+// `.release-complete` marker. This case exists because the rollback readiness check was
+// re-deriving availability from the injected fault flag instead of observing the marker on
+// disk, which made the whole check unfalsifiable: it agreed with itself by construction.
+test('a rollback target left without its completion marker is refused',()=>{
+  const report=runDisposableRestoreCutover(options({fault:'rollback_incomplete'}));
+  assert.equal(report.goNoGo,'NO_GO_ROLLBACK_TARGET_INVALID');
+  assert.equal(report.rollbackReadinessReport.verified,false);
+  assert.equal(report.rollbackReadinessReport.recoveryRecommendation,'operator_intervention_required');
+  // The candidate release itself is present and its evidence still verifies; only the
+  // completion marker is absent, so the refusal must come from the marker observation.
+  assert.equal(report.rollbackReadinessReport.releaseEvidence.state,'VERIFIED');
+  assert.equal(report.automaticActionTaken,false);
 });
