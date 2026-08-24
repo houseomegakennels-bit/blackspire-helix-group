@@ -42,18 +42,22 @@ for index in "${!non_units[@]}"; do
 done
 
 repair_dir="$(mktemp -d "$(dirname -- "$api_unit")/.blackspire-gate4-repair.XXXXXX")"
-moved_units=()
-moved_non_units=()
+moved_unit_destinations=()
+moved_unit_staged=()
+moved_unit_was_present=()
+moved_non_unit_destinations=()
+moved_non_unit_staged=()
 staging_dirs=()
 compensate() {
   trap - ERR
   set +e
-  for record in "${moved_units[@]}"; do
-    rm -f -- "${record%%|*}"
-    staged="${record#*|}"
-    [[ "$staged" == *.absent ]] || mv -T -- "$staged" "${record%%|*}"
+  for index in "${!moved_unit_destinations[@]}"; do
+    rm -f -- "${moved_unit_destinations[$index]}"
+    (( moved_unit_was_present[index] == 0 )) || mv -T -- "${moved_unit_staged[$index]}" "${moved_unit_destinations[$index]}"
   done
-  for record in "${moved_non_units[@]}"; do mv -T -- "${record#*|}" "${record%%|*}"; done
+  for index in "${!moved_non_unit_destinations[@]}"; do
+    mv -T -- "${moved_non_unit_staged[$index]}" "${moved_non_unit_destinations[$index]}"
+  done
   for directory in "${staging_dirs[@]}"; do rmdir -- "$directory"; done
   "$systemctl_bin" daemon-reload >/dev/null 2>&1
   rm -rf -- "$repair_dir"
@@ -67,12 +71,14 @@ for unit in "${units[@]}"; do
   if [[ -f "$unit" ]]; then
     staged="$repair_dir/$base.prepared"
     mv -T -- "$unit" "$staged"
-    moved_units+=("$unit|$staged")
+    moved_unit_was_present+=(1)
   else
     staged="$repair_dir/$base.absent"
     : > "$staged"
-    moved_units+=("$unit|$staged")
+    moved_unit_was_present+=(0)
   fi
+  moved_unit_destinations+=("$unit")
+  moved_unit_staged+=("$staged")
   if [[ -f "$backup_dir/$base" ]]; then
     "$install_bin" -T -o "$(id -u)" -g "$(id -g)" -m 0644 "$backup_dir/$base" "$unit"
   else
@@ -87,12 +93,13 @@ for item in "${non_units[@]}"; do
     staging_dirs+=("$staging_dir")
     staged="$staging_dir/value"
     mv -T -- "$item" "$staged"
-    moved_non_units+=("$item|$staged")
+    moved_non_unit_destinations+=("$item")
+    moved_non_unit_staged+=("$staged")
   fi
 done
 
 trap - ERR
 rm -rf -- "$repair_dir"
-for record in "${moved_non_units[@]}"; do rm -rf -- "${record#*|}"; done
+for staged in "${moved_non_unit_staged[@]}"; do rm -rf -- "$staged"; done
 for directory in "${staging_dirs[@]}"; do rmdir -- "$directory"; done
 echo 'Gate 4 preparation rollback complete; production was not activated'

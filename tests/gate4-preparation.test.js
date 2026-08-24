@@ -403,8 +403,8 @@ test('gate4-prepare is registered in the trusted test and script inventory surfa
   assert.equal(path.extname(script), '.sh');
 });
 
-function rollbackFixture({ failUnit = '', failReload = false, absentTarget = false, absentPreparedApi = false } = {}) {
-  const root = fs.mkdtempSync(path.join(scratch, 'rollback-'));
+function rollbackFixture({ failUnit = '', failReload = false, absentTarget = false, absentPreparedApi = false, rootPrefix = 'rollback-' } = {}) {
+  const root = fs.mkdtempSync(path.join(scratch, rootPrefix));
   const units = ['api.service', 'worker.service', 'command.target'].map((name) => path.join(root, name));
   const backup = path.join(root, 'backup');
   fs.mkdirSync(backup);
@@ -485,4 +485,13 @@ test('rollback normalizes a quoted workspace exactly as preparation does', () =>
   const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(fixture.workspaceRoot), false);
+});
+
+test('rollback keeps workspace and staging paths lossless when they contain a delimiter', () => {
+  const fixture = rollbackFixture({ rootPrefix: 'rollback|delimited-' });
+  const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(fixture.workspaceRoot), false);
+  assert.equal(fs.existsSync(fixture.envPath), false);
+  assert.equal(fs.existsSync(fixture.logrotatePath), false);
 });
