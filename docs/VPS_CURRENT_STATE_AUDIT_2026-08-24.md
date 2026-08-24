@@ -58,6 +58,8 @@ Initial production will initialize a deliberately clean canonical database at th
 
 Both historical databases remain preserved as read-only reconciliation sources. Writer-stopped, checksum-verified backups remain mandatory immediately before retiring either writer or cutting over. Any later import or retention decision requires a separately reviewed record-level migration plan.
 
+A separate clean-database rehearsal at `/tmp/blackspire-clean-production.tp6aRS/command.sqlite` proves the selected initial-production path. Current migrations created a schema with integrity `ok`, zero foreign-key violations, zero missing required schema objects, one seeded workspace, and zero tasks. Minimum operator provisioning created one principal and one grant, and an exact repeat created nothing and skipped both records. The resolved principal received only the six intended permissions; cross-workspace access, development-provider escalation, and workspace-management escalation were denied. This disposable file is not the configured production target and no production environment was changed.
+
 ## Codex service-home preparation
 
 An empty `/opt/blackspire-command/shared/codex-home` now exists as `0700 blackspire:blackspire`, outside `ProtectHome` and inside the reviewed service writable path. A service-equivalent empty-environment invocation can execute the installed `codex-cli 0.149.0` binary with that `CODEX_HOME`.

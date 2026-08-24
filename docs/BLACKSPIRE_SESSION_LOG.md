@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — clean production database path rehearsed
+
+- Current migrations initialized a disposable clean database with integrity `ok`, zero foreign-key violations, zero missing schema objects, one seeded workspace, and zero tasks.
+- Minimum operator provisioning created one principal/grant and skipped both on exact repeat. Required workspace/task/approval/runtime permissions resolved; cross-workspace access plus provider and workspace-management escalation were denied.
+- The rehearsal lives under a root-only temporary directory and is not the configured production target. No live database, environment, service, container, volume, proxy, provider, or credential changed.
+
+
 ## 2026-08-24 — Telegram production activation blocked on canonical authority
 
 - Current main was traced from `handleTelegramUpdate` to `createUnifiedInput`: the numeric allowlist is the only identity gate, selected workspace/conversation and polling offset are in memory, and no persisted #104 principal/grant is resolved before task creation or channel reads.

@@ -10,6 +10,8 @@ The public Jarvis domain still routes to the historical staging API on loopback 
 
 Root-only online safety snapshots now preserve both historical databases with verified SHA-256 sidecars. Disposable copies of both migrate cleanly to the current schema with integrity and foreign-key checks passing, and minimum operator provisioning is idempotent with cross-workspace/provider/management escalation denied. Initial production will use a deliberately clean database created by the reviewed migration path at the configured canonical target; neither legacy database will be promoted or merged. Staging's 21 stale claimed queued tasks and Docker's old accounting plus a pending approval on a cancelled task make implicit promotion unsafe. Both histories remain preserved, and these online snapshots do not replace required writer-stopped cutover backups.
 
+The selected clean-database path now has its own disposable rehearsal: current migrations produced integrity `ok`, zero foreign-key violations, and a complete schema with one seeded workspace and no tasks. Minimum provisioning was idempotent and denied cross-workspace, provider, and management escalation. The rehearsal database is not the production target.
+
 An empty private service home for Codex is prepared at `/opt/blackspire-command/shared/codex-home` with `0700 blackspire:blackspire`; the service identity can execute Codex 0.149.0 with that location under an empty environment. It contains no copied credentials, is not configured in production, and has not passed an authenticated capability probe.
 
 ## Workspace authorization remediation in review (2026-08-24 UTC)
