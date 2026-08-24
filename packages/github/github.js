@@ -112,8 +112,26 @@ export function commitArtifacts(message, edits, { cwd = '.', allowedPaths = ['.'
     const indexed = spawnSync('git', ['show', `:${relative}`], { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     if (indexed.status !== 0 || indexed.stdout !== expected) throw new Error(`Staged artifact does not match approved content: ${relative}`);
   }
-  const result = git(['-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '-m', message], cwd);
-  return { ok: result.code === 0, ...result };
+  const parent = git(['rev-parse', 'HEAD'], cwd);
+  if (parent.code !== 0 || !/^[a-f0-9]{40,64}$/.test(parent.stdout.trim())) return { ok: false, ...parent };
+  const writtenTree = git(['write-tree'], cwd);
+  const tree = writtenTree.stdout.trim();
+  if (writtenTree.code !== 0 || !/^[a-f0-9]{40,64}$/.test(tree)) return { ok: false, ...writtenTree };
+  const treeDiff = spawnSync('git', ['diff-tree', '-r', '--no-commit-id', '--name-only', '-z', parent.stdout.trim(), tree], { cwd, encoding: 'utf8' });
+  const treePaths = String(treeDiff.stdout || '').split('\0').filter(Boolean);
+  if (treeDiff.status !== 0 || treePaths.length !== targets.size || treePaths.some((file) => !targets.has(file))) {
+    throw new Error('Immutable commit tree does not match the approved artifacts');
+  }
+  for (const [relative, expected] of targets) {
+    const blob = spawnSync('git', ['show', `${tree}:${relative}`], { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+    if (blob.status !== 0 || blob.stdout !== expected) throw new Error(`Immutable commit tree has unexpected artifact content: ${relative}`);
+  }
+  const commit = git(['commit-tree', tree, '-p', parent.stdout.trim(), '-m', message], cwd);
+  const commitId = commit.stdout.trim();
+  if (commit.code !== 0 || !/^[a-f0-9]{40,64}$/.test(commitId)) return { ok: false, ...commit };
+  const updated = git(['update-ref', '-m', `Hermes artifact commit: ${message}`, `refs/heads/${branch}`, commitId, parent.stdout.trim()], cwd);
+  if (updated.code !== 0) return { ok: false, ...updated };
+  return { ok: true, code: 0, stdout: `${commitId}\n`, stderr: '' };
 }
 
 export function compareChanges({ cwd = '.', base = 'HEAD~1' } = {}) {
@@ -136,7 +154,7 @@ function isPathAllowed(filePath, allowedPaths) {
   if (input.startsWith('/')) return false;
   const normalized = path.posix.normalize(input);
   if (normalized === '..' || normalized.startsWith('../')) return false;
-  if (normalized === '.git' || normalized.startsWith('.git/')) return false;
+  if (normalized.split('/').includes('.git')) return false;
   if (allowedPaths.includes('.')) return true;
   return allowedPaths.some((entry) => {
     const allowed = String(entry).replace(/^\.\/?/, '').replace(/\/$/, '');

@@ -228,6 +228,7 @@ test('Git workflow and workspace isolation/security controls', async () => {
   fs.writeFileSync(hook, '#!/bin/sh\nprintf "hook content\\n" > docs/hook-injected.md\ngit add docs/hook-injected.md\n');
   fs.chmodSync(hook, 0o755);
   assert.throws(() => applyEdits([{ path: '.git/hooks/pre-commit', content: 'replaced' }], { cwd: dir, allowedPaths: ['.'] }), /Git control|not allowed/i);
+  assert.throws(() => applyEdits([{ path: 'docs/nested/.git', content: 'replaced' }], { cwd: dir, allowedPaths: ['.'] }), /Git control|not allowed/i);
   const approved = [{ path: 'docs/hook-proof.md', content: 'approved only\n' }];
   applyEdits(approved, { cwd: dir, allowedPaths: ['docs'] });
   assert.equal(commitArtifacts('hook-isolated commit', approved, { cwd: dir, allowedPaths: ['docs'] }).ok, true);
