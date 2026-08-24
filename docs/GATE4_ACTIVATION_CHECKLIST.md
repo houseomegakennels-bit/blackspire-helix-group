@@ -169,6 +169,7 @@ Preparation never started production, so undoing it is just removing what it cre
 immutable and are never deleted as part of a rollback.
 
 ```sh
+set -euo pipefail
 unit_backup_dir=/var/backups/blackspire-command/gate4-<approved-sha>
 test -f "$unit_backup_dir/.complete" && test ! -L "$unit_backup_dir/.complete" || {
   echo 'missing safe complete snapshot marker; refusing rollback' >&2; exit 1;
@@ -204,10 +205,36 @@ if test -e /etc/logrotate.d/blackspire-command || test -L /etc/logrotate.d/black
     echo 'unsafe rollback destination: /etc/logrotate.d/blackspire-command' >&2; exit 1;
   }
 fi
-# Only after every evidence record and destination is valid may rollback mutate prepared state.
-rm -f /etc/blackspire/command.env
-rm -rf /opt/blackspire-command/shared/workspace
-rm -f /etc/logrotate.d/blackspire-command
+# Snapshot the currently installed prepared definitions on their own filesystem. If any later unit
+# restore fails, the ERR trap repairs every definition already changed before exiting nonzero.
+repair_dir="$(mktemp -d /etc/systemd/system/.blackspire-gate4-repair.XXXXXX)"
+for unit_path in /etc/systemd/system/blackspire-command.service \
+  /etc/systemd/system/blackspire-command-worker.service \
+  /etc/systemd/system/blackspire-command.target; do
+  unit_base="$(basename -- "$unit_path")"
+  if test -f "$unit_path"; then
+    install -T -o root -g root -m 0644 "$unit_path" "$repair_dir/$unit_base"
+  else
+    install -T -o root -g root -m 0600 /dev/null "$repair_dir/$unit_base.absent"
+  fi
+done
+repair_prepared_units() {
+  trap - ERR
+  for repair_path in /etc/systemd/system/blackspire-command.service \
+    /etc/systemd/system/blackspire-command-worker.service \
+    /etc/systemd/system/blackspire-command.target; do
+    repair_base="$(basename -- "$repair_path")"
+    if test -f "$repair_dir/$repair_base"; then
+      install -T -o root -g root -m 0644 "$repair_dir/$repair_base" "$repair_path"
+    else
+      rm -f -- "$repair_path"
+    fi
+  done
+  systemctl daemon-reload
+  rm -rf -- "$repair_dir"
+  exit 1
+}
+trap repair_prepared_units ERR
 for unit_path in /etc/systemd/system/blackspire-command.service \
   /etc/systemd/system/blackspire-command-worker.service \
   /etc/systemd/system/blackspire-command.target; do
@@ -219,6 +246,12 @@ for unit_path in /etc/systemd/system/blackspire-command.service \
   fi
 done
 systemctl daemon-reload
+trap - ERR
+rm -rf -- "$repair_dir"
+# Only after the complete unit restore succeeds may prepared non-unit state be deleted.
+rm -f /etc/blackspire/command.env
+rm -rf /opt/blackspire-command/shared/workspace
+rm -f /etc/logrotate.d/blackspire-command
 ```
 
 ## Authorization boundary

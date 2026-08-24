@@ -367,7 +367,7 @@ test('the checklist and the script agree on the authorization boundary', () => {
     /rm -f \/etc\/logrotate\.d\/blackspire-command/,
     'the checklist must roll back the log-rotation policy created by preparation',
   );
-  const firstMutation = before.indexOf('rm -f /etc/blackspire/command.env');
+  const firstMutation = before.indexOf('repair_dir="$(mktemp -d /etc/systemd/system/.blackspire-gate4-repair.XXXXXX)"');
   assert.ok(firstMutation > 0, 'the checklist must define its first rollback mutation');
   for (const required of [
     'missing safe complete snapshot marker',
@@ -381,6 +381,9 @@ test('the checklist and the script agree on the authorization boundary', () => {
   }
   assert.match(before, /install -T -o root -g root -m 0644/, 'the checklist must restore units without directory reinterpretation');
   assert.match(before, /rm -f -- "\$unit_path"/, 'the checklist removes a unit only from trusted absent before-state');
+  assert.match(before, /trap repair_prepared_units ERR/, 'a failed unit restore must arm compensation');
+  assert.ok(before.indexOf('systemctl daemon-reload\ntrap - ERR') < before.indexOf('rm -f /etc/blackspire/command.env'),
+    'prepared non-unit state is removed only after every unit restore succeeds');
   for (const verb of ['systemctl start', 'systemctl enable', 'release-switch.sh']) {
     assert.equal(before.includes(verb), false, `${verb} must not be documented as preparation`);
   }
