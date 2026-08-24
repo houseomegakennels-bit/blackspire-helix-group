@@ -1,5 +1,9 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — Immutable GitHub Action pins rebuilt on current main (Codex)
+
+- Recovered only the narrow action-pin behavior from stale PR #96 onto current main. Direct official Git tag resolution verified checkout v7.0.1 at `3d3c42e5aac5ba805825da76410c181273ba90b1`, setup-node v7.0.0 at `820762786026740c76f36085b0efc47a31fe5020`, and upload-artifact v7.0.1 at `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`. Unlike the stale patch, the correction covers every repository workflow, including Book Studio, and its regression scans the whole workflow directory for mutable major tags or unexpected SHAs. Focused CI release-gate validation passed 8/8 under Node 22.23.1 and `git diff --check` passed. No deployment, workflow dispatch, secret access, provider call, or production mutation occurred.
+
 ## 2026-08-24 — PR #103 merged and workspace route authorization implemented (Codex)
 
 - Recovered no valuable local work newer than PR #103 exact head `dae91962f992016cf0dcde823643bad42130952a`. Verified exact-head Actions, Vercel, and clean adversarial Codex review; reproduced 54 focused ownership/Codex/preflight checks; answered and resolved the four outdated P1 threads individually; and merged with expected-head protection as `029376c4e47451c6426eb4cbf7c3f9e622a2170b`. The merge tree is byte-identical to the reviewed head. No deployment or real provider smoke occurred.

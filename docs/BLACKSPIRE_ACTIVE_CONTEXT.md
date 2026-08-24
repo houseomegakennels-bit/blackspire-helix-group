@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Current-main GitHub Action pin recovery (2026-08-24 UTC)
+
+The useful three-file patch from stale PR #96 has been reconstructed on current main and expanded to cover the previously omitted Book Studio workflow. Checkout v7.0.1, setup-node v7.0.0, and upload-artifact v7.0.1 tags were independently resolved against their official Git repositories and every workflow use is pinned to the resulting commit SHA. A repository-wide test rejects mutable major tags and unexpected pins; focused validation passes 8/8. The branch is not merged.
+
 ## Workspace authorization remediation in review (2026-08-24 UTC)
 
 PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.

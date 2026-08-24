@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Immutable GitHub Action pins rebuilt on current main (2026-08-24 UTC)
+
+Branch `ci/pin-github-actions-current-main` recovers the narrow useful behavior from stale PR #96 without preserving its ancestry. Every repository workflow use of `actions/checkout`, `actions/setup-node`, and `actions/upload-artifact` is pinned to a directly verified immutable release commit, including the Book Studio workflow that PR #96 omitted. A repository-wide regression refuses mutable major tags and unexpected action SHAs. Focused CI-gate validation passes 8/8. This source is not merged or deployed; exact-head CI/review remain required.
+
 ## Production Hermes merged; workspace authorization in review (2026-08-24 UTC)
 
 PR #103 merged as `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from independently reviewed exact head `dae91962f992016cf0dcde823643bad42130952a`. Actions and Vercel were green, the exact-head adversarial Codex review reported no major issues, and the four superseded P1 threads were individually verified and resolved. The merge tree is byte-identical to the reviewed head. This proves the production Codex source path is merged; production deployment and a real Jarvis-pipeline Codex smoke remain unverified.
