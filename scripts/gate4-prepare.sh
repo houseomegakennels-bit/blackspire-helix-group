@@ -404,6 +404,9 @@ ROLLBACK OF PREPARATION (safe; production was never started)
   # Validate the complete snapshot before mutating the first installed definition.
   for unit_path in $api_unit_file $worker_unit_file $target_file; do
     unit_base="\$(basename -- "\$unit_path")"
+    if test -e "\$unit_path" || test -L "\$unit_path"; then
+      test -f "\$unit_path" && test ! -L "\$unit_path" || { echo "unsafe rollback destination: \$unit_path" >&2; exit 1; }
+    fi
     backup_present=0; absent_present=0
     test -f "$unit_backup_dir/\$unit_base" && test ! -L "$unit_backup_dir/\$unit_base" && backup_present=1
     test -f "$unit_backup_dir/\$unit_base.absent" && test ! -L "$unit_backup_dir/\$unit_base.absent" && absent_present=1
@@ -418,7 +421,7 @@ ROLLBACK OF PREPARATION (safe; production was never started)
   for unit_path in $api_unit_file $worker_unit_file $target_file; do
     unit_base="\$(basename -- "\$unit_path")"
     if test -f "$unit_backup_dir/\$unit_base"; then
-      install -o root -g root -m 0644 "$unit_backup_dir/\$unit_base" "\$unit_path"
+      install -T -o root -g root -m 0644 "$unit_backup_dir/\$unit_base" "\$unit_path"
     else
       rm -f -- "\$unit_path"
     fi

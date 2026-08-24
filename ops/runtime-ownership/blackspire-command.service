@@ -71,6 +71,9 @@ StandardError=append:/var/log/blackspire-command/command.log
 # (StartLimitIntervalSec/StartLimitBurst live in [Unit] above — that is where systemd reads them.)
 Restart=on-failure
 RestartSec=5
+# Signal the supervisor once; it forwards to the API for its graceful drain. At timeout, mixed
+# mode still kills every remaining process in the cgroup.
+KillMode=mixed
 
 # --- Sandboxing / hardening ---
 NoNewPrivileges=yes

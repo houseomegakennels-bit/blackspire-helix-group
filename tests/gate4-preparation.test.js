@@ -340,6 +340,8 @@ test('the plan separates preparation from activation and executes nothing', () =
   assert.match(preparation, /\.complete/, 'rollback requires a complete snapshot marker');
   assert.match(preparation, /refusing unsafe installed unit path/, 'symlinked or non-regular installed units fail closed');
   assert.match(preparation, /missing or ambiguous trusted before-state/, 'rollback validates exactly one record for every unit before restoring any');
+  assert.match(preparation, /unsafe rollback destination/, 'rollback validates every destination before removing prepared state');
+  assert.match(preparation, /install -T -o root -g root -m 0644/, 'restore cannot reinterpret a destination as a directory');
   assert.ok(preparation.indexOf('test -f ' + path.join('/var/backups/blackspire-command', `gate4-${'a'.repeat(40)}`, '.complete')) < preparation.indexOf('rm -f ' + host.envPath),
     'all rollback evidence is validated before any prepared resource is removed');
   assert.match(preparation, /systemctl daemon-reload/);
