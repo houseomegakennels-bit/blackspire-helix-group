@@ -13,17 +13,19 @@ export async function codexCliAvailable({ env = process.env, deadline = null, sh
   const version = await runBoundedProbe('codex', ['--version'], { env: sanitizedCodexEnvironment(env), deadline, shouldCancel, spawnImpl, timeoutMs });
   if (version.status !== 0) { codexCapability = { fingerprint, state: 'unavailable', checkedAt: Date.now() }; return false; }
   const doctor = await runBoundedProbe('codex', ['doctor', '--json'], { env: sanitizedCodexEnvironment(env), deadline, shouldCancel, spawnImpl, timeoutMs });
-  if (doctor.status !== 0) { codexCapability = { fingerprint, state: 'unavailable', checkedAt: Date.now() }; return false; }
+  if (doctor.status === 124 || doctor.signal !== null) { codexCapability = { fingerprint, state: 'unavailable', checkedAt: Date.now() }; return false; }
   try {
     const report = JSON.parse(doctor.stdout || '{}');
-    const auth = report?.checks?.['auth.credentials'];
-    const available = auth?.status === 'ok' && /auth is configured/i.test(auth?.summary || '');
+    const checks = report?.checks;
+    const available = report?.schemaVersion === 1
+      && checks?.['auth.credentials']?.status === 'ok'
+      && checks?.['network.provider_reachability']?.status === 'ok'
+      && checks?.['network.websocket_reachability']?.status === 'ok';
     codexCapability = { fingerprint, state: available ? 'verified' : 'unavailable', checkedAt: Date.now() };
     return available;
   } catch {
-    const available = /auth is configured/i.test(doctor.stdout);
-    codexCapability = { fingerprint, state: available ? 'verified' : 'unavailable', checkedAt: Date.now() };
-    return available;
+    codexCapability = { fingerprint, state: 'unavailable', checkedAt: Date.now() };
+    return false;
   }
 }
 

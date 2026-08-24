@@ -84,7 +84,7 @@ case "\${1:-}" in
     ;;
   doctor)
     if [[ "\${2:-}" == "--json" ]]; then
-      printf '{"checks":{"auth.credentials":{"status":"ok","summary":"auth is configured"}}}\\n'
+      printf '{"schemaVersion":1,"checks":{"auth.credentials":{"status":"ok"},"network.provider_reachability":{"status":"ok"},"network.websocket_reachability":{"status":"ok"},"installation":{"status":"fail"}}}\\n'
     else
       printf 'auth is configured\\n'
     fi
