@@ -23,6 +23,13 @@
 - An old-owner heartbeat returned false and an ownership-qualified old-owner completion changed neither state nor summary. **Final task:** `completed`; **provider attempt:** `codex_dispatch_task_161c20ed2043b0a3`, `completed`, 19,809 ms; **usage/accounting:** `subscription_unmetered`, NULL cost; **restart:** worker stop/start; **replay count:** 1.
 - Retry count stayed 0, the replacement claim remained authoritative, no task-specific process survived, and public health reported the worker idle on generation `30827cc914a0497a8f0faa0ea900845a` at exact deployment `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
 
+### Dispatch crash to outcome_unknown with no replay — PASS
+
+- **Task ID:** `task_973451e232b1a6d5`; **start:** `2026-08-24T14:57:13.642Z`; **expected:** loss of the worker after a durable Codex marker produces an uncertain terminal attempt and never starts a replacement external execution.
+- Attempt `codex_dispatch_task_973451e232b1a6d5` was observed `dispatching` at `2026-08-24T14:57:15.908Z`. The worker supervisor generation `30827cc914a0497a8f0faa0ea900845a` was then killed with SIGKILL through systemd; `KillMode=mixed` contained its service cgroup, no task-specific process remained, and systemd restarted it as generation `2a6662f968cc4ca18274f2be211b4644`.
+- The stranded task lease alone was aged beyond 300 seconds. Recovery found the existing marker, finalized it as `outcome_unknown`, atomically persisted `subscription_unmetered` with NULL cost, recorded `codex_dispatch_replay_prevented`, and failed the task with operator-intervention-required semantics.
+- **Final task:** `failed` with canonical attempt state `outcome_unknown`; **claim behavior:** replacement generation reclaimed the stale lease; **restart:** worker crash/restart; **replay count:** 1 total attempt. After an additional three-second poll window retry count remained 0, attempt count remained 1, replay-prevented evidence count remained 1, and the public worker was idle/healthy.
+
 ## 2026-08-24 — Canonical production cutover and real Codex completion (Codex)
 
 - Integrated the existing current-main lanes in dependency order: topology PR #105, immutable Actions PR #107, independent release evidence PR #109, PWA observability PR #108, and truthful VPS audit PR #106. Follow-up PRs #110-#113 corrected live-discovered Codex readiness and coherent runtime-profile defects with focused regression coverage and exact CI before deployment.
