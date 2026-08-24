@@ -2,7 +2,7 @@
 
 ## Jarvis canonical operator observability in progress (2026-08-24 UTC)
 
-The PWA observability branch renders server-authoritative readiness, worker heartbeat/generation state, provider/model evidence, and `outcome_unknown` as a terminal operator-review state with automatic retry blocked. The authenticated session surface now returns only the persisted principal bound by the server to the session, and Jarvis displays that principal and session expiry without accepting browser-supplied identity. Focused PWA/API validation passes 44/44. This branch is not merged or deployed; production and live Jarvis-to-Codex execution remain unverified.
+The PWA observability branch renders server-authoritative health and readiness distinctly, including degraded and unreachable API states; worker state, heartbeat age, and a shortened non-secret systemd generation identifier; provider/model evidence; and `outcome_unknown` as a terminal operator-review state with automatic retry blocked. The authenticated session surface returns only the persisted principal bound by the server to the session, and Jarvis displays that principal and session expiry without accepting browser-supplied identity. Deterministic UI fixtures cover healthy/degraded/offline API, ready/not-ready, stale/stopped/current-generation worker state, every canonical task state, and the no-replay unknown-outcome contract. Focused PWA/API validation passes 45/45. This branch is not merged or deployed; production and live Jarvis-to-Codex execution remain unverified.
 
 ## Workspace authorization remediation in review (2026-08-24 UTC)
 

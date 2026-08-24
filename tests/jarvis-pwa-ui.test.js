@@ -159,7 +159,29 @@ test('System view renders fresh server-authoritative readiness and worker heartb
   assert.match(html, /id="sysReady"/);
   assert.match(appScript, /r\?\.dependencies\?\.worker \|\| h\?\.dependencies\?\.worker/);
   assert.match(appScript, /heartbeatAgeMs/);
+  assert.match(appScript, /generationId/);
   assert.match(appScript, /if \(store\.view === 'system'\) \{ const \{ body \} = await api\.ready/, 'readiness refreshes on every System poll');
+});
+
+test('system-state helpers distinguish degraded, offline, stale, dead, and current worker generations', () => {
+  const helperSource = appScript.slice(0, appScript.indexOf('/* ---------- Helix Core state ---------- */'))
+    + '\nglobalThis.__systemState = { controlPlaneLabel, readinessLabel, workerLabel };';
+  const context = {
+    document: { getElementById: () => null },
+    window: { addEventListener() {} },
+    location: { hash: '' },
+    console,
+  };
+  vm.runInNewContext(helperSource, context, { filename: 'jarvis-system-state.js' });
+  const helpers = context.__systemState;
+  assert.equal(helpers.controlPlaneLabel({ health: { ok: true }, offline: false }), 'Healthy');
+  assert.equal(helpers.controlPlaneLabel({ health: { ok: false }, offline: false }), 'Degraded');
+  assert.equal(helpers.controlPlaneLabel({ health: { ok: true }, offline: true }), 'Unreachable');
+  assert.equal(helpers.readinessLabel({ ok: false }), 'Not ready');
+  assert.equal(helpers.workerLabel({ required: true, ok: false, state: 'stale', heartbeatAgeMs: 31_400, generationId: 'a'.repeat(32) }),
+    'Worker unavailable · stale · heartbeat 31s ago · generation aaaaaaaa');
+  assert.equal(helpers.workerLabel({ required: true, ok: false, state: 'stopped', heartbeatAgeMs: null, generationId: null }),
+    'Worker unavailable · stopped');
 });
 
 test('session identity is displayed only from the server-bound canonical principal', () => {

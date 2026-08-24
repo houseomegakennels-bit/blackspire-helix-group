@@ -48,6 +48,19 @@ const statusInfo = (task) => {
   if (task.status === 'failed' && task.policy_decision === 'denied') return { label: 'Denied by policy', tone: 'bad', core: 'denied' };
   return base;
 };
+const controlPlaneLabel = ({ health, offline }) => offline ? 'Unreachable' : health ? (health.ok ? 'Healthy' : 'Degraded') : '—';
+const readinessLabel = (ready) => ready ? (ready.ok ? 'Ready' : 'Not ready') : '—';
+const workerLabel = (worker) => {
+  if (!worker) return 'Worker state not reported';
+  const availability = worker.required
+    ? (worker.ok ? 'Worker ' + worker.state : 'Worker unavailable · ' + worker.state)
+    : 'Worker not required · ' + worker.state;
+  const heartbeat = Number.isFinite(worker.heartbeatAgeMs) ? ' · heartbeat ' + Math.round(worker.heartbeatAgeMs / 1000) + 's ago' : '';
+  const generation = typeof worker.generationId === 'string' && /^[a-f0-9]{32}$/.test(worker.generationId)
+    ? ' · generation ' + worker.generationId.slice(0, 8)
+    : '';
+  return availability + heartbeat + generation;
+};
 const EVENT_LABELS = {
   'input.received': ['Input received', 'ion'],
   'policy.allowed': ['Policy allowed', 'ok'],
@@ -527,8 +540,8 @@ function renderSystem() {
   const h = store.health; const r = store.ready;
   const identity = deploymentIdentity(h);
   const stale = canonicalSyncStale(store.lastSync, store.pollMs);
-  byId('sysApi').textContent = h?.ok ? 'Healthy' : store.offline ? 'Unreachable' : '—';
-  byId('sysReady').textContent = r ? (r.ok ? 'Ready' : 'Not ready') : '—';
+  byId('sysApi').textContent = controlPlaneLabel({ health: h, offline: store.offline });
+  byId('sysReady').textContent = readinessLabel(r);
   byId('sysLink').textContent = store.offline ? 'Offline — reconnecting with backoff' : 'Connected';
   byId('sysStop').textContent = h ? (h.emergencyStop ? 'ACTIVE' : 'Inactive') : '—';
   byId('sysSafeMode').textContent = 'Not reported by control plane';
@@ -544,10 +557,7 @@ function renderSystem() {
   byId('sysSync').textContent = store.lastSync ? fmtTime(store.lastSync) : '—';
   byId('sysPwa').textContent = store.swWaiting ? 'Update ready — reload to apply' : 'Current';
   const worker = r?.dependencies?.worker || h?.dependencies?.worker;
-  const heartbeat = Number.isFinite(worker?.heartbeatAgeMs) ? ' · heartbeat ' + Math.round(worker.heartbeatAgeMs / 1000) + 's ago' : '';
-  byId('sysHermes').textContent = worker
-    ? (worker.required ? (worker.ok ? 'Worker ' + worker.state : 'Worker unavailable · ' + worker.state) : 'Worker not required · ' + worker.state) + heartbeat
-    : 'Worker state not reported';
+  byId('sysHermes').textContent = workerLabel(worker);
   const deploymentBar = byId('deploymentBar');
   deploymentBar.classList.toggle('verified', identity.verified);
   deploymentBar.textContent = identity.verified

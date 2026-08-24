@@ -897,3 +897,7 @@
 ## 2026-08-24 — Jarvis server-bound principal observability (Codex)
 
 - Extended the existing PWA observability slice so `/api/auth/session` returns the currently persisted principal resolved from the server-bound session, never from browser input. Jarvis displays that canonical principal and session expiry, clears both on logout/expiry, and retains server authority over all permissions. Focused Jarvis PWA/API validation passed 44/44 under Node 22.23.1. No deployment, production mutation, provider call, Telegram connection, or credential read occurred.
+
+## 2026-08-24 — Jarvis degraded/runtime-generation fixtures (Codex)
+
+- Corrected the System view so a reachable control plane whose canonical health verdict is false displays `Degraded` instead of an ambiguous dash, while network failure remains `Unreachable`. Worker presentation now includes the current shortened, non-secret systemd generation identifier when the server reports a valid value, alongside canonical state and heartbeat age. Deterministic fixtures pin healthy/degraded/offline API, ready/not-ready, stale and stopped required workers, and current-generation rendering; focused Jarvis PWA/API validation passed 45/45 under Node 22.23.1 and `git diff --check` passed. PR #105 and production were not changed; no deployment, provider call, credential read, or production mutation occurred.
