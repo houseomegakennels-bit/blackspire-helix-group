@@ -16,6 +16,13 @@
 - **Claim behavior:** the task retained its single worker/claim ownership record; no replacement claim or attempt appeared. **Final task:** `cancelled`; **usage/accounting:** `subscription_unmetered`, NULL cost, atomically linked to the attempt; **restart:** none during this case; **replay count:** 1 total attempt.
 - Three seconds after settlement the task was still cancelled with retry count 0, no task-specific process remained, the worker was idle on generation `fc3ffd52173e4994a385c3238f85c72b`, and public health remained healthy. No `task.failed` or `task.completed` terminal overwrite occurred.
 
+### Stale undispatched claim recovery and old-claim rejection — PASS
+
+- **Task ID:** `task_161c20ed2043b0a3`; **start:** `2026-08-24T14:55:05.577Z`; **expected:** a replacement worker reclaims an expired lease that has no dispatch marker, changes the claim token, executes once, and rejects every old-owner write.
+- With the worker stopped, the canonical claim function assigned the isolated queued task to synthetic `acceptance-lost-worker`; no provider attempt existed. Only that task's claim/heartbeat timestamps were aged 601 seconds to simulate loss beyond the 300-second lease. The restarted production worker reclaimed it at `2026-08-24T14:55:29.645Z`; the SHA-256 token fingerprints changed from `2e0fb033d59882ee` to `87bf0d5eadb77e14` (tokens themselves are not recorded).
+- An old-owner heartbeat returned false and an ownership-qualified old-owner completion changed neither state nor summary. **Final task:** `completed`; **provider attempt:** `codex_dispatch_task_161c20ed2043b0a3`, `completed`, 19,809 ms; **usage/accounting:** `subscription_unmetered`, NULL cost; **restart:** worker stop/start; **replay count:** 1.
+- Retry count stayed 0, the replacement claim remained authoritative, no task-specific process survived, and public health reported the worker idle on generation `30827cc914a0497a8f0faa0ea900845a` at exact deployment `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
+
 ## 2026-08-24 — Canonical production cutover and real Codex completion (Codex)
 
 - Integrated the existing current-main lanes in dependency order: topology PR #105, immutable Actions PR #107, independent release evidence PR #109, PWA observability PR #108, and truthful VPS audit PR #106. Follow-up PRs #110-#113 corrected live-discovered Codex readiness and coherent runtime-profile defects with focused regression coverage and exact CI before deployment.
