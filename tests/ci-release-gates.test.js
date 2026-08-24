@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { computeArtifactDigest, writeReleaseEvidence } from '../packages/shared/release-evidence.js';
 
 const workflow = fs.readFileSync('.github/workflows/blackspire-ci.yml', 'utf8');
 const validator = path.resolve('scripts/ci-validate-whitespace-range.sh');
@@ -91,8 +92,39 @@ test('CI publishes commit, tree, runtime, and run identity metadata', () => {
 test('CI release artifact verifier cross-checks every authoritative identity source', () => {
   const verifier = fs.readFileSync('scripts/verify-ci-release-artifact.js', 'utf8');
   for (const field of ['build-metadata.json', 'RELEASE_EVIDENCE.json', 'COMMIT_SHA', 'GITHUB_SHA',
-    'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'artifactDigest', 'nodeVersion', 'buildId']) {
+    'GITHUB_REPOSITORY', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'artifactDigest', 'nodeVersion',
+    'expectedEnvironment', 'repository', 'buildId', 'computeArtifactDigest']) {
     assert.match(verifier, new RegExp(field.replace(/[{}^$.*+?()[\]\\|]/g, '\\$&')));
   }
   assert.match(verifier, /process\.exit\(1\)/);
+  assert.doesNotMatch(workflow, /require\('\.\/ci-artifacts\/release-package\/RELEASE_EVIDENCE\.json'\).*artifact\.digest/,
+    'CI metadata must independently hash the package rather than copy its manifest digest');
+});
+
+test('CI release artifact verifier independently detects package-tree mutation', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-ci-artifact-'));
+  const artifact = path.join(root, 'release-package');
+  fs.mkdirSync(artifact);
+  const commit = git(process.cwd(), 'rev-parse', 'HEAD');
+  const tree = git(process.cwd(), 'rev-parse', 'HEAD^{tree}');
+  fs.writeFileSync(path.join(artifact, 'COMMIT_SHA'), `${commit}\n`);
+  fs.writeFileSync(path.join(artifact, 'package.json'), '{"version":"0.1.0"}\n');
+  const common = { GITHUB_SHA: commit, GITHUB_REPOSITORY: 'houseomegakennels-bit/blackspire-helix-group',
+    GITHUB_RUN_ID: '12345', GITHUB_RUN_ATTEMPT: '2' };
+  const manifest = writeReleaseEvidence(artifact, { artifactRoot: artifact, commitSha: commit,
+    expectedEnvironment: 'disposable-staging', buildTimestamp: '2026-08-24T00:00:00.000Z',
+    sourceRef: 'refs/pull/1/merge', buildId: '12345.2', ciProvider: 'github-actions', ciRunId: '12345',
+    artifactName: `blackspire-command-${commit}`, packageVersion: '0.1.0', nodeVersion: process.version,
+    repository: common.GITHUB_REPOSITORY });
+  fs.writeFileSync(path.join(root, 'build-metadata.json'), `${JSON.stringify({ repository: common.GITHUB_REPOSITORY,
+    environment: 'disposable-staging', commit, tree, artifactDigest: computeArtifactDigest(artifact),
+    node: process.version, runId: '12345', runAttempt: '2' })}\n`);
+  const verify = () => spawnSync(process.execPath, ['scripts/verify-ci-release-artifact.js', root],
+    { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...common } });
+  assert.equal(verify().status, 0);
+  fs.writeFileSync(path.join(artifact, 'package.json'), '{"version":"tampered"}\n');
+  const rejected = verify();
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /release artifact verification failed/);
+  assert.notEqual(computeArtifactDigest(artifact), manifest.artifact.digest);
 });

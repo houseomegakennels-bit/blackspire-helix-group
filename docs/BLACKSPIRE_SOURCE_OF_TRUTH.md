@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Release evidence reconstructed on current main (2026-08-24 UTC)
+
+Branch `fix/release-evidence-current-main` reconstructs the final corrected unique release-evidence tree from historical PR #97 on current main and adds only PR #98's unique CI artifact cross-check. It binds repository, checkout commit/tree, packaged `COMMIT_SHA`, package-tree digest, Node runtime, GitHub run ID/attempt, expected environment, deployment record, and rollback evidence. The CI metadata digest is independently recomputed from packaged bytes rather than copied from `RELEASE_EVIDENCE.json`; a real mutation regression proves package tampering fails the cross-check. Focused validation passes 116/116 for the recovered release/rollback contract and 36/36 for CI, evidence, and deployment-record integration. This branch is not merged or deployed and must be reconciled onto new main after PR #105 lands.
+
 ## Production Hermes merged; workspace authorization in review (2026-08-24 UTC)
 
 PR #103 merged as `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from independently reviewed exact head `dae91962f992016cf0dcde823643bad42130952a`. Actions and Vercel were green, the exact-head adversarial Codex review reported no major issues, and the four superseded P1 threads were individually verified and resolved. The merge tree is byte-identical to the reviewed head. This proves the production Codex source path is merged; production deployment and a real Jarvis-pipeline Codex smoke remain unverified.

@@ -2,6 +2,8 @@
 
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 
+0. **IN REVIEW — current-main release evidence reconstruction.** After PR #105 merges, reconcile `fix/release-evidence-current-main` onto new main, preserve #105's Gate 4 semantics, run focused release/topology integration tests, obtain exact-head CI and review, and merge before building a production candidate. Do not merge historical PR #97 or #98 directly.
+
 1. Complete exact-head adversarial review, CI, and merge of `fix/workspace-authorization`, emphasizing cross-workspace IDOR, task-ID substitution, approval/evidence/conversation leakage, permission confusion, and runtime bypass.
 2. Provision and verify the configured production operator principal and active workspace grants as a separately controlled database operation before activation; configuration never substitutes for a persisted grant.
 3. Repair and verify canonical API/worker service topology, then complete PWA observability, Telegram canonical intake, and release integrity before rollback-safe deployment.

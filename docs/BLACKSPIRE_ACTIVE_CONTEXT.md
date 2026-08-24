@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Current-main release evidence reconstruction (2026-08-24 UTC)
+
+The corrected unique #97 release-evidence series and #98 artifact cross-check are reconstructed on current main without their stale duplicated ancestry. The recovered contract passes 116 focused release/rollback tests. Its CI cross-check now independently hashes the packaged tree and binds repository plus environment instead of copying the manifest digest and comparing that value back to its source; focused CI/evidence/deployment-record validation passes 36/36, including a real post-package mutation rejection. Merge remains blocked on reconciliation after #105 and exact-head review/CI.
+
 ## Workspace authorization remediation in review (2026-08-24 UTC)
 
 PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.

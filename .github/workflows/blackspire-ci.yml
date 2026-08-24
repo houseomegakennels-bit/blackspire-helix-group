@@ -121,9 +121,9 @@ jobs:
           node_version="$(node --version)"
           commit_sha="$(git rev-parse HEAD)"
           tree_sha="$(git rev-parse HEAD^{tree})"
-          artifact_digest="$(node -e "const m=require('./ci-artifacts/release-package/RELEASE_EVIDENCE.json'); process.stdout.write(m.artifact.digest)")"
-          printf '{"commit":"%s","tree":"%s","artifactDigest":"%s","node":"%s","runId":"%s","runAttempt":"%s"}\n' \
-            "$commit_sha" "$tree_sha" "$artifact_digest" "$node_version" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+          artifact_digest="$(node --input-type=module -e "import {computeArtifactDigest} from './packages/shared/release-evidence.js'; process.stdout.write(computeArtifactDigest('ci-artifacts/release-package'))")"
+          printf '{"repository":"%s","environment":"disposable-staging","commit":"%s","tree":"%s","artifactDigest":"%s","node":"%s","runId":"%s","runAttempt":"%s"}\n' \
+            "$GITHUB_REPOSITORY" "$commit_sha" "$tree_sha" "$artifact_digest" "$node_version" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
             > ci-artifacts/build-metadata.json
 
       - name: Cross-check packaged release and CI metadata

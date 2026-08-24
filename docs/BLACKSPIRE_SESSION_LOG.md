@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — release evidence reconstructed without tautological digest verification (Codex)
+
+- Reapplied the final corrected unique #97 release-evidence series to current main in an isolated worktree, preserving both sides of two append-only session-log conflicts. Focused release, deployment identity/record, post-deploy replay, restore, mutation, and CI validation passed 116/116.
+- Recovered only #98's unique CI artifact cross-check. Its historical implementation copied `artifact.digest` from the manifest into build metadata and compared it back to the same manifest. The reconstruction independently recomputes the packaged tree digest and additionally binds repository and expected environment. A real package mutation is rejected; focused CI/evidence/deployment-record validation passes 36/36.
+- No production service, database, container, proxy, release link, environment, provider, or credential changed. The branch remains unmerged and must be reconciled after PR #105 lands.
+
 ## 2026-08-24 — PR #103 merged and workspace route authorization implemented (Codex)
 
 - Recovered no valuable local work newer than PR #103 exact head `dae91962f992016cf0dcde823643bad42130952a`. Verified exact-head Actions, Vercel, and clean adversarial Codex review; reproduced 54 focused ownership/Codex/preflight checks; answered and resolved the four outdated P1 threads individually; and merged with expected-head protection as `029376c4e47451c6426eb4cbf7c3f9e622a2170b`. The merge tree is byte-identical to the reviewed head. No deployment or real provider smoke occurred.
