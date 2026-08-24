@@ -1,5 +1,9 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — Current VPS read-only audit (Codex)
+
+- Recorded the actual host state without mutation: public Jarvis still proxies to staging release `f0a7b66` on 8788; legacy July Docker API/worker containers own wildcard 8787 and a separate named database volume; canonical production systemd is inactive with only the historical API unit installed; worker/target units and `current` are absent. Public health/readiness lack deployment and worker-generation evidence and report production providers disabled. Configuration inspection was limited to file metadata and key presence: no operator principal ID, production provider enablement, or `CODEX_HOME` is configured, and no secret value or Codex authentication state was read or recorded. Deployment remains blocked pending reviewed topology merge, authorization provisioning, private service auth, database backup/rollback evidence, exact-main release, Gate 4 readiness, and real Jarvis-to-Codex proof.
+
 ## 2026-08-24 — PR #103 merged and workspace route authorization implemented (Codex)
 
 - Recovered no valuable local work newer than PR #103 exact head `dae91962f992016cf0dcde823643bad42130952a`. Verified exact-head Actions, Vercel, and clean adversarial Codex review; reproduced 54 focused ownership/Codex/preflight checks; answered and resolved the four outdated P1 threads individually; and merged with expected-head protection as `029376c4e47451c6426eb4cbf7c3f9e622a2170b`. The merge tree is byte-identical to the reviewed head. No deployment or real provider smoke occurred.

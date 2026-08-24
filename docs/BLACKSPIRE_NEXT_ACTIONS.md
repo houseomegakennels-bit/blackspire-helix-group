@@ -1,5 +1,7 @@
 # Blackspire Next Actions
 
+0. **BLOCKED BEFORE DEPLOYMENT — reconcile observed VPS runtime.** Preserve the July Docker and staging state while selecting the authoritative production database, provisioning the persisted operator principal/workspace grants, preparing a private service-accessible `CODEX_HOME`, recording backup/rollback evidence, installing the reviewed three-unit topology only after PR #105 merges, and switching nginx only after activation-generation readiness succeeds. See `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`.
+
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 
 1. Complete exact-head adversarial review, CI, and merge of `fix/workspace-authorization`, emphasizing cross-workspace IDOR, task-ID substitution, approval/evidence/conversation leakage, permission confusion, and runtime bypass.

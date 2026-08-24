@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Read-only live VPS audit (2026-08-24 UTC)
+
+The public Jarvis domain still routes to the historical staging API on loopback port 8788. Canonical production systemd is inactive: only the historical API unit is installed, while the worker unit and target are absent and `/opt/blackspire-command/current` does not exist. Legacy July Docker API/worker containers still own wildcard port 8787 and a separate named database volume. Public health/readiness omit current deployment and worker-generation evidence and report production providers disabled. The production environment has no configured operator principal ID or `CODEX_HOME`. Full sanitized evidence and blockers are recorded in `docs/VPS_CURRENT_STATE_AUDIT_2026-08-24.md`; no live state was mutated.
+
 ## Workspace authorization remediation in review (2026-08-24 UTC)
 
 PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.
