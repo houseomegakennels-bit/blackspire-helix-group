@@ -4,8 +4,8 @@ set -euo pipefail
 repo_root="${BLACKSPIRE_RELEASE_DIR:-$(git rev-parse --show-toplevel)}"
 [[ -f "$repo_root/.release-complete" || -z "${BLACKSPIRE_RELEASE_DIR:-}" ]] || { echo 'production release is incomplete' >&2; exit 1; }
 cd "$repo_root"
-service_role="${1:-api}"
-case "$service_role" in api|worker) ;; *) echo 'usage: start-production.sh [api|worker]' >&2; exit 2 ;; esac
+service_role="${1:-}"
+case "$service_role" in api|worker) ;; *) echo 'usage: start-production.sh <api|worker>' >&2; exit 2 ;; esac
 bash scripts/verify-environment.sh vps-production "$service_role"
 # shellcheck source=scripts/lib/node-bin.sh
 . scripts/lib/node-bin.sh

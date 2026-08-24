@@ -414,6 +414,18 @@ ROLLBACK OF PREPARATION (safe; production was never started)
       echo "missing or ambiguous trusted before-state for \$unit_path; refusing rollback" >&2; exit 1
     fi
   done
+  # Preparation creates these three paths from an absent before-state. Validate every removal
+  # destination before deleting any of them, so drift to a directory, symlink, or special file
+  # cannot turn rollback into a partial mutation.
+  if test -e $env_file || test -L $env_file; then
+    test -f $env_file && test ! -L $env_file || { echo 'unsafe rollback destination: $env_file' >&2; exit 1; }
+  fi
+  if test -e $workspace_root || test -L $workspace_root; then
+    test -d $workspace_root && test ! -L $workspace_root || { echo 'unsafe rollback destination: $workspace_root' >&2; exit 1; }
+  fi
+  if test -e $logrotate_file || test -L $logrotate_file; then
+    test -f $logrotate_file && test ! -L $logrotate_file || { echo 'unsafe rollback destination: $logrotate_file' >&2; exit 1; }
+  fi
   # Only after every rollback input is valid may any prepared state be removed or replaced.
   rm -f $env_file
   rm -rf $workspace_root
