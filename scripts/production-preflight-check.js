@@ -27,6 +27,8 @@ const asJson = process.argv.includes('--json');
 const strict = process.argv.includes('--strict');
 
 const UNIT_PATH = 'ops/runtime-ownership/blackspire-command.service';
+const WORKER_UNIT_PATH = 'ops/runtime-ownership/blackspire-command-worker.service';
+const TARGET_PATH = 'ops/runtime-ownership/blackspire-command.target';
 const INSTALLED_UNIT_PATH = '/etc/systemd/system/blackspire-command.service';
 const NODE_BIN_LIB = 'scripts/lib/node-bin.sh';
 
@@ -70,6 +72,8 @@ const REQUIRED_TOOLING = [
   'ops/blackspire-command-logrotate.conf',
   'ops/reverse-proxy/blackspire-command.nginx.conf',
   'ops/runtime-ownership/OWNERSHIP_MAP.md',
+  WORKER_UNIT_PATH,
+  TARGET_PATH,
 ];
 
 const findings = [];
@@ -131,6 +135,8 @@ const pinnedNodeVersion = (read('.node-version') || '').trim();
 }
 
 const unit = read(UNIT_PATH);
+const workerUnit = read(WORKER_UNIT_PATH);
+const runtimeTarget = read(TARGET_PATH);
 if (unit === null) {
   record('unit-present', false, 'source', `${UNIT_PATH} is missing`);
 } else {
@@ -191,6 +197,22 @@ if (unit === null) {
   const startLimit = /StartLimitBurst=\d+/.test(unit) && /StartLimitIntervalSec=\d+/.test(unit);
   record('unit-restart-cap', startLimit, 'source',
     startLimit ? 'restart storm cap present' : 'StartLimitIntervalSec/StartLimitBurst must cap restart storms');
+}
+
+{
+  const apiIsolated = unit !== null && /^ExecStart=.*production-supervisor\.js --api-only$/m.test(unit);
+  const workerIsolated = workerUnit !== null && /^ExecStart=.*production-supervisor\.js --worker-only$/m.test(workerUnit);
+  const targetStartsBoth = runtimeTarget !== null && /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m.test(runtimeTarget);
+  const lifecycleIndependent = unit !== null && workerUnit !== null &&
+    !/Requires=blackspire-command-worker\.service/.test(unit) && !/Requires=blackspire-command\.service/.test(workerUnit);
+  const workerHardening = workerUnit !== null && ['User=blackspire', 'Group=blackspire', 'NoNewPrivileges=yes',
+    'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'ReadWritePaths=/opt/blackspire-command/shared',
+    'CapabilityBoundingSet=', 'AmbientCapabilities=', 'TimeoutStopSec=35'].every((directive) => workerUnit.includes(directive));
+  const complete = apiIsolated && workerIsolated && targetStartsBoth && lifecycleIndependent && workerHardening;
+  record('service-topology', complete, 'source',
+    complete
+      ? 'API and worker have independent supervisors and restarts under one non-coupling target'
+      : 'API and hardened worker must use role-specific supervisors under a target without cross-service Requires coupling');
 }
 
 // --- Startup-path interpreter resolution ----------------------------------------------------

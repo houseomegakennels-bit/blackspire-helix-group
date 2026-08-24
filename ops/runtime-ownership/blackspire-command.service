@@ -6,9 +6,10 @@
 # non-root blackspire user from the immutable current release.
 
 [Unit]
-Description=Blackspire Command control plane (durable production runtime)
+Description=Blackspire Command API (durable production runtime)
 After=network-online.target
 Wants=network-online.target
+PartOf=blackspire-command.target
 # Restart-storm cap: modern systemd honors StartLimit* only in [Unit] (not [Service]). At
 # five failed starts within ten minutes the unit enters failed state and stops for operator
 # review instead of looping. Paired with Restart=on-failure/RestartSec=5 in [Service].
@@ -54,7 +55,7 @@ ExecStartPre=/usr/bin/env bash scripts/verify-environment.sh vps-production
 # scripts/restore.js), which does not exist before Node 22.5, so an unpinned unit fails every
 # start, exhausts StartLimitBurst, and leaves the unit failed. The restricted staging unit
 # already pins this same absolute path; production must match it.
-ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node scripts/production-supervisor.js
+ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node scripts/production-supervisor.js --api-only
 
 # --- Service-isolated structured logs ---
 # systemd creates this directory with the runtime identity before ExecStart. The application and
@@ -94,4 +95,4 @@ AmbientCapabilities=
 # executable memory and would crash under it.
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=blackspire-command.target

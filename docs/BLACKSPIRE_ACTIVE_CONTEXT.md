@@ -1,10 +1,10 @@
 # Blackspire Active Context
 
-## Workspace authorization remediation in review (2026-08-24 UTC)
+## API/worker service topology in progress (2026-08-24 UTC)
 
-PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.
+PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b`; PR #104 workspace authorization is merged at `31a716961b174496e5d343a8e4586017204b4990` from reviewed head `5e877a8e6f7ff2af11c61e76bb1234b8623e50b7`. Production and a real Jarvis-pipeline Codex smoke remain unverified.
 
-The current branch protects persisted-workspace operator routes with the existing principal/grant system. It filters listings, hides cross-workspace object existence, scopes runtime evidence, binds actions to their required permissions, and makes production refuse a missing or malformed configured operator principal. First review found and the branch corrected four P1s involving idempotency disclosure, conversation binding, the PWA stop payload, and global-stop authority. Focused regressions pass. Fresh exact-head review and merge are next; no production state changed.
+The current branch retains `apps/worker/worker.js` and gives API and worker separate role-specific production supervisors and systemd restart lifecycles under `blackspire-command.target`. The worker skips the API port-availability probe, drains within a bounded systemd stop window, shares the immutable release/environment/database identity, and does not carry a cross-service `Requires` edge that would kill its peer. Source preflight is green; focused topology tests pass. This branch is not reviewed, merged, installed, or deployed, and no host service changed.
 
 ## Production Hermes execution final correction in progress (2026-08-17 UTC)
 

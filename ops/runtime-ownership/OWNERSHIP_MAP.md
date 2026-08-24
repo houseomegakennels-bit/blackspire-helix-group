@@ -34,10 +34,10 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 | `/opt/blackspire-command/shared/database/` | `blackspire:blackspire` | `0700` | SQLite `command.sqlite` + WAL/SHM. Runtime read/write. This is the DB parent `verifyVpsRuntime` checks. |
 | `/opt/blackspire-command/shared/evidence/` | `blackspire:blackspire` | `0700` | Durable sanitized evidence/audit. Runtime read/write. |
 | `/opt/blackspire-command/shared/backups/` | `blackspire:blackspire` | `0700` | `scripts/backup.js` default destination; SHA-256 sidecars. Runtime/backup read/write. |
-| `/var/log/blackspire-command/` | `blackspire:blackspire` | `0750` | Created by systemd `LogsDirectory`; contains only this unit's combined JSON stdout/stderr. |
+| `/var/log/blackspire-command/` | `blackspire:blackspire` | `0750` | Created by systemd `LogsDirectory`; contains isolated API and worker JSON logs. |
 | `/etc/blackspire/` | `root:blackspire` | `0750` | Config dir. |
 | `/etc/blackspire/command.env` | `root:blackspire` | `0640` | **Secrets** (`COMMAND_ADMIN_TOKEN`, `SESSION_SECRET`, ...). Group-readable by runtime only; never world-readable; never committed to Git. |
-| `/etc/systemd/system/blackspire-command.service` | `root:root` | `0644` | Unit file; only root manages. |
+| `/etc/systemd/system/blackspire-command.service`, `blackspire-command-worker.service`, `blackspire-command.target` | `root:root` | `0644` | Reviewed API, worker, and coordination units; only root manages. |
 
 ### Directories that MUST remain root-owned (runtime must NOT own or write)
 
@@ -55,11 +55,10 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 
 ## Logging
 
-The app, worker, and supervisor log line-delimited JSON to stdout/stderr. The production unit pins
-both streams to `/var/log/blackspire-command/command.log`, with systemd creating the isolated
-directory and `UMask=0027`. The reviewed logrotate policy names that one file exactly and uses
-`copytruncate` because the supervisor holds the descriptor. It never rotates Docker-wide or
-unrelated host logs.
+The app, worker, and role-specific supervisors log line-delimited JSON to stdout/stderr. The API
+writes `/var/log/blackspire-command/command.log`; the worker writes `worker.log`. Systemd creates
+the isolated directory with `UMask=0027`. The reviewed logrotate policy names both files exactly,
+uses `copytruncate`, and never rotates Docker-wide or unrelated host logs.
 
 ## How deployment tooling gains only what it needs
 
@@ -82,7 +81,7 @@ unrelated host logs.
 |---|---|---|
 | `verifyVpsRuntime` | uid ≠ 0; `BLACKSPIRE_RUNTIME_USER` == effective user; DB parent exists; each of `[dbParent, shared/database, shared/evidence, shared/backups]` writable **and** owned by uid; PORT 1–65535; bounded timeouts | Runtime is `blackspire` (non-root); the four persistent dirs are `blackspire`-owned `0700`; DB parent `shared/database` exists; `releases/*` is excluded from the writable set so its `root` ownership does not fail the gate. |
 | `verify-environment.sh vps-production` | non-root; `BLACKSPIRE_RUNTIME_USER` ≠ root; DB parent exists; PORT valid; timeouts valid; no implicit migrations | Same identity and layout; env profile sets these. |
-| `scripts/production-supervisor.js` | runs `verifyVpsRuntime` then spawns api/worker | Runs as `blackspire`; passes the gate before spawn. |
+| `scripts/production-supervisor.js` | runs `verifyVpsRuntime`, validates deployment identity, then spawns exactly the selected API or worker role | Each independent service runs as `blackspire`; both pass the same gate before spawn. |
 | `scripts/backup.js` | default dest = `shared/backups` (never inside a release, outside the DB dir); target not a symlink; 0700/0600 | `shared/database` → `defaultBackupDir` returns `shared/backups`; `shared/backups` is outside `shared/database` and not under `releases/`. |
 | `scripts/restore.js` | disposable target, never the live DB; backup preserved | Rehearsal uses a disposable path under a temp dir; `shared/database/command.sqlite` is the protected live path. |
 | `release-create.sh` / `release-rollback.sh` | archive to `releases/<sha>`; switch only the symlink | Run as root/deploy with write to `releases` + `current` only. |

@@ -11,6 +11,10 @@ function fatal(reason, errors) {
   process.exit(1);
 }
 
+const roleArgument = process.argv[2] || '';
+const role = roleArgument === '--api-only' ? 'api' : roleArgument === '--worker-only' ? 'worker' : null;
+if (!role) fatal('production service role verification failed', ['expected exactly --api-only or --worker-only']);
+
 // Fail closed before spawning any child if the runtime is unsafe. Messages are sanitized (no env values).
 const runtime = verifyVpsRuntime();
 if (!runtime.ok) fatal('production runtime verification failed', runtime.errors);
@@ -22,16 +26,14 @@ if (!bind.ok) fatal('production bind verification failed', bind.errors);
 
 // Read-only conflict preflight. An occupied port stops the start; the existing listener on
 // that port is never terminated, signalled, or modified.
-const availability = await probePortAvailable(bind.host, bind.port);
+const availability = role === 'api' ? await probePortAvailable(bind.host, bind.port) : { free: true };
 if (!availability.free) {
   fatal('production port conflict', [
     `${bind.host}:${bind.port} is already in use (${availability.code || 'unavailable'}); refusing to start without a fallback port.`,
   ]);
 }
 
-// Verify the packaged deployment artifact before starting either long-lived process. The
-// children repeat this check, but doing it here prevents a worker from briefly accepting work
-// while an API process is failing closed on an invalid deployment identity.
+// Verify the packaged deployment artifact before starting either long-lived process.
 const deploymentIdentity = createDeploymentIdentityProvider().get();
 const identityValidation = validateDeploymentIdentityForStartup(deploymentIdentity);
 if (!identityValidation.ok) {
@@ -39,10 +41,8 @@ if (!identityValidation.ok) {
 }
 
 const childEnvironment = { ...process.env, BIND_HOST: bind.host, PORT: String(bind.port) };
-const children = [
-  spawn(process.execPath, ['apps/api/server.js'], { stdio: 'inherit', env: childEnvironment }),
-  spawn(process.execPath, ['apps/worker/worker.js'], { stdio: 'inherit', env: childEnvironment }),
-];
+const entrypoint = role === 'api' ? 'apps/api/server.js' : 'apps/worker/worker.js';
+const children = [spawn(process.execPath, [entrypoint], { stdio: 'inherit', env: childEnvironment })];
 let stopping = false;
 function stop(signal = 'SIGTERM') {
   if (stopping) return;

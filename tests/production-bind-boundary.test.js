@@ -635,7 +635,7 @@ test('the production supervisor and the API server agree on host and port', asyn
 // nonzero without reaching the check under test, so each supervisor test below states which
 // documented reason it expects and rejects the others by name.
 function runSupervisor(env, spawnOptions = {}) {
-  return spawnSync(node, ['scripts/production-supervisor.js'], {
+  return spawnSync(node, ['scripts/production-supervisor.js', '--api-only'], {
     cwd: process.cwd(), encoding: 'utf8', timeout: 20000, env, ...spawnOptions,
   });
 }
@@ -864,10 +864,19 @@ test('the reverse-proxy template targets the loopback production port and never 
   assert.doesNotMatch(conf, /listen\s+0\.0\.0\.0:8789/);
 });
 
-test('the systemd unit runs the preflight and the supervisor, and documents the port boundary', () => {
+test('systemd independently supervises the API and existing worker under one target', () => {
   const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const worker = fs.readFileSync('ops/runtime-ownership/blackspire-command-worker.service', 'utf8');
+  const target = fs.readFileSync('ops/runtime-ownership/blackspire-command.target', 'utf8');
   assert.match(unit, /ExecStartPre=.*verify-environment\.sh vps-production/);
-  assert.match(unit, /ExecStart=.*production-supervisor\.js/);
+  assert.match(unit, /ExecStart=.*production-supervisor\.js --api-only/);
+  assert.match(worker, /ExecStart=.*production-supervisor\.js --worker-only/);
+  assert.match(worker, /^TimeoutStopSec=35$/m, 'worker receives enough time for its bounded drain');
+  assert.match(target, /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m);
+  assert.match(unit, /^PartOf=blackspire-command\.target$/m);
+  assert.match(worker, /^PartOf=blackspire-command\.target$/m);
+  assert.doesNotMatch(unit, /Requires=blackspire-command-worker/, 'worker failure must not terminate the API');
+  assert.doesNotMatch(worker, /Requires=blackspire-command\.service/, 'API failure must not terminate the worker');
   assert.match(unit, /BIND_HOST=127\.0\.0\.1/);
   assert.match(unit, /8788/, 'the unit must document that restricted staging keeps 8788');
 });
