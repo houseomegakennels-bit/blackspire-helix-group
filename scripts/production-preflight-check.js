@@ -68,6 +68,7 @@ const REQUIRED_TOOLING = [
   'scripts/release-rollback.sh',
   'scripts/release-preflight.sh',
   'scripts/release-tree-validator.sh',
+  'scripts/wait-production-ready.sh',
   'scripts/verify-environment.sh',
   'scripts/production-supervisor.js',
   'ops/blackspire-command-healthcheck.sh',

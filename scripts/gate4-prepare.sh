@@ -426,8 +426,8 @@ ACTIVATION (operator only, after Gate 4 is authorized)
   trap activation_failed ERR
   bash scripts/release-switch.sh \${BLACKSPIRE_GATE4_APPROVED_SHA}
   systemctl start $target_name
-  # health-check has no default target and fails closed without one; name the loopback port.
-  BIND_HOST=127.0.0.1 PORT=<reviewed-port> bash scripts/health-check.sh
+  # The canonical waiter polls both services, health/readiness, and the worker systemd invocation.
+  bash scripts/wait-production-ready.sh http://127.0.0.1:<reviewed-port> $api_unit_name $worker_unit_name 60 1
   systemctl enable $target_name        # persist boot activation only after health and readiness pass
   trap - ERR
 

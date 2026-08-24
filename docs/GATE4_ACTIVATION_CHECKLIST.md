@@ -200,7 +200,8 @@ activation_failed() {
 trap activation_failed ERR
 bash scripts/release-switch.sh "$approved_sha"    # switches the production current symlink
 systemctl start blackspire-command.target
-BIND_HOST=127.0.0.1 PORT=<reviewed-port> bash scripts/health-check.sh
+bash scripts/wait-production-ready.sh http://127.0.0.1:<reviewed-port> \
+  blackspire-command.service blackspire-command-worker.service 60 1
 systemctl enable blackspire-command.target         # persist boot activation only after health/readiness pass
 trap - ERR
 

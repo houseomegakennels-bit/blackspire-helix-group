@@ -15,6 +15,7 @@ import { spawnSync } from 'node:child_process';
 const repo = path.resolve(import.meta.dirname, '..');
 const script = path.join(repo, 'scripts', 'gate4-prepare.sh');
 const rollbackScript = path.join(repo, 'scripts', 'gate4-rollback-preparation.sh');
+const readinessWaiterScript = path.join(repo, 'scripts', 'wait-production-ready.sh');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-gate4-'));
 
 // A host fixture: disposable stand-ins for every path the checker reads, so no case can touch the
@@ -357,8 +358,9 @@ test('the plan separates preparation from activation and executes nothing', () =
   assert.match(preparation, /checkout --detach \$\{BLACKSPIRE_GATE4_APPROVED_SHA\}/);
   assert.match(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.target/);
   assert.doesNotMatch(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.service/);
-  assert.ok(activation.indexOf('systemctl start') < activation.indexOf('health-check.sh'));
-  assert.ok(activation.indexOf('health-check.sh') < activation.indexOf('systemctl enable'));
+  assert.ok(activation.indexOf('systemctl start') < activation.indexOf('wait-production-ready.sh'));
+  assert.ok(activation.indexOf('wait-production-ready.sh') < activation.indexOf('systemctl enable'));
+  assert.match(activation, /wait-production-ready\.sh http:\/\/127\.0\.0\.1:<reviewed-port> .*\.service .*\.service 60 1/);
   assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*release-rollback\.sh/);
   assert.equal(snapshot(host.home), before, 'printing the plan must not change anything');
 });
@@ -380,8 +382,13 @@ test('the checklist and the script agree on the authorization boundary', () => {
     assert.equal(before.includes(verb), false, `${verb} must not be documented as preparation`);
   }
   const activation = checklist.slice(boundary);
-  assert.ok(activation.indexOf('systemctl start') < activation.indexOf('health-check.sh'));
-  assert.ok(activation.indexOf('health-check.sh') < activation.indexOf('systemctl enable'));
+  assert.ok(activation.indexOf('systemctl start') < activation.indexOf('wait-production-ready.sh'));
+  assert.ok(activation.indexOf('wait-production-ready.sh') < activation.indexOf('systemctl enable'));
+  const readinessWaiter = fs.readFileSync(readinessWaiterScript, 'utf8');
+  assert.match(readinessWaiter, /ActiveState/);
+  assert.match(readinessWaiter, /InvocationID/);
+  assert.match(readinessWaiter, /dependencies\?\.worker\?\.generationId/);
+  assert.match(readinessWaiter, /deadline_ms/);
   assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*release-rollback\.sh/);
 });
 
