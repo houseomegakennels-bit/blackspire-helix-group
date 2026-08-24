@@ -88,7 +88,7 @@ test('delivery failures stay retryable without changing canonical state', async 
 });
 
 test('Telegram cannot use privileged commands', async () => {
-  for (const [offset, command] of ['/approve task_x', '/deploy production', '/merge main', '/reset emergency', '/secret access', '/trade funds', '/task increase the budget', '/task change host security', '/task amend the constitution'].entries()) {
+  for (const [offset, command] of ['/approve task_x', '/deploy production', '/merge main', '/reset emergency', '/secret access', '/trade funds', '/task write increase the budget', '/task write change host security', '/task write amend the constitution'].entries()) {
     const reply = await handleTelegramUpdate({ update_id: 500 + offset, message: { from: { id: 1001 }, chat: { id: 50 }, text: command } }, 'http://127.0.0.1:1');
     assert.match(reply.text[0], /require|cannot|not found/i);
   }

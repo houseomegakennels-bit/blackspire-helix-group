@@ -114,6 +114,16 @@ case "\${1:-}" in
       printf '{"type":"turn.completed"}\\n'
       exit 0
     fi
+    if grep -q 'read-only-empty' "$packet"; then
+      printf '{"artifacts":[],"summary":"Read-only inspection completed."}\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\n{"type":"turn.started"}\n{"type":"turn.completed"}\n'
+      exit 0
+    fi
+    if grep -q 'identical-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Proposed existing content."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\n{"type":"turn.started"}\n{"type":"turn.completed"}\n'
+      exit 0
+    fi
     printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n' > "$final"
     printf '{"type":"thread.started","thread_id":"fixture"}\\n'
     printf '{"type":"turn.started"}\\n'
@@ -296,6 +306,31 @@ test('the persisted read-only contract rejects provider artifacts', async () => 
   await startWorker({ once: true });
   assert.equal(getTask(body.task.id).status, 'failed');
   assert.match(getTask(body.task.id).error, /artifacts for a read-only task/i);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+});
+
+test('a successful read-only task never enters branch, apply, validation, commit, or PR stages', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(path.join(repo, 'docs', 'unrelated-uncommitted.md'), 'must remain uncommitted\n');
+  const { status, body } = await submit('read-only-empty inspect status', 'production-e2e-read-only-empty', 'read_only');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  const current = getTask(body.task.id);
+  assert.equal(current.status, 'completed');
+  assert.deepEqual(JSON.parse(current.summary).changedFiles, []);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+  assert.ok(fs.existsSync(path.join(repo, 'docs', 'unrelated-uncommitted.md')));
+  assert.doesNotMatch(spawnSync('git', ['log', '-1', '--format=%B'], { cwd: repo, encoding: 'utf8' }).stdout, new RegExp(body.task.id));
+  fs.rmSync(path.join(repo, 'docs', 'unrelated-uncommitted.md'));
+});
+
+test('a non-empty artifact that produces no workspace delta cannot complete', async () => {
+  const { status, body } = await submit('identical-artifact mutation', 'production-e2e-identical-artifact');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /no workspace delta/i);
   assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
 });
 

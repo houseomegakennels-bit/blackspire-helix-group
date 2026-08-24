@@ -40,7 +40,7 @@ test('telegram unauthorized users are ignored', async () => {
 });
 
 test('telegram command creates stored task', async () => {
-  const result = await handleTelegramUpdate({ update_id: 2, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/task document status' } }, 'http://localhost:8791');
+  const result = await handleTelegramUpdate({ update_id: 2, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/task read document status' } }, 'http://localhost:8791');
   assert.ok(result.text[0].includes('Queued'));
 });
 

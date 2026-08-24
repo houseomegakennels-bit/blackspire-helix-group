@@ -82,12 +82,22 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
       recordEvidence(task.id, 'artifact_application_refused', { reason: 'read-only task returned workspace artifacts', provider: providerResult.provider });
       return move('failed', { error: 'Provider returned workspace artifacts for a read-only task' });
     }
+    if (task.execution_intent === 'read_only') {
+      const evidence = { provider: providerResult.provider, mode: providerResult.mode, model: providerResult.model || null, changedFiles: [], readOnly: true };
+      await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
+      return move('completed', { summary: { result: providerResult.summary || 'Read-only task completed', changedFiles: [], provider: providerResult.provider, model: providerResult.model || null }, evidence });
+    }
     if (await shouldStop(task.id, ownership)) return;
 
     const branch = await stage(task.id, ownership, 'apply_edits', () => applyProviderEdits(task, workspace, providerResult));
+    if (branch.changedFiles.length === 0) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace mutation task produced no workspace delta', provider: providerResult.provider });
+      return move('failed', { error: 'Provider artifacts produced no workspace delta' });
+    }
     const validation = await stage(task.id, ownership, 'validate', () => validateWorkspace(task.id, workspace));
     if (!validation.ok) return move('failed', { error: validation.stderr || 'validation failed', summary: { validation } });
     const commit = await stage(task.id, ownership, 'commit', () => commitAll(`Hermes task ${task.id}: ${task.request.slice(0, 60)}`, { cwd: workspace.root_path }));
+    if (!commit.ok) return move('failed', { error: commit.stderr || 'workspace mutation commit failed' });
     const pr = await stage(task.id, ownership, 'pull_request', () => createPullRequest({ title: `Hermes task ${task.id}`, body: `Automated Hermes task evidence for ${task.request}`, cwd: workspace.root_path, draft: true }));
     const evidence = { context, plan, provider: providerResult.provider, mode: providerResult.mode, branch, validation, commit, pullRequest: pr };
     await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
@@ -296,7 +306,7 @@ function applyProviderEdits(task, workspace, providerResult) {
   if (!branch.ok) throw new Error(branch.stderr || 'failed to create task branch');
   const changed = applyEdits(providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths });
   const inspected = inspectChangedFiles({ cwd: workspace.root_path });
-  const filesToRecord = inspected.length ? inspected : changed;
+  const filesToRecord = inspected;
   for (const file of filesToRecord) recordChangedFile(task.id, file);
   recordEvidence(task.id, 'branch', { branch: branchName, proposed: changed, changedFiles: filesToRecord });
   return { branch: branchName, changedFiles: filesToRecord };

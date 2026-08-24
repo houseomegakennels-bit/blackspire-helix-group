@@ -60,7 +60,7 @@ const evidence = {};
 test('credential-free loopback Unified Jarvis and mock Telegram flow', async () => {
   server = start(8910, '127.0.0.1', { exitOnListenError: false });
   await handleTelegramUpdate({ update_id: 8099, message: { from: { id: 9001 }, chat: { id: 9100 }, text: '/use e2e' } });
-  const telegramReply = await handleTelegramUpdate({ update_id: 8100, message: { from: { id: 9001 }, chat: { id: 9100 }, text: '/task create `docs/e2e.md`' } });
+  const telegramReply = await handleTelegramUpdate({ update_id: 8100, message: { from: { id: 9001 }, chat: { id: 9100 }, text: '/task write create `docs/e2e.md`' } });
   assert.match(telegramReply.text[0], /Queued/);
   const telegramInput = query("SELECT * FROM unified_inputs WHERE channel='telegram' AND idempotency_key='telegram:8100';")[0];
   const telegramTask = query(`SELECT * FROM tasks WHERE input_id='${telegramInput.id}';`)[0];
@@ -81,7 +81,7 @@ test('credential-free loopback Unified Jarvis and mock Telegram flow', async () 
   const duplicateJarvis = await (await fetch('http://127.0.0.1:8910/api/unified-input', { method: 'POST', headers: { authorization: 'Bearer local-validation-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'e2e', conversationId: evidence.conversationId, text: 'ignored duplicate', idempotencyKey: 'jarvis-e2e' }) })).json();
   assert.equal(duplicateJarvis.duplicate, true);
   assert.equal(duplicateJarvis.taskId, jarvis.taskId);
-  const replay = await handleTelegramUpdate({ update_id: 8100, message: { from: { id: 9001 }, chat: { id: 9100 }, text: '/task duplicate' } });
+  const replay = await handleTelegramUpdate({ update_id: 8100, message: { from: { id: 9001 }, chat: { id: 9100 }, text: '/task read duplicate' } });
   assert.equal(replay.ignored, true);
 
   let tokenCalls = 0;

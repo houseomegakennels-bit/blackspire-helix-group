@@ -235,7 +235,7 @@ test('Telegram local bridge covers allowlist, duplicates, commands, chunking, es
   assert.equal((await handleTelegramUpdate({ update_id: 11, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/start' } }, 'http://localhost:8892')).ignored, true);
   assert.ok((await handleTelegramUpdate({ update_id: 12, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/workspaces' } }, 'http://localhost:8892')).text[0]);
   assert.ok((await handleTelegramUpdate({ update_id: 13, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8892')).text[0]);
-  const taskReply = await handleTelegramUpdate({ update_id: 14, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/task local telegram task' } }, 'http://localhost:8892');
+  const taskReply = await handleTelegramUpdate({ update_id: 14, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/task read local telegram task' } }, 'http://localhost:8892');
   const taskId = taskReply.text[0].match(/task\w+/)?.[0];
   assert.ok(taskReply.text[0].includes('Queued'));
   assert.ok((await handleTelegramUpdate({ update_id: 15, message: { from: { id: 1001 }, chat: { id: 1 }, text: `/task_status ${taskId}` } }, 'http://localhost:8892')).text[0]);

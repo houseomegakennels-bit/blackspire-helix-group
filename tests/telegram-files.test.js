@@ -108,7 +108,7 @@ test('getFile failure is surfaced explicitly instead of silently dropping the at
 test('voice note: mocked successful transcription creates a Hermes task from the transcript', async () => {
   installTelegramMock();
   process.env.TRANSCRIPTION_ADAPTER = 'mock';
-  process.env.TRANSCRIPTION_MOCK_TEXT = 'Create docs/from-voice.md with proof text';
+  process.env.TRANSCRIPTION_MOCK_TEXT = 'write: Create docs/from-voice.md with proof text';
   const audio = Buffer.from('fake-ogg-bytes');
   files.set('voice-ok', { filePath: 'voice/voice_ok.oga', buffer: audio });
   const update = { message: { from: { id: 1001 }, chat: { id: 42 }, voice: { file_id: 'voice-ok', file_size: audio.length, mime_type: 'audio/ogg' } } };
@@ -167,7 +167,7 @@ test('sendTelegramDocument posts a multipart form with chat_id, caption, and the
 test('evidence bundle delivery: /export produces a document reply for large bundles and dispatchReply sends + cleans it up', async () => {
   installTelegramMock();
   process.env.TELEGRAM_INLINE_MAX_CHARS = '10'; // force document mode regardless of actual bundle size
-  const reply = await handleTelegramUpdate({ update_id: 100, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task Create `docs/export-target.md`' } }, 'http://localhost:8896');
+  const reply = await handleTelegramUpdate({ update_id: 100, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task write Create `docs/export-target.md`' } }, 'http://localhost:8896');
   const taskId = extractTaskId(reply.text[0]);
   const exportReply = await handleTelegramUpdate({ update_id: 101, message: { from: { id: 1001 }, chat: { id: 42 }, text: `/export ${taskId}` } }, 'http://localhost:8896');
   assert.ok(exportReply.document, 'large export must be delivered as a document, not truncated text');
@@ -183,7 +183,7 @@ test('evidence bundle delivery: /export produces a document reply for large bund
 test('large-log delivery: /logs produces a document reply instead of truncating', async () => {
   installTelegramMock();
   process.env.TELEGRAM_INLINE_MAX_CHARS = '10';
-  const reply = await handleTelegramUpdate({ update_id: 102, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task Create `docs/log-target.md`' } }, 'http://localhost:8896');
+  const reply = await handleTelegramUpdate({ update_id: 102, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task write Create `docs/log-target.md`' } }, 'http://localhost:8896');
   const taskId = extractTaskId(reply.text[0]);
   const logsReply = await handleTelegramUpdate({ update_id: 103, message: { from: { id: 1001 }, chat: { id: 42 }, text: `/logs ${taskId}` } }, 'http://localhost:8896');
   assert.ok(logsReply.document, 'large log history must be delivered as a document, not truncated text');
