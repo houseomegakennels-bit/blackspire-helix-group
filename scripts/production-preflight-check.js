@@ -358,20 +358,8 @@ if (unit === null) {
   }
 }
 
-{
-  let installed = null;
-  try { installed = fs.readFileSync(INSTALLED_UNIT_PATH, 'utf8'); } catch { installed = null; }
-  if (installed === null) {
-    record('installed-unit', true, 'deployment', 'no unit installed yet; the runbook must install the reviewed template before daemon-reload');
-  } else if (unit !== null && installed === unit) {
-    record('installed-unit', true, 'deployment', 'installed unit matches the reviewed template');
-  } else {
-    record('installed-unit', false, 'deployment',
-      'installed unit differs from the reviewed template and must be reinstalled before daemon-reload and start');
-  }
-}
-
 for (const [id, installedPath, reviewed] of [
+  ['installed-unit', INSTALLED_UNIT_PATH, unit],
   ['installed-worker-unit', INSTALLED_WORKER_UNIT_PATH, workerUnit],
   ['installed-runtime-target', INSTALLED_TARGET_PATH, runtimeTarget],
 ]) {

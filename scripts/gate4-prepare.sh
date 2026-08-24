@@ -59,6 +59,7 @@ systemctl_bin="${BLACKSPIRE_GATE4_SYSTEMCTL:-systemctl}"
 logrotate_file="${BLACKSPIRE_GATE4_LOGROTATE_FILE:-/etc/logrotate.d/blackspire-command}"
 runtime_user="${BLACKSPIRE_GATE4_RUNTIME_USER:-blackspire}"
 approved_sha="${BLACKSPIRE_GATE4_APPROVED_SHA:-}"
+unit_backup_dir="${BLACKSPIRE_GATE4_UNIT_BACKUP_DIR:-/var/backups/blackspire-command/gate4-${approved_sha:-unapproved}}"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Findings accumulate as three parallel arrays rather than one delimited string, so a message
@@ -358,6 +359,17 @@ PREPARATION (safe, reversible, no activation)
   5. Install the reviewed API, worker, and coordination target definitions, then reload systemd.
      The checker above fails closed if an installed definition differs; inspect that difference
      before replacing any existing file:
+       install -d -o root -g root -m 0700 $unit_backup_dir
+       for unit_path in $api_unit_file $worker_unit_file $target_file; do
+         unit_base="\$(basename -- "\$unit_path")"
+         if test -f "\$unit_path" && test ! -L "\$unit_path"; then
+           install -o root -g root -m 0600 "\$unit_path" "$unit_backup_dir/\$unit_base"
+         elif test ! -e "\$unit_path" && test ! -L "\$unit_path"; then
+           install -o root -g root -m 0600 /dev/null "$unit_backup_dir/\$unit_base.absent"
+         else
+           echo "refusing unsafe installed unit path: \$unit_path" >&2; exit 1
+         fi
+       done
        install -o root -g root -m 0644 \\
          $repo_root/ops/runtime-ownership/blackspire-command.service $api_unit_file
        install -o root -g root -m 0644 \\
@@ -388,8 +400,16 @@ ROLLBACK OF PREPARATION (safe; production was never started)
   rm -f $env_file
   rm -rf $workspace_root
   rm -f $logrotate_file
-  # Restore each unit definition from its recorded pre-preparation backup. Remove a definition
-  # only when the before-state evidence proves it did not exist; never erase an unknown prior unit.
+  for unit_path in $api_unit_file $worker_unit_file $target_file; do
+    unit_base="\$(basename -- "\$unit_path")"
+    if test -f "$unit_backup_dir/\$unit_base" && test ! -L "$unit_backup_dir/\$unit_base"; then
+      install -o root -g root -m 0644 "$unit_backup_dir/\$unit_base" "\$unit_path"
+    elif test -f "$unit_backup_dir/\$unit_base.absent" && test ! -L "$unit_backup_dir/\$unit_base.absent"; then
+      rm -f -- "\$unit_path"
+    else
+      echo "missing trusted before-state for \$unit_path; refusing rollback" >&2; exit 1
+    fi
+  done
   systemctl daemon-reload
   # releases are immutable and are never deleted as part of a rollback
 

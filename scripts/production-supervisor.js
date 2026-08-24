@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { verifyVpsRuntime } from '../packages/shared/security.js';
 import { resolveBindTarget, probePortAvailable } from '../packages/shared/bind.js';
+import { childExitStatus } from '../packages/shared/supervisor-exit.js';
 import {
   createDeploymentIdentityProvider,
   validateDeploymentIdentityForStartup,
@@ -52,6 +53,7 @@ function stop(signal = 'SIGTERM') {
 process.on('SIGTERM', () => stop('SIGTERM'));
 process.on('SIGINT', () => stop('SIGINT'));
 for (const child of children) child.on('exit', (code, signal) => {
-  if (!stopping) { stop('SIGTERM'); process.exitCode = code ?? 1; }
+  process.exitCode = childExitStatus(process.exitCode, { code, signal, stopping });
+  if (!stopping) stop('SIGTERM');
   if (children.every((entry) => entry.exitCode !== null || entry.signalCode)) process.exit(process.exitCode || 0);
 });

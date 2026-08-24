@@ -94,7 +94,20 @@ npm run db:backup -- /opt/blackspire-command/shared/backups
 
 # 5. Record the before-state of all three installed definitions, install the reviewed topology,
 # and reload definitions only (this does not start or enable anything)
-systemctl cat blackspire-command.service blackspire-command-worker.service blackspire-command.target
+unit_backup_dir=/var/backups/blackspire-command/gate4-<approved-sha>
+install -d -o root -g root -m 0700 "$unit_backup_dir"
+for unit_path in /etc/systemd/system/blackspire-command.service \
+  /etc/systemd/system/blackspire-command-worker.service \
+  /etc/systemd/system/blackspire-command.target; do
+  unit_base="$(basename -- "$unit_path")"
+  if test -f "$unit_path" && test ! -L "$unit_path"; then
+    install -o root -g root -m 0600 "$unit_path" "$unit_backup_dir/$unit_base"
+  elif test ! -e "$unit_path" && test ! -L "$unit_path"; then
+    install -o root -g root -m 0600 /dev/null "$unit_backup_dir/$unit_base.absent"
+  else
+    echo "refusing unsafe installed unit path: $unit_path" >&2; exit 1
+  fi
+done
 install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command.service \
   /etc/systemd/system/blackspire-command.service
 install -o root -g root -m 0644 ops/runtime-ownership/blackspire-command-worker.service \
@@ -156,6 +169,9 @@ immutable and are never deleted as part of a rollback.
 rm -f /etc/blackspire/command.env
 rm -rf /opt/blackspire-command/shared/workspace
 rm -f /etc/logrotate.d/blackspire-command
+# Restore each definition from $unit_backup_dir, or remove it only when its matching `.absent`
+# marker proves it did not exist. Refuse rollback if either form of before-state evidence is absent.
+systemctl daemon-reload
 ```
 
 ## Authorization boundary

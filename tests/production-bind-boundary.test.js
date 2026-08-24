@@ -18,9 +18,17 @@ import {
   PRODUCTION_PORT_CANDIDATES,
 } from '../packages/shared/bind.js';
 import { verifyVpsRuntime } from '../packages/shared/security.js';
+import { childExitStatus } from '../packages/shared/supervisor-exit.js';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const node = process.execPath;
+
+test('supervisor preserves a worker drain failure during requested shutdown', () => {
+  assert.equal(childExitStatus(0, { code: 1, signal: null, stopping: true }), 1);
+  assert.equal(childExitStatus(0, { code: null, signal: 'SIGTERM', stopping: true }), 0);
+  assert.equal(childExitStatus(0, { code: null, signal: 'SIGKILL', stopping: false }), 1);
+  assert.equal(childExitStatus(2, { code: 0, signal: null, stopping: true }), 2);
+});
 
 // Real host locations this suite must never read, create, chmod, chown, or remove. The production
 // runtime verifier calls mkdir on whatever release root it is handed, so a fixture pointing at a
@@ -1127,6 +1135,9 @@ test('the production preflight detects a stale installed unit as a deployment fi
   const installed = report.findings.find((finding) => finding.id === 'installed-unit');
   assert.ok(installed, 'the preflight must report installed-unit drift');
   assert.equal(installed.class, 'deployment', 'installed-unit drift is a deployment follow-up, not a source defect');
+  const preflightSource = fs.readFileSync('scripts/production-preflight-check.js', 'utf8');
+  assert.match(preflightSource, /\['installed-unit', INSTALLED_UNIT_PATH, unit\]/,
+    'the API unit must use the same absent-or-drifted failure loop as worker and target');
 });
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
