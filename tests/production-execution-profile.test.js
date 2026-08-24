@@ -51,6 +51,9 @@ case "\${1:-}" in
   doctor)
     [[ "\${2:-}" == "--json" ]] || exit 64
     printf '{"schemaVersion":1,"checks":{"auth.credentials":{"status":"%s"},"network.provider_reachability":{"status":"ok"},"network.websocket_reachability":{"status":"ok"},"installation":{"status":"fail"},"updates.status":{"status":"fail"}}}\\n' "\${TEST_CODEX_AUTH_STATUS:-ok}"
+    if [[ "\${TEST_CODEX_DOCTOR_HANG_AFTER_OUTPUT:-false}" == "true" ]]; then
+      while :; do sleep 1; done
+    fi
     exit "\${TEST_CODEX_DOCTOR_EXIT:-0}"
     ;;
   *) exit 64 ;;
@@ -149,6 +152,14 @@ test('Codex readiness accepts healthy auth and transport despite unrelated docto
 test('Codex readiness fails closed when doctor authentication is unhealthy', () => {
   const result = verify(executionEnv({ TEST_CODEX_AUTH_STATUS: 'fail' }));
   assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /authenticated Codex CLI and reachable provider transport/);
+});
+
+test('Codex readiness rejects a healthy report from a probe that never completes', () => {
+  const started = Date.now();
+  const result = verify(executionEnv({ TEST_CODEX_DOCTOR_HANG_AFTER_OUTPUT: 'true' }));
+  assert.notEqual(result.status, 0);
+  assert.ok(Date.now() - started < 5_000, 'print-then-hang doctor probe must remain bounded');
   assert.match(result.stderr, /authenticated Codex CLI and reachable provider transport/);
 });
 

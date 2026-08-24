@@ -1,5 +1,10 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — Codex doctor timeout finding reproduced (Codex)
+
+- Exact-head review of PR #110 found one P1 after merge: healthy JSON printed before a timeout could be accepted because parsed readiness did not also require a clean supervisor completion.
+- The follow-up requires drained output, no timeout, no cleanup/escalation, no forwarded interruption, and no spawn error, in addition to terminated process containment and the three healthy doctor checks. A print-then-hang regression proves the report is rejected within the bounded probe window. Production activation remained frozen throughout.
+
 ## 2026-08-24 — production preparation and bounded Codex doctor readiness (Codex)
 
 - Merged the existing current-main lanes in dependency order: #105 topology, #107 immutable action pins, #109 independently bound release evidence, #108 PWA observability, and #106 factual VPS audit. Current main is `bce2300ca15a1555d808d756ab1de5304d8f495d`.
