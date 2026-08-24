@@ -26,6 +26,9 @@ StandardError=append:/var/log/blackspire-command/worker.log
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=35
+# systemd signals only the supervisor initially; it forwards one SIGTERM to the worker for its
+# bounded drain. At timeout, mixed mode still kills the full cgroup so descendants cannot escape.
+KillMode=mixed
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

@@ -95,8 +95,9 @@ npm run db:backup -- /opt/blackspire-command/shared/backups
 # 5. Record the before-state of all three installed definitions, install the reviewed topology,
 # and reload definitions only (this does not start or enable anything)
 unit_backup_dir=/var/backups/blackspire-command/gate4-<approved-sha>
-test ! -e "$unit_backup_dir" && test ! -L "$unit_backup_dir"
-install -d -o root -g root -m 0700 "$unit_backup_dir"
+install -d -o root -g root -m 0700 "$(dirname -- "$unit_backup_dir")"
+mkdir -m 0700 -- "$unit_backup_dir"       # atomic: fails if this SHA snapshot already exists
+chown root:root -- "$unit_backup_dir"
 for unit_path in /etc/systemd/system/blackspire-command.service \
   /etc/systemd/system/blackspire-command-worker.service \
   /etc/systemd/system/blackspire-command.target; do

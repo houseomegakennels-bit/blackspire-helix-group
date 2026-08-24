@@ -359,8 +359,9 @@ PREPARATION (safe, reversible, no activation)
   5. Install the reviewed API, worker, and coordination target definitions, then reload systemd.
      The checker above fails closed if an installed definition differs; inspect that difference
      before replacing any existing file:
-       test ! -e $unit_backup_dir && test ! -L $unit_backup_dir
-       install -d -o root -g root -m 0700 $unit_backup_dir
+       install -d -o root -g root -m 0700 "\$(dirname -- $unit_backup_dir)"
+       mkdir -m 0700 -- $unit_backup_dir
+       chown root:root -- $unit_backup_dir
        for unit_path in $api_unit_file $worker_unit_file $target_file; do
          unit_base="\$(basename -- "\$unit_path")"
          if test -f "\$unit_path" && test ! -L "\$unit_path"; then
@@ -399,9 +400,6 @@ VALIDATION (read-only, proves preparation is correct)
   systemctl show $target_name $api_unit_name $worker_unit_name -p ActiveState -p UnitFileState -p MainPID
 
 ROLLBACK OF PREPARATION (safe; production was never started)
-  rm -f $env_file
-  rm -rf $workspace_root
-  rm -f $logrotate_file
   test -f $unit_backup_dir/.complete && test ! -L $unit_backup_dir/.complete
   # Validate the complete snapshot before mutating the first installed definition.
   for unit_path in $api_unit_file $worker_unit_file $target_file; do
@@ -413,6 +411,10 @@ ROLLBACK OF PREPARATION (safe; production was never started)
       echo "missing or ambiguous trusted before-state for \$unit_path; refusing rollback" >&2; exit 1
     fi
   done
+  # Only after every rollback input is valid may any prepared state be removed or replaced.
+  rm -f $env_file
+  rm -rf $workspace_root
+  rm -f $logrotate_file
   for unit_path in $api_unit_file $worker_unit_file $target_file; do
     unit_base="\$(basename -- "\$unit_path")"
     if test -f "$unit_backup_dir/\$unit_base"; then
