@@ -91,11 +91,23 @@ test('execute, approval, cancellation, and runtime operations cannot substitute 
   assert.equal((await request('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-b' }) })).status, 404);
 });
 
+test('a read-only workspace grant cannot create, execute, approve, cancel, or inspect runtime', async () => {
+  run("UPDATE auth_workspace_grants SET status='superseded' WHERE id='route-grant-a'");
+  run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['route-grant-a-v2', 'route-operator', 'workspace-a', 'service', JSON.stringify(['task.read', 'workspace.read']), 'active', 2, 'route-grant-a', now + 1, null, null, 'test', 1, now + 1]);
+
+  assert.equal((await request(`/api/tasks/${taskA.id}`)).status, 200);
+  assert.equal((await request('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', request: 'must not create' }) })).status, 404);
+  assert.equal((await request(`/api/tasks/${taskA.id}/resume`, { method: 'POST' })).status, 404);
+  assert.equal((await request(`/api/tasks/${taskA.id}/approve`, { method: 'POST' })).status, 404);
+  assert.equal((await request(`/api/tasks/${taskA.id}/cancel`, { method: 'POST' })).status, 404);
+  assert.equal((await request('/api/hermes/runtime?workspaceId=workspace-a')).status, 404);
+});
+
 test('revoked grants fail closed and session rotation does not resurrect authority', async () => {
   const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'workspace-authz-test-token' }) });
   const cookies = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
   const loginBody = await login.json();
-  run("UPDATE auth_workspace_grants SET status='revoked',revoked_at=? WHERE id='route-grant-a'", [Date.now()]);
+  run("UPDATE auth_workspace_grants SET status='revoked',revoked_at=? WHERE id='route-grant-a-v2'", [Date.now()]);
   assert.equal((await fetch(`${base}/api/tasks/${taskA.id}`, { headers: { cookie: cookies } })).status, 404);
   const rotated = await fetch(`${base}/api/auth/rotate`, { method: 'POST', headers: { cookie: cookies, 'x-csrf-token': loginBody.csrfToken } });
   assert.equal(rotated.status, 200);

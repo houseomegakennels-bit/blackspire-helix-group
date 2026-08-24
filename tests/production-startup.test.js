@@ -50,6 +50,7 @@ test('startup refuses to boot when a required deployment identity is unverified'
   // the refusal cannot be attributed to an unrelated unsafe-config error.
   const result = await runApi({
     NODE_ENV: 'production',
+    BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'startup-operator',
     BLACKSPIRE_STATE_OWNER: 'vps-staging',
     BLACKSPIRE_DB_PATH: path.join(root, 'identity', 'command.sqlite'),
     TELEGRAM_TMP_DIR: path.join(root, 'identity-attachments'),
@@ -77,6 +78,7 @@ test('production startup boots normally with a valid configuration', async () =>
   const attachmentsDir = path.join(root, 'safe-attachments');
   const result = await runApi({
     NODE_ENV: 'production',
+    BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'startup-operator',
     BLACKSPIRE_DB_PATH: dbPath,
     TELEGRAM_TMP_DIR: attachmentsDir,
     PORT: '8900',
