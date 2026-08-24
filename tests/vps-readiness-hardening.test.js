@@ -218,6 +218,7 @@ function runtimeEnv(overrides = {}) {
     BLACKSPIRE_STATE_OWNER: 'vps-production',
     BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run', UNIFIED_IPHONE_TEST_MODE: 'false',
     BIND_HOST: '127.0.0.1', PORT: '8789', BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',
     BLACKSPIRE_RUNTIME_USER: 'blackspire', BLACKSPIRE_DB_PATH: disposableProductionDbPath,
     BLACKSPIRE_RELEASE_ROOT: productionRoot,
     ...overrides,
@@ -314,6 +315,7 @@ function preflightEnv(overrides = {}) {
     COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40),
     BIND_HOST: '127.0.0.1', PORT: String(freeProductionPort()),
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',
     BLACKSPIRE_RUNTIME_USER: 'blackspire',
     BLACKSPIRE_WORKSPACE_ROOT: workspaceRootFixture,
     ...overrides,
@@ -354,6 +356,23 @@ test('verify-environment.sh vps-production rejects an invalid port before the ro
   assert.match(r.stderr, /PORT must be no greater than 65535/);
   assert.doesNotMatch(r.stderr, /persistent database parent directory does not exist/, `the port must be refused before the database parent: ${r.stderr}`);
   assert.doesNotMatch(r.stderr, /production runtime must not run as root/, 'the port must be refused before the root check');
+});
+
+test('worker preflight validates the bind contract without claiming the API port', () => {
+  const fakeBin = path.join(productionRoot, 'fake-bin-occupied-port');
+  fs.mkdirSync(fakeBin, { recursive: true });
+  const fakeSs = path.join(fakeBin, 'ss');
+  fs.writeFileSync(fakeSs, '#!/usr/bin/env bash\nprintf "State Recv-Q Send-Q Local Address:Port Peer Address:Port\\nLISTEN 0 1 127.0.0.1:%s 0.0.0.0:*\\n" "$PORT"\n', { mode: 0o755 });
+  const env = preflightEnv({ PATH: `${fakeBin}:${process.env.PATH}` });
+  const api = run('scripts/verify-environment.sh', ['vps-production', 'api'], env);
+  assert.match(api.stderr, /already in use/, 'API preflight must retain exclusive port ownership');
+  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], env);
+  assert.doesNotMatch(worker.stderr, /already in use/, 'worker restart must not be blocked by the healthy API listener');
+  if (process.getuid() === 0) {
+    assert.match(worker.stderr, /production runtime must not run as root/, 'the worker fixture must reach the final root boundary');
+  } else {
+    assert.equal(worker.status, 0, `a non-root worker must accept the otherwise valid profile: ${worker.stderr}`);
+  }
 });
 
 // ---------------------------------------------------------------------------

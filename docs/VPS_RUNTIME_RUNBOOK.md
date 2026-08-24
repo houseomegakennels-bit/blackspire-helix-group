@@ -9,8 +9,12 @@ For a separately approved production start, install the supported Node runtime, 
 ```sh
 npm ci --ignore-scripts
 bash scripts/verify-environment.sh vps-production
-npm run start:production
+systemctl start blackspire-command.target
 ```
+
+The target starts both independently supervised services. For bounded diagnostics only, the
+single-role wrappers are `npm run start:production -- api` and
+`npm run start:production -- worker`; a missing role is refused.
 
 The profile requires `NODE_ENV=production`, `BLACKSPIRE_RUNTIME_MODE=production`, state owner `vps-production`, persistent non-`/tmp` storage, authentication configuration, `BLACKSPIRE_PROVIDER_MODE=manual`, restricted Hermes, dry-run Telegram, and no provider or Telegram credentials. It rejects test mode and mock Telegram.
 

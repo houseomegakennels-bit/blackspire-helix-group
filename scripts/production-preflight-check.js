@@ -21,13 +21,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PROTECTED_PORTS, PRODUCTION_BIND_HOST, PRODUCTION_PORT_CANDIDATES } from '../packages/shared/bind.js';
+import { installedUnitMetadataSafe } from '../packages/shared/installed-unit.js';
 
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const asJson = process.argv.includes('--json');
 const strict = process.argv.includes('--strict');
 
 const UNIT_PATH = 'ops/runtime-ownership/blackspire-command.service';
+const WORKER_UNIT_PATH = 'ops/runtime-ownership/blackspire-command-worker.service';
+const TARGET_PATH = 'ops/runtime-ownership/blackspire-command.target';
 const INSTALLED_UNIT_PATH = '/etc/systemd/system/blackspire-command.service';
+const INSTALLED_WORKER_UNIT_PATH = '/etc/systemd/system/blackspire-command-worker.service';
+const INSTALLED_TARGET_PATH = '/etc/systemd/system/blackspire-command.target';
 const NODE_BIN_LIB = 'scripts/lib/node-bin.sh';
 
 // Shell scripts are discovered rather than listed, so a newly added production script is covered
@@ -64,12 +69,15 @@ const REQUIRED_TOOLING = [
   'scripts/release-rollback.sh',
   'scripts/release-preflight.sh',
   'scripts/release-tree-validator.sh',
+  'scripts/wait-production-ready.sh',
   'scripts/verify-environment.sh',
   'scripts/production-supervisor.js',
   'ops/blackspire-command-healthcheck.sh',
   'ops/blackspire-command-logrotate.conf',
   'ops/reverse-proxy/blackspire-command.nginx.conf',
   'ops/runtime-ownership/OWNERSHIP_MAP.md',
+  WORKER_UNIT_PATH,
+  TARGET_PATH,
 ];
 
 const findings = [];
@@ -131,6 +139,8 @@ const pinnedNodeVersion = (read('.node-version') || '').trim();
 }
 
 const unit = read(UNIT_PATH);
+const workerUnit = read(WORKER_UNIT_PATH);
+const runtimeTarget = read(TARGET_PATH);
 if (unit === null) {
   record('unit-present', false, 'source', `${UNIT_PATH} is missing`);
 } else {
@@ -191,6 +201,22 @@ if (unit === null) {
   const startLimit = /StartLimitBurst=\d+/.test(unit) && /StartLimitIntervalSec=\d+/.test(unit);
   record('unit-restart-cap', startLimit, 'source',
     startLimit ? 'restart storm cap present' : 'StartLimitIntervalSec/StartLimitBurst must cap restart storms');
+}
+
+{
+  const apiIsolated = unit !== null && /^ExecStart=.*production-supervisor\.js --api-only$/m.test(unit);
+  const workerIsolated = workerUnit !== null && /^ExecStart=.*production-supervisor\.js --worker-only$/m.test(workerUnit);
+  const targetStartsBoth = runtimeTarget !== null && /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m.test(runtimeTarget);
+  const lifecycleIndependent = unit !== null && workerUnit !== null &&
+    !/Requires=blackspire-command-worker\.service/.test(unit) && !/Requires=blackspire-command\.service/.test(workerUnit);
+  const workerHardening = workerUnit !== null && ['User=blackspire', 'Group=blackspire', 'NoNewPrivileges=yes',
+    'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'ReadWritePaths=/opt/blackspire-command/shared',
+    'CapabilityBoundingSet=', 'AmbientCapabilities=', 'TimeoutStopSec=35'].every((directive) => workerUnit.includes(directive));
+  const complete = apiIsolated && workerIsolated && targetStartsBoth && lifecycleIndependent && workerHardening;
+  record('service-topology', complete, 'source',
+    complete
+      ? 'API and worker have independent supervisors and restarts under one non-coupling target'
+      : 'API and hardened worker must use role-specific supervisors under a target without cross-service Requires coupling');
 }
 
 // --- Startup-path interpreter resolution ----------------------------------------------------
@@ -334,16 +360,24 @@ if (unit === null) {
   }
 }
 
-{
+for (const [id, installedPath, reviewed] of [
+  ['installed-unit', INSTALLED_UNIT_PATH, unit],
+  ['installed-worker-unit', INSTALLED_WORKER_UNIT_PATH, workerUnit],
+  ['installed-runtime-target', INSTALLED_TARGET_PATH, runtimeTarget],
+]) {
   let installed = null;
-  try { installed = fs.readFileSync(INSTALLED_UNIT_PATH, 'utf8'); } catch { installed = null; }
+  let installedIsRegular = false;
+  try {
+    const installedStat = fs.lstatSync(installedPath);
+    installedIsRegular = installedUnitMetadataSafe(installedStat);
+    if (installedIsRegular) installed = fs.readFileSync(installedPath, 'utf8');
+  } catch { installed = null; }
   if (installed === null) {
-    record('installed-unit', true, 'deployment', 'no unit installed yet; the runbook must install the reviewed template before daemon-reload');
-  } else if (unit !== null && installed === unit) {
-    record('installed-unit', true, 'deployment', 'installed unit matches the reviewed template');
+    record(id, false, 'deployment', `${installedPath} is absent or is not a root-owned, non-group/world-writable regular file and must be safely installed before activation`);
+  } else if (reviewed !== null && installed === reviewed) {
+    record(id, true, 'deployment', `${installedPath} matches the reviewed template`);
   } else {
-    record('installed-unit', false, 'deployment',
-      'installed unit differs from the reviewed template and must be reinstalled before daemon-reload and start');
+    record(id, false, 'deployment', `${installedPath} differs from the reviewed template`);
   }
 }
 
