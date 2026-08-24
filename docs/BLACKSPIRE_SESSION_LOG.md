@@ -9,6 +9,13 @@
 - **Provider attempt ID/state:** none; **usage/accounting:** no rows; **restart:** worker restarted and generation changed to `fc3ffd52173e4994a385c3238f85c72b`; **replay count:** 0.
 - After generation-fenced readiness passed and the replacement worker had polled for three seconds, the final task state remained `cancelled`, retry count remained 0, and public readiness was healthy. No Codex child or external dispatch marker existed.
 
+### Cancel during Codex execution — PASS
+
+- **Task ID:** `task_ef214bac982b88a0`; **start:** `2026-08-24T14:53:11.263Z`; **expected:** cancellation after the durable external-dispatch marker terminates the provider process group, finalizes attempt/accounting honestly, remains absorbing, and never retries.
+- **Provider attempt:** `codex_dispatch_task_ef214bac982b88a0`, observed `dispatching` at `2026-08-24T14:53:13.071Z`; cancellation was submitted at `2026-08-24T14:53:13.122Z`, 51 ms after the observed marker. The attempt finalized `failed` after 320 ms and durable `codex_dispatch_started` plus `late_response_ignored` evidence remained.
+- **Claim behavior:** the task retained its single worker/claim ownership record; no replacement claim or attempt appeared. **Final task:** `cancelled`; **usage/accounting:** `subscription_unmetered`, NULL cost, atomically linked to the attempt; **restart:** none during this case; **replay count:** 1 total attempt.
+- Three seconds after settlement the task was still cancelled with retry count 0, no task-specific process remained, the worker was idle on generation `fc3ffd52173e4994a385c3238f85c72b`, and public health remained healthy. No `task.failed` or `task.completed` terminal overwrite occurred.
+
 ## 2026-08-24 — Canonical production cutover and real Codex completion (Codex)
 
 - Integrated the existing current-main lanes in dependency order: topology PR #105, immutable Actions PR #107, independent release evidence PR #109, PWA observability PR #108, and truthful VPS audit PR #106. Follow-up PRs #110-#113 corrected live-discovered Codex readiness and coherent runtime-profile defects with focused regression coverage and exact CI before deployment.
