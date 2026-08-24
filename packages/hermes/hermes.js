@@ -4,7 +4,7 @@ import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
 import { classifyRequest, decide, evaluateRequestPolicy } from '../policy/policy.js';
-import { createTaskBranch, applyEdits, inspectChangedFiles, commitAll, createPullRequest, getRepositoryMetadata } from '../github/github.js';
+import { createTaskBranch, applyEdits, artifactsWouldChangeWorkspace, inspectChangedFiles, commitAll, createPullRequest, getRepositoryMetadata } from '../github/github.js';
 import { query, esc } from '../task-engine/db.js';
 import { createHermesRequest } from './contract.js';
 import { dispatchHermes } from './adapter.js';
@@ -90,6 +90,10 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     if (context.changedFiles.length !== 0) {
       recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace was not clean before artifact application', paths: context.changedFiles.map((file) => file.path) });
       return move('failed', { error: 'Workspace must be clean before applying provider artifacts' });
+    }
+    if (!artifactsWouldChangeWorkspace(providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths })) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'provider artifacts were byte-identical to the workspace', provider: providerResult.provider });
+      return move('failed', { error: 'Provider artifacts produced no workspace delta' });
     }
     if (await shouldStop(task.id, ownership)) return;
 
@@ -232,7 +236,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     const guard = guardDispatch({ task, workspace, actorId: taskActor(task), channel: task.source_channel || 'api', selected, deadline: hermesRequest.deadline, idempotencyKey: hermesRequest.idempotencyKey, allowedProviders: allowedProviders(workspace) });
     recordEvidence(task.id, guard.ok ? 'dispatch_attempt' : 'dispatch_prevented', { allowed: guard.ok, reason: guard.reason || 'guard passed', provider: selected.provider, attempt });
     if (!guard.ok) return { ok: false, error: guard.reason };
-    const requestPacket = { taskId: task.id, request: hermesRequest.objective, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference, dispatchOwnership: workerId && claimToken ? { workerId, claimToken } : null };
+    const requestPacket = { taskId: task.id, request: hermesRequest.objective, executionIntent: task.execution_intent, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference, dispatchOwnership: workerId && claimToken ? { workerId, claimToken } : null };
     const started = Date.now();
     let codexDispatch = null;
     if (selected.provider === 'codex') {

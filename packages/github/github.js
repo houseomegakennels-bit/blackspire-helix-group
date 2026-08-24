@@ -36,6 +36,17 @@ export function applyEdits(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
   return changed;
 }
 
+export function artifactsWouldChangeWorkspace(edits, { cwd = '.', allowedPaths = ['.'] } = {}) {
+  return (edits || []).some((edit) => {
+    if (!isPathAllowed(edit.path, allowedPaths)) throw new Error(`Edit path not allowed: ${edit.path}`);
+    const target = assertInsideWorkspace(edit.path, cwd);
+    try { return fs.readFileSync(target, 'utf8') !== String(edit.content ?? ''); } catch (error) {
+      if (error?.code === 'ENOENT') return true;
+      throw error;
+    }
+  });
+}
+
 export function inspectChangedFiles({ cwd = '.' } = {}) {
   const output = git(['status', '--porcelain', '-uall'], cwd).stdout.trim();
   if (!output) return [];

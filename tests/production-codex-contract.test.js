@@ -210,6 +210,7 @@ test('Codex spawn args carry server model, workspace cwd, read-only sandbox, and
   const result = await runCodexCliPacket(packet, {
     workspaceRoot: workspace,
     model: 'MODEL_A',
+    executionIntent: 'read_only',
     spawnImpl: fakeChild(({ child, args, options }) => {
       observed = { args, options };
       const final = args[args.indexOf('--output-last-message') + 1];
@@ -225,6 +226,7 @@ test('Codex spawn args carry server model, workspace cwd, read-only sandbox, and
   assert.equal(observed.args[observed.args.indexOf('--model') + 1], 'MODEL_A');
   assert.equal(observed.args[observed.args.indexOf('--cd') + 1], workspace);
   assert.equal(observed.args[observed.args.indexOf('--sandbox') + 1], 'read-only');
+  assert.match(observed.args.at(-1), /This is a read-only task[\s\S]*artifacts must be empty/);
 });
 
 test('workspace cwd follows the selected workspace and never the service checkout', async () => {

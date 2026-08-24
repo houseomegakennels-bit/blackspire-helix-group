@@ -92,7 +92,7 @@ case "\${1:-}" in
   exec)
     prompt="\${*: -1}"
     packet="\${prompt#* at }"
-    packet="\${packet%%. Return*}"
+    packet="\${packet%%. This*}"
     final=""
     for ((i=1; i<=$#; i++)); do
       if [[ "\${!i}" == "--output-last-message" ]]; then
@@ -326,12 +326,14 @@ test('a successful read-only task never enters branch, apply, validation, commit
 });
 
 test('a non-empty artifact that produces no workspace delta cannot complete', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
   const { status, body } = await submit('identical-artifact mutation', 'production-e2e-identical-artifact');
   assert.equal(status, 202);
   await startWorker({ once: true });
   assert.equal(getTask(body.task.id).status, 'failed');
   assert.match(getTask(body.task.id).error, /no workspace delta/i);
   assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
 });
 
 test('a mutation task refuses a dirty baseline instead of attributing unrelated files to its artifacts', async () => {
