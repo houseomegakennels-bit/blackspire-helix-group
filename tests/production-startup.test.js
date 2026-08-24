@@ -4,12 +4,23 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-prodstartup-'));
 
-function runApi(env) {
+function runApi(env, { operatorStatus = null, operatorExpiresAt = null, operatorRevokedAt = null } = {}) {
   prepareDisposableDatabase(env.BLACKSPIRE_DB_PATH);
+  if (operatorStatus) {
+    const timestamp = Date.now() - 1000;
+    const db = new DatabaseSync(env.BLACKSPIRE_DB_PATH);
+    try {
+      db.prepare('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(
+        env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID, 'admin', env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID, 'bearer', null,
+        operatorStatus, timestamp, operatorExpiresAt, operatorRevokedAt, null, 1, timestamp,
+      );
+    } finally { db.close(); }
+  }
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
@@ -64,7 +75,7 @@ test('startup refuses to boot when a required deployment identity is unverified'
     CORS_ORIGIN: 'https://command.example.com',
     RATE_LIMIT_DISABLED: 'false',
     TRUST_PROXY: 'false',
-  });
+  }, { operatorStatus: 'active' });
   assert.equal(result.exited, true, `the API must refuse to serve traffic on an unverified deployment identity: ${result.stderr}`);
   assert.equal(result.code, 1);
   assert.match(result.stderr, /deploymentIdentityReasonCode/, `the refusal must name the deployment identity: ${result.stderr}`);
@@ -92,6 +103,36 @@ test('production startup boots normally with a valid configuration', async () =>
     RATE_LIMIT_DISABLED: 'false',
     TRUST_PROXY: 'false',
     GIT_WORKFLOW_ENABLED: 'false',
-  });
+  }, { operatorStatus: 'active' });
   assert.equal(result.exited, false, 'API must stay up and serve traffic with a valid production config');
+});
+
+test('production startup refuses an absent, revoked, or expired canonical operator principal', async () => {
+  const baseEnv = {
+    NODE_ENV: 'production',
+    BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'startup-operator',
+    PORT: '8900',
+    COMMAND_ADMIN_TOKEN: 'a'.repeat(32),
+    SESSION_SECRET: 'b'.repeat(40),
+    SECURE_COOKIES: 'true',
+    PUBLIC_BASE_URL: 'https://command.example.com',
+    TELEGRAM_MODE: 'dry-run',
+    DEBUG: 'false',
+    CORS_ORIGIN: 'https://command.example.com',
+    RATE_LIMIT_DISABLED: 'false',
+    TRUST_PROXY: 'false',
+    GIT_WORKFLOW_ENABLED: 'false',
+  };
+  const fixtures = [
+    ['absent', {}],
+    ['revoked', { operatorStatus: 'revoked', operatorRevokedAt: Date.now() - 500 }],
+    ['expired', { operatorStatus: 'active', operatorExpiresAt: Date.now() - 500 }],
+  ];
+  for (const [name, operator] of fixtures) {
+    const result = await runApi({ ...baseEnv, BLACKSPIRE_DB_PATH: path.join(root, `operator-${name}`, 'command.sqlite'), TELEGRAM_TMP_DIR: path.join(root, `operator-${name}-attachments`) }, operator);
+    assert.equal(result.exited, true, `${name} operator must fail startup`);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /canonical operator principal is unavailable/);
+    assert.doesNotMatch(result.stderr, /startup-operator/, 'startup refusal must not disclose the configured authority identifier');
+  }
 });

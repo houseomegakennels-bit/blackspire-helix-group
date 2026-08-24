@@ -485,10 +485,13 @@ export function start(port, host) {
   }
   const validation = requireProductionSafeConfig();
   const identityValidation = validateDeploymentIdentityForStartup(deploymentIdentityProvider.get());
-  startupConfigValidation = { ok: validation.ok && identityValidation.ok, deploymentIdentity: identityValidation };
-  if ((process.env.NODE_ENV === 'production' && !validation.ok) || !identityValidation.ok) {
-    console.error(JSON.stringify({ service: 'api', fatal: true, errors: validation.errors, deploymentIdentityReasonCode: identityValidation.reasonCode }));
-    throw new Error(`production configuration refused: ${[...validation.errors, ...(identityValidation.ok ? [] : [`deployment identity ${identityValidation.reasonCode}`])].join('; ')}`);
+  const operatorPrincipalValid = process.env.NODE_ENV !== 'production' || Boolean(configuredEvaluationAdminPrincipal());
+  const configErrors = [...validation.errors, ...(operatorPrincipalValid ? [] : ['canonical operator principal is unavailable'])];
+  const startupErrors = [...configErrors, ...(identityValidation.ok ? [] : [`deployment identity ${identityValidation.reasonCode}`])];
+  startupConfigValidation = { ok: validation.ok && identityValidation.ok && operatorPrincipalValid, operatorPrincipal: operatorPrincipalValid, deploymentIdentity: identityValidation };
+  if ((process.env.NODE_ENV === 'production' && (!validation.ok || !operatorPrincipalValid)) || !identityValidation.ok) {
+    console.error(JSON.stringify({ service: 'api', fatal: true, errors: configErrors, deploymentIdentityReasonCode: identityValidation.reasonCode }));
+    throw new Error(`production configuration refused: ${startupErrors.join('; ')}`);
   }
   // The canonical bind contract decides host and port. Explicit arguments stay supported for
   // in-process tests and the restricted staging launcher, but a production profile is always
@@ -566,7 +569,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
   const checks = {
     lifecycle: lifecyclePhase === 'ready',
     database: database === 'compatible',
-    productionConfig: startupConfigValidation.ok === true,
+    productionConfig: startupConfigValidation.ok === true && (process.env.NODE_ENV !== 'production' || Boolean(configuredEvaluationAdminPrincipal())),
     worker: worker.ok,
     scheduler: scheduler.ok,
     deploymentIdentity: validateDeploymentIdentityForStartup(deploymentIdentityProvider.get()).ok,
