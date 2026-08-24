@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## Workspace authorization remediation in review (2026-08-24 UTC)
+
+PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.
+
+The current branch protects persisted-workspace operator routes with the existing principal/grant system. It filters listings, hides cross-workspace object existence, scopes runtime evidence, binds actions to their required permissions, and makes production refuse a missing or malformed configured operator principal. Focused authorization, production startup, lint, typecheck, and preflight gates pass. Exact-head independent review and merge are next; no production state changed.
+
 ## Production Hermes execution final correction in progress (2026-08-17 UTC)
 
 PR #103 entered this correction at exact head `443466a619f601b237ebbb5d764a98ab4930eef4`, open, not draft, mergeable, and green on GitHub Actions and Vercel, with three unresolved P1 review threads: metered API cost ceiling enforcement, Codex direct-api preflight mismatch, and canonical memory. The implemented correction keeps production execution fail-closed for metered OpenAI/Anthropic API providers because this branch still lacks conservative pre-dispatch monetary cost enforcement; it makes authenticated Codex CLI the canonical Codex production mode; it refuses Codex direct-api credentials/preflight until a real implementation exists; and it records subscription CLI accounting separately from metered cost.

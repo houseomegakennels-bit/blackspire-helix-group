@@ -251,6 +251,7 @@ test('production CSP does not permit inline script or style', async () => {
     env: {
       ...process.env,
       NODE_ENV: 'production',
+      BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'static-asset-operator',
       PORT: '8901',
       BLACKSPIRE_DB_PATH: dbPath,
       COMMAND_ADMIN_TOKEN: crypto.randomBytes(24).toString('hex'),

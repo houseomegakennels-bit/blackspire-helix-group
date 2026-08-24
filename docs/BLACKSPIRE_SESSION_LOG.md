@@ -1,5 +1,10 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — PR #103 merged and workspace route authorization implemented (Codex)
+
+- Recovered no valuable local work newer than PR #103 exact head `dae91962f992016cf0dcde823643bad42130952a`. Verified exact-head Actions, Vercel, and clean adversarial Codex review; reproduced 54 focused ownership/Codex/preflight checks; answered and resolved the four outdated P1 threads individually; and merged with expected-head protection as `029376c4e47451c6426eb4cbf7c3f9e622a2170b`. The merge tree is byte-identical to the reviewed head. No deployment or real provider smoke occurred.
+- Fresh branch `fix/workspace-authorization` integrates existing persisted principals and grants across workspace/task/conversation/evidence/approval/runtime/halt/resume HTTP surfaces, filters list results, scopes runtime evidence, and uses 404-like denial. Production requires a canonical operator principal ID but still requires active persisted grants. Cross-workspace, revoked-grant, session-rotation, and read-only-permission tests pass; a temporary unconditional-allow mutant failed the authorization suite and exact source was restored. The complete trusted run measured 1,005 total, 995 passed, one production-CSP fixture failure, and 9 skipped; the fixture now supplies the newly required non-secret principal and passes 14/14 in isolation. Lint, typecheck, source preflight, whitespace, and focused production/authorization gates pass. Independent exact-head review and merge remain outstanding; production remains unchanged.
+
 ## 2026-08-13 — PR #95 second correction round: the fix itself is now pinned (Claude Code)
 
 - Two fresh independent exact-head reviewers ran against `b714e64`. One returned **MERGE** with no material findings, independently re-deriving all six mutants from the previous round and confirming every one is killed, that the audit-projection round-trip fix still holds, that nothing merged was reverted, and that the retraction above matches measured `required` semantics. The other returned **REQUEST CHANGES** with one finding, and it was correct.
