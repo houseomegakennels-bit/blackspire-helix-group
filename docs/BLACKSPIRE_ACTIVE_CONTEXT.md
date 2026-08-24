@@ -4,7 +4,7 @@
 
 PR #103 is merged at `029376c4e47451c6426eb4cbf7c3f9e622a2170b` from exact reviewed head `dae91962f992016cf0dcde823643bad42130952a`, with a byte-identical tree. Production and a real Jarvis-pipeline Codex smoke remain unverified.
 
-The current branch protects persisted-workspace operator routes with the existing principal/grant system. It filters listings, hides cross-workspace object existence, scopes runtime evidence, binds actions to their required permissions, and makes production refuse a missing or malformed configured operator principal. Focused authorization, production startup, lint, typecheck, and preflight gates pass. Exact-head independent review and merge are next; no production state changed.
+The current branch protects persisted-workspace operator routes with the existing principal/grant system. It filters listings, hides cross-workspace object existence, scopes runtime evidence, binds actions to their required permissions, and makes production refuse a missing or malformed configured operator principal. First review found and the branch corrected four P1s involving idempotency disclosure, conversation binding, the PWA stop payload, and global-stop authority. Focused regressions pass. Fresh exact-head review and merge are next; no production state changed.
 
 ## Production Hermes execution final correction in progress (2026-08-17 UTC)
 
