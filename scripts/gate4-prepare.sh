@@ -336,6 +336,8 @@ emit_plan() {
 BLACKSPIRE GATE 4 — OPERATOR COMMAND PLAN (nothing below is executed by this script)
 
 PREPARATION (safe, reversible, no activation)
+  Run the following preparation commands in one fail-fast shell:
+       set -euo pipefail
   1. Create the environment file from the reviewed example, then supply the operator values. The
      file is created root:$runtime_user 0640 in one step, so it is never briefly world-readable:
        test ! -e $env_file && test ! -L $env_file

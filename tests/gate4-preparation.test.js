@@ -342,6 +342,8 @@ test('the plan separates preparation from activation and executes nothing', () =
     'every planned validation must carry the required approved SHA',
   );
   assert.match(preparation, /test ! -e .*command\.env && test ! -L .*command\.env/);
+  assert.match(preparation, /PREPARATION[\s\S]*set -euo pipefail[\s\S]*unit snapshot/,
+    'snapshot creation must run in a fail-fast preparation shell');
   assert.match(preparation, /test ! -e .*workspace && test ! -L .*workspace/);
   assert.match(preparation, /test ! -e .*logrotate\.conf && test ! -L .*logrotate\.conf/);
   assert.match(preparation, /install -o root -g root -m 0644[\s\\]+.*blackspire-command-logrotate\.conf/);
@@ -374,6 +376,8 @@ test('the checklist and the script agree on the authorization boundary', () => {
   const before = checklist.slice(0, boundary);
   assert.match(before, /BLACKSPIRE_GATE4_APPROVED_SHA=<approved-sha> bash scripts\/gate4-rollback-preparation\.sh/,
     'the checklist must call the same canonical tested rollback helper');
+  assert.match(before, /set -euo pipefail[\s\S]*unit_backup_dir=/,
+    'the checklist must abort before .complete or topology install when a snapshot write fails');
   const rollbackSource = fs.readFileSync(rollbackScript, 'utf8');
   assert.match(rollbackSource, /missing or ambiguous trusted before-state/);
   assert.match(rollbackSource, /unsafe rollback destination/);

@@ -172,3 +172,14 @@ test('timeout is bounded', async () => {
   assert.equal(result.code, 1);
   assert.ok(elapsed >= 850 && elapsed < 2500, `elapsed=${elapsed}`);
 });
+
+test('a hung systemctl probe is killed within the total readiness budget', async () => {
+  const host = fixture();
+  fs.writeFileSync(host.systemctl, '#!/bin/sh\nexec sleep 30\n');
+  fs.chmodSync(host.systemctl, 0o755);
+  const started = Date.now();
+  const result = await runWait({ url: 'http://127.0.0.1:9', host, timeout: 1 });
+  const elapsed = Date.now() - started;
+  assert.equal(result.code, 1);
+  assert.ok(elapsed >= 850 && elapsed < 2500, `elapsed=${elapsed}`);
+});

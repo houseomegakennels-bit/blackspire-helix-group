@@ -26,7 +26,11 @@ node_bin="$(blackspire_resolve_node)" || { echo 'production readiness requires N
 deadline_ms=$(( $(date +%s%3N) + timeout_seconds * 1000 ))
 
 unit_state() {
-  "$systemctl_bin" show "$1" --property=ActiveState --property=InvocationID 2>/dev/null | awk -F= '
+  local remaining_ms remaining_seconds
+  remaining_ms=$(( deadline_ms - $(date +%s%3N) ))
+  (( remaining_ms > 0 )) || return 1
+  remaining_seconds="$(awk -v ms="$remaining_ms" 'BEGIN { printf "%.3f", ms/1000 }')"
+  timeout --signal=KILL "$remaining_seconds" "$systemctl_bin" show "$1" --property=ActiveState --property=InvocationID 2>/dev/null | awk -F= '
     $1 == "ActiveState" { active=$2 }
     $1 == "InvocationID" { invocation=$2 }
     END { print active, invocation }

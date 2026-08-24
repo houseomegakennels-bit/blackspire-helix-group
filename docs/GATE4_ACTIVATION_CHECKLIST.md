@@ -73,6 +73,7 @@ paths already substituted.
 
 ```sh
 # 1. Environment file, created with its final ownership and mode in one step
+set -euo pipefail
 test ! -e /etc/blackspire/command.env && test ! -L /etc/blackspire/command.env
 install -o root -g blackspire -m 0640 \
   scripts/production-profile.env.example /etc/blackspire/command.env
