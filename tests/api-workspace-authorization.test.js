@@ -13,7 +13,7 @@ process.env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID = 'route-operator';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
-const { run } = await import('../packages/task-engine/db.js');
+const { run, get } = await import('../packages/task-engine/db.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { createTask, createApproval, recordEvidence } = await import('../packages/task-engine/tasks.js');
 const { createUnifiedInput } = await import('../packages/unified-input/unified.js');
@@ -28,6 +28,7 @@ for (const id of ['workspace-a', 'workspace-b']) upsertWorkspace({ id, name: id,
 
 const taskA = createTask({ workspaceId: 'workspace-a', request: 'inspect A', idempotencyKey: 'route-task-a' });
 const taskB = createTask({ workspaceId: 'workspace-b', request: 'inspect B', idempotencyKey: 'route-task-b' });
+const derivedCollisionTaskB = createTask({ workspaceId: 'workspace-b', request: 'reserve unified key in B', idempotencyKey: 'unified:jarvis:route-derived-collision' });
 createApproval(taskA.id, 'high_risk_execution', 'test approval');
 createApproval(taskB.id, 'high_risk_execution', 'test approval');
 recordEvidence(taskA.id, 'test', { workspace: 'a' });
@@ -75,6 +76,10 @@ test('creation and unified input enforce the target workspace before mutation', 
   assert.equal((await request('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', request: 'replay B key', idempotencyKey: 'route-task-b' }) })).status, 404);
   assert.equal((await request('/api/unified-input', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', text: 'replay B input key', idempotencyKey: 'route-conv-b' }) })).status, 404);
   assert.equal((await request('/api/unified-input', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', text: 'reuse B channel binding', channelKey: 'fixture-b', idempotencyKey: 'route-channel-substitution' }) })).status, 404);
+  const recordsBeforeCollision = get('SELECT (SELECT COUNT(*) FROM unified_inputs) inputs,(SELECT COUNT(*) FROM conversations) conversations,(SELECT COUNT(*) FROM audit_events WHERE task_id=?) audits,(SELECT COUNT(*) FROM task_evidence WHERE task_id=?) evidence', [derivedCollisionTaskB.id, derivedCollisionTaskB.id]);
+  assert.equal((await request('/api/unified-input', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'workspace-a', text: 'collide with derived B task key', channelKey: 'fresh-a-binding', idempotencyKey: 'route-derived-collision' }) })).status, 404);
+  const recordsAfterCollision = get('SELECT (SELECT COUNT(*) FROM unified_inputs) inputs,(SELECT COUNT(*) FROM conversations) conversations,(SELECT COUNT(*) FROM audit_events WHERE task_id=?) audits,(SELECT COUNT(*) FROM task_evidence WHERE task_id=?) evidence', [derivedCollisionTaskB.id, derivedCollisionTaskB.id]);
+  assert.deepEqual(recordsAfterCollision, recordsBeforeCollision, 'derived task-key collision writes no A input/conversation or B audit/evidence');
   const after = await (await request('/api/tasks')).json();
   assert.equal(after.tasks.length, before.tasks.length + 1);
 });
