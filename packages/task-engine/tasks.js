@@ -1,5 +1,5 @@
 import { id, now, redact } from '../shared/util.js';
-import { query, execSql, esc } from './db.js';
+import { query, execSql, esc, run, get, transaction } from './db.js';
 
 export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
@@ -11,7 +11,7 @@ export function createTask({ workspaceId, request, idempotencyKey, budgetCents =
   const task = {
     id: id('task'), workspace_id: workspaceId, request, status: initialStatus, idempotency_key: idempotencyKey || id('idem'), provider: null,
     plan: null, summary: initialSummary, error: initialError, budget_cents: budgetCents, retry_count: 0, created_at: now(), updated_at: now(),
-    worker_id: null, claimed_at: null, heartbeat_at: null, current_stage: null, evidence: null,
+    worker_id: null, claim_token: null, claimed_at: null, heartbeat_at: null, current_stage: null, evidence: null,
     conversation_id: conversationId, input_id: inputId, source_channel: sourceChannel, actor_id: actorId, action_class: actionClass, authority_class: authorityClass, policy_decision: policyDecision,
   };
   execSql(`INSERT INTO tasks(${Object.keys(task).join(',')}) VALUES (${Object.values(task).map(esc).join(',')});`);
@@ -28,11 +28,19 @@ export function listTasks() {
   return query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 50;');
 }
 
-export function transition(taskId, status, patch = {}) {
+export function transition(taskId, status, patch = {}, ownership = null) {
+  const timestamp = now();
+  const entries = Object.entries(patch);
+  const sets = ['status=?', 'updated_at=?', ...entries.map(([key]) => `${key}=?`)];
+  const values = [status, timestamp, ...entries.map(([, value]) => typeof value === 'string' ? value : JSON.stringify(value)), taskId];
+  let predicate = status === 'cancelled' ? '' : " AND status<>'cancelled'";
+  if (ownership) {
+    predicate += ' AND worker_id=? AND claim_token=?';
+    values.push(ownership.workerId, ownership.claimToken);
+  }
+  const result = run(`UPDATE tasks SET ${sets.join(',')} WHERE id=?${predicate}`, values);
   const current = getTask(taskId);
-  if (current?.status === 'cancelled' && !['cancelled','failed','queued'].includes(status)) return current;
-  const sets = [`status=${esc(status)}`, `updated_at=${esc(now())}`, ...Object.entries(patch).map(([key, value]) => `${key}=${esc(typeof value === 'string' ? value : JSON.stringify(value))}`)];
-  execSql(`UPDATE tasks SET ${sets.join(',')} WHERE id=${esc(taskId)};`);
+  if (Number(result.changes) !== 1) return current;
   audit(taskId, 'system', 'task.transition', { status, ...patch });
   recordTaskEvent(taskId, `task.${status}`, { status, summary: patch.summary || null, error: patch.error || null, currentStage: patch.current_stage || null });
   return getTask(taskId);
@@ -81,19 +89,24 @@ export function deliveryRecords(conversationId) {
 export function claimNext({ workerId, staleAfterSeconds = 300 } = {}) {
   const claimedAt = now();
   const assignedWorkerId = workerId || id('worker');
+  const claimToken = id('claim');
   execSql(`BEGIN IMMEDIATE;
-UPDATE tasks SET status='planning', worker_id=${esc(assignedWorkerId)}, claimed_at=${esc(claimedAt)}, heartbeat_at=${esc(claimedAt)}, updated_at=${esc(claimedAt)}, current_stage='claimed'
+UPDATE tasks SET status='planning', worker_id=${esc(assignedWorkerId)}, claim_token=${esc(claimToken)}, claimed_at=${esc(claimedAt)}, heartbeat_at=${esc(claimedAt)}, updated_at=${esc(claimedAt)}, current_stage='claimed'
 WHERE id=(
   SELECT id FROM tasks
   WHERE status='queued' OR (status IN ('planning','running','validating') AND (heartbeat_at IS NULL OR datetime(heartbeat_at) < datetime('now','-${Number(staleAfterSeconds)} seconds')))
   ORDER BY created_at LIMIT 1
 );
 COMMIT;`);
-  return query(`SELECT * FROM tasks WHERE claimed_at=${esc(claimedAt)} AND worker_id=${esc(assignedWorkerId)} ORDER BY created_at LIMIT 1;`)[0] || null;
+  return query(`SELECT * FROM tasks WHERE claim_token=${esc(claimToken)} AND worker_id=${esc(assignedWorkerId)} LIMIT 1;`)[0] || null;
 }
 
-export function heartbeat(taskId, stage) {
-  execSql(`UPDATE tasks SET heartbeat_at=${esc(now())}, current_stage=${esc(stage || '')}, updated_at=${esc(now())} WHERE id=${esc(taskId)};`);
+export function heartbeat(taskId, stage, { workerId = null, claimToken = null } = {}) {
+  const timestamp = now();
+  const result = workerId || claimToken
+    ? run("UPDATE tasks SET heartbeat_at=?,current_stage=?,updated_at=? WHERE id=? AND worker_id=? AND claim_token=? AND status IN ('planning','running','validating')", [timestamp, stage || '', timestamp, taskId, workerId, claimToken])
+    : run('UPDATE tasks SET heartbeat_at=?,current_stage=?,updated_at=? WHERE id=?', [timestamp, stage || '', timestamp, taskId]);
+  return Number(result.changes) === 1;
 }
 
 export function createSubtasks(taskId, subtasks) {
@@ -105,11 +118,56 @@ export function updateSubtask(taskId, stage, status, details = {}) {
 }
 
 export function recordProviderAttempt(taskId, attempt) {
-  execSql(`INSERT INTO provider_attempts VALUES (${esc(id('attempt'))},${esc(taskId)},${esc(attempt.provider)},${esc(attempt.mode)},${esc(attempt.status)},${esc(redact(JSON.stringify(attempt.requestPacket || {})))},${esc(redact(JSON.stringify(attempt.responsePacket || {})))},${esc(redact(attempt.error || ''))},${Number(attempt.latencyMs || 0)},${esc(now())});`);
+  const responsePacket = { ...(attempt.responsePacket || {}), accounting: attempt.accounting || attempt.responsePacket?.accounting || null };
+  execSql(`INSERT INTO provider_attempts VALUES (${esc(id('attempt'))},${esc(taskId)},${esc(attempt.provider)},${esc(attempt.mode)},${esc(attempt.status)},${esc(redact(JSON.stringify(attempt.requestPacket || {})))},${esc(redact(JSON.stringify(responsePacket)))},${esc(redact(attempt.error || ''))},${Number(attempt.latencyMs || 0)},${esc(now())});`);
+}
+
+export function prepareCodexDispatch(taskId, attempt) {
+  const attemptId = `codex_dispatch_${taskId}`;
+  const responsePacket = { model: attempt.model || null, accounting: { monetaryCostState: 'subscription_unmetered', costCents: null } };
+  return transaction(() => {
+    const existing = get('SELECT * FROM provider_attempts WHERE id=? OR (task_id=? AND provider=\'codex\') ORDER BY created_at LIMIT 1', [attemptId, taskId]);
+    if (existing) return { owned: false, attempt: existing };
+    run('INSERT INTO provider_attempts(id,task_id,provider,mode,status,request_packet,response_packet,error,latency_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)', [
+      attemptId, taskId, 'codex', attempt.mode, 'dispatching', redact(JSON.stringify(attempt.requestPacket || {})), redact(JSON.stringify(responsePacket)), '', 0, now(),
+    ]);
+    return { owned: true, attempt: get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]) };
+  });
+}
+
+export function finishCodexDispatch(taskId, status, { attemptId = `codex_dispatch_${taskId}`, responsePacket = {}, error = '', latencyMs = 0 } = {}) {
+  if (!['completed', 'failed', 'outcome_unknown'].includes(status)) throw new Error('invalid Codex dispatch terminal status');
+  const result = run('UPDATE provider_attempts SET status=?,response_packet=?,error=?,latency_ms=? WHERE id=? AND status IN (\'dispatching\',\'started\')', [
+    status, redact(JSON.stringify(responsePacket)), redact(error), Number(latencyMs || 0), attemptId,
+  ]);
+  if (Number(result.changes) !== 1) throw new Error('Codex dispatch attempt is missing or already terminal');
+  return get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
+}
+
+export function finishCodexDispatchWithUsage(taskId, status, { attemptId = `codex_dispatch_${taskId}`, responsePacket = {}, error = '', latencyMs = 0, usage, faultInjector = null } = {}) {
+  return transaction(() => {
+    const existing = get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
+    if (!existing || existing.task_id !== taskId || existing.provider !== 'codex' || existing.mode !== usage?.mode || usage?.provider !== 'codex') throw new Error('Codex dispatch identity mismatch');
+    const existingUsage = get('SELECT * FROM provider_usage WHERE attempt_id=?', [attemptId]);
+    const safeResponse = redact(JSON.stringify(responsePacket));
+    const safeError = redact(error);
+    if (existing.status === status && existingUsage && existing.response_packet === safeResponse && existing.error === safeError && Number(existing.latency_ms) === Number(latencyMs || 0)) return existing;
+    if (!['dispatching', 'started'].includes(existing.status)) throw new Error('Codex dispatch attempt is already terminal');
+    const attempt = finishCodexDispatch(taskId, status, { attemptId, responsePacket, error, latencyMs });
+    faultInjector?.('after_attempt_update');
+    recordUsage(taskId, { ...usage, attemptId });
+    faultInjector?.('after_usage_insert');
+    return attempt;
+  });
 }
 
 export function recordUsage(taskId, usage) {
-  execSql(`INSERT INTO provider_usage VALUES (${esc(id('usage'))},${esc(taskId)},${esc(usage.provider)},${esc(usage.mode)},${Number(usage.latencyMs || 0)},${Number(usage.inputTokens || 0)},${Number(usage.outputTokens || 0)},${Number(usage.costCents || 0)},${esc(now())});`);
+  const state = normalizeAccountingState(usage.monetaryCostState, usage.costCents);
+  const cost = Number.isFinite(Number(usage.costCents)) && usage.costCents !== null && usage.costCents !== undefined ? Number(usage.costCents) : null;
+  if (state === 'metered' && cost === null) throw new Error('metered provider usage requires a verified cost_cents value');
+  run('INSERT INTO provider_usage(id,task_id,provider,mode,latency_ms,input_tokens,output_tokens,cost_cents,created_at,monetary_cost_state,accounting_metadata,attempt_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', [
+    usage.attemptId ? `usage_${usage.attemptId}` : id('usage'), taskId, usage.provider, usage.mode, Number(usage.latencyMs || 0), Number(usage.inputTokens || 0), Number(usage.outputTokens || 0), cost, now(), state, redact(JSON.stringify(usage.accountingMetadata || {})), usage.attemptId || null,
+  ]);
 }
 
 export function recordChangedFile(taskId, file) {
@@ -180,4 +238,29 @@ export function setFlag(key, value) {
 
 export function getFlag(key) {
   return query(`SELECT value FROM system_flags WHERE key=${esc(key)};`)[0]?.value;
+}
+
+export function monetarySpend(taskId) {
+  return taskRecords(taskId).usage.reduce((sum, row) => {
+    const state = row.monetary_cost_state || legacyAccountingState(row);
+    if (state === 'metered') {
+      if (row.cost_cents === null || row.cost_cents === undefined || row.cost_cents === '') throw new Error('metered provider usage has unknown cost');
+      return sum + Number(row.cost_cents);
+    }
+    if (state === 'subscription_unmetered') return sum;
+    if (state === 'metered_cost_unavailable') throw new Error('metered provider usage has unavailable cost');
+    throw new Error(`unknown provider accounting state: ${state || 'missing'}`);
+  }, 0);
+}
+
+function normalizeAccountingState(state, costCents) {
+  const value = state || (costCents === null || costCents === undefined ? 'metered_cost_unavailable' : 'metered');
+  if (['metered', 'subscription_unmetered', 'metered_cost_unavailable'].includes(value)) return value;
+  return 'metered_cost_unavailable';
+}
+
+function legacyAccountingState(row) {
+  if (row.provider === 'mock' || row.provider === 'manual') return 'metered';
+  if (row.provider === 'codex' && row.mode === 'cli' && row.cost_cents === null) return 'subscription_unmetered';
+  return row.cost_cents === null ? 'metered_cost_unavailable' : 'metered';
 }

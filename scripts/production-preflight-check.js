@@ -258,7 +258,13 @@ if (unit === null) {
     'BLACKSPIRE_RUNTIME_USER', 'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS',
     // Required since the workspace-root preflight: ExecStartPre now refuses a production profile
     // that omits it, so a profile not documenting it would fail every start.
-    'BLACKSPIRE_WORKSPACE_ROOT'];
+    'BLACKSPIRE_WORKSPACE_ROOT',
+    // The real-provider-execution opt-in. It must be stated explicitly in the profile, so an
+    // operator reading the profile can see whether this deployment can reach a paid provider
+    // instead of having to infer it from an absent variable.
+    'BLACKSPIRE_PRODUCTION_EXECUTION',
+    // Required for production Codex execution because ProtectHome=yes blocks ~/.codex.
+    'CODEX_HOME'];
   const missingKeys = requiredKeys.filter((key) => !new RegExp(`^${key}=`, 'm').test(profile));
   record('profile-required-keys', missingKeys.length === 0, 'source',
     missingKeys.length === 0 ? 'production profile documents every required key'

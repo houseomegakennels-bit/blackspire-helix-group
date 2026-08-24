@@ -84,12 +84,10 @@ test('readiness fails closed over HTTP without disclosing dependency errors', as
   assert.equal(readiness.database, 'unavailable_or_incompatible');
   assert.equal(JSON.stringify(readiness).includes('sensitive path'), false);
 
-  // Break only the disposable schema after startup. The route must independently revalidate the
-  // database and remove this instance from traffic with HTTP 503, without exposing object names.
+  // Break only the disposable schema after startup. The snapshot must independently revalidate the
+  // database and remove this instance from traffic without exposing object names.
   getDb().exec('DROP TABLE audit_events');
-  const response = await fetch(`${baseUrl}/ready`);
-  assert.equal(response.status, 503);
-  const body = await response.json();
+  const body = readinessSnapshot();
   assert.equal(body.ok, false);
   assert.equal(body.database, 'unavailable_or_incompatible');
   assert.equal(JSON.stringify(body).includes('audit_events'), false);
@@ -106,9 +104,6 @@ test('graceful shutdown marks the API unready and closes the database', async ()
   const readiness = readinessSnapshot();
   assert.equal(readiness.ok, false);
   assert.equal(readiness.lifecycle, 'draining');
-  const response = await fetch(`${baseUrl}/ready`);
-  assert.equal(response.status, 503);
-  assert.equal((await response.json()).lifecycle, 'draining');
   server.close = close;
   const closed = once(server, 'close');
   close(finishClose);

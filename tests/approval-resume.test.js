@@ -73,10 +73,10 @@ test('rejected high-risk task cannot be forced to run by resuming', async () => 
   await fetch(`http://localhost:8895/api/tasks/${taskId}/reject`, { method: 'POST', headers: { authorization: 'Bearer approval-token' } });
   assert.equal(getTask(taskId).status, 'cancelled');
 
-  // Even if something forces the task back to queued, the persisted rejection blocks execution instead of re-prompting.
+  // Cancellation is absorbing: a rejected task cannot be forced back to queued or re-prompted.
   await fetch(`http://localhost:8895/api/tasks/${taskId}/resume`, { method: 'POST', headers: { authorization: 'Bearer approval-token' } });
   await startWorker({ once: true });
-  assert.equal(getTask(taskId).status, 'failed');
+  assert.equal(getTask(taskId).status, 'cancelled');
   assert.equal(taskRecords(taskId).providerAttempts.length, 0, 'a rejected task must never reach the provider');
 });
 

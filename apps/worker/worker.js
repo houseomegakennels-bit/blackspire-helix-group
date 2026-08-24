@@ -43,7 +43,7 @@ export function startWorker({
     safeHeartbeat('working');
     try {
       // A cancellation racing the atomic claim must be observed before provider dispatch.
-      if (getTaskImpl(task.id)?.status !== 'cancelled') await processTaskImpl(task);
+      if (getTaskImpl(task.id)?.status !== 'cancelled') await processTaskImpl(task, { workerId, claimToken: task.claim_token });
     } finally {
       await deliverEventsImpl();
       activeTaskId = null;
