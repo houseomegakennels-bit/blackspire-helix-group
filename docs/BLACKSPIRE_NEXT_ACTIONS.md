@@ -4,7 +4,7 @@
 
 ## Current Jarvis delivery sequence (2026-08-24 UTC)
 
-0. **IN REVIEW — current-main release evidence reconstruction.** Reconciled `fix/release-evidence-current-main` onto post-#105/#107 main; preserve #105's Gate 4 semantics and #107's immutable pins, run focused release/topology integration tests, obtain exact-head CI and review, and merge before building a production candidate. Do not merge historical PR #97 or #98 directly.
+0. **IN PROGRESS — Jarvis canonical operator observability.** Reconciled this focused slice onto post-#105/#107/#109 main. Health/readiness, stale/stopped/current-generation worker, task-state, offline, and `outcome_unknown` no-replay fixtures are implemented. Preserve server authority for principal, workspace, provider, model, readiness, and task state; never offer automatic replay for `outcome_unknown`.
 
 1. **DONE:** workspace authorization merged in PR #104 at `31a716961b174496e5d343a8e4586017204b4990` from reviewed head `5e877a8e6f7ff2af11c61e76bb1234b8623e50b7`.
 2. Provision and verify the configured production operator principal and active workspace grants as a separately controlled database operation before activation; configuration never substitutes for a persisted grant.

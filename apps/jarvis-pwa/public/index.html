@@ -44,6 +44,7 @@
         <div class="stack">
           <p class="muted">Operator authentication for the Blackspire control plane. The token is sent once and never persisted in this browser.</p>
           <p class="notice" id="sessionNotice" role="alert"></p>
+          <p class="stamp mono" id="sessionIdentity">Canonical principal: not authenticated</p>
           <label class="sr-only" for="token">Admin token</label>
           <input id="token" type="password" autocomplete="current-password" placeholder="Admin token">
           <div class="row">
@@ -219,6 +220,7 @@
         <h2>System status</h2>
         <div class="facts" id="systemFacts">
           <div class="fact"><span class="label">Control plane</span><span class="value" id="sysApi">—</span></div>
+          <div class="fact"><span class="label">Readiness</span><span class="value" id="sysReady">—</span></div>
           <div class="fact"><span class="label">Connection</span><span class="value" id="sysLink">—</span></div>
           <div class="fact"><span class="label">Emergency stop</span><span class="value" id="sysStop">—</span></div>
           <div class="fact"><span class="label">Safe Mode</span><span class="value" id="sysSafeMode">Not reported</span></div>

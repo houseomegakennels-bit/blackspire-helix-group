@@ -91,7 +91,15 @@ async function route(req, res) {
     if (isStateChanging(req) && auth.mode === 'session' && !checkCsrf(req, auth.session)) return json(res, 403, { error: 'invalid csrf token' });
     if (TEST_MODE.enabled && !testModeAllowsRequest(u.pathname, req.method)) return json(res, 404, { error: 'not found' });
 
-    if (u.pathname === '/api/auth/session') return json(res, 200, { authenticated: auth.ok, csrfToken: auth.session?.csrfToken, expiresAt: auth.session?.expiresAt });
+    if (u.pathname === '/api/auth/session') {
+      const principal = auth.session ? resolveBoundSession(auth.session) : null;
+      // Authentication and execution authorization are separate facts. A valid
+      // persisted session remains authenticated even when no production operator
+      // principal is configured; protected workspace routes still fail closed when
+      // resolveBoundSession() cannot establish current persisted authority.
+      const authenticated = auth.ok;
+      return json(res, 200, { authenticated, principalId: principal?.principalId || null, csrfToken: authenticated ? auth.session?.csrfToken : undefined, expiresAt: authenticated ? auth.session?.expiresAt : undefined });
+    }
     if (u.pathname === '/api/auth/logout' && req.method === 'POST') { if (auth.session) destroySession(auth.session.sessionId); return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() }); }
     if (u.pathname === '/api/auth/rotate' && req.method === 'POST') {
       if (auth.mode !== 'session') return json(res, 401, { error: 'session required' });

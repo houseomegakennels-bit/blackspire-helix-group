@@ -1,8 +1,12 @@
 # Blackspire Active Context
 
+## Jarvis canonical operator observability in progress (2026-08-24 UTC)
+
+The PWA observability branch renders server-authoritative health and readiness distinctly, including degraded and unreachable API states; worker state, heartbeat age, and a shortened non-secret systemd generation identifier; provider/model evidence; and `outcome_unknown` as a terminal operator-review state with automatic retry blocked. The authenticated session surface returns only the persisted principal bound by the server to the session, and Jarvis displays that principal and session expiry without accepting browser-supplied identity. Deterministic UI fixtures cover healthy/degraded/offline API, ready/not-ready, stale/stopped/current-generation worker state, every canonical task state, and the no-replay unknown-outcome contract. Focused PWA/API validation passes 45/45. This branch is not merged or deployed; production and live Jarvis-to-Codex execution remain unverified.
+
 ## Current-main release evidence reconstruction (2026-08-24 UTC)
 
-The corrected unique #97 release-evidence series and #98 artifact cross-check are reconstructed on current main without their stale duplicated ancestry. The recovered contract passes 116 focused release/rollback tests. Its CI cross-check now independently hashes the packaged tree and binds repository plus environment instead of copying the manifest digest and comparing that value back to its source; focused CI/evidence/deployment-record validation passes 36/36, including a real post-package mutation rejection. The lane is reconciled onto post-#105/#107 main and remains unmerged pending exact-head validation.
+The corrected unique #97 release-evidence series and #98 artifact cross-check merged in PR #109 as `b83fcafe70a2d8644dda37324cc8dd8cf4499fae`, with exact-head CI and independent artifact cross-check green.
 
 ## Current-main GitHub Action pin recovery (2026-08-24 UTC)
 
