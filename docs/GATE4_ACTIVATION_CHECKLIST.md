@@ -186,10 +186,23 @@ automation — including `scripts/gate4-prepare.sh` — may perform any of it.
 
 ```sh
 # OPERATOR ONLY, AFTER GATE 4 IS AUTHORIZED
-bash scripts/release-switch.sh <approved-sha>      # switches the production current symlink
+set -euo pipefail
+approved_sha=<approved-sha>
+rollback_sha=<known-good-sha>
+activation_failed() {
+  trap - ERR
+  set +e
+  systemctl disable blackspire-command.target
+  systemctl stop blackspire-command.target
+  bash scripts/release-rollback.sh "$rollback_sha"
+  exit 1
+}
+trap activation_failed ERR
+bash scripts/release-switch.sh "$approved_sha"    # switches the production current symlink
 systemctl start blackspire-command.target
-systemctl enable blackspire-command.target         # only after a clean API+worker start is verified
 BIND_HOST=127.0.0.1 PORT=<reviewed-port> bash scripts/health-check.sh
+systemctl enable blackspire-command.target         # persist boot activation only after health/readiness pass
+trap - ERR
 
 # ACTIVATION ROLLBACK, OPERATOR ONLY
 systemctl stop blackspire-command.target

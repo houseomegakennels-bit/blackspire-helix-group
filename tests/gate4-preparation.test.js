@@ -357,6 +357,9 @@ test('the plan separates preparation from activation and executes nothing', () =
   assert.match(preparation, /checkout --detach \$\{BLACKSPIRE_GATE4_APPROVED_SHA\}/);
   assert.match(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.target/);
   assert.doesNotMatch(activation, /systemctl start blackspire-gate4-fixture-nonexistent\.service/);
+  assert.ok(activation.indexOf('systemctl start') < activation.indexOf('health-check.sh'));
+  assert.ok(activation.indexOf('health-check.sh') < activation.indexOf('systemctl enable'));
+  assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*release-rollback\.sh/);
   assert.equal(snapshot(host.home), before, 'printing the plan must not change anything');
 });
 
@@ -376,6 +379,10 @@ test('the checklist and the script agree on the authorization boundary', () => {
   for (const verb of ['systemctl start', 'systemctl enable', 'release-switch.sh']) {
     assert.equal(before.includes(verb), false, `${verb} must not be documented as preparation`);
   }
+  const activation = checklist.slice(boundary);
+  assert.ok(activation.indexOf('systemctl start') < activation.indexOf('health-check.sh'));
+  assert.ok(activation.indexOf('health-check.sh') < activation.indexOf('systemctl enable'));
+  assert.match(activation, /activation_failed\(\)[\s\S]*systemctl disable[\s\S]*systemctl stop[\s\S]*release-rollback\.sh/);
 });
 
 test('the reviewed profile example never ships a real secret', () => {
@@ -470,4 +477,12 @@ test('rollback derives a non-default workspace from the prepared production prof
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(fixture.workspaceRoot), false, 'the workspace named by the prepared profile is removed');
   assert.equal(fs.existsSync(unrelatedDefault), true, 'an unrelated workspace is never selected by a fallback');
+});
+
+test('rollback normalizes a quoted workspace exactly as preparation does', () => {
+  const fixture = rollbackFixture();
+  fs.writeFileSync(fixture.envPath, `BLACKSPIRE_WORKSPACE_ROOT="${fixture.workspaceRoot}"\n`);
+  const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(fixture.workspaceRoot), false);
 });

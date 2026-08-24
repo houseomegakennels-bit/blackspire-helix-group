@@ -413,11 +413,23 @@ explicit, bounded operator approval. This script will never run any of it, and n
 automation acting on this report.
 
 ACTIVATION (operator only, after Gate 4 is authorized)
+  set -euo pipefail
+  rollback_sha=<known-good-sha>
+  activation_failed() {
+    trap - ERR
+    set +e
+    systemctl disable $target_name
+    systemctl stop $target_name
+    bash scripts/release-rollback.sh "\$rollback_sha"
+    exit 1
+  }
+  trap activation_failed ERR
   bash scripts/release-switch.sh \${BLACKSPIRE_GATE4_APPROVED_SHA}
   systemctl start $target_name
-  systemctl enable $target_name        # only after a clean API+worker start is verified
   # health-check has no default target and fails closed without one; name the loopback port.
   BIND_HOST=127.0.0.1 PORT=<reviewed-port> bash scripts/health-check.sh
+  systemctl enable $target_name        # persist boot activation only after health and readiness pass
+  trap - ERR
 
 ACTIVATION ROLLBACK (operator only)
   systemctl stop $target_name

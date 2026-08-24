@@ -7,6 +7,8 @@ approved_sha="${BLACKSPIRE_GATE4_APPROVED_SHA:-}"
 env_file="${BLACKSPIRE_PRODUCTION_ENV_FILE:-/etc/blackspire/command.env}"
 [[ -f "$env_file" && ! -L "$env_file" ]] || { echo 'cannot resolve workspace from a safe production environment file' >&2; exit 1; }
 workspace_root="$(sed -nE 's/^[[:space:]]*BLACKSPIRE_WORKSPACE_ROOT=(.*)$/\1/p' -- "$env_file" | tail -n 1)"
+workspace_root="${workspace_root%\"}"; workspace_root="${workspace_root#\"}"
+workspace_root="${workspace_root%\'}"; workspace_root="${workspace_root#\'}"
 [[ -n "$workspace_root" && "$workspace_root" == /* ]] || { echo 'production workspace root must be an absolute path' >&2; exit 1; }
 logrotate_file="${BLACKSPIRE_GATE4_LOGROTATE_FILE:-/etc/logrotate.d/blackspire-command}"
 api_unit="${BLACKSPIRE_GATE4_API_UNIT_FILE:-/etc/systemd/system/blackspire-command.service}"
