@@ -40,3 +40,18 @@ This is an observation, not deployment evidence. No service, container, database
 6. nginx must be switched only after activation-specific API/worker generation readiness succeeds.
 
 Until those conditions and the real Jarvis-to-Codex smoke pass, production remains **NOT LIVE** under the current definition.
+
+## Preliminary safety snapshots and disposable rehearsal
+
+At `2026-08-24T12:40:25Z`, the reviewed `scripts/backup.js` contract created root-only online safety snapshots outside the runtime-owned tree. The sources stayed online and unchanged, so these are **not** the required quiesced cutover backups:
+
+- staging snapshot SHA-256: `a5a247528720bdb0cd045f7d77e482b5e816458d53d77038d9073ed545e8e63a`
+- Docker snapshot SHA-256: `f7cd8341a10265872546121a8603bd1a23c0eeb5056f367356672e69c0e6a93d`
+
+Both snapshots and checksum sidecars are `0600 root:root`; checksum verification passed. Read-only comparison found SQLite integrity `ok`, zero foreign-key violations, and no ID overlap except the single workspace. Staging contains newer but sparse July 21 input/conversation history; Docker contains distinct July 17–23 execution, provider, evidence, and approval history. Automatic record merging is unsafe and was not attempted.
+
+The dedicated migration command succeeded independently on disposable copies of both snapshots. Each reopened with integrity `ok`, zero foreign-key violations, and zero missing current schema objects while preserving its original row counts. Migration correctly created no principal or grant.
+
+The existing provisioning CLI then applied an explicit rehearsal admin principal plus a service-role minimum grant on each disposable migrated copy. Exact repeat was idempotent. Authorization allowed only `workspace.read`, `task.read`, `task.create`, `task.execute`, `approval.grant`, and `runtime.read`; it denied another workspace, `provider.use.development`, and `workspace.manage`. No rehearsal identifier or grant was written to a live database or environment.
+
+The authoritative database decision remains open. Evidence supports preserving both histories and either selecting one explicitly or starting a clean production database; it does not support an implicit union. A writer-stopped backup of each source remains mandatory immediately before any cutover or migration.
