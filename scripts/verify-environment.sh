@@ -99,7 +99,7 @@ case "$mode" in
             [[ -d "${CODEX_HOME}" && -r "${CODEX_HOME}" && -w "${CODEX_HOME}" ]] || fail "CODEX_HOME must be an existing readable and writable Codex state directory"
             command -v codex >/dev/null 2>&1 || fail "allowlisted provider codex requires the Codex CLI"
             codex_probe codex --version >/dev/null 2>&1 || fail "allowlisted provider codex requires an executable Codex CLI"
-            codex_probe codex doctor --json >/dev/null 2>&1 || fail "allowlisted provider codex requires authenticated Codex CLI"
+            codex_probe --require-authenticated-doctor codex doctor --json >/dev/null 2>&1 || fail "allowlisted provider codex requires authenticated Codex CLI and reachable provider transport"
             ;;
           claudeCode) fail "allowlisted provider claudeCode is disabled until production accounting and authentication are independently reviewed" ;;
           *) fail "BLACKSPIRE_PRODUCTION_PROVIDERS allowlist contains an unknown provider: $entry" ;;

@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — production preparation and bounded Codex doctor readiness (Codex)
+
+- Merged the existing current-main lanes in dependency order: #105 topology, #107 immutable action pins, #109 independently bound release evidence, #108 PWA observability, and #106 factual VPS audit. Current main is `bce2300ca15a1555d808d756ab1de5304d8f495d`.
+- Took writer-stopped, checksum-verified backups of the staging and legacy Docker databases without deleting either source or the Docker volume. Installed a clean migrated production database with one active `blackspire-operator` principal and minimum workspace permissions; the provisioning rerun was idempotent.
+- Prepared a private `blackspire`-owned service `CODEX_HOME` containing only the authenticated CLI credential file, with no credential contents logged. Installed reviewed API/worker/target units and logrotate configuration byte-identically; all canonical units remain inactive pending a reviewed candidate release.
+- Reproduced a live preflight defect: authenticated Codex and both provider transports were healthy, while unrelated CLI installation/update diagnostics made the aggregate doctor command nonzero. The bounded probe now validates only explicit authentication and transport checks from schema-versioned JSON and still fails closed for malformed output, unhealthy required checks, overflow, timeout, or process-containment failure. `tests/production-execution-profile.test.js` passes 18/18, lint and diff checks pass, and the service-equivalent production preflight succeeds.
+
 ## 2026-08-24 — clean production database path rehearsed
 
 - Current migrations initialized a disposable clean database with integrity `ok`, zero foreign-key violations, zero missing schema objects, one seeded workspace, and zero tasks.

@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## Production activation preparation and Codex readiness correction (2026-08-24 UTC)
+
+Current main is `bce2300ca15a1555d808d756ab1de5304d8f495d` after merging PRs #105, #107, #109, #108, and #106. Writer-stopped, checksum-verified backups now preserve both historical databases; a deliberately clean migrated production database has the persisted minimum operator grant; a private service-owned `CODEX_HOME` reports authenticated ChatGPT access; and reviewed API/worker/target units are installed byte-identically but remain inactive. Activation exposed one fail-closed preflight defect: `codex doctor --json` returned healthy authentication and provider transports but a nonzero aggregate status for unrelated installation/update diagnostics. Branch `fix/codex-doctor-auth-readiness` now parses bounded doctor JSON and requires the explicit auth and both transport checks, while continuing to reject malformed, oversized, hanging, unreachable, or unauthenticated probes. Focused tests pass 18/18 and the service-equivalent live preflight passes. Public nginx still points to staging 8788; no canonical service has been activated or called live.
+
 ## Telegram canonical-intake blocker (2026-08-24 UTC)
 
 Current main still treats the Telegram allowlist as execution authority: workspace/conversation/update state is process-local and task creation does not resolve a persisted #104 principal/grant. Old PR #86 improves transport reliability but does not repair this boundary and must not be merged or activated directly. Production Telegram stays disconnected until persisted identity mapping, workspace authorization, durable offset/dedupe/context state, and negative cross-workspace tests exist.
