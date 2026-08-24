@@ -86,6 +86,7 @@ function baseEnv(overrides = {}) {
     PORT: '8799',
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30',
     BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',
     BLACKSPIRE_DB_PATH: path.join(dbDir, 'command.sqlite'),
     BLACKSPIRE_WORKSPACE_ROOT: workspaceRoot,
     CODEX_HOME: codexHome,
@@ -234,6 +235,7 @@ test('the opt-in does not relax the unrelated production boundaries', () => {
     [{ UNIFIED_IPHONE_TEST_MODE: 'true' }, /test mode/],
     [{ BIND_HOST: '0.0.0.0' }, /BIND_HOST/],
     [{ BLACKSPIRE_STATE_OWNER: 'vps-prod' }, /state owner/],
+    [{ BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'false' }, /requires BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true/],
   ]) {
     const result = verify(executionEnv(override));
     assert.notEqual(result.status, 0, `${JSON.stringify(override)} must still be refused`);
@@ -244,6 +246,7 @@ test('the opt-in does not relax the unrelated production boundaries', () => {
 test('the documented production profile carries the opt-in, disabled, with its required keys', () => {
   const profile = fs.readFileSync('scripts/production-profile.env.example', 'utf8');
   assert.match(profile, /^BLACKSPIRE_PRODUCTION_EXECUTION=disabled$/m, 'the profile ships the opt-in explicitly disabled');
+  assert.match(profile, /^BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true$/m, 'production readiness must require the worker');
   for (const key of ['BLACKSPIRE_PRODUCTION_PROVIDERS', 'BLACKSPIRE_PRODUCTION_MODEL', 'CODEX_HOME']) {
     assert.ok(profile.includes(key), `the profile documents ${key}`);
   }

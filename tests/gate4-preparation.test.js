@@ -40,6 +40,7 @@ function makeHost({ envFile = true, workspace = true, releases = ['a'.repeat(40)
       'NODE_ENV=production', 'BLACKSPIRE_RUNTIME_MODE=production', 'BLACKSPIRE_STATE_OWNER=vps-production',
       'BLACKSPIRE_RUNTIME_USER=blackspire',
       'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS=30', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS=5',
+      'BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true',
       'BLACKSPIRE_PROVIDER_MODE=manual', 'BLACKSPIRE_HERMES_MODE=restricted', 'TELEGRAM_MODE=dry-run',
       `BLACKSPIRE_DB_PATH=${releaseRoot}/shared/database/command.sqlite`,
       `BLACKSPIRE_DATA_DIR=${releaseRoot}/shared/database`,

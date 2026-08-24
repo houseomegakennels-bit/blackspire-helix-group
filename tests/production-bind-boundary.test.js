@@ -87,6 +87,7 @@ function productionEnv(overrides = {}) {
     PORT: '8789',
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30',
     BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',
     BLACKSPIRE_RUNTIME_USER: 'blackspire',
     BLACKSPIRE_RELEASE_ROOT: disposableReleaseRoot,
     BLACKSPIRE_DB_PATH: disposableDbPath,
@@ -1074,6 +1075,7 @@ test('the approved production profile pins loopback and an explicit non-conflict
   assert.ok(port, 'the profile must set an explicit port');
   assert.equal(PROTECTED_PORTS.includes(Number(port[1])), false, 'the profile must not use a protected port');
   assert.equal(port[1], '8789');
+  assert.match(profile, /^BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true$/m);
 });
 
 test('the production preflight passes the source contract and is machine-readable', () => {
