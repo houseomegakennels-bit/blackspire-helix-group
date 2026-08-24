@@ -22,7 +22,7 @@ prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { run } = await import('../packages/task-engine/db.js');
 const authNow = Date.now();
 run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-evaluation-admin','admin','m2-evaluation-admin','bearer',null,'active',authNow,null,null,null,1,authNow]);
-run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-evaluation-grant','m2-evaluation-admin','m2-api-workspace','viewer','["evaluation.read"]','active',1,null,authNow,null,null,'test',1,authNow]);
+run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['m2-evaluation-grant','m2-evaluation-admin','m2-api-workspace','viewer','["evaluation.read","runtime.read"]','active',1,null,authNow,null,null,'test',1,authNow]);
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { createUnifiedInput } = await import('../packages/unified-input/unified.js');
 const { getTask } = await import('../packages/task-engine/tasks.js');
@@ -63,7 +63,7 @@ test('GET /api/hermes/runtime requires authentication', async () => {
 });
 
 test('authenticated status returns redacted metadata and never the credential value', async () => {
-  const res = await fetch(`${base}/api/hermes/runtime`, { headers: { authorization: 'Bearer m2-api-token' } });
+  const res = await fetch(`${base}/api/hermes/runtime?workspaceId=m2-api-workspace`, { headers: { authorization: 'Bearer m2-api-token' } });
   assert.equal(res.status, 200);
   const body = await res.text();
   assert.ok(!body.includes('super-secret-should-never-appear'), 'credential value must never appear in the status response');

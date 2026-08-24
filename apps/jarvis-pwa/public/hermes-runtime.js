@@ -1,7 +1,12 @@
 async function load() {
   const root = document.getElementById('root');
   try {
-    const response = await fetch('/api/hermes/runtime', { credentials: 'include', headers: { accept: 'application/json' } });
+    const workspaceResponse = await fetch('/api/workspaces', { credentials: 'include', headers: { accept: 'application/json' } });
+    if (workspaceResponse.status === 401) { root.innerHTML = '<p class="err">Sign in required.</p>'; return; }
+    if (!workspaceResponse.ok) { root.textContent = `Status unavailable (HTTP ${workspaceResponse.status}).`; return; }
+    const workspaceId = (await workspaceResponse.json()).workspaces?.[0]?.id;
+    if (!workspaceId) { root.innerHTML = '<p class="err">No authorized workspace is available.</p>'; return; }
+    const response = await fetch(`/api/hermes/runtime?workspaceId=${encodeURIComponent(workspaceId)}`, { credentials: 'include', headers: { accept: 'application/json' } });
     if (response.status === 401) { root.innerHTML = '<p class="err">Sign in required.</p>'; return; }
     if (!response.ok) { root.textContent = `Status unavailable (HTTP ${response.status}).`; return; }
     const status = await response.json();

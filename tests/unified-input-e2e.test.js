@@ -41,6 +41,8 @@ globalThis.fetch = async (input, init) => {
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['e2e', 'zero-e2e']);
 const { start } = await import('../apps/api/server.js');
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
 const { createUnifiedInput, getConversation, drainTelegramOutbox, registerCancellationToken } = await import('../packages/unified-input/unified.js');

@@ -12,7 +12,7 @@ import { recentProviderInvocations, recentOutcomeEvaluations, getOutcomeComponen
 import { all } from '../task-engine/db.js';
 import { redactString } from './redaction.js';
 
-export function buildRuntimeStatus(env = process.env) {
+export function buildRuntimeStatus(env = process.env, workspaceId = null) {
   const rp = resolveRuntimeProfile(env);
   const killSwitch = getFlag('emergency_stop') === 'active';
 
@@ -31,13 +31,18 @@ export function buildRuntimeStatus(env = process.env) {
     health: healthView(currentHealth(p.id)),
   }));
 
-  const recentRuns = safeRows(all('SELECT id, task_id, workspace_id, actor_id, channel, status, outcome, provider, agent, cost_cents, created_at FROM hermes_workflow_runs ORDER BY created_at DESC LIMIT 10'))
+  const recentRuns = safeRows(workspaceId
+    ? all('SELECT id, task_id, workspace_id, actor_id, channel, status, outcome, provider, agent, cost_cents, created_at FROM hermes_workflow_runs WHERE workspace_id=? ORDER BY created_at DESC LIMIT 10', [workspaceId])
+    : all('SELECT id, task_id, workspace_id, actor_id, channel, status, outcome, provider, agent, cost_cents, created_at FROM hermes_workflow_runs ORDER BY created_at DESC LIMIT 10'))
     .map((r) => ({
       id: r.id, taskId: r.task_id, workspaceId: r.workspace_id, actorId: r.actor_id, channel: r.channel,
       status: r.status, outcome: r.outcome, provider: r.provider, agent: r.agent, costCents: r.cost_cents, createdAt: r.created_at,
     }));
 
-  const recentInvocations = recentProviderInvocations(10).map((i) => ({
+  const invocationRows = workspaceId
+    ? all('SELECT i.* FROM hermes_provider_invocations i JOIN hermes_workflow_runs r ON r.id=i.run_id WHERE r.workspace_id=? ORDER BY i.created_at DESC LIMIT 10', [workspaceId])
+    : recentProviderInvocations(10);
+  const recentInvocations = invocationRows.map((i) => ({
     provider: i.provider, adapterType: i.adapter_type, model: i.model, mode: i.mode, status: i.status,
     attempt: i.attempt, durationMs: i.duration_ms, timedOut: Boolean(i.timed_out), cancelled: Boolean(i.cancelled),
     usage: { inputTokens: i.input_tokens, outputTokens: i.output_tokens, costCents: i.cost_cents },

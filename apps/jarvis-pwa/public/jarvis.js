@@ -157,8 +157,8 @@ const api = {
   cancelTask: (id) => api.request('/api/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '{}' }),
   approveTask: (id) => api.request('/api/tasks/' + encodeURIComponent(id) + '/approve', { method: 'POST', body: '{}' }),
   rejectTask: (id) => api.request('/api/tasks/' + encodeURIComponent(id) + '/reject', { method: 'POST', body: '{}' }),
-  stop: () => api.request('/api/stop', { method: 'POST', body: '{}' }),
-  stopReset: () => api.request('/api/stop/reset', { method: 'POST', body: '{}', headers: { 'x-confirmation-token': store.csrfToken + ':RESET' } }),
+  stop: () => api.request('/api/stop', { method: 'POST', body: JSON.stringify({ workspaceId: store.workspaceId }) }),
+  stopReset: () => api.request('/api/stop/reset', { method: 'POST', body: JSON.stringify({ workspaceId: store.workspaceId }), headers: { 'x-confirmation-token': store.csrfToken + ':RESET' } }),
 };
 
 /* ---------- notices, toast, announcements ---------- */

@@ -15,6 +15,8 @@ process.env.LOGIN_RATE_LIMIT = '20';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['blackspire-command']);
 const { start } = await import('../apps/api/server.js');
 const { createTask, taskRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { handleTelegramUpdate, handleTelegramAttachment } = await import('../apps/telegram/bot.js');
@@ -116,7 +118,7 @@ test('emergency reset requires session confirmation and production validation re
   const login = await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': 'reset-ip' }, body: JSON.stringify({ adminToken: 'hardening-token' }) });
   const body = await login.json();
   const sessionCookie = login.headers.get('set-cookie').split(',').map((v) => v.split(';')[0]).join('; ');
-  assert.equal((await fetch('http://localhost:8893/api/stop/reset', { method: 'POST', headers: { cookie: sessionCookie, 'x-csrf-token': body.csrfToken, 'x-confirmation-token': `${body.csrfToken}:RESET` } })).status, 200);
+  assert.equal((await fetch('http://localhost:8893/api/stop/reset', { method: 'POST', headers: { cookie: sessionCookie, 'x-csrf-token': body.csrfToken, 'x-confirmation-token': `${body.csrfToken}:RESET`, 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'blackspire-command' }) })).status, 200);
   const production = requireProductionSafeConfig({ NODE_ENV: 'production', COMMAND_ADMIN_TOKEN: 'dev-admin-token-change-me', SESSION_SECRET: 'weak', PUBLIC_BASE_URL: 'http://example.com', TELEGRAM_MODE: 'webhook', DEBUG: 'true', CORS_ORIGIN: '*', RATE_LIMIT_DISABLED: 'true' });
   assert.equal(production.ok, false);
   assert.ok(production.errors.length >= 5);
