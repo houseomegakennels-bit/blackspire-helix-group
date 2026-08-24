@@ -411,14 +411,14 @@ function rollbackFixture({ failUnit = '', failReload = false, absentTarget = fal
   const envPath = path.join(root, 'command.env');
   const workspaceRoot = path.join(root, 'workspace');
   const logrotatePath = path.join(root, 'logrotate');
-  fs.writeFileSync(envPath, 'prepared'); fs.mkdirSync(workspaceRoot); fs.writeFileSync(logrotatePath, 'prepared');
+  fs.writeFileSync(envPath, `BLACKSPIRE_WORKSPACE_ROOT=${workspaceRoot}\n`); fs.mkdirSync(workspaceRoot); fs.writeFileSync(logrotatePath, 'prepared');
   const systemctl = path.join(root, 'systemctl');
   fs.writeFileSync(systemctl, `#!/bin/sh\n${failReload ? 'exit 71' : 'exit 0'}\n`); fs.chmodSync(systemctl, 0o755);
   const installer = path.join(root, 'install');
   const failureClause = failUnit ? `case \"$arg\" in *${failUnit}) exit 72;; esac\n` : '';
   fs.writeFileSync(installer, `#!/bin/sh\nfor arg do :; done\n${failureClause}exec /usr/bin/install \"$@\"\n`); fs.chmodSync(installer, 0o755);
   const env = { ...process.env, BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40), BLACKSPIRE_PRODUCTION_ENV_FILE: envPath,
-    BLACKSPIRE_WORKSPACE_ROOT: workspaceRoot, BLACKSPIRE_GATE4_LOGROTATE_FILE: logrotatePath,
+    BLACKSPIRE_GATE4_LOGROTATE_FILE: logrotatePath,
     BLACKSPIRE_GATE4_API_UNIT_FILE: units[0], BLACKSPIRE_GATE4_WORKER_UNIT_FILE: units[1],
     BLACKSPIRE_GATE4_TARGET_FILE: units[2], BLACKSPIRE_GATE4_UNIT_BACKUP_DIR: backup,
     BLACKSPIRE_GATE4_SYSTEMCTL: systemctl, BLACKSPIRE_GATE4_INSTALL_BIN: installer };
@@ -459,4 +459,15 @@ test('successful rollback restores present units, removes originally absent unit
   assert.equal(fs.readFileSync(fixture.units[1], 'utf8'), 'original-1');
   assert.equal(fs.existsSync(fixture.units[2]), false);
   for (const item of [fixture.envPath, fixture.workspaceRoot, fixture.logrotatePath]) assert.equal(fs.existsSync(item), false);
+});
+
+test('rollback derives a non-default workspace from the prepared production profile', () => {
+  const fixture = rollbackFixture();
+  fixture.env.BLACKSPIRE_WORKSPACE_ROOT = path.join(fixture.root, 'ambient-wrong-workspace');
+  const unrelatedDefault = path.join(fixture.root, 'unrelated-default-workspace');
+  fs.mkdirSync(unrelatedDefault);
+  const result = spawnSync('bash', [rollbackScript], { cwd: repo, env: fixture.env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(fixture.workspaceRoot), false, 'the workspace named by the prepared profile is removed');
+  assert.equal(fs.existsSync(unrelatedDefault), true, 'an unrelated workspace is never selected by a fallback');
 });
