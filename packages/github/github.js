@@ -175,11 +175,30 @@ function canonicalArtifactTarget(filePath, cwd, allowedPaths) {
   if (gitDirectoryResult.status !== 0) throw new Error('Workspace Git directory unavailable');
   const gitDirectory = fs.realpathSync(gitDirectoryResult.stdout.trim());
   if (isInside(gitDirectory, target)) throw new Error(`Artifact path targets Git control data: ${filePath}`);
+  assertCanonicalRepositoryTarget(target, realRoot, gitDirectory, filePath);
   const allowedRoots = allowedPaths.includes('.')
     ? [realRoot]
     : allowedPaths.map((allowed) => resolvePhysicalTarget(assertInsideWorkspace(allowed, cwd), allowed));
   if (!allowedRoots.some((allowedRoot) => isInside(allowedRoot, target))) throw new Error(`Edit path not allowed after symlink resolution: ${filePath}`);
   return target;
+}
+
+function assertCanonicalRepositoryTarget(target, realRoot, gitDirectory, displayPath) {
+  let probe = target;
+  while (!pathEntryExists(probe) || !fs.statSync(probe).isDirectory()) {
+    const parent = path.dirname(probe);
+    if (parent === probe) throw new Error(`Artifact repository boundary unavailable: ${displayPath}`);
+    probe = parent;
+  }
+  const insideGitDirectory = spawnSync('git', ['rev-parse', '--is-inside-git-dir'], { cwd: probe, encoding: 'utf8' });
+  if (insideGitDirectory.status !== 0) throw new Error(`Artifact repository boundary unavailable: ${displayPath}`);
+  if (insideGitDirectory.stdout.trim() === 'true') throw new Error(`Artifact path targets Git control data: ${displayPath}`);
+  const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: probe, encoding: 'utf8' });
+  const targetGitDirectory = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: probe, encoding: 'utf8' });
+  if (topLevel.status !== 0 || targetGitDirectory.status !== 0) throw new Error(`Artifact repository boundary unavailable: ${displayPath}`);
+  if (fs.realpathSync(topLevel.stdout.trim()) !== realRoot || fs.realpathSync(targetGitDirectory.stdout.trim()) !== gitDirectory) {
+    throw new Error(`Artifact path crosses a repository boundary: ${displayPath}`);
+  }
 }
 
 function resolvePhysicalTarget(lexicalTarget, displayPath) {

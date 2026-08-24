@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## PR #115 nonstandard Git-control boundary correction (2026-08-24 UTC)
+
+PR #115 now validates every physical artifact target against Git's discovered repository identity, not directory basenames. From the nearest existing physical directory, a target is refused when Git identifies control storage or when the discovered top-level or absolute Git directory differs from the one registered workspace repository. This covers arbitrary `git init --separate-git-dir` names, symlink ingress into that storage, new control files, and nested repository worktree content while retaining ordinary approved files and in-repository symlinks. Focused regression and required detection ablation passed; the correction is checkpointed by the implementation commit carrying this entry but remains not exact-head reviewed, and production remains on `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
+
 ## Release evidence reconstructed on current main (2026-08-24 UTC)
 
 Branch `fix/release-evidence-current-main` reconstructs the final corrected unique release-evidence tree from historical PR #97 on current main and adds only PR #98's unique CI artifact cross-check. It binds repository, checkout commit/tree, packaged `COMMIT_SHA`, package-tree digest, Node runtime, GitHub run ID/attempt, expected environment, deployment record, and rollback evidence. The CI metadata digest is independently recomputed from packaged bytes rather than copied from `RELEASE_EVIDENCE.json`; a real mutation regression proves package tampering fails the cross-check. Focused validation passes 116/116 for the recovered release/rollback contract and 36/36 for CI, evidence, and deployment-record integration. The branch is reconciled onto post-#105/#107 main but is not merged or deployed; exact-head review and CI remain required.

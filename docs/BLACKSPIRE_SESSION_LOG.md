@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-24 — PR #115 arbitrary separate Git-directory correction (Codex)
+
+- Recovered the clean PR worktree at exact remote head `548ed7a415dad495410ede01cfbd8e6e70bd439a`; no later local fix or detached recovery commit existed. Production remained healthy/ready at deployed identity `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
+- Reproduced the review class with `git init --separate-git-dir nested-control nested-work`. Artifact validation now asks Git from the nearest existing physical target directory whether it is control storage and requires both its canonical top-level and absolute Git directory to equal the registered workspace repository.
+- Deterministic coverage refuses direct and tracked-symlink access to the arbitrary control directory, a new file below it, and nested-worktree content before writes; branch, HEAD, target bytes, missing-file state, and outer cleanliness remain unchanged. Ordinary approved files and legitimate in-repository symlinks still work.
+- Focused regression passed. Removing the Git-identity call made the separate-control assertion fail with `Missing expected exception`; restoring it returned the test to green. The consolidated focused production E2E/Codex/Gate 4/release/worker lane passed 150/150, and lint, typecheck, build, security scan, zero-vulnerability high audit, whitespace, tracked-shell syntax, and living-memory validation passed. The implementation and memory are checkpointed together; push, CI, and exact-head review remain pending.
+
 ## 2026-08-24 — Post-live destructive race acceptance (Codex)
 
 ### Cancel before dispatch — PASS

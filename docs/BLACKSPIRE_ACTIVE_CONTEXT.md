@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## PR #115 arbitrary Git-directory blocker correction in progress (2026-08-24 UTC)
+
+The latest exact-head review of `548ed7a415dad495410ede01cfbd8e6e70bd439a` found that name-based `.git` protection missed repositories created with an arbitrary separate Git-directory name. The current correction validates the nearest existing physical target directory using Git itself and accepts only the registered workspace's exact top-level and Git-directory identity; nested repository content is refused under the one-workspace/one-repository contract. Direct, symlinked, and new-file ingress regressions pass, an ablation without the identity guard fails, and the consolidated focused production/Codex/Gate 4/release/worker lane passes 150/150. The implementation and memory are checkpointed together; push, CI, and exact-head review remain pending. Production is healthy and unchanged at `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
+
 ## Canonical production is serving real Jarvis-to-Codex work (2026-08-24 UTC)
 
 Public nginx now routes `jarvis.blackspirehelix.com` to the canonical loopback API on `127.0.0.1:8789`. The immutable release at merge `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8` is active through the reviewed independent API and worker services under `blackspire-command.target`; public health and readiness report VERIFIED production identity and the current worker invocation generation. The target was enabled only after activation-specific generation-fenced readiness passed. Historical staging on 8788 and the legacy Docker topology on wildcard 8787 remain preserved as rollback/history sources rather than being misreported as production.
