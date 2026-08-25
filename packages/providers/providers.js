@@ -153,6 +153,9 @@ export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirna
 }
 
 function mockResponse(packet) {
+  if (packet.executionIntent === 'read_only') {
+    return { ok: true, provider: 'mock', mode: 'mock', summary: 'Mock provider completed a read-only workspace inspection.', artifacts: [], usage: { inputTokens: 50, outputTokens: 25, costCents: 0 } };
+  }
   const requestedPath = packet.request.match(/`([^`]+)`/)?.[1] || 'docs/hermes-mock-change.md';
   return { ok: true, provider: 'mock', mode: 'mock', summary: 'Mock provider proposed a safe local coding edit.', artifacts: [{ path: requestedPath, content: `# Hermes Mock Change\n\nRequest: ${packet.request}\n` }], usage: { inputTokens: 50, outputTokens: 25, costCents: 0 } };
 }

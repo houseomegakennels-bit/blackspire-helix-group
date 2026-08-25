@@ -80,39 +80,52 @@ function assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths) {
       const result = spawnSync('git', ['rev-parse', '--is-inside-git-dir'], { cwd: projection, encoding: 'utf8' });
       if (result.error || result.signal) throw new Error('Artifact Git control inspection failed');
       if (result.status === 0 && result.stdout.trim() === 'true') throw new Error('Artifact set creates Git control data');
-      if (hasGitControlShape(projection)) throw new Error('Artifact set creates Git control data');
+      if (hasGitControlShape(projection, candidate, proposed)) throw new Error('Artifact set creates Git control data');
     } finally {
       fs.rmSync(projection, { recursive: true, force: true });
     }
   }
 }
 
-function hasGitControlShape(directory) {
+function hasGitControlShape(directory, sourceDirectory, proposed) {
   return hasGitHead(path.join(directory, 'HEAD'))
-    && isFile(path.join(directory, 'config'))
-    && isDirectory(path.join(directory, 'objects'))
-    && isDirectory(path.join(directory, 'refs'));
+    && hasGitConfig(path.join(directory, 'config'))
+    && isProjectedDirectory(path.join(directory, 'objects'), path.join(sourceDirectory, 'objects'), proposed)
+    && isProjectedDirectory(path.join(directory, 'refs'), path.join(sourceDirectory, 'refs'), proposed);
 }
 
 function hasGitHead(target) {
   try {
     const content = fs.readFileSync(target, 'utf8').trim();
-    return /^ref:\s+refs\/[\x21-\x7e]+$/.test(content) || /^[a-f0-9]{40,64}$/.test(content);
+    if (/^[a-f0-9]{40,64}$/.test(content)) return true;
+    const symbolic = content.match(/^ref:\s+(.+)$/s)?.[1];
+    if (!symbolic) return false;
+    return spawnSync('git', ['check-ref-format', symbolic], { encoding: 'utf8' }).status === 0;
   } catch (error) {
     if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false;
     throw error;
   }
 }
 
-function isFile(target) {
-  try { return fs.statSync(target).isFile(); } catch (error) {
-    if (error?.code === 'ENOENT') return false;
+function hasGitConfig(target) {
+  try {
+    const content = fs.readFileSync(target, 'utf8');
+    return /^\s*\[core(?:\s*\]|\s*$)/m.test(content);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false;
     throw error;
   }
 }
 
-function isDirectory(target) {
-  try { return fs.statSync(target).isDirectory(); } catch (error) {
+function isProjectedDirectory(projectedTarget, sourceTarget, proposed) {
+  try { return fs.statSync(projectedTarget).isDirectory(); } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  try {
+    if (!fs.lstatSync(sourceTarget).isSymbolicLink()) return false;
+    const referent = path.resolve(path.dirname(sourceTarget), fs.readlinkSync(sourceTarget));
+    return proposed.some(({ target }) => isInside(referent, target));
+  } catch (error) {
     if (error?.code === 'ENOENT') return false;
     throw error;
   }

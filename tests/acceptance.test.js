@@ -287,15 +287,35 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.equal(fs.existsSync(path.join(dir, 'control', 'config')), false);
   fs.rmSync(path.join(dir, 'control'), { recursive: true });
   fs.rmSync(projectionTargets, { recursive: true });
+  fs.mkdirSync(path.join(dir, 'control'));
+  fs.symlinkSync('../prospective-targets/objects', path.join(dir, 'control', 'objects'));
+  fs.symlinkSync('../prospective-targets/refs', path.join(dir, 'control', 'refs'));
+  const danglingReferentControl = [
+    { path: 'prospective-targets/objects/placeholder', content: '' },
+    { path: 'prospective-targets/refs/placeholder', content: '' },
+    { path: 'control/config', content: '[core\nmalformed = true\n' },
+    { path: 'control/HEAD', content: 'ref: refs/heads/main\n' },
+  ];
+  assert.throws(() => artifactsWouldChangeWorkspace(danglingReferentControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(danglingReferentControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'prospective-targets')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'control', 'HEAD')), false);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  const unicodeControl = malformedProspectiveControl.map((edit) => edit.path === 'control/HEAD'
+    ? { ...edit, content: 'ref: refs/heads/café\n' }
+    : edit);
+  assert.throws(() => artifactsWouldChangeWorkspace(unicodeControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(unicodeControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   const ordinaryProjection = [
-    { path: 'render/HEAD', content: 'current render output\n' },
+    { path: 'render/HEAD', content: 'ref: refs/current-output\n' },
     { path: 'render/config', content: 'renderer configuration\n' },
     { path: 'render/objects/item.json', content: '{}\n' },
     { path: 'render/refs/index.json', content: '[]\n' },
   ];
   assert.equal(artifactsWouldChangeWorkspace(ordinaryProjection, { cwd: dir, allowedPaths: ['.'] }), true);
   applyEdits(ordinaryProjection, { cwd: dir, allowedPaths: ['.'] });
-  assert.equal(fs.readFileSync(path.join(dir, 'render', 'HEAD'), 'utf8'), 'current render output\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'render', 'HEAD'), 'utf8'), 'ref: refs/current-output\n');
   fs.rmSync(path.join(dir, 'render'), { recursive: true });
   assert.equal(git(['status', '--porcelain'], dir), '');
   fs.mkdirSync(path.join(dir, 'control', 'objects'), { recursive: true });

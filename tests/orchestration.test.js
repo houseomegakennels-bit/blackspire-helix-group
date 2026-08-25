@@ -78,6 +78,10 @@ test('mocked provider adapter returns normalized proposed edit artifacts', async
   assert.equal(result.provider, 'mock');
   assert.ok(result.artifacts[0].path.startsWith('docs/'));
   assert.ok(result.usage);
+  const inspected = await executeProviderRequest({ selected: { provider: 'mock', mode: 'mock' }, packet: { request: 'Inspect workspace status', executionIntent: 'read_only' }, workspace: { root_path: repo } });
+  assert.equal(inspected.ok, true);
+  assert.deepEqual(inspected.artifacts, []);
+  assert.match(inspected.summary, /read-only workspace inspection/);
 });
 
 test('worker claims task and Hermes completes branch edit validation commit and evidence', async () => {
