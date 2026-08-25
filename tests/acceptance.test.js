@@ -275,6 +275,29 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.throws(() => applyEdits(malformedProspectiveControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
+  const projectionTargets = path.join(dir, 'projection-targets');
+  fs.mkdirSync(path.join(projectionTargets, 'objects'), { recursive: true });
+  fs.mkdirSync(path.join(projectionTargets, 'refs'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'control'));
+  fs.symlinkSync(path.join(projectionTargets, 'objects'), path.join(dir, 'control', 'objects'));
+  fs.symlinkSync(path.join(projectionTargets, 'refs'), path.join(dir, 'control', 'refs'));
+  assert.throws(() => artifactsWouldChangeWorkspace(malformedProspectiveControl.filter((edit) => !edit.path.includes('/placeholder')), { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(malformedProspectiveControl.filter((edit) => !edit.path.includes('/placeholder')), { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control', 'HEAD')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'control', 'config')), false);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  fs.rmSync(projectionTargets, { recursive: true });
+  const ordinaryProjection = [
+    { path: 'render/HEAD', content: 'current render output\n' },
+    { path: 'render/config', content: 'renderer configuration\n' },
+    { path: 'render/objects/item.json', content: '{}\n' },
+    { path: 'render/refs/index.json', content: '[]\n' },
+  ];
+  assert.equal(artifactsWouldChangeWorkspace(ordinaryProjection, { cwd: dir, allowedPaths: ['.'] }), true);
+  applyEdits(ordinaryProjection, { cwd: dir, allowedPaths: ['.'] });
+  assert.equal(fs.readFileSync(path.join(dir, 'render', 'HEAD'), 'utf8'), 'current render output\n');
+  fs.rmSync(path.join(dir, 'render'), { recursive: true });
+  assert.equal(git(['status', '--porcelain'], dir), '');
   fs.mkdirSync(path.join(dir, 'control', 'objects'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'control', 'refs'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'control', 'config'), '[core]\nrepositoryformatversion = 0\nbare = false\n');

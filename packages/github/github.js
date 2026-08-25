@@ -88,13 +88,31 @@ function assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths) {
 }
 
 function hasGitControlShape(directory) {
-  return pathEntryExists(path.join(directory, 'HEAD'))
+  return hasGitHead(path.join(directory, 'HEAD'))
+    && isFile(path.join(directory, 'config'))
     && isDirectory(path.join(directory, 'objects'))
     && isDirectory(path.join(directory, 'refs'));
 }
 
+function hasGitHead(target) {
+  try {
+    const content = fs.readFileSync(target, 'utf8').trim();
+    return /^ref:\s+refs\/[\x21-\x7e]+$/.test(content) || /^[a-f0-9]{40,64}$/.test(content);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false;
+    throw error;
+  }
+}
+
+function isFile(target) {
+  try { return fs.statSync(target).isFile(); } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 function isDirectory(target) {
-  try { return fs.lstatSync(target).isDirectory(); } catch (error) {
+  try { return fs.statSync(target).isDirectory(); } catch (error) {
     if (error?.code === 'ENOENT') return false;
     throw error;
   }

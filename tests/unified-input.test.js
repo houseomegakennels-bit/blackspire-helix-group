@@ -39,11 +39,15 @@ test('Telegram and Jarvis share canonical conversation history and task events',
 });
 
 test('duplicate unified inputs are idempotent', () => {
-  const first = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1' });
-  const second = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1' });
+  const first = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1', executionIntent: 'read_only' });
+  const second = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1', executionIntent: 'read_only' });
   assert.equal(second.duplicate, true);
   assert.equal(second.taskId, first.taskId);
   assert.equal(second.conversationId, first.conversationId);
+  const conflict = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'mutating retry', idempotencyKey: 'duplicate-1', executionIntent: 'workspace_mutation' });
+  assert.equal(conflict.status, 409);
+  assert.match(conflict.error, /conflicts with executionIntent/);
+  assert.equal(getTask(first.taskId).execution_intent, 'read_only');
 });
 
 test('policy and workspace denial prevent provider execution', () => {
