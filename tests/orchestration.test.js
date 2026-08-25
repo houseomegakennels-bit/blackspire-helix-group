@@ -60,6 +60,18 @@ test('API queues but does not process directly', async () => {
   assert.equal(getTask(task.id).status, 'queued');
 });
 
+test('API rejects idempotent replay with a conflicting execution intent', async () => {
+  const idempotencyKey = 'intent-conflict';
+  const first = await fetch('http://localhost:8891/api/tasks', { method: 'POST', headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'temp-coding', request: 'Inspect status', idempotencyKey, executionIntent: 'read_only' }) });
+  const original = (await first.json()).task;
+  assert.equal(first.status, 202);
+  assert.equal(original.execution_intent, 'read_only');
+  const replay = await fetch('http://localhost:8891/api/tasks', { method: 'POST', headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'temp-coding', request: 'Create docs/conflict.md', idempotencyKey, executionIntent: 'workspace_mutation' }) });
+  assert.equal(replay.status, 409);
+  assert.match((await replay.json()).error, /conflicts with executionIntent/);
+  assert.equal(getTask(original.id).execution_intent, 'read_only');
+});
+
 test('mocked provider adapter returns normalized proposed edit artifacts', async () => {
   const result = await executeProviderRequest({ selected: { provider: 'mock', mode: 'mock' }, packet: { request: 'Create `docs/provider.md`' }, workspace: { root_path: repo } });
   assert.equal(result.ok, true);

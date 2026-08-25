@@ -78,10 +78,25 @@ function assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths) {
         fs.writeFileSync(projectedTarget, String(edit.content ?? ''), 'utf8');
       }
       const result = spawnSync('git', ['rev-parse', '--is-inside-git-dir'], { cwd: projection, encoding: 'utf8' });
+      if (result.error || result.signal) throw new Error('Artifact Git control inspection failed');
       if (result.status === 0 && result.stdout.trim() === 'true') throw new Error('Artifact set creates Git control data');
+      if (hasGitControlShape(projection)) throw new Error('Artifact set creates Git control data');
     } finally {
       fs.rmSync(projection, { recursive: true, force: true });
     }
+  }
+}
+
+function hasGitControlShape(directory) {
+  return pathEntryExists(path.join(directory, 'HEAD'))
+    && isDirectory(path.join(directory, 'objects'))
+    && isDirectory(path.join(directory, 'refs'));
+}
+
+function isDirectory(target) {
+  try { return fs.lstatSync(target).isDirectory(); } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
   }
 }
 

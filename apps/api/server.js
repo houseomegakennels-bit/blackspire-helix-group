@@ -355,7 +355,13 @@ async function createTaskRoute(req, res, auth) {
   const decision = evaluateRequestPolicy({ request, channel: 'api', authority: 'authenticated_admin' });
   const executionIntent = body.executionIntent || 'workspace_mutation';
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) return json(res, 422, { error: 'executionIntent must be read_only or workspace_mutation' });
-  const task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', executionIntent, initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  let task;
+  try {
+    task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', executionIntent, initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  } catch (error) {
+    if (error?.code === 'TASK_IDEMPOTENCY_CONFLICT') return json(res, 409, { error: 'idempotency key conflicts with executionIntent' });
+    throw error;
+  }
   if (task.workspace_id !== workspaceId) return json(res, 404, { error: 'not found' });
   return json(res, decision.allowed ? 202 : 403, decision.allowed ? { task } : { task, denied: true, error: decision.reason });
 }

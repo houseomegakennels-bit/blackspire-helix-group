@@ -268,6 +268,13 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.throws(() => applyEdits(prospectiveControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
+  const malformedProspectiveControl = prospectiveControl.map((edit) => edit.path === 'control/config'
+    ? { ...edit, content: '[core\nmalformed = true\n' }
+    : edit);
+  assert.throws(() => artifactsWouldChangeWorkspace(malformedProspectiveControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(malformedProspectiveControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control')), false);
+  assert.equal(git(['status', '--porcelain'], dir), '');
   fs.mkdirSync(path.join(dir, 'control', 'objects'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'control', 'refs'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'control', 'config'), '[core]\nrepositoryformatversion = 0\nbare = false\n');

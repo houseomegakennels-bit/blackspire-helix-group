@@ -1,8 +1,8 @@
 # Blackspire Active Context
 
-## PR #115 arbitrary Git-directory blocker correction in progress (2026-08-24 UTC)
+## PR #115 malformed Git projection and intent replay corrections in progress (2026-08-25 UTC)
 
-The exact-head review of `25f89d717830489821ed4733b3ae588bd9aecda0` confirmed the existing nonstandard separate-Git-directory fix but found one new P1: a batch could create the Git control shape only after individual preflight. The current correction builds bounded disposable projections of every affected candidate ancestor, overlays the full proposed artifact set, and uses Git itself to refuse a prospective control directory before any workspace write. It covers both a wholly proposed control directory and adding the final `HEAD` to an existing partial shape. Focused regression and ablation pass; the consolidated production/Codex/Gate 4/release/worker lane passes 161/161. Checkpoint, CI, and exact-head review remain pending. Production is healthy and unchanged at `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
+Exact-head review of `72a55347e1025146a5a53ddebaf065ebcdc8a3dd` found two new P1s after the prospective Git-control correction: a malformed control-shaped projection could make `git rev-parse` inconclusive and be treated as safe, and `/api/tasks` could reuse an idempotency key with a conflicting execution intent. The local correction recognizes the prospective `HEAD` plus `objects` plus `refs` control shape independently of whether Git can parse `config`, before any workspace write. Task creation now binds a same-workspace idempotency key to its persisted `execution_intent`; the API returns 409 on conflict and leaves the original task unchanged. Focused acceptance passes 11/11 and orchestration passes 9/9. The branch is not yet checkpointed or pushed; fresh CI and exact-head review remain required. Production is healthy and unchanged at `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
 
 ## Canonical production is serving real Jarvis-to-Codex work (2026-08-24 UTC)
 

@@ -8,7 +8,14 @@ export function audit(taskId, actor, action, details = {}) {
 export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'workspace_mutation', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) throw new Error('invalid task execution intent');
   const existing = idempotencyKey && query(`SELECT * FROM tasks WHERE idempotency_key=${esc(idempotencyKey)};`)[0];
-  if (existing) return existing;
+  if (existing) {
+    if (existing.workspace_id === workspaceId && existing.execution_intent !== executionIntent) {
+      const error = new Error('task idempotency key conflicts with execution intent');
+      error.code = 'TASK_IDEMPOTENCY_CONFLICT';
+      throw error;
+    }
+    return existing;
+  }
   const task = {
     id: id('task'), workspace_id: workspaceId, request, status: initialStatus, idempotency_key: idempotencyKey || id('idem'), provider: null,
     plan: null, summary: initialSummary, error: initialError, budget_cents: budgetCents, retry_count: 0, created_at: now(), updated_at: now(),
