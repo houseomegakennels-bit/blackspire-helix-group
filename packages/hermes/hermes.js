@@ -123,15 +123,23 @@ async function processReadOnlyTestTask(task, workspace) {
   const started = Date.now();
   const guard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', selected, deadline: request.deadline, idempotencyKey: request.idempotencyKey, allowedProviders: ['mock'] });
   if (!guard.ok) return transition(task.id, guard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: guard.reason });
-  const packet = { taskId: task.id, request: request.objective, idempotencyKey: request.idempotencyKey, deadline: request.deadline, cancellationReference: request.cancellationReference };
+  const packet = { taskId: task.id, request: request.objective, executionIntent: task.execution_intent, idempotencyKey: request.idempotencyKey, deadline: request.deadline, cancellationReference: request.cancellationReference };
   const result = await executeProviderRequest({ selected, packet, workspace: null, deadline: request.deadline });
   if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider }); return getTask(task.id); }
   recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket: packet, responsePacket: { summary: result.summary, model: result.model }, error: result.error, latencyMs: Date.now() - started });
   recordUsage(task.id, result.usage);
   if (!result.ok) return transition(task.id, 'failed', { error: result.error || 'mock provider failed' });
+  if (task.execution_intent === 'read_only' && result.artifacts.length !== 0) {
+    recordEvidence(task.id, 'artifact_application_refused', { reason: 'read-only bounded mock returned workspace artifacts', provider: result.provider });
+    return transition(task.id, 'failed', { error: 'Read-only bounded mock returned workspace artifacts' });
+  }
+  if (task.execution_intent === 'workspace_mutation' && result.artifacts.length === 0) {
+    recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace mutation bounded mock returned no artifacts', provider: result.provider });
+    return transition(task.id, 'failed', { error: 'Workspace mutation bounded mock returned no artifacts' });
+  }
   const evidence = { provider: result.provider, mode: result.mode, model: result.model, changedFiles: [], readOnly: true };
   recordEvidence(task.id, 'final', evidence);
-  return transition(task.id, 'completed', { summary: { result: 'status reported', changedFiles: [], provider: result.provider, model: result.model }, evidence });
+  return transition(task.id, 'completed', { summary: { result: result.summary || 'Read-only task completed', changedFiles: [], provider: result.provider, model: result.model }, evidence });
 }
 
 async function stage(taskId, ownership, name, fn) {

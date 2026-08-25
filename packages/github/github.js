@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { redact } from '../shared/util.js';
 import { assertInsideWorkspace } from '../execution/runner.js';
@@ -60,6 +59,7 @@ export function artifactsWouldChangeWorkspace(edits, { cwd = '.', allowedPaths =
 function assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths) {
   const realRoot = fs.realpathSync(cwd);
   const proposed = (edits || []).map((edit) => ({ edit, target: canonicalArtifactTarget(edit.path, cwd, allowedPaths) }));
+  const projectedFiles = new Map(proposed.map(({ edit, target }) => [target, String(edit.content ?? '')]));
   const candidates = new Set();
   for (const { target } of proposed) {
     for (let candidate = path.dirname(target); candidate !== realRoot && isInside(realRoot, candidate); candidate = path.dirname(candidate)) {
@@ -67,36 +67,21 @@ function assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths) {
     }
   }
   for (const candidate of candidates) {
-    const projection = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-artifact-git-'));
-    try {
-      if (pathEntryExists(candidate)) copyBoundedProjection(candidate, projection);
-      for (const { edit, target } of proposed) {
-        if (!isInside(candidate, target)) continue;
-        const relative = path.relative(candidate, target);
-        const projectedTarget = path.join(projection, relative);
-        fs.mkdirSync(path.dirname(projectedTarget), { recursive: true });
-        fs.writeFileSync(projectedTarget, String(edit.content ?? ''), 'utf8');
-      }
-      const result = spawnSync('git', ['rev-parse', '--is-inside-git-dir'], { cwd: projection, encoding: 'utf8' });
-      if (result.error || result.signal) throw new Error('Artifact Git control inspection failed');
-      if (result.status === 0 && result.stdout.trim() === 'true') throw new Error('Artifact set creates Git control data');
-      if (hasGitControlShape(projection, candidate, proposed)) throw new Error('Artifact set creates Git control data');
-    } finally {
-      fs.rmSync(projection, { recursive: true, force: true });
-    }
+    if (hasGitControlShape(candidate, realRoot, projectedFiles)) throw new Error('Artifact set creates Git control data');
   }
 }
 
-function hasGitControlShape(directory, sourceDirectory, proposed) {
-  return hasGitHead(path.join(directory, 'HEAD'))
-    && hasGitConfig(path.join(directory, 'config'))
-    && isProjectedDirectory(path.join(directory, 'objects'), path.join(sourceDirectory, 'objects'), proposed)
-    && isProjectedDirectory(path.join(directory, 'refs'), path.join(sourceDirectory, 'refs'), proposed);
+function hasGitControlShape(directory, realRoot, projectedFiles) {
+  const projection = { realRoot, projectedFiles };
+  return hasGitHead(path.join(directory, 'HEAD'), projection)
+    && hasGitConfig(path.join(directory, 'config'), projection)
+    && projectedEntry(path.join(directory, 'objects'), projection).type === 'directory'
+    && projectedEntry(path.join(directory, 'refs'), projection).type === 'directory';
 }
 
-function hasGitHead(target) {
+function hasGitHead(target, projection) {
   try {
-    const content = fs.readFileSync(target, 'utf8').trim();
+    const content = readProjectedFile(target, projection).trim();
     if (/^[a-f0-9]{40,64}$/.test(content)) return true;
     const symbolic = content.match(/^ref:\s+(.+)$/s)?.[1];
     if (!symbolic) return false;
@@ -107,9 +92,9 @@ function hasGitHead(target) {
   }
 }
 
-function hasGitConfig(target) {
+function hasGitConfig(target, projection) {
   try {
-    const content = fs.readFileSync(target, 'utf8');
+    const content = readProjectedFile(target, projection);
     return /^\s*\[core(?:\s*\]|\s*$)/m.test(content);
   } catch (error) {
     if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false;
@@ -117,35 +102,68 @@ function hasGitConfig(target) {
   }
 }
 
-function isProjectedDirectory(projectedTarget, sourceTarget, proposed) {
-  try { return fs.statSync(projectedTarget).isDirectory(); } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
+const MAX_PROJECTED_SYMLINK_HOPS = 40;
+
+// Resolve one component at a time against the final proposed graph.  A proposed
+// file shadows an existing file, while a descendant proposal implies only its
+// missing directory ancestry.  This deliberately never calls realpath on the
+// whole path: realpath cannot model a dangling link whose referent is created
+// later in the same artifact batch.
+function projectedEntry(target, projection) {
+  let current = path.resolve(target);
+  const visited = new Set();
+  let hops = 0;
+  for (;;) {
+    if (!isInside(projection.realRoot, current)) throw new Error('Projected symlink escapes workspace');
+    const relative = path.relative(projection.realRoot, current);
+    const parts = relative ? relative.split(path.sep) : [];
+    let cursor = projection.realRoot;
+    let restarted = false;
+    for (let index = 0; index < parts.length; index += 1) {
+      cursor = path.join(cursor, parts[index]);
+      const entry = projectedDirectEntry(cursor, projection.projectedFiles);
+      if (entry.type !== 'symlink') {
+        if (index === parts.length - 1) return { ...entry, path: cursor };
+        if (entry.type !== 'directory') return { type: entry.type === 'absent' ? 'absent' : 'unsupported', path: cursor };
+        continue;
+      }
+      if (++hops > MAX_PROJECTED_SYMLINK_HOPS || visited.has(cursor)) throw new Error('Projected symlink chain is cyclic or exceeds the hop limit');
+      visited.add(cursor);
+      const next = path.resolve(path.dirname(cursor), fs.readlinkSync(cursor), ...parts.slice(index + 1));
+      if (!isInside(projection.realRoot, next)) throw new Error('Projected symlink escapes workspace');
+      current = next;
+      restarted = true;
+      break;
+    }
+    if (!restarted) return projectedDirectEntry(projection.realRoot, projection.projectedFiles);
   }
+}
+
+function projectedDirectEntry(target, projectedFiles) {
+  if (projectedFiles.has(target)) return { type: 'file' };
+  for (const proposed of projectedFiles.keys()) if (proposed !== target && isInside(target, proposed)) return { type: 'directory' };
   try {
-    if (!fs.lstatSync(sourceTarget).isSymbolicLink()) return false;
-    const referent = path.resolve(path.dirname(sourceTarget), fs.readlinkSync(sourceTarget));
-    return proposed.some(({ target }) => isInside(referent, target));
+    const stat = fs.lstatSync(target);
+    if (stat.isDirectory()) return { type: 'directory' };
+    if (stat.isFile()) return { type: 'file' };
+    if (stat.isSymbolicLink()) return { type: 'symlink' };
+    return { type: 'unsupported' };
   } catch (error) {
-    if (error?.code === 'ENOENT') return false;
+    if (error?.code === 'ENOENT') return { type: 'absent' };
     throw error;
   }
 }
 
-function copyBoundedProjection(source, destination) {
-  let entries = 0;
-  let bytes = 0;
-  fs.cpSync(source, destination, {
-    recursive: true,
-    dereference: false,
-    filter(entry) {
-      const stat = fs.lstatSync(entry);
-      entries += 1;
-      if (stat.isFile()) bytes += stat.size;
-      if (entries > 20_000 || bytes > 64 * 1024 * 1024) throw new Error('Artifact repository projection exceeds safety limit');
-      if (!stat.isDirectory() && !stat.isFile() && !stat.isSymbolicLink()) throw new Error('Artifact repository projection contains unsupported entry');
-      return true;
-    },
-  });
+function readProjectedFile(target, projection) {
+  const entry = projectedEntry(target, projection);
+  if (entry.type !== 'file') {
+    const error = new Error('Projected entry is not a regular file');
+    error.code = entry.type === 'absent' ? 'ENOENT' : 'EISDIR';
+    throw error;
+  }
+  return projection.projectedFiles.has(entry.path)
+    ? projection.projectedFiles.get(entry.path)
+    : fs.readFileSync(entry.path, 'utf8');
 }
 
 export function inspectChangedFiles({ cwd = '.' } = {}) {

@@ -323,14 +323,14 @@ async function testTelegramInput(req, res) {
   const body = await readJson(req);
   const updateId = String(body.updateId || '').trim();
   if (!updateId || updateId.length > 120) return json(res, 422, { error: 'updateId is required' });
-  const result = createUnifiedInput({ channel: 'telegram', actorId: TEST_MODE.testActor, channelKey: TEST_MODE.channelKey, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: body.text, idempotencyKey: `test-telegram:${updateId}`, metadata: { testMode: true }, authority: 'test_operator' });
+  const result = createUnifiedInput({ channel: 'telegram', actorId: TEST_MODE.testActor, channelKey: TEST_MODE.channelKey, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: body.text, idempotencyKey: `test-telegram:${updateId}`, metadata: { testMode: true }, authority: 'test_operator', executionIntent: 'read_only' });
   return json(res, result.status && result.status >= 400 ? result.status : (result.denied ? 403 : 202), result);
 }
 
 async function testQueuedTask(req, res) {
   const body = await readJson(req);
   setFlag('test_worker_hold', 'active');
-  const result = createUnifiedInput({ channel: 'jarvis', actorId: TEST_MODE.testActor, channelKey: `test-session:${TEST_MODE.testActor}`, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: 'Report queued task status without changing files.', idempotencyKey: body.idempotencyKey || id('test-held'), authority: 'test_operator' });
+  const result = createUnifiedInput({ channel: 'jarvis', actorId: TEST_MODE.testActor, channelKey: `test-session:${TEST_MODE.testActor}`, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: 'Report queued task status without changing files.', idempotencyKey: body.idempotencyKey || id('test-held'), authority: 'test_operator', executionIntent: 'read_only' });
   if (result.taskId) audit(result.taskId, 'test-mode', 'task.held', { reason: 'eligible cancellation fixture' });
   return json(res, 202, { ...result, task: result.taskId ? getTask(result.taskId) : null });
 }

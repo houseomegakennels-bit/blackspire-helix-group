@@ -301,6 +301,42 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.equal(fs.existsSync(path.join(dir, 'prospective-targets')), false);
   assert.equal(fs.existsSync(path.join(dir, 'control', 'HEAD')), false);
   fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  // The final graph must follow every same-batch dangling-link hop, not just
+  // the first link.  Neither target directory exists before this batch.
+  fs.mkdirSync(path.join(dir, 'control'));
+  fs.mkdirSync(path.join(dir, 'links'));
+  fs.symlinkSync('../links/objects', path.join(dir, 'control', 'objects'));
+  fs.symlinkSync('../links/refs', path.join(dir, 'control', 'refs'));
+  fs.symlinkSync('../targets/objects', path.join(dir, 'links', 'objects'));
+  fs.symlinkSync('../targets/refs', path.join(dir, 'links', 'refs'));
+  const twoHopDanglingControl = [
+    { path: 'targets/objects/placeholder', content: '' },
+    { path: 'targets/refs/placeholder', content: '' },
+    { path: 'control/config', content: '[core\nmalformed = true\n' },
+    { path: 'control/HEAD', content: 'ref: refs/heads/café\n' },
+  ];
+  assert.throws(() => artifactsWouldChangeWorkspace(twoHopDanglingControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(twoHopDanglingControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'targets')), false);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  fs.rmSync(path.join(dir, 'links'), { recursive: true });
+  assert.equal(git(['status', '--porcelain'], dir), '');
+  // An exact proposed referent is a regular file, not an inferred directory.
+  fs.mkdirSync(path.join(dir, 'control'));
+  fs.symlinkSync('../targets/objects', path.join(dir, 'control', 'objects'));
+  fs.symlinkSync('../targets/refs', path.join(dir, 'control', 'refs'));
+  const regularReferents = [
+    { path: 'targets/objects', content: 'not a directory' },
+    { path: 'targets/refs', content: 'not a directory' },
+    { path: 'control/config', content: '[core]\nrepositoryformatversion = 0\n' },
+    { path: 'control/HEAD', content: 'ref: refs/heads/main\n' },
+  ];
+  assert.equal(artifactsWouldChangeWorkspace(regularReferents, { cwd: dir, allowedPaths: ['.'] }), true);
+  applyEdits(regularReferents, { cwd: dir, allowedPaths: ['.'] });
+  assert.equal(fs.readFileSync(path.join(dir, 'targets', 'objects'), 'utf8'), 'not a directory');
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  fs.rmSync(path.join(dir, 'targets'), { recursive: true });
+  assert.equal(git(['status', '--porcelain'], dir), '');
   const unicodeControl = malformedProspectiveControl.map((edit) => edit.path === 'control/HEAD'
     ? { ...edit, content: 'ref: refs/heads/café\n' }
     : edit);

@@ -85,6 +85,8 @@ test('test routes share canonical state and mock Hermes is read-only', async () 
   assert.equal(records.providerAttempts.length, 1);
   assert.equal(records.providerAttempts[0].provider, 'mock');
   assert.match(records.providerAttempts[0].response_packet, /mock-hermes-status-v1/);
+  assert.match(records.providerAttempts[0].request_packet, /"executionIntent":"read_only"/);
+  assert.equal(JSON.parse(getTask(telegram.taskId).summary).result, 'Mock provider completed a read-only workspace inspection.');
 
   const jarvis = await (await fetch('http://127.0.0.1:8920/api/unified-input', {
     method: 'POST', headers: headers(), body: JSON.stringify({ conversationId, text: 'Give the same status as a follow-up.', idempotencyKey: 'iphone-follow-up-1' }),
