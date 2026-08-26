@@ -268,6 +268,13 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.throws(() => applyEdits(prospectiveControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
+  for (const config of ['', '[user]\nname = Blackspire\n']) {
+    const validConfigControl = prospectiveControl.map((edit) => edit.path === 'control/config' ? { ...edit, content: config } : edit);
+    assert.throws(() => artifactsWouldChangeWorkspace(validConfigControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+    assert.throws(() => applyEdits(validConfigControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+    assert.equal(fs.existsSync(path.join(dir, 'control')), false);
+  }
+  assert.equal(git(['status', '--porcelain'], dir), '');
   const malformedProspectiveControl = prospectiveControl.map((edit) => edit.path === 'control/config'
     ? { ...edit, content: '[core\nmalformed = true\n' }
     : edit);

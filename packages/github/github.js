@@ -95,11 +95,33 @@ function hasGitHead(target, projection) {
 function hasGitConfig(target, projection) {
   try {
     const content = readProjectedFile(target, projection);
-    return /^\s*\[core(?:\s*\]|\s*$)/m.test(content);
+    // A Git config need not declare [core]: an empty config and one containing
+    // only [user], for example, are valid Git control data.  We still require
+    // Git config syntax rather than treating an arbitrary application file as
+    // control data, preserving the ordinary-directory false-positive boundary.
+    // A malformed attempted core section is also control-shaped.  Git itself
+    // rejects that projection, so accepting it would reintroduce the
+    // inconclusive-parser write-before-refusal path.
+    return isGitConfigSyntax(content) || /^\s*\[core(?:\s|$)/m.test(content);
   } catch (error) {
     if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false;
     throw error;
   }
+}
+
+function isGitConfigSyntax(content) {
+  const lines = String(content).replace(/^\uFEFF/, '').split(/\r?\n/);
+  let inSection = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    if (/^\[[A-Za-z][A-Za-z0-9.-]*(?:\s+"(?:[^"\\]|\\.)*")?\]$/.test(line)) {
+      inSection = true;
+      continue;
+    }
+    if (!inSection || !/^[A-Za-z][A-Za-z0-9-]*(?:\s*=\s*.*)?$/.test(line)) return false;
+  }
+  return true;
 }
 
 const MAX_PROJECTED_SYMLINK_HOPS = 40;

@@ -88,12 +88,20 @@ test('test routes share canonical state and mock Hermes is read-only', async () 
   assert.match(records.providerAttempts[0].request_packet, /"executionIntent":"read_only"/);
   assert.equal(JSON.parse(getTask(telegram.taskId).summary).result, 'Mock provider completed a read-only workspace inspection.');
 
+  const mutation = await (await fetch('http://127.0.0.1:8920/api/unified-input', {
+    method: 'POST', headers: headers(), body: JSON.stringify({ conversationId, text: 'Create a harmless fixture file.', idempotencyKey: 'iphone-mutation-refusal-1', executionIntent: 'workspace_mutation' }),
+  })).json();
+  await processTask(getTask(mutation.taskId));
+  assert.equal(getTask(mutation.taskId).status, 'failed');
+  assert.match(getTask(mutation.taskId).error, /read-only tasks only/);
+  assert.equal(taskRecords(mutation.taskId).providerAttempts.length, 0);
+
   const jarvis = await (await fetch('http://127.0.0.1:8920/api/unified-input', {
     method: 'POST', headers: headers(), body: JSON.stringify({ conversationId, text: 'Give the same status as a follow-up.', idempotencyKey: 'iphone-follow-up-1' }),
   })).json();
   assert.equal(jarvis.conversationId, conversationId);
   assert.equal(getConversation(conversationId).conversation.id, conversationId);
-  assert.equal(getConversation(conversationId).tasks.length, 2);
+  assert.equal(getConversation(conversationId).tasks.length, 3);
 
   const replay = await (await fetch('http://127.0.0.1:8920/api/unified-input', {
     method: 'POST', headers: headers(), body: JSON.stringify({ conversationId, text: 'ignored replay', idempotencyKey: 'iphone-follow-up-1' }),

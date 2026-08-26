@@ -110,6 +110,13 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
 }
 
 async function processReadOnlyTestTask(task, workspace) {
+  // This deliberately bounded path never applies artifacts.  A persisted
+  // mutation intent must therefore fail before dispatch rather than reporting
+  // a false mutation completion after discarding a mock artifact.
+  if (task.execution_intent !== 'read_only') {
+    recordEvidence(task.id, 'mock_acceptance_denied', { reason: 'bounded mock path supports read-only intent only' });
+    return transition(task.id, 'failed', { error: 'bounded mock acceptance path supports read-only tasks only' });
+  }
   const actorId = taskActor(task);
   const request = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: ['read','status'] });
   const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: request.deadline, phase: 'hermes' });
@@ -129,13 +136,9 @@ async function processReadOnlyTestTask(task, workspace) {
   recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket: packet, responsePacket: { summary: result.summary, model: result.model }, error: result.error, latencyMs: Date.now() - started });
   recordUsage(task.id, result.usage);
   if (!result.ok) return transition(task.id, 'failed', { error: result.error || 'mock provider failed' });
-  if (task.execution_intent === 'read_only' && result.artifacts.length !== 0) {
+  if (result.artifacts.length !== 0) {
     recordEvidence(task.id, 'artifact_application_refused', { reason: 'read-only bounded mock returned workspace artifacts', provider: result.provider });
     return transition(task.id, 'failed', { error: 'Read-only bounded mock returned workspace artifacts' });
-  }
-  if (task.execution_intent === 'workspace_mutation' && result.artifacts.length === 0) {
-    recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace mutation bounded mock returned no artifacts', provider: result.provider });
-    return transition(task.id, 'failed', { error: 'Workspace mutation bounded mock returned no artifacts' });
   }
   const evidence = { provider: result.provider, mode: result.mode, model: result.model, changedFiles: [], readOnly: true };
   recordEvidence(task.id, 'final', evidence);
