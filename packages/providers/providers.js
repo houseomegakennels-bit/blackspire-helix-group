@@ -436,6 +436,8 @@ function snapshotProviderIsolation(root) {
     }
   };
   const workspace = fs.realpathSync(root);
+  if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
+  entries.set('workspace:', `directory:${fs.lstatSync(workspace).mode}`);
   visit(workspace, 'workspace', workspace);
   const gitDirectories = new Set();
   for (const option of ['--absolute-git-dir', '--git-common-dir']) {
@@ -452,7 +454,10 @@ function snapshotProviderIsolation(root) {
     .filter((gitDirectory, _index, roots) => !roots.some((other) => other !== gitDirectory && isPathInside(other, gitDirectory)))
     .sort();
   for (const [gitDirectoryIndex, gitDirectory] of externalGitDirectories.entries()) {
-    visit(gitDirectory, `gitdir${gitDirectoryIndex}`, gitDirectory);
+    const namespace = `gitdir${gitDirectoryIndex}`;
+    if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
+    entries.set(`${namespace}:`, `directory:${fs.lstatSync(gitDirectory).mode}`);
+    visit(gitDirectory, namespace, gitDirectory);
   }
   return entries;
 }

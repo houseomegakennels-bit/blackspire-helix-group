@@ -282,6 +282,23 @@ test('provider mutation is rejected even when the Codex child fails', async () =
   assert.match(result.error, /mutated/);
 });
 
+test('provider mutation of the workspace root mode is rejected', async () => {
+  const workspace = path.join(root, 'root-mode-mutation-workspace');
+  fs.mkdirSync(workspace, { recursive: true, mode: 0o755 });
+  fs.chmodSync(workspace, 0o755);
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
+    fs.chmodSync(workspace, 0o700);
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
 test('provider Git-control mutation is rejected even when size and timestamp are restored', async () => {
   const workspace = path.join(root, 'control-mutation-workspace');
   fs.mkdirSync(path.join(workspace, '.git'), { recursive: true });
