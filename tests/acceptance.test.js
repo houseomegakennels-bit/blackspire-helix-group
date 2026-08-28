@@ -219,6 +219,13 @@ exit 64
     assert.equal(path.dirname(path.dirname(manual.manualPacketPath)), manualDataDir);
     assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), '');
     assert.equal(fs.existsSync(path.join(manualWorkspace, '.hermes-task-packets')), false);
+    const linkedDataDir = path.join(root, 'linked-provider-data');
+    fs.symlinkSync(manualWorkspace, linkedDataDir);
+    process.env.BLACKSPIRE_DATA_DIR = linkedDataDir;
+    const escaped = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'escaped-manual', request: 'packet', executionIntent: 'read_only' }, workspace: { root_path: manualWorkspace } });
+    assert.equal(escaped.ok, false);
+    assert.match(escaped.error, /outside the workspace/i);
+    assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), '');
   } finally {
     if (previousDataDir === undefined) delete process.env.BLACKSPIRE_DATA_DIR;
     else process.env.BLACKSPIRE_DATA_DIR = previousDataDir;
@@ -306,6 +313,16 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
   fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  for (const head of ['refs//heads/main', `${'a'.repeat(65)}`]) {
+    fs.mkdirSync(path.join(dir, 'control', 'refs', 'heads'), { recursive: true });
+    if (head.startsWith('refs')) fs.symlinkSync(head, path.join(dir, 'control', 'HEAD'));
+    else fs.writeFileSync(path.join(dir, 'control', 'HEAD'), `${head}\n`);
+    const extendedHeadControl = [{ path: 'control/objects/placeholder', content: '' }];
+    assert.throws(() => artifactsWouldChangeWorkspace(extendedHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+    assert.throws(() => applyEdits(extendedHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+    assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
+    fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  }
   const malformedProspectiveControl = prospectiveControl.map((edit) => edit.path === 'control/config'
     ? { ...edit, content: '[core\nmalformed = true\n' }
     : edit);

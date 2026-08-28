@@ -111,11 +111,12 @@ function hasGitHead(target, projection) {
     // dangling HEAD -> refs/heads/main is still Git-formatted control metadata.
     if (projectedDirectEntry(target, projection.projectedFiles).type === 'symlink') {
       const symbolic = fs.readlinkSync(target);
-      return !path.isAbsolute(symbolic)
-        && spawnSync('git', ['check-ref-format', symbolic], { encoding: 'utf8' }).status === 0;
+      const normalized = path.posix.normalize(symbolic);
+      return !path.posix.isAbsolute(symbolic) && !normalized.startsWith('../')
+        && spawnSync('git', ['check-ref-format', normalized], { encoding: 'utf8' }).status === 0;
     }
     const content = readProjectedFile(target, projection).trim();
-    if (/^[a-f0-9]{40,64}$/i.test(content)) return true;
+    if (/^[a-f0-9]{40,}$/i.test(content)) return true;
     const symbolic = content.match(/^ref:\s+(.+)$/s)?.[1];
     if (!symbolic) return false;
     return spawnSync('git', ['check-ref-format', symbolic], { encoding: 'utf8' }).status === 0;

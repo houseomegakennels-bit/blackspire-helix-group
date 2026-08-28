@@ -265,6 +265,26 @@ test('provider direct workspace mutation is rejected before artifact application
   assert.match(result.error, /mutated/);
 });
 
+test('provider Git-control mutation is rejected even when size and timestamp are restored', async () => {
+  const workspace = path.join(root, 'control-mutation-workspace');
+  fs.mkdirSync(path.join(workspace, '.git'), { recursive: true });
+  const head = path.join(workspace, '.git', 'HEAD');
+  fs.writeFileSync(head, 'ref: refs/heads/main\n');
+  const original = fs.statSync(head);
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
+    fs.writeFileSync(head, 'ref: refs/heads/evil\n');
+    fs.utimesSync(head, original.atime, original.mtime);
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
 test('Codex child is terminated at the Hermes deadline', async () => {
   const workspace = path.join(root, 'timeout-workspace');
   fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });

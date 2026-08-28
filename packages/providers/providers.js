@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -167,8 +168,9 @@ function manualPacket(packet, workspaceRoot = '.') {
 
 function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {}) {
   const dir = external ? providerRuntimeDir('hermes-task-packets') : path.resolve(workspaceRoot || '.', '.hermes-task-packets');
-  const workspace = path.resolve(workspaceRoot || '.');
-  const relative = path.relative(workspace, dir);
+  const workspace = fs.realpathSync(path.resolve(workspaceRoot || '.'));
+  const physicalDir = physicalProspectivePath(dir);
+  const relative = path.relative(workspace, physicalDir);
   if (external && (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))) {
     throw new Error('External provider runtime directory must be outside the workspace');
   }
@@ -176,6 +178,18 @@ function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {})
   const packetPath = path.join(dir, `${packet.taskId || id('task')}.json`);
   fs.writeFileSync(packetPath, JSON.stringify(packet, null, 2));
   return packetPath;
+}
+
+function physicalProspectivePath(target) {
+  const missing = [];
+  let existing = path.resolve(target);
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) throw new Error('Unable to resolve external provider runtime directory');
+    missing.unshift(path.basename(existing));
+    existing = parent;
+  }
+  return path.join(fs.realpathSync(existing), ...missing);
 }
 
 function providerRuntimeDir(name) {
@@ -366,17 +380,30 @@ function validArtifact(artifact) {
   return artifact && typeof artifact === 'object' && typeof artifact.path === 'string' && artifact.path.length > 0 && !path.isAbsolute(artifact.path) && typeof artifact.content === 'string';
 }
 
+const MAX_WORKSPACE_SNAPSHOT_ENTRIES = 100_000;
+const MAX_WORKSPACE_SNAPSHOT_BYTES = 256 * 1024 * 1024;
+
 function snapshotWorkspace(root) {
   const entries = new Map();
   if (!root || !fs.existsSync(root)) return entries;
+  let entryCount = 0;
+  let byteCount = 0;
   const visit = (dir) => {
     for (const name of fs.readdirSync(dir)) {
-      if (name === '.git' || name === '.hermes-task-packets') continue;
       const full = path.join(dir, name);
       const relative = path.relative(root, full);
       const stat = fs.lstatSync(full);
-      if (stat.isDirectory()) visit(full);
-      else entries.set(relative, `${stat.size}:${stat.mtimeMs}`);
+      if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
+      if (stat.isDirectory()) {
+        entries.set(relative, `directory:${stat.mode}`);
+        visit(full);
+      } else if (stat.isSymbolicLink()) {
+        entries.set(relative, `symlink:${fs.readlinkSync(full)}`);
+      } else if (stat.isFile()) {
+        byteCount += stat.size;
+        if (byteCount > MAX_WORKSPACE_SNAPSHOT_BYTES) throw new Error('Workspace is too large to verify provider isolation safely');
+        entries.set(relative, `file:${stat.mode}:${createHash('sha256').update(fs.readFileSync(full)).digest('hex')}`);
+      } else entries.set(relative, `unsupported:${stat.mode}`);
     }
   };
   visit(root);
