@@ -299,6 +299,27 @@ test('provider mutation of the workspace root mode is rejected', async () => {
   assert.match(result.error, /mutated/);
 });
 
+test('provider replacement of a workspace file with an external hard link is rejected', async () => {
+  const workspace = path.join(root, 'hard-link-mutation-workspace');
+  fs.mkdirSync(workspace, { recursive: true });
+  const tracked = path.join(workspace, 'tracked.txt');
+  const external = path.join(root, 'external-hard-link-source.txt');
+  fs.writeFileSync(tracked, 'identical');
+  fs.writeFileSync(external, 'identical');
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
+    fs.unlinkSync(tracked);
+    fs.linkSync(external, tracked);
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
 test('provider Git-control mutation is rejected even when size and timestamp are restored', async () => {
   const workspace = path.join(root, 'control-mutation-workspace');
   fs.mkdirSync(path.join(workspace, '.git'), { recursive: true });

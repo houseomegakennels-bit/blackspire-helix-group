@@ -226,6 +226,25 @@ exit 64
     assert.equal(escaped.ok, false);
     assert.match(escaped.error, /outside the workspace/i);
     assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), '');
+    const missingDataDir = path.join(root, 'missing-provider-data');
+    const originalMkdirSync = fs.mkdirSync;
+    let swappedMissingDirectory = false;
+    fs.mkdirSync = function swapMissingDirectory(target, ...args) {
+      if (!swappedMissingDirectory && String(target).startsWith('/proc/self/fd/') && path.basename(String(target)) === path.basename(missingDataDir)) {
+        swappedMissingDirectory = true;
+        fs.symlinkSync(manualWorkspace, missingDataDir);
+      }
+      return originalMkdirSync.call(this, target, ...args);
+    };
+    process.env.BLACKSPIRE_DATA_DIR = missingDataDir;
+    try {
+      const swappedMissing = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'swapped-missing-parent', request: 'packet', executionIntent: 'read_only' }, workspace: { root_path: manualWorkspace } });
+      assert.equal(swappedMissing.ok, false);
+      assert.equal(fs.existsSync(path.join(manualWorkspace, 'hermes-task-packets')), false);
+    } finally {
+      fs.mkdirSync = originalMkdirSync;
+      fs.rmSync(missingDataDir);
+    }
     const externalDataDir = path.join(root, 'external-provider-data');
     const externalPackets = path.join(externalDataDir, 'hermes-task-packets');
     fs.mkdirSync(externalPackets, { recursive: true });
@@ -381,6 +400,16 @@ test('Git workflow and workspace isolation/security controls', async () => {
   const regularDotHeadControl = [{ path: 'control/objects/placeholder', content: '' }];
   assert.throws(() => artifactsWouldChangeWorkspace(regularDotHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.throws(() => applyEdits(regularDotHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'control', 'refs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'control', 'HEAD'), 'ref: refs/heads/../../evil\n');
+  const regularUpwardHeadControl = [{ path: 'control/objects/placeholder', content: '' }];
+  fs.mkdirSync(path.join(dir, 'control', 'objects'));
+  assert.equal(spawnSync('git', ['-C', path.join(dir, 'control'), 'rev-parse', '--is-inside-git-dir'], { encoding: 'utf8' }).status, 0);
+  fs.rmSync(path.join(dir, 'control', 'objects'), { recursive: true });
+  assert.throws(() => artifactsWouldChangeWorkspace(regularUpwardHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(regularUpwardHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
   fs.rmSync(path.join(dir, 'control'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'control', 'refs', 'heads'), { recursive: true });

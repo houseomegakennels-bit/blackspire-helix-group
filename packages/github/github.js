@@ -132,8 +132,8 @@ function hasGitHead(target, projection) {
 
 function isGitRepositorySymbolicHead(symbolic) {
   const normalized = path.posix.normalize(symbolic);
-  return !path.posix.isAbsolute(symbolic) && !normalized.startsWith('../')
-    && normalized.startsWith('refs/') && !normalized.includes('\0');
+  return !path.posix.isAbsolute(symbolic) && !symbolic.includes('\0')
+    && (symbolic.startsWith('refs/') || normalized.startsWith('refs/'));
 }
 
 const MAX_PROJECTED_SYMLINK_HOPS = 40;

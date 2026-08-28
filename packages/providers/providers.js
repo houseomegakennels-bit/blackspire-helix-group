@@ -169,25 +169,22 @@ function manualPacket(packet, workspaceRoot = '.') {
 function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {}) {
   const dir = external ? providerRuntimeDir('hermes-task-packets') : path.resolve(workspaceRoot || '.', '.hermes-task-packets');
   const workspace = fs.realpathSync(path.resolve(workspaceRoot || '.'));
-  const physicalDir = physicalProspectivePath(dir);
-  const relative = path.relative(workspace, physicalDir);
-  if (external && (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))) {
-    throw new Error('External provider runtime directory must be outside the workspace');
-  }
-  fs.mkdirSync(dir, { recursive: true });
+  if (!external) fs.mkdirSync(dir, { recursive: true });
   const packetPath = path.join(dir, `${packet.taskId || id('task')}.json`);
-  const physicalPacketPath = physicalProspectivePath(packetPath);
-  const packetRelative = path.relative(workspace, physicalPacketPath);
-  if (external && (packetRelative === '' || (!packetRelative.startsWith(`..${path.sep}`) && packetRelative !== '..' && !path.isAbsolute(packetRelative)))) {
-    throw new Error('External provider packet path must be outside the workspace');
-  }
-  const directoryDescriptor = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  const packetDirectoryDescriptor = external
+    ? openConfinedDirectory(dir, workspace)
+    : fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
   let descriptor;
   try {
+    const physicalPacketPath = physicalProspectivePath(packetPath);
+    const packetRelative = path.relative(workspace, physicalPacketPath);
+    if (external && (packetRelative === '' || (!packetRelative.startsWith(`..${path.sep}`) && packetRelative !== '..' && !path.isAbsolute(packetRelative)))) {
+      throw new Error('External provider packet path must be outside the workspace');
+    }
     // Node does not expose openat(2). On Linux, the procfs descriptor link gives
     // openSync the same pinned-directory semantics: subsequent path replacement
     // cannot redirect the create into a different directory.
-    const pinnedDirectory = `/proc/self/fd/${directoryDescriptor}`;
+    const pinnedDirectory = `/proc/self/fd/${packetDirectoryDescriptor}`;
     const pinnedPhysicalDirectory = fs.realpathSync(pinnedDirectory);
     const pinnedRelative = path.relative(workspace, pinnedPhysicalDirectory);
     if (external && (pinnedRelative === '' || (!pinnedRelative.startsWith(`..${path.sep}`) && pinnedRelative !== '..' && !path.isAbsolute(pinnedRelative)))) {
@@ -197,9 +194,49 @@ function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {})
     fs.writeFileSync(descriptor, JSON.stringify(packet, null, 2));
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);
-    fs.closeSync(directoryDescriptor);
+    fs.closeSync(packetDirectoryDescriptor);
   }
   return packetPath;
+}
+
+function openConfinedDirectory(target, workspace) {
+  const missing = [];
+  let existing = path.resolve(target);
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) throw new Error('Unable to resolve external provider runtime directory');
+    missing.unshift(path.basename(existing));
+    existing = parent;
+  }
+  assertExternalDirectory(fs.realpathSync(existing), workspace);
+  let descriptor = fs.openSync(existing, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  try {
+    for (const component of missing) {
+      const pinnedParent = `/proc/self/fd/${descriptor}`;
+      assertExternalDirectory(fs.realpathSync(pinnedParent), workspace);
+      const child = path.join(pinnedParent, component);
+      try {
+        fs.mkdirSync(child, { mode: 0o700 });
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error;
+      }
+      const childDescriptor = fs.openSync(child, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      fs.closeSync(descriptor);
+      descriptor = childDescriptor;
+    }
+    assertExternalDirectory(fs.realpathSync(`/proc/self/fd/${descriptor}`), workspace);
+    return descriptor;
+  } catch (error) {
+    fs.closeSync(descriptor);
+    throw error;
+  }
+}
+
+function assertExternalDirectory(directory, workspace) {
+  const relative = path.relative(workspace, directory);
+  if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
+    throw new Error('External provider runtime directory must be outside the workspace');
+  }
 }
 
 function physicalProspectivePath(target) {
@@ -428,7 +465,7 @@ function snapshotProviderIsolation(root) {
       } else if (stat.isFile()) {
         byteCount += stat.size;
         if (byteCount > MAX_WORKSPACE_SNAPSHOT_BYTES) throw new Error('Workspace is too large to verify provider isolation safely');
-        entries.set(relative, `file:${stat.mode}:${createHash('sha256').update(fs.readFileSync(full)).digest('hex')}`);
+        entries.set(relative, `file:${stat.mode}:${stat.dev}:${stat.ino}:${stat.nlink}:${createHash('sha256').update(fs.readFileSync(full)).digest('hex')}`);
       } else entries.set(relative, `unsupported:${stat.mode}`);
       }
     } finally {
