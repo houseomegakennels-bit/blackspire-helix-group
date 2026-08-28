@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { spawnSync } from 'node:child_process';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-codex-contract-'));
 process.env.BLACKSPIRE_DATA_DIR = root;
@@ -276,6 +277,25 @@ test('provider Git-control mutation is rejected even when size and timestamp are
   const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
     fs.writeFileSync(head, 'ref: refs/heads/evil\n');
     fs.utimesSync(head, original.atime, original.mtime);
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
+test('provider mutation of a separate Git directory is rejected', async () => {
+  const workspace = path.join(root, 'separate-control-workspace');
+  const gitDirectory = path.join(root, 'separate-control-gitdir');
+  fs.mkdirSync(workspace, { recursive: true });
+  assert.equal(spawnSync('git', ['init', '--separate-git-dir', gitDirectory, workspace], { encoding: 'utf8' }).status, 0);
+  const head = path.join(gitDirectory, 'HEAD');
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
+    fs.writeFileSync(head, 'ref: refs/heads/evil\n');
     fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
     child.stdout.end(jsonlFinal());
     child.stderr.end();

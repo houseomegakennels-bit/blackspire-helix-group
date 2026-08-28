@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-28 — PR #115 separate-control and final-symlink correction (Codex)
+
+- Exact-head CI passed at `653655f8b07cb3de3dd872063a7b7a2c538dd17c` in run `33150874103`. The one requested exact-head review found two P1s: read-only verification omitted a separate Git directory, and an existing packet-file symlink could redirect the external write into the workspace. It also found the valid P2 that directory enumeration allocated before its advertised bound.
+- The correction discovers `git rev-parse --absolute-git-dir` and includes an external control directory in the same bounded byte-level snapshot; confines the complete packet path and opens it with `O_NOFOLLOW`; and uses incremental `opendirSync` enumeration. Deterministic regressions mutate a separate Git `HEAD` and redirect an existing packet path into the workspace. Focused acceptance/provider validation passes 40/40.
+- A claimed P2 false-positive for `HEAD -> ./refs/heads/main` was independently checked and is not valid on the repository Git: after `objects/` exists, `git rev-parse --is-inside-git-dir` succeeds. The control-storage refusal is retained. New exact-head CI and review remain required; production was not changed.
+
 ## 2026-08-24 — PR #115 arbitrary separate Git-directory correction (Codex)
 
 - Recovered the clean PR worktree at exact remote head `548ed7a415dad495410ede01cfbd8e6e70bd439a`; no later local fix or detached recovery commit existed. Production remained healthy/ready at deployed identity `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.

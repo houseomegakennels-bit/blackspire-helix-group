@@ -146,10 +146,10 @@ export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirna
     ? 'This is a read-only task. Return only JSON with {"artifacts":[],"summary":"..."}; artifacts must be empty.'
     : 'This is a workspace-mutation task. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}; include every proposed complete file artifact.';
   args.push(`Read the approved task packet at ${packetPath}. ${responseContract} Do not modify files.`);
-  const before = snapshotWorkspace(cwd);
+  const before = snapshotProviderIsolation(cwd);
   const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
   const parsed = parseCodexCliResult(result, finalPath);
-  if (parsed.ok && workspaceMutated(before, snapshotWorkspace(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
+  if (parsed.ok && workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
   return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
 }
 
@@ -176,7 +176,17 @@ function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {})
   }
   fs.mkdirSync(dir, { recursive: true });
   const packetPath = path.join(dir, `${packet.taskId || id('task')}.json`);
-  fs.writeFileSync(packetPath, JSON.stringify(packet, null, 2));
+  const physicalPacketPath = physicalProspectivePath(packetPath);
+  const packetRelative = path.relative(workspace, physicalPacketPath);
+  if (external && (packetRelative === '' || (!packetRelative.startsWith(`..${path.sep}`) && packetRelative !== '..' && !path.isAbsolute(packetRelative)))) {
+    throw new Error('External provider packet path must be outside the workspace');
+  }
+  const descriptor = fs.openSync(packetPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW, 0o600);
+  try {
+    fs.writeFileSync(descriptor, JSON.stringify(packet, null, 2));
+  } finally {
+    fs.closeSync(descriptor);
+  }
   return packetPath;
 }
 
@@ -383,20 +393,24 @@ function validArtifact(artifact) {
 const MAX_WORKSPACE_SNAPSHOT_ENTRIES = 100_000;
 const MAX_WORKSPACE_SNAPSHOT_BYTES = 256 * 1024 * 1024;
 
-function snapshotWorkspace(root) {
+function snapshotProviderIsolation(root) {
   const entries = new Map();
   if (!root || !fs.existsSync(root)) return entries;
   let entryCount = 0;
   let byteCount = 0;
-  const visit = (dir) => {
-    for (const name of fs.readdirSync(dir)) {
+  const visit = (dir, namespace, base) => {
+    const handle = fs.opendirSync(dir);
+    try {
+      let directoryEntry;
+      while ((directoryEntry = handle.readSync()) !== null) {
+      const name = directoryEntry.name;
       const full = path.join(dir, name);
-      const relative = path.relative(root, full);
+      const relative = `${namespace}:${path.relative(base, full)}`;
       const stat = fs.lstatSync(full);
       if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
       if (stat.isDirectory()) {
         entries.set(relative, `directory:${stat.mode}`);
-        visit(full);
+        visit(full, namespace, base);
       } else if (stat.isSymbolicLink()) {
         entries.set(relative, `symlink:${fs.readlinkSync(full)}`);
       } else if (stat.isFile()) {
@@ -404,9 +418,20 @@ function snapshotWorkspace(root) {
         if (byteCount > MAX_WORKSPACE_SNAPSHOT_BYTES) throw new Error('Workspace is too large to verify provider isolation safely');
         entries.set(relative, `file:${stat.mode}:${createHash('sha256').update(fs.readFileSync(full)).digest('hex')}`);
       } else entries.set(relative, `unsupported:${stat.mode}`);
+      }
+    } finally {
+      handle.closeSync();
     }
   };
-  visit(root);
+  const workspace = fs.realpathSync(root);
+  visit(workspace, 'workspace', workspace);
+  const gitDirectoryResult = spawnSync('git', ['-C', workspace, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8' });
+  if (gitDirectoryResult.status === 0) {
+    const gitDirectory = fs.realpathSync(gitDirectoryResult.stdout.trim());
+    const relative = path.relative(workspace, gitDirectory);
+    const insideWorkspace = relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+    if (!insideWorkspace) visit(gitDirectory, 'gitdir', gitDirectory);
+  }
   return entries;
 }
 

@@ -226,6 +226,19 @@ exit 64
     assert.equal(escaped.ok, false);
     assert.match(escaped.error, /outside the workspace/i);
     assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), '');
+    const externalDataDir = path.join(root, 'external-provider-data');
+    const externalPackets = path.join(externalDataDir, 'hermes-task-packets');
+    fs.mkdirSync(externalPackets, { recursive: true });
+    const redirectedTarget = path.join(manualWorkspace, 'redirected-packet.json');
+    fs.writeFileSync(redirectedTarget, 'unchanged');
+    const statusBeforeRedirect = git(['status', '--porcelain', '-uall'], manualWorkspace);
+    fs.symlinkSync(redirectedTarget, path.join(externalPackets, 'redirected.json'));
+    process.env.BLACKSPIRE_DATA_DIR = externalDataDir;
+    const redirected = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'redirected', request: 'packet', executionIntent: 'read_only' }, workspace: { root_path: manualWorkspace } });
+    assert.equal(redirected.ok, false);
+    assert.match(redirected.error, /outside the workspace/i);
+    assert.equal(fs.readFileSync(redirectedTarget, 'utf8'), 'unchanged');
+    assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), statusBeforeRedirect);
   } finally {
     if (previousDataDir === undefined) delete process.env.BLACKSPIRE_DATA_DIR;
     else process.env.BLACKSPIRE_DATA_DIR = previousDataDir;
@@ -323,6 +336,14 @@ test('Git workflow and workspace isolation/security controls', async () => {
     assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
     fs.rmSync(path.join(dir, 'control'), { recursive: true });
   }
+  fs.mkdirSync(path.join(dir, 'control', 'refs', 'heads'), { recursive: true });
+  fs.symlinkSync('./refs/heads/main', path.join(dir, 'control', 'HEAD'));
+  const gitLeadingDotHead = [{ path: 'control/objects/placeholder', content: '' }];
+  assert.throws(() => artifactsWouldChangeWorkspace(gitLeadingDotHead, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(gitLeadingDotHead, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  fs.mkdirSync(path.join(dir, 'control', 'objects'), { recursive: true });
+  assert.equal(spawnSync('git', ['-C', path.join(dir, 'control'), 'rev-parse', '--is-inside-git-dir'], { encoding: 'utf8' }).status, 0);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
   const malformedProspectiveControl = prospectiveControl.map((edit) => edit.path === 'control/config'
     ? { ...edit, content: '[core\nmalformed = true\n' }
     : edit);

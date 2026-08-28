@@ -1,8 +1,8 @@
 # Blackspire Active Context
 
-## PR #115 exact-head review correction in progress (2026-08-28 UTC)
+## PR #115 second exact-head review correction in progress (2026-08-28 UTC)
 
-PR #115 remains open at reviewed head `0be37ebfb7c0ff9d3e7956e795323d7b22a12886`; exact-head CI run `33149998177` (#481) passed. Its review found four current P1s: a symlinked external data directory could re-enter the workspace, Git normalizes redundant separators in a symlinked HEAD ref, Git recognizes detached hexadecimal HEAD content longer than 64 characters, and read-only Codex isolation ignored Git-control and same-size/restored-time mutations. The local correction physically resolves the prospective packet directory, normalizes relative HEAD link text before Git ref validation, recognizes 40-or-more hexadecimal detached HEADs, and uses bounded byte/mode/symlink snapshots including `.git`. Focused validation passes 39/39. A new push, isolated exact-head CI, and exact-head review remain required. Production is unchanged at `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
+PR #115 remains open at reviewed head `653655f8b07cb3de3dd872063a7b7a2c538dd17c`; exact-head CI run `33150874103` passed. Its review found two current P1s and one valid P2: read-only isolation omitted a physically separate Git directory, an existing final packet-path symlink could redirect the write into the workspace, and `readdirSync` allocated an entire adversarial directory before enforcing the entry bound. The local correction snapshots Git's discovered external control directory, confines the complete packet path and opens it with `O_NOFOLLOW`, and enumerates incrementally with `opendirSync`. The review's other P2 claim about `HEAD -> ./refs/heads/main` was disproved on the repository Git: Git recognizes that completed shape as control storage, so it must remain refused. Focused validation passes 40/40. A new push, exact-head CI, and exact-head review remain required. Production is unchanged at `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
 
 ## Canonical production is serving real Jarvis-to-Codex work (2026-08-24 UTC)
 
