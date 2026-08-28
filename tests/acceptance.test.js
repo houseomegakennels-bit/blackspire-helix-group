@@ -208,9 +208,21 @@ exit 64
   assert.equal((await runCodexCliPacket(path.join(root, 'packet.json'))).artifacts[0].path, 'docs/codex.md');
   assert.equal(runClaudeCodePacket(path.join(root, 'packet.json')).artifacts[0].path, 'docs/claude.md');
   process.env.PATH = oldPath;
-  const manual = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'manual', request: 'packet' }, workspace: { root_path: root } });
-  assert.equal(manual.mode, 'handoff');
-  assert.ok(fs.existsSync(manual.manualPacketPath));
+  const manualWorkspace = repo();
+  const manualDataDir = path.join(root, 'manual-provider-data');
+  const previousDataDir = process.env.BLACKSPIRE_DATA_DIR;
+  process.env.BLACKSPIRE_DATA_DIR = manualDataDir;
+  try {
+    const manual = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'manual', request: 'packet', executionIntent: 'read_only' }, workspace: { root_path: manualWorkspace } });
+    assert.equal(manual.mode, 'handoff');
+    assert.ok(fs.existsSync(manual.manualPacketPath));
+    assert.equal(path.dirname(path.dirname(manual.manualPacketPath)), manualDataDir);
+    assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), '');
+    assert.equal(fs.existsSync(path.join(manualWorkspace, '.hermes-task-packets')), false);
+  } finally {
+    if (previousDataDir === undefined) delete process.env.BLACKSPIRE_DATA_DIR;
+    else process.env.BLACKSPIRE_DATA_DIR = previousDataDir;
+  }
 });
 
 test('Git workflow and workspace isolation/security controls', async () => {
@@ -285,6 +297,15 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.throws(() => applyEdits(uppercaseDetachedControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
+  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), '/control/\n');
+  fs.mkdirSync(path.join(dir, 'control', 'refs', 'heads'), { recursive: true });
+  fs.symlinkSync('refs/heads/main', path.join(dir, 'control', 'HEAD'));
+  const symlinkedHeadControl = [{ path: 'control/objects/placeholder', content: '' }];
+  assert.throws(() => artifactsWouldChangeWorkspace(symlinkedHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(symlinkedHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
+  assert.equal(git(['status', '--porcelain'], dir), '');
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
   const malformedProspectiveControl = prospectiveControl.map((edit) => edit.path === 'control/config'
     ? { ...edit, content: '[core\nmalformed = true\n' }
     : edit);

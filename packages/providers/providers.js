@@ -161,12 +161,17 @@ function mockResponse(packet) {
 }
 
 function manualPacket(packet, workspaceRoot = '.') {
-  const packetPath = writeTaskPacket(packet, workspaceRoot);
+  const packetPath = writeTaskPacket(packet, workspaceRoot, { external: true });
   return { ok: true, provider: 'manual', mode: 'handoff', summary: `Manual task packet written to ${packetPath}`, artifacts: [], manualPacketPath: packetPath, usage: { inputTokens: 0, outputTokens: 0, costCents: 0 } };
 }
 
 function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {}) {
   const dir = external ? providerRuntimeDir('hermes-task-packets') : path.resolve(workspaceRoot || '.', '.hermes-task-packets');
+  const workspace = path.resolve(workspaceRoot || '.');
+  const relative = path.relative(workspace, dir);
+  if (external && (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)))) {
+    throw new Error('External provider runtime directory must be outside the workspace');
+  }
   fs.mkdirSync(dir, { recursive: true });
   const packetPath = path.join(dir, `${packet.taskId || id('task')}.json`);
   fs.writeFileSync(packetPath, JSON.stringify(packet, null, 2));
