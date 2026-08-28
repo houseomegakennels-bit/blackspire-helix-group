@@ -278,6 +278,12 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.throws(() => artifactsWouldChangeWorkspace(configlessControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.throws(() => applyEdits(configlessControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'control')), false);
+  const uppercaseDetachedControl = configlessControl.map((edit) => edit.path === 'control/HEAD'
+    ? { ...edit, content: 'ABCDEF0123456789ABCDEF0123456789ABCDEF01\n' }
+    : edit);
+  assert.throws(() => artifactsWouldChangeWorkspace(uppercaseDetachedControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(uppercaseDetachedControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
   const malformedProspectiveControl = prospectiveControl.map((edit) => edit.path === 'control/config'
     ? { ...edit, content: '[core\nmalformed = true\n' }
