@@ -266,6 +266,22 @@ test('provider direct workspace mutation is rejected before artifact application
   assert.match(result.error, /mutated/);
 });
 
+test('provider mutation is rejected even when the Codex child fails', async () => {
+  const workspace = path.join(root, 'failed-mutation-workspace');
+  fs.mkdirSync(workspace, { recursive: true });
+  fs.writeFileSync(path.join(workspace, 'tracked.txt'), 'before');
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', spawnImpl: fakeChild(({ child }) => {
+    fs.writeFileSync(path.join(workspace, 'tracked.txt'), 'after');
+    child.stdout.end(`${JSON.stringify({ type: 'error', message: 'provider failed' })}\n`);
+    child.stderr.end('provider failed');
+    child.emit('close', 1, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
 test('provider Git-control mutation is rejected even when size and timestamp are restored', async () => {
   const workspace = path.join(root, 'control-mutation-workspace');
   fs.mkdirSync(path.join(workspace, '.git'), { recursive: true });

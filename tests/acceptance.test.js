@@ -276,6 +276,20 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.equal(decide('repository', { repository: 'evil/repo', allowlist: ['local/ok'] }).allowed, false);
   assert.throws(() => applyEdits([{ path: '../escape.md', content: 'x' }], { cwd: dir, allowedPaths: ['docs'] }));
   assert.throws(() => applyEdits([{ path: 'src/nope.md', content: 'x' }], { cwd: dir, allowedPaths: ['docs'] }));
+  const originalOpenDirectory = fs.opendirSync;
+  let boundedReads = 0;
+  let boundedHandleClosed = false;
+  fs.opendirSync = () => ({
+    readSync: () => (++boundedReads <= 100_001 ? { name: `entry-${boundedReads}`, isDirectory: () => false } : null),
+    closeSync: () => { boundedHandleClosed = true; },
+  });
+  try {
+    assert.throws(() => artifactsWouldChangeWorkspace([{ path: 'docs/bounded.md', content: 'x' }], { cwd: dir, allowedPaths: ['docs'] }), /too large to inspect projected Git control data safely/i);
+    assert.equal(boundedReads, 100_001);
+    assert.equal(boundedHandleClosed, true);
+  } finally {
+    fs.opendirSync = originalOpenDirectory;
+  }
   assert.equal((await runAllowed('rm -rf /', { cwd: dir, allowedCommands: ['npm test'] })).ok, false);
   assert.equal(commitAll('blocked on main', { cwd: dir }).ok, false);
   git(['switch', '-c', 'hermes/test'], dir);

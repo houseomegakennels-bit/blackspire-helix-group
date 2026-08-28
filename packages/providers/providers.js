@@ -149,7 +149,7 @@ export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirna
   const before = snapshotProviderIsolation(cwd);
   const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
   const parsed = parseCodexCliResult(result, finalPath);
-  if (parsed.ok && workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
+  if (workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
   return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
 }
 

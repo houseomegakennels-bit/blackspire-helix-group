@@ -86,12 +86,18 @@ function existingHeadDirectories(realRoot) {
   let entries = 0;
   while (pending.length) {
     const directory = pending.pop();
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (++entries > MAX_CONTROL_CANDIDATE_ENTRIES) throw new Error('Workspace is too large to inspect projected Git control data safely');
-      if (!entry.isDirectory() || entry.name === '.git') continue;
-      const child = path.join(directory, entry.name);
-      pending.push(child);
-      if (pathEntryExists(path.join(child, 'HEAD'))) candidates.push(child);
+    const handle = fs.opendirSync(directory);
+    try {
+      let entry;
+      while ((entry = handle.readSync()) !== null) {
+        if (++entries > MAX_CONTROL_CANDIDATE_ENTRIES) throw new Error('Workspace is too large to inspect projected Git control data safely');
+        if (!entry.isDirectory() || entry.name === '.git') continue;
+        const child = path.join(directory, entry.name);
+        pending.push(child);
+        if (pathEntryExists(path.join(child, 'HEAD'))) candidates.push(child);
+      }
+    } finally {
+      handle.closeSync();
     }
   }
   return candidates;
