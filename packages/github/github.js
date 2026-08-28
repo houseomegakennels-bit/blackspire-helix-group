@@ -66,15 +66,40 @@ function assertArtifactsDoNotCreateGitControl(edits, cwd, allowedPaths) {
       candidates.add(candidate);
     }
   }
+  // A proposal can complete an existing, currently-inert control shape through
+  // reverse symlink edges. For example, control/{objects,refs} may be dangling
+  // links whose referent directories are created elsewhere by this batch. Such
+  // a control directory is not an ancestor of any proposed path.
+  for (const candidate of existingHeadDirectories(realRoot)) candidates.add(candidate);
+  const currentFiles = new Map();
   for (const candidate of candidates) {
-    if (hasGitControlShape(candidate, realRoot, projectedFiles)) throw new Error('Artifact set creates Git control data');
+    if (hasGitControlShape(candidate, realRoot, projectedFiles)
+      && !hasGitControlShape(candidate, realRoot, currentFiles)) throw new Error('Artifact set creates Git control data');
   }
+}
+
+const MAX_CONTROL_CANDIDATE_ENTRIES = 100_000;
+
+function existingHeadDirectories(realRoot) {
+  const candidates = [];
+  const pending = [realRoot];
+  let entries = 0;
+  while (pending.length) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (++entries > MAX_CONTROL_CANDIDATE_ENTRIES) throw new Error('Workspace is too large to inspect projected Git control data safely');
+      if (!entry.isDirectory() || entry.name === '.git') continue;
+      const child = path.join(directory, entry.name);
+      pending.push(child);
+      if (pathEntryExists(path.join(child, 'HEAD'))) candidates.push(child);
+    }
+  }
+  return candidates;
 }
 
 function hasGitControlShape(directory, realRoot, projectedFiles) {
   const projection = { realRoot, projectedFiles };
   return hasGitHead(path.join(directory, 'HEAD'), projection)
-    && hasGitConfig(path.join(directory, 'config'), projection)
     && projectedEntry(path.join(directory, 'objects'), projection).type === 'directory'
     && projectedEntry(path.join(directory, 'refs'), projection).type === 'directory';
 }
@@ -90,38 +115,6 @@ function hasGitHead(target, projection) {
     if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false;
     throw error;
   }
-}
-
-function hasGitConfig(target, projection) {
-  try {
-    const content = readProjectedFile(target, projection);
-    // A Git config need not declare [core]: an empty config and one containing
-    // only [user], for example, are valid Git control data.  We still require
-    // Git config syntax rather than treating an arbitrary application file as
-    // control data, preserving the ordinary-directory false-positive boundary.
-    // A malformed attempted core section is also control-shaped.  Git itself
-    // rejects that projection, so accepting it would reintroduce the
-    // inconclusive-parser write-before-refusal path.
-    return isGitConfigSyntax(content) || /^\s*\[core(?:\s|$)/m.test(content);
-  } catch (error) {
-    if (error?.code === 'ENOENT' || error?.code === 'EISDIR') return false;
-    throw error;
-  }
-}
-
-function isGitConfigSyntax(content) {
-  const lines = String(content).replace(/^\uFEFF/, '').split(/\r?\n/);
-  let inSection = false;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
-    if (/^\[[A-Za-z][A-Za-z0-9.-]*(?:\s+"(?:[^"\\]|\\.)*")?\]$/.test(line)) {
-      inSection = true;
-      continue;
-    }
-    if (!inSection || !/^[A-Za-z][A-Za-z0-9-]*(?:\s*=\s*.*)?$/.test(line)) return false;
-  }
-  return true;
 }
 
 const MAX_PROJECTED_SYMLINK_HOPS = 40;

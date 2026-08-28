@@ -274,6 +274,10 @@ test('Git workflow and workspace isolation/security controls', async () => {
     assert.throws(() => applyEdits(validConfigControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
     assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   }
+  const configlessControl = prospectiveControl.filter((edit) => edit.path !== 'control/config');
+  assert.throws(() => artifactsWouldChangeWorkspace(configlessControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(configlessControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
   const malformedProspectiveControl = prospectiveControl.map((edit) => edit.path === 'control/config'
     ? { ...edit, content: '[core\nmalformed = true\n' }
@@ -307,6 +311,20 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.throws(() => applyEdits(danglingReferentControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'prospective-targets')), false);
   assert.equal(fs.existsSync(path.join(dir, 'control', 'HEAD')), false);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  // This batch does not touch control/ or its ancestors. It completes the
+  // existing dangling objects/refs links only by creating referents elsewhere.
+  fs.mkdirSync(path.join(dir, 'control'));
+  fs.writeFileSync(path.join(dir, 'control', 'HEAD'), 'ref: refs/heads/main\n');
+  fs.symlinkSync('../reverse-targets/objects', path.join(dir, 'control', 'objects'));
+  fs.symlinkSync('../reverse-targets/refs', path.join(dir, 'control', 'refs'));
+  const reverseSymlinkControl = [
+    { path: 'reverse-targets/objects/placeholder', content: '' },
+    { path: 'reverse-targets/refs/placeholder', content: '' },
+  ];
+  assert.throws(() => artifactsWouldChangeWorkspace(reverseSymlinkControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(reverseSymlinkControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'reverse-targets')), false);
   fs.rmSync(path.join(dir, 'control'), { recursive: true });
   // The final graph must follow every same-batch dangling-link hop, not just
   // the first link.  Neither target directory exists before this batch.
@@ -351,14 +369,14 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.throws(() => applyEdits(unicodeControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
   assert.equal(fs.existsSync(path.join(dir, 'control')), false);
   const ordinaryProjection = [
-    { path: 'render/HEAD', content: 'ref: refs/current-output\n' },
+    { path: 'render/HEAD', content: 'current renderer output\n' },
     { path: 'render/config', content: 'renderer configuration\n' },
     { path: 'render/objects/item.json', content: '{}\n' },
     { path: 'render/refs/index.json', content: '[]\n' },
   ];
   assert.equal(artifactsWouldChangeWorkspace(ordinaryProjection, { cwd: dir, allowedPaths: ['.'] }), true);
   applyEdits(ordinaryProjection, { cwd: dir, allowedPaths: ['.'] });
-  assert.equal(fs.readFileSync(path.join(dir, 'render', 'HEAD'), 'utf8'), 'ref: refs/current-output\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'render', 'HEAD'), 'utf8'), 'current renderer output\n');
   fs.rmSync(path.join(dir, 'render'), { recursive: true });
   assert.equal(git(['status', '--porcelain'], dir), '');
   fs.mkdirSync(path.join(dir, 'control', 'objects'), { recursive: true });
