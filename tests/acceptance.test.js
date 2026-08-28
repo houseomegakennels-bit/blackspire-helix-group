@@ -377,6 +377,13 @@ test('Git workflow and workspace isolation/security controls', async () => {
     fs.rmSync(path.join(dir, 'control'), { recursive: true });
   }
   fs.mkdirSync(path.join(dir, 'control', 'refs', 'heads'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'control', 'HEAD'), 'ref: refs/heads/.main\n');
+  const regularDotHeadControl = [{ path: 'control/objects/placeholder', content: '' }];
+  assert.throws(() => artifactsWouldChangeWorkspace(regularDotHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.throws(() => applyEdits(regularDotHeadControl, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
+  assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
+  fs.rmSync(path.join(dir, 'control'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'control', 'refs', 'heads'), { recursive: true });
   fs.symlinkSync('./refs/heads/main', path.join(dir, 'control', 'HEAD'));
   const gitLeadingDotHead = [{ path: 'control/objects/placeholder', content: '' }];
   assert.throws(() => artifactsWouldChangeWorkspace(gitLeadingDotHead, { cwd: dir, allowedPaths: ['.'] }), /creates Git control/i);
