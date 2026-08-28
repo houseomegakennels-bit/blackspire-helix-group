@@ -239,6 +239,32 @@ exit 64
     assert.match(redirected.error, /outside the workspace/i);
     assert.equal(fs.readFileSync(redirectedTarget, 'utf8'), 'unchanged');
     assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), statusBeforeRedirect);
+    fs.rmSync(path.join(externalPackets, 'redirected.json'));
+    const displacedPackets = `${externalPackets}-displaced`;
+    const originalOpenSync = fs.openSync;
+    let swappedPacketDirectory = false;
+    fs.openSync = function swapBeforeDirectoryOpen(target, ...args) {
+      if (!swappedPacketDirectory && target === externalPackets) {
+        swappedPacketDirectory = true;
+        fs.renameSync(externalPackets, displacedPackets);
+        fs.symlinkSync(manualWorkspace, externalPackets);
+      }
+      return originalOpenSync.call(this, target, ...args);
+    };
+    try {
+      const swapped = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'swapped-parent', request: 'packet', executionIntent: 'read_only' }, workspace: { root_path: manualWorkspace } });
+      assert.equal(swapped.ok, false);
+      assert.equal(fs.existsSync(path.join(manualWorkspace, 'swapped-parent.json')), false);
+    } finally {
+      fs.openSync = originalOpenSync;
+      fs.rmSync(externalPackets);
+      fs.renameSync(displacedPackets, externalPackets);
+    }
+    fs.linkSync(redirectedTarget, path.join(externalPackets, 'hard-linked.json'));
+    const hardLinked = await executeProviderRequest({ selected: { provider: 'manual', mode: 'handoff' }, packet: { taskId: 'hard-linked', request: 'packet', executionIntent: 'read_only' }, workspace: { root_path: manualWorkspace } });
+    assert.equal(hardLinked.ok, false);
+    assert.equal(fs.readFileSync(redirectedTarget, 'utf8'), 'unchanged');
+    assert.equal(git(['status', '--porcelain', '-uall'], manualWorkspace), statusBeforeRedirect);
   } finally {
     if (previousDataDir === undefined) delete process.env.BLACKSPIRE_DATA_DIR;
     else process.env.BLACKSPIRE_DATA_DIR = previousDataDir;
@@ -326,7 +352,7 @@ test('Git workflow and workspace isolation/security controls', async () => {
   assert.equal(fs.existsSync(path.join(dir, 'control', 'objects')), false);
   assert.equal(git(['status', '--porcelain'], dir), '');
   fs.rmSync(path.join(dir, 'control'), { recursive: true });
-  for (const head of ['refs//heads/main', `${'a'.repeat(65)}`]) {
+  for (const head of ['refs//heads/main', 'refs/heads/.main', `${'a'.repeat(65)}`]) {
     fs.mkdirSync(path.join(dir, 'control', 'refs', 'heads'), { recursive: true });
     if (head.startsWith('refs')) fs.symlinkSync(head, path.join(dir, 'control', 'HEAD'));
     else fs.writeFileSync(path.join(dir, 'control', 'HEAD'), `${head}\n`);

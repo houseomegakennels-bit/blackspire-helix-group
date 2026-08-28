@@ -305,6 +305,29 @@ test('provider mutation of a separate Git directory is rejected', async () => {
   assert.match(result.error, /mutated/);
 });
 
+test('provider mutation of a linked worktree common Git directory is rejected', async () => {
+  const primary = path.join(root, 'linked-primary');
+  const workspace = path.join(root, 'linked-worktree');
+  fs.mkdirSync(primary, { recursive: true });
+  assert.equal(spawnSync('git', ['init', primary], { encoding: 'utf8' }).status, 0);
+  fs.writeFileSync(path.join(primary, 'tracked.txt'), 'tracked');
+  assert.equal(spawnSync('git', ['-C', primary, 'add', 'tracked.txt'], { encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync('git', ['-C', primary, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'fixture'], { encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync('git', ['-C', primary, 'worktree', 'add', workspace], { encoding: 'utf8' }).status, 0);
+  const commonConfig = path.join(primary, '.git', 'config');
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, model: 'MODEL_A', executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
+    fs.appendFileSync(commonConfig, '\n[alias]\nunsafe = status\n');
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
 test('Codex child is terminated at the Hermes deadline', async () => {
   const workspace = path.join(root, 'timeout-workspace');
   fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });

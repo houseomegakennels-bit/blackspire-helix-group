@@ -113,7 +113,7 @@ function hasGitHead(target, projection) {
       const symbolic = fs.readlinkSync(target);
       const normalized = path.posix.normalize(symbolic);
       return !path.posix.isAbsolute(symbolic) && !normalized.startsWith('../')
-        && spawnSync('git', ['check-ref-format', normalized], { encoding: 'utf8' }).status === 0;
+        && normalized.startsWith('refs/') && !normalized.includes('\0');
     }
     const content = readProjectedFile(target, projection).trim();
     if (/^[a-f0-9]{40,}$/i.test(content)) return true;

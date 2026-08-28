@@ -2,7 +2,7 @@
 
 ## Immediate PR #115 closure (2026-08-24 UTC)
 
-1. Push the validated bounded-mock fixture correction and its pre-dispatch mutation-intent regression as one checkpoint.
+1. Push the validated exact-head provider-isolation correction as one checkpoint.
 2. Wait for exact-head CI, then request one focused Codex review of the changed head; do not duplicate review on an unchanged SHA.
 3. Merge only after required checks and review are clean, using expected-head protection, then verify the reviewed tree landed on main.
 4. Immediately inspect the persisted successful provider attempt for `task_61a88e75d88dbcd1` read-only and implement the canonical result-display contract without replaying the historical task.

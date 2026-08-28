@@ -181,11 +181,23 @@ function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {})
   if (external && (packetRelative === '' || (!packetRelative.startsWith(`..${path.sep}`) && packetRelative !== '..' && !path.isAbsolute(packetRelative)))) {
     throw new Error('External provider packet path must be outside the workspace');
   }
-  const descriptor = fs.openSync(packetPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW, 0o600);
+  const directoryDescriptor = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  let descriptor;
   try {
+    // Node does not expose openat(2). On Linux, the procfs descriptor link gives
+    // openSync the same pinned-directory semantics: subsequent path replacement
+    // cannot redirect the create into a different directory.
+    const pinnedDirectory = `/proc/self/fd/${directoryDescriptor}`;
+    const pinnedPhysicalDirectory = fs.realpathSync(pinnedDirectory);
+    const pinnedRelative = path.relative(workspace, pinnedPhysicalDirectory);
+    if (external && (pinnedRelative === '' || (!pinnedRelative.startsWith(`..${path.sep}`) && pinnedRelative !== '..' && !path.isAbsolute(pinnedRelative)))) {
+      throw new Error('External provider packet path must be outside the workspace');
+    }
+    descriptor = fs.openSync(path.join(pinnedDirectory, path.basename(packetPath)), fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
     fs.writeFileSync(descriptor, JSON.stringify(packet, null, 2));
   } finally {
-    fs.closeSync(descriptor);
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    fs.closeSync(directoryDescriptor);
   }
   return packetPath;
 }
@@ -425,14 +437,29 @@ function snapshotProviderIsolation(root) {
   };
   const workspace = fs.realpathSync(root);
   visit(workspace, 'workspace', workspace);
-  const gitDirectoryResult = spawnSync('git', ['-C', workspace, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8' });
-  if (gitDirectoryResult.status === 0) {
-    const gitDirectory = fs.realpathSync(gitDirectoryResult.stdout.trim());
-    const relative = path.relative(workspace, gitDirectory);
-    const insideWorkspace = relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-    if (!insideWorkspace) visit(gitDirectory, 'gitdir', gitDirectory);
+  const gitDirectories = new Set();
+  for (const option of ['--absolute-git-dir', '--git-common-dir']) {
+    const result = spawnSync('git', ['-C', workspace, 'rev-parse', option], { encoding: 'utf8' });
+    if (result.status !== 0) continue;
+    const reported = result.stdout.trim();
+    gitDirectories.add(fs.realpathSync(path.isAbsolute(reported) ? reported : path.resolve(workspace, reported)));
+  }
+  const externalGitDirectories = [...gitDirectories]
+    .filter((gitDirectory) => {
+      const relative = path.relative(workspace, gitDirectory);
+      return relative !== '' && (relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative));
+    })
+    .filter((gitDirectory, _index, roots) => !roots.some((other) => other !== gitDirectory && isPathInside(other, gitDirectory)))
+    .sort();
+  for (const [gitDirectoryIndex, gitDirectory] of externalGitDirectories.entries()) {
+    visit(gitDirectory, `gitdir${gitDirectoryIndex}`, gitDirectory);
   }
   return entries;
+}
+
+function isPathInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
 function workspaceMutated(before, after) {
