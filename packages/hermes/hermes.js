@@ -288,7 +288,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     last = result;
     const responsePacket = { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } };
     const usage = result.usage || { provider: result.provider, mode: result.mode };
-    if (selected.provider === 'codex') finishCodexDispatchWithUsage(task.id, result.ok ? 'completed' : 'failed', { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started, usage });
+    if (selected.provider === 'codex') finishCodexDispatchWithUsage(task.id, result.outcomeUnknown ? 'outcome_unknown' : (result.ok ? 'completed' : 'failed'), { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started, usage });
     else {
       recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.handedOff ? 'handed_off' : (result.ok ? 'completed' : 'failed'), requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
       recordUsage(task.id, usage);

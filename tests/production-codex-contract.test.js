@@ -276,6 +276,7 @@ test('unproven containment durably quarantines only the affected workspace until
   for (const [id, rootPath] of [['quarantine-a', workspaceA], ['quarantine-b', workspaceB]]) {
     upsertWorkspace({ id, name: id, githubRepository: `local/${id}`, allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath });
   }
+  upsertWorkspace({ id: 'quarantine-alias', name: 'quarantine-alias', githubRepository: 'local/quarantine-alias', allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: workspaceA });
   const taskA = createTask({ workspaceId: 'quarantine-a', request: 'inspect containment', idempotencyKey: 'quarantine-a-task', executionIntent: 'read_only' });
   const taskB = createTask({ workspaceId: 'quarantine-b', request: 'inspect unrelated', idempotencyKey: 'quarantine-b-task', executionIntent: 'read_only' });
   const packet = path.join(workspaceA, 'task.json');
@@ -286,9 +287,11 @@ test('unproven containment durably quarantines only the affected workspace until
     runCliChildImpl: async () => { childRuns += 1; return { status: 125, signal: null, stdout: '', stderr: '', containmentFailed: true }; },
   });
   assert.equal(result.ok, false);
-  assert.match(result.error, /containment could not be proven; workspace quarantined/);
+  assert.equal(result.outcomeUnknown, true);
+  assert.match(result.error, /containment could not be proven; workspace remains quarantined/);
   closeDb();
   assert.deepEqual(workspaceDispatchEligibility('quarantine-a').eligible, false);
+  assert.deepEqual(workspaceDispatchEligibility('quarantine-alias').eligible, false, 'an alias of the same physical root cannot bypass quarantine');
   assert.deepEqual(workspaceDispatchEligibility('quarantine-b'), { eligible: true, state: 'available' });
   assert.match(guardDispatch({ task: taskA, workspace: { id: 'quarantine-a' }, phase: 'hermes' }).reason, /workspace unavailable/);
   assert.equal(guardDispatch({ task: taskB, workspace: { id: 'quarantine-b' }, phase: 'hermes' }).ok, true);
@@ -297,7 +300,23 @@ test('unproven containment durably quarantines only the affected workspace until
   assert.throws(() => recoverWorkspace('quarantine-a', { containmentVerified: true }), /requires verified process containment and workspace integrity/);
   assert.equal(workspaceDispatchEligibility('quarantine-a').eligible, false, 'failed recovery survives through the durable registry state');
   assert.deepEqual(recoverWorkspace('quarantine-a', { containmentVerified: true, integrityVerified: true }), { eligible: true, state: 'available' });
+  assert.equal(workspaceDispatchEligibility('quarantine-alias').eligible, true);
   assert.equal(guardDispatch({ task: taskA, workspace: { id: 'quarantine-a' }, phase: 'hermes' }).ok, true);
+});
+
+test('a failed durable quarantine write prevents provider launch', async () => {
+  const workspace = path.join(root, 'containment-quarantine-write-failure');
+  fs.mkdirSync(workspace, { recursive: true });
+  upsertWorkspace({ id: 'quarantine-write-failure', name: 'quarantine-write-failure', githubRepository: 'local/quarantine-write-failure', allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: workspace });
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  let childRuns = 0;
+  await assert.rejects(() => runCodexCliPacket(packet, {
+    workspaceId: 'quarantine-write-failure', workspaceRoot: workspace, executionIntent: 'read_only',
+    quarantineWorkspaceImpl: () => { throw new Error('durable quarantine unavailable'); },
+    runCliChildImpl: async () => { childRuns += 1; return { status: 0, stdout: '', stderr: '', containmentFailed: false }; },
+  }), /durable quarantine unavailable/);
+  assert.equal(childRuns, 0, 'no workspace is touched unless quarantine is durable first');
 });
 
 test('provider mutation is rejected even when the Codex child fails', async () => {
@@ -712,6 +731,11 @@ test('Hermes commits the Codex dispatch marker before the child invocation can b
   const marker = source.indexOf('prepareCodexDispatch(task.id');
   const child = source.indexOf('await executeProviderRequest(', marker);
   assert.ok(marker >= 0 && child > marker, 'durable marker must remain before provider child invocation');
+});
+
+test('Hermes preserves containment uncertainty as outcome_unknown', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'packages/hermes/hermes.js'), 'utf8');
+  assert.match(source, /result\.outcomeUnknown \? 'outcome_unknown'/);
 });
 
 test.after(() => {

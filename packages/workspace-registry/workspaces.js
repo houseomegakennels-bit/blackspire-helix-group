@@ -1,6 +1,9 @@
-import { execSql, query, esc } from '../task-engine/db.js';
+import { execSql, query, esc, run, transaction } from '../task-engine/db.js';
 import { now } from '../shared/util.js';
 import { WORKSPACE_ROOT } from '../shared/config.js';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export function seedWorkspace() {
   upsertWorkspace({
@@ -25,20 +28,30 @@ export function getWorkspace(id = 'blackspire-command') {
   return workspace && parse(workspace);
 }
 
-const quarantineKey = (id) => `workspace_quarantine:${id}`;
+function quarantineKeys(id) {
+  const workspace = query(`SELECT root_path FROM workspaces WHERE id=${esc(id)};`)[0];
+  if (!workspace?.root_path) throw new Error('workspace root unavailable for quarantine');
+  const logicalRoot = path.resolve(workspace.root_path);
+  const physicalRoot = fs.realpathSync(logicalRoot);
+  return [...new Set([logicalRoot, physicalRoot])].map((root) => `workspace_quarantine_root:${createHash('sha256').update(root).digest('hex')}`);
+}
 
 export function quarantineWorkspace(id, { reason = 'workspace integrity is unverified', taskId = null } = {}) {
   const value = JSON.stringify({ state: 'quarantined', reason, taskId, quarantinedAt: now() });
-  execSql(`INSERT OR REPLACE INTO system_flags VALUES (${esc(quarantineKey(id))},${esc(value)},${esc(now())});`);
+  const timestamp = now();
+  transaction(() => { for (const key of quarantineKeys(id)) run('INSERT OR REPLACE INTO system_flags VALUES (?,?,?);', [key, value, timestamp]); });
   return workspaceDispatchEligibility(id);
 }
 
 export function workspaceDispatchEligibility(id) {
-  const value = query(`SELECT value FROM system_flags WHERE key=${esc(quarantineKey(id))};`)[0]?.value;
-  if (!value) return { eligible: true, state: 'available' };
+  let keys;
+  try { keys = quarantineKeys(id); } catch { return { eligible: false, state: 'quarantined', reason: 'workspace root identity is unverified', taskId: null }; }
+  const values = query(`SELECT value FROM system_flags WHERE key IN (${keys.map(esc).join(',')});`).map((row) => row.value);
+  if (!values.length) return { eligible: true, state: 'available' };
   try {
-    const quarantine = JSON.parse(value);
-    return quarantine?.state === 'quarantined'
+    const quarantines = values.map((value) => JSON.parse(value));
+    const quarantine = quarantines.find((entry) => entry?.state === 'quarantined');
+    return quarantine && quarantines.every((entry) => entry?.state === 'quarantined')
       ? { eligible: false, state: 'quarantined', reason: quarantine.reason || 'workspace integrity is unverified', taskId: quarantine.taskId || null }
       : { eligible: false, state: 'quarantined', reason: 'workspace quarantine state is invalid', taskId: null };
   } catch {
@@ -48,7 +61,7 @@ export function workspaceDispatchEligibility(id) {
 
 export function recoverWorkspace(id, { containmentVerified = false, integrityVerified = false } = {}) {
   if (!containmentVerified || !integrityVerified) throw new Error('workspace recovery requires verified process containment and workspace integrity');
-  execSql(`DELETE FROM system_flags WHERE key=${esc(quarantineKey(id))};`);
+  transaction(() => { for (const key of quarantineKeys(id)) run('DELETE FROM system_flags WHERE key=?;', [key]); });
   return workspaceDispatchEligibility(id);
 }
 

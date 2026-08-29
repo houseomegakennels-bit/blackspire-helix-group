@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { id, redact } from '../shared/util.js';
-import { quarantineWorkspace } from '../workspace-registry/workspaces.js';
+import { quarantineWorkspace, recoverWorkspace } from '../workspace-registry/workspaces.js';
 
 const CODEX_CLI_MAX_STREAM_BYTES = 1_000_000;
 const CODEX_CLI_PROBE_TIMEOUT_MS = 2_000;
@@ -137,7 +137,7 @@ export function runClaudeCodePacket(packetPath) {
   return parseCliResult('claudeCode', 'cli', result);
 }
 
-export async function runCodexCliPacket(packetPath, { workspaceId = null, taskId = null, workspaceRoot = path.dirname(packetPath), model = null, executionIntent = 'workspace_mutation', timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null, runCliChildImpl = runCliChild } = {}) {
+export async function runCodexCliPacket(packetPath, { workspaceId = null, taskId = null, workspaceRoot = path.dirname(packetPath), model = null, executionIntent = 'workspace_mutation', timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null, runCliChildImpl = runCliChild, quarantineWorkspaceImpl = quarantineWorkspace } = {}) {
   const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
   const finalPath = path.join(providerRuntimeDir('hermes-codex-results'), `${path.basename(packetPath, '.json')}.codex-final.json`);
   fs.mkdirSync(path.dirname(finalPath), { recursive: true });
@@ -147,16 +147,17 @@ export async function runCodexCliPacket(packetPath, { workspaceId = null, taskId
     ? 'This is a read-only task. Return only JSON with {"artifacts":[],"summary":"..."}; artifacts must be empty.'
     : 'This is a workspace-mutation task. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}; include every proposed complete file artifact.';
   args.push(`Read the approved task packet at ${packetPath}. ${responseContract} Do not modify files.`);
+  if (workspaceId) quarantineWorkspaceImpl(workspaceId, { reason: 'Codex provider execution is pending containment and workspace integrity verification', taskId });
   const before = snapshotProviderIsolation(cwd);
   const result = await runCliChildImpl(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
   if (result.containmentFailed) {
-    if (workspaceId) quarantineWorkspace(workspaceId, { reason: 'Codex CLI process-group containment could not be proven; workspace integrity is unverified', taskId });
-    return { ok: false, provider: 'codex', mode: 'cli', error: workspaceId
-      ? 'Codex CLI process-group containment could not be proven; workspace quarantined pending explicit recovery'
+    return { ok: false, outcomeUnknown: true, provider: 'codex', mode: 'cli', error: workspaceId
+      ? 'Codex CLI process-group containment could not be proven; workspace remains quarantined pending explicit recovery'
       : 'Codex CLI process-group containment could not be proven; workspace identity unavailable for quarantine', artifacts: [] };
   }
   const parsed = parseCodexCliResult(result, finalPath);
-  if (workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
+  if (workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application; workspace remains quarantined pending explicit recovery', artifacts: [] };
+  if (workspaceId) recoverWorkspace(workspaceId, { containmentVerified: true, integrityVerified: true });
   return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
 }
 
@@ -265,7 +266,7 @@ function providerRuntimeDir(name) {
 function normalizeProviderResult({ provider, mode, model = null, started, response }) {
   const monetaryCostState = response.usage?.monetaryCostState || (provider === 'codex' && mode === 'cli' ? 'subscription_unmetered' : 'metered');
   return {
-    ok: Boolean(response.ok), handedOff: response.handedOff === true, provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
+    ok: Boolean(response.ok), handedOff: response.handedOff === true, outcomeUnknown: response.outcomeUnknown === true, provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
     usage: { provider, mode, model, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents ?? null, monetaryCostState },
     error: response.ok ? null : redact(response.error || 'provider failed'), raw: response,
   };
