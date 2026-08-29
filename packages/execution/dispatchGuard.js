@@ -1,5 +1,6 @@
 import { evaluateRequestPolicy } from '../policy/policy.js';
 import { getFlag, getTask, taskRecords, monetarySpend } from '../task-engine/tasks.js';
+import { workspaceDispatchEligibility } from '../workspace-registry/workspaces.js';
 
 const PLACEHOLDER = /^(?:replace|change|example|placeholder|default|test|your[-_]|changeme|dev-admin-token-change-me)/i;
 const PAID = new Set(['openai','anthropic']);
@@ -27,6 +28,8 @@ export function guardDispatch({ task: suppliedTask, workspace, actorId, channel,
   const deny = (reason) => ({ ok: false, reason, phase });
   if (!task || !workspace) return deny('task or workspace missing');
   if (task.workspace_id !== workspace.id) return deny('workspace mismatch');
+  const workspaceEligibility = workspaceDispatchEligibility(workspace.id);
+  if (!workspaceEligibility.eligible) return deny(`workspace unavailable: ${workspaceEligibility.reason}`);
   if (task.actor_id && actorId !== undefined && String(actorId) !== String(task.actor_id)) return deny('actor mismatch');
   if (channel && channel !== (task.source_channel || 'api')) return deny('channel mismatch');
   const policy = evaluateRequestPolicy({ request: task.request, channel: task.source_channel || 'api', authority: task.authority_class || 'untrusted' });

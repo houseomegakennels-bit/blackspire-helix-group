@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-29 — PR #115 containment quarantine and manual-response correction (Codex)
+
+- Recovered clean branch `acceptance/live-race-matrix` at exact remote head `77aa61b5f38d040248fddce77ae50dd4bda7cc4c`; trusted main remained `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`, exact-head CI #491 was green, no PR #116+ existed, and production remained healthy/ready on its trusted main build. The exact-head findings were one P1 for unsafe workspace reuse after unproven process containment and one P2 for false Approval Center guidance on manual-response waits.
+- Reused durable `system_flags` through the workspace registry for workspace-scoped quarantine. Codex containment failure now quarantines before returning failure; the existing dispatch guard refuses subsequent work in that workspace, unrelated workspaces remain eligible, restart/reload retains state, and explicit recovery requires both containment and integrity verification. No final clean snapshot is claimed on the uncontrolled path and no automatic replay was added.
+- Jarvis now presents manual-response waits as warning/nonterminal processing with dedicated response-ingestion-or-cancellation guidance. Approval Center messaging and task filtering remain exclusive to `waiting_for_approval`; approve, pause, and resume were not re-enabled.
+- Focused validation passed 125/125. Both required ablations failed: removing the quarantine write left the workspace eligible, and restoring the prior Approval mapping made the dedicated-state assertion fail. Full validation measured 1,112 total, 1,102 passed, 1 failed, and 9 skipped; the only failure was the documented live production listener on `127.0.0.1:8789`, with clean test process containment and zero descendants. Lint, typecheck, build, security scan, zero-vulnerability high audit, whitespace, tracked-shell syntax, and living-memory checks passed. Production changed: no. Push, new exact-head CI, and new exact-head review remain pending.
+
 ## 2026-08-28 — PR #115 separate-control and final-symlink correction (Codex)
 
 - Exact-head CI passed at `653655f8b07cb3de3dd872063a7b7a2c538dd17c` in run `33150874103`. The one requested exact-head review found two P1s: read-only verification omitted a separate Git directory, and an existing packet-file symlink could redirect the external write into the workspace. It also found the valid P2 that directory enumeration allocated before its advertised bound.

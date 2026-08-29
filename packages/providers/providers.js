@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { id, redact } from '../shared/util.js';
+import { quarantineWorkspace } from '../workspace-registry/workspaces.js';
 
 const CODEX_CLI_MAX_STREAM_BYTES = 1_000_000;
 const CODEX_CLI_PROBE_TIMEOUT_MS = 2_000;
@@ -97,7 +98,7 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
     if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, model: selected.model, started, response: await callOpenAI({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, model: selected.model, started, response: await callAnthropic({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, model: selected.model, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
-    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: await runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path, { external: true }), { workspaceRoot: workspace?.root_path, model: selected.model, executionIntent: packet.executionIntent, timeoutMs, shouldCancel }) });
+    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: await runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path, { external: true }), { workspaceId: workspace?.id, taskId: packet.taskId, workspaceRoot: workspace?.root_path, model: selected.model, executionIntent: packet.executionIntent, timeoutMs, shouldCancel }) });
     if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
     return { ok: false, provider: selected.provider || 'unknown', mode: selected.mode || 'unconfigured', artifacts: [], usage: usage(selected, Date.now() - started), error: 'provider is not explicitly configured', raw: null };
   } catch (error) {
@@ -136,7 +137,7 @@ export function runClaudeCodePacket(packetPath) {
   return parseCliResult('claudeCode', 'cli', result);
 }
 
-export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, executionIntent = 'workspace_mutation', timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null } = {}) {
+export async function runCodexCliPacket(packetPath, { workspaceId = null, taskId = null, workspaceRoot = path.dirname(packetPath), model = null, executionIntent = 'workspace_mutation', timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null, runCliChildImpl = runCliChild } = {}) {
   const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
   const finalPath = path.join(providerRuntimeDir('hermes-codex-results'), `${path.basename(packetPath, '.json')}.codex-final.json`);
   fs.mkdirSync(path.dirname(finalPath), { recursive: true });
@@ -147,8 +148,13 @@ export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirna
     : 'This is a workspace-mutation task. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}; include every proposed complete file artifact.';
   args.push(`Read the approved task packet at ${packetPath}. ${responseContract} Do not modify files.`);
   const before = snapshotProviderIsolation(cwd);
-  const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
-  if (result.containmentFailed) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI process-group containment could not be proven', artifacts: [] };
+  const result = await runCliChildImpl(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
+  if (result.containmentFailed) {
+    if (workspaceId) quarantineWorkspace(workspaceId, { reason: 'Codex CLI process-group containment could not be proven; workspace integrity is unverified', taskId });
+    return { ok: false, provider: 'codex', mode: 'cli', error: workspaceId
+      ? 'Codex CLI process-group containment could not be proven; workspace quarantined pending explicit recovery'
+      : 'Codex CLI process-group containment could not be proven; workspace identity unavailable for quarantine', artifacts: [] };
+  }
   const parsed = parseCodexCliResult(result, finalPath);
   if (workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
   return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;

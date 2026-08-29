@@ -32,7 +32,7 @@ const STATUS = {
   planning: { label: 'Planning', tone: 'ion', core: 'processing' },
   running: { label: 'Processing', tone: 'ion', core: 'processing' },
   waiting_for_approval: { label: 'Awaiting approval', tone: 'warn', core: 'approval' },
-  waiting_for_manual_response: { label: 'Awaiting manual response', tone: 'warn', core: 'approval' },
+  waiting_for_manual_response: { label: 'Awaiting manual response', tone: 'warn', core: 'processing' },
   validating: { label: 'Validating', tone: 'ion', core: 'processing' },
   completed: { label: 'Completed', tone: 'ok', core: 'completed' },
   failed: { label: 'Failed', tone: 'bad', core: 'denied' },
@@ -48,6 +48,12 @@ const statusInfo = (task) => {
   const base = STATUS[status] || { label: 'Unknown state', tone: 'muted', core: 'dormant' };
   if (task.status === 'failed' && task.policy_decision === 'denied') return { label: 'Denied by policy', tone: 'bad', core: 'denied' };
   return base;
+};
+const taskOperatorDetail = (task) => {
+  const status = canonicalTaskStatus(task);
+  if (status === 'outcome_unknown') return 'Automatic retry is blocked. Operator review is required before any new execution.';
+  if (status === 'waiting_for_manual_response') return 'A verified response must be ingested before this task can complete. The task can also be cancelled.';
+  return { processing: 'Hermes is working within Blackspire constraints.', approval: 'A decision is required in the Approval center.', completed: 'Canonical state is stable.', denied: 'Blackspire policy locked this request.', cancelled: 'The orbit wound down safely.' }[statusInfo(task).core];
 };
 const controlPlaneLabel = ({ health, offline }) => offline ? 'Unreachable' : health ? (health.ok ? 'Healthy' : 'Degraded') : '—';
 const readinessLabel = (ready) => ready ? (ready.ok ? 'Ready' : 'Not ready') : '—';
@@ -269,9 +275,7 @@ function coreStateFor() {
   const task = currentTask();
   if (task) {
     const info = statusInfo(task);
-    const detail = canonicalTaskStatus(task) === 'outcome_unknown'
-      ? 'Automatic retry is blocked. Operator review is required before any new execution.'
-      : { processing: 'Hermes is working within Blackspire constraints.', approval: 'A decision is required in the Approval center.', completed: 'Canonical state is stable.', denied: 'Blackspire policy locked this request.', cancelled: 'The orbit wound down safely.' }[info.core];
+    const detail = taskOperatorDetail(task);
     return [info.core, info.label, detail || 'Awaiting your command.'];
   }
   return ['dormant', 'Dormant', 'Awaiting your command.'];

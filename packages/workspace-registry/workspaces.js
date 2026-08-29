@@ -25,6 +25,33 @@ export function getWorkspace(id = 'blackspire-command') {
   return workspace && parse(workspace);
 }
 
+const quarantineKey = (id) => `workspace_quarantine:${id}`;
+
+export function quarantineWorkspace(id, { reason = 'workspace integrity is unverified', taskId = null } = {}) {
+  const value = JSON.stringify({ state: 'quarantined', reason, taskId, quarantinedAt: now() });
+  execSql(`INSERT OR REPLACE INTO system_flags VALUES (${esc(quarantineKey(id))},${esc(value)},${esc(now())});`);
+  return workspaceDispatchEligibility(id);
+}
+
+export function workspaceDispatchEligibility(id) {
+  const value = query(`SELECT value FROM system_flags WHERE key=${esc(quarantineKey(id))};`)[0]?.value;
+  if (!value) return { eligible: true, state: 'available' };
+  try {
+    const quarantine = JSON.parse(value);
+    return quarantine?.state === 'quarantined'
+      ? { eligible: false, state: 'quarantined', reason: quarantine.reason || 'workspace integrity is unverified', taskId: quarantine.taskId || null }
+      : { eligible: false, state: 'quarantined', reason: 'workspace quarantine state is invalid', taskId: null };
+  } catch {
+    return { eligible: false, state: 'quarantined', reason: 'workspace quarantine state is unreadable', taskId: null };
+  }
+}
+
+export function recoverWorkspace(id, { containmentVerified = false, integrityVerified = false } = {}) {
+  if (!containmentVerified || !integrityVerified) throw new Error('workspace recovery requires verified process containment and workspace integrity');
+  execSql(`DELETE FROM system_flags WHERE key=${esc(quarantineKey(id))};`);
+  return workspaceDispatchEligibility(id);
+}
+
 function parse(workspace) {
   for (const key of ['allowed_paths', 'build_commands', 'secret_references', 'enabled_tools']) workspace[key] = JSON.parse(workspace[key] || '[]');
   workspace.provider_policy = JSON.parse(workspace.provider_policy || '{}');

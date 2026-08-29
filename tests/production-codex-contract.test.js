@@ -16,6 +16,8 @@ prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { activeModes, codexCliAvailable, resolveProviderAvailability, parseCodexCliResult, runCodexCliPacket, runCliChild } = await import('../packages/providers/providers.js');
 const { createTask, claimNext, heartbeat, transition, prepareCodexDispatch, finishCodexDispatch, finishCodexDispatchWithUsage, recordUsage, taskRecords, monetarySpend, getTask } = await import('../packages/task-engine/tasks.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
+const { upsertWorkspace, workspaceDispatchEligibility, recoverWorkspace } = await import('../packages/workspace-registry/workspaces.js');
+const { guardDispatch } = await import('../packages/execution/dispatchGuard.js');
 
 const bin = path.join(root, 'bin');
 fs.mkdirSync(bin, { recursive: true });
@@ -264,6 +266,38 @@ test('provider direct workspace mutation is rejected before artifact application
   }) });
   assert.equal(result.ok, false);
   assert.match(result.error, /mutated/);
+});
+
+test('unproven containment durably quarantines only the affected workspace until explicit verified recovery', async () => {
+  const workspaceA = path.join(root, 'containment-quarantine-a');
+  const workspaceB = path.join(root, 'containment-quarantine-b');
+  fs.mkdirSync(workspaceA, { recursive: true });
+  fs.mkdirSync(workspaceB, { recursive: true });
+  for (const [id, rootPath] of [['quarantine-a', workspaceA], ['quarantine-b', workspaceB]]) {
+    upsertWorkspace({ id, name: id, githubRepository: `local/${id}`, allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath });
+  }
+  const taskA = createTask({ workspaceId: 'quarantine-a', request: 'inspect containment', idempotencyKey: 'quarantine-a-task', executionIntent: 'read_only' });
+  const taskB = createTask({ workspaceId: 'quarantine-b', request: 'inspect unrelated', idempotencyKey: 'quarantine-b-task', executionIntent: 'read_only' });
+  const packet = path.join(workspaceA, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  let childRuns = 0;
+  const result = await runCodexCliPacket(packet, {
+    workspaceId: 'quarantine-a', taskId: taskA.id, workspaceRoot: workspaceA, executionIntent: 'read_only',
+    runCliChildImpl: async () => { childRuns += 1; return { status: 125, signal: null, stdout: '', stderr: '', containmentFailed: true }; },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /containment could not be proven; workspace quarantined/);
+  closeDb();
+  assert.deepEqual(workspaceDispatchEligibility('quarantine-a').eligible, false);
+  assert.deepEqual(workspaceDispatchEligibility('quarantine-b'), { eligible: true, state: 'available' });
+  assert.match(guardDispatch({ task: taskA, workspace: { id: 'quarantine-a' }, phase: 'hermes' }).reason, /workspace unavailable/);
+  assert.equal(guardDispatch({ task: taskB, workspace: { id: 'quarantine-b' }, phase: 'hermes' }).ok, true);
+  assert.equal(childRuns, 1, 'the failed provider attempt is never replayed automatically');
+
+  assert.throws(() => recoverWorkspace('quarantine-a', { containmentVerified: true }), /requires verified process containment and workspace integrity/);
+  assert.equal(workspaceDispatchEligibility('quarantine-a').eligible, false, 'failed recovery survives through the durable registry state');
+  assert.deepEqual(recoverWorkspace('quarantine-a', { containmentVerified: true, integrityVerified: true }), { eligible: true, state: 'available' });
+  assert.equal(guardDispatch({ task: taskA, workspace: { id: 'quarantine-a' }, phase: 'hermes' }).ok, true);
 });
 
 test('provider mutation is rejected even when the Codex child fails', async () => {

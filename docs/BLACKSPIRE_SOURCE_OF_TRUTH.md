@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## PR #115 containment quarantine and manual-response presentation correction (2026-08-29 UTC)
+
+Previous head `77aa61b5f38d040248fddce77ae50dd4bda7cc4c` passed exact-head Blackspire Command CI run `33230069553` (#491). Its exact-head review found one P1: an unproven Codex process-group containment result returned before integrity handling and could leave that workspace reusable. It found one P2: Jarvis mapped `waiting_for_manual_response` to Approval Center instructions even though approval, pause, and resume are invalid for that state.
+
+Containment failure now writes a workspace-scoped durable quarantine through the existing `system_flags` state owner before returning provider failure. The existing dispatch guard refuses that workspace on later Hermes or provider dispatch while unrelated workspaces remain eligible. Restart/reload retains the quarantine. Clearing it is an explicit workspace-registry recovery operation that refuses unless both process containment and workspace integrity are verified; there is no automatic provider replay or guessed recovery. The containment-failure path does not take or claim a clean final workspace snapshot.
+
+Jarvis retains `waiting_for_approval` as the Approval Center state, while `waiting_for_manual_response` is a warning/nonterminal processing state with dedicated truthful detail: a verified response must be ingested before completion, or the task can be cancelled. It exposes no invented ingestion or approval action.
+
+The focused provider, dispatch, recovery, production no-replay, API-control, manual-wait, and Jarvis lane passed 125/125. Removing the quarantine write failed the new regression; restoring the prior manual-response Approval mapping failed the UI regression. Full validation ran 1,112 tests: 1,102 passed, 1 failed, and 9 host-conditional tests skipped. The sole failure was the documented live-host occupation of `127.0.0.1:8789`; process containment completed with zero descendants. Lint, typecheck, build, secret scan, high-severity audit, whitespace, tracked-shell syntax, and living-memory checks passed. New exact-head CI and review are not yet claimed. Production was not changed.
+
 ## PR #115 exact-head provider-isolation correction (2026-08-28 UTC)
 
 PR #115 validates every physical artifact target against Git's discovered repository identity, not directory basenames. The projected final filesystem graph is evaluated in place with bounded, cycle-safe symlink resolution, same-batch referent-directory modeling, file/directory distinction, reverse-edge candidate discovery, and workspace-escape refusal. Git-shaped projections require a Git-recognized HEAD plus `objects`/`refs` directories; config is not required. Detached hexadecimal HEAD content is recognized case-insensitively from 40 characters upward. Symbolic HEADs, whether regular `ref:` files or filesystem symlinks, share Git 2.43.0's repository-recognition boundary rather than ref-creation validity, including `refs/` targets with repeated separators, dot-prefixed components, or upward normalization; absolute and non-`refs` targets remain ordinary application data.
