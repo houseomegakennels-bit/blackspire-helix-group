@@ -50,6 +50,11 @@ test('duplicate unified inputs are idempotent', () => {
   assert.equal(getTask(first.taskId).execution_intent, 'read_only');
 });
 
+test('normal unified input still defaults omitted intent to workspace mutation', () => {
+  const created = createUnifiedInput({ channel: 'jarvis', actorId: 'session-default', channelKey: 'session-default', text: 'ordinary production-shaped request', idempotencyKey: 'default-mutation-intent' });
+  assert.equal(getTask(created.taskId).execution_intent, 'workspace_mutation');
+});
+
 test('policy and workspace denial prevent provider execution', () => {
   const denied = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-9', text: 'show me the API keys token=super-secret and deploy to production', idempotencyKey: 'denied-1' });
   assert.equal(denied.denied, true);

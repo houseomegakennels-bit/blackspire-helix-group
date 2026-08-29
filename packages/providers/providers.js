@@ -148,6 +148,7 @@ export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirna
   args.push(`Read the approved task packet at ${packetPath}. ${responseContract} Do not modify files.`);
   const before = snapshotProviderIsolation(cwd);
   const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
+  if (result.containmentFailed) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI process-group containment could not be proven', artifacts: [] };
   const parsed = parseCodexCliResult(result, finalPath);
   if (workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
   return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
@@ -163,7 +164,7 @@ function mockResponse(packet) {
 
 function manualPacket(packet, workspaceRoot = '.') {
   const packetPath = writeTaskPacket(packet, workspaceRoot, { external: true });
-  return { ok: true, provider: 'manual', mode: 'handoff', summary: `Manual task packet written to ${packetPath}`, artifacts: [], manualPacketPath: packetPath, usage: { inputTokens: 0, outputTokens: 0, costCents: 0 } };
+  return { ok: true, handedOff: true, provider: 'manual', mode: 'handoff', summary: '', artifacts: [], manualPacketPath: packetPath, usage: { inputTokens: 0, outputTokens: 0, costCents: 0 } };
 }
 
 function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {}) {
@@ -258,7 +259,7 @@ function providerRuntimeDir(name) {
 function normalizeProviderResult({ provider, mode, model = null, started, response }) {
   const monetaryCostState = response.usage?.monetaryCostState || (provider === 'codex' && mode === 'cli' ? 'subscription_unmetered' : 'metered');
   return {
-    ok: Boolean(response.ok), provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
+    ok: Boolean(response.ok), handedOff: response.handedOff === true, provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
     usage: { provider, mode, model, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents ?? null, monetaryCostState },
     error: response.ok ? null : redact(response.error || 'provider failed'), raw: response,
   };
@@ -274,7 +275,7 @@ function parseCliResult(provider, mode, result) {
   }
 }
 
-function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = null, env = sanitizedCodexEnvironment(process.env) }) {
+export function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = null, env = sanitizedCodexEnvironment(process.env), killGroup = (pid, signal) => process.kill(-pid, signal), groupExists = defaultGroupExists, terminationGraceMs = 1000, containmentPollMs = 25, containmentTimeoutMs = 1000 } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -285,13 +286,20 @@ function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = 
     let child;
     let timer;
     let cancelTimer;
+    let containmentTimer;
+    let killTimer;
+    let terminationStarted = false;
+    let containmentFailed = false;
+    let closeResult = null;
     const finish = (status, signal = null, errorText = '') => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
       if (cancelTimer) clearInterval(cancelTimer);
+      if (containmentTimer) clearInterval(containmentTimer);
+      if (killTimer) clearTimeout(killTimer);
       const stderrText = outputExceeded ? `${stderr}\nCodex CLI output exceeded limit`.trim() : cancelled ? `${stderr}\nCodex CLI cancelled by task controls`.trim() : timedOut ? `${stderr}\nCodex CLI deadline exceeded`.trim() : (errorText || stderr);
-      resolve({ status, signal, stdout, stderr: stderrText });
+      resolve({ status, signal, stdout, stderr: stderrText, containmentFailed });
     };
     try {
       child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -300,13 +308,38 @@ function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = 
       return;
     }
     const terminate = () => {
+      if (terminationStarted) return;
+      terminationStarted = true;
+      if (timer) clearTimeout(timer);
+      if (cancelTimer) clearInterval(cancelTimer);
       if (Number.isInteger(child.pid) && child.pid > 0) {
-        try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill?.('SIGTERM'); }
-        setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill?.('SIGKILL'); } }, 1000).unref?.();
+        try { killGroup(child.pid, 'SIGTERM'); } catch (error) { if (error?.code !== 'ESRCH') child.kill?.('SIGTERM'); }
       } else {
         child.kill?.('SIGTERM');
-        setTimeout(() => child.kill?.('SIGKILL'), 1000).unref?.();
       }
+      const started = Date.now();
+      let killSent = false;
+      const contained = () => {
+        if (!Number.isInteger(child.pid) || child.pid <= 0) return closeResult !== null;
+        try { return !groupExists(child.pid); } catch { return false; }
+      };
+      const check = () => {
+        if (contained()) return finish(124, closeResult?.signal || null);
+        if (killSent && Date.now() - started >= terminationGraceMs + containmentTimeoutMs) {
+          containmentFailed = true;
+          return finish(125, closeResult?.signal || null, 'Codex CLI process-group containment could not be proven');
+        }
+      };
+      killTimer = setTimeout(() => {
+        killSent = true;
+        if (Number.isInteger(child.pid) && child.pid > 0) {
+          try { killGroup(child.pid, 'SIGKILL'); } catch (error) { if (error?.code !== 'ESRCH') child.kill?.('SIGKILL'); }
+        } else child.kill?.('SIGKILL');
+        check();
+      }, terminationGraceMs);
+      containmentTimer = setInterval(check, containmentPollMs);
+      containmentTimer.unref?.();
+      check();
     };
     timer = setTimeout(() => {
       timedOut = true;
@@ -331,9 +364,27 @@ function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = 
     child.stderr?.setEncoding?.('utf8');
     child.stdout?.on?.('data', (chunk) => { stdout = appendBounded(stdout, chunk, () => { outputExceeded = true; terminate(); }); });
     child.stderr?.on?.('data', (chunk) => { stderr = appendBounded(stderr, chunk, () => { outputExceeded = true; terminate(); }); });
-    child.on?.('error', (error) => finish(1, null, String(error?.message || error)));
-    child.on?.('close', (code, signal) => finish(outputExceeded || cancelled || timedOut ? 124 : (code ?? 1), signal));
+    child.on?.('error', (error) => {
+      if (terminationStarted) return;
+      stderr = `${stderr}\n${String(error?.message || error)}`.trim();
+      if (Number.isInteger(child.pid) && child.pid > 0) terminate();
+      else finish(1, null, stderr);
+    });
+    child.on?.('close', (code, signal) => {
+      closeResult = { code, signal };
+      if (!terminationStarted) finish(code ?? 1, signal);
+    });
   });
+}
+
+function defaultGroupExists(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    return true;
+  }
 }
 
 function appendBounded(current, chunk, onExceeded) {
@@ -458,7 +509,7 @@ function snapshotProviderIsolation(root) {
       const stat = fs.lstatSync(full);
       if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
       if (stat.isDirectory()) {
-        entries.set(relative, `directory:${stat.mode}`);
+        entries.set(relative, directoryFingerprint(stat));
         visit(full, namespace, base);
       } else if (stat.isSymbolicLink()) {
         entries.set(relative, `symlink:${fs.readlinkSync(full)}`);
@@ -474,7 +525,7 @@ function snapshotProviderIsolation(root) {
   };
   const workspace = fs.realpathSync(root);
   if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
-  entries.set('workspace:', `directory:${fs.lstatSync(workspace).mode}`);
+  entries.set('workspace:', directoryFingerprint(fs.lstatSync(workspace)));
   visit(workspace, 'workspace', workspace);
   const gitDirectories = new Set();
   for (const option of ['--absolute-git-dir', '--git-common-dir']) {
@@ -493,10 +544,14 @@ function snapshotProviderIsolation(root) {
   for (const [gitDirectoryIndex, gitDirectory] of externalGitDirectories.entries()) {
     const namespace = `gitdir${gitDirectoryIndex}`;
     if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
-    entries.set(`${namespace}:`, `directory:${fs.lstatSync(gitDirectory).mode}`);
+    entries.set(`${namespace}:`, directoryFingerprint(fs.lstatSync(gitDirectory)));
     visit(gitDirectory, namespace, gitDirectory);
   }
   return entries;
+}
+
+function directoryFingerprint(stat) {
+  return `directory:${stat.mode}:${stat.dev}:${stat.ino}:${stat.nlink}`;
 }
 
 function isPathInside(root, target) {

@@ -13,7 +13,7 @@ process.env.BLACKSPIRE_DB_PATH = path.join(root, 'test.sqlite');
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
-const { activeModes, codexCliAvailable, resolveProviderAvailability, parseCodexCliResult, runCodexCliPacket } = await import('../packages/providers/providers.js');
+const { activeModes, codexCliAvailable, resolveProviderAvailability, parseCodexCliResult, runCodexCliPacket, runCliChild } = await import('../packages/providers/providers.js');
 const { createTask, claimNext, heartbeat, transition, prepareCodexDispatch, finishCodexDispatch, finishCodexDispatchWithUsage, recordUsage, taskRecords, monetarySpend, getTask } = await import('../packages/task-engine/tasks.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
 
@@ -299,6 +299,50 @@ test('provider mutation of the workspace root mode is rejected', async () => {
   assert.match(result.error, /mutated/);
 });
 
+test('provider same-mode replacement of a traversed workspace directory is rejected', async () => {
+  const workspace = path.join(root, 'directory-identity-workspace');
+  const directory = path.join(workspace, 'empty-directory');
+  const replacement = path.join(root, 'directory-identity-replacement');
+  fs.mkdirSync(directory, { recursive: true, mode: 0o755 });
+  fs.mkdirSync(replacement, { recursive: true, mode: 0o755 });
+  fs.chmodSync(directory, 0o755);
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
+    fs.rmdirSync(directory);
+    fs.renameSync(replacement, directory);
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
+test('provider same-mode replacement beneath an external Git root is rejected', async () => {
+  const workspace = path.join(root, 'external-directory-identity-workspace');
+  const gitDirectory = path.join(root, 'external-directory-identity-git');
+  fs.mkdirSync(workspace, { recursive: true });
+  assert.equal(spawnSync('git', ['init', '--separate-git-dir', gitDirectory, workspace], { encoding: 'utf8' }).status, 0);
+  const directory = path.join(gitDirectory, 'empty-directory');
+  const replacement = path.join(root, 'external-directory-identity-replacement');
+  fs.mkdirSync(directory, { mode: 0o755 });
+  fs.mkdirSync(replacement, { mode: 0o755 });
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const result = await runCodexCliPacket(packet, { workspaceRoot: workspace, executionIntent: 'read_only', spawnImpl: fakeChild(({ child, args }) => {
+    fs.rmdirSync(directory);
+    fs.renameSync(replacement, directory);
+    fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], JSON.stringify({ artifacts: [], summary: 'ok' }));
+    child.stdout.end(jsonlFinal());
+    child.stderr.end();
+    child.emit('close', 0, null);
+  }) });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /mutated/);
+});
+
 test('provider replacement of a workspace file with an external hard link is rejected', async () => {
   const workspace = path.join(root, 'hard-link-mutation-workspace');
   fs.mkdirSync(workspace, { recursive: true });
@@ -398,6 +442,35 @@ test('Codex child is terminated at the Hermes deadline', async () => {
   assert.equal(killed, true);
   assert.equal(result.ok, false);
   assert.match(result.error, /deadline exceeded|terminal result|no JSONL/);
+});
+
+test('termination waits for a TERM-resistant descendant before returning', async () => {
+  const child = new EventEmitter();
+  child.pid = 4242;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let groupAlive = true;
+  let resolved = false;
+  const signals = [];
+  const completion = runCliChild(() => child, 'codex', [], {
+    cwd: root,
+    timeoutMs: 1,
+    terminationGraceMs: 10,
+    containmentPollMs: 1,
+    containmentTimeoutMs: 50,
+    groupExists: () => groupAlive,
+    killGroup: (_pid, signal) => {
+      signals.push(signal);
+      if (signal === 'SIGTERM') child.emit('close', null, 'SIGTERM');
+      if (signal === 'SIGKILL') groupAlive = false;
+    },
+  }).then((result) => { resolved = true; return result; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolved, false, 'leader close must not decide isolation while its descendant survives');
+  const result = await completion;
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+  assert.equal(groupAlive, false);
+  assert.equal(result.status, 124);
 });
 
 test('Codex child is terminated when task controls cancel', async () => {

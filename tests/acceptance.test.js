@@ -20,6 +20,7 @@ const { execSql, query, closeDb } = await import('../packages/task-engine/db.js'
 const { createTask, getTask, transition, claimNext, heartbeat, createSubtasks, recordProviderAttempt, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, taskRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { start } = await import('../apps/api/server.js');
 const { startWorker } = await import('../apps/worker/worker.js');
+const { processTask } = await import('../packages/hermes/hermes.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
 const { runAllowed } = await import('../packages/execution/runner.js');
@@ -287,6 +288,53 @@ exit 64
   } finally {
     if (previousDataDir === undefined) delete process.env.BLACKSPIRE_DATA_DIR;
     else process.env.BLACKSPIRE_DATA_DIR = previousDataDir;
+  }
+});
+
+test('manual handoff is durable, nonterminal, restart-safe, and cancellable for either intent', async () => {
+  const manualRoot = repo();
+  upsertWorkspace({ id: 'manual-code', name: 'Manual Code', githubRepository: 'local/manual-code', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: ['npm test'], providerPolicy: { preferred: ['manual'] }, rootPath: manualRoot, enabledTools: ['read', 'write_branch'] });
+  const priorRuntime = process.env.BLACKSPIRE_RUNTIME_MODE;
+  const priorProvider = process.env.BLACKSPIRE_PROVIDER_MODE;
+  process.env.BLACKSPIRE_RUNTIME_MODE = 'production';
+  process.env.BLACKSPIRE_PROVIDER_MODE = 'manual';
+  const dispatchManual = async (request) => ({
+    version: request.version,
+    requestId: request.requestId,
+    canonicalConversationId: request.canonicalConversationId,
+    canonicalTaskId: request.canonicalTaskId,
+    actorId: request.actorId,
+    workspaceId: request.workspaceId,
+    channel: request.channel,
+    costCeilingCents: request.costCeilingCents,
+    provider: 'manual',
+    model: null,
+    status: 'selected',
+    summary: '',
+  });
+  try {
+    for (const executionIntent of ['read_only', 'workspace_mutation']) {
+      const task = createTask({ workspaceId: 'manual-code', request: executionIntent === 'read_only' ? 'Inspect status' : 'Create `docs/manual.md`', idempotencyKey: `manual-${executionIntent}`, executionIntent });
+      await processTask(task, { dispatchHermesImpl: dispatchManual });
+      const waiting = getTask(task.id);
+      assert.equal(waiting.status, 'waiting_for_manual_response', waiting.error || 'manual handoff unexpectedly terminal');
+      assert.equal(waiting.summary || '', '');
+      const records = taskRecords(task.id);
+      assert.equal(records.providerAttempts.at(-1).status, 'handed_off');
+      assert.equal(records.providerAttempts.at(-1).provider, 'manual');
+      const handoff = records.evidence.find((row) => row.kind === 'manual_handoff_created');
+      assert.ok(handoff);
+      const details = JSON.parse(handoff.details);
+      assert.equal(details.responseIngestionRequired, true);
+      assert.ok(path.isAbsolute(details.manualPacketPath));
+      assert.equal(path.relative(manualRoot, details.manualPacketPath).startsWith('..'), true);
+      assert.equal(claimNext({ workerId: `restart-${executionIntent}` })?.id === task.id, false);
+      transition(task.id, 'cancelled', { error: 'Cancelled while awaiting manual response' });
+      assert.equal(getTask(task.id).status, 'cancelled');
+    }
+  } finally {
+    if (priorRuntime === undefined) delete process.env.BLACKSPIRE_RUNTIME_MODE; else process.env.BLACKSPIRE_RUNTIME_MODE = priorRuntime;
+    if (priorProvider === undefined) delete process.env.BLACKSPIRE_PROVIDER_MODE; else process.env.BLACKSPIRE_PROVIDER_MODE = priorProvider;
   }
 });
 

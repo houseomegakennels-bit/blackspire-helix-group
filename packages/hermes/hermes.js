@@ -15,7 +15,7 @@ const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider
 const MAX_RETRIES = 2;
 const HIGH_RISK_ACTION = 'high_risk_execution';
 
-export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null } = {}) {
+export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null, dispatchHermesImpl = dispatchHermes } = {}) {
   const ownership = workerId && claimToken ? { workerId, claimToken } : null;
   const move = (status, patch = {}) => transition(task.id, status, patch, ownership);
   const workspace = getWorkspace(task.workspace_id);
@@ -56,7 +56,7 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: hermesRequest.deadline, phase: 'hermes' });
     recordEvidence(task.id, hermesGuard.ok ? 'hermes_selection' : 'hermes_prevented', { allowed: hermesGuard.ok, reason: hermesGuard.reason || 'credential-free Hermes permitted', requestId: hermesRequest.requestId });
     if (!hermesGuard.ok) return move(hermesGuard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: hermesGuard.reason });
-    const hermesResponse = await dispatchHermes(hermesRequest, {
+    const hermesResponse = await dispatchHermesImpl(hermesRequest, {
       allowedProviders: allowedProviders(workspace),
       shouldCancel: () => getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled',
     });
@@ -74,6 +74,11 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     if (getTask(task.id)?.status === 'cancelled') return getTask(task.id);
     if (providerResult.ownershipLost) return getTask(task.id);
     if (!providerResult.ok) return move('failed', { error: providerResult.error || 'provider failed' });
+    if (providerResult.handedOff) {
+      const evidence = { provider: providerResult.provider, mode: providerResult.mode, manualPacketPath: providerResult.manualPacketPath, responseIngestionRequired: true };
+      recordEvidence(task.id, 'manual_handoff_created', evidence);
+      return move('waiting_for_manual_response', { evidence, current_stage: 'manual_handoff' });
+    }
     if (task.execution_intent === 'workspace_mutation' && providerResult.artifacts.length === 0) {
       recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace mutation task returned no artifacts', provider: providerResult.provider });
       return move('failed', { error: 'Provider returned no artifacts for a workspace mutation task' });
@@ -285,7 +290,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     const usage = result.usage || { provider: result.provider, mode: result.mode };
     if (selected.provider === 'codex') finishCodexDispatchWithUsage(task.id, result.ok ? 'completed' : 'failed', { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started, usage });
     else {
-      recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
+      recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.handedOff ? 'handed_off' : (result.ok ? 'completed' : 'failed'), requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
       recordUsage(task.id, usage);
     }
     if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt, dispatchStatus: result.ok ? 'completed' : 'failed' }); return { ok: false, error: 'cancelled' }; }
