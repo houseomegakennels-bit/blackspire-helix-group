@@ -330,9 +330,11 @@ test('manual handoff is durable, nonterminal, restart-safe, and cancellable for 
       assert.ok(path.isAbsolute(details.manualPacketPath));
       assert.equal(path.relative(manualRoot, details.manualPacketPath).startsWith('..'), true);
       assert.equal(claimNext({ workerId: `restart-${executionIntent}` })?.id === task.id, false);
-      const resumed = await fetch(`http://localhost:8892/api/tasks/${task.id}/resume`, { method: 'POST', headers: { authorization: 'Bearer accept-token' } });
-      assert.equal(resumed.status, 409);
-      assert.equal(getTask(task.id).status, 'waiting_for_manual_response');
+      for (const action of ['approve', 'pause', 'resume']) {
+        const response = await fetch(`http://localhost:8892/api/tasks/${task.id}/${action}`, { method: 'POST', headers: { authorization: 'Bearer accept-token' } });
+        assert.equal(response.status, 409, `${action} must not requeue or rewrite a manual-response wait`);
+        assert.equal(getTask(task.id).status, 'waiting_for_manual_response');
+      }
       transition(task.id, 'cancelled', { error: 'Cancelled while awaiting manual response' });
       assert.equal(getTask(task.id).status, 'cancelled');
     }

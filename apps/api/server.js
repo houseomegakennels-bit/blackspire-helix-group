@@ -397,6 +397,7 @@ function taskRoute(req, res, auth, match) {
   if (match[2] === 'approvals') return json(res, 200, { approvals: taskRecords(task.id).approvals });
   const limit = checkLimit(req, 'approval-action', 20, 60000); if (!limit.allowed) return limited(res, limit);
   if (match[2] === 'approve') {
+    if (task.status === 'waiting_for_manual_response') return json(res, 409, { error: 'manual-response waits require response ingestion or cancellation' });
     if (task.policy_decision === 'denied' || task.source_channel === 'telegram' || ['telegram', 'test_operator', 'untrusted'].includes(task.authority_class)) return json(res, 403, { error: 'task authority cannot be elevated by approval' });
     if (!taskRecords(task.id).approvals.some((approval) => approval.status === 'pending') && task.policy_decision === 'approval_required') createApproval(task.id, 'high_risk_execution', 'High-impact task requires administrator approval before execution', { requestedBy: 'api' });
     const decision = decideApproval(task.id, 'approved', 'Approved by administrator');
@@ -405,6 +406,7 @@ function taskRoute(req, res, auth, match) {
   }
   if (match[2] === 'reject') { decideApproval(task.id, 'rejected', 'Rejected by administrator'); return json(res, 200, { task: transition(task.id, 'cancelled', { error: 'Rejected by administrator' }) }); }
   if (match[2] === 'pause') {
+    if (task.status === 'waiting_for_manual_response') return json(res, 409, { error: 'manual-response waits require response ingestion or cancellation' });
     if (task.policy_decision === 'denied' || task.source_channel === 'telegram' || ['telegram', 'test_operator', 'untrusted'].includes(task.authority_class)) return json(res, 403, { error: 'task authority cannot be elevated by pause' });
     return json(res, 200, { task: transition(task.id, 'waiting_for_approval', { summary: 'Paused by administrator' }) });
   }

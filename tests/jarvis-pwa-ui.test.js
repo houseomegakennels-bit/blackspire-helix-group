@@ -145,9 +145,11 @@ test('canonical task-state helpers obey deterministic terminal and in-flight fix
   };
   vm.runInNewContext(helperSource, context, { filename: 'jarvis-task-state.js' });
   const helpers = context.__taskState;
-  for (const status of ['queued', 'planning', 'running', 'waiting_for_approval', 'validating']) {
+  for (const status of ['queued', 'planning', 'running', 'waiting_for_approval', 'waiting_for_manual_response', 'validating']) {
     assert.equal(helpers.cancellable({ status }), true, `${status} remains cancellable`);
   }
+  assert.equal(helpers.statusInfo({ status: 'waiting_for_manual_response' }).label, 'Awaiting manual response');
+  assert.match(appScript, /'task\.waiting_for_manual_response': \['Awaiting manual response', 'warn'\]/);
   for (const status of ['completed', 'failed', 'cancelled']) assert.equal(helpers.cancellable({ status }), false);
   const escaped = { status: 'failed', providerAttribution: [{ provider: 'codex', status: 'outcome_unknown' }] };
   assert.equal(helpers.canonicalTaskStatus(escaped), 'outcome_unknown');
