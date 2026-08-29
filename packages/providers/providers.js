@@ -147,18 +147,31 @@ export async function runCodexCliPacket(packetPath, { workspaceId = null, taskId
     ? 'This is a read-only task. Return only JSON with {"artifacts":[],"summary":"..."}; artifacts must be empty.'
     : 'This is a workspace-mutation task. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}; include every proposed complete file artifact.';
   args.push(`Read the approved task packet at ${packetPath}. ${responseContract} Do not modify files.`);
-  if (workspaceId) quarantineWorkspaceImpl(workspaceId, { reason: 'Codex provider execution is pending containment and workspace integrity verification', taskId });
-  const before = snapshotProviderIsolation(cwd);
-  const result = await runCliChildImpl(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
-  if (result.containmentFailed) {
-    return { ok: false, outcomeUnknown: true, provider: 'codex', mode: 'cli', error: workspaceId
-      ? 'Codex CLI process-group containment could not be proven; workspace remains quarantined pending explicit recovery'
-      : 'Codex CLI process-group containment could not be proven; workspace identity unavailable for quarantine', artifacts: [] };
+  const quarantine = workspaceId ? quarantineWorkspaceImpl(workspaceId, { reason: 'Codex provider execution is pending containment and workspace integrity verification', taskId }) : null;
+  let workspaceDescriptor;
+  try {
+    if (workspaceId) {
+      workspaceDescriptor = fs.openSync(cwd, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      const pinnedPhysicalRoot = fs.realpathSync(`/proc/self/fd/${workspaceDescriptor}`);
+      if (pinnedPhysicalRoot !== quarantine.physicalRoot) throw new Error('Workspace root identity changed before provider launch');
+      args[args.indexOf('--cd') + 1] = '/proc/self/fd/3';
+    }
+    const snapshotRoot = workspaceDescriptor === undefined ? cwd : `/proc/self/fd/${workspaceDescriptor}`;
+    const childCwd = workspaceDescriptor === undefined ? cwd : '/proc/self/fd/3';
+    const before = snapshotProviderIsolation(snapshotRoot);
+    const result = await runCliChildImpl(spawnImpl, 'codex', args, { cwd: childCwd, workspaceDescriptor, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
+    if (result.containmentFailed) {
+      return { ok: false, outcomeUnknown: true, provider: 'codex', mode: 'cli', error: workspaceId
+        ? 'Codex CLI process-group containment could not be proven; workspace remains quarantined pending explicit recovery'
+        : 'Codex CLI process-group containment could not be proven; workspace identity unavailable for quarantine', artifacts: [] };
+    }
+    const parsed = parseCodexCliResult(result, finalPath);
+    if (workspaceMutated(before, snapshotProviderIsolation(snapshotRoot))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application; workspace remains quarantined pending explicit recovery', artifacts: [] };
+    if (workspaceId) recoverWorkspace(workspaceId, { containmentVerified: true, integrityVerified: true, expectedPhysicalRoot: quarantine.physicalRoot });
+    return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
+  } finally {
+    if (workspaceDescriptor !== undefined) fs.closeSync(workspaceDescriptor);
   }
-  const parsed = parseCodexCliResult(result, finalPath);
-  if (workspaceMutated(before, snapshotProviderIsolation(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application; workspace remains quarantined pending explicit recovery', artifacts: [] };
-  if (workspaceId) recoverWorkspace(workspaceId, { containmentVerified: true, integrityVerified: true });
-  return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
 }
 
 function mockResponse(packet) {
@@ -282,7 +295,7 @@ function parseCliResult(provider, mode, result) {
   }
 }
 
-export function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = null, env = sanitizedCodexEnvironment(process.env), killGroup = (pid, signal) => process.kill(-pid, signal), groupExists = defaultGroupExists, terminationGraceMs = 1000, containmentPollMs = 25, containmentTimeoutMs = 1000 } = {}) {
+export function runCliChild(spawnImpl, command, args, { cwd, workspaceDescriptor = undefined, timeoutMs, shouldCancel = null, env = sanitizedCodexEnvironment(process.env), killGroup = (pid, signal) => process.kill(-pid, signal), groupExists = defaultGroupExists, terminationGraceMs = 1000, containmentPollMs = 25, containmentTimeoutMs = 1000 } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -309,7 +322,7 @@ export function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCa
       resolve({ status, signal, stdout, stderr: stderrText, containmentFailed });
     };
     try {
-      child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawnImpl(command, args, { cwd, env, detached: true, stdio: workspaceDescriptor === undefined ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe', workspaceDescriptor] });
     } catch (error) {
       finish(1, null, String(error?.message || error));
       return;

@@ -28,24 +28,27 @@ export function getWorkspace(id = 'blackspire-command') {
   return workspace && parse(workspace);
 }
 
-function quarantineKeys(id) {
+export function workspaceRootIdentity(id) {
   const workspace = query(`SELECT root_path FROM workspaces WHERE id=${esc(id)};`)[0];
   if (!workspace?.root_path) throw new Error('workspace root unavailable for quarantine');
   const logicalRoot = path.resolve(workspace.root_path);
   const physicalRoot = fs.realpathSync(logicalRoot);
-  return [...new Set([logicalRoot, physicalRoot])].map((root) => `workspace_quarantine_root:${createHash('sha256').update(root).digest('hex')}`);
+  return { logicalRoot, physicalRoot };
 }
 
+const quarantineKeys = ({ logicalRoot, physicalRoot }) => [...new Set([logicalRoot, physicalRoot])].map((root) => `workspace_quarantine_root:${createHash('sha256').update(root).digest('hex')}`);
+
 export function quarantineWorkspace(id, { reason = 'workspace integrity is unverified', taskId = null } = {}) {
+  const identity = workspaceRootIdentity(id);
   const value = JSON.stringify({ state: 'quarantined', reason, taskId, quarantinedAt: now() });
   const timestamp = now();
-  transaction(() => { for (const key of quarantineKeys(id)) run('INSERT OR REPLACE INTO system_flags VALUES (?,?,?);', [key, value, timestamp]); });
-  return workspaceDispatchEligibility(id);
+  transaction(() => { for (const key of quarantineKeys(identity)) run('INSERT OR REPLACE INTO system_flags VALUES (?,?,?);', [key, value, timestamp]); });
+  return { ...workspaceDispatchEligibility(id), ...identity };
 }
 
 export function workspaceDispatchEligibility(id) {
   let keys;
-  try { keys = quarantineKeys(id); } catch { return { eligible: false, state: 'quarantined', reason: 'workspace root identity is unverified', taskId: null }; }
+  try { keys = quarantineKeys(workspaceRootIdentity(id)); } catch { return { eligible: false, state: 'quarantined', reason: 'workspace root identity is unverified', taskId: null }; }
   const values = query(`SELECT value FROM system_flags WHERE key IN (${keys.map(esc).join(',')});`).map((row) => row.value);
   if (!values.length) return { eligible: true, state: 'available' };
   try {
@@ -59,9 +62,11 @@ export function workspaceDispatchEligibility(id) {
   }
 }
 
-export function recoverWorkspace(id, { containmentVerified = false, integrityVerified = false } = {}) {
+export function recoverWorkspace(id, { containmentVerified = false, integrityVerified = false, expectedPhysicalRoot = null } = {}) {
   if (!containmentVerified || !integrityVerified) throw new Error('workspace recovery requires verified process containment and workspace integrity');
-  transaction(() => { for (const key of quarantineKeys(id)) run('DELETE FROM system_flags WHERE key=?;', [key]); });
+  const identity = workspaceRootIdentity(id);
+  if (expectedPhysicalRoot && identity.physicalRoot !== expectedPhysicalRoot) throw new Error('workspace recovery requires the quarantined physical root identity');
+  transaction(() => { for (const key of quarantineKeys(identity)) run('DELETE FROM system_flags WHERE key=?;', [key]); });
   return workspaceDispatchEligibility(id);
 }
 

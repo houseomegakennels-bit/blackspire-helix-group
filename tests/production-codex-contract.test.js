@@ -16,7 +16,7 @@ prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { activeModes, codexCliAvailable, resolveProviderAvailability, parseCodexCliResult, runCodexCliPacket, runCliChild } = await import('../packages/providers/providers.js');
 const { createTask, claimNext, heartbeat, transition, prepareCodexDispatch, finishCodexDispatch, finishCodexDispatchWithUsage, recordUsage, taskRecords, monetarySpend, getTask } = await import('../packages/task-engine/tasks.js');
 const { closeDb } = await import('../packages/task-engine/db.js');
-const { upsertWorkspace, workspaceDispatchEligibility, recoverWorkspace } = await import('../packages/workspace-registry/workspaces.js');
+const { upsertWorkspace, quarantineWorkspace, workspaceDispatchEligibility, recoverWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { guardDispatch } = await import('../packages/execution/dispatchGuard.js');
 
 const bin = path.join(root, 'bin');
@@ -317,6 +317,31 @@ test('a failed durable quarantine write prevents provider launch', async () => {
     runCliChildImpl: async () => { childRuns += 1; return { status: 0, stdout: '', stderr: '', containmentFailed: false }; },
   }), /durable quarantine unavailable/);
   assert.equal(childRuns, 0, 'no workspace is touched unless quarantine is durable first');
+});
+
+test('a quarantined workspace root retarget cannot redirect provider launch', async () => {
+  const original = path.join(root, 'containment-root-original');
+  const replacement = path.join(root, 'containment-root-replacement');
+  const registered = path.join(root, 'containment-root-registered');
+  fs.mkdirSync(original, { recursive: true });
+  fs.mkdirSync(replacement, { recursive: true });
+  fs.symlinkSync(original, registered, 'dir');
+  upsertWorkspace({ id: 'quarantine-retarget', name: 'quarantine-retarget', githubRepository: 'local/quarantine-retarget', allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: registered });
+  const packet = path.join(original, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  let childRuns = 0;
+  await assert.rejects(() => runCodexCliPacket(packet, {
+    workspaceId: 'quarantine-retarget', workspaceRoot: registered, executionIntent: 'read_only',
+    quarantineWorkspaceImpl: (...args) => {
+      const quarantine = quarantineWorkspace(...args);
+      fs.unlinkSync(registered);
+      fs.symlinkSync(replacement, registered, 'dir');
+      return quarantine;
+    },
+    runCliChildImpl: async () => { childRuns += 1; return { status: 0, stdout: '', stderr: '', containmentFailed: false }; },
+  }), /ELOOP|ENOTDIR|symbolic link|Workspace root identity changed/);
+  assert.equal(childRuns, 0);
+  assert.equal(workspaceDispatchEligibility('quarantine-retarget').eligible, false, 'logical-root quarantine survives retargeting');
 });
 
 test('provider mutation is rejected even when the Codex child fails', async () => {
