@@ -344,6 +344,29 @@ test('a quarantined workspace root retarget cannot redirect provider launch', as
   assert.equal(workspaceDispatchEligibility('quarantine-retarget').eligible, false, 'logical-root quarantine survives retargeting');
 });
 
+test('a quarantined directory replacement at the same pathname cannot redirect provider launch or recovery', async () => {
+  const registered = path.join(root, 'containment-root-replaced-in-place');
+  const moved = path.join(root, 'containment-root-replaced-in-place-old');
+  fs.mkdirSync(registered, { recursive: true });
+  upsertWorkspace({ id: 'quarantine-inode-replacement', name: 'quarantine-inode-replacement', githubRepository: 'local/quarantine-inode-replacement', allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: registered });
+  const packet = path.join(registered, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  let childRuns = 0;
+  await assert.rejects(() => runCodexCliPacket(packet, {
+    workspaceId: 'quarantine-inode-replacement', workspaceRoot: registered, executionIntent: 'read_only',
+    quarantineWorkspaceImpl: (...args) => {
+      const quarantine = quarantineWorkspace(...args);
+      fs.renameSync(registered, moved);
+      fs.mkdirSync(registered);
+      return quarantine;
+    },
+    runCliChildImpl: async () => { childRuns += 1; return { status: 0, stdout: '', stderr: '', containmentFailed: false }; },
+  }), /Workspace root identity changed/);
+  assert.equal(childRuns, 0);
+  assert.equal(workspaceDispatchEligibility('quarantine-inode-replacement').eligible, false);
+  assert.throws(() => recoverWorkspace('quarantine-inode-replacement', { containmentVerified: true, integrityVerified: true }), /quarantined directory identity/);
+});
+
 test('provider mutation is rejected even when the Codex child fails', async () => {
   const workspace = path.join(root, 'failed-mutation-workspace');
   fs.mkdirSync(workspace, { recursive: true });

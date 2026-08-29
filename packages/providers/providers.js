@@ -153,7 +153,8 @@ export async function runCodexCliPacket(packetPath, { workspaceId = null, taskId
     if (workspaceId) {
       workspaceDescriptor = fs.openSync(cwd, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
       const pinnedPhysicalRoot = fs.realpathSync(`/proc/self/fd/${workspaceDescriptor}`);
-      if (pinnedPhysicalRoot !== quarantine.physicalRoot) throw new Error('Workspace root identity changed before provider launch');
+      const pinnedStat = fs.fstatSync(workspaceDescriptor, { bigint: true });
+      if (pinnedPhysicalRoot !== quarantine.physicalRoot || String(pinnedStat.dev) !== quarantine.rootDevice || String(pinnedStat.ino) !== quarantine.rootInode) throw new Error('Workspace root identity changed before provider launch');
       args[args.indexOf('--cd') + 1] = '/proc/self/fd/3';
     }
     const snapshotRoot = workspaceDescriptor === undefined ? cwd : `/proc/self/fd/${workspaceDescriptor}`;

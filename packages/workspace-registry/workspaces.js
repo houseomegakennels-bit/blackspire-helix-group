@@ -33,14 +33,15 @@ export function workspaceRootIdentity(id) {
   if (!workspace?.root_path) throw new Error('workspace root unavailable for quarantine');
   const logicalRoot = path.resolve(workspace.root_path);
   const physicalRoot = fs.realpathSync(logicalRoot);
-  return { logicalRoot, physicalRoot };
+  const stat = fs.statSync(physicalRoot, { bigint: true });
+  return { logicalRoot, physicalRoot, rootDevice: String(stat.dev), rootInode: String(stat.ino) };
 }
 
 const quarantineKeys = ({ logicalRoot, physicalRoot }) => [...new Set([logicalRoot, physicalRoot])].map((root) => `workspace_quarantine_root:${createHash('sha256').update(root).digest('hex')}`);
 
 export function quarantineWorkspace(id, { reason = 'workspace integrity is unverified', taskId = null } = {}) {
   const identity = workspaceRootIdentity(id);
-  const value = JSON.stringify({ state: 'quarantined', reason, taskId, quarantinedAt: now() });
+  const value = JSON.stringify({ state: 'quarantined', reason, taskId, quarantinedAt: now(), rootDevice: identity.rootDevice, rootInode: identity.rootInode });
   const timestamp = now();
   transaction(() => { for (const key of quarantineKeys(identity)) run('INSERT OR REPLACE INTO system_flags VALUES (?,?,?);', [key, value, timestamp]); });
   return { ...workspaceDispatchEligibility(id), ...identity };
@@ -66,6 +67,8 @@ export function recoverWorkspace(id, { containmentVerified = false, integrityVer
   if (!containmentVerified || !integrityVerified) throw new Error('workspace recovery requires verified process containment and workspace integrity');
   const identity = workspaceRootIdentity(id);
   if (expectedPhysicalRoot && identity.physicalRoot !== expectedPhysicalRoot) throw new Error('workspace recovery requires the quarantined physical root identity');
+  const stored = query(`SELECT value FROM system_flags WHERE key IN (${quarantineKeys(identity).map(esc).join(',')});`).map((row) => JSON.parse(row.value));
+  if (!stored.length || stored.some((entry) => entry?.rootDevice !== identity.rootDevice || entry?.rootInode !== identity.rootInode)) throw new Error('workspace recovery requires the quarantined directory identity');
   transaction(() => { for (const key of quarantineKeys(identity)) run('DELETE FROM system_flags WHERE key=?;', [key]); });
   return workspaceDispatchEligibility(id);
 }
