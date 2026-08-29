@@ -372,7 +372,9 @@ export function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCa
     });
     child.on?.('close', (code, signal) => {
       closeResult = { code, signal };
-      if (!terminationStarted) finish(code ?? 1, signal);
+      if (terminationStarted) return;
+      if (Number.isInteger(child.pid) && child.pid > 0 && groupExists(child.pid)) terminate();
+      else finish(code ?? 1, signal);
     });
   });
 }

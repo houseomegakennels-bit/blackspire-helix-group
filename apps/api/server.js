@@ -410,6 +410,7 @@ function taskRoute(req, res, auth, match) {
   }
   if (match[2] === 'resume') {
     if (task.policy_decision === 'denied' || task.source_channel === 'telegram' || ['telegram', 'test_operator', 'untrusted'].includes(task.authority_class)) return json(res, 403, { error: 'task authority cannot be elevated by resume' });
+    if (task.status !== 'waiting_for_approval') return json(res, 409, { error: 'only approval-paused tasks can be resumed' });
     return json(res, 200, { task: transition(task.id, 'queued') });
   }
   if (match[2] === 'cancel') {

@@ -473,6 +473,53 @@ test('termination waits for a TERM-resistant descendant before returning', async
   assert.equal(result.status, 124);
 });
 
+test('ordinary leader exit contains a surviving descendant before returning', async () => {
+  const child = new EventEmitter();
+  child.pid = 4343;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let groupAlive = true;
+  let resolved = false;
+  const signals = [];
+  const completion = runCliChild(() => child, 'codex', [], {
+    cwd: root,
+    timeoutMs: 5000,
+    terminationGraceMs: 10,
+    containmentPollMs: 1,
+    containmentTimeoutMs: 50,
+    groupExists: () => groupAlive,
+    killGroup: (_pid, signal) => {
+      signals.push(signal);
+      if (signal === 'SIGKILL') groupAlive = false;
+    },
+  }).then((result) => { resolved = true; return result; });
+  child.emit('close', 1, null);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolved, false, 'ordinary leader close must not return while its descendant survives');
+  const result = await completion;
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+  assert.equal(groupAlive, false);
+  assert.equal(result.status, 124);
+});
+
+test('ordinary clean exit with no surviving process group returns without kill grace', async () => {
+  const child = new EventEmitter();
+  child.pid = 4444;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  const signals = [];
+  const completion = runCliChild(() => child, 'codex', [], {
+    cwd: root,
+    timeoutMs: 5000,
+    groupExists: () => false,
+    killGroup: (_pid, signal) => signals.push(signal),
+  });
+  child.emit('close', 0, null);
+  const result = await completion;
+  assert.equal(result.status, 0);
+  assert.deepEqual(signals, []);
+});
+
 test('Codex child is terminated when task controls cancel', async () => {
   const workspace = path.join(root, 'cancel-workspace');
   fs.mkdirSync(path.join(workspace, '.hermes-task-packets'), { recursive: true });

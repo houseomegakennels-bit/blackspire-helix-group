@@ -294,6 +294,7 @@ exit 64
 test('manual handoff is durable, nonterminal, restart-safe, and cancellable for either intent', async () => {
   const manualRoot = repo();
   upsertWorkspace({ id: 'manual-code', name: 'Manual Code', githubRepository: 'local/manual-code', defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: ['npm test'], providerPolicy: { preferred: ['manual'] }, rootPath: manualRoot, enabledTools: ['read', 'write_branch'] });
+  provisionRouteAuthorization(['manual-code']);
   const priorRuntime = process.env.BLACKSPIRE_RUNTIME_MODE;
   const priorProvider = process.env.BLACKSPIRE_PROVIDER_MODE;
   process.env.BLACKSPIRE_RUNTIME_MODE = 'production';
@@ -329,6 +330,9 @@ test('manual handoff is durable, nonterminal, restart-safe, and cancellable for 
       assert.ok(path.isAbsolute(details.manualPacketPath));
       assert.equal(path.relative(manualRoot, details.manualPacketPath).startsWith('..'), true);
       assert.equal(claimNext({ workerId: `restart-${executionIntent}` })?.id === task.id, false);
+      const resumed = await fetch(`http://localhost:8892/api/tasks/${task.id}/resume`, { method: 'POST', headers: { authorization: 'Bearer accept-token' } });
+      assert.equal(resumed.status, 409);
+      assert.equal(getTask(task.id).status, 'waiting_for_manual_response');
       transition(task.id, 'cancelled', { error: 'Cancelled while awaiting manual response' });
       assert.equal(getTask(task.id).status, 'cancelled');
     }
