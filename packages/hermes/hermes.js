@@ -10,12 +10,13 @@ import { createHermesRequest } from './contract.js';
 import { dispatchHermes } from './adapter.js';
 import { guardDispatch } from '../execution/dispatchGuard.js';
 import { authorizeReadOnlyTestTask } from '../shared/testMode.js';
+import { executeRegisteredCapability } from '../capabilities/execute.js';
 
 const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider', 'execute_provider', 'apply_edits', 'validate', 'commit', 'pull_request', 'summarize'];
 const MAX_RETRIES = 2;
 const HIGH_RISK_ACTION = 'high_risk_execution';
 
-export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null, dispatchHermesImpl = dispatchHermes } = {}) {
+export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null, dispatchHermesImpl = dispatchHermes, capabilityOptions = {} } = {}) {
   const ownership = workerId && claimToken ? { workerId, claimToken } : null;
   const move = (status, patch = {}) => transition(task.id, status, patch, ownership);
   const workspace = getWorkspace(task.workspace_id);
@@ -36,6 +37,12 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
       recordApprovalPause(task.id, approval.reason);
       return;
     }
+
+    // Registered division capabilities are selected deterministically by Hermes and retain the
+    // canonical task/workspace/principal bindings. Natural-language text can select only a known
+    // server-owned capability; it cannot supply or alter the capability definition or authority.
+    const capabilityResult = await executeRegisteredCapability(task, workspace, { ...capabilityOptions, ownership });
+    if (capabilityResult) return capabilityResult;
 
     // Bounded mock acceptance path. Entering it is gated on the canonical
     // test-mode authorization (valid config + designated synthetic workspace +

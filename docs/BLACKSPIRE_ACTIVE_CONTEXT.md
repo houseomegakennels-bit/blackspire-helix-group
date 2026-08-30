@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-08-30 — capability orchestration vertical slice
+
+Active branch `feature/jarvis-capability-registry` implements the first bounded Jarvis → Blackspire Command → Hermes → registered division capability path. `seller.opportunities.search` is a read-only Seller Engine capability backed by the existing Seller Supabase owner through a fixed server adapter, with persisted grant revalidation before dispatch and disclosure, durable no-replay dispatch ownership, bounded/redacted result and evidence, and cancellation/emergency/worker fencing. It is local only; production configuration and real Seller-data acceptance remain unverified. PR #117 is merged; documentation PR #118 remains open because external review was unavailable.
+
 ## Canonical Jarvis result implemented and validated locally (2026-08-30 UTC)
 
 Branch `fix/jarvis-canonical-result` derives one bounded, redacted human-readable result on the server for authorized completed tasks. A meaningful task summary wins; an exact generic completion token falls back only to an unambiguous completed provider attempt owned by the same task; absent text gets the fixed truthful fallback. Failed, cancelled, and `outcome_unknown` tasks never promote provider text. Task Detail, Evidence, and Conversation consume the same serialized field, conversation pairing uses persisted input/task IDs, refresh replaces the prior projection, and dynamic response text remains on `textContent`/text-node paths.

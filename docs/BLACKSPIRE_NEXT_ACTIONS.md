@@ -2,10 +2,10 @@
 
 ## Immediate ordered work (2026-08-30 UTC)
 
-1. DONE — PR #115 merged with expected-head protection as `a78bb4011a8b263845288351d22c68a500b3772b` from exact reviewed head `545f425d801151966ad2ddc0d01bb6d24d249d85`; CI run `33301410453` (#497) passed and the exact-head Codex review was clean.
-2. DONE locally — implemented the canonical Jarvis human-readable result on `fix/jarvis-canonical-result` from verified post-#115 main. Provider-attempt selection, authorization, sanitization, the 8,000-character bound, generic-result fallback, and terminal-state exclusion are server-authoritative; Task, Evidence, and Conversation consume the same field.
-3. DONE locally — initial focused validation passed 111/111 and both required temporary ablations failed their intended historical-fallback and status-ownership regressions before restoration. The full lane recorded 1,118 passed, 1 failed, and 9 host skips out of 1,128; the only failure was the documented live `127.0.0.1:8789` collision. Exact-head CI passed on its unchanged rerun after an unrelated persistence-test flake passed 8/8 alone. The single exact-head review's task-list query-amplification finding is corrected with one authorization-scoped batch lookup; focused validation now passes 112/112. Push the correction, obtain green exact-head CI and one new exact-head review, then merge.
-4. Only after that reviewed merge, deploy through the existing Gate 4 release path and verify the historical task without replaying it, creating a provider attempt, or rewriting its evidence.
+1. DONE — PR #117 merged the canonical server-authoritative Jarvis result into `main` at `979272fb46c5a6fc370a24144643166b0cf3a635`.
+2. IN REVIEW EXTERNALLY — PR #118 accurately records the bounded Jarvis/Blackspire architecture, but remains open because no exact-head external review was available; do not fabricate approval.
+3. DONE locally — first bounded capability slice: canonical contract/registry, Hermes routing, durable dispatch/no-replay ownership, and read-only Seller opportunity search through the existing data owner. Local focused tests pass; no deployment or production Seller-data claim is made.
+4. Push the implementation PR, require exact-head CI and review, correct genuine findings, and merge only the reviewed head. Then configure the internal Seller transport secret/workspace through the established production secret path and deploy through Gate 4 before one authorized production read-only acceptance.
 
 ## Immediate PR #115 closure (2026-08-24 UTC)
 

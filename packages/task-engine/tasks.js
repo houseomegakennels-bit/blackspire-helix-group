@@ -175,6 +175,32 @@ export function finishCodexDispatchWithUsage(taskId, status, { attemptId = `code
   });
 }
 
+function capabilityAttemptId(taskId, capabilityId) {
+  return `cap_dispatch_${taskId}_${String(capabilityId).replace(/[^a-z0-9]+/gi, '_')}`;
+}
+
+export function prepareCapabilityDispatch(taskId, capabilityId, requestPacket = {}) {
+  const attemptId = capabilityAttemptId(taskId, capabilityId);
+  return transaction(() => {
+    const existing = get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
+    if (existing) return { owned: false, attempt: existing };
+    run('INSERT INTO provider_attempts(id,task_id,provider,mode,status,request_packet,response_packet,error,latency_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)', [
+      attemptId, taskId, 'blackspire-capability', capabilityId, 'dispatching', redact(JSON.stringify(requestPacket)), '{}', '', 0, now(),
+    ]);
+    return { owned: true, attempt: get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]) };
+  });
+}
+
+export function finishCapabilityDispatch(taskId, capabilityId, status, { responsePacket = {}, error = '', latencyMs = 0 } = {}) {
+  if (!['completed','failed','outcome_unknown'].includes(status)) throw new Error('invalid capability dispatch terminal status');
+  const attemptId = capabilityAttemptId(taskId, capabilityId);
+  const result = run("UPDATE provider_attempts SET status=?,response_packet=?,error=?,latency_ms=? WHERE id=? AND task_id=? AND provider='blackspire-capability' AND mode=? AND status IN ('dispatching','started')", [
+    status, redact(JSON.stringify(responsePacket)), redact(error), Number(latencyMs || 0), attemptId, taskId, capabilityId,
+  ]);
+  if (Number(result.changes) !== 1) throw new Error('capability dispatch attempt is missing or already terminal');
+  return get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
+}
+
 export function recordUsage(taskId, usage) {
   const state = normalizeAccountingState(usage.monetaryCostState, usage.costCents);
   const cost = Number.isFinite(Number(usage.costCents)) && usage.costCents !== null && usage.costCents !== undefined ? Number(usage.costCents) : null;
