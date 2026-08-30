@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-30 — PR #115 merged without changing its reviewed tree (Codex)
+
+- Recovered live VPS and GitHub state under Node 22.23.1. The active checkout was clean with no unpushed commits; the dedicated #115 worktree and remote branch were both exactly `545f425d801151966ad2ddc0d01bb6d24d249d85`. Production health was ready with its database available and worker idle, still serving prior release `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.
+- Reconfirmed PR #115 open, not draft, mergeable/clean, with no newer commit or superseding PR. Blackspire Command CI run `33301410453` (#497) was successful for the exact head. The latest and final Codex result said it found no major issues and identified reviewed commit `545f425d80`; no newer review finding existed.
+- Adjudicated the complete historical inline-review backlog against the final source and later fixing commits. Of 80 unresolved threads, 52 were already marked outdated by GitHub and 28 were still mapped onto current lines but fixed or superseded by subsequent commits and the clean exact-head review. Resolved all 80 without a source, test, or documentation edit on the reviewed branch.
+- Merged with `--match-head-commit 545f425d801151966ad2ddc0d01bb6d24d249d85`. GitHub created merge `a78bb4011a8b263845288351d22c68a500b3772b`. A fresh fetch proved `origin/main` contains the exact reviewed head and that its final tree is byte-identical to the reviewed tree. No deployment or production mutation occurred during this milestone.
+
 ## 2026-08-29 — PR #115 containment quarantine and manual-response correction (Codex)
 
 - Recovered clean branch `acceptance/live-race-matrix` at exact remote head `77aa61b5f38d040248fddce77ae50dd4bda7cc4c`; trusted main remained `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`, exact-head CI #491 was green, no PR #116+ existed, and production remained healthy/ready on its trusted main build. The exact-head findings were one P1 for unsafe workspace reuse after unproven process containment and one P2 for false Approval Center guidance on manual-response waits.

@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## PR #115 merged; canonical Jarvis result fix is next (2026-08-30 UTC)
+
+PR #115 is merged as `a78bb4011a8b263845288351d22c68a500b3772b` from reviewed head `545f425d801151966ad2ddc0d01bb6d24d249d85`. Exact-head CI #497 passed and the final Codex review was clean. The reviewed tree is present unchanged on `origin/main`; production was not changed and remained healthy on `608b10fd233a5a2a94fd0ce4cc03d73894c5694d` at this checkpoint.
+
+The next scoped implementation is a server-authoritative canonical human-readable Jarvis result shared by Task Detail, Evidence, and Conversation. It must derive only from an authorized completed task and its authoritative successful provider attempt, sanitize and bound text server-side, refuse promotion for failed, cancelled, and `outcome_unknown` tasks, preserve historical provider evidence without replay or rewrite, and render dynamic text inertly.
+
 ## PR #115 exact-head provider-isolation correction in progress (2026-08-28 UTC)
 
 PR #115 remains open. Exact-head CI passed at `206fd7b3e552bc741a871737b4b5b28affa4ac2d`; its single Codex review found three fresh P1s: Git-recognized upward-normalized symbolic HEAD text was missed, creation of missing external packet directories was not descriptor-confined, and read-only snapshots did not bind regular-file inode/link topology. The correction recognizes the additional Git repository shape, walks and creates every missing external directory component relative to pinned no-follow descriptors, and fingerprints device/inode/link count with file bytes and mode. Deterministic regressions cover all three findings, and focused acceptance/provider validation passes 44/44. Lint, typecheck, build, secret scan, and the high-severity audit pass. The full trusted lane recorded 1,104 tests: 1,094 passed, 1 failed, and 9 host-conditional skips; the sole failure is the known live-host `127.0.0.1:8789` occupation, and process containment completed with zero surviving descendants. A new push, exact-head CI, and exactly one review of the new SHA remain required before expected-head merge. Production is unchanged at `608b10fd233a5a2a94fd0ce4cc03d73894c5694d`.

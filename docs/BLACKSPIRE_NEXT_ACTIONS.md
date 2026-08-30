@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## Immediate ordered work (2026-08-30 UTC)
+
+1. DONE — PR #115 merged with expected-head protection as `a78bb4011a8b263845288351d22c68a500b3772b` from exact reviewed head `545f425d801151966ad2ddc0d01bb6d24d249d85`; CI run `33301410453` (#497) passed and the exact-head Codex review was clean.
+2. Implement the canonical Jarvis human-readable result on `fix/jarvis-canonical-result` from verified post-#115 main. Keep provider-attempt selection, authorization, sanitization, bounding, generic-result fallback, and terminal-state exclusion server-authoritative; make Task, Evidence, and Conversation consume the same field.
+3. Prove the historical generic-`completed` fallback and failed/cancelled/`outcome_unknown` exclusion with load-bearing ablations, complete focused and full validation, then use exact-head CI and one review before merge.
+4. Only after that reviewed merge, deploy through the existing Gate 4 release path and verify the historical task without replaying it, creating a provider attempt, or rewriting its evidence.
+
 ## Immediate PR #115 closure (2026-08-24 UTC)
 
 1. Push the validated exact-head provider-isolation correction as one checkpoint.
