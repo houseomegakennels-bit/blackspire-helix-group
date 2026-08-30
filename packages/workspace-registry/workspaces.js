@@ -46,9 +46,13 @@ export function quarantineKeys({ logicalRoot, physicalRoot, rootDevice, rootInod
 
 export function quarantineWorkspace(id, { reason = 'workspace integrity is unverified', taskId = null } = {}) {
   const identity = workspaceRootIdentity(id);
+  const keys = quarantineKeys(identity);
   const value = JSON.stringify({ state: 'quarantined', reason, taskId, quarantinedAt: now(), rootDevice: identity.rootDevice, rootInode: identity.rootInode });
   const timestamp = now();
-  transaction(() => { for (const key of quarantineKeys(identity)) run('INSERT OR REPLACE INTO system_flags VALUES (?,?,?);', [key, value, timestamp]); });
+  transaction(() => {
+    if (query(`SELECT key FROM system_flags WHERE key IN (${keys.map(esc).join(',')}) LIMIT 1;`).length) throw new Error('workspace directory is already quarantined');
+    for (const key of keys) run('INSERT INTO system_flags VALUES (?,?,?);', [key, value, timestamp]);
+  });
   return { ...workspaceDispatchEligibility(id), ...identity };
 }
 

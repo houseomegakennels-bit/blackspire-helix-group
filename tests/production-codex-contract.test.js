@@ -331,6 +331,7 @@ test('verified recovery through an alias clears every path key for the shared di
   quarantineWorkspace('recovery-alias-a');
   quarantineWorkspace('recovery-unrelated');
   assert.equal(workspaceDispatchEligibility('recovery-alias-b').eligible, false);
+  assert.throws(() => quarantineWorkspace('recovery-alias-b'), /already quarantined/, 'a second alias cannot acquire or replace an in-flight identity quarantine');
   assert.throws(() => recoverWorkspace('recovery-alias-b', { integrityVerified: true }), /requires verified process containment and workspace integrity/);
   assert.throws(() => recoverWorkspace('recovery-alias-b', { containmentVerified: true }), /requires verified process containment and workspace integrity/);
   assert.deepEqual(recoverWorkspace('recovery-alias-b', { containmentVerified: true, integrityVerified: true }), { eligible: true, state: 'available' });
