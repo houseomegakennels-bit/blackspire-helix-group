@@ -1,6 +1,9 @@
-import { execSql, query, esc } from '../task-engine/db.js';
+import { execSql, query, esc, run, transaction } from '../task-engine/db.js';
 import { now } from '../shared/util.js';
 import { WORKSPACE_ROOT } from '../shared/config.js';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export function seedWorkspace() {
   upsertWorkspace({
@@ -23,6 +26,67 @@ export function getWorkspace(id = 'blackspire-command') {
   seedWorkspace();
   const workspace = query(`SELECT * FROM workspaces WHERE id=${esc(id)};`)[0];
   return workspace && parse(workspace);
+}
+
+export function workspaceRootIdentity(id) {
+  const workspace = query(`SELECT root_path FROM workspaces WHERE id=${esc(id)};`)[0];
+  if (!workspace?.root_path) throw new Error('workspace root unavailable for quarantine');
+  const logicalRoot = path.resolve(workspace.root_path);
+  const physicalRoot = fs.realpathSync(logicalRoot);
+  const stat = fs.statSync(physicalRoot, { bigint: true });
+  return { logicalRoot, physicalRoot, rootDevice: String(stat.dev), rootInode: String(stat.ino) };
+}
+
+export function quarantineKeys({ logicalRoot, physicalRoot, rootDevice, rootInode }) {
+  if (!/^\d+$/.test(rootDevice) || !/^\d+$/.test(rootInode)) throw new Error('workspace directory identity unavailable for quarantine');
+  const pathKeys = [...new Set([logicalRoot, physicalRoot])].map((root) => `workspace_quarantine_root:${createHash('sha256').update(root).digest('hex')}`);
+  const directoryKey = `workspace_quarantine_identity:${createHash('sha256').update(`${rootDevice}:${rootInode}`).digest('hex')}`;
+  return [...pathKeys, directoryKey];
+}
+
+export function quarantineWorkspace(id, { reason = 'workspace integrity is unverified', taskId = null } = {}) {
+  const identity = workspaceRootIdentity(id);
+  const keys = quarantineKeys(identity);
+  const value = JSON.stringify({ state: 'quarantined', reason, taskId, quarantinedAt: now(), rootDevice: identity.rootDevice, rootInode: identity.rootInode });
+  const timestamp = now();
+  transaction(() => {
+    if (query(`SELECT key FROM system_flags WHERE key IN (${keys.map(esc).join(',')}) LIMIT 1;`).length) throw new Error('workspace directory is already quarantined');
+    for (const key of keys) run('INSERT INTO system_flags VALUES (?,?,?);', [key, value, timestamp]);
+  });
+  return { ...workspaceDispatchEligibility(id), ...identity };
+}
+
+export function workspaceDispatchEligibility(id) {
+  let keys;
+  try { keys = quarantineKeys(workspaceRootIdentity(id)); } catch { return { eligible: false, state: 'quarantined', reason: 'workspace root identity is unverified', taskId: null }; }
+  const values = query(`SELECT value FROM system_flags WHERE key IN (${keys.map(esc).join(',')});`).map((row) => row.value);
+  if (!values.length) return { eligible: true, state: 'available' };
+  try {
+    const quarantines = values.map((value) => JSON.parse(value));
+    const quarantine = quarantines.find((entry) => entry?.state === 'quarantined');
+    return quarantine && quarantines.every((entry) => entry?.state === 'quarantined')
+      ? { eligible: false, state: 'quarantined', reason: quarantine.reason || 'workspace integrity is unverified', taskId: quarantine.taskId || null }
+      : { eligible: false, state: 'quarantined', reason: 'workspace quarantine state is invalid', taskId: null };
+  } catch {
+    return { eligible: false, state: 'quarantined', reason: 'workspace quarantine state is unreadable', taskId: null };
+  }
+}
+
+export function recoverWorkspace(id, { containmentVerified = false, integrityVerified = false, expectedPhysicalRoot = null } = {}) {
+  if (!containmentVerified || !integrityVerified) throw new Error('workspace recovery requires verified process containment and workspace integrity');
+  const identity = workspaceRootIdentity(id);
+  if (expectedPhysicalRoot && identity.physicalRoot !== expectedPhysicalRoot) throw new Error('workspace recovery requires the quarantined physical root identity');
+  const stored = query(`SELECT value FROM system_flags WHERE key IN (${quarantineKeys(identity).map(esc).join(',')});`).map((row) => JSON.parse(row.value));
+  if (!stored.length || stored.some((entry) => entry?.rootDevice !== identity.rootDevice || entry?.rootInode !== identity.rootInode)) throw new Error('workspace recovery requires the quarantined directory identity');
+  transaction(() => {
+    const flags = query("SELECT key,value FROM system_flags WHERE key LIKE 'workspace_quarantine_root:%' OR key LIKE 'workspace_quarantine_identity:%';");
+    for (const flag of flags) {
+      let value;
+      try { value = JSON.parse(flag.value); } catch { continue; }
+      if (value?.state === 'quarantined' && value.rootDevice === identity.rootDevice && value.rootInode === identity.rootInode) run('DELETE FROM system_flags WHERE key=?;', [flag.key]);
+    }
+  });
+  return workspaceDispatchEligibility(id);
 }
 
 function parse(workspace) {

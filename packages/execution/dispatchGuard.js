@@ -1,5 +1,6 @@
 import { evaluateRequestPolicy } from '../policy/policy.js';
 import { getFlag, getTask, taskRecords, monetarySpend } from '../task-engine/tasks.js';
+import { workspaceDispatchEligibility } from '../workspace-registry/workspaces.js';
 
 const PLACEHOLDER = /^(?:replace|change|example|placeholder|default|test|your[-_]|changeme|dev-admin-token-change-me)/i;
 const PAID = new Set(['openai','anthropic']);
@@ -8,6 +9,7 @@ export function providerConfiguration(selected, { env = process.env, allowedProv
   if (!selected?.provider || !allowedProviders.includes(selected.provider)) return { ok: false, reason: 'provider is not explicitly allowlisted' };
   if ((env.BLACKSPIRE_RUNTIME_MODE || 'mock') !== 'production' && PAID.has(selected.provider)) return { ok: false, reason: 'paid providers are forbidden outside production' };
   if (selected.provider === 'mock') return selected.mode === 'mock' ? { ok: true } : { ok: false, reason: 'mock provider mode is invalid' };
+  if (selected.provider === 'manual') return selected.mode === 'handoff' ? { ok: true } : { ok: false, reason: 'manual provider mode is invalid' };
   if (selected.provider === 'codex') {
     if (selected.mode !== 'cli') return { ok: false, reason: 'Codex direct-api is not implemented' };
     if (env.CODEX_API_KEY || env.CODEX_API_ENDPOINT) return { ok: false, reason: 'Codex direct-api is not implemented' };
@@ -26,6 +28,8 @@ export function guardDispatch({ task: suppliedTask, workspace, actorId, channel,
   const deny = (reason) => ({ ok: false, reason, phase });
   if (!task || !workspace) return deny('task or workspace missing');
   if (task.workspace_id !== workspace.id) return deny('workspace mismatch');
+  const workspaceEligibility = workspaceDispatchEligibility(workspace.id);
+  if (!workspaceEligibility.eligible) return deny(`workspace unavailable: ${workspaceEligibility.reason}`);
   if (task.actor_id && actorId !== undefined && String(actorId) !== String(task.actor_id)) return deny('actor mismatch');
   if (channel && channel !== (task.source_channel || 'api')) return deny('channel mismatch');
   const policy = evaluateRequestPolicy({ request: task.request, channel: task.source_channel || 'api', authority: task.authority_class || 'untrusted' });
@@ -43,7 +47,7 @@ export function guardDispatch({ task: suppliedTask, workspace, actorId, channel,
       const packet = JSON.parse(row.request_packet || '{}');
       if (packet.idempotencyKey !== idempotencyKey) return false;
       if (selected.provider === 'codex' && row.provider === 'codex') return false;
-      return row.status === 'completed';
+      return row.status === 'completed' || row.status === 'handed_off';
     });
     if (duplicate) return deny('duplicate replay');
   }

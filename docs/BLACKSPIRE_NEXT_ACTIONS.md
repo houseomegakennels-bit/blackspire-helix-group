@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## Immediate PR #115 closure (2026-08-24 UTC)
+
+1. Push the validated exact-head provider-isolation correction as one checkpoint.
+2. Wait for exact-head CI, then request one focused Codex review of the changed head; do not duplicate review on an unchanged SHA.
+3. Merge only after required checks and review are clean, using expected-head protection, then verify the reviewed tree landed on main.
+4. Immediately inspect the persisted successful provider attempt for `task_61a88e75d88dbcd1` read-only and implement the canonical result-display contract without replaying the historical task.
+
 ## Post-live acceptance work (2026-08-24 UTC)
 
 1. Run the rendered mobile PWA journey when an approved browser executable is available; the public HTML, manifest, service worker, viewport, and state/error copy have been inspected, but a visual touch-layout pass is not yet evidence-backed.

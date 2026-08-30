@@ -53,11 +53,23 @@ test('setup temporary workspace and API', async () => {
 });
 
 test('API queues but does not process directly', async () => {
-  const response = await fetch('http://localhost:8891/api/tasks', { method: 'POST', headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'temp-coding', request: 'Create `docs/proof.md` with proof text', idempotencyKey: 'api-only' }) });
+  const response = await fetch('http://localhost:8891/api/tasks', { method: 'POST', headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'temp-coding', request: 'Create `docs/queued.md` with queued proof text', idempotencyKey: 'api-only' }) });
   const task = (await response.json()).task;
   assert.equal(task.status, 'queued');
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(getTask(task.id).status, 'queued');
+});
+
+test('API rejects idempotent replay with a conflicting execution intent', async () => {
+  const idempotencyKey = 'intent-conflict';
+  const first = await fetch('http://localhost:8891/api/tasks', { method: 'POST', headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'temp-coding', request: 'Inspect status', idempotencyKey, executionIntent: 'read_only' }) });
+  const original = (await first.json()).task;
+  assert.equal(first.status, 202);
+  assert.equal(original.execution_intent, 'read_only');
+  const replay = await fetch('http://localhost:8891/api/tasks', { method: 'POST', headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId: 'temp-coding', request: 'Create docs/conflict.md', idempotencyKey, executionIntent: 'workspace_mutation' }) });
+  assert.equal(replay.status, 409);
+  assert.match((await replay.json()).error, /conflicts with executionIntent/);
+  assert.equal(getTask(original.id).execution_intent, 'read_only');
 });
 
 test('mocked provider adapter returns normalized proposed edit artifacts', async () => {
@@ -66,6 +78,10 @@ test('mocked provider adapter returns normalized proposed edit artifacts', async
   assert.equal(result.provider, 'mock');
   assert.ok(result.artifacts[0].path.startsWith('docs/'));
   assert.ok(result.usage);
+  const inspected = await executeProviderRequest({ selected: { provider: 'mock', mode: 'mock' }, packet: { request: 'Inspect workspace status', executionIntent: 'read_only' }, workspace: { root_path: repo } });
+  assert.equal(inspected.ok, true);
+  assert.deepEqual(inspected.artifacts, []);
+  assert.match(inspected.summary, /read-only workspace inspection/);
 });
 
 test('worker claims task and Hermes completes branch edit validation commit and evidence', async () => {
@@ -73,7 +89,7 @@ test('worker claims task and Hermes completes branch edit validation commit and 
   const taskId = (await response.json()).task.id;
   for (let i = 0; i < 6 && getTask(taskId).status === 'queued'; i += 1) await startWorker({ once: true });
   const task = getTask(taskId);
-  assert.equal(task.status, 'completed');
+  assert.equal(task.status, 'completed', task.error || 'task did not complete');
   assert.equal(git(['branch', '--show-current'], repo), `hermes/${taskId}`);
   assert.ok(fs.existsSync(path.join(repo, 'docs/proof.md')));
   const records = taskRecords(taskId);

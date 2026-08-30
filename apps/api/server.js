@@ -323,14 +323,14 @@ async function testTelegramInput(req, res) {
   const body = await readJson(req);
   const updateId = String(body.updateId || '').trim();
   if (!updateId || updateId.length > 120) return json(res, 422, { error: 'updateId is required' });
-  const result = createUnifiedInput({ channel: 'telegram', actorId: TEST_MODE.testActor, channelKey: TEST_MODE.channelKey, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: body.text, idempotencyKey: `test-telegram:${updateId}`, metadata: { testMode: true }, authority: 'test_operator' });
+  const result = createUnifiedInput({ channel: 'telegram', actorId: TEST_MODE.testActor, channelKey: TEST_MODE.channelKey, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: body.text, idempotencyKey: `test-telegram:${updateId}`, metadata: { testMode: true }, authority: 'test_operator', executionIntent: 'read_only' });
   return json(res, result.status && result.status >= 400 ? result.status : (result.denied ? 403 : 202), result);
 }
 
 async function testQueuedTask(req, res) {
   const body = await readJson(req);
   setFlag('test_worker_hold', 'active');
-  const result = createUnifiedInput({ channel: 'jarvis', actorId: TEST_MODE.testActor, channelKey: `test-session:${TEST_MODE.testActor}`, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: 'Report queued task status without changing files.', idempotencyKey: body.idempotencyKey || id('test-held'), authority: 'test_operator' });
+  const result = createUnifiedInput({ channel: 'jarvis', actorId: TEST_MODE.testActor, channelKey: `test-session:${TEST_MODE.testActor}`, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: 'Report queued task status without changing files.', idempotencyKey: body.idempotencyKey || id('test-held'), authority: 'test_operator', executionIntent: 'read_only' });
   if (result.taskId) audit(result.taskId, 'test-mode', 'task.held', { reason: 'eligible cancellation fixture' });
   return json(res, 202, { ...result, task: result.taskId ? getTask(result.taskId) : null });
 }
@@ -353,7 +353,15 @@ async function createTaskRoute(req, res, auth) {
   const request = String(body.request || '').trim();
   if (!request || request.length > 4000) return json(res, 422, { error: 'request is required and must be under 4000 characters' });
   const decision = evaluateRequestPolicy({ request, channel: 'api', authority: 'authenticated_admin' });
-  const task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  const executionIntent = body.executionIntent || 'workspace_mutation';
+  if (!['read_only', 'workspace_mutation'].includes(executionIntent)) return json(res, 422, { error: 'executionIntent must be read_only or workspace_mutation' });
+  let task;
+  try {
+    task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', executionIntent, initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+  } catch (error) {
+    if (error?.code === 'TASK_IDEMPOTENCY_CONFLICT') return json(res, 409, { error: 'idempotency key conflicts with executionIntent' });
+    throw error;
+  }
   if (task.workspace_id !== workspaceId) return json(res, 404, { error: 'not found' });
   return json(res, decision.allowed ? 202 : 403, decision.allowed ? { task } : { task, denied: true, error: decision.reason });
 }
@@ -372,6 +380,7 @@ async function unifiedInputRoute(req, res, auth) {
     text: body.text || body.request,
     idempotencyKey: body.idempotencyKey || id('idem'),
     authority: TEST_MODE.enabled ? 'test_operator' : 'authenticated_admin',
+    executionIntent: body.executionIntent || 'workspace_mutation',
   });
   return json(res, result.status && result.status >= 400 ? result.status : (result.denied ? 403 : 202), result);
 }
@@ -388,6 +397,7 @@ function taskRoute(req, res, auth, match) {
   if (match[2] === 'approvals') return json(res, 200, { approvals: taskRecords(task.id).approvals });
   const limit = checkLimit(req, 'approval-action', 20, 60000); if (!limit.allowed) return limited(res, limit);
   if (match[2] === 'approve') {
+    if (task.status === 'waiting_for_manual_response') return json(res, 409, { error: 'manual-response waits require response ingestion or cancellation' });
     if (task.policy_decision === 'denied' || task.source_channel === 'telegram' || ['telegram', 'test_operator', 'untrusted'].includes(task.authority_class)) return json(res, 403, { error: 'task authority cannot be elevated by approval' });
     if (!taskRecords(task.id).approvals.some((approval) => approval.status === 'pending') && task.policy_decision === 'approval_required') createApproval(task.id, 'high_risk_execution', 'High-impact task requires administrator approval before execution', { requestedBy: 'api' });
     const decision = decideApproval(task.id, 'approved', 'Approved by administrator');
@@ -396,11 +406,13 @@ function taskRoute(req, res, auth, match) {
   }
   if (match[2] === 'reject') { decideApproval(task.id, 'rejected', 'Rejected by administrator'); return json(res, 200, { task: transition(task.id, 'cancelled', { error: 'Rejected by administrator' }) }); }
   if (match[2] === 'pause') {
+    if (task.status === 'waiting_for_manual_response') return json(res, 409, { error: 'manual-response waits require response ingestion or cancellation' });
     if (task.policy_decision === 'denied' || task.source_channel === 'telegram' || ['telegram', 'test_operator', 'untrusted'].includes(task.authority_class)) return json(res, 403, { error: 'task authority cannot be elevated by pause' });
     return json(res, 200, { task: transition(task.id, 'waiting_for_approval', { summary: 'Paused by administrator' }) });
   }
   if (match[2] === 'resume') {
     if (task.policy_decision === 'denied' || task.source_channel === 'telegram' || ['telegram', 'test_operator', 'untrusted'].includes(task.authority_class)) return json(res, 403, { error: 'task authority cannot be elevated by resume' });
+    if (task.status !== 'waiting_for_approval') return json(res, 409, { error: 'only approval-paused tasks can be resumed' });
     return json(res, 200, { task: transition(task.id, 'queued') });
   }
   if (match[2] === 'cancel') {

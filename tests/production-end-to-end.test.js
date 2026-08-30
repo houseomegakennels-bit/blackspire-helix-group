@@ -92,7 +92,7 @@ case "\${1:-}" in
   exec)
     prompt="\${*: -1}"
     packet="\${prompt#* at }"
-    packet="\${packet%%. Return*}"
+    packet="\${packet%%. This*}"
     final=""
     for ((i=1; i<=$#; i++)); do
       if [[ "\${!i}" == "--output-last-message" ]]; then
@@ -105,6 +105,58 @@ case "\${1:-}" in
     if grep -q 'malformed-codex' "$packet"; then
       printf '{"type":"thread.started"}\\n'
       printf 'not-json\\n'
+      exit 0
+    fi
+    if grep -q 'empty-artifacts' "$packet"; then
+      printf '{"artifacts":[],"summary":"sandbox could not inspect the requested file"}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n'
+      printf '{"type":"turn.started"}\\n'
+      printf '{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'read-only-empty' "$packet"; then
+      printf '{"artifacts":[],"summary":"Read-only inspection completed."}\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\n{"type":"turn.started"}\n{"type":"turn.completed"}\n'
+      exit 0
+    fi
+    if grep -q 'identical-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Proposed existing content."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\n{"type":"turn.started"}\n{"type":"turn.completed"}\n'
+      exit 0
+    fi
+    if grep -q 'alias-duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"./docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Aliased duplicate proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'symlink-duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/alias.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Symlink duplicate proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'validation-race-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"validated replacement\\\\n"}],"summary":"Validation race proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'symlink-escape-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/outside/escape.md","content":"must not escape\\\\n"}],"summary":"Escape proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'allowed-path-symlink-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/internal-alias/victim.md","content":"must not cross allowlist\\\\n"}],"summary":"Allowlist escape proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'unicode-path-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/café.md","content":"unicode path accepted\\\\n"}],"summary":"Unicode path proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
+      exit 0
+    fi
+    if grep -q 'duplicate-artifact' "$packet"; then
+      printf '{"artifacts":[{"path":"docs/production-proof.md","content":"changed"},{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Duplicate path proposal."}\\n' > "$final"
+      printf '{"type":"thread.started","thread_id":"fixture"}\\n{"type":"turn.started"}\\n{"type":"turn.completed"}\\n'
       exit 0
     fi
     printf '{"artifacts":[{"path":"docs/production-proof.md","content":"# Production proof\\\\n\\\\nWritten by the configured Codex CLI provider.\\\\n"}],"summary":"Wrote the requested proof document.","usage":{"inputTokens":120,"outputTokens":45}}\\n' > "$final"
@@ -145,10 +197,10 @@ upsertWorkspace({
 const server = start(8907, undefined, { exitOnListenError: false });
 await fetch(`${BASE}/api/stop/reset`, { method: 'POST', headers: ADMIN });
 
-async function submit(request, idempotencyKey) {
+async function submit(request, idempotencyKey, executionIntent = 'workspace_mutation') {
   const response = await fetch(`${BASE}/api/tasks`, {
     method: 'POST', headers: ADMIN,
-    body: JSON.stringify({ workspaceId: 'production-e2e', request, idempotencyKey }),
+    body: JSON.stringify({ workspaceId: 'production-e2e', request, idempotencyKey, executionIntent }),
   });
   return { status: response.status, body: await response.json() };
 }
@@ -260,6 +312,182 @@ test('a failed production Codex invocation is not retried for the same task', as
   const after = fs.readFileSync(codexLog, 'utf8').trim().split('\n').filter(Boolean).length;
   assert.equal(after, before + 1, 'production Codex must not retry a failed subscription invocation');
   assert.equal(getTask(body.task.id).status, 'failed');
+});
+
+test('the persisted mutation contract rejects empty artifacts regardless of objective wording', async () => {
+  for (const [index, request] of [
+    'Fix empty-artifacts behavior',
+    'Implement empty-artifacts behavior',
+    'Remove empty-artifacts text',
+    'In README, add empty-artifacts proof',
+  ].entries()) {
+    const { status, body } = await submit(request, `production-e2e-empty-artifacts-${index}`);
+    assert.equal(status, 202);
+    assert.equal(body.task.execution_intent, 'workspace_mutation');
+    await startWorker({ once: true });
+    assert.equal(getTask(body.task.id).status, 'failed');
+    assert.match(getTask(body.task.id).error, /no artifacts for a workspace mutation task/i);
+    const records = taskRecords(body.task.id);
+    assert.equal(records.providerAttempts.at(-1).status, 'completed', 'provider output is terminal even though Hermes refuses it');
+    assert.equal(records.changedFiles.length, 0);
+    assert.ok(records.evidence.some((row) => row.kind === 'artifact_application_refused'));
+  }
+});
+
+test('the persisted read-only contract rejects provider artifacts', async () => {
+  const { status, body } = await submit('Inspect status', 'production-e2e-read-only-artifacts', 'read_only');
+  assert.equal(status, 202);
+  assert.equal(body.task.execution_intent, 'read_only');
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /artifacts for a read-only task/i);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+});
+
+test('a successful read-only task never enters branch, apply, validation, commit, or PR stages', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(path.join(repo, 'docs', 'unrelated-uncommitted.md'), 'must remain uncommitted\n');
+  const { status, body } = await submit('read-only-empty inspect status', 'production-e2e-read-only-empty', 'read_only');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  const current = getTask(body.task.id);
+  assert.equal(current.status, 'completed');
+  assert.deepEqual(JSON.parse(current.summary).changedFiles, []);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+  assert.ok(fs.existsSync(path.join(repo, 'docs', 'unrelated-uncommitted.md')));
+  assert.doesNotMatch(spawnSync('git', ['log', '-1', '--format=%B'], { cwd: repo, encoding: 'utf8' }).stdout, new RegExp(body.task.id));
+  fs.rmSync(path.join(repo, 'docs', 'unrelated-uncommitted.md'));
+});
+
+test('a non-empty artifact that produces no workspace delta cannot complete', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('identical-artifact mutation', 'production-e2e-identical-artifact');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /no workspace delta/i);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+});
+
+test('a mutation task refuses a dirty baseline instead of attributing unrelated files to its artifacts', async () => {
+  const dirtyPath = path.join(repo, 'docs', 'unrelated-dirty.md');
+  fs.writeFileSync(dirtyPath, 'unrelated operator content\n');
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('identical-artifact with dirty baseline', 'production-e2e-dirty-identical');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /workspace must be clean/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+  assert.ok(fs.existsSync(dirtyPath));
+  fs.rmSync(dirtyPath);
+});
+
+test('duplicate artifact paths are rejected before branch creation', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('duplicate-artifact mutation', 'production-e2e-duplicate-artifact');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /duplicate edit path/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+  assert.equal(taskRecords(body.task.id).changedFiles.length, 0);
+});
+
+test('canonical-path aliases are duplicate artifacts and cannot change branches', async () => {
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('alias-duplicate-artifact mutation', 'production-e2e-alias-duplicate');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /duplicate edit path/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+});
+
+test('symlink aliases are duplicate artifacts and cannot change branches', async () => {
+  fs.symlinkSync('production-proof.md', path.join(repo, 'docs', 'alias.md'));
+  git(['add', 'docs/alias.md'], repo);
+  git(['commit', '-m', 'add in-workspace alias fixture'], repo);
+  const beforeBranch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const { status, body } = await submit('symlink-duplicate-artifact mutation', 'production-e2e-symlink-duplicate');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /duplicate edit path/i);
+  assert.equal(spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), beforeBranch);
+});
+
+test('artifact targets cannot escape through a workspace symlink', async () => {
+  const outside = path.join(root, 'outside-artifacts');
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(repo, 'docs', 'outside'));
+  git(['add', 'docs/outside'], repo);
+  git(['commit', '-m', 'add escaping alias fixture'], repo);
+  const beforeBranch = git(['branch', '--show-current'], repo);
+  const { status, body } = await submit('symlink-escape-artifact mutation', 'production-e2e-symlink-escape');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /escapes workspace/i);
+  assert.equal(fs.existsSync(path.join(outside, 'escape.md')), false);
+  assert.equal(git(['branch', '--show-current'], repo), beforeBranch);
+});
+
+test('artifact targets cannot escape the physical allowed path through an internal symlink', async () => {
+  fs.mkdirSync(path.join(repo, 'packages'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'packages', 'victim.md'), 'protected baseline\n');
+  fs.symlinkSync('../packages', path.join(repo, 'docs', 'internal-alias'));
+  git(['add', 'packages/victim.md', 'docs/internal-alias'], repo);
+  git(['commit', '-m', 'add internal allowlist alias fixture'], repo);
+  const beforeBranch = git(['branch', '--show-current'], repo);
+  const { status, body } = await submit('allowed-path-symlink-artifact mutation', 'production-e2e-allowed-path-symlink');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /not allowed after symlink resolution/i);
+  assert.equal(fs.readFileSync(path.join(repo, 'packages', 'victim.md'), 'utf8'), 'protected baseline\n');
+  assert.equal(git(['branch', '--show-current'], repo), beforeBranch);
+});
+
+test('Unicode artifact paths survive raw status comparison and commit exactly', async () => {
+  const { status, body } = await submit('unicode-path-artifact mutation', 'production-e2e-unicode-path');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'completed', getTask(body.task.id).error);
+  assert.equal(fs.readFileSync(path.join(repo, 'docs', 'café.md'), 'utf8'), 'unicode path accepted\n');
+  const committedPaths = spawnSync('git', ['ls-tree', '-r', '--name-only', '-z', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.split('\0');
+  assert.ok(committedPaths.includes('docs/café.md'));
+});
+
+test('validation-time unrelated changes are refused and never committed', async () => {
+  const contaminator = path.join(binDir, 'contaminate-build');
+  fs.writeFileSync(contaminator, '#!/bin/sh\nprintf "external change\\n" > docs/validation-race.md\n');
+  fs.chmodSync(contaminator, 0o755);
+  upsertWorkspace({
+    id: 'production-e2e', name: 'Production E2E', description: 'production end-to-end proof',
+    githubRepository: 'local/production-e2e', defaultBranch: 'main', allowedPaths: ['docs'],
+    buildCommands: ['contaminate-build'], providerPolicy: { preferred: ['codex'] }, riskLevel: 'low',
+    budgetCents: 500, secretReferences: [], enabledTools: ['read', 'status', 'write_branch'],
+    lastHealthStatus: 'ok', rootPath: repo,
+  });
+  const { status, body } = await submit('validation-race-artifact mutation', 'production-e2e-validation-race');
+  assert.equal(status, 202);
+  await startWorker({ once: true });
+  assert.equal(getTask(body.task.id).status, 'failed');
+  assert.match(getTask(body.task.id).error, /outside the approved artifacts/i);
+  assert.doesNotMatch(git(['show', '--name-only', '--format=', 'HEAD'], repo), /validation-race\.md/);
+  fs.rmSync(path.join(repo, 'docs', 'validation-race.md'));
+  fs.rmSync(contaminator);
+  upsertWorkspace({
+    id: 'production-e2e', name: 'Production E2E', description: 'production end-to-end proof',
+    githubRepository: 'local/production-e2e', defaultBranch: 'main', allowedPaths: ['docs'],
+    buildCommands: ['true'], providerPolicy: { preferred: ['codex'] }, riskLevel: 'low',
+    budgetCents: 500, secretReferences: [], enabledTools: ['read', 'status', 'write_branch'],
+    lastHealthStatus: 'ok', rootPath: repo,
+  });
 });
 
 test('a live Codex dispatch renews its task lease and cancellation finalizes accounting', async () => {

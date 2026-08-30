@@ -7,10 +7,11 @@ import { evaluateRequestPolicy } from '../policy/policy.js';
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
 const cancellationTokens = new Map();
 
-export function createUnifiedInput({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted' }) {
+export function createUnifiedInput({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted', executionIntent = 'workspace_mutation' }) {
   if (!CHANNELS.has(channel)) return { error: 'unsupported channel', status: 422 };
   const request = String(text || '').trim();
   if (!request || request.length > 4000) return { error: 'request is required and must be under 4000 characters', status: 422 };
+  if (!['read_only', 'workspace_mutation'].includes(executionIntent)) return { error: 'executionIntent must be read_only or workspace_mutation', status: 422 };
   const workspace = getWorkspace(workspaceId);
   if (!workspace) return { error: 'workspace not found', status: 403 };
   if (getFlag('emergency_stop') === 'active') return { error: 'emergency stop active', status: 423 };
@@ -18,10 +19,12 @@ export function createUnifiedInput({ channel, actorId, channelKey, conversationI
   const key = String(idempotencyKey || id('idem'));
   const taskKey = `unified:${channel}:${key}`;
   return transaction(() => {
-    const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,t.workspace_id task_workspace_id,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
-    if (duplicate) return duplicate.workspace_id === workspaceId && (!duplicate.task_id || duplicate.task_workspace_id === workspaceId)
-      ? responseFor(duplicate.conversation_id, duplicate.id, duplicate.task_id, duplicate.task_status, true, duplicate.policy_status === 'denied' ? denialReason(channel) : null)
-      : { error: 'input not found', status: 404 };
+    const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,t.workspace_id task_workspace_id,t.execution_intent task_execution_intent,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
+    if (duplicate) {
+      if (duplicate.workspace_id !== workspaceId || (duplicate.task_id && duplicate.task_workspace_id !== workspaceId)) return { error: 'input not found', status: 404 };
+      if (duplicate.task_id && duplicate.task_execution_intent !== executionIntent) return { error: 'idempotency key conflicts with executionIntent', status: 409 };
+      return responseFor(duplicate.conversation_id, duplicate.id, duplicate.task_id, duplicate.task_status, true, duplicate.policy_status === 'denied' ? denialReason(channel) : null);
+    }
 
     const existingTask = query(`SELECT id,workspace_id FROM tasks WHERE idempotency_key=${esc(taskKey)};`)[0];
     if (existingTask) return existingTask.workspace_id === workspaceId
@@ -34,7 +37,7 @@ export function createUnifiedInput({ channel, actorId, channelKey, conversationI
     const decision = evaluateRequestPolicy({ request, channel, authority });
     const denial = decision.allowed ? null : decision.reason;
     execSql(`INSERT INTO unified_inputs VALUES (${esc(inputId)},${esc(conversation.id)},${esc(channel)},${esc(actorId || '')},${esc(redact(request))},${esc(key)},${esc(denial ? 'denied' : 'allowed')},${esc(now())});`);
-    const task = createTask({ workspaceId, request: redact(request), idempotencyKey: taskKey, budgetCents: Number(workspace.budget_cents || 0), conversationId: conversation.id, inputId, sourceChannel: channel, actorId: String(actorId || ''), actionClass: decision.actionClass, authorityClass: authority, policyDecision: denial ? 'denied' : (decision.requiresApproval ? 'approval_required' : 'allowed'), initialStatus: denial ? 'failed' : 'queued', initialError: denial, initialSummary: denial ? 'Denied by Blackspire policy' : null, initialEventType: denial ? 'policy.denied' : 'task.queued', initialEventPayload: denial ? { reason: denial } : {} });
+    const task = createTask({ workspaceId, request: redact(request), idempotencyKey: taskKey, budgetCents: Number(workspace.budget_cents || 0), conversationId: conversation.id, inputId, sourceChannel: channel, actorId: String(actorId || ''), actionClass: decision.actionClass, authorityClass: authority, policyDecision: denial ? 'denied' : (decision.requiresApproval ? 'approval_required' : 'allowed'), executionIntent, initialStatus: denial ? 'failed' : 'queued', initialError: denial, initialSummary: denial ? 'Denied by Blackspire policy' : null, initialEventType: denial ? 'policy.denied' : 'task.queued', initialEventPayload: denial ? { reason: denial } : {} });
     if (task.workspace_id !== workspaceId || task.input_id !== inputId || task.conversation_id !== conversation.id) throw new Error('unified task binding conflict');
     audit(task.id, channel, denial ? 'unified_input.denied' : 'unified_input.accepted', { conversationId: conversation.id, inputId, channel, policy: denial ? 'denied' : 'allowed', actionClass: decision.actionClass });
     recordEvidence(task.id, 'unified_input', { conversationId: conversation.id, inputId, sourceChannel: channel, actorId: redact(String(actorId || '')), policy: denial ? 'denied' : 'allowed' });

@@ -1,8 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { id, redact } from '../shared/util.js';
+import { quarantineWorkspace, recoverWorkspace } from '../workspace-registry/workspaces.js';
 
 const CODEX_CLI_MAX_STREAM_BYTES = 1_000_000;
 const CODEX_CLI_PROBE_TIMEOUT_MS = 2_000;
@@ -96,7 +98,7 @@ export async function executeProviderRequest({ selected, packet, workspace, dead
     if (selected.provider === 'openai') return normalizeProviderResult({ provider: 'openai', mode: selected.mode, model: selected.model, started, response: await callOpenAI({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'anthropic') return normalizeProviderResult({ provider: 'anthropic', mode: selected.mode, model: selected.model, started, response: await callAnthropic({ prompt: JSON.stringify(packet), model: selected.model, timeoutMs }) });
     if (selected.provider === 'claudeCode') return normalizeProviderResult({ provider: 'claudeCode', mode: selected.mode, model: selected.model, started, response: runClaudeCodePacket(writeTaskPacket(packet, workspace?.root_path)) });
-    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: await runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path, { external: true }), { workspaceRoot: workspace?.root_path, model: selected.model, timeoutMs, shouldCancel }) });
+    if (selected.provider === 'codex' && selected.mode === 'cli') return normalizeProviderResult({ provider: 'codex', mode: 'cli', model: selected.model, started, response: await runCodexCliPacket(writeTaskPacket(packet, workspace?.root_path, { external: true }), { workspaceId: workspace?.id, taskId: packet.taskId, workspaceRoot: workspace?.root_path, model: selected.model, executionIntent: packet.executionIntent, timeoutMs, shouldCancel }) });
     if (selected.provider === 'manual' && selected.mode === 'handoff') return normalizeProviderResult({ provider: 'manual', mode: 'handoff', started, response: manualPacket(packet, workspace?.root_path) });
     return { ok: false, provider: selected.provider || 'unknown', mode: selected.mode || 'unconfigured', artifacts: [], usage: usage(selected, Date.now() - started), error: 'provider is not explicitly configured', raw: null };
   } catch (error) {
@@ -135,36 +137,140 @@ export function runClaudeCodePacket(packetPath) {
   return parseCliResult('claudeCode', 'cli', result);
 }
 
-export async function runCodexCliPacket(packetPath, { workspaceRoot = path.dirname(packetPath), model = null, timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null } = {}) {
+export async function runCodexCliPacket(packetPath, { workspaceId = null, taskId = null, workspaceRoot = path.dirname(packetPath), model = null, executionIntent = 'workspace_mutation', timeoutMs = 30_000, spawnImpl = spawn, shouldCancel = null, runCliChildImpl = runCliChild, quarantineWorkspaceImpl = quarantineWorkspace } = {}) {
   const cwd = path.resolve(workspaceRoot || path.dirname(packetPath));
   const finalPath = path.join(providerRuntimeDir('hermes-codex-results'), `${path.basename(packetPath, '.json')}.codex-final.json`);
   fs.mkdirSync(path.dirname(finalPath), { recursive: true });
   const args = ['exec', '--json', '--sandbox', 'read-only', '--cd', cwd, '--output-last-message', finalPath];
   if (model) args.push('--model', model);
-  args.push(`Read the approved task packet at ${packetPath}. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}. Do not modify files.`);
-  const before = snapshotWorkspace(cwd);
-  const result = await runCliChild(spawnImpl, 'codex', args, { cwd, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
-  const parsed = parseCodexCliResult(result, finalPath);
-  if (parsed.ok && workspaceMutated(before, snapshotWorkspace(cwd))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application', artifacts: [] };
-  return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
+  const responseContract = executionIntent === 'read_only'
+    ? 'This is a read-only task. Return only JSON with {"artifacts":[],"summary":"..."}; artifacts must be empty.'
+    : 'This is a workspace-mutation task. Return only JSON with {"artifacts":[{"path":"relative/path","content":"file content"}],"summary":"..."}; include every proposed complete file artifact.';
+  args.push(`Read the approved task packet at ${packetPath}. ${responseContract} Do not modify files.`);
+  const quarantine = workspaceId ? quarantineWorkspaceImpl(workspaceId, { reason: 'Codex provider execution is pending containment and workspace integrity verification', taskId }) : null;
+  let workspaceDescriptor;
+  try {
+    if (workspaceId) {
+      workspaceDescriptor = fs.openSync(cwd, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      const pinnedPhysicalRoot = fs.realpathSync(`/proc/self/fd/${workspaceDescriptor}`);
+      const pinnedStat = fs.fstatSync(workspaceDescriptor, { bigint: true });
+      if (pinnedPhysicalRoot !== quarantine.physicalRoot || String(pinnedStat.dev) !== quarantine.rootDevice || String(pinnedStat.ino) !== quarantine.rootInode) throw new Error('Workspace root identity changed before provider launch');
+      args[args.indexOf('--cd') + 1] = '/proc/self/fd/3';
+    }
+    const snapshotRoot = workspaceDescriptor === undefined ? cwd : `/proc/self/fd/${workspaceDescriptor}`;
+    const childCwd = workspaceDescriptor === undefined ? cwd : '/proc/self/fd/3';
+    const before = snapshotProviderIsolation(snapshotRoot);
+    const result = await runCliChildImpl(spawnImpl, 'codex', args, { cwd: childCwd, workspaceDescriptor, timeoutMs: Math.max(1, Number(timeoutMs) || 1), shouldCancel });
+    if (result.containmentFailed) {
+      return { ok: false, outcomeUnknown: true, provider: 'codex', mode: 'cli', error: workspaceId
+        ? 'Codex CLI process-group containment could not be proven; workspace remains quarantined pending explicit recovery'
+        : 'Codex CLI process-group containment could not be proven; workspace identity unavailable for quarantine', artifacts: [] };
+    }
+    const parsed = parseCodexCliResult(result, finalPath);
+    if (workspaceMutated(before, snapshotProviderIsolation(snapshotRoot))) return { ok: false, provider: 'codex', mode: 'cli', error: 'Codex CLI mutated the workspace before artifact application; workspace remains quarantined pending explicit recovery', artifacts: [] };
+    if (workspaceId) recoverWorkspace(workspaceId, { containmentVerified: true, integrityVerified: true, expectedPhysicalRoot: quarantine.physicalRoot });
+    return parsed.ok ? { ...parsed, usage: { ...(parsed.usage || {}), monetaryCostState: 'subscription_unmetered' } } : parsed;
+  } finally {
+    if (workspaceDescriptor !== undefined) fs.closeSync(workspaceDescriptor);
+  }
 }
 
 function mockResponse(packet) {
+  if (packet.executionIntent === 'read_only') {
+    return { ok: true, provider: 'mock', mode: 'mock', summary: 'Mock provider completed a read-only workspace inspection.', artifacts: [], usage: { inputTokens: 50, outputTokens: 25, costCents: 0 } };
+  }
   const requestedPath = packet.request.match(/`([^`]+)`/)?.[1] || 'docs/hermes-mock-change.md';
   return { ok: true, provider: 'mock', mode: 'mock', summary: 'Mock provider proposed a safe local coding edit.', artifacts: [{ path: requestedPath, content: `# Hermes Mock Change\n\nRequest: ${packet.request}\n` }], usage: { inputTokens: 50, outputTokens: 25, costCents: 0 } };
 }
 
 function manualPacket(packet, workspaceRoot = '.') {
-  const packetPath = writeTaskPacket(packet, workspaceRoot);
-  return { ok: true, provider: 'manual', mode: 'handoff', summary: `Manual task packet written to ${packetPath}`, artifacts: [], manualPacketPath: packetPath, usage: { inputTokens: 0, outputTokens: 0, costCents: 0 } };
+  const packetPath = writeTaskPacket(packet, workspaceRoot, { external: true });
+  return { ok: true, handedOff: true, provider: 'manual', mode: 'handoff', summary: '', artifacts: [], manualPacketPath: packetPath, usage: { inputTokens: 0, outputTokens: 0, costCents: 0 } };
 }
 
 function writeTaskPacket(packet, workspaceRoot = '.', { external = false } = {}) {
   const dir = external ? providerRuntimeDir('hermes-task-packets') : path.resolve(workspaceRoot || '.', '.hermes-task-packets');
-  fs.mkdirSync(dir, { recursive: true });
+  const workspace = fs.realpathSync(path.resolve(workspaceRoot || '.'));
+  if (!external) fs.mkdirSync(dir, { recursive: true });
   const packetPath = path.join(dir, `${packet.taskId || id('task')}.json`);
-  fs.writeFileSync(packetPath, JSON.stringify(packet, null, 2));
+  const packetDirectoryDescriptor = external
+    ? openConfinedDirectory(dir, workspace)
+    : fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  let descriptor;
+  try {
+    const physicalPacketPath = physicalProspectivePath(packetPath);
+    const packetRelative = path.relative(workspace, physicalPacketPath);
+    if (external && (packetRelative === '' || (!packetRelative.startsWith(`..${path.sep}`) && packetRelative !== '..' && !path.isAbsolute(packetRelative)))) {
+      throw new Error('External provider packet path must be outside the workspace');
+    }
+    // Node does not expose openat(2). On Linux, the procfs descriptor link gives
+    // openSync the same pinned-directory semantics: subsequent path replacement
+    // cannot redirect the create into a different directory.
+    const pinnedDirectory = `/proc/self/fd/${packetDirectoryDescriptor}`;
+    const pinnedPhysicalDirectory = fs.realpathSync(pinnedDirectory);
+    const pinnedRelative = path.relative(workspace, pinnedPhysicalDirectory);
+    if (external && (pinnedRelative === '' || (!pinnedRelative.startsWith(`..${path.sep}`) && pinnedRelative !== '..' && !path.isAbsolute(pinnedRelative)))) {
+      throw new Error('External provider packet path must be outside the workspace');
+    }
+    descriptor = fs.openSync(path.join(pinnedDirectory, path.basename(packetPath)), fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+    fs.writeFileSync(descriptor, JSON.stringify(packet, null, 2));
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    fs.closeSync(packetDirectoryDescriptor);
+  }
   return packetPath;
+}
+
+function openConfinedDirectory(target, workspace) {
+  const missing = [];
+  let existing = path.resolve(target);
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) throw new Error('Unable to resolve external provider runtime directory');
+    missing.unshift(path.basename(existing));
+    existing = parent;
+  }
+  assertExternalDirectory(fs.realpathSync(existing), workspace);
+  let descriptor = fs.openSync(existing, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  try {
+    for (const component of missing) {
+      const pinnedParent = `/proc/self/fd/${descriptor}`;
+      assertExternalDirectory(fs.realpathSync(pinnedParent), workspace);
+      const child = path.join(pinnedParent, component);
+      try {
+        fs.mkdirSync(child, { mode: 0o700 });
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error;
+      }
+      const childDescriptor = fs.openSync(child, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      fs.closeSync(descriptor);
+      descriptor = childDescriptor;
+    }
+    assertExternalDirectory(fs.realpathSync(`/proc/self/fd/${descriptor}`), workspace);
+    return descriptor;
+  } catch (error) {
+    fs.closeSync(descriptor);
+    throw error;
+  }
+}
+
+function assertExternalDirectory(directory, workspace) {
+  const relative = path.relative(workspace, directory);
+  if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
+    throw new Error('External provider runtime directory must be outside the workspace');
+  }
+}
+
+function physicalProspectivePath(target) {
+  const missing = [];
+  let existing = path.resolve(target);
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) throw new Error('Unable to resolve external provider runtime directory');
+    missing.unshift(path.basename(existing));
+    existing = parent;
+  }
+  return path.join(fs.realpathSync(existing), ...missing);
 }
 
 function providerRuntimeDir(name) {
@@ -174,7 +280,7 @@ function providerRuntimeDir(name) {
 function normalizeProviderResult({ provider, mode, model = null, started, response }) {
   const monetaryCostState = response.usage?.monetaryCostState || (provider === 'codex' && mode === 'cli' ? 'subscription_unmetered' : 'metered');
   return {
-    ok: Boolean(response.ok), provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
+    ok: Boolean(response.ok), handedOff: response.handedOff === true, outcomeUnknown: response.outcomeUnknown === true, provider, mode, model, artifacts: response.artifacts || [], summary: response.summary || '', manualPacketPath: response.manualPacketPath,
     usage: { provider, mode, model, latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens || 0, outputTokens: response.usage?.outputTokens || 0, costCents: response.usage?.costCents ?? null, monetaryCostState },
     error: response.ok ? null : redact(response.error || 'provider failed'), raw: response,
   };
@@ -190,7 +296,7 @@ function parseCliResult(provider, mode, result) {
   }
 }
 
-function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = null, env = sanitizedCodexEnvironment(process.env) }) {
+export function runCliChild(spawnImpl, command, args, { cwd, workspaceDescriptor = undefined, timeoutMs, shouldCancel = null, env = sanitizedCodexEnvironment(process.env), killGroup = (pid, signal) => process.kill(-pid, signal), groupExists = defaultGroupExists, terminationGraceMs = 1000, containmentPollMs = 25, containmentTimeoutMs = 1000 } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -201,28 +307,60 @@ function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = 
     let child;
     let timer;
     let cancelTimer;
+    let containmentTimer;
+    let killTimer;
+    let terminationStarted = false;
+    let containmentFailed = false;
+    let closeResult = null;
     const finish = (status, signal = null, errorText = '') => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
       if (cancelTimer) clearInterval(cancelTimer);
+      if (containmentTimer) clearInterval(containmentTimer);
+      if (killTimer) clearTimeout(killTimer);
       const stderrText = outputExceeded ? `${stderr}\nCodex CLI output exceeded limit`.trim() : cancelled ? `${stderr}\nCodex CLI cancelled by task controls`.trim() : timedOut ? `${stderr}\nCodex CLI deadline exceeded`.trim() : (errorText || stderr);
-      resolve({ status, signal, stdout, stderr: stderrText });
+      resolve({ status, signal, stdout, stderr: stderrText, containmentFailed });
     };
     try {
-      child = spawnImpl(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawnImpl(command, args, { cwd, env, detached: true, stdio: workspaceDescriptor === undefined ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe', workspaceDescriptor] });
     } catch (error) {
       finish(1, null, String(error?.message || error));
       return;
     }
     const terminate = () => {
+      if (terminationStarted) return;
+      terminationStarted = true;
+      if (timer) clearTimeout(timer);
+      if (cancelTimer) clearInterval(cancelTimer);
       if (Number.isInteger(child.pid) && child.pid > 0) {
-        try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill?.('SIGTERM'); }
-        setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill?.('SIGKILL'); } }, 1000).unref?.();
+        try { killGroup(child.pid, 'SIGTERM'); } catch (error) { if (error?.code !== 'ESRCH') child.kill?.('SIGTERM'); }
       } else {
         child.kill?.('SIGTERM');
-        setTimeout(() => child.kill?.('SIGKILL'), 1000).unref?.();
       }
+      const started = Date.now();
+      let killSent = false;
+      const contained = () => {
+        if (!Number.isInteger(child.pid) || child.pid <= 0) return closeResult !== null;
+        try { return !groupExists(child.pid); } catch { return false; }
+      };
+      const check = () => {
+        if (contained()) return finish(124, closeResult?.signal || null);
+        if (killSent && Date.now() - started >= terminationGraceMs + containmentTimeoutMs) {
+          containmentFailed = true;
+          return finish(125, closeResult?.signal || null, 'Codex CLI process-group containment could not be proven');
+        }
+      };
+      killTimer = setTimeout(() => {
+        killSent = true;
+        if (Number.isInteger(child.pid) && child.pid > 0) {
+          try { killGroup(child.pid, 'SIGKILL'); } catch (error) { if (error?.code !== 'ESRCH') child.kill?.('SIGKILL'); }
+        } else child.kill?.('SIGKILL');
+        check();
+      }, terminationGraceMs);
+      containmentTimer = setInterval(check, containmentPollMs);
+      containmentTimer.unref?.();
+      check();
     };
     timer = setTimeout(() => {
       timedOut = true;
@@ -247,9 +385,29 @@ function runCliChild(spawnImpl, command, args, { cwd, timeoutMs, shouldCancel = 
     child.stderr?.setEncoding?.('utf8');
     child.stdout?.on?.('data', (chunk) => { stdout = appendBounded(stdout, chunk, () => { outputExceeded = true; terminate(); }); });
     child.stderr?.on?.('data', (chunk) => { stderr = appendBounded(stderr, chunk, () => { outputExceeded = true; terminate(); }); });
-    child.on?.('error', (error) => finish(1, null, String(error?.message || error)));
-    child.on?.('close', (code, signal) => finish(outputExceeded || cancelled || timedOut ? 124 : (code ?? 1), signal));
+    child.on?.('error', (error) => {
+      if (terminationStarted) return;
+      stderr = `${stderr}\n${String(error?.message || error)}`.trim();
+      if (Number.isInteger(child.pid) && child.pid > 0) terminate();
+      else finish(1, null, stderr);
+    });
+    child.on?.('close', (code, signal) => {
+      closeResult = { code, signal };
+      if (terminationStarted) return;
+      if (Number.isInteger(child.pid) && child.pid > 0 && groupExists(child.pid)) terminate();
+      else finish(code ?? 1, signal);
+    });
   });
+}
+
+function defaultGroupExists(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    return true;
+  }
 }
 
 function appendBounded(current, chunk, onExceeded) {
@@ -355,21 +513,73 @@ function validArtifact(artifact) {
   return artifact && typeof artifact === 'object' && typeof artifact.path === 'string' && artifact.path.length > 0 && !path.isAbsolute(artifact.path) && typeof artifact.content === 'string';
 }
 
-function snapshotWorkspace(root) {
+const MAX_WORKSPACE_SNAPSHOT_ENTRIES = 100_000;
+const MAX_WORKSPACE_SNAPSHOT_BYTES = 256 * 1024 * 1024;
+
+function snapshotProviderIsolation(root) {
   const entries = new Map();
   if (!root || !fs.existsSync(root)) return entries;
-  const visit = (dir) => {
-    for (const name of fs.readdirSync(dir)) {
-      if (name === '.git' || name === '.hermes-task-packets') continue;
+  let entryCount = 0;
+  let byteCount = 0;
+  const visit = (dir, namespace, base) => {
+    const handle = fs.opendirSync(dir);
+    try {
+      let directoryEntry;
+      while ((directoryEntry = handle.readSync()) !== null) {
+      const name = directoryEntry.name;
       const full = path.join(dir, name);
-      const relative = path.relative(root, full);
+      const relative = `${namespace}:${path.relative(base, full)}`;
       const stat = fs.lstatSync(full);
-      if (stat.isDirectory()) visit(full);
-      else entries.set(relative, `${stat.size}:${stat.mtimeMs}`);
+      if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
+      if (stat.isDirectory()) {
+        entries.set(relative, directoryFingerprint(stat));
+        visit(full, namespace, base);
+      } else if (stat.isSymbolicLink()) {
+        entries.set(relative, `symlink:${fs.readlinkSync(full)}`);
+      } else if (stat.isFile()) {
+        byteCount += stat.size;
+        if (byteCount > MAX_WORKSPACE_SNAPSHOT_BYTES) throw new Error('Workspace is too large to verify provider isolation safely');
+        entries.set(relative, `file:${stat.mode}:${stat.dev}:${stat.ino}:${stat.nlink}:${createHash('sha256').update(fs.readFileSync(full)).digest('hex')}`);
+      } else entries.set(relative, `unsupported:${stat.mode}`);
+      }
+    } finally {
+      handle.closeSync();
     }
   };
-  visit(root);
+  const workspace = fs.realpathSync(root);
+  if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
+  entries.set('workspace:', directoryFingerprint(fs.lstatSync(workspace)));
+  visit(workspace, 'workspace', workspace);
+  const gitDirectories = new Set();
+  for (const option of ['--absolute-git-dir', '--git-common-dir']) {
+    const result = spawnSync('git', ['-C', workspace, 'rev-parse', option], { encoding: 'utf8' });
+    if (result.status !== 0) continue;
+    const reported = result.stdout.trim();
+    gitDirectories.add(fs.realpathSync(path.isAbsolute(reported) ? reported : path.resolve(workspace, reported)));
+  }
+  const externalGitDirectories = [...gitDirectories]
+    .filter((gitDirectory) => {
+      const relative = path.relative(workspace, gitDirectory);
+      return relative !== '' && (relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative));
+    })
+    .filter((gitDirectory, _index, roots) => !roots.some((other) => other !== gitDirectory && isPathInside(other, gitDirectory)))
+    .sort();
+  for (const [gitDirectoryIndex, gitDirectory] of externalGitDirectories.entries()) {
+    const namespace = `gitdir${gitDirectoryIndex}`;
+    if (++entryCount > MAX_WORKSPACE_SNAPSHOT_ENTRIES) throw new Error('Workspace is too large to verify provider isolation safely');
+    entries.set(`${namespace}:`, directoryFingerprint(fs.lstatSync(gitDirectory)));
+    visit(gitDirectory, namespace, gitDirectory);
+  }
   return entries;
+}
+
+function directoryFingerprint(stat) {
+  return `directory:${stat.mode}:${stat.dev}:${stat.ino}:${stat.nlink}`;
+}
+
+function isPathInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
 function workspaceMutated(before, after) {

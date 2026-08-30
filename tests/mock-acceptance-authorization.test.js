@@ -126,6 +126,7 @@ test('harmless happy-path command completes read-only with mock attribution', as
   const result = createUnifiedInput({
     channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator',
     conversationId: null, workspaceId: 'iphone-test', text: 'status check', idempotencyKey: 'happy-1', authority: 'test_operator',
+    executionIntent: 'read_only',
   });
   assert.ok(result.conversationId?.startsWith('conv_'), 'canonical conversation id');
   assert.ok(result.taskId?.startsWith('task_'), 'canonical task id');
@@ -133,6 +134,7 @@ test('harmless happy-path command completes read-only with mock attribution', as
 
   await processTask(getTask(result.taskId));
   const task = getTask(result.taskId);
+  assert.equal(task.execution_intent, 'read_only');
   assert.equal(task.status, 'completed', task.error || 'expected completion');
   assert.deepEqual(JSON.parse(task.summary).changedFiles, [], 'read-only: no changed files');
 
@@ -141,17 +143,27 @@ test('harmless happy-path command completes read-only with mock attribution', as
   assert.equal(rec.providerAttempts[0].provider, 'mock');
   assert.equal(rec.providerAttempts[0].mode, 'mock');
   assert.equal(rec.providerAttempts[0].status, 'completed');
+  assert.equal(JSON.parse(rec.providerAttempts[0].request_packet).executionIntent, 'read_only');
   assert.match(rec.providerAttempts[0].response_packet, /mock-hermes-status-v1/, 'mock Hermes attribution');
 });
 
 test('follow-up in the same conversation reuses it and completes', async () => {
-  const first = createUnifiedInput({ channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator', conversationId: null, workspaceId: 'iphone-test', text: 'status check', idempotencyKey: 'reuse-1', authority: 'test_operator' });
+  const first = createUnifiedInput({ channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator', conversationId: null, workspaceId: 'iphone-test', text: 'status check', idempotencyKey: 'reuse-1', authority: 'test_operator', executionIntent: 'read_only' });
   await processTask(getTask(first.taskId));
-  const follow = createUnifiedInput({ channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator', conversationId: first.conversationId, workspaceId: 'iphone-test', text: 'status check again', idempotencyKey: 'reuse-2', authority: 'test_operator' });
+  const follow = createUnifiedInput({ channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator', conversationId: first.conversationId, workspaceId: 'iphone-test', text: 'status check again', idempotencyKey: 'reuse-2', authority: 'test_operator', executionIntent: 'read_only' });
   assert.equal(follow.conversationId, first.conversationId, 'same canonical conversation');
   assert.notEqual(follow.taskId, first.taskId, 'distinct task');
   await processTask(getTask(follow.taskId));
   assert.equal(getTask(follow.taskId).status, 'completed');
+});
+
+test('mutation intent is refused before bounded mock provider dispatch', async () => {
+  const result = createUnifiedInput({ channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator', conversationId: null, workspaceId: 'iphone-test', text: 'status check', idempotencyKey: 'mutation-refusal-1', authority: 'test_operator' });
+  await processTask(getTask(result.taskId));
+  const task = getTask(result.taskId);
+  assert.equal(task.execution_intent, 'workspace_mutation');
+  assert.equal(task.status, 'failed');
+  assert.equal(taskRecords(result.taskId).providerAttempts.length, 0, 'mutation intent is refused before provider dispatch');
 });
 
 test('a task in a non-designated workspace fails closed and never invokes a provider', async () => {
@@ -174,7 +186,7 @@ test('a policy-prohibited request is denied at ingress and never dispatched', as
 });
 
 test('replay of a completed task does not invoke a second provider call', async () => {
-  const result = createUnifiedInput({ channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator', conversationId: null, workspaceId: 'iphone-test', text: 'status check', idempotencyKey: 'replay-1', authority: 'test_operator' });
+  const result = createUnifiedInput({ channel: 'jarvis', actorId: 'iphone-test-operator', channelKey: 'test-session:iphone-test-operator', conversationId: null, workspaceId: 'iphone-test', text: 'status check', idempotencyKey: 'replay-1', authority: 'test_operator', executionIntent: 'read_only' });
   await processTask(getTask(result.taskId));
   assert.equal(getTask(result.taskId).status, 'completed');
   const attemptsBefore = taskRecords(result.taskId).providerAttempts.length;

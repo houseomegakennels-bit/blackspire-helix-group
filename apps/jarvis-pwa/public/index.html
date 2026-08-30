@@ -93,6 +93,12 @@
         <div class="stack">
           <label class="sr-only" for="workspace">Workspace</label>
           <select id="workspace" aria-label="Workspace"></select>
+          <label for="executionIntent">Execution intent</label>
+          <select id="executionIntent" aria-describedby="executionIntentHint">
+            <option value="read_only">Read-only inspection</option>
+            <option value="workspace_mutation">Propose a workspace change</option>
+          </select>
+          <p class="muted fs-12" id="executionIntentHint">Jarvis enforces this choice: read-only tasks cannot apply files, and change tasks cannot succeed without an artifact.</p>
           <label class="sr-only" for="cmd">Command for Hermes</label>
           <textarea id="cmd" placeholder="Ask Hermes to do safe workspace work" enterkeyhint="send"></textarea>
           <div class="row row-center">
@@ -142,6 +148,11 @@
         <div class="stack">
           <label class="sr-only" for="followCmd">Follow-up command</label>
           <textarea id="followCmd" placeholder="Continue this conversation" enterkeyhint="send"></textarea>
+          <label for="followExecutionIntent">Execution intent</label>
+          <select id="followExecutionIntent">
+            <option value="read_only">Read-only inspection</option>
+            <option value="workspace_mutation">Propose a workspace change</option>
+          </select>
           <button class="primary" id="followBtn" type="button">Send follow-up</button>
           <p class="notice" id="followNotice" role="status" aria-live="polite"></p>
         </div>

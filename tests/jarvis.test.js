@@ -36,6 +36,9 @@ test('Jarvis markup exposes evidence download, approval history, and status badg
   assert.match(appScript, /Telegram: /);
   assert.match(appScript, /Session expired/);
   assert.match(html, /viewport/);
+  assert.match(html, /id="executionIntent"/);
+  assert.match(html, /id="followExecutionIntent"/);
+  assert.match(appScript, /executionIntent \}\);/);
 });
 
 test('dangerous PWA actions require a second press on the same control', () => {

@@ -39,11 +39,20 @@ test('Telegram and Jarvis share canonical conversation history and task events',
 });
 
 test('duplicate unified inputs are idempotent', () => {
-  const first = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1' });
-  const second = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1' });
+  const first = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1', executionIntent: 'read_only' });
+  const second = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'idempotent status', idempotencyKey: 'duplicate-1', executionIntent: 'read_only' });
   assert.equal(second.duplicate, true);
   assert.equal(second.taskId, first.taskId);
   assert.equal(second.conversationId, first.conversationId);
+  const conflict = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-8', text: 'mutating retry', idempotencyKey: 'duplicate-1', executionIntent: 'workspace_mutation' });
+  assert.equal(conflict.status, 409);
+  assert.match(conflict.error, /conflicts with executionIntent/);
+  assert.equal(getTask(first.taskId).execution_intent, 'read_only');
+});
+
+test('normal unified input still defaults omitted intent to workspace mutation', () => {
+  const created = createUnifiedInput({ channel: 'jarvis', actorId: 'session-default', channelKey: 'session-default', text: 'ordinary production-shaped request', idempotencyKey: 'default-mutation-intent' });
+  assert.equal(getTask(created.taskId).execution_intent, 'workspace_mutation');
 });
 
 test('policy and workspace denial prevent provider execution', () => {
@@ -88,7 +97,7 @@ test('delivery failures stay retryable without changing canonical state', async 
 });
 
 test('Telegram cannot use privileged commands', async () => {
-  for (const [offset, command] of ['/approve task_x', '/deploy production', '/merge main', '/reset emergency', '/secret access', '/trade funds', '/task increase the budget', '/task change host security', '/task amend the constitution'].entries()) {
+  for (const [offset, command] of ['/approve task_x', '/deploy production', '/merge main', '/reset emergency', '/secret access', '/trade funds', '/task write increase the budget', '/task write change host security', '/task write amend the constitution'].entries()) {
     const reply = await handleTelegramUpdate({ update_id: 500 + offset, message: { from: { id: 1001 }, chat: { id: 50 }, text: command } }, 'http://127.0.0.1:1');
     assert.match(reply.text[0], /require|cannot|not found/i);
   }

@@ -4,7 +4,7 @@ import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { selectProvider, executeProviderRequest } from '../providers/providers.js';
 import { runAllowed } from '../execution/runner.js';
 import { classifyRequest, decide, evaluateRequestPolicy } from '../policy/policy.js';
-import { createTaskBranch, applyEdits, inspectChangedFiles, commitAll, createPullRequest, getRepositoryMetadata } from '../github/github.js';
+import { createTaskBranch, applyEdits, artifactsWouldChangeWorkspace, inspectChangedFiles, commitArtifacts, createPullRequest, getRepositoryMetadata } from '../github/github.js';
 import { query, esc } from '../task-engine/db.js';
 import { createHermesRequest } from './contract.js';
 import { dispatchHermes } from './adapter.js';
@@ -15,7 +15,7 @@ const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider
 const MAX_RETRIES = 2;
 const HIGH_RISK_ACTION = 'high_risk_execution';
 
-export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null } = {}) {
+export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null, dispatchHermesImpl = dispatchHermes } = {}) {
   const ownership = workerId && claimToken ? { workerId, claimToken } : null;
   const move = (status, patch = {}) => transition(task.id, status, patch, ownership);
   const workspace = getWorkspace(task.workspace_id);
@@ -56,7 +56,7 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: hermesRequest.deadline, phase: 'hermes' });
     recordEvidence(task.id, hermesGuard.ok ? 'hermes_selection' : 'hermes_prevented', { allowed: hermesGuard.ok, reason: hermesGuard.reason || 'credential-free Hermes permitted', requestId: hermesRequest.requestId });
     if (!hermesGuard.ok) return move(hermesGuard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: hermesGuard.reason });
-    const hermesResponse = await dispatchHermes(hermesRequest, {
+    const hermesResponse = await dispatchHermesImpl(hermesRequest, {
       allowedProviders: allowedProviders(workspace),
       shouldCancel: () => getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled',
     });
@@ -74,12 +74,35 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     if (getTask(task.id)?.status === 'cancelled') return getTask(task.id);
     if (providerResult.ownershipLost) return getTask(task.id);
     if (!providerResult.ok) return move('failed', { error: providerResult.error || 'provider failed' });
+    if (providerResult.handedOff) {
+      const evidence = { provider: providerResult.provider, mode: providerResult.mode, manualPacketPath: providerResult.manualPacketPath, responseIngestionRequired: true };
+      recordEvidence(task.id, 'manual_handoff_created', evidence);
+      return move('waiting_for_manual_response', { evidence, current_stage: 'manual_handoff' });
+    }
+    if (task.execution_intent === 'workspace_mutation' && providerResult.artifacts.length === 0) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace mutation task returned no artifacts', provider: providerResult.provider });
+      return move('failed', { error: 'Provider returned no artifacts for a workspace mutation task' });
+    }
+    if (task.execution_intent !== 'workspace_mutation' && providerResult.artifacts.length !== 0) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'read-only task returned workspace artifacts', provider: providerResult.provider });
+      return move('failed', { error: 'Provider returned workspace artifacts for a read-only task' });
+    }
+    if (task.execution_intent === 'read_only') {
+      const evidence = { provider: providerResult.provider, mode: providerResult.mode, model: providerResult.model || null, changedFiles: [], readOnly: true };
+      await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
+      return move('completed', { summary: { result: providerResult.summary || 'Read-only task completed', changedFiles: [], provider: providerResult.provider, model: providerResult.model || null }, evidence });
+    }
     if (await shouldStop(task.id, ownership)) return;
 
     const branch = await stage(task.id, ownership, 'apply_edits', () => applyProviderEdits(task, workspace, providerResult));
+    if (branch.changedFiles.length === 0) {
+      recordEvidence(task.id, 'artifact_application_refused', { reason: 'workspace mutation task produced no workspace delta', provider: providerResult.provider });
+      return move('failed', { error: 'Provider artifacts produced no workspace delta' });
+    }
     const validation = await stage(task.id, ownership, 'validate', () => validateWorkspace(task.id, workspace));
     if (!validation.ok) return move('failed', { error: validation.stderr || 'validation failed', summary: { validation } });
-    const commit = await stage(task.id, ownership, 'commit', () => commitAll(`Hermes task ${task.id}: ${task.request.slice(0, 60)}`, { cwd: workspace.root_path }));
+    const commit = await stage(task.id, ownership, 'commit', () => commitArtifacts(`Hermes task ${task.id}: ${task.request.slice(0, 60)}`, providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths }));
+    if (!commit.ok) return move('failed', { error: commit.stderr || 'workspace mutation commit failed' });
     const pr = await stage(task.id, ownership, 'pull_request', () => createPullRequest({ title: `Hermes task ${task.id}`, body: `Automated Hermes task evidence for ${task.request}`, cwd: workspace.root_path, draft: true }));
     const evidence = { context, plan, provider: providerResult.provider, mode: providerResult.mode, branch, validation, commit, pullRequest: pr };
     await stage(task.id, ownership, 'summarize', () => recordEvidence(task.id, 'final', evidence));
@@ -92,6 +115,13 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
 }
 
 async function processReadOnlyTestTask(task, workspace) {
+  // This deliberately bounded path never applies artifacts.  A persisted
+  // mutation intent must therefore fail before dispatch rather than reporting
+  // a false mutation completion after discarding a mock artifact.
+  if (task.execution_intent !== 'read_only') {
+    recordEvidence(task.id, 'mock_acceptance_denied', { reason: 'bounded mock path supports read-only intent only' });
+    return transition(task.id, 'failed', { error: 'bounded mock acceptance path supports read-only tasks only' });
+  }
   const actorId = taskActor(task);
   const request = createHermesRequest({ task, actorId, workspace, permittedSkillToolClasses: ['read','status'] });
   const hermesGuard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', deadline: request.deadline, phase: 'hermes' });
@@ -105,15 +135,19 @@ async function processReadOnlyTestTask(task, workspace) {
   const started = Date.now();
   const guard = guardDispatch({ task, workspace, actorId, channel: task.source_channel || 'api', selected, deadline: request.deadline, idempotencyKey: request.idempotencyKey, allowedProviders: ['mock'] });
   if (!guard.ok) return transition(task.id, guard.reason === 'task cancelled' ? 'cancelled' : 'failed', { error: guard.reason });
-  const packet = { taskId: task.id, request: request.objective, idempotencyKey: request.idempotencyKey, deadline: request.deadline, cancellationReference: request.cancellationReference };
+  const packet = { taskId: task.id, request: request.objective, executionIntent: task.execution_intent, idempotencyKey: request.idempotencyKey, deadline: request.deadline, cancellationReference: request.cancellationReference };
   const result = await executeProviderRequest({ selected, packet, workspace: null, deadline: request.deadline });
   if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider }); return getTask(task.id); }
   recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket: packet, responsePacket: { summary: result.summary, model: result.model }, error: result.error, latencyMs: Date.now() - started });
   recordUsage(task.id, result.usage);
   if (!result.ok) return transition(task.id, 'failed', { error: result.error || 'mock provider failed' });
+  if (result.artifacts.length !== 0) {
+    recordEvidence(task.id, 'artifact_application_refused', { reason: 'read-only bounded mock returned workspace artifacts', provider: result.provider });
+    return transition(task.id, 'failed', { error: 'Read-only bounded mock returned workspace artifacts' });
+  }
   const evidence = { provider: result.provider, mode: result.mode, model: result.model, changedFiles: [], readOnly: true };
   recordEvidence(task.id, 'final', evidence);
-  return transition(task.id, 'completed', { summary: { result: 'status reported', changedFiles: [], provider: result.provider, model: result.model }, evidence });
+  return transition(task.id, 'completed', { summary: { result: result.summary || 'Read-only task completed', changedFiles: [], provider: result.provider, model: result.model }, evidence });
 }
 
 async function stage(taskId, ownership, name, fn) {
@@ -180,7 +214,7 @@ function inspectWorkspace(workspace) {
   const repositoryPolicy = decide('repository', { repository: workspace.github_repository, allowlist: [workspace.github_repository] });
   if (!repositoryPolicy.allowed) throw new Error(repositoryPolicy.reason);
   const metadata = getRepositoryMetadata({ cwd: workspace.root_path });
-  return { metadata, allowedPaths: workspace.allowed_paths, buildCommands: workspace.build_commands, root: path.resolve(workspace.root_path) };
+  return { metadata, allowedPaths: workspace.allowed_paths, buildCommands: workspace.build_commands, root: path.resolve(workspace.root_path), changedFiles: inspectChangedFiles({ cwd: workspace.root_path }) };
 }
 
 function buildPlan(task, workspace, context) {
@@ -210,7 +244,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     const guard = guardDispatch({ task, workspace, actorId: taskActor(task), channel: task.source_channel || 'api', selected, deadline: hermesRequest.deadline, idempotencyKey: hermesRequest.idempotencyKey, allowedProviders: allowedProviders(workspace) });
     recordEvidence(task.id, guard.ok ? 'dispatch_attempt' : 'dispatch_prevented', { allowed: guard.ok, reason: guard.reason || 'guard passed', provider: selected.provider, attempt });
     if (!guard.ok) return { ok: false, error: guard.reason };
-    const requestPacket = { taskId: task.id, request: hermesRequest.objective, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference, dispatchOwnership: workerId && claimToken ? { workerId, claimToken } : null };
+    const requestPacket = { taskId: task.id, request: hermesRequest.objective, executionIntent: task.execution_intent, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference, dispatchOwnership: workerId && claimToken ? { workerId, claimToken } : null };
     const started = Date.now();
     let codexDispatch = null;
     if (selected.provider === 'codex') {
@@ -254,9 +288,9 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     last = result;
     const responsePacket = { artifacts: result.artifacts, summary: result.summary, model: result.model, manualPacketPath: result.manualPacketPath, accounting: { monetaryCostState: result.usage?.monetaryCostState || null, costCents: result.usage?.costCents ?? null } };
     const usage = result.usage || { provider: result.provider, mode: result.mode };
-    if (selected.provider === 'codex') finishCodexDispatchWithUsage(task.id, result.ok ? 'completed' : 'failed', { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started, usage });
+    if (selected.provider === 'codex') finishCodexDispatchWithUsage(task.id, result.outcomeUnknown ? 'outcome_unknown' : (result.ok ? 'completed' : 'failed'), { attemptId: codexDispatch.attempt.id, responsePacket, error: result.error, latencyMs: Date.now() - started, usage });
     else {
-      recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.ok ? 'completed' : 'failed', requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
+      recordProviderAttempt(task.id, { provider: result.provider, mode: result.mode, status: result.handedOff ? 'handed_off' : (result.ok ? 'completed' : 'failed'), requestPacket, responsePacket, error: result.error, latencyMs: Date.now() - started });
       recordUsage(task.id, usage);
     }
     if (getTask(task.id)?.status === 'cancelled') { recordEvidence(task.id, 'late_response_ignored', { provider: result.provider, attempt, dispatchStatus: result.ok ? 'completed' : 'failed' }); return { ok: false, error: 'cancelled' }; }
@@ -283,12 +317,15 @@ function remainingBudget(taskId) {
 }
 
 function applyProviderEdits(task, workspace, providerResult) {
+  const currentWorkspaceChanges = inspectChangedFiles({ cwd: workspace.root_path });
+  if (currentWorkspaceChanges.length !== 0) throw new Error('Workspace must be clean before applying provider artifacts');
+  if (!artifactsWouldChangeWorkspace(providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths })) throw new Error('Provider artifacts produced no workspace delta');
   const branchName = `hermes/${task.id}`;
   const branch = createTaskBranch(branchName, { cwd: workspace.root_path });
   if (!branch.ok) throw new Error(branch.stderr || 'failed to create task branch');
   const changed = applyEdits(providerResult.artifacts, { cwd: workspace.root_path, allowedPaths: workspace.allowed_paths });
   const inspected = inspectChangedFiles({ cwd: workspace.root_path });
-  const filesToRecord = inspected.length ? inspected : changed;
+  const filesToRecord = inspected;
   for (const file of filesToRecord) recordChangedFile(task.id, file);
   recordEvidence(task.id, 'branch', { branch: branchName, proposed: changed, changedFiles: filesToRecord });
   return { branch: branchName, changedFiles: filesToRecord };

@@ -474,19 +474,20 @@ test('review queue index is registered and validated as an exact non-unique keys
   db.close();
 });
 
-test('required CHECK inventory covers authorization and every Hermes 3A-3C constraint family', () => {
+test('required CHECK inventory covers task intent, authorization, and every Hermes 3A-3C constraint family', () => {
   assert.deepEqual(Object.keys(REQUIRED_TABLE_CHECKS).sort(), [
     'auth_decisions', 'auth_principals', 'auth_workspace_grants',
     'hermes_memory_candidate_rereviews', 'hermes_memory_candidate_reviews',
     'hermes_outcome_corrections', 'hermes_outcome_evaluation_failures',
     'hermes_outcome_source_events', 'hermes_verified_scorecard_sources',
-    'hermes_verified_scorecards',
+    'hermes_verified_scorecards', 'tasks',
   ]);
-  assert.equal(Object.values(REQUIRED_TABLE_CHECKS).reduce((total, checks) => total + checks.length, 0), 52);
+  assert.equal(Object.values(REQUIRED_TABLE_CHECKS).reduce((total, checks) => total + checks.length, 0), 53);
 });
 
 test('schema validation rejects removed or widened authorization and Hermes CHECK constraints', () => {
   const cases = [
+    ['task-intent', 'tasks', "CHECK(execution_intent IN ('read_only','workspace_mutation'))", "CHECK(execution_intent IN ('read_only','workspace_mutation','unknown'))"],
     ['auth-type', 'auth_principals', "CHECK(type IN ('admin','service'))", "CHECK(type IN ('admin','service','guest'))"],
     ['auth-status', 'auth_workspace_grants', "CHECK(status IN ('active','revoked','expired','superseded'))", "CHECK(status IN ('active','revoked','expired','superseded','forged'))"],
     ['auth-allowed', 'auth_decisions', 'CHECK(allowed IN (0,1))', 'CHECK(allowed IN (0,1,2))'],

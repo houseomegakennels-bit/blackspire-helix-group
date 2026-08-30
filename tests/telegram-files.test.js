@@ -18,6 +18,7 @@ const { start } = await import('../apps/api/server.js');
 const { handleTelegramAttachment, handleTelegramUpdate, sendTelegramDocument, dispatchReply } = await import('../apps/telegram/bot.js');
 const { attachmentsForTask } = await import('../packages/task-engine/attachments.js');
 const { getTask } = await import('../packages/task-engine/tasks.js');
+const { query } = await import('../packages/task-engine/db.js');
 
 const files = new Map(); // fileId -> { filePath, buffer }
 let sentDocuments = [];
@@ -108,7 +109,7 @@ test('getFile failure is surfaced explicitly instead of silently dropping the at
 test('voice note: mocked successful transcription creates a Hermes task from the transcript', async () => {
   installTelegramMock();
   process.env.TRANSCRIPTION_ADAPTER = 'mock';
-  process.env.TRANSCRIPTION_MOCK_TEXT = 'Create docs/from-voice.md with proof text';
+  process.env.TRANSCRIPTION_MOCK_TEXT = 'write: Create docs/from-voice.md with proof text';
   const audio = Buffer.from('fake-ogg-bytes');
   files.set('voice-ok', { filePath: 'voice/voice_ok.oga', buffer: audio });
   const update = { message: { from: { id: 1001 }, chat: { id: 42 }, voice: { file_id: 'voice-ok', file_size: audio.length, mime_type: 'audio/ogg' } } };
@@ -119,6 +120,22 @@ test('voice note: mocked successful transcription creates a Hermes task from the
   const attachment = attachmentsForTask(taskId)[0];
   assert.equal(attachment.transcription_status, 'ok');
   assert.equal(attachment.kind, 'voice');
+  delete process.env.TRANSCRIPTION_ADAPTER;
+  delete process.env.TRANSCRIPTION_MOCK_TEXT;
+  uninstallTelegramMock();
+});
+
+test('voice note missing explicit intent is durably recorded as rejected', async () => {
+  installTelegramMock();
+  process.env.TRANSCRIPTION_ADAPTER = 'mock';
+  process.env.TRANSCRIPTION_MOCK_TEXT = 'inspect the workspace';
+  const audio = Buffer.from('voice-without-intent');
+  files.set('voice-no-intent', { filePath: 'voice/no_intent.oga', buffer: audio });
+  const update = { message: { from: { id: 1001 }, chat: { id: 42 }, voice: { file_id: 'voice-no-intent', file_size: audio.length, mime_type: 'audio/ogg' } } };
+  const result = await handleTelegramAttachment(update, 'http://localhost:8896');
+  assert.match(result.text[0], /explicit intent/);
+  const row = query("SELECT * FROM telegram_attachments WHERE file_id='voice-no-intent'")[0];
+  assert.equal(row?.transcription_status, 'intent_rejected');
   delete process.env.TRANSCRIPTION_ADAPTER;
   delete process.env.TRANSCRIPTION_MOCK_TEXT;
   uninstallTelegramMock();
@@ -167,7 +184,7 @@ test('sendTelegramDocument posts a multipart form with chat_id, caption, and the
 test('evidence bundle delivery: /export produces a document reply for large bundles and dispatchReply sends + cleans it up', async () => {
   installTelegramMock();
   process.env.TELEGRAM_INLINE_MAX_CHARS = '10'; // force document mode regardless of actual bundle size
-  const reply = await handleTelegramUpdate({ update_id: 100, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task Create `docs/export-target.md`' } }, 'http://localhost:8896');
+  const reply = await handleTelegramUpdate({ update_id: 100, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task write Create `docs/export-target.md`' } }, 'http://localhost:8896');
   const taskId = extractTaskId(reply.text[0]);
   const exportReply = await handleTelegramUpdate({ update_id: 101, message: { from: { id: 1001 }, chat: { id: 42 }, text: `/export ${taskId}` } }, 'http://localhost:8896');
   assert.ok(exportReply.document, 'large export must be delivered as a document, not truncated text');
@@ -183,7 +200,7 @@ test('evidence bundle delivery: /export produces a document reply for large bund
 test('large-log delivery: /logs produces a document reply instead of truncating', async () => {
   installTelegramMock();
   process.env.TELEGRAM_INLINE_MAX_CHARS = '10';
-  const reply = await handleTelegramUpdate({ update_id: 102, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task Create `docs/log-target.md`' } }, 'http://localhost:8896');
+  const reply = await handleTelegramUpdate({ update_id: 102, message: { from: { id: 1001 }, chat: { id: 42 }, text: '/task write Create `docs/log-target.md`' } }, 'http://localhost:8896');
   const taskId = extractTaskId(reply.text[0]);
   const logsReply = await handleTelegramUpdate({ update_id: 103, message: { from: { id: 1001 }, chat: { id: 42 }, text: `/logs ${taskId}` } }, 'http://localhost:8896');
   assert.ok(logsReply.document, 'large log history must be delivered as a document, not truncated text');

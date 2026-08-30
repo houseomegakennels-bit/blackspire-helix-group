@@ -136,7 +136,7 @@ test('unknown Codex outcomes are terminal, distinct, and never invite automatic 
 
 test('canonical task-state helpers obey deterministic terminal and in-flight fixtures', () => {
   const helperSource = appScript.slice(0, appScript.indexOf('/* ---------- Helix Core state ---------- */'))
-    + '\nglobalThis.__taskState = { canonicalTaskStatus, statusInfo, cancellable };';
+    + '\nglobalThis.__taskState = { canonicalTaskStatus, statusInfo, taskOperatorDetail, cancellable };';
   const context = {
     document: { getElementById: () => null },
     window: { addEventListener() {} },
@@ -145,9 +145,18 @@ test('canonical task-state helpers obey deterministic terminal and in-flight fix
   };
   vm.runInNewContext(helperSource, context, { filename: 'jarvis-task-state.js' });
   const helpers = context.__taskState;
-  for (const status of ['queued', 'planning', 'running', 'waiting_for_approval', 'validating']) {
+  for (const status of ['queued', 'planning', 'running', 'waiting_for_approval', 'waiting_for_manual_response', 'validating']) {
     assert.equal(helpers.cancellable({ status }), true, `${status} remains cancellable`);
   }
+  assert.equal(helpers.statusInfo({ status: 'waiting_for_manual_response' }).label, 'Awaiting manual response');
+  assert.equal(helpers.statusInfo({ status: 'waiting_for_manual_response' }).tone, 'warn');
+  assert.equal(helpers.statusInfo({ status: 'waiting_for_manual_response' }).core, 'processing');
+  assert.match(helpers.taskOperatorDetail({ status: 'waiting_for_manual_response' }), /verified response must be ingested[\s\S]*also be cancelled/i);
+  assert.doesNotMatch(helpers.taskOperatorDetail({ status: 'waiting_for_manual_response' }), /Approval center|Unknown state/i);
+  assert.equal(helpers.taskOperatorDetail({ status: 'waiting_for_approval' }), 'A decision is required in the Approval center.');
+  assert.match(appScript, /'task\.waiting_for_manual_response': \['Awaiting manual response', 'warn'\]/);
+  assert.match(appScript, /filter\(\(t\) => t\.status === 'waiting_for_approval'\)/, 'Approval Center remains approval-only');
+  assert.doesNotMatch(appScript, /waiting_for_manual_response[^\n]*(?:approveTask|pauseTask|resumeTask)/, 'manual-response waits expose no invalid control action');
   for (const status of ['completed', 'failed', 'cancelled']) assert.equal(helpers.cancellable({ status }), false);
   const escaped = { status: 'failed', providerAttribution: [{ provider: 'codex', status: 'outcome_unknown' }] };
   assert.equal(helpers.canonicalTaskStatus(escaped), 'outcome_unknown');
