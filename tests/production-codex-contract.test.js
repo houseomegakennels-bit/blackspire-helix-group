@@ -15,8 +15,8 @@ const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { activeModes, codexCliAvailable, resolveProviderAvailability, parseCodexCliResult, runCodexCliPacket, runCliChild } = await import('../packages/providers/providers.js');
 const { createTask, claimNext, heartbeat, transition, prepareCodexDispatch, finishCodexDispatch, finishCodexDispatchWithUsage, recordUsage, taskRecords, monetarySpend, getTask } = await import('../packages/task-engine/tasks.js');
-const { closeDb } = await import('../packages/task-engine/db.js');
-const { upsertWorkspace, quarantineWorkspace, workspaceDispatchEligibility, recoverWorkspace } = await import('../packages/workspace-registry/workspaces.js');
+const { closeDb, execSql, query } = await import('../packages/task-engine/db.js');
+const { upsertWorkspace, quarantineKeys, quarantineWorkspace, workspaceDispatchEligibility, recoverWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { guardDispatch } = await import('../packages/execution/dispatchGuard.js');
 
 const bin = path.join(root, 'bin');
@@ -304,6 +304,43 @@ test('unproven containment durably quarantines only the affected workspace until
   assert.equal(guardDispatch({ task: taskA, workspace: { id: 'quarantine-a' }, phase: 'hermes' }).ok, true);
 });
 
+test('quarantine keys share directory identity across distinct path spellings', () => {
+  const identityA = { logicalRoot: '/mount/a', physicalRoot: '/physical/a', rootDevice: '2049', rootInode: '8193' };
+  const identityB = { logicalRoot: '/mount/b', physicalRoot: '/physical/b', rootDevice: '2049', rootInode: '8193' };
+  const shared = quarantineKeys(identityA).filter((key) => quarantineKeys(identityB).includes(key));
+  assert.equal(shared.length, 1, 'the same device/inode must have one shared durable lookup key');
+  assert.equal(quarantineKeys(identityA).filter((key) => key.startsWith('workspace_quarantine_root:')).length, 2, 'logical and physical path keys remain present');
+  assert.equal(quarantineKeys({ ...identityB, rootInode: '8194' }).some((key) => shared.includes(key)), false, 'a different directory identity must not share a lookup key');
+  assert.throws(() => quarantineKeys({ logicalRoot: '/a', physicalRoot: '/a' }), /directory identity unavailable/);
+});
+
+test('verified recovery through an alias clears every path key for the shared directory identity', () => {
+  const workspace = path.join(root, 'containment-recovery-alias-target');
+  const unrelated = path.join(root, 'containment-recovery-unrelated');
+  const aliasA = path.join(root, 'containment-recovery-alias-a');
+  const aliasB = path.join(root, 'containment-recovery-alias-b');
+  fs.mkdirSync(workspace, { recursive: true });
+  fs.mkdirSync(unrelated, { recursive: true });
+  fs.symlinkSync(workspace, aliasA, 'dir');
+  fs.symlinkSync(workspace, aliasB, 'dir');
+  for (const [id, rootPath] of [['recovery-alias-a', aliasA], ['recovery-alias-b', aliasB]]) {
+    upsertWorkspace({ id, name: id, githubRepository: `local/${id}`, allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath });
+  }
+  upsertWorkspace({ id: 'recovery-unrelated', name: 'recovery-unrelated', githubRepository: 'local/recovery-unrelated', allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: unrelated });
+
+  quarantineWorkspace('recovery-alias-a');
+  quarantineWorkspace('recovery-unrelated');
+  assert.equal(workspaceDispatchEligibility('recovery-alias-b').eligible, false);
+  assert.throws(() => recoverWorkspace('recovery-alias-b', { integrityVerified: true }), /requires verified process containment and workspace integrity/);
+  assert.throws(() => recoverWorkspace('recovery-alias-b', { containmentVerified: true }), /requires verified process containment and workspace integrity/);
+  assert.deepEqual(recoverWorkspace('recovery-alias-b', { containmentVerified: true, integrityVerified: true }), { eligible: true, state: 'available' });
+  assert.deepEqual(workspaceDispatchEligibility('recovery-alias-a'), { eligible: true, state: 'available' });
+  assert.equal(workspaceDispatchEligibility('recovery-unrelated').eligible, false, 'shared-identity recovery must not clear an unrelated quarantine');
+  quarantineWorkspace('recovery-alias-b');
+  assert.equal(workspaceDispatchEligibility('recovery-alias-a').eligible, false, 'quarantine is symmetric across aliases');
+  recoverWorkspace('recovery-alias-a', { containmentVerified: true, integrityVerified: true });
+});
+
 test('a failed durable quarantine write prevents provider launch', async () => {
   const workspace = path.join(root, 'containment-quarantine-write-failure');
   fs.mkdirSync(workspace, { recursive: true });
@@ -317,6 +354,28 @@ test('a failed durable quarantine write prevents provider launch', async () => {
     runCliChildImpl: async () => { childRuns += 1; return { status: 0, stdout: '', stderr: '', containmentFailed: false }; },
   }), /durable quarantine unavailable/);
   assert.equal(childRuns, 0, 'no workspace is touched unless quarantine is durable first');
+});
+
+test('a failed directory-identity quarantine write rolls back path keys before provider launch', async () => {
+  const workspace = path.join(root, 'containment-quarantine-identity-write-failure');
+  fs.mkdirSync(workspace, { recursive: true });
+  upsertWorkspace({ id: 'quarantine-identity-write-failure', name: 'quarantine-identity-write-failure', githubRepository: 'local/quarantine-identity-write-failure', allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['codex'] }, budgetCents: 100, enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: workspace });
+  const packet = path.join(workspace, 'task.json');
+  fs.writeFileSync(packet, '{}');
+  const quarantineCount = () => query("SELECT COUNT(*) AS count FROM system_flags WHERE key LIKE 'workspace_quarantine_root:%' OR key LIKE 'workspace_quarantine_identity:%';")[0].count;
+  const baselineQuarantineCount = quarantineCount();
+  execSql("CREATE TRIGGER reject_quarantine_identity BEFORE INSERT ON system_flags WHEN NEW.key LIKE 'workspace_quarantine_identity:%' BEGIN SELECT RAISE(ABORT, 'identity quarantine unavailable'); END;");
+  let childRuns = 0;
+  try {
+    await assert.rejects(() => runCodexCliPacket(packet, {
+      workspaceId: 'quarantine-identity-write-failure', workspaceRoot: workspace, executionIntent: 'read_only',
+      runCliChildImpl: async () => { childRuns += 1; return { status: 0, stdout: '', stderr: '', containmentFailed: false }; },
+    }), /identity quarantine unavailable/);
+    assert.equal(childRuns, 0);
+    assert.equal(quarantineCount(), baselineQuarantineCount, 'the failed transaction leaves no partial quarantine keys');
+  } finally {
+    execSql('DROP TRIGGER reject_quarantine_identity;');
+  }
 });
 
 test('a quarantined workspace root retarget cannot redirect provider launch', async () => {

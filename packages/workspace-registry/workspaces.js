@@ -37,7 +37,12 @@ export function workspaceRootIdentity(id) {
   return { logicalRoot, physicalRoot, rootDevice: String(stat.dev), rootInode: String(stat.ino) };
 }
 
-const quarantineKeys = ({ logicalRoot, physicalRoot }) => [...new Set([logicalRoot, physicalRoot])].map((root) => `workspace_quarantine_root:${createHash('sha256').update(root).digest('hex')}`);
+export function quarantineKeys({ logicalRoot, physicalRoot, rootDevice, rootInode }) {
+  if (!/^\d+$/.test(rootDevice) || !/^\d+$/.test(rootInode)) throw new Error('workspace directory identity unavailable for quarantine');
+  const pathKeys = [...new Set([logicalRoot, physicalRoot])].map((root) => `workspace_quarantine_root:${createHash('sha256').update(root).digest('hex')}`);
+  const directoryKey = `workspace_quarantine_identity:${createHash('sha256').update(`${rootDevice}:${rootInode}`).digest('hex')}`;
+  return [...pathKeys, directoryKey];
+}
 
 export function quarantineWorkspace(id, { reason = 'workspace integrity is unverified', taskId = null } = {}) {
   const identity = workspaceRootIdentity(id);
@@ -69,7 +74,14 @@ export function recoverWorkspace(id, { containmentVerified = false, integrityVer
   if (expectedPhysicalRoot && identity.physicalRoot !== expectedPhysicalRoot) throw new Error('workspace recovery requires the quarantined physical root identity');
   const stored = query(`SELECT value FROM system_flags WHERE key IN (${quarantineKeys(identity).map(esc).join(',')});`).map((row) => JSON.parse(row.value));
   if (!stored.length || stored.some((entry) => entry?.rootDevice !== identity.rootDevice || entry?.rootInode !== identity.rootInode)) throw new Error('workspace recovery requires the quarantined directory identity');
-  transaction(() => { for (const key of quarantineKeys(identity)) run('DELETE FROM system_flags WHERE key=?;', [key]); });
+  transaction(() => {
+    const flags = query("SELECT key,value FROM system_flags WHERE key LIKE 'workspace_quarantine_root:%' OR key LIKE 'workspace_quarantine_identity:%';");
+    for (const flag of flags) {
+      let value;
+      try { value = JSON.parse(flag.value); } catch { continue; }
+      if (value?.state === 'quarantined' && value.rootDevice === identity.rootDevice && value.rootInode === identity.rootInode) run('DELETE FROM system_flags WHERE key=?;', [flag.key]);
+    }
+  });
   return workspaceDispatchEligibility(id);
 }
 
