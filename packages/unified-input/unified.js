@@ -3,6 +3,7 @@ import { query, execSql, esc, transaction } from '../task-engine/db.js';
 import { createTask, getTask, getFlag, transition, recordEvidence, recordTaskEvent, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { evaluateRequestPolicy } from '../policy/policy.js';
+import { serializeTaskWithCanonicalResult } from '../task-engine/canonical-result.js';
 
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
 const cancellationTokens = new Map();
@@ -72,7 +73,7 @@ export function getConversation(conversationId) {
   const tasks = query(`SELECT * FROM tasks WHERE conversation_id=${esc(conversationId)} ORDER BY created_at;`).map((task) => {
     const records = taskRecords(task.id);
     return {
-      ...task,
+      ...serializeTaskWithCanonicalResult(task, records.providerAttempts),
       providerAttribution: records.providerAttempts.map(({ provider, mode, status, response_packet, created_at }) => {
         let model = null;
         try { model = JSON.parse(response_packet || '{}').model || null; } catch { /* sanitized legacy packet */ }
@@ -88,6 +89,10 @@ export function getConversation(conversationId) {
     events: conversationEvents(conversationId),
     deliveries: deliveryRecords(conversationId),
   };
+}
+
+export function getConversationRecord(conversationId) {
+  return query(`SELECT * FROM conversations WHERE id=${esc(conversationId)};`)[0] || null;
 }
 
 export function channelCanAccessConversation(channel, channelKey, conversationId) {

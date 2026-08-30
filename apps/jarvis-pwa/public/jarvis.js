@@ -410,15 +410,37 @@ function renderConversation() {
   byId('convSync').textContent = store.loading ? 'refreshing…' : store.refreshError ? 'stale · reconnecting' : store.lastSync ? 'synced ' + fmtTime(store.lastSync) : '—';
   const list = byId('messageList'); list.replaceChildren();
   const messages = conv?.messages || [];
+  const tasksByInput = new Map();
+  for (const task of conv?.tasks || []) {
+    if (!task.input_id) continue;
+    const bound = tasksByInput.get(task.input_id) || [];
+    bound.push(task);
+    tasksByInput.set(task.input_id, bound);
+  }
   byId('messagesEmpty').hidden = messages.length > 0;
   messages.forEach((m, i) => {
     const li = el('li'); li.style.setProperty('--i', String(Math.min(i, 8)));
-    const chip = el('span', 'chip', m.channel || 'jarvis'); chip.dataset.ch = m.channel || 'jarvis';
+    const chip = el('span', 'chip', 'USER'); chip.dataset.ch = m.channel || 'jarvis';
     li.append(chip);
     if (m.policy_status === 'denied') { const d = el('span', 'chip', 'denied'); d.dataset.ch = 'denied'; li.append(document.createTextNode(' '), d); }
     li.append(el('p', null, m.text || ''), el('span', 'stamp', fmtTime(m.created_at)));
     list.append(li);
+    for (const task of tasksByInput.get(m.id) || []) {
+      const reply = el('li'); reply.style.setProperty('--i', String(Math.min(i + 1, 8))); reply.dataset.taskId = task.id;
+      const jarvis = el('span', 'chip', 'JARVIS'); jarvis.dataset.ch = 'jarvis';
+      reply.append(jarvis, el('p', null, taskConversationResponse(task)), el('span', 'stamp mono', `task ${task.id} · ${fmtTime(task.updated_at)}`));
+      list.append(reply);
+    }
   });
+}
+
+function taskConversationResponse(task) {
+  const status = canonicalTaskStatus(task);
+  if (status === 'completed') return task.canonicalResult || 'Task completed; no textual response was recorded.';
+  if (status === 'outcome_unknown') return 'AUTOMATIC RETRY BLOCKED · OPERATOR REVIEW REQUIRED';
+  if (status === 'failed') return task.error ? `Task failed: ${task.error}` : 'Task failed; no successful Jarvis response was recorded.';
+  if (status === 'cancelled') return 'Task cancelled; no successful Jarvis response was recorded.';
+  return `${statusInfo(task).label}; Jarvis has not recorded a final response.`;
 }
 
 function renderTaskDetail() {
@@ -446,10 +468,7 @@ function renderTaskDetail() {
   set('taskDuration', task && completedAt ? fmtDuration(startedAt, completedAt) : null);
   set('taskIdem', task?.idempotency_key);
   set('taskRequest', task?.request);
-  let outcome = '—';
-  if (canonicalTaskStatus(task) === 'outcome_unknown') outcome = 'AUTOMATIC RETRY BLOCKED · OPERATOR REVIEW REQUIRED';
-  else if (task?.error) outcome = String(task.error);
-  else if (task?.summary) { try { const s = JSON.parse(task.summary); outcome = s.result || task.summary; } catch { outcome = String(task.summary); } }
+  const outcome = task ? taskConversationResponse(task) : '—';
   set('taskOutcome', outcome);
   byId('cancelBtn').disabled = !cancellable(task);
   renderTaskEvidence(task);
@@ -591,14 +610,8 @@ function renderEvidenceView() {
   wrap.append(el('h3', null, 'Recorded evidence kinds'));
   if (kinds.length) { const row = el('div', 'row'); for (const kind of kinds) row.append(el('span', 'chip', kind)); wrap.append(row); }
   else wrap.append(el('p', 'muted stamp', 'None recorded yet.'));
-  let outcome = null;
-  if (task.summary) { try { outcome = JSON.parse(task.summary); } catch { outcome = { result: String(task.summary) }; } }
-  if (outcome) {
-    wrap.append(el('h3', null, 'Completion summary'));
-    wrap.append(el('p', null, String(outcome.result || '—')));
-    if (Array.isArray(outcome.changedFiles) && outcome.changedFiles.length) wrap.append(el('p', 'stamp mono', 'changed files: ' + outcome.changedFiles.length));
-    if (outcome.validation) wrap.append(el('p', 'stamp mono', 'validation: recorded'));
-  }
+  wrap.append(el('h3', null, 'Completion summary'));
+  wrap.append(el('p', null, taskConversationResponse(task)));
   const note = el('p', 'muted stamp', 'Full sanitized bundle: use the evidence downloads on the Task screen.');
   wrap.append(note);
 }

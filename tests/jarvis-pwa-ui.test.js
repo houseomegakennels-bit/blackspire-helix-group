@@ -134,6 +134,27 @@ test('unknown Codex outcomes are terminal, distinct, and never invite automatic 
   assert.doesNotMatch(appScript, /outcome_unknown[^\n]*(?:retryTask|submitCommand)/, 'unknown outcomes never trigger execution');
 });
 
+test('conversation pairs each user input to task-id-bound canonical Jarvis text without refresh duplicates', () => {
+  assert.match(appScript, /tasksByInput\.get\(task\.input_id\)/, 'pairing uses persisted input ids, not array position');
+  assert.match(appScript, /reply\.dataset\.taskId = task\.id/, 'each rendered Jarvis response retains its task identity');
+  assert.match(appScript, /messageList'\); list\.replaceChildren\(\)/, 'every refresh replaces the prior projection');
+  assert.match(appScript, /task\.canonicalResult \|\| 'Task completed; no textual response was recorded\.'/);
+  assert.doesNotMatch(appScript, /task\.summary[\s\S]{0,120}Completion summary/, 'the PWA does not independently select task summary results');
+});
+
+test('canonical provider text is rendered only through inert text helpers', () => {
+  assert.match(appScript, /node\.textContent = String\(text\)/, 'el() assigns dynamic text through textContent');
+  assert.match(appScript, /el\('p', null, taskConversationResponse\(task\)\)/, 'Task and Evidence use the shared display value');
+  assert.doesNotMatch(appScript, /innerHTML/, 'provider text has no HTML injection sink');
+  const payload = '<script>globalThis.pwned=true</script><img src=x onerror=alert(1)>';
+  const task = { status: 'completed', canonicalResult: payload };
+  const helperSource = appScript.slice(0, appScript.indexOf('function renderTaskDetail'))
+    + '\nglobalThis.__response = taskConversationResponse;';
+  const context = { document: { getElementById: () => null }, window: { addEventListener() {} }, location: { hash: '' }, console };
+  vm.runInNewContext(helperSource, context, { filename: 'jarvis-canonical-response.js' });
+  assert.equal(context.__response(task), payload, 'script-like text stays data until el() assigns textContent');
+});
+
 test('canonical task-state helpers obey deterministic terminal and in-flight fixtures', () => {
   const helperSource = appScript.slice(0, appScript.indexOf('/* ---------- Helix Core state ---------- */'))
     + '\nglobalThis.__taskState = { canonicalTaskStatus, statusInfo, taskOperatorDetail, cancellable };';
