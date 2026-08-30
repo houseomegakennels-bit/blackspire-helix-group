@@ -168,11 +168,11 @@ const api = {
     const response = await fetch(path, { method, credentials: 'same-origin', headers, body: options.body, signal: options.signal });
     let body = {};
     try { body = await response.json(); } catch { body = { error: 'Unexpected response from control plane' }; }
-    if (response.status === 401 && store.authed) { store.authed = false; setNotice('sessionNotice', 'Session expired. Enter the admin token to continue.'); render(); }
+    if (response.status === 401 && store.authed) { store.authed = false; setNotice('sessionNotice', 'Session expired. Enter your password to continue.'); render(); }
     return { response, body };
   },
   session: () => api.request('/api/auth/session'),
-  login: (adminToken) => api.request('/api/auth/login', { method: 'POST', body: JSON.stringify({ adminToken }) }),
+  login: (password) => api.request('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
   logout: () => api.request('/api/auth/logout', { method: 'POST', body: '{}' }),
   health: (signal) => api.request('/health', { signal }),
   ready: (signal) => api.request('/ready', { signal }),
@@ -794,14 +794,16 @@ async function checkSession() {
   store.principalId = store.authed && typeof body.principalId === 'string' ? body.principalId : '';
   store.sessionExpiresAt = store.authed ? body.expiresAt || null : null;
   if (body.csrfToken) store.csrfToken = body.csrfToken;
-  if (!store.authed && store.csrfToken) setNotice('sessionNotice', 'Session expired or not signed in. Enter the admin token to continue.');
+  if (!store.authed && store.csrfToken) setNotice('sessionNotice', 'Session expired or not signed in. Enter your password to continue.');
   return store.authed;
 }
 async function login() {
-  const input = byId('token');
-  const { response, body } = await api.login(input.value);
+  const input = byId('password');
+  const password = input.value;
   input.value = '';
-  if (!response.ok) { setNotice('sessionNotice', response.status === 429 ? 'Too many attempts — wait a minute and retry.' : 'Sign-in failed. Check the admin token.'); return; }
+  const { response, body } = await api.login(password);
+  input.value = '';
+  if (!response.ok) { setNotice('sessionNotice', response.status === 429 ? 'Too many attempts — wait a minute and retry.' : 'Sign-in failed. Invalid credentials.'); return; }
   store.csrfToken = body.csrfToken || ''; store.authed = true;
   await checkSession();
   setNotice('sessionNotice', '');
@@ -911,7 +913,7 @@ function loadHelixEnhancement() {
 /* ---------- wire up ---------- */
 byId('loginBtn').addEventListener('click', login);
 byId('logoutBtn').addEventListener('click', logout);
-byId('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+byId('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
 byId('sendBtn').addEventListener('click', () => submitCommand(byId('cmd').value, store.conversationId, 'composerNotice', byId('executionIntent').value));
 byId('followBtn').addEventListener('click', () => submitCommand(byId('followCmd').value, store.conversationId, 'followNotice', byId('followExecutionIntent').value));
 byId('cmd').addEventListener('input', () => { store.idemKey = ''; });

@@ -120,7 +120,10 @@ case "$mode" in
       done
     fi
     [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
-    [[ -n "${COMMAND_ADMIN_TOKEN:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production authentication is not configured"
+    [[ -n "${COMMAND_ADMIN_PASSWORD_HASH:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production password authentication is not configured"
+    if [[ "${ALLOW_BEARER_AUTH:-false}" == "true" ]]; then
+      [[ -n "${COMMAND_ADMIN_TOKEN:-}" ]] || fail "production bearer authentication is enabled without COMMAND_ADMIN_TOKEN"
+    fi
     [[ "${BLACKSPIRE_RUN_MIGRATIONS:-false}" != "true" ]] || fail "migrations must not run implicitly; approve them separately"
     # Loopback-only bind boundary. The production application port is private; the reverse
     # proxy is the only public surface, so a wildcard or non-loopback host is rejected here

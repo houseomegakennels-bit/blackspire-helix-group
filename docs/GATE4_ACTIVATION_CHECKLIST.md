@@ -27,7 +27,8 @@ None of these may be generated, invented, or defaulted by tooling.
 | Value | Where it goes | Notes |
 | --- | --- | --- |
 | Approved commit SHA | `BLACKSPIRE_GATE4_APPROVED_SHA` | Full 40-character lowercase SHA, reviewed and merged |
-| `COMMAND_ADMIN_TOKEN` | `/etc/blackspire/command.env` | Operator-generated secret |
+| `COMMAND_ADMIN_PASSWORD_HASH` | `/etc/blackspire/command.env` | Generated interactively with `npm run auth:hash-password` |
+| `COMMAND_ADMIN_TOKEN` | `/etc/blackspire/command.env` | Separate machine credential; required only if bearer auth is explicitly enabled |
 | `SESSION_SECRET` | `/etc/blackspire/command.env` | Operator-generated secret |
 | `PUBLIC_BASE_URL` | `/etc/blackspire/command.env` | The real production URL; the example ships a `.invalid` placeholder |
 | `PORT` | `/etc/blackspire/command.env` | Reviewed default 8789; confirm it is still free before use |
@@ -77,7 +78,7 @@ set -euo pipefail
 test ! -e /etc/blackspire/command.env && test ! -L /etc/blackspire/command.env
 install -o root -g blackspire -m 0640 \
   scripts/production-profile.env.example /etc/blackspire/command.env
-# then edit it and supply PUBLIC_BASE_URL, COMMAND_ADMIN_TOKEN, SESSION_SECRET
+# then edit it and supply PUBLIC_BASE_URL, COMMAND_ADMIN_PASSWORD_HASH, SESSION_SECRET
 bash scripts/with-node.sh scripts/select-production-port.js   # confirm PORT is free
 
 # 2. Workspace checkout — never inside releases/, never the release root

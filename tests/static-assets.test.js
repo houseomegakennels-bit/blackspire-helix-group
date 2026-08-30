@@ -13,9 +13,14 @@ process.env.BLACKSPIRE_DB_PATH = path.join(root, 'static.sqlite');
 process.env.COMMAND_ADMIN_TOKEN = 'static-token';
 process.env.PORT = '8899';
 process.env.HERMES_TEST_PROVIDER = 'mock';
+process.env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID = 'static-test-operator';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const authDb = new DatabaseSync(process.env.BLACKSPIRE_DB_PATH);
+const authNow = Date.now();
+authDb.prepare('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run('static-test-operator', 'admin', 'static-test-operator', 'bearer', null, 'active', authNow, null, null, null, 1, authNow);
+authDb.close();
 const { closeDb } = await import('../packages/task-engine/db.js');
 const { start } = await import('../apps/api/server.js');
 
@@ -263,6 +268,7 @@ test('production CSP does not permit inline script or style', async () => {
       PORT: '8901',
       BLACKSPIRE_DB_PATH: dbPath,
       COMMAND_ADMIN_TOKEN: crypto.randomBytes(24).toString('hex'),
+      COMMAND_ADMIN_PASSWORD_HASH: (await import('../packages/shared/password-auth.js')).hashAdminPassword('production-pass'),
       SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
       PUBLIC_BASE_URL: 'https://command.example.com',
       TRUST_PROXY: 'false',

@@ -2,7 +2,8 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN_TOKEN, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
+import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
+import { verifyAdminPassword } from '../../packages/shared/password-auth.js';
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
@@ -305,7 +306,14 @@ function memoryCandidateReviewQueueRoute(req, res, auth, url, workspaceId) {
 async function login(req, res) {
   const limit = checkLimit(req, 'login', Number(process.env.LOGIN_RATE_LIMIT || 5), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
-  const session = createSession(body.adminToken, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null });
+  const password = body && !Array.isArray(body) ? body.password : null;
+  const legacyDevelopmentPassword = process.env.NODE_ENV !== 'production' && body?.adminToken;
+  const submitted = password ?? legacyDevelopmentPassword;
+  const valid = process.env.NODE_ENV === 'production'
+    ? verifyAdminPassword(submitted, ADMIN_PASSWORD_HASH)
+    : (password !== null && ADMIN_PASSWORD_HASH && verifyAdminPassword(password, ADMIN_PASSWORD_HASH)) || legacyDevelopmentPassword === ADMIN_TOKEN;
+  const principal = valid ? configuredEvaluationAdminPrincipal() : null;
+  const session = principal ? createSession({ ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: principal.principalId }) : null;
   if (!session) { audit(null, 'auth', 'login.failed', { ip: clientIp(req) }); return json(res, 401, { error: 'invalid credentials' }); }
   audit(null, 'auth', 'login.succeeded', { ip: clientIp(req) });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: session.expiresAt }, { 'set-cookie': sessionCookie(session) });
@@ -321,7 +329,7 @@ async function testModeLogin(req, res) {
     audit(null, 'test-mode', 'session.denied', { actor: TEST_MODE.testActor });
     return json(res, 404, { error: 'test session unavailable' });
   }
-  const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null, maxExpiresAt: Date.parse(TEST_MODE.expiresAt) });
+  const session = createSession({ ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null, maxExpiresAt: Date.parse(TEST_MODE.expiresAt) });
   if (!session) return json(res, 503, { error: 'test session unavailable' });
   audit(null, 'test-mode', 'session.created', { actor: TEST_MODE.testActor });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: Math.min(session.expiresAt, Date.parse(TEST_MODE.expiresAt)) }, { 'set-cookie': sessionCookie(session, { secure: true }) });

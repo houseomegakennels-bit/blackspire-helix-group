@@ -7,6 +7,7 @@ import { redact } from './util.js';
 import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions } from './sessions.js';
 import { rateLimit } from './rateLimits.js';
 import { validateProductionHost, validateProductionPort, PRODUCTION_STATE_OWNER } from './bind.js';
+import { parseAdminPasswordHash } from './password-auth.js';
 
 export { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, rateLimit };
 
@@ -45,7 +46,8 @@ export function requireProductionSafeConfig(env = process.env, { dbDir = path.di
         if (env[key]) errors.push(`${key} is forbidden in the no-provider production profile.`);
       }
     }
-    if (!env.COMMAND_ADMIN_TOKEN || env.COMMAND_ADMIN_TOKEN === 'dev-admin-token-change-me' || env.COMMAND_ADMIN_TOKEN.length < 24) errors.push('Set a strong COMMAND_ADMIN_TOKEN before production use.');
+    if (!parseAdminPasswordHash(env.COMMAND_ADMIN_PASSWORD_HASH)) errors.push('Set a valid COMMAND_ADMIN_PASSWORD_HASH before production use.');
+    if (env.ALLOW_BEARER_AUTH === 'true' && (!env.COMMAND_ADMIN_TOKEN || env.COMMAND_ADMIN_TOKEN === 'dev-admin-token-change-me' || env.COMMAND_ADMIN_TOKEN.length < 24)) errors.push('Set a strong COMMAND_ADMIN_TOKEN when bearer authentication is enabled.');
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID || '')) errors.push('Set BLACKSPIRE_OPERATOR_PRINCIPAL_ID to the canonical persisted operator principal before production use.');
     if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) errors.push('Set SESSION_SECRET to at least 32 characters.');
     if (env.SECURE_COOKIES === 'false') errors.push('SECURE_COOKIES=false is not allowed in production.');

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
+import { hashAdminPassword } from '../packages/shared/password-auth.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-prodstartup-'));
 
@@ -22,7 +23,7 @@ function runApi(env, { operatorStatus = null, operatorExpiresAt = null, operator
     } finally { db.close(); }
   }
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['apps/api/server.js'], { env: { ...process.env, COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'), ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     const timer = setTimeout(async () => {
@@ -43,13 +44,14 @@ test('production startup refuses to boot with an unsafe configuration', async ()
     BLACKSPIRE_DB_PATH: path.join(root, 'unsafe', 'command.sqlite'),
     PORT: '8899',
     COMMAND_ADMIN_TOKEN: 'dev-admin-token-change-me',
+    COMMAND_ADMIN_PASSWORD_HASH: '',
     SESSION_SECRET: 'too-short',
     PUBLIC_BASE_URL: 'http://insecure.example.com',
   });
   assert.equal(result.exited, true, 'API must exit instead of serving traffic with an unsafe production config');
   assert.equal(result.code, 1);
   assert.match(result.stderr, /fatal/);
-  assert.match(result.stderr, /COMMAND_ADMIN_TOKEN/);
+  assert.match(result.stderr, /COMMAND_ADMIN_PASSWORD_HASH/);
 });
 
 test('startup refuses to boot when a required deployment identity is unverified', async () => {

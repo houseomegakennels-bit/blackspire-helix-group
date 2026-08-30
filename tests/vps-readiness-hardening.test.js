@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { verifyVpsRuntime } from '../packages/shared/security.js';
 import { executeProviderRequest, selectProvider } from '../packages/providers/providers.js';
+import { hashAdminPassword } from '../packages/shared/password-auth.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-vps-hardening-'));
 const node = process.execPath;
@@ -334,7 +335,7 @@ function preflightEnv(overrides = {}) {
     NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production',
     BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run',
     BLACKSPIRE_DB_PATH: disposableProductionDbPath, BLACKSPIRE_RELEASE_ROOT: productionRoot,
-    COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40),
+    COMMAND_ADMIN_TOKEN: 'x'.repeat(32), COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'), SESSION_SECRET: 'y'.repeat(40),
     BIND_HOST: '127.0.0.1', PORT: String(freeProductionPort()),
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',

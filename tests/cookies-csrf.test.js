@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
+import { hashAdminPassword } from '../packages/shared/password-auth.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-cookies-'));
 
@@ -124,6 +125,7 @@ const prodEnv = {
   BLACKSPIRE_DB_PATH: path.join(root, 'prod', 'command.sqlite'),
   TELEGRAM_TMP_DIR: path.join(root, 'prod-attachments'),
   COMMAND_ADMIN_TOKEN: 'p'.repeat(32),
+  COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'),
   SESSION_SECRET: 'q'.repeat(40),
   SECURE_COOKIES: 'true',
   PUBLIC_BASE_URL: 'https://command.example.com',
@@ -140,7 +142,7 @@ test('boot production-mode API for Secure-cookie and bearer-restriction checks',
 });
 
 test('production sets Secure on both cookies', async () => {
-  const login = await fetch(`http://localhost:${prodPort}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: prodEnv.COMMAND_ADMIN_TOKEN }) });
+  const login = await fetch(`http://localhost:${prodPort}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'production-pass' }) });
   const cookies = parseSetCookies(login);
   assert.ok(cookies.every((c) => c.attrs.includes('secure')), 'production cookies must be Secure');
 });
@@ -159,5 +161,9 @@ test('production allows bearer-token auth only when explicitly opted in', async 
   prodBearerApi = await bootAndWait({ ...prodEnv, ALLOW_BEARER_AUTH: 'true', BLACKSPIRE_DB_PATH: path.join(root, 'prod-bearer', 'command.sqlite'), TELEGRAM_TMP_DIR: path.join(root, 'prod-bearer-attachments') }, prodBearerPort);
   const response = await fetch(`http://localhost:${prodBearerPort}/api/tasks`, { headers: { authorization: `Bearer ${prodEnv.COMMAND_ADMIN_TOKEN}` } });
   assert.equal(response.status, 200, 'bearer auth must work once explicitly enabled');
+  const tokenAsPassword = await fetch(`http://localhost:${prodBearerPort}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: prodEnv.COMMAND_ADMIN_TOKEN }) });
+  assert.equal(tokenAsPassword.status, 401, 'bearer token must not authenticate through the password form');
+  const passwordAsBearer = await fetch(`http://localhost:${prodBearerPort}/api/tasks`, { headers: { authorization: 'Bearer production-pass' } });
+  assert.equal(passwordAsBearer.status, 401, 'password must not authenticate as bearer');
   await stopApi(prodBearerApi);
 });

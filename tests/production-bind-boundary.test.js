@@ -5,6 +5,7 @@ import os from 'node:os';
 import net from 'node:net';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { hashAdminPassword } from '../packages/shared/password-auth.js';
 import {
   resolveBindTarget,
   validateProductionHost,
@@ -110,6 +111,7 @@ function productionEnv(overrides = {}) {
     BLACKSPIRE_RELEASE_ROOT: disposableReleaseRoot,
     BLACKSPIRE_DB_PATH: disposableDbPath,
     TELEGRAM_TMP_DIR: path.join(root, 'attachments'),
+    COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'),
     ...overrides,
   };
 }

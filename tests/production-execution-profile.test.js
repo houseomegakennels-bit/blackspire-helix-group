@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { hashAdminPassword } from '../packages/shared/password-auth.js';
 import { spawnSync } from 'node:child_process';
 
 // verify-environment.sh rejects a /tmp database as non-persistent, so the
@@ -98,6 +99,7 @@ function baseEnv(overrides = {}) {
     BLACKSPIRE_WORKSPACE_ROOT: workspaceRoot,
     CODEX_HOME: codexHome,
     COMMAND_ADMIN_TOKEN: 'x'.repeat(32),
+    COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'),
     SESSION_SECRET: 'y'.repeat(40),
     ...overrides,
   };

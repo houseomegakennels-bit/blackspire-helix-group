@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-08-30 — focused Jarvis password authentication
+
+Active branch `feature/jarvis-password-auth` replaces token-shaped browser login with password verification against `COMMAND_ADMIN_PASSWORD_HASH`, while preserving `COMMAND_ADMIN_TOKEN` solely for explicitly enabled bearer clients. Session issuance no longer receives plaintext credentials. Production requires a valid supported password hash; development retains an explicit non-production legacy fixture path. Provisioning, merge, deployment, and production verification remain outstanding.
+
 ## Canonical ZOLA result implemented (PR #117 merged on origin/main, 2026-08-30 UTC)
 
 Branch `fix/jarvis-canonical-result` derives one bounded, redacted human-readable result on the server for authorized completed tasks. A meaningful task summary wins; an exact generic completion token falls back only to an unambiguous completed provider attempt owned by the same task; absent text gets the fixed truthful fallback. Failed, cancelled, and `outcome_unknown` tasks never promote provider text. Task Detail, Evidence, and Conversation consume the same serialized field, conversation pairing uses persisted input/task IDs, refresh replaces the prior projection, and dynamic response text remains on `textContent`/text-node paths.
