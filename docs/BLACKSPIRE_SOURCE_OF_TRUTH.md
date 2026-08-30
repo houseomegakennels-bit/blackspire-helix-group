@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## Canonical Jarvis result implementation pending review (2026-08-30 UTC)
+
+The unmerged `fix/jarvis-canonical-result` branch adds a single server-authoritative, 8,000-character bounded and redacted human-readable result derived after workspace authorization. Completed tasks prefer meaningful `summary.result`, fall back from exact generic status tokens only to an unambiguous completed provider attempt owned by that task, and otherwise use `Task completed; no textual response was recorded.` Failed, cancelled, and `outcome_unknown` tasks expose no promoted success text. Task Detail, Conversation, and Evidence use this same field; conversation pairing is keyed by persisted input and task IDs and renders inert text without persistence or replay. Focused validation is 111/111, both required ablations fail load-bearing regressions, all secondary gates pass, and the sole full-lane failure is the documented live-host `127.0.0.1:8789` collision. This implementation is not yet committed, pushed, reviewed, merged, or deployed, and it does not advance the verified implementation anchor.
+
 ## PR #115 merged from its clean exact reviewed head (2026-08-30 UTC)
 
 PR #115 merged into `main` as `a78bb4011a8b263845288351d22c68a500b3772b` from independently reviewed exact head `545f425d801151966ad2ddc0d01bb6d24d249d85`. Blackspire Command CI run `33301410453` (#497) succeeded for that exact head, and the final exact-head Codex review reported no major issues. The merge used the established merge-commit method with expected-head protection. Post-merge fetch proved the reviewed head is an ancestor of `origin/main`, and the reviewed head and merge commit have identical trees.

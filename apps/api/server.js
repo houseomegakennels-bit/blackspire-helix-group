@@ -14,7 +14,7 @@ import { handleTelegramUpdate, dispatchReply } from '../telegram/bot.js';
 import { createSession, getSession, rotateSession, destroySession, revokeAllSessions, cleanupExpiredSessions, parseCookies, sessionCookie, clearSessionCookies, checkCsrf, rateLimit, safeError, requireProductionSafeConfig } from '../../packages/shared/security.js';
 import { clientIp } from '../../packages/shared/net.js';
 import { cleanupRateLimits } from '../../packages/shared/rateLimits.js';
-import { createUnifiedInput, getConversation, requestCancellation } from '../../packages/unified-input/unified.js';
+import { createUnifiedInput, getConversation, getConversationRecord, requestCancellation } from '../../packages/unified-input/unified.js';
 import { conversationEvents } from '../../packages/task-engine/tasks.js';
 import { requireSafeTestMode, isSameOrigin, testModeAllowsRequest, publicTestModeStatus } from '../../packages/shared/testMode.js';
 import { evaluateRequestPolicy } from '../../packages/policy/policy.js';
@@ -25,6 +25,7 @@ import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorec
 import { readMemoryCandidateReview, readMemoryCandidateRereview, listMemoryCandidateReviewQueue } from '../../packages/hermes-orchestrator/memory-review.js';
 import { createDeploymentIdentityProvider, serializeDeploymentIdentity, validateDeploymentIdentityForStartup } from '../../packages/shared/deployment-identity.js';
 import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task-engine/runtime-status.js';
+import { serializeTaskWithCanonicalResult } from '../../packages/task-engine/canonical-result.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
@@ -133,17 +134,19 @@ async function route(req, res) {
     const memoryQueueMatch = u.pathname.match(/^\/api\/hermes\/workspaces\/([A-Za-z0-9._:-]{1,128})\/memory-candidate-review-queue$/);
     if (memoryQueueMatch && req.method === 'GET') return memoryCandidateReviewQueueRoute(req, res, auth, u, memoryQueueMatch[1]);
     if (u.pathname === '/api/workspaces' && req.method === 'GET') return json(res, 200, { workspaces: listWorkspaces().filter((workspace) => authorizeWorkspaceRequest(auth, workspace.id, 'workspace.read')) });
-    if (u.pathname === '/api/tasks' && req.method === 'GET') return json(res, 200, { tasks: listTasks().filter((task) => authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read')) });
+    if (u.pathname === '/api/tasks' && req.method === 'GET') {
+      const authorized = listTasks().filter((task) => authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read'));
+      return json(res, 200, { tasks: authorized.map(serializeTask) });
+    }
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res, auth);
     if (u.pathname === '/api/unified-input' && req.method === 'POST') return unifiedInputRoute(req, res, auth);
 
     const conversationMatch = u.pathname.match(/^\/api\/conversations\/([^/]+)(?:\/(events))?$/);
     if (conversationMatch && req.method === 'GET') {
-      const conversation = getConversation(conversationMatch[1]);
-      if (!conversation) return json(res, 404, { error: 'conversation not found' });
-      if (!authorizeWorkspaceRequest(auth, conversation.conversation.workspace_id, 'task.read')) return json(res, 404, { error: 'conversation not found' });
+      const conversationRecord = getConversationRecord(conversationMatch[1]);
+      if (!conversationRecord || !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'task.read')) return json(res, 404, { error: 'conversation not found' });
       if (conversationMatch[2] === 'events') return json(res, 200, { conversationId: conversationMatch[1], events: conversationEvents(conversationMatch[1], u.searchParams.get('after') || '') });
-      return json(res, 200, conversation);
+      return json(res, 200, getConversation(conversationMatch[1]));
     }
 
     const exportMatch = u.pathname.match(/^\/api\/tasks\/([^/]+)\/export\.(json|md)$/);
@@ -392,7 +395,7 @@ function taskRoute(req, res, auth, match) {
   if ((isRead && req.method !== 'GET') || (!isRead && req.method !== 'POST')) return json(res, 404, { error: 'not found' });
   const permission = ['approve', 'reject'].includes(match[2]) ? 'approval.grant' : ['pause', 'resume', 'cancel'].includes(match[2]) ? 'task.execute' : 'task.read';
   if (!authorizeWorkspaceRequest(auth, task.workspace_id, permission)) return json(res, 404, { error: 'not found' });
-  if (!match[2]) return json(res, 200, { task });
+  if (!match[2]) return json(res, 200, { task: serializeTask(task) });
   if (match[2] === 'logs') return json(res, 200, { logs: logs(task.id) });
   if (match[2] === 'approvals') return json(res, 200, { approvals: taskRecords(task.id).approvals });
   const limit = checkLimit(req, 'approval-action', 20, 60000); if (!limit.allowed) return limited(res, limit);
@@ -423,6 +426,10 @@ function taskRoute(req, res, auth, match) {
   return json(res, 404, { error: 'not found' });
 }
 
+function serializeTask(task) {
+  return serializeTaskWithCanonicalResult(task, taskRecords(task.id).providerAttempts);
+}
+
 function buildEvidenceBundle(taskId) {
   const task = getTask(taskId);
   if (!task) return null;
@@ -449,7 +456,8 @@ function buildEvidenceBundle(taskId) {
     commit: finalDetails.commit || null,
     pullRequestOrManualHandoff: finalDetails.pullRequest || null,
     finalEvidence: records.evidence,
-    task,
+    canonicalResult: serializeTaskWithCanonicalResult(task, records.providerAttempts).canonicalResult,
+    task: serializeTaskWithCanonicalResult(task, records.providerAttempts),
   };
 }
 
