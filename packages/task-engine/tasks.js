@@ -36,6 +36,12 @@ export function listTasks() {
   return query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 50;');
 }
 
+export function providerAttemptsForTasks(taskIds) {
+  const ids = [...new Set(taskIds)].filter((taskId) => typeof taskId === 'string' && taskId);
+  if (!ids.length) return [];
+  return query(`SELECT * FROM provider_attempts WHERE task_id IN (${ids.map(esc).join(',')}) ORDER BY created_at;`);
+}
+
 export function transition(taskId, status, patch = {}, ownership = null) {
   const timestamp = now();
   const entries = Object.entries(patch);
@@ -227,7 +233,7 @@ export function taskRecords(taskId) {
   return {
     logs: logs(taskId),
     subtasks: query(`SELECT * FROM subtasks WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
-    providerAttempts: query(`SELECT * FROM provider_attempts WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
+    providerAttempts: providerAttemptsForTasks([taskId]),
     usage: query(`SELECT * FROM provider_usage WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
     changedFiles: query(`SELECT * FROM changed_files WHERE task_id=${esc(taskId)} ORDER BY created_at;`),
     commands: query(`SELECT * FROM command_results WHERE task_id=${esc(taskId)} ORDER BY created_at;`),

@@ -88,6 +88,13 @@ test('authorized Task, Conversation, Evidence, and task list expose one identica
   assert.equal(taskRecords(created.taskId).providerAttempts.length, 1, 'reads never create a duplicate attempt');
 });
 
+test('task-list canonical results use one provider-attempt batch rather than full task records', () => {
+  const serverSource = fs.readFileSync(path.join(process.cwd(), 'apps/api/server.js'), 'utf8');
+  const listRoute = serverSource.slice(serverSource.indexOf("u.pathname === '/api/tasks'"), serverSource.indexOf("u.pathname === '/api/tasks'", serverSource.indexOf("u.pathname === '/api/tasks'") + 1));
+  assert.match(listRoute, /providerAttemptsForTasks\(authorized\.map/);
+  assert.doesNotMatch(listRoute, /taskRecords\(/);
+});
+
 test('cross-workspace API authorization denies before exposing provider fallback', async () => {
   upsertWorkspace({ id: 'canonical-victim', name: 'Victim', githubRepository: 'local/victim', allowedPaths: ['.'], buildCommands: [], providerPolicy: { preferred: ['mock'] }, budgetCents: 1, rootPath: process.cwd() });
   const victim = createTask({ workspaceId: 'canonical-victim', request: 'private', idempotencyKey: 'canonical-victim', initialStatus: 'completed', initialSummary: { result: 'completed' } });

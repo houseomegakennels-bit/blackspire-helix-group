@@ -6,7 +6,7 @@ import { ADMIN_TOKEN, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js'
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
-import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords } from '../../packages/task-engine/tasks.js';
+import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords, providerAttemptsForTasks } from '../../packages/task-engine/tasks.js';
 import { attachmentsForTask } from '../../packages/task-engine/attachments.js';
 import { listWorkspaces, getWorkspace, upsertWorkspace } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
@@ -136,7 +136,13 @@ async function route(req, res) {
     if (u.pathname === '/api/workspaces' && req.method === 'GET') return json(res, 200, { workspaces: listWorkspaces().filter((workspace) => authorizeWorkspaceRequest(auth, workspace.id, 'workspace.read')) });
     if (u.pathname === '/api/tasks' && req.method === 'GET') {
       const authorized = listTasks().filter((task) => authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read'));
-      return json(res, 200, { tasks: authorized.map(serializeTask) });
+      const attemptsByTask = new Map();
+      for (const attempt of providerAttemptsForTasks(authorized.map((task) => task.id))) {
+        const attempts = attemptsByTask.get(attempt.task_id) || [];
+        attempts.push(attempt);
+        attemptsByTask.set(attempt.task_id, attempts);
+      }
+      return json(res, 200, { tasks: authorized.map((task) => serializeTaskWithCanonicalResult(task, attemptsByTask.get(task.id) || [])) });
     }
     if (u.pathname === '/api/tasks' && req.method === 'POST') return createTaskRoute(req, res, auth);
     if (u.pathname === '/api/unified-input' && req.method === 'POST') return unifiedInputRoute(req, res, auth);
@@ -427,7 +433,7 @@ function taskRoute(req, res, auth, match) {
 }
 
 function serializeTask(task) {
-  return serializeTaskWithCanonicalResult(task, taskRecords(task.id).providerAttempts);
+  return serializeTaskWithCanonicalResult(task, providerAttemptsForTasks([task.id]));
 }
 
 function buildEvidenceBundle(taskId) {
