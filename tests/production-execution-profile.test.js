@@ -44,7 +44,7 @@ fs.mkdirSync(path.join(workspaceRoot, 'packages'), { recursive: true });
 fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'w', type: 'module' }));
 fs.writeFileSync(path.join(binDir, 'codex'), `#!/usr/bin/env bash
 set -euo pipefail
-if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
+if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${COMMAND_ADMIN_PASSWORD_HASH:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
   exit 66
 fi
 case "\${1:-}" in

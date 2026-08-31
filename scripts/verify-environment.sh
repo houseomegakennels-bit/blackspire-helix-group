@@ -8,7 +8,7 @@ minimum_node="22.5.0"
 fail() { printf 'environment verification failed: %s\n' "$1" >&2; exit 1; }
 has_value() { [[ -n "${!1:-}" ]]; }
 codex_probe() {
-  env -u COMMAND_ADMIN_TOKEN -u SESSION_SECRET -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
+  env -u COMMAND_ADMIN_TOKEN -u COMMAND_ADMIN_PASSWORD_HASH -u SESSION_SECRET -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
     -u CODEX_API_KEY -u CODEX_API_ENDPOINT -u GITHUB_TOKEN -u GH_TOKEN \
     -u TELEGRAM_BOT_TOKEN -u TELEGRAM_WEBHOOK_SECRET \
     HOME="${CODEX_HOME}" XDG_CONFIG_HOME="${CODEX_HOME}" XDG_DATA_HOME="${CODEX_HOME}" CODEX_HOME="${CODEX_HOME}" \

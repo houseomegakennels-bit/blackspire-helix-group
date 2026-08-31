@@ -46,4 +46,8 @@ test('browser login never submits or falls back to the machine admin token', () 
   const guide = fs.readFileSync(new URL('../docs/JARVIS_PASSWORD_AUTHENTICATION.md', import.meta.url), 'utf8');
   assert.match(guide, /including development, must configure `COMMAND_ADMIN_PASSWORD_HASH`/);
   assert.match(guide, /browser never submits or falls back to `COMMAND_ADMIN_TOKEN`/);
+  const iphoneGuide = fs.readFileSync(new URL('../JARVIS_UI_IPHONE_TEST_GUIDE.md', import.meta.url), 'utf8');
+  assert.match(iphoneGuide, /COMMAND_ADMIN_PASSWORD_HASH/);
+  assert.match(iphoneGuide, /disposable password/);
+  assert.doesNotMatch(iphoneGuide, /token field|wrong token|COMMAND_ADMIN_TOKEN set/);
 });
