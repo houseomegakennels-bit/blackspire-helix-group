@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-31 — PR #118 exact-head review correction (Codex)
+
+- Re-anchored living memory to reviewed PR #118 head `7a20e804b384e90d44f8e8f20d01c7145a972a09`, which includes the executable canonical-memory allowlist and focused regression changes. This following correction changes canonical memory only, so after merge the reviewed anchor is an ancestor of trusted main with only allowlisted memory changes in the descendant diff.
+- Reconciled `BLACKSPIRE_ACTIVE_CONTEXT.md` with merged PR #117: removed the stale instruction that the canonical result was still the next scoped implementation and recorded its exact reviewed head and merge commit without claiming deployment or authenticated production proof.
+- Marked the reported external `blackspire-engineering` skill update `UNVERIFIED` because no durable repository artifact or independently recoverable evidence identifies that update.
+- No runtime, authentication, authorization, deployment, production, credential, or external-system state changed.
+
 ## 2026-08-31 — PR #118 CI failure fix: living-memory test fixture sync (Codex)
 
 - **START STATE:** Local HEAD `7a99c2f`, remote PR HEAD `7a99c2f` (exact match), CI run #521 for head `7a99c2f` IN_PROGRESS. PR open, mergeable, 0 human reviews.
@@ -12,7 +19,7 @@
      - Test 62: Fixture `canonicalMemoryFiles` must match checker `CANONICAL_MEMORY_NAMES` allowlist (prevents future drift).
      - Test 63: ZOLA canonical docs are accepted as canonical memory when all trust requirements pass (positive acceptance with file-existence verification).
      - Test 64: ZOLA-prefixed but non-allowlisted doc (`docs/ZOLA_UNRELATED_DECISION.md`) is rejected (proves look-alike filenames remain fail-closed).
-- **LEARNING PERSISTED:** Updated `blackspire-engineering` skill with:
+- **LEARNING PERSISTED — UNVERIFIED:** The session reported updating an external `blackspire-engineering` skill with the following rules, but no durable repository artifact or independently recoverable evidence for that skill update was identified:
   - `## Change classification and validation` (semantic effect vs extension; allowlist = code)
   - `### Allowlist modification discipline` (never weaken broad rejection; keep docs in sync; add regression)
   - `### Failed-CI learning loop` (root cause → rule → regression test → verify skill → re-apply)
