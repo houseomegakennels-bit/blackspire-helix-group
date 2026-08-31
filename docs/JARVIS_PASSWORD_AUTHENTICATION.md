@@ -10,7 +10,7 @@ export PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:$PATH
 npm run auth:hash-password
 ```
 
-Enter the chosen 13–128 character password only at the hidden prompts. Put the single encoded value printed by the command into `/etc/blackspire/command.env` as `COMMAND_ADMIN_PASSWORD_HASH`. Do not put the plaintext password in that file, a command argument, Git, logs, or chat.
+Enter the chosen 13–128 character password only at the hidden prompts. Put the single encoded value printed by the command into `/etc/blackspire/command.env` as a single-quoted shell assignment: `COMMAND_ADMIN_PASSWORD_HASH='<encoded-hash>'`. The encoded scrypt value contains `$` characters and must remain quoted so shell-based validation reads it literally. Do not put the plaintext password in that file, a command argument, Git, logs, or chat.
 
 Keep `ALLOW_BEARER_AUTH=false` unless a separately authorized machine client requires bearer access. With bearer disabled, `COMMAND_ADMIN_TOKEN` is not used for browser login and may be removed after all machine clients are confirmed migrated. With bearer enabled, retain a separate high-entropy `COMMAND_ADMIN_TOKEN` of at least 24 characters.
 
