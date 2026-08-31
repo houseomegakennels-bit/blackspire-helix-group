@@ -26,4 +26,4 @@ sudo systemctl restart blackspire-command.target
 
 Verify `/health` and `/ready`, sign in through the Jarvis password form, confirm the session endpoint reports the configured canonical principal, confirm a state-changing request still requires CSRF, and confirm bearer access remains denied when disabled. If readiness fails, use the existing Gate 4 compensation/rollback procedure; do not weaken validation or restore token-based browser login.
 
-There is a development/test-only compatibility path for legacy `adminToken` request fixtures when no password hash is configured. It cannot activate under `NODE_ENV=production`.
+Every interactive browser environment, including development, must configure `COMMAND_ADMIN_PASSWORD_HASH`; the browser never submits or falls back to `COMMAND_ADMIN_TOKEN`. A narrowly scoped compatibility path remains only for legacy automated non-production API fixtures that explicitly send an `adminToken` JSON field while no password hash is configured. It is not a supported browser-login configuration and cannot activate under `NODE_ENV=production`.

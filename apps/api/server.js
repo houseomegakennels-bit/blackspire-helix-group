@@ -307,11 +307,14 @@ async function login(req, res) {
   const limit = checkLimit(req, 'login', Number(process.env.LOGIN_RATE_LIMIT || 5), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
   const password = body && !Array.isArray(body) ? body.password : null;
-  const legacyDevelopmentPassword = process.env.NODE_ENV !== 'production' && !ADMIN_PASSWORD_HASH && body?.adminToken;
-  const submitted = password ?? legacyDevelopmentPassword;
+  // Compatibility is intentionally limited to legacy non-production API fixtures. The
+  // browser submits only `password` and must be configured with a password hash even in
+  // development; never reinterpret the machine token as a human-entered password.
+  const legacyDevelopmentFixtureToken = process.env.NODE_ENV !== 'production' && !ADMIN_PASSWORD_HASH && body?.adminToken;
+  const submitted = password ?? legacyDevelopmentFixtureToken;
   const valid = process.env.NODE_ENV === 'production'
     ? await verifyAdminPasswordAsync(submitted, ADMIN_PASSWORD_HASH)
-    : (password !== null && ADMIN_PASSWORD_HASH && await verifyAdminPasswordAsync(password, ADMIN_PASSWORD_HASH)) || legacyDevelopmentPassword === ADMIN_TOKEN;
+    : (password !== null && ADMIN_PASSWORD_HASH && await verifyAdminPasswordAsync(password, ADMIN_PASSWORD_HASH)) || legacyDevelopmentFixtureToken === ADMIN_TOKEN;
   const principal = valid ? configuredEvaluationAdminPrincipal() : null;
   const session = principal ? createSession({ ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: principal.principalId }) : null;
   if (!session) { audit(null, 'auth', 'login.failed', { ip: clientIp(req) }); return json(res, 401, { error: 'invalid credentials' }); }

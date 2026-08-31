@@ -38,3 +38,12 @@ test('HTTP login awaits the asynchronous verifier', () => {
   assert.match(server, /await verifyAdminPasswordAsync\(submitted, ADMIN_PASSWORD_HASH\)/);
   assert.doesNotMatch(server, /verifyAdminPassword\(submitted, ADMIN_PASSWORD_HASH\)/);
 });
+
+test('browser login never submits or falls back to the machine admin token', () => {
+  const client = fs.readFileSync(new URL('../apps/jarvis-pwa/public/jarvis.js', import.meta.url), 'utf8');
+  assert.match(client, /JSON\.stringify\(\{ password \}\)/);
+  assert.doesNotMatch(client, /JSON\.stringify\(\{ adminToken/);
+  const guide = fs.readFileSync(new URL('../docs/JARVIS_PASSWORD_AUTHENTICATION.md', import.meta.url), 'utf8');
+  assert.match(guide, /including development, must configure `COMMAND_ADMIN_PASSWORD_HASH`/);
+  assert.match(guide, /browser never submits or falls back to `COMMAND_ADMIN_TOKEN`/);
+});
