@@ -13,10 +13,39 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ workspaceId, limit }),
       });
-      const text = await response.text();
-      if (Buffer.byteLength(text) > 32 * 1024) throw new Error('Seller Engine capability response too large');
+      const text = await readBoundedResponse(response, 32 * 1024);
       if (!response.ok) throw new Error(`Seller Engine capability failed with HTTP ${response.status}`);
       try { return JSON.parse(text); } catch { throw new Error('Seller Engine capability returned malformed JSON'); }
     },
   });
+}
+
+async function readBoundedResponse(response, maxBytes) {
+  if (!response.body?.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new Error('Seller Engine capability response too large');
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel('response too large');
+        throw new Error('Seller Engine capability response too large');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { throw new Error('Seller Engine capability returned malformed UTF-8'); }
 }

@@ -4,8 +4,8 @@
 
 1. DONE — PR #117 merged the canonical server-authoritative Jarvis result into `main` at `979272fb46c5a6fc370a24144643166b0cf3a635`.
 2. IN REVIEW EXTERNALLY — PR #118 accurately records the bounded Jarvis/Blackspire architecture, but remains open because no exact-head external review was available; do not fabricate approval.
-3. DONE locally — first bounded capability slice: canonical contract/registry, Hermes routing, durable dispatch/no-replay ownership, and read-only Seller opportunity search through the existing data owner. Local focused tests pass; no deployment or production Seller-data claim is made.
-4. Push the implementation PR, require exact-head CI and review, correct genuine findings, and merge only the reviewed head. Then configure the internal Seller transport secret/workspace through the established production secret path and deploy through Gate 4 before one authorized production read-only acceptance.
+3. Validate and push the local #119 correction for its three P1/five P2 exact-head findings; require green exact-head CI and one new exact-head review after reconciliation onto post-auth main. Do not merge it before the core password-auth production checkpoint.
+4. After reviewed merge, configure the internal Seller transport secret/workspace through the established production secret path and deploy through Gate 4 before one authorized production read-only acceptance.
 
 ## Immediate PR #115 closure (2026-08-24 UTC)
 

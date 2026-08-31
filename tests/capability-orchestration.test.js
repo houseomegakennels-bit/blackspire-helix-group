@@ -21,6 +21,7 @@ const { createCapabilityRegistry } = await import('../packages/capabilities/regi
 const { defineCapability, validateCapabilityInput, validateCapabilityOutput } = await import('../packages/capabilities/contract.js');
 const { sellerOpportunityCapability } = await import('../packages/capabilities/seller-opportunities.js');
 const { selectCapabilityForTask } = await import('../packages/capabilities/execute.js');
+const { createDivisionAdapters } = await import('../packages/capabilities/http-adapters.js');
 
 const now = Date.now();
 const permissions = ['seller.opportunities.read','task.create','task.execute','task.read','workspace.read'];
@@ -73,6 +74,30 @@ test('capability output rejects oversized data, secret-shaped fields, extra arti
   assert.throws(() => validateCapabilityOutput(sellerOpportunityCapability, { ...canonicalResult(), opportunities:[canonicalRows[1], canonicalRows[0]] }), /deterministically ranked/);
   const secretCapability = defineCapability(capabilityDefinition({ id:'test.capability.secret', output:(raw)=>raw }));
   assert.throws(() => validateCapabilityOutput(secretCapability, { nested:{ credential:'must-not-escape' } }), /secret-shaped/);
+});
+
+test('consumer refuses adapter rows beyond the request-scoped limit', async () => {
+  const created = task('Show seller opportunities with a version-skewed adapter.');
+  const rows = Array.from({ length: 6 }, (_, index) => ({
+    ...canonicalRows[0], leadId:`lead-limit-${index}`, propertyId:`property-limit-${index}`,
+    propertyAddress:`${100 + index} Limit Ave`, motivationScore:100 - index,
+  }));
+  const result = await processTask(created, { capabilityOptions:{ adapters:{ sellerOpportunities:async()=>({ opportunities:rows, sourceSnapshotAt:'2026-08-30T00:00:00.000Z' }) } } });
+  assert.equal(result.status, 'outcome_unknown');
+  assert.doesNotMatch(String(result.summary || ''), /Limit Ave/);
+  assert.doesNotMatch(taskRecords(created.id).providerAttempts[0].response_packet, /Limit Ave/);
+});
+
+test('Seller adapter cancels a streamed response as soon as its byte bound is exceeded', async () => {
+  let cancelled = false; let reads = 0;
+  const stream = new ReadableStream({
+    pull(controller) { reads += 1; controller.enqueue(new Uint8Array(20 * 1024)); },
+    cancel() { cancelled = true; },
+  });
+  const adapters = createDivisionAdapters({ BLACKSPIRE_SELLER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_SELLER_CAPABILITY_TOKEN:'x'.repeat(32) }, async()=>new Response(stream, { status:200 }));
+  await assert.rejects(adapters.sellerOpportunities({ workspaceId:'seller-ws', limit:5 }), /response too large/);
+  assert.equal(cancelled, true);
+  assert.ok(reads <= 3, 'the consumer stops without draining the unbounded stream');
 });
 
 test('Jarvis to Seller Engine acceptance traverses durable task, Hermes registry, canonical data, evidence, and conversation', async () => {

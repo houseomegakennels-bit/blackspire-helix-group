@@ -3,7 +3,7 @@ import { validateCapabilityInput, validateCapabilityOutput } from './contract.js
 import { createDivisionAdapters } from './http-adapters.js';
 import { summarizeSellerOpportunities } from './seller-opportunities.js';
 import { resolveAdminBearer, requireWorkspacePermission } from '../shared/authorization.js';
-import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, recordEvidence, recordTaskEvent, transition } from '../task-engine/tasks.js';
+import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition } from '../task-engine/tasks.js';
 
 export function selectCapabilityForTask(task, registry = blackspireCapabilityRegistry) {
   const objective = String(task?.request || '');
@@ -36,7 +36,9 @@ export async function executeRegisteredCapability(task, workspace, {
     if (!requireWorkspacePermission(principal, workspace.id, permission).allowed) return fail('capability permission denied');
   }
   const validatedInput = validateCapabilityInput(capability, { limit: 5 });
-  const dispatch = prepareCapabilityDispatch(task.id, capability.id, { workspaceId: workspace.id, input: validatedInput });
+  const dispatch = prepareCapabilityDispatch(task.id, capability.id, {
+    workspaceId: workspace.id, principalId: task.actor_id, ...capabilityDispatchAuthority(ownership), input: validatedInput,
+  });
   if (!dispatch.owned) {
     if (['dispatching','started'].includes(dispatch.attempt.status)) {
       finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Prior capability dispatch outcome is unknown after recovery' });
@@ -77,13 +79,14 @@ export async function executeRegisteredCapability(task, workspace, {
       return fail('capability authority changed before result disclosure');
     }
     const result = validateCapabilityOutput(capability, raw);
-    finishCapabilityDispatch(task.id, capability.id, 'completed', { responsePacket: { result } });
+    if (result.opportunities.length > validatedInput.limit) throw new Error('Seller Engine capability exceeded the requested result limit');
     const evidence = { capabilityId: capability.id, division: capability.division, readOnly: true, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt, resultCount: result.opportunities.length };
-    recordEvidence(task.id, 'capability_result', evidence);
-    recordEvidence(task.id, 'final', evidence);
-    recordTaskEvent(task.id, 'capability.completed', { capabilityId: capability.id, resultCount: result.opportunities.length, status: 'completed' });
-    audit(task.id, 'hermes', 'capability.completed', { capabilityId: capability.id, resultCount: result.opportunities.length });
-    return transition(task.id, 'completed', { summary: { result: summarizeSellerOpportunities(result), capabilityId: capability.id, division: capability.division, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt }, evidence, current_stage: 'summarize' }, ownership);
+    const summary = { result: summarizeSellerOpportunities(result), capabilityId: capability.id, division: capability.division, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt };
+    return finalizeCapabilitySuccess({ taskId: task.id, capabilityId: capability.id, workspaceId: workspace.id, principalId: task.actor_id, ownership, result, summary, evidence },
+      (currentTask) => {
+        const currentPrincipal = resolvePrincipal(currentTask.actor_id);
+        return Boolean(currentPrincipal && capability.requiredPermissions.every((permission) => requireWorkspacePermission(currentPrincipal, workspace.id, permission).allowed));
+      });
   } catch (error) {
     if (error?.code === 'CAPABILITY_OWNERSHIP_LOST') {
       finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability task ownership changed during dispatch' });

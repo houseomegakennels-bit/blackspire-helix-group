@@ -6,7 +6,7 @@ import { ADMIN_TOKEN, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js'
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
-import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords, providerAttemptsForTasks } from '../../packages/task-engine/tasks.js';
+import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords, providerAttemptsForTasks, taskRequiresCapabilityPermission, conversationRequiresCapabilityPermission } from '../../packages/task-engine/tasks.js';
 import { attachmentsForTask } from '../../packages/task-engine/attachments.js';
 import { listWorkspaces, getWorkspace, upsertWorkspace } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
@@ -135,7 +135,7 @@ async function route(req, res) {
     if (memoryQueueMatch && req.method === 'GET') return memoryCandidateReviewQueueRoute(req, res, auth, u, memoryQueueMatch[1]);
     if (u.pathname === '/api/workspaces' && req.method === 'GET') return json(res, 200, { workspaces: listWorkspaces().filter((workspace) => authorizeWorkspaceRequest(auth, workspace.id, 'workspace.read')) });
     if (u.pathname === '/api/tasks' && req.method === 'GET') {
-      const authorized = listTasks().filter((task) => authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read'));
+      const authorized = listTasks().filter((task) => authorizeTaskDisclosure(auth, task));
       const attemptsByTask = new Map();
       for (const attempt of providerAttemptsForTasks(authorized.map((task) => task.id))) {
         const attempts = attemptsByTask.get(attempt.task_id) || [];
@@ -150,7 +150,8 @@ async function route(req, res) {
     const conversationMatch = u.pathname.match(/^\/api\/conversations\/([^/]+)(?:\/(events))?$/);
     if (conversationMatch && req.method === 'GET') {
       const conversationRecord = getConversationRecord(conversationMatch[1]);
-      if (!conversationRecord || !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'task.read')) return json(res, 404, { error: 'conversation not found' });
+      if (!conversationRecord || !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'task.read') ||
+        (conversationRequiresCapabilityPermission(conversationRecord.id, 'seller.opportunities.read') && !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'seller.opportunities.read'))) return json(res, 404, { error: 'conversation not found' });
       if (conversationMatch[2] === 'events') return json(res, 200, { conversationId: conversationMatch[1], events: conversationEvents(conversationMatch[1], u.searchParams.get('after') || '') });
       return json(res, 200, getConversation(conversationMatch[1]));
     }
@@ -213,6 +214,15 @@ function authorizeWorkspaceRequest(auth, workspaceId, permission) {
   if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(workspaceId)) return false;
   const principal = requestPrincipal(auth);
   return Boolean(principal && requireWorkspacePermission(principal, workspaceId, permission).allowed);
+}
+
+function authorizeTaskDisclosure(auth, task) {
+  return authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read') &&
+    authorizeCapabilityDisclosure(auth, task);
+}
+
+function authorizeCapabilityDisclosure(auth, task) {
+  return !taskRequiresCapabilityPermission(task.id, 'seller.opportunities.read') || authorizeWorkspaceRequest(auth, task.workspace_id, 'seller.opportunities.read');
 }
 
 function authorizeGlobalRuntimeControl(auth, selectedWorkspaceId) {
@@ -404,7 +414,7 @@ function taskRoute(req, res, auth, match) {
   const isRead = !match[2] || ['logs', 'approvals'].includes(match[2]);
   if ((isRead && req.method !== 'GET') || (!isRead && req.method !== 'POST')) return json(res, 404, { error: 'not found' });
   const permission = ['approve', 'reject'].includes(match[2]) ? 'approval.grant' : ['pause', 'resume', 'cancel'].includes(match[2]) ? 'task.execute' : 'task.read';
-  if (!authorizeWorkspaceRequest(auth, task.workspace_id, permission)) return json(res, 404, { error: 'not found' });
+  if (!authorizeWorkspaceRequest(auth, task.workspace_id, permission) || !authorizeCapabilityDisclosure(auth, task)) return json(res, 404, { error: 'not found' });
   if (!match[2]) return json(res, 200, { task: serializeTask(task) });
   if (match[2] === 'logs') return json(res, 200, { logs: logs(task.id) });
   if (match[2] === 'approvals') return json(res, 200, { approvals: taskRecords(task.id).approvals });
@@ -473,7 +483,7 @@ function buildEvidenceBundle(taskId) {
 
 function exportTask(res, auth, taskId, format) {
   const task = getTask(taskId);
-  if (!task || !authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read')) return json(res, 404, { error: 'task not found' });
+  if (!task || !authorizeTaskDisclosure(auth, task)) return json(res, 404, { error: 'task not found' });
   const bundle = buildEvidenceBundle(taskId);
   if (!bundle) return json(res, 404, { error: 'task not found' });
   const redacted = redact(JSON.stringify(bundle, null, 2));

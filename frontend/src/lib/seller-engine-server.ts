@@ -834,6 +834,23 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
   return leads.map((lead) => applyNexusContactToLead(lead, latestNexusContacts.get(lead.id) ?? null));
 }
 
+// The internal Blackspire capability boundary must distinguish a legitimate empty
+// pipeline from missing configuration and query/schema failures. Keep that stricter
+// contract separate from legacy UI callers which intentionally degrade to an empty list.
+export async function listSellerLeadsForCapability(limit: number): Promise<SellerLeadView[]> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) throw new Error("Seller Engine database is not configured");
+
+  const { data, error } = await supabase
+    .from("seller_leads")
+    .select(SELLER_LEAD_BASE_SELECT)
+    .order("motivation_score", { ascending: false })
+    .order("id", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error("Seller Engine opportunity query failed");
+  return ((data ?? []) as unknown as SellerLeadJoin[]).map(mapSellerLead);
+}
+
 export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | null> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;
