@@ -3,7 +3,7 @@
 ## 2026-08-31 — PR #118 exact-head review correction (Codex)
 
 - Re-anchored living memory to reviewed PR #118 head `7a20e804b384e90d44f8e8f20d01c7145a972a09`, which includes the executable canonical-memory allowlist and focused regression changes. This following correction changes canonical memory only, so after merge the reviewed anchor is an ancestor of trusted main with only allowlisted memory changes in the descendant diff.
-- Reconciled `BLACKSPIRE_ACTIVE_CONTEXT.md` with merged PR #117: removed the stale instruction that the canonical result was still the next scoped implementation and recorded its exact reviewed head and merge commit without claiming deployment or authenticated production proof.
+- Reconciled `BLACKSPIRE_ACTIVE_CONTEXT.md` and `BLACKSPIRE_NEXT_ACTIONS.md` with merged PR #117: removed stale instructions that the canonical result was still local or the next scoped implementation, recorded its exact reviewed head and merge commit, and retained only authorized deployment and historical verification as outstanding without claiming either occurred.
 - Marked the reported external `blackspire-engineering` skill update `UNVERIFIED` because no durable repository artifact or independently recoverable evidence identifies that update.
 - No runtime, authentication, authorization, deployment, production, credential, or external-system state changed.
 
