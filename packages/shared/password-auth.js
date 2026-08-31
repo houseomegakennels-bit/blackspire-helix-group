@@ -36,3 +36,22 @@ export function verifyAdminPassword(password, encoded) {
   const candidate = crypto.scryptSync(password, parsed.salt, parsed.derived.length, { N: parsed.N, r: parsed.r, p: parsed.p, maxmem: 32 * 1024 * 1024 });
   return crypto.timingSafeEqual(candidate, parsed.derived);
 }
+
+export async function verifyAdminPasswordAsync(password, encoded, scrypt = crypto.scrypt) {
+  if (!validPasswordInput(password)) return false;
+  const parsed = parseAdminPasswordHash(encoded);
+  if (!parsed) return false;
+  try {
+    const candidate = await new Promise((resolve, reject) => {
+      scrypt(password, parsed.salt, parsed.derived.length, { N: parsed.N, r: parsed.r, p: parsed.p, maxmem: 32 * 1024 * 1024 }, (error, value) => {
+        if (error) reject(error);
+        else resolve(value);
+      });
+    });
+    return Buffer.isBuffer(candidate)
+      && candidate.length === parsed.derived.length
+      && crypto.timingSafeEqual(candidate, parsed.derived);
+  } catch {
+    return false;
+  }
+}

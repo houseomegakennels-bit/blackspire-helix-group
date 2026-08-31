@@ -133,6 +133,7 @@ const prodEnv = {
   DEBUG: 'false',
   CORS_ORIGIN: 'https://command.example.com',
   RATE_LIMIT_DISABLED: 'false',
+  LOGIN_RATE_LIMIT: '20',
   TRUST_PROXY: 'false',
   GIT_WORKFLOW_ENABLED: 'false',
 };
@@ -145,6 +146,25 @@ test('production sets Secure on both cookies', async () => {
   const login = await fetch(`http://localhost:${prodPort}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'production-pass' }) });
   const cookies = parseSetCookies(login);
   assert.ok(cookies.every((c) => c.attrs.includes('secure')), 'production cookies must be Secure');
+});
+
+test('production health and readiness progress while password derivations are in flight', async () => {
+  let completedLogins = 0;
+  const logins = Array.from({ length: 8 }, (_, index) => fetch(`http://localhost:${prodPort}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': `password-concurrency-${index}` },
+    body: JSON.stringify({ password: 'production-pass' }),
+  }).then((response) => { completedLogins += 1; return response; }));
+
+  const [health, readiness] = await Promise.all([
+    fetch(`http://localhost:${prodPort}/health`),
+    fetch(`http://localhost:${prodPort}/ready`),
+  ]);
+  assert.equal(health.status, 200);
+  assert.ok([200, 503].includes(readiness.status), 'readiness must return a bounded response');
+  assert.ok(completedLogins < logins.length, 'public status routes must progress before all concurrent password derivations finish');
+  const responses = await Promise.all(logins);
+  assert.ok(responses.every((response) => response.status === 200));
 });
 
 test('production disables bearer-token auth by default even with the correct token', async () => {
