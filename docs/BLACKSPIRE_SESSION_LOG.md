@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-31 — ZOLA identity roadmap review corrections (Codex)
+
+- Recorded **Z.O.L.A. — Zero-Trust Operations, Logic & Automation** as the future-facing user intelligence/command identity while preserving Blackspire Command as the control plane and Hermes as the existing orchestration/runtime layer. The roadmap explicitly stages the rename: no `jarvis-*` runtime path, API/auth identifier, service/deployment name, database key, persisted evidence, or historical record changed.
+- Corrected the roadmap after exact-head review showed it had incorrectly assigned real-estate property discovery to Recon. Recon remains the separate government-contract, grant, vendor-program, and bid-opportunity system. Seller Engine's authorized county/public-record sources, operator imports, and Harvester remain the current real-estate intake; any broader property discovery must be a separately reviewed bounded capability.
+- Content correction `0996c8163f3b1a3104546a4bd4efe1ac9ae690c5` precedes this canonical-memory-only descendant so the living-memory checker has a non-self-referential content anchor. PR #118 is still open: fresh exact-head CI/review and merge remain pending. No runtime, production service, database, provider, credential, or deployment state changed.
+
 ## 2026-08-30 — Canonical Jarvis result implemented and locally validated (Codex)
 
 - Created `fix/jarvis-canonical-result` from post-#115 main `3ffd6fdb5a68ade6b47a1c8d2225aa5afff7f157` and implemented one server-authoritative result resolver shared by Task, Conversation, and Evidence APIs. It prefers meaningful task result text, otherwise reads only an unambiguous same-task completed provider attempt, redacts and deterministically bounds output at 8,000 characters, supplies the fixed no-text fallback, and returns no success result for failed, cancelled, or `outcome_unknown` tasks. Authorization precedes provider-attempt lookup.
