@@ -187,3 +187,25 @@ test('production allows bearer-token auth only when explicitly opted in', async 
   assert.equal(passwordAsBearer.status, 401, 'password must not authenticate as bearer');
   await stopApi(prodBearerApi);
 });
+
+test('development token compatibility is disabled once a password hash exists', async () => {
+  const port = 8904;
+  const child = await bootAndWait({
+    NODE_ENV: 'development',
+    BLACKSPIRE_DB_PATH: path.join(root, 'dev-password', 'command.sqlite'),
+    COMMAND_ADMIN_TOKEN: 'legacy-development-token',
+    COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('development-pass'),
+  }, port);
+  try {
+    const tokenLogin = await fetch(`http://localhost:${port}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ adminToken: 'legacy-development-token' }),
+    });
+    assert.equal(tokenLogin.status, 401, 'configured password hashing must retire browser token compatibility');
+    const passwordLogin = await fetch(`http://localhost:${port}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'development-pass' }),
+    });
+    assert.equal(passwordLogin.status, 200);
+  } finally {
+    await stopApi(child);
+  }
+});

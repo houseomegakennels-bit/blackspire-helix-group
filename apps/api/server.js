@@ -307,7 +307,7 @@ async function login(req, res) {
   const limit = checkLimit(req, 'login', Number(process.env.LOGIN_RATE_LIMIT || 5), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
   const password = body && !Array.isArray(body) ? body.password : null;
-  const legacyDevelopmentPassword = process.env.NODE_ENV !== 'production' && body?.adminToken;
+  const legacyDevelopmentPassword = process.env.NODE_ENV !== 'production' && !ADMIN_PASSWORD_HASH && body?.adminToken;
   const submitted = password ?? legacyDevelopmentPassword;
   const valid = process.env.NODE_ENV === 'production'
     ? await verifyAdminPasswordAsync(submitted, ADMIN_PASSWORD_HASH)
