@@ -59,10 +59,11 @@ Integrate these first because together they create an end-to-end wholesale workf
    - Feed Seller Engine, Nexus, Deal Engine, and Buyer Engine without duplicate records.
 
 6. **Recon Engine**
-   - Discover market opportunities from connected sources.
-   - Run saved searches and market scans.
-   - Surface properties/leads that fit operator-defined acquisition criteria.
-   - Feed qualified discoveries into Seller Engine/Harvester intake rather than creating a parallel pipeline.
+   - Discover government contracts, grants, vendor programs, and similar public/private bid opportunities.
+   - Preserve Recon's existing agency, solicitation, deadline, proposal-support, and vendor-workflow boundaries.
+   - Remain separate from the real-estate property pipeline; Recon does not discover properties or motivated-seller leads.
+
+Real-estate property discovery continues through Seller Engine's existing county/public-record sources, operator imports, and Harvester intake. If broader property discovery is needed later, define it as a new bounded real-estate capability with explicit sources, authorization, schemas, and handoff into the canonical Seller Engine pipeline; do not repurpose Recon.
 
 ### Phase 3 — Oversight and intelligence
 
@@ -90,11 +91,11 @@ Additional Blackspire divisions should adopt the same contract before ZOLA recei
 
 The canonical property/deal pipeline remains one connected operating system, not a set of duplicate workflows.
 
-**Discovery/intake:** Recon and Harvester feed the canonical property/seller pipeline.
+**Discovery/intake:** Seller Engine's authorized county/public-record sources, operator imports, and Harvester feed the canonical property/seller pipeline. A future property-discovery capability may join this intake only after its own bounded contract is reviewed. Recon remains the separate government-contract/grant/vendor opportunity system.
 
 **Core pipeline:**
 
-Harvester / Recon → Seller Engine → Nexus → Deal Engine → Buyer Engine → Transaction → Closed
+Seller Engine sources / operator imports / Harvester → Seller Engine → Nexus → Deal Engine → Buyer Engine → Transaction → Closed
 
 **Supervision:** Sentinel observes the whole pipeline and reports exceptions to ZOLA.
 
@@ -109,7 +110,7 @@ Operator request:
 Expected orchestration:
 
 1. ZOLA parses the objective and acquisition constraints.
-2. Recon and/or Harvester identify candidate properties from authorized sources.
+2. Seller Engine's authorized county/public-record sources, operator imports, and/or Harvester identify candidate properties. A future reviewed property-discovery capability may also supply candidates; Recon does not.
 3. Seller Engine scores seller/property opportunity quality.
 4. Nexus enriches ownership/contact data when authorized.
 5. Deal Engine calculates ARV, repair estimate, MAO, projected spread, and deal confidence.
@@ -185,8 +186,8 @@ The UI can expose deep links into a division for advanced/manual work, but norma
 8. Prove one end-to-end read-only wholesale search through ZOLA.
 9. Add controlled mutation capabilities for lead/deal state.
 10. Add approval-gated outreach/offer/contract actions.
-11. Integrate Harvester intake and Recon discovery into the same canonical property pipeline.
-12. Add Sentinel ecosystem oversight and alerts.
+11. Integrate Harvester intake and any separately reviewed property-discovery capability into the same canonical property pipeline; keep Recon's government-contract/grant/vendor discovery separate.
+12. Add Sentinel ecosystem oversight and alerts across the appropriate bounded divisions.
 13. Expand to Social OS, Book Studio, and other Blackspire divisions using the same contract.
 14. Perform the legacy `jarvis` → ZOLA runtime/UI identifier migration as its own bounded, reviewed change; preserve historical evidence and compatibility where needed.
 
@@ -203,7 +204,7 @@ Until the dedicated migration is reviewed and deployed:
 
 ZOLA should be able to accept one natural-language acquisition objective and, without requiring the operator to manually open another Blackspire app:
 
-- discover candidate properties from authorized sources;
+- discover candidate properties through authorized Seller Engine sources, operator imports, Harvester, or a separately reviewed bounded property-discovery capability;
 - rank motivated-seller opportunities;
 - enrich owner/contact information where authorized;
 - calculate ARV, repairs, MAO, and projected assignment spread;
