@@ -159,7 +159,7 @@ The final credential-free acceptance pass ran these exact commands:
 
 ## B. CREDENTIALS I MUST PROVIDE
 
-- `COMMAND_ADMIN_TOKEN` production value.
+- `COMMAND_ADMIN_PASSWORD_HASH` produced interactively from an operator-chosen password; a separate `COMMAND_ADMIN_TOKEN` only if bearer authentication is explicitly authorized.
 - Numeric Telegram user ID for `TELEGRAM_ALLOWED_USERS`.
 - `TELEGRAM_BOT_TOKEN` from BotFather for live Telegram polling/sending.
 - `GITHUB_TOKEN` and authenticated `gh` CLI or a future GitHub App for live draft PR creation.
@@ -169,10 +169,10 @@ The final credential-free acceptance pass ran these exact commands:
 
 ## C. WHAT I MUST CONFIGURE FROM MY IPHONE
 
-1. Set a strong `COMMAND_ADMIN_TOKEN` in the host/container environment.
+1. Follow `docs/JARVIS_PASSWORD_AUTHENTICATION.md` to set a shell-safe `COMMAND_ADMIN_PASSWORD_HASH`; never enter `COMMAND_ADMIN_TOKEN` in the browser.
 2. Set `TELEGRAM_ALLOWED_USERS` to your numeric Telegram user ID.
 3. Create a Telegram bot with BotFather and set `TELEGRAM_BOT_TOKEN` for live polling/sending.
-4. Open the deployed `/jarvis` URL in iPhone Safari, enter `COMMAND_ADMIN_TOKEN`, then Add to Home Screen.
+4. Open the deployed `/jarvis` URL in iPhone Safari, enter the operator password, then Add to Home Screen.
 5. Add `GITHUB_TOKEN` and install/authenticate `gh` before expecting live draft PR creation.
 6. Add `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` before expecting real model calls.
 7. Install/authenticate `codex` and/or `claude` CLIs if those execution modes are desired.
@@ -259,7 +259,7 @@ YES, as a local foundation and hardening baseline — not as an internet-exposed
 
 ## WHAT I MUST CONFIGURE FROM MY IPHONE
 
-1. Set `COMMAND_ADMIN_TOKEN` to a long unique admin secret in the host environment.
+1. Set `COMMAND_ADMIN_PASSWORD_HASH` through the interactive procedure in `docs/JARVIS_PASSWORD_AUTHENTICATION.md`; configure a distinct `COMMAND_ADMIN_TOKEN` only for explicitly enabled bearer clients.
 2. Set `SESSION_SECRET` to a separate 32+ character random value.
 3. Create a Telegram bot in BotFather and set `TELEGRAM_BOT_TOKEN`.
 4. Generate and set `TELEGRAM_WEBHOOK_SECRET`.
@@ -267,6 +267,6 @@ YES, as a local foundation and hardening baseline — not as an internet-exposed
 6. Add `GITHUB_TOKEN` and authenticate `gh` for live draft PR creation.
 7. Add `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` if live model providers are desired.
 8. Point `PUBLIC_BASE_URL` to an HTTPS domain and enable production secure cookies.
-9. Open `/jarvis` on iPhone Safari, log in with the admin secret, and add it to Home Screen.
+9. Open `/jarvis` on iPhone Safari, log in with the operator password, and add it to Home Screen.
 10. Send `/health` from the allowlisted Telegram account, then `/task Create \`docs/mobile-verification.md\` with a short mobile smoke-test note.`
 11. Tap the Jarvis emergency stop, then reset it from an authenticated fresh Jarvis session using the confirmation flow.

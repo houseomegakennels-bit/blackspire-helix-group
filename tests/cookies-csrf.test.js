@@ -134,7 +134,7 @@ const prodEnv = {
   CORS_ORIGIN: 'https://command.example.com',
   RATE_LIMIT_DISABLED: 'false',
   LOGIN_RATE_LIMIT: '20',
-  TRUST_PROXY: 'false',
+  TRUST_PROXY: 'true',
   GIT_WORKFLOW_ENABLED: 'false',
 };
 
@@ -148,7 +148,7 @@ test('production sets Secure on both cookies', async () => {
   assert.ok(cookies.every((c) => c.attrs.includes('secure')), 'production cookies must be Secure');
 });
 
-test('production health and readiness progress while password derivations are in flight', async () => {
+test('production globally bounds distributed password derivations while status routes remain responsive', async () => {
   let completedLogins = 0;
   const logins = Array.from({ length: 8 }, (_, index) => fetch(`http://localhost:${prodPort}/api/auth/login`, {
     method: 'POST',
@@ -164,7 +164,16 @@ test('production health and readiness progress while password derivations are in
   assert.ok([200, 503].includes(readiness.status), 'readiness must return a bounded response');
   assert.ok(completedLogins < logins.length, 'public status routes must progress before all concurrent password derivations finish');
   const responses = await Promise.all(logins);
-  assert.ok(responses.every((response) => response.status === 200));
+  const statuses = responses.map((response) => response.status);
+  assert.ok(statuses.includes(200), 'bounded authentication must continue accepting available capacity');
+  assert.ok(statuses.includes(503), 'distributed identities beyond aggregate capacity must be refused');
+  assert.ok(statuses.every((status) => status === 200 || status === 503));
+
+  const sequential = await fetch(`http://localhost:${prodPort}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'production-pass' }),
+  });
+  assert.equal(sequential.status, 200, 'completed derivations must release capacity for legitimate sequential login');
+  assert.match(sequential.headers.get('set-cookie') || '', /bc_session=/, 'only verified login may issue a session');
 });
 
 test('production disables bearer-token auth by default even with the correct token', async () => {

@@ -3,7 +3,7 @@
 ## Controls Implemented (original foundation)
 - Secrets are environment variables with `.env.example` placeholders only.
 - Telegram uses numeric allowlisting and ignores unauthorized users without system details.
-- Jarvis never stores the admin token in `localStorage` — it is entered once, sent to `/api/auth/login`, and only the resulting cookie session is kept.
+- ZOLA browser login sends an operator password only to `/api/auth/login`, stores neither it nor the server-side password hash in browser state, and retains only the resulting cookie session. `COMMAND_ADMIN_TOKEN` is a separate optional machine credential and is never submitted by the browser.
 - Logs redact common OpenAI, GitHub, and Telegram token patterns.
 - Workspace command execution is default-deny and allowlist-based.
 - Path traversal is blocked in policy tests.
@@ -69,7 +69,7 @@ allowlist-sanitized task id.
 ### Production startup validation (`packages/shared/security.js`, `apps/api/server.js`)
 `requireProductionSafeConfig()` was previously computed and exposed at `GET /ready` but never enforced —
 `start()` now calls it at boot and `process.exit(1)`s with the exact list of failures if
-`NODE_ENV=production` and the config is unsafe. Checks: admin token strength, session secret strength,
+`NODE_ENV=production` and the config is unsafe. Checks include a supported `COMMAND_ADMIN_PASSWORD_HASH`, optional bearer-token strength when bearer auth is enabled, session secret strength,
 secure cookies, HTTPS public URL, webhook secret in webhook mode, debug mode, wildcard CORS, rate limiting
 enabled, explicit `TRUST_PROXY`, supported Node version, git binary present when git workflow is enabled,
 and writable database/attachment directories. One test per failure mode plus a valid-config test live in

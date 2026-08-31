@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## ZOLA critical path (2026-08-31 UTC)
+
+1. NEXT — publish the locally validated rebased `feature/jarvis-password-auth` candidate only with explicit push authority, then obtain exact-head CI and fresh review. Do not merge while any valid P1/P2 auth finding remains.
+2. AFTER #120 — reconcile `feature/jarvis-capability-registry` onto post-auth `main`, preserving its bounded Seller disclosure/finalization fences.
+3. AFTER #119 — reconcile draft `ui/jarvis-mobile-polish` onto the stable authentication UI and perform rendered mobile verification when approved tooling is available.
+
 ## Immediate ordered work (2026-08-30 UTC)
 
 1. DONE — PR #115 merged with expected-head protection as `a78bb4011a8b263845288351d22c68a500b3772b` from exact reviewed head `545f425d801151966ad2ddc0d01bb6d24d249d85`; CI run `33301410453` (#497) passed and the exact-head Codex review was clean.

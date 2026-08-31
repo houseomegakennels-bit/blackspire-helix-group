@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
-import { verifyAdminPasswordAsync } from '../../packages/shared/password-auth.js';
+import { verifyAdminPasswordAsyncResult } from '../../packages/shared/password-auth.js';
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
@@ -311,10 +311,16 @@ async function login(req, res) {
   // browser submits only `password` and must be configured with a password hash even in
   // development; never reinterpret the machine token as a human-entered password.
   const legacyDevelopmentFixtureToken = process.env.NODE_ENV !== 'production' && !ADMIN_PASSWORD_HASH && body?.adminToken;
-  const submitted = password ?? legacyDevelopmentFixtureToken;
-  const valid = process.env.NODE_ENV === 'production'
-    ? await verifyAdminPasswordAsync(submitted, ADMIN_PASSWORD_HASH)
-    : (password !== null && ADMIN_PASSWORD_HASH && await verifyAdminPasswordAsync(password, ADMIN_PASSWORD_HASH)) || legacyDevelopmentFixtureToken === ADMIN_TOKEN;
+  const passwordResult = (process.env.NODE_ENV === 'production' || (password !== null && ADMIN_PASSWORD_HASH))
+    ? await verifyAdminPasswordAsyncResult(password, ADMIN_PASSWORD_HASH)
+    : null;
+  if (passwordResult?.status === 'overloaded') {
+    audit(null, 'auth', 'login.overloaded', { ip: clientIp(req) });
+    return writeJson(res, 503, { error: 'authentication temporarily unavailable' }, { 'retry-after': '1' });
+  }
+  const valid = passwordResult
+    ? passwordResult.status === 'verified'
+    : legacyDevelopmentFixtureToken === ADMIN_TOKEN;
   const principal = valid ? configuredEvaluationAdminPrincipal() : null;
   const session = principal ? createSession({ ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: principal.principalId }) : null;
   if (!session) { audit(null, 'auth', 'login.failed', { ip: clientIp(req) }); return json(res, 401, { error: 'invalid credentials' }); }
