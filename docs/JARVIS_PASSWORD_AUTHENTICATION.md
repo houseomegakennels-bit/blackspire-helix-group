@@ -5,7 +5,7 @@ Jarvis browser login and machine bearer authentication use independent credentia
 On the trusted production host, from the reviewed release checkout, run:
 
 ```bash
-cd /opt/blackspire
+cd /opt/blackspire-command/current
 export PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:$PATH
 npm run auth:hash-password
 ```
@@ -19,8 +19,9 @@ Before restarting, use the existing release preflight. Then restart through the 
 ```bash
 sudo -u blackspire /opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/current/scripts/production-preflight-check.js --strict
 sudo systemctl restart blackspire-command.target
-/opt/blackspire-command/current/scripts/wait-production-ready.sh
-/opt/blackspire-command/current/scripts/health-check.sh
+/opt/blackspire-command/current/scripts/wait-production-ready.sh http://127.0.0.1:8789 \
+  blackspire-command.service blackspire-command-worker.service 60 1
+/opt/blackspire-command/current/scripts/health-check.sh http://127.0.0.1:8789 production
 ```
 
 Verify `/health` and `/ready`, sign in through the Jarvis password form, confirm the session endpoint reports the configured canonical principal, confirm a state-changing request still requires CSRF, and confirm bearer access remains denied when disabled. If readiness fails, use the existing Gate 4 compensation/rollback procedure; do not weaken validation or restore token-based browser login.
