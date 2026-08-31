@@ -4,7 +4,7 @@
 
 - Recorded **Z.O.L.A. — Zero-Trust Operations, Logic & Automation** as the future-facing user intelligence/command identity while preserving Blackspire Command as the control plane and Hermes as the existing orchestration/runtime layer. The roadmap explicitly stages the rename: no `jarvis-*` runtime path, API/auth identifier, service/deployment name, database key, persisted evidence, or historical record changed.
 - Corrected the roadmap after exact-head review showed it had incorrectly assigned real-estate property discovery to Recon. Recon remains the separate government-contract, grant, vendor-program, and bid-opportunity system. Seller Engine's authorized county/public-record sources, operator imports, and Harvester remain the current real-estate intake; any broader property discovery must be a separately reviewed bounded capability.
-- Content correction `0996c8163f3b1a3104546a4bd4efe1ac9ae690c5` precedes this canonical-memory-only descendant so the living-memory checker has a non-self-referential content anchor. PR #118 is still open: fresh exact-head CI/review and merge remain pending. No runtime, production service, database, provider, credential, or deployment state changed.
+- Reviewed prior head `b862b56da4ef83397602e1ad341800c0ff79454a` contains the roadmap correction and canonical-memory update; the subsequent anchor correction changes canonical memory only, giving the checker a non-self-referential reviewed ancestor that a GitHub merge commit will retain. PR #118 is still open: fresh exact-head CI/review and merge remain pending. No runtime, production service, database, provider, credential, or deployment state changed.
 
 ## 2026-08-30 — Canonical Jarvis result implemented and locally validated (Codex)
 
