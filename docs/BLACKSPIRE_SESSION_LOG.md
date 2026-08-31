@@ -1,10 +1,19 @@
 # Blackspire Canonical Session Log
 
+## 2026-08-31 — PR #118 ZOLA naming repair (Codex)
+
+- Fixed the canonical-memory anchor from `b862b56da4ef83397602e1ad341800c0ff79454a` (a docs-only descendant on this branch, not an ancestor of trusted `origin/main`) to `13c864b7ee72b7a427a8579e5a725dc4f31fe872` (PR #117 exact head, the last reviewed implementation commit that is an ancestor of `origin/main`). `scripts/check-living-memory.sh` now passes `CANONICAL_MEMORY_ONLY_DESCENDANT`.
+- Updated `BLACKSPIRE_SOURCE_OF_TRUTH.md` to record PR #117 as merged (the canonical result implementation is on `origin/main`), replacing the stale "pending review" language.
+- Updated future-facing roadmap and pipeline language in `BLACKSPIRE_NEXT_ACTIONS.md` and `BLACKSPIRE_ACTIVE_CONTEXT.md` from Jarvis to ZOLA: "Current ZOLA delivery sequence" and "run one bounded read-only task through the real ZOLA pipeline."
+- Preserved genuinely literal legacy identifiers: `jarvis-*` filenames, routes, service names, historical records, and quoted evidence remain unchanged.
+- Added `docs/ZOLA_NAMING_DECISION.md` and `docs/ZOLA_BLACKSPIRE_INTEGRATION_PLAN.md` to the canonical-memory allowlist in `scripts/check-living-memory.sh` and `docs/BLACKSPIRE_MEMORY_MAINTENANCE.md` so they pass living-memory validation at `origin/main`. Recon remains separate from real-estate property discovery.
+- Live PR #118 state confirmed: open, not draft, mergeable, all CI green, no human review findings resolved (only automated Codex comments). No runtime, production, deployment, or credential changes.
+
 ## 2026-08-31 — ZOLA identity roadmap review corrections (Codex)
 
 - Recorded **Z.O.L.A. — Zero-Trust Operations, Logic & Automation** as the future-facing user intelligence/command identity while preserving Blackspire Command as the control plane and Hermes as the existing orchestration/runtime layer. The roadmap explicitly stages the rename: no `jarvis-*` runtime path, API/auth identifier, service/deployment name, database key, persisted evidence, or historical record changed.
 - Corrected the roadmap after exact-head review showed it had incorrectly assigned real-estate property discovery to Recon. Recon remains the separate government-contract, grant, vendor-program, and bid-opportunity system. Seller Engine's authorized county/public-record sources, operator imports, and Harvester remain the current real-estate intake; any broader property discovery must be a separately reviewed bounded capability.
-- Reviewed prior head `b862b56da4ef83397602e1ad341800c0ff79454a` contains the roadmap correction and canonical-memory update; the subsequent anchor correction changes canonical memory only, giving the checker a non-self-referential reviewed ancestor that a GitHub merge commit will retain. PR #118 is still open: fresh exact-head CI/review and merge remain pending. No runtime, production service, database, provider, credential, or deployment state changed.
+- Verified implementation anchor `13c864b7ee72b7a427a8579e5a725dc4f31fe872` (PR #117 exact head, the canonical-Jarvis-result implementation now merged on `origin/main`) is the canonical-memory-only descendant anchor. PR #118 is open, changes documentation only, and changes no runtime or production state. The ZOLA naming decision is recorded in `BLACKSPIRE_SOURCE_OF_TRUTH.md`; legacy `jarvis-*` runtime identifiers are preserved.
 
 ## 2026-08-30 — Canonical Jarvis result implemented and locally validated (Codex)
 

@@ -1,16 +1,16 @@
 # Blackspire Active Context
 
-## Canonical Jarvis result implemented and validated locally (2026-08-30 UTC)
+## Canonical ZOLA result implemented (PR #117 merged on origin/main, 2026-08-30 UTC)
 
 Branch `fix/jarvis-canonical-result` derives one bounded, redacted human-readable result on the server for authorized completed tasks. A meaningful task summary wins; an exact generic completion token falls back only to an unambiguous completed provider attempt owned by the same task; absent text gets the fixed truthful fallback. Failed, cancelled, and `outcome_unknown` tasks never promote provider text. Task Detail, Evidence, and Conversation consume the same serialized field, conversation pairing uses persisted input/task IDs, refresh replaces the prior projection, and dynamic response text remains on `textContent`/text-node paths.
 
 The initial focused task/API/provider/evidence/PWA lane passed 111/111. Both temporary ablations were load-bearing: accepting generic `completed` suppressed the historical provider fallback and failed its regression; permitting non-completed task states promoted forbidden provider text and failed the status-ownership regression. The full trusted lane recorded 1,128 tests: 1,118 passed, 1 failed, and 9 host-conditional skips; the sole failure was the live production listener already owning `127.0.0.1:8789`, causing the production-bind fixture to fail on port collision before its intended identity diagnostic. Exact-head CI then exposed one unrelated persistence-test flake, which passed 8/8 in isolation; the unchanged rerun passed every CI gate. The single automatic exact-head Codex review found one P2: task-list polling loaded all task records per row. The correction performs one authorization-scoped batch provider-attempt query, and refreshed focused validation passes 112/112 with lint, typecheck, security scan, and whitespace clean. Production and the historical task/database remain unchanged; correction push/CI, review adjudication, merge, deployment, and authenticated historical verification remain pending.
 
-## PR #115 merged; canonical Jarvis result fix is next (2026-08-30 UTC)
+## PR #115 merged; canonical ZOLA result fix is next (2026-08-30 UTC)
 
 PR #115 is merged as `a78bb4011a8b263845288351d22c68a500b3772b` from reviewed head `545f425d801151966ad2ddc0d01bb6d24d249d85`. Exact-head CI #497 passed and the final Codex review was clean. The reviewed tree is present unchanged on `origin/main`; production was not changed and remained healthy on `608b10fd233a5a2a94fd0ce4cc03d73894c5694d` at this checkpoint.
 
-The next scoped implementation is a server-authoritative canonical human-readable Jarvis result shared by Task Detail, Evidence, and Conversation. It must derive only from an authorized completed task and its authoritative successful provider attempt, sanitize and bound text server-side, refuse promotion for failed, cancelled, and `outcome_unknown` tasks, preserve historical provider evidence without replay or rewrite, and render dynamic text inertly.
+The next scoped implementation is a server-authoritative canonical human-readable ZOLA result shared by Task Detail, Evidence, and Conversation. It must derive only from an authorized completed task and its authoritative successful provider attempt, sanitize and bound text server-side, refuse promotion for failed, cancelled, and `outcome_unknown` tasks, preserve historical provider evidence without replay or rewrite, and render dynamic text inertly.
 
 ## PR #115 exact-head provider-isolation correction in progress (2026-08-28 UTC)
 
