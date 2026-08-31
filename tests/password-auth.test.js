@@ -69,6 +69,20 @@ test('process-wide admission refuses excess derivations without a waiting queue'
   assert.equal(limiter.active, 0);
 });
 
+test('derivation admission validates its bound and release tokens cannot corrupt capacity', () => {
+  for (const limit of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => createPasswordDerivationLimiter(limit), /positive integer/);
+  }
+  const limiter = createPasswordDerivationLimiter(1);
+  const release = limiter.tryAcquire();
+  assert.equal(typeof release, 'function');
+  assert.equal(limiter.tryAcquire(), null);
+  release();
+  release();
+  assert.equal(limiter.active, 0, 'duplicate release must not produce impossible spare capacity');
+  assert.equal(typeof limiter.tryAcquire(), 'function', 'a valid release must restore exactly one slot');
+});
+
 test('derivation capacity is released after success, mismatch, and thrown errors', async () => {
   const encoded = hashAdminPassword('thirteen-char');
   const limiter = createPasswordDerivationLimiter(1);

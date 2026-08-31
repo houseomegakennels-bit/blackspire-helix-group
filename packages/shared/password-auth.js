@@ -8,17 +8,30 @@ export const PASSWORD_DERIVATION_CONCURRENCY = 4;
 export function createPasswordDerivationLimiter(limit = PASSWORD_DERIVATION_CONCURRENCY) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('Password derivation limit must be a positive integer.');
   let active = 0;
+  let poisoned = false;
+  const stateIsValid = () => Number.isSafeInteger(active) && active >= 0 && active <= limit;
   return Object.freeze({
     get active() { return active; },
     get limit() { return limit; },
     tryAcquire() {
+      // An impossible counter state must never create more expensive work. Once observed,
+      // keep this process-local boundary closed instead of attempting to repair capacity.
+      if (poisoned || !stateIsValid()) {
+        poisoned = true;
+        return null;
+      }
       if (active >= limit) return null;
       active += 1;
       let released = false;
       return () => {
         if (released) return;
         released = true;
+        if (poisoned || !stateIsValid() || active < 1) {
+          poisoned = true;
+          return;
+        }
         active -= 1;
+        if (!stateIsValid()) poisoned = true;
       };
     },
   });
