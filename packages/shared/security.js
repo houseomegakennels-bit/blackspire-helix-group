@@ -99,6 +99,8 @@ export function verifyVpsRuntime(env = process.env, {
   requiredDirs = null,
   isWritable = writable,
   dirOwnerUid = defaultDirOwnerUid,
+  dirOwnerGid = defaultDirOwnerGid,
+  groupIds = typeof process.getgroups === 'function' ? process.getgroups() : [],
   dirExists = (dir) => { try { return fs.statSync(dir).isDirectory(); } catch { return false; } },
 } = {}) {
   const errors = [];
@@ -136,7 +138,10 @@ export function verifyVpsRuntime(env = process.env, {
     if (!isWritable(dir)) { errors.push('A required persistent directory is not writable by the runtime user.'); continue; }
     if (uid !== null) {
       const owner = dirOwnerUid(dir);
-      if (owner !== null && owner !== uid) errors.push('A required persistent directory is not owned by the runtime user.');
+      const groupOwner = dirOwnerGid(dir);
+      if (owner !== null && owner !== uid && (groupOwner === null || !groupIds.includes(groupOwner))) {
+        errors.push('A required persistent directory is not owned by the runtime user or one of its groups.');
+      }
     }
   }
 
@@ -168,6 +173,10 @@ function defaultPersistentDirs(env, dbParent) {
 
 function defaultDirOwnerUid(dir) {
   try { return fs.statSync(dir).uid; } catch { return null; }
+}
+
+function defaultDirOwnerGid(dir) {
+  try { return fs.statSync(dir).gid; } catch { return null; }
 }
 
 function safeUsername() {

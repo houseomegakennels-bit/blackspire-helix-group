@@ -20,13 +20,17 @@ StartLimitBurst=5
 Type=simple
 
 # --- Least-privileged identity (blocker #2) ---
-User=blackspire
+User=blackspire-api
 Group=blackspire
+SupplementaryGroups=blackspire-api
 
 # --- Release + persistent state layout ---
 WorkingDirectory=/opt/blackspire-command/current
-# Secrets live outside Git in a 0640 root:blackspire file; values never appear in the repo.
+# Shared non-authentication settings live in command.env. Browser/session credentials are isolated
+# in an API-only file that the worker unit never opens. Both remain outside Git and root-managed.
 EnvironmentFile=/etc/blackspire/command.env
+EnvironmentFile=/etc/blackspire/command-api.env
+Environment=BLACKSPIRE_RUNTIME_USER=blackspire-api
 
 # Pinned PATH. systemd's manager PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
 # and excludes /opt/nodejs, so any helper resolving `node` through PATH would silently get the
@@ -80,6 +84,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+ProtectProc=invisible
 # Only the persistent state tree is writable; releases and everything else stay read-only.
 ReadWritePaths=/opt/blackspire-command/shared
 ProtectKernelTunables=yes

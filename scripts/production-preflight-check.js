@@ -183,8 +183,8 @@ if (unit === null) {
     execStartPre ? 'ExecStartPre runs the vps-production environment verification'
       : 'ExecStartPre must run scripts/verify-environment.sh vps-production');
 
-  const hardening = ['User=blackspire', 'Group=blackspire', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
-    'ProtectHome=yes', 'PrivateTmp=yes', 'RestrictSUIDSGID=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
+  const hardening = ['User=blackspire-api', 'Group=blackspire', 'SupplementaryGroups=blackspire-api', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
+    'ProtectHome=yes', 'PrivateTmp=yes', 'ProtectProc=invisible', 'RestrictSUIDSGID=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
     'LogsDirectory=blackspire-command', 'LogsDirectoryMode=0750', 'UMask=0027',
     'StandardOutput=append:/var/log/blackspire-command/command.log',
     'StandardError=append:/var/log/blackspire-command/command.log'];
@@ -206,17 +206,19 @@ if (unit === null) {
 {
   const apiIsolated = unit !== null && /^ExecStart=.*production-supervisor\.js --api-only$/m.test(unit);
   const workerIsolated = workerUnit !== null && /^ExecStart=.*production-supervisor\.js --worker-only$/m.test(workerUnit);
+  const apiLoadsAuth = unit !== null && /^EnvironmentFile=\/etc\/blackspire\/command-api\.env$/m.test(unit);
+  const workerExcludesAuth = workerUnit !== null && !/command-api\.env|COMMAND_ADMIN_PASSWORD_HASH|COMMAND_ADMIN_TOKEN|SESSION_SECRET/.test(workerUnit);
   const targetStartsBoth = runtimeTarget !== null && /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m.test(runtimeTarget);
   const lifecycleIndependent = unit !== null && workerUnit !== null &&
     !/Requires=blackspire-command-worker\.service/.test(unit) && !/Requires=blackspire-command\.service/.test(workerUnit);
-  const workerHardening = workerUnit !== null && ['User=blackspire', 'Group=blackspire', 'NoNewPrivileges=yes',
-    'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'ReadWritePaths=/opt/blackspire-command/shared',
+  const workerHardening = workerUnit !== null && ['User=blackspire-worker', 'Group=blackspire', 'NoNewPrivileges=yes',
+    'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'ProtectProc=invisible', 'ReadWritePaths=/opt/blackspire-command/shared',
     'CapabilityBoundingSet=', 'AmbientCapabilities=', 'TimeoutStopSec=35'].every((directive) => workerUnit.includes(directive));
-  const complete = apiIsolated && workerIsolated && targetStartsBoth && lifecycleIndependent && workerHardening;
+  const complete = apiIsolated && workerIsolated && apiLoadsAuth && workerExcludesAuth && targetStartsBoth && lifecycleIndependent && workerHardening;
   record('service-topology', complete, 'source',
     complete
-      ? 'API and worker have independent supervisors and restarts under one non-coupling target'
-      : 'API and hardened worker must use role-specific supervisors under a target without cross-service Requires coupling');
+      ? 'API and worker have independent supervisors, authentication environments, and restarts under one non-coupling target'
+      : 'API and hardened worker must use role-specific supervisors and authentication environments under a target without cross-service Requires coupling');
 }
 
 // --- Startup-path interpreter resolution ----------------------------------------------------

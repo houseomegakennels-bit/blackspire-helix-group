@@ -14,15 +14,15 @@ does not establish production activation and remains separate from the disabled 
 
 ## Intended runtime identity
 
-- **User:** `blackspire` — system account, no login shell (`/usr/sbin/nologin`), no password.
-- **Group:** `blackspire` (primary).
-- The service's `verifyVpsRuntime`/`verify-environment.sh` gates require: not root,
-  `BLACKSPIRE_RUNTIME_USER=blackspire` matching the effective user, and the persistent state
-  directories writable by **and owned by** this uid.
+- **API user:** `blackspire-api`; **worker user:** `blackspire-worker`. Both are distinct system
+  accounts with no login shell or password.
+- **Shared group:** `blackspire`. Persistent state is group-writable where both roles require it.
+- The runtime gates require the declared role user to match the effective user and persistent state
+  to be writable and owned by either that user or one of its groups.
 
 ## Ownership and permission map
 
-Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blackspire`.
+Layout rooted at `/opt/blackspire-command` (the code default).
 
 | Path | Owner:Group | Mode | Rationale |
 |---|---|---|---|
@@ -30,13 +30,14 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 | `/opt/blackspire-command/releases/` | `root:blackspire` | `0755` | Parent of immutable releases; only deploy tooling (root) writes. |
 | `/opt/blackspire-command/releases/<sha>/` | `root:blackspire` | directories `0755`; ordinary files `0644`; archived executables `0755` | **Immutable release.** Runtime traverses directories, reads files, and executes required entrypoints; it never writes. Enforces that running code cannot mutate itself. |
 | `/opt/blackspire-command/current` | `root:blackspire` (symlink) | symlink | Points at the active release. Swapped atomically by deploy tooling as root; runtime only reads. Symlink ownership does not grant target write. |
-| `/opt/blackspire-command/shared/` | `blackspire:blackspire` | `0750` | Persistent-state root; runtime-owned. |
-| `/opt/blackspire-command/shared/database/` | `blackspire:blackspire` | `0700` | SQLite `command.sqlite` + WAL/SHM. Runtime read/write. This is the DB parent `verifyVpsRuntime` checks. |
-| `/opt/blackspire-command/shared/evidence/` | `blackspire:blackspire` | `0700` | Durable sanitized evidence/audit. Runtime read/write. |
-| `/opt/blackspire-command/shared/backups/` | `blackspire:blackspire` | `0700` | `scripts/backup.js` default destination; SHA-256 sidecars. Runtime/backup read/write. |
+| `/opt/blackspire-command/shared/` | `blackspire-api:blackspire` | `0770` | Persistent-state root shared by the two isolated role identities. |
+| `/opt/blackspire-command/shared/database/` | `blackspire-api:blackspire` | `0770` | SQLite `command.sqlite` + WAL/SHM; both roles require read/write. |
+| `/opt/blackspire-command/shared/evidence/` | `blackspire-api:blackspire` | `0770` | Durable sanitized evidence/audit shared by both roles. |
+| `/opt/blackspire-command/shared/backups/` | `blackspire-api:blackspire` | `0770` | Backup destination shared through the runtime group. |
 | `/var/log/blackspire-command/` | `blackspire:blackspire` | `0750` | Created by systemd `LogsDirectory`; contains isolated API and worker JSON logs. |
 | `/etc/blackspire/` | `root:blackspire` | `0750` | Config dir. |
-| `/etc/blackspire/command.env` | `root:blackspire` | `0640` | **Secrets** (`COMMAND_ADMIN_PASSWORD_HASH`, optional `COMMAND_ADMIN_TOKEN`, `SESSION_SECRET`, ...). Group-readable by runtime only; never world-readable; never committed to Git. |
+| `/etc/blackspire/command.env` | `root:blackspire` | `0640` | Shared non-authentication production settings. Loaded by API and worker; must contain no password verifier, bearer token, or session secret. |
+| `/etc/blackspire/command-api.env` | `root:blackspire-api` | `0640` | API-only password verifier, optional machine bearer token, and session secret. The distinct worker UID and group cannot read it. |
 | `/etc/systemd/system/blackspire-command.service`, `blackspire-command-worker.service`, `blackspire-command.target` | `root:root` | `0644` | Reviewed API, worker, and coordination units; only root manages. |
 
 ### Directories that MUST remain root-owned (runtime must NOT own or write)
@@ -45,12 +46,13 @@ Layout rooted at `/opt/blackspire-command` (the code default). "runtime" = `blac
 - `/etc/systemd/system/blackspire-command.service` and all systemd paths.
 - Other services' journal files and `/var/lib/docker/containers/*`; Blackspire rotation must never
   target broad host or container globs.
-- `/etc/blackspire/command.env` is `root:blackspire 0640` — owned by root, only *readable* by
-  the runtime group, never writable by the runtime.
+- `/etc/blackspire/command.env` is `root:blackspire 0640`; the API-only file is
+  `root:blackspire-api 0640`. Both are root-owned and runtime read-only.
 
 ### Config that must not be broadly readable
 
-- `/etc/blackspire/command.env` → `0640 root:blackspire` (no world bits). Contains the admin
+- `/etc/blackspire/command.env` → `0640 root:blackspire` (no world bits). Contains shared settings
+  only. `/etc/blackspire/command-api.env` is `0640 root:blackspire-api` and contains the admin
   token and session secret. Method/name only ever appears in memory docs — never a value.
 
 ## Logging
