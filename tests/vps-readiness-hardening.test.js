@@ -389,7 +389,13 @@ test('worker preflight validates the bind contract without claiming the API port
   const env = preflightEnv({ PATH: `${fakeBin}:${process.env.PATH}` });
   const api = run('scripts/verify-environment.sh', ['vps-production', 'api'], env);
   assert.match(api.stderr, /already in use/, 'API preflight must retain exclusive port ownership');
-  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], env);
+  const workerEnv = {
+    ...env,
+    COMMAND_ADMIN_PASSWORD_HASH: undefined,
+    COMMAND_ADMIN_TOKEN: undefined,
+    SESSION_SECRET: undefined,
+  };
+  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], workerEnv);
   assert.doesNotMatch(worker.stderr, /already in use/, 'worker restart must not be blocked by the healthy API listener');
   if (process.getuid() === 0) {
     assert.match(worker.stderr, /production runtime must not run as root/, 'the worker fixture must reach the final root boundary');
