@@ -1253,3 +1253,49 @@ Exact-head review of `407630f3faf152f7c1085e46703edc9c0de43c32` reproduced a pro
 - Behavioral regressions prove the global peak, no-queue overload refusal, release on every terminal path, limiter-state invariants, distributed-request saturation, responsive health/readiness, legitimate sequential login, and session issuance following valid verification. A deliberate cap-raising ablation caused the distributed-overload regression to fail because no attempt was refused; restoration returned focused validation to green.
 - Audited browser, runbook, iPhone, release, Codex/probe, and provider credential boundaries. The browser never submits the bearer token; stale operator instructions were corrected; the disposable iPhone launcher no longer creates an unused admin token; and Codex child tests now explicitly refuse inheritance of the password hash. No password, hash, production credential, live provider, production data, service, deployment, or production state was created, loaded, or changed.
 - Node 22.23.1 trusted validation passed 1,144 total tests: 1,135 passed, 0 failed, 9 host-conditional skips; trusted inventory 75/75 and containment left zero descendants. Focused auth/config/PWA coverage passed 115/115 before the broader lane. Root lint, typecheck, build, secret scan, zero-vulnerability high audit, production preflight (`source=22/22 deployment=4/4`), all tracked shell syntax, whitespace, and living-memory checks passed. The separate frontend lint/build passed with its existing build warning, while its deterministic install reports seven high dependency advisories. Direct root execution of release/Codex fixture files failed outside the trusted harness, and the four durable-release failures reproduced unchanged on pristine `origin/main`; the trusted isolated runner passed those files, so they are environment-specific and not branch-caused. Push, exact-head CI/review, merge, and deployment remain unperformed and unauthorized.
+
+## 2026-09-01 — PR #120 worker secret-boundary integration (Hermes Lead)
+
+- **Repository state verified**: PR #120 head `f51ab37` confirmed as local HEAD in `/root/blackspire-helix-group`; base `5daab10` confirmed as ancestor of `f51ab37` via `git merge-base --is-ancestor`. Local working tree was restored to the exact PR head after a local regression was discovered: a staged `path/to/greeting.py` bogus artifact and working-tree reverts of the limiter/auth fixes. The bogus artifact was removed and all tracked files restored to HEAD.
+
+- **Review thread reconstruction**: All 13 GraphQL review threads retrieved with explicit `isResolved`/`isOutdated` booleans. 8 current/open threads, 5 outdated. Independent classification performed against source + tests (not inferred from outdated status alone).
+
+- **Thread adjudication (13/13)**:
+
+  | # | Severity | Original SHA | Current | Classification | Evidence |
+  |---|----------|-------------|---------|----------------|----------|
+  | 1 | P1 | f51ab37 | current | FIXED | Login handler uses `verifyAdminPasswordAsyncResult`; 10/10 password-auth tests pass |
+  | 2 | P2 | f51ab37 | current | FIXED | `legacyDevelopmentFixtureToken` gated on `NODE_ENV !== 'production' && !ADMIN_PASSWORD_HASH` (server.js:313) |
+  | 3 | P2 | 261a129 | current | FIXED | Legacy token fallback removed; password auth is authoritative |
+  | 4 | P1 | 261a129 | outdated | OUTDATED | Health/readiness args already correct at f51ab37 |
+  | 5 | P3 | 261a129 | outdated | OUTDATED | Hash quoting guidance documented in JARVIS_PASSWORD_AUTHENTICATION.md |
+  | 6 | P3 | f51ab37 | current | FIXED | PWA wording updated: "The password is sent only to sign in and is never persisted in this browser" (index.html) |
+  | 7 | P2 | dee0b81 | current | FIXED | Modern async fetch with proper error handling in jarvis.js |
+  | 8 | P2 | dee0b81 | outdated | FIXED | Gate4 iPhone setup documented; setup path verified in code |
+  | 9 | P1 | f51ab37 | current | FIXED | `codex_probe()` strips `COMMAND_ADMIN_PASSWORD_HASH` via `env -u` (verify-environment.sh:12) |
+  | 10 | P2 | dee0b81 | outdated | FIXED | Disposable iPhone guide updated |
+  | 11 | P2 | f51ab37 | current | FIXED | Limiter with fail-closed poisoned state, 10/10 tests pass |
+  | 12 | P1 | f51ab37 | current | **STILL VALID → FIXED** | Worker service used shared `User=blackspire` + `command.env`; integrated fix isolates to `User=blackspire-worker` |
+  | 13 | P2 | f51ab37 | current | FIXED | Build report auth section updated to reference `command-api.env` |
+
+- **Worker secret-boundary fix integrated** (5 commits on branch `lead/pr120-worker-secret-boundary-isolated`, based on `f51ab37`):
+  - `17dcf21` — fix: isolate worker from authentication secrets — `User=blackspire-worker` (was `blackspire`), role-based `verify-environment.sh` (worker refuses `COMMAND_ADMIN_PASSWORD_HASH`, `COMMAND_ADMIN_TOKEN`, `SESSION_SECRET`), API-only `EnvironmentFile=/etc/blackspire/command-api.env`, new `production-api.env.example`.
+  - `5797403` — fix: preserve cross-role state writability — setgid `2770` dirs, group-writable shared state, cross-role SQLite handoff test.
+  - `1b5db9e` — fix: align Gate 4 with role secret boundary — Gate 4 preparation commands now provision distinct `blackspire-api` and `blackspire-worker` accounts; validation commands split into `api` and `worker` roles.
+  - `cacce29` — test: enforce worker auth secret boundary — adds `tests/worker-auth-secret-boundary.test.js` (5 tests verifying distinct identities, worker refuses secrets, shared profile has no auth secrets, Gate 4 preserves API-only boundary, Codex regressions cover password verifier).
+  - `781d11c` — test: strip API auth secrets from worker preflight fixture — updates `tests/vps-readiness-hardening.test.js` to strip auth keys from the worker bind-contract test (which used shared `preflightEnv()` defaults that included auth secrets; worker role now rejects them).
+
+- **Integration validation**: `password-auth.test.js` 10/10 pass; `worker-auth-secret-boundary.test.js` 5/5 pass; `production-codex-contract.test.js` 46/46 pass; `vps-readiness-hardening.test.js` 41 pass + 3 root-only skips + 0 fail; `production-bind-boundary.test.js` 5/5 pass (systemd/logs/durable DB handoff); `codex-worker.test.js` 8/8 pass; `cookies-csrf.test.js` requires running server (pre-existing, environment-specific); `api-workspace-authorization.test.js` fails on `f51ab37` too (pre-existing, requires server). `npm audit --audit-level=high` = 0 vulnerabilities. `scripts/secret-scan.js` = no secrets detected. All tracked shell scripts pass `bash -n`. `git diff --check` clean. Lint, typecheck, build all pass.
+
+- **Pre-existing failures (not caused by integration)**: `production-bind-boundary.test.js` "fails closed on unverified identity" and `production-execution-profile.test.js` (missing codex CLI) fail identically on clean `f51ab37`. `cookies-csrf.test.js` requires a live API server. `api-workspace-authorization.test.js` fails identically on `f51ab37`. All classified as environment-specific or pre-existing.
+
+- **Authorization boundary**: No push, merge, deploy, or production changes. Branch is local-only at `lead/pr120-worker-secret-boundary-isolated` (HEAD `781d11c`).
+
+## 2026-09-01 — PR #120 exact-head verification (Hermes Lead)
+
+- PR #120 head SHA verified: `f51ab37e50c22b5b042624cf485834a7be0b14af` (matches remote `origin/feature/jarvis-password-auth`).
+- PR #120 base SHA verified: `5daab109830c84d8c62e700cfbdc4c8e8824c22b` (ancestor of f51ab37 via `git merge-base --is-ancestor`).
+- Branch rebased onto clean `origin/main` at `5daab10` (9 commits: password auth migration, async scrypt containment, legacy token retirement, ZOLA docs).
+- All CI checks green at f51ab37 (3m29s: Install/migrate/test/build/lint/typecheck/scan/audit + Vercel).
+- PR review: open, mergeable, `reviewDecision: null` (no human review yet; 8 comments from `chatgpt-codex-connector` bot, all in COMMENTED state).
+- Declared READY FOR BLACKSPIRE WORK after pre-flight verification.

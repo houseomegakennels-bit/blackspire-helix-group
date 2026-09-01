@@ -2,7 +2,7 @@
 
 ## ZOLA critical path (2026-08-31 UTC)
 
-1. NEXT — publish the locally validated rebased `feature/jarvis-password-auth` candidate only with explicit push authority, then obtain exact-head CI and fresh review. Do not merge while any valid P1/P2 auth finding remains.
+1. NEXT — branch `lead/pr120-worker-secret-boundary-isolated` (HEAD `781d11c`, based on exact PR #120 head `f51ab37`) has integrated the worker secret-boundary fix for the last open P1 (Thread #12). All 13 review threads adjudicated: 11 FIXED at PR head, 1 OUTDATED, 1 STILL VALID→FIXED. Local-only commit on isolated branch; **NOT pushed**. Next action: push this candidate SHA and obtain exact-head CI + fresh independent review. Do NOT push the PR head `f51ab37` itself; push the candidate `781d11c`.
 2. AFTER #120 — reconcile `feature/jarvis-capability-registry` onto post-auth `main`, preserving its bounded Seller disclosure/finalization fences.
 3. AFTER #119 — reconcile draft `ui/jarvis-mobile-polish` onto the stable authentication UI and perform rendered mobile verification when approved tooling is available.
 
