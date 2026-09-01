@@ -2,7 +2,7 @@
 
 ## ZOLA critical path (2026-08-31 UTC)
 
-1. NEXT — branch `lead/pr120-worker-secret-boundary-isolated` contains the locally validated PR #120 worker secret-boundary, cross-role restore, regression, and authentication-report corrections through implementation anchor `6faecbfea025bf79553c3331e62de9a7f4848bf5`, followed only by the canonical-memory refresh that records this checkpoint. The latest independent source-and-test adjudication classifies all 13 review findings FIXED in the local tree, superseding the older historical session table's status labels without rewriting that evidence; remote PR head `f51ab37` still lacks the two fresh P1/P2 corrections. Nothing is pushed. The next authorized step is to publish the final local branch HEAD, then obtain fresh exact-head CI and independent review; never publish the stale `781d11c` or `f51ab37` as the candidate.
+1. NEXT — branch `fix/pr120-p2s-660dfb` contains the locally validated PR #120 candidate through implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf`, followed only by the canonical-memory checkpoint. All 16 review topics are fixed or superseded in the local tree; remote PR head `660dfb63444069c734dcff50415cb84c4fd919b6` lacks the three latest P2 corrections. Nothing is pushed. The single next action is operator authorization to push the final local candidate SHA, followed by fresh exact-head CI and independent remote review.
 2. AFTER #120 — reconcile `feature/jarvis-capability-registry` onto post-auth `main`, preserving its bounded Seller disclosure/finalization fences.
 3. AFTER #119 — reconcile draft `ui/jarvis-mobile-polish` onto the stable authentication UI and perform rendered mobile verification when approved tooling is available.
 

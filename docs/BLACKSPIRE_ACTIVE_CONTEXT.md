@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-01 — PR #120 local P2 candidate complete
+
+Local implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf` closes the three exact-head P2 findings after remote `660dfb63444069c734dcff50415cb84c4fd919b6`: Gate 4 rejects worker membership in the API credential group by numeric GID, current iPhone instructions preserve the shared/API-only environment split, and the PWA reports 503 saturation as credential-neutral temporary unavailability. Behavioral Gate4 and PWA mutations were load-bearing. The Node 22.23.1 trusted lane and secondary source gates are clean; installed production units remain older than the candidate and were not modified. A following canonical-memory commit records this verified checkpoint. Nothing is pushed, merged, deployed, or production-verified at the new local head.
+
 ## 2026-09-01 — PR #120 worker authentication boundary locally integrated
 
 Branch `lead/pr120-worker-secret-boundary-isolated` extends remote PR #120 head `f51ab37e50c22b5b042624cf485834a7be0b14af`. The API and worker now use distinct non-root identities. Only the API loads the root-managed API authentication profile; the worker loads the shared credential-free profile and refuses startup if it receives the password verifier, optional bearer credential, or session secret. Provider and Codex children retain their explicit sanitized environments. Gate 4 preparation provisions and validates the two roles independently, shared durable state remains group-writable across role handoff, and disposable restore output preserves the reviewed cross-role mode for a separately authorized cutover. Current-state authentication rows in the build report now consistently describe password-backed browser sessions and optional independent machine bearer authentication.
