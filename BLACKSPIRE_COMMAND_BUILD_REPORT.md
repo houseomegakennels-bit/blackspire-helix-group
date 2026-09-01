@@ -107,8 +107,8 @@ dependency).
 | Telegram numeric user allowlist | FUNCTIONAL LOCAL | `apps/telegram/bot.js`, `packages/shared/config.js` | `tests/integration.test.js` unauthorized Telegram user ignored | `TELEGRAM_ALLOWED_USERS` | Add allowlist management UI. |
 | Telegram polling runtime | FUNCTIONAL LOCAL DRY-RUN / LIVE WITH TOKEN | `apps/telegram/bot.js`, `scripts/start-local.js` | `tests/integration.test.js` dry-run polling test | `TELEGRAM_BOT_TOKEN` for live polling | Add webhook route. |
 | Telegram message sending | MOCKED / LIVE WITH TOKEN | `apps/telegram/bot.js` | `tests/integration.test.js` mocked Bot API shape | `TELEGRAM_BOT_TOKEN` | Run live Telegram test after token. |
-| Jarvis PWA API connectivity | FUNCTIONAL LOCAL | `apps/jarvis-pwa/public/index.html`, `apps/api/server.js` | `tests/integration.test.js` API endpoint used by Jarvis | Admin token | Add browser E2E test. |
-| Jarvis authentication | FUNCTIONAL LOCAL | `apps/jarvis-pwa/public/index.html`, `apps/api/server.js` | Protected API tests | Strong `COMMAND_ADMIN_TOKEN` | Replace localStorage bearer with secure sessions before production. |
+| Jarvis PWA API connectivity | FUNCTIONAL LOCAL | `apps/jarvis-pwa/public/index.html`, `apps/api/server.js` | `tests/integration.test.js` API endpoint used by Jarvis; `tests/static-assets.test.js` production PWA login contract | Operator password backed by server-only `COMMAND_ADMIN_PASSWORD_HASH`; `SESSION_SECRET` | Add browser E2E test. |
+| Jarvis authentication | FUNCTIONAL LOCAL | `apps/jarvis-pwa/public/index.html`, `apps/api/server.js`, `packages/shared/password-auth.js`, `packages/shared/sessions.js` | `tests/password-auth.test.js`; `tests/cookies-csrf.test.js`; protected API tests | Server-only `COMMAND_ADMIN_PASSWORD_HASH`, `SESSION_SECRET`; a distinct `COMMAND_ADMIN_TOKEN` only for explicitly enabled machine bearer clients | Browser password login resolves the canonical principal before issuing an HttpOnly/SameSite session; the browser neither receives nor stores `COMMAND_ADMIN_TOKEN`. Add browser E2E coverage. |
 | Voice input/spoken output | STUBBED | `apps/jarvis-pwa/public/index.html` | No automated voice test | Browser speech APIs | Add server transcription/TTS adapters. |
 | Docker/local startup | FUNCTIONAL LOCAL | `Dockerfile`, `docker-compose.yml`, `scripts/start-local.js` | `npm run build`; previous manual startup smoke | Docker for compose | Add container healthcheck. |
 | Backup/restore | FUNCTIONAL LOCAL | `scripts/backup.js`, `scripts/restore.js` | Script-level only | Existing SQLite DB | Add automated backup/restore test. |
@@ -185,7 +185,7 @@ NO — not as a production system. It is safe to merge only as a local foundatio
 1. Credential-free local orchestration is now proven end-to-end.
 2. External provider and Telegram/GitHub live paths are credential-gated and not live-verified.
 3. Telegram webhook, file upload, and voice-note handling remain missing.
-4. Secure cookie sessions, CSRF, and rate limiting remain missing.
+4. Secure HttpOnly/SameSite cookie sessions, CSRF protection, and persisted rate limiting are implemented and locally tested; production deployment and real-browser E2E verification remain outstanding.
 5. GitHub App flow and live draft PR creation remain unverified.
 6. Provider cost accounting is persisted but estimated unless real provider responses are used.
 7. Approval records exist, but approval UI/detail endpoints need refinement.
@@ -206,14 +206,14 @@ Expected local result: Hermes creates a `hermes/<taskId>` branch, writes the fil
 - Live Telegram Bot API send/receive still requires your bot token and allowlisted user ID.
 - Live GitHub draft PR creation requires GitHub credentials and a target repository policy.
 - Live OpenAI, Anthropic, Codex, and Claude Code execution requires the respective credentials/installed CLIs.
-- Telegram webhook mode, file uploads, result-file delivery, voice-note transcription, secure session cookies, CSRF protection, rate limiting, and incident bundle export remain unimplemented and must not be described as complete.
+- Telegram webhook live transport, real Telegram file transfer, a production transcription backend, large-file result delivery, and incident bundle export remain unverified or incomplete as described below. Secure HttpOnly/SameSite sessions, CSRF protection, and persisted rate limiting are implemented and locally tested; they must not be described as production-verified.
 
 ## PRODUCTION HARDENING RESULTS
 
 | Requirement | Status | Exact file paths | Exact tests | Credentials still required | Remaining limitations |
 |---|---:|---|---|---|---|
 | Approval request/decision persistence with risk, requester, decider, expiration, idempotency, and audit | FUNCTIONAL LOCAL | `packages/task-engine/db.js`, `packages/task-engine/tasks.js`, `packages/hermes/hermes.js`, `apps/api/server.js` | `tests/hardening.test.js` approval records test | None local | Approval UI can expose more detail. |
-| Secure Jarvis session login/logout/status/revoke | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/api/server.js`, `apps/jarvis-pwa/public/index.html` | `tests/hardening.test.js` secure session test; `tests/acceptance.test.js` Jarvis asset test | Strong `COMMAND_ADMIN_TOKEN`, `SESSION_SECRET` | Browser E2E should be added with a real browser. |
+| Secure Jarvis password login/logout/status/revoke | FUNCTIONAL LOCAL | `packages/shared/password-auth.js`, `packages/shared/security.js`, `packages/shared/sessions.js`, `apps/api/server.js`, `apps/jarvis-pwa/public/index.html` | `tests/password-auth.test.js`; `tests/cookies-csrf.test.js`; `tests/hardening.test.js` secure session test; `tests/acceptance.test.js` Jarvis asset test | Server-only `COMMAND_ADMIN_PASSWORD_HASH`, `SESSION_SECRET`; a distinct `COMMAND_ADMIN_TOKEN` only for explicitly enabled machine bearer clients | The canonical principal is resolved before session issuance. The browser receives/stores neither the bearer token nor password hash; browser E2E should be added with a real browser. |
 | HttpOnly/SameSite cookie sessions and no token in localStorage | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/jarvis-pwa/public/index.html` | `tests/hardening.test.js`; `tests/acceptance.test.js` asserts no `localStorage.commandToken` | HTTPS for Secure cookies in production | Production deployment must set HTTPS base URL. |
 | CSRF protection for state-changing session requests | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/api/server.js`, `apps/jarvis-pwa/public/index.html` | `tests/hardening.test.js` missing/invalid/valid CSRF checks | None local | Bearer-token API clients remain CSRF-exempt by design. |
 | Rate limiting for login/API actions/Telegram | FUNCTIONAL LOCAL | `packages/shared/security.js`, `apps/api/server.js`, `apps/telegram/bot.js` | `tests/hardening.test.js` login rate-limit test; Telegram command test | None local | Production distributed deployments need shared rate-limit storage. |
