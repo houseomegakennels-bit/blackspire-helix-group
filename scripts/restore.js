@@ -73,7 +73,10 @@ function main() {
     fs.copyFileSync(backup, tempTarget, fs.constants.COPYFILE_EXCL);
     const fd = fs.openSync(tempTarget, 'r+');
     try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-    fs.chmodSync(tempTarget, 0o600);
+    // The published inode can later be selected by an operator-authorized cutover into the
+    // setgid production database directory. Keep owner/group write so the isolated API and worker
+    // identities can both use it; disposable parents remain private and archival backups stay 0600.
+    fs.chmodSync(tempTarget, 0o660);
     // Post-copy validation independently re-proves the copy is intact and schema-complete rather
     // than trusting that the copy operation reported success.
     validateDatabase(tempTarget, 'restored database');

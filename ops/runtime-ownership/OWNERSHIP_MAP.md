@@ -74,7 +74,8 @@ uses `copytruncate`, and never rotates Docker-wide or unrelated host logs.
 - **Restore/migration** are never implicit. Restore rehearsal targets disposable paths only;
   migration requires `BLACKSPIRE_RUN_MIGRATIONS=true` under a separately approved controlled
   writer outage.
-- The runtime (`blackspire`) needs **no** capabilities: port 8787 > 1024, so no
+- The API and worker runtime identities need **no** capabilities: the production port is
+  unprivileged, so no
   `CAP_NET_BIND_SERVICE`; the unit template sets an empty capability set.
 
 ## Validation against repository tooling
@@ -83,9 +84,9 @@ uses `copytruncate`, and never rotates Docker-wide or unrelated host logs.
 |---|---|---|
 | `verifyVpsRuntime` | uid ≠ 0; role-specific `BLACKSPIRE_RUNTIME_USER` == effective user; DB parent exists; each of `[dbParent, shared/database, shared/evidence, shared/backups]` writable and owned by the role uid or one of its groups; PORT 1–65535; bounded timeouts | API and worker use distinct non-root identities in shared group `blackspire`; persistent directories are setgid/group-writable `2770`; `releases/*` is excluded from the writable set so its root ownership does not fail the gate. |
 | `verify-environment.sh vps-production [api|worker]` | non-root; `BLACKSPIRE_RUNTIME_USER` ≠ root; DB parent exists; PORT syntax valid; API alone requires the port to be free; timeouts valid; no implicit migrations | Both roles validate one shared profile, while a worker restart cannot be blocked by the healthy API listener that owns the port. |
-| `scripts/production-supervisor.js` | runs `verifyVpsRuntime`, validates deployment identity, then spawns exactly the selected API or worker role | Each independent service runs as `blackspire`; both pass the same gate before spawn. |
+| `scripts/production-supervisor.js` | runs `verifyVpsRuntime`, validates deployment identity, then spawns exactly the selected API or worker role | The independent services run as `blackspire-api` and `blackspire-worker`; each passes its role-bound gate before spawn. |
 | `scripts/backup.js` | default dest = `shared/backups` (never inside a release, outside the DB dir); target not a symlink; 0700/0600 | `shared/database` → `defaultBackupDir` returns `shared/backups`; `shared/backups` is outside `shared/database` and not under `releases/`. |
-| `scripts/restore.js` | disposable target, never the live DB; backup preserved | Rehearsal uses a disposable path under a temp dir; `shared/database/command.sqlite` is the protected live path. |
+| `scripts/restore.js` | disposable owner-private target, never the live DB; backup preserved | Rehearsal uses a disposable path under a temp dir; it does not promote a restored file. Any separately authorized production cutover must normalize the final live DB to the reviewed `blackspire-api:blackspire` group-writable contract before either service restarts. |
 | `release-create.sh` / `release-rollback.sh` | archive to `releases/<sha>`; switch only the symlink | Run as root/deploy with write to `releases` + `current` only. |
 
 Credential-free fixture verification of the `verifyVpsRuntime` expectations is in
