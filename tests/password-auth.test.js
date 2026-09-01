@@ -130,3 +130,10 @@ test('active production runbooks preserve the API-only authentication boundary',
   assert.doesNotMatch(gate4, /-type f -exec chmod 0660/,
     'workspace migration must preserve existing executable bits');
 });
+
+test('iPhone guide documents password hash in the API-only environment, not the shared environment', () => {
+  const guide = fs.readFileSync(new URL('../BLACKSPIRE_COMMAND_SETUP_FROM_IPHONE.md', import.meta.url), 'utf8');
+  assert.match(guide, /In API-only `\/etc\/blackspire\/command-api\.env`, configure `COMMAND_ADMIN_PASSWORD_HASH`/);
+  assert.match(guide, /Never put[^\n]*authentication values[^\n]*\/etc\/blackspire\/command\.env/,
+    'the guide must explicitly warn that the worker-loaded shared file cannot contain authentication values');
+});

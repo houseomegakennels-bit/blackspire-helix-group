@@ -788,6 +788,11 @@ function downloadExport(format) {
 }
 
 /* ---------- auth ---------- */
+const loginFailureMessage = (status) => {
+  if (status === 429) return 'Too many attempts — wait a minute and retry.';
+  if (status === 503) return 'Authentication temporarily unavailable — retry in a moment.';
+  return 'Sign-in failed. Invalid credentials.';
+};
 async function checkSession() {
   const { body } = await api.session();
   store.authed = Boolean(body.authenticated);
@@ -803,7 +808,10 @@ async function login() {
   input.value = '';
   const { response, body } = await api.login(password);
   input.value = '';
-  if (!response.ok) { setNotice('sessionNotice', response.status === 429 ? 'Too many attempts — wait a minute and retry.' : 'Sign-in failed. Invalid credentials.'); return; }
+  if (!response.ok) {
+    setNotice('sessionNotice', loginFailureMessage(response.status));
+    return;
+  }
   store.csrfToken = body.csrfToken || ''; store.authed = true;
   await checkSession();
   setNotice('sessionNotice', '');

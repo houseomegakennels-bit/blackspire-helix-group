@@ -61,6 +61,7 @@ logrotate_file="${BLACKSPIRE_GATE4_LOGROTATE_FILE:-/etc/logrotate.d/blackspire-c
 runtime_user="${BLACKSPIRE_GATE4_RUNTIME_USER:-blackspire}"
 api_user="${BLACKSPIRE_GATE4_API_USER:-blackspire-api}"
 worker_user="${BLACKSPIRE_GATE4_WORKER_USER:-blackspire-worker}"
+api_group="${BLACKSPIRE_GATE4_API_GROUP:-blackspire-api}"
 approved_sha="${BLACKSPIRE_GATE4_APPROVED_SHA:-}"
 unit_backup_dir="${BLACKSPIRE_GATE4_UNIT_BACKUP_DIR:-/var/backups/blackspire-command/gate4-${approved_sha:-unapproved}}"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -333,10 +334,20 @@ for checked_user in "$api_user" "$worker_user"; do
   elif ! id -Gn "$checked_user" | tr ' ' '\n' | grep -qx "$runtime_user"; then runtime_identity_detail+="${runtime_identity_detail:+; }$checked_user is not in shared group $runtime_user"
   fi
 done
-if [[ -z "$runtime_identity_detail" && "$(id -u "$api_user")" != "$(id -u "$worker_user")" ]]; then
-  record runtime-ownership READY "distinct non-root API and worker accounts share only group $runtime_user"
-elif [[ -z "$runtime_identity_detail" ]]; then
-  record runtime-ownership FAILED 'API and worker runtime accounts must have distinct UIDs'
+# Resolve numeric GIDs rather than trusting group names. `id -G` includes the primary and
+# supplementary groups systemd would initialize, while the numeric comparison also catches an NSS
+# alias that names the API credential group's GID differently.
+if [[ -z "$runtime_identity_detail" ]]; then
+  api_group_gid="$(getent group "$api_group" 2>/dev/null | awk -F: 'NR == 1 { print $3 }' || true)"
+  if [[ ! "$api_group_gid" =~ ^[0-9]+$ ]]; then
+    record runtime-ownership PENDING "API credential group $api_group is absent or has no verifiable numeric GID"
+  elif id -G "$worker_user" | tr ' ' '\n' | grep -qx "$api_group_gid"; then
+    record runtime-ownership FAILED "worker must not belong to API credential group $api_group (GID $api_group_gid)"
+  elif [[ "$(id -u "$api_user")" != "$(id -u "$worker_user")" ]]; then
+    record runtime-ownership READY "distinct non-root API and worker accounts share only group $runtime_user"
+  else
+    record runtime-ownership FAILED 'API and worker runtime accounts must have distinct UIDs'
+  fi
 else
   record runtime-ownership PENDING "$runtime_identity_detail"
 fi
