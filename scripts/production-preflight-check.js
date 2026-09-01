@@ -185,7 +185,7 @@ if (unit === null) {
 
   const hardening = ['User=blackspire-api', 'Group=blackspire', 'SupplementaryGroups=blackspire-api', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
     'ProtectHome=yes', 'PrivateTmp=yes', 'ProtectProc=invisible', 'RestrictSUIDSGID=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
-    'LogsDirectory=blackspire-command', 'LogsDirectoryMode=0750', 'UMask=0027',
+    'LogsDirectory=blackspire-command', 'LogsDirectoryMode=2770', 'UMask=0007',
     'StandardOutput=append:/var/log/blackspire-command/command.log',
     'StandardError=append:/var/log/blackspire-command/command.log'];
   const missingHardening = hardening.filter((directive) => !unit.includes(directive));
@@ -213,7 +213,8 @@ if (unit === null) {
     !/Requires=blackspire-command-worker\.service/.test(unit) && !/Requires=blackspire-command\.service/.test(workerUnit);
   const workerHardening = workerUnit !== null && ['User=blackspire-worker', 'Group=blackspire', 'NoNewPrivileges=yes',
     'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'ProtectProc=invisible', 'ReadWritePaths=/opt/blackspire-command/shared',
-    'CapabilityBoundingSet=', 'AmbientCapabilities=', 'TimeoutStopSec=35'].every((directive) => workerUnit.includes(directive));
+    'CapabilityBoundingSet=', 'AmbientCapabilities=', 'TimeoutStopSec=35', 'LogsDirectoryMode=2770',
+    'UMask=0007'].every((directive) => workerUnit.includes(directive));
   const complete = apiIsolated && workerIsolated && apiLoadsAuth && workerExcludesAuth && targetStartsBoth && lifecycleIndependent && workerHardening;
   record('service-topology', complete, 'source',
     complete
@@ -333,7 +334,8 @@ if (unit === null) {
   const logrotate = read('ops/blackspire-command-logrotate.conf') ?? '';
   const isolatedRotation = /^\/var\/log\/blackspire-command\/command\.log\s*\{/m.test(logrotate)
     && /\bmaxsize\s+50M\b/.test(logrotate)
-    && /\bcreate\s+0640\s+blackspire\s+blackspire\b/.test(logrotate)
+    && /\bcreate\s+0660\s+blackspire-api\s+blackspire\b/.test(logrotate)
+    && /\bcreate\s+0660\s+blackspire-worker\s+blackspire\b/.test(logrotate)
     && !/\/var\/lib\/docker|\*/.test(logrotate);
   record('activation-tooling', unusable.length === 0 && isolatedRotation, 'source',
     unusable.length === 0 && isolatedRotation

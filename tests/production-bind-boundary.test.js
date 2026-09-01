@@ -916,17 +916,55 @@ test('systemd independently supervises the API and existing worker under one tar
 
 test('production logs are isolated by service and rotation never targets Docker-wide logs', () => {
   const unit = fs.readFileSync('ops/runtime-ownership/blackspire-command.service', 'utf8');
+  const worker = fs.readFileSync('ops/runtime-ownership/blackspire-command-worker.service', 'utf8');
   assert.match(unit, /^LogsDirectory=blackspire-command$/m);
-  assert.match(unit, /^LogsDirectoryMode=0750$/m);
-  assert.match(unit, /^UMask=0027$/m);
+  for (const service of [unit, worker]) {
+    assert.match(service, /^LogsDirectoryMode=2770$/m);
+    assert.match(service, /^UMask=0007$/m, 'cross-role files must remain group-writable');
+  }
   assert.match(unit, /^StandardOutput=append:\/var\/log\/blackspire-command\/command\.log$/m);
   assert.match(unit, /^StandardError=append:\/var\/log\/blackspire-command\/command\.log$/m);
   const rotation = fs.readFileSync('ops/blackspire-command-logrotate.conf', 'utf8');
   assert.match(rotation, /^\/var\/log\/blackspire-command\/command\.log \{$/m);
   assert.match(rotation, /^\s+daily$/m);
   assert.match(rotation, /^\s+maxsize 50M$/m);
-  assert.match(rotation, /^\s+create 0640 blackspire blackspire$/m);
+  assert.match(rotation, /^\s+create 0660 blackspire-api blackspire$/m);
+  assert.match(rotation, /^\s+create 0660 blackspire-worker blackspire$/m);
   assert.doesNotMatch(rotation, /\/var\/lib\/docker|\*/);
+});
+
+test('the distinct runtime roles can hand off a durable SQLite database through group-write modes', () => {
+  const gate4 = fs.readFileSync('scripts/gate4-prepare.sh', 'utf8');
+  assert.match(gate4, /find \$release_root\/shared\/database[\s\S]*-type f -exec chmod 0660/,
+    'Gate4 must migrate existing durable files after backup and before activation');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-cross-role-db-'));
+  fs.chmodSync(dir, 0o2770);
+  const db = path.join(dir, 'command.sqlite');
+  const writer = `
+    const { DatabaseSync } = require('node:sqlite');
+    process.umask(0o007);
+    const db = new DatabaseSync(process.argv[1]);
+    db.exec('CREATE TABLE durable (value TEXT)');
+    db.prepare('INSERT INTO durable VALUES (?)').run('api');
+    db.close();
+  `;
+  const first = spawnSync(process.execPath, ['-e', writer, db], { encoding: 'utf8' });
+  assert.equal(first.status, 0, first.stderr);
+  // Gate4 performs this one-time migration while both services are stopped. SQLite requests 0644
+  // for a brand-new database, so umask alone cannot add group write; the reviewed migration is
+  // load-bearing for an existing durable database.
+  fs.chmodSync(db, 0o660);
+  assert.equal(fs.statSync(db).mode & 0o777, 0o660, 'migrated SQLite state must be group-writable');
+  const second = spawnSync(process.execPath, ['-e', `
+    const { DatabaseSync } = require('node:sqlite');
+    process.umask(0o007);
+    const db = new DatabaseSync(process.argv[1]);
+    db.prepare('INSERT INTO durable VALUES (?)').run('worker');
+    process.stdout.write(String(db.prepare('SELECT count(*) AS n FROM durable').get().n));
+    db.close();
+  `, db], { encoding: 'utf8' });
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(second.stdout, '2');
 });
 
 test('the systemd unit pins an absolute Node interpreter that satisfies the node:sqlite requirement', () => {

@@ -30,11 +30,11 @@ Layout rooted at `/opt/blackspire-command` (the code default).
 | `/opt/blackspire-command/releases/` | `root:blackspire` | `0755` | Parent of immutable releases; only deploy tooling (root) writes. |
 | `/opt/blackspire-command/releases/<sha>/` | `root:blackspire` | directories `0755`; ordinary files `0644`; archived executables `0755` | **Immutable release.** Runtime traverses directories, reads files, and executes required entrypoints; it never writes. Enforces that running code cannot mutate itself. |
 | `/opt/blackspire-command/current` | `root:blackspire` (symlink) | symlink | Points at the active release. Swapped atomically by deploy tooling as root; runtime only reads. Symlink ownership does not grant target write. |
-| `/opt/blackspire-command/shared/` | `blackspire-api:blackspire` | `0770` | Persistent-state root shared by the two isolated role identities. |
-| `/opt/blackspire-command/shared/database/` | `blackspire-api:blackspire` | `0770` | SQLite `command.sqlite` + WAL/SHM; both roles require read/write. |
-| `/opt/blackspire-command/shared/evidence/` | `blackspire-api:blackspire` | `0770` | Durable sanitized evidence/audit shared by both roles. |
-| `/opt/blackspire-command/shared/backups/` | `blackspire-api:blackspire` | `0770` | Backup destination shared through the runtime group. |
-| `/var/log/blackspire-command/` | `blackspire:blackspire` | `0750` | Created by systemd `LogsDirectory`; contains isolated API and worker JSON logs. |
+| `/opt/blackspire-command/shared/` | `blackspire-api:blackspire` | `2770` | Setgid persistent-state root shared by the two isolated role identities. |
+| `/opt/blackspire-command/shared/database/` | `blackspire-api:blackspire` | `2770` | SQLite `command.sqlite` + WAL/SHM; both roles require read/write. |
+| `/opt/blackspire-command/shared/evidence/` | `blackspire-api:blackspire` | `2770` | Durable sanitized evidence/audit shared by both roles. |
+| `/opt/blackspire-command/shared/backups/` | `blackspire-api:blackspire` | `2770` | Backup destination shared through the runtime group. |
+| `/var/log/blackspire-command/` | role owner:`blackspire` | `2770` | Setgid shared log directory; role-created files remain group-writable. |
 | `/etc/blackspire/` | `root:blackspire` | `0750` | Config dir. |
 | `/etc/blackspire/command.env` | `root:blackspire` | `0640` | Shared non-authentication production settings. Loaded by API and worker; must contain no password verifier, bearer token, or session secret. |
 | `/etc/blackspire/command-api.env` | `root:blackspire-api` | `0640` | API-only password verifier, optional machine bearer token, and session secret. The distinct worker UID and group cannot read it. |
@@ -59,7 +59,7 @@ Layout rooted at `/opt/blackspire-command` (the code default).
 
 The app, worker, and role-specific supervisors log line-delimited JSON to stdout/stderr. The API
 writes `/var/log/blackspire-command/command.log`; the worker writes `worker.log`. Systemd creates
-the isolated directory with `UMask=0027`. The reviewed logrotate policy names both files exactly,
+the isolated setgid directory with `UMask=0007`. The reviewed logrotate policy names both files exactly,
 uses `copytruncate`, and never rotates Docker-wide or unrelated host logs.
 
 ## How deployment tooling gains only what it needs

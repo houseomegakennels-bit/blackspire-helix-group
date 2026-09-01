@@ -408,7 +408,16 @@ PREPARATION (safe, reversible, no activation)
      pinned interpreter: scripts/backup.js imports node:sqlite, which this host's PATH node (18.x)
      does not have.
        npm run db:backup -- $release_root/shared/backups
-  5. Install the reviewed API, worker, and coordination target definitions, then reload systemd.
+  5. With production still stopped and the backup verified, migrate existing shared state to the
+     cross-role setgid/group-write contract. This is reversible from the backup; record prior
+     ownership/modes separately if an exact metadata rollback is required:
+       chown -R $api_user:$runtime_user $release_root/shared/database \
+         $release_root/shared/evidence $release_root/shared/backups $workspace_root
+       find $release_root/shared/database $release_root/shared/evidence \
+         $release_root/shared/backups $workspace_root -type d -exec chmod 2770 {} +
+       find $release_root/shared/database $release_root/shared/evidence \
+         $release_root/shared/backups $workspace_root -type f -exec chmod 0660 {} +
+  6. Install the reviewed API, worker, and coordination target definitions, then reload systemd.
      The checker above fails closed if an installed definition differs; inspect that difference
      before replacing any existing file:
        install -d -o root -g root -m 0700 "\$(dirname -- $unit_backup_dir)"
@@ -432,11 +441,11 @@ PREPARATION (safe, reversible, no activation)
        install -o root -g root -m 0644 \\
          $repo_root/ops/runtime-ownership/blackspire-command.target $target_file
        systemctl daemon-reload
-  6. Install the reviewed log-rotation policy without replacing an existing policy:
+  7. Install the reviewed log-rotation policy without replacing an existing policy:
        test ! -e $logrotate_file && test ! -L $logrotate_file
        install -o root -g root -m 0644 \\
          $repo_root/ops/blackspire-command-logrotate.conf $logrotate_file
-  7. Re-run this checker to review the remaining prerequisites. It deliberately stays nonzero
+  8. Re-run this checker to review the remaining prerequisites. It deliberately stays nonzero
      while authorization and activation remain beyond the boundary:
        BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \\
          bash scripts/gate4-prepare.sh --validate-only
