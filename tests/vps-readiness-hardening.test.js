@@ -398,6 +398,37 @@ test('worker preflight validates the bind contract without claiming the API port
   }
 });
 
+test('worker production preflight starts without API authentication secrets', () => {
+  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], preflightEnv({
+    COMMAND_ADMIN_PASSWORD_HASH: undefined,
+    COMMAND_ADMIN_TOKEN: undefined,
+    SESSION_SECRET: undefined,
+  }));
+  assert.doesNotMatch(worker.stderr, /password authentication is not configured|COMMAND_ADMIN_PASSWORD_HASH|SESSION_SECRET/,
+    `worker startup must not depend on API authentication secrets: ${worker.stderr}`);
+  if (process.getuid() === 0) {
+    assert.match(worker.stderr, /production runtime must not run as root/,
+      'a credential-free worker fixture must reach the final runtime-identity boundary');
+  } else {
+    assert.equal(worker.status, 0, `a non-root credential-free worker must pass: ${worker.stderr}`);
+  }
+});
+
+test('worker production preflight refuses API authentication secrets instead of silently inheriting them', () => {
+  for (const key of ['COMMAND_ADMIN_PASSWORD_HASH', 'COMMAND_ADMIN_TOKEN', 'SESSION_SECRET']) {
+    const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], preflightEnv({
+      COMMAND_ADMIN_PASSWORD_HASH: undefined,
+      COMMAND_ADMIN_TOKEN: undefined,
+      SESSION_SECRET: undefined,
+      [key]: key === 'COMMAND_ADMIN_PASSWORD_HASH' ? hashAdminPassword('production-pass') : 'x'.repeat(40),
+    }));
+    assert.notEqual(worker.status, 0, `worker must refuse inherited API-only ${key}`);
+    assert.match(worker.stderr, new RegExp(key), `worker refusal must identify the forbidden key without printing its value: ${worker.stderr}`);
+    assert.doesNotMatch(worker.stderr, /production runtime must not run as root/,
+      `${key} must be refused before the generic root boundary`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // BLACKSPIRE_WORKSPACE_ROOT preflight contract
 //
