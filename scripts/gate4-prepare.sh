@@ -377,11 +377,29 @@ emit_plan() {
   cat <<PLAN
 BLACKSPIRE GATE 4 — OPERATOR COMMAND PLAN (nothing below is executed by this script)
 
-PREPARATION (safe, reversible, no activation)
+IDENTITY PREREQUISITE (separately authorized host change; not undone by preparation rollback)
   Run the following preparation commands in one fail-fast shell:
        set -euo pipefail
-  1. Provision distinct no-login $api_user and $worker_user accounts in shared group $runtime_user,
-     then create the shared and API-only environment files. Each file is created with mode 0640 in
+       getent group $runtime_user >/dev/null || groupadd --system $runtime_user
+       provision_runtime_user() {
+         user_name="\$1"
+         if id "\$user_name" >/dev/null 2>&1; then
+           test "\$(id -u "\$user_name")" -ne 0
+           test "\$(getent passwd "\$user_name" | cut -d: -f7)" = /usr/sbin/nologin
+         else
+           useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "\$user_name"
+         fi
+         usermod --append --groups $runtime_user "\$user_name"
+         id -Gn "\$user_name" | tr ' ' '\n' | grep -qx $runtime_user
+       }
+       provision_runtime_user $api_user
+       provision_runtime_user $worker_user
+       test "\$(id -u $api_user)" != "\$(id -u $worker_user)"
+
+PREPARATION (safe where described, no activation)
+  Run the following preparation commands in one fail-fast shell:
+       set -euo pipefail
+  1. Create the shared and API-only environment files. Each file is created with mode 0640 in
      one step, so it is never briefly world-readable:
        test ! -e $env_file && test ! -L $env_file
        install -o root -g $runtime_user -m 0640 \\
@@ -408,15 +426,15 @@ PREPARATION (safe, reversible, no activation)
      pinned interpreter: scripts/backup.js imports node:sqlite, which this host's PATH node (18.x)
      does not have.
        npm run db:backup -- $release_root/shared/backups
-  5. With production still stopped and the backup verified, migrate existing shared state to the
-     cross-role setgid/group-write contract. This is reversible from the backup; record prior
-     ownership/modes separately if an exact metadata rollback is required:
+  5. Separately authorize this one-time ownership/mode migration after verifying the backup and
+     while production remains stopped. Preparation rollback does NOT restore accounts or metadata:
+       chown $api_user:$runtime_user $release_root/shared
        chown -R $api_user:$runtime_user $release_root/shared/database \
          $release_root/shared/evidence $release_root/shared/backups $workspace_root
-       find $release_root/shared/database $release_root/shared/evidence \
+       find $release_root/shared $release_root/shared/database $release_root/shared/evidence \
          $release_root/shared/backups $workspace_root -type d -exec chmod 2770 {} +
        find $release_root/shared/database $release_root/shared/evidence \
-         $release_root/shared/backups $workspace_root -type f -exec chmod 0660 {} +
+         $release_root/shared/backups $workspace_root -type f -exec chmod g+rw,o-rwx {} +
   6. Install the reviewed API, worker, and coordination target definitions, then reload systemd.
      The checker above fails closed if an installed definition differs; inspect that difference
      before replacing any existing file:
@@ -454,15 +472,16 @@ VALIDATION (read-only, proves preparation is correct)
   # Runs the same profile ExecStartPre will, as the runtime account. Sourcing keeps the values out
   # of argv and the process table; never pass them as command arguments.
   sudo -u $api_user bash -c \\
-    'set -a; . $env_file; . $api_env_file; set +a; exec bash $repo_root/scripts/verify-environment.sh vps-production api'
+    'set -a; . $env_file; . $api_env_file; set +a; BLACKSPIRE_RUNTIME_USER=$api_user exec bash $repo_root/scripts/verify-environment.sh vps-production api'
   sudo -u $worker_user bash -c \\
-    'set -a; . $env_file; set +a; exec bash $repo_root/scripts/verify-environment.sh vps-production worker'
+    'set -a; . $env_file; set +a; BLACKSPIRE_RUNTIME_USER=$worker_user exec bash $repo_root/scripts/verify-environment.sh vps-production worker'
   npm run production:preflight:host
   BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \\
     bash $repo_root/scripts/gate4-prepare.sh --validate-only
   systemctl show $target_name $api_unit_name $worker_unit_name -p ActiveState -p UnitFileState -p MainPID
 
 ROLLBACK OF PREPARATION (safe; production was never started)
+  # This does not remove runtime accounts or restore the separately authorized metadata migration.
   BLACKSPIRE_GATE4_APPROVED_SHA=\${BLACKSPIRE_GATE4_APPROVED_SHA} \
     bash $repo_root/scripts/gate4-rollback-preparation.sh
   # The helper validates all evidence/destinations, compensates failed unit restore/reload, and

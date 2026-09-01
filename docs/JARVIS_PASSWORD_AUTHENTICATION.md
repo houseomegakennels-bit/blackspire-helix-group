@@ -10,14 +10,14 @@ export PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:$PATH
 npm run auth:hash-password
 ```
 
-Enter the chosen 13–128 character password only at the hidden prompts. Put the single encoded value printed by the command into `/etc/blackspire/command.env` as a single-quoted shell assignment: `COMMAND_ADMIN_PASSWORD_HASH='<encoded-hash>'`. The encoded scrypt value contains `$` characters and must remain quoted so shell-based validation reads it literally. Do not put the plaintext password in that file, a command argument, Git, logs, or chat.
+Enter the chosen 13–128 character password only at the hidden prompts. Put the single encoded value printed by the command into the API-only `/etc/blackspire/command-api.env` as a single-quoted shell assignment: `COMMAND_ADMIN_PASSWORD_HASH='<encoded-hash>'`. The encoded scrypt value contains `$` characters and must remain quoted so shell-based validation reads it literally. Never put the verifier, bearer token, or session secret in shared `/etc/blackspire/command.env`; the worker loads that shared file. Do not put the plaintext password in either file, a command argument, Git, logs, or chat.
 
-Keep `ALLOW_BEARER_AUTH=false` unless a separately authorized machine client requires bearer access. With bearer disabled, `COMMAND_ADMIN_TOKEN` is not used for browser login and may be removed after all machine clients are confirmed migrated. With bearer enabled, retain a separate high-entropy `COMMAND_ADMIN_TOKEN` of at least 24 characters.
+Keep `ALLOW_BEARER_AUTH=false` in the API-only file unless a separately authorized machine client requires bearer access. With bearer disabled, `COMMAND_ADMIN_TOKEN` is not used for browser login and may be removed after all machine clients are confirmed migrated. With bearer enabled, retain a separate high-entropy `COMMAND_ADMIN_TOKEN` of at least 24 characters in that API-only file.
 
 Before restarting, use the existing release preflight. Then restart through the established target and bounded readiness path:
 
 ```bash
-sudo -u blackspire /opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/current/scripts/production-preflight-check.js --strict
+sudo -u blackspire-api /opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/current/scripts/production-preflight-check.js --strict
 sudo systemctl restart blackspire-command.target
 /opt/blackspire-command/current/scripts/wait-production-ready.sh http://127.0.0.1:8789 \
   blackspire-command.service blackspire-command-worker.service 60 1

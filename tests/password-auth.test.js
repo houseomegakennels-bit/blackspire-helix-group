@@ -114,3 +114,19 @@ test('browser login never submits or falls back to the machine admin token', () 
   assert.match(iphoneGuide, /disposable password/);
   assert.doesNotMatch(iphoneGuide, /token field|wrong token|COMMAND_ADMIN_TOKEN set/);
 });
+
+test('active production runbooks preserve the API-only authentication boundary', () => {
+  const authGuide = fs.readFileSync(new URL('../docs/JARVIS_PASSWORD_AUTHENTICATION.md', import.meta.url), 'utf8');
+  const gate4 = fs.readFileSync(new URL('../docs/GATE4_ACTIVATION_CHECKLIST.md', import.meta.url), 'utf8');
+  for (const guide of [authGuide, gate4]) {
+    assert.match(guide, /command-api\.env/);
+    assert.doesNotMatch(guide, /`COMMAND_ADMIN_(?:PASSWORD_HASH|TOKEN)`\s*\|\s*`\/etc\/blackspire\/command\.env`/);
+    assert.doesNotMatch(guide, /`SESSION_SECRET`\s*\|\s*`\/etc\/blackspire\/command\.env`/);
+  }
+  assert.match(gate4, /BLACKSPIRE_RUNTIME_USER=blackspire-api.*vps-production api/);
+  assert.match(gate4, /BLACKSPIRE_RUNTIME_USER=blackspire-worker.*vps-production worker/);
+  assert.match(gate4, /useradd --system --user-group --no-create-home --shell \/usr\/sbin\/nologin/);
+  assert.match(gate4, /preparation rollback does not restore accounts, ownership, or modes/i);
+  assert.doesNotMatch(gate4, /-type f -exec chmod 0660/,
+    'workspace migration must preserve existing executable bits');
+});

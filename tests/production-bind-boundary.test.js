@@ -935,7 +935,7 @@ test('production logs are isolated by service and rotation never targets Docker-
 
 test('the distinct runtime roles can hand off a durable SQLite database through group-write modes', () => {
   const gate4 = fs.readFileSync('scripts/gate4-prepare.sh', 'utf8');
-  assert.match(gate4, /find \$release_root\/shared\/database[\s\S]*-type f -exec chmod 0660/,
+  assert.match(gate4, /find \$release_root\/shared\/database[\s\S]*-type f -exec chmod g\+rw,o-rwx/,
     'Gate4 must migrate existing durable files after backup and before activation');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-cross-role-db-'));
   fs.chmodSync(dir, 0o2770);
