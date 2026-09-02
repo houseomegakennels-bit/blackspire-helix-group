@@ -68,6 +68,59 @@ test('the application script parses before any browser APIs run', () => {
   assert.doesNotThrow(() => new vm.Script(appScript, { filename: 'jarvis.js' }));
 });
 
+test('browser login presents distinct, credential-neutral status semantics without changing success', async () => {
+  const start = appScript.indexOf('/* ---------- auth ---------- */');
+  const end = appScript.indexOf('/* ---------- emergency stop', start);
+  assert.ok(start >= 0 && end > start, 'authentication behavior must remain directly testable');
+
+  const passwordInput = { value: 'operator-password' };
+  const notices = [];
+  const toasts = [];
+  let status = 401;
+  let sessionChecks = 0;
+  let refreshes = 0;
+  const context = {
+    api: {
+      login: async () => ({ response: { ok: status === 200, status }, body: status === 200 ? { csrfToken: 'csrf' } : {} }),
+      session: async () => { sessionChecks += 1; return { body: { authenticated: true, principalId: 'operator' } }; },
+      logout: async () => {},
+    },
+    byId: (id) => id === 'password' ? passwordInput : null,
+    setNotice: (id, message) => notices.push({ id, message }),
+    toast: (message) => toasts.push(message),
+    refreshAll: async () => { refreshes += 1; },
+    render: () => {},
+    store: { authed: false, csrfToken: '', principalId: '', sessionExpiresAt: null, conversation: null, tasks: [] },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${appScript.slice(start, end)}\nthis.login = login; this.loginFailureMessage = loginFailureMessage;`, context);
+
+  assert.equal(context.loginFailureMessage(401), 'Sign-in failed. Invalid credentials.');
+  assert.match(context.loginFailureMessage(429), /Too many attempts.*retry/i);
+  assert.match(context.loginFailureMessage(503), /temporarily unavailable.*retry/i);
+  assert.doesNotMatch(context.loginFailureMessage(503), /invalid|valid|password|credential/i,
+    'capacity saturation must disclose nothing about credential validity');
+
+  for (const failureStatus of [401, 429, 503]) {
+    status = failureStatus;
+    passwordInput.value = 'operator-password';
+    await context.login();
+    assert.equal(passwordInput.value, '', `${failureStatus} clears the submitted password`);
+    assert.equal(notices.at(-1).message, context.loginFailureMessage(failureStatus));
+  }
+  assert.equal(sessionChecks, 0, 'failed authentication never checks or establishes a session');
+  assert.equal(refreshes, 0, 'failed authentication never refreshes protected data');
+
+  status = 200;
+  passwordInput.value = 'operator-password';
+  await context.login();
+  assert.equal(context.store.authed, true);
+  assert.equal(sessionChecks, 1);
+  assert.equal(refreshes, 1);
+  assert.equal(toasts.at(-1), 'Signed in.');
+  assert.deepEqual(notices.at(-1), { id: 'sessionNotice', message: '' });
+});
+
 /* ---------- CSP: production allows only same-origin script and style ----------
    script-src 'self'; style-src 'self' — with no unsafe-inline, hash, or nonce.
    Anything inline in index.html would silently fail to run or apply in production. */

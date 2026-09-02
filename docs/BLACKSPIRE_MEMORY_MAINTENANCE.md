@@ -7,7 +7,9 @@
 - `docs/BLACKSPIRE_NEXT_ACTIONS.md`
 - `docs/BLACKSPIRE_DECISIONS.md`
 - `docs/BLACKSPIRE_SESSION_LOG.md`
-- this file
+- `docs/BLACKSPIRE_MEMORY_MAINTENANCE.md`
+- `docs/ZOLA_NAMING_DECISION.md`
+- `docs/ZOLA_BLACKSPIRE_INTEGRATION_PLAN.md`
 
 ## Milestone rule
 

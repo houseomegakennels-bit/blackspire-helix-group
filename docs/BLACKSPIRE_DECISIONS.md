@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-08-31 — ZOLA is the future-facing Blackspire AI/operator identity (PR #118)
+
+Z.O.L.A. (Zero-Trust Operations, Logic & Automation) is adopted as the future-facing user-facing AI identity and command surface for the Blackspire platform, succeeding the legacy "Jarvis" product/operator naming in all current roadmap, future pipeline, user-facing AI identity, future command surface, and future product/operator terminology. Blackspire Command remains the canonical control plane, and Hermes remains the orchestration/runtime layer; no second orchestrator is created. Legacy `jarvis-*` runtime identifiers — filenames, routes, service names, auth surfaces, database keys, historical records, and quoted evidence — are preserved as literal technical identifiers and must not be mass-renamed. Recon remains the government-contract, grant, vendor-program, and bid-opportunity discovery system and is NOT repurposed as a real-estate property discovery engine.
+
 ## 2026-08-24 — Operator HTTP authority is the persisted workspace grant
 
 Successful bearer or cookie authentication identifies a server-configured canonical principal but grants no workspace authority by itself. Every persisted-workspace operator route derives the target workspace from canonical server state where possible, requests the route-specific canonical permission, and revalidates the active persisted grant. Lists filter unauthorized rows; object reads and mutations collapse absence and denial to the existing 404-like privacy response. Production requires an explicit canonical operator principal ID, but that configuration value cannot replace a persisted active grant.

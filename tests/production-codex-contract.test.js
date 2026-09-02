@@ -24,7 +24,7 @@ fs.mkdirSync(bin, { recursive: true });
 process.env.CODEX_HOME = path.join(root, 'codex-home');
 fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });
 fs.writeFileSync(path.join(bin, 'codex'), `#!/usr/bin/env bash
-if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
+if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${COMMAND_ADMIN_PASSWORD_HASH:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
   exit 66
 fi
 case "\${1:-}" in
@@ -74,11 +74,13 @@ test('nonzero Codex process result is refused even with structured stdout', () =
 test('Codex availability probes use the sanitized child environment', async () => {
   const prior = {
     COMMAND_ADMIN_TOKEN: process.env.COMMAND_ADMIN_TOKEN,
+    COMMAND_ADMIN_PASSWORD_HASH: process.env.COMMAND_ADMIN_PASSWORD_HASH,
     SESSION_SECRET: process.env.SESSION_SECRET,
     GITHUB_TOKEN: process.env.GITHUB_TOKEN,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   };
   process.env.COMMAND_ADMIN_TOKEN = 'secret-admin';
+  process.env.COMMAND_ADMIN_PASSWORD_HASH = 'password-verifier-must-not-reach-child';
   process.env.SESSION_SECRET = 'secret-session';
   process.env.GITHUB_TOKEN = 'secret-github';
   process.env.OPENAI_API_KEY = 'secret-openai';

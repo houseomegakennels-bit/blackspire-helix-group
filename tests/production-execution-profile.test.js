@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { hashAdminPassword } from '../packages/shared/password-auth.js';
 import { spawnSync } from 'node:child_process';
 
 // verify-environment.sh rejects a /tmp database as non-persistent, so the
@@ -43,7 +44,7 @@ fs.mkdirSync(path.join(workspaceRoot, 'packages'), { recursive: true });
 fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'w', type: 'module' }));
 fs.writeFileSync(path.join(binDir, 'codex'), `#!/usr/bin/env bash
 set -euo pipefail
-if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
+if [[ -n "\${COMMAND_ADMIN_TOKEN:-}" || -n "\${COMMAND_ADMIN_PASSWORD_HASH:-}" || -n "\${SESSION_SECRET:-}" || -n "\${GITHUB_TOKEN:-}" || -n "\${OPENAI_API_KEY:-}" || -n "\${ANTHROPIC_API_KEY:-}" || -n "\${CODEX_API_KEY:-}" ]]; then
   exit 66
 fi
 case "\${1:-}" in
@@ -84,7 +85,8 @@ function baseEnv(overrides = {}) {
     NODE_ENV: 'production',
     BLACKSPIRE_RUNTIME_MODE: 'production',
     BLACKSPIRE_STATE_OWNER: 'vps-production',
-    BLACKSPIRE_RUNTIME_USER: childUsername,
+    // The supervisor's API role supplies this value; the shared profile never does.
+    BLACKSPIRE_RUNTIME_USER: 'blackspire-api',
     BLACKSPIRE_PROVIDER_MODE: 'manual',
     BLACKSPIRE_HERMES_MODE: 'restricted-test',
     TELEGRAM_MODE: 'dry-run',
@@ -98,6 +100,7 @@ function baseEnv(overrides = {}) {
     BLACKSPIRE_WORKSPACE_ROOT: workspaceRoot,
     CODEX_HOME: codexHome,
     COMMAND_ADMIN_TOKEN: 'x'.repeat(32),
+    COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'),
     SESSION_SECRET: 'y'.repeat(40),
     ...overrides,
   };

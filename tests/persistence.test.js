@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { prepareDisposableDatabase } from './helpers/prepare-disposable-database.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-persistence-'));
@@ -15,8 +16,13 @@ const base = `http://localhost:${port}`;
 // same values the child API processes use.
 process.env.BLACKSPIRE_DB_PATH = dbPath;
 process.env.COMMAND_ADMIN_TOKEN = 'persist-token';
+process.env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID = 'persistence-operator';
 const env = { ...process.env, PORT: String(port), LOGIN_RATE_LIMIT: '3' };
 prepareDisposableDatabase(dbPath);
+const authorityDb = new DatabaseSync(dbPath);
+const authorityNow = Date.now();
+authorityDb.prepare('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run('persistence-operator', 'admin', 'persistence-operator', 'bearer', null, 'active', authorityNow, null, null, null, 1, authorityNow);
+authorityDb.close();
 
 function bootApi() {
   const child = spawn(process.execPath, ['apps/api/server.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -120,7 +126,7 @@ test('restart-persistence: expired sessions are rejected', async () => {
   process.env.COMMAND_ADMIN_TOKEN = 'persist-token';
   const { createSession, getSession } = await import('../packages/shared/sessions.js');
   process.env.SESSION_TTL_MS = '1';
-  const expiring = createSession('persist-token', { ip: 'local' });
+  const expiring = createSession({ ip: 'local' });
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(getSession(expiring.sessionId), null);
   delete process.env.SESSION_TTL_MS;

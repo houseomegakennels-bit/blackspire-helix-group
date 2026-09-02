@@ -5,6 +5,7 @@ approved_sha="${BLACKSPIRE_GATE4_APPROVED_SHA:-}"
 [[ "$approved_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'a full approved SHA is required' >&2; exit 2; }
 
 env_file="${BLACKSPIRE_PRODUCTION_ENV_FILE:-/etc/blackspire/command.env}"
+api_env_file="${BLACKSPIRE_PRODUCTION_API_ENV_FILE:-/etc/blackspire/command-api.env}"
 [[ -f "$env_file" && ! -L "$env_file" ]] || { echo 'cannot resolve workspace from a safe production environment file' >&2; exit 1; }
 workspace_root="$(sed -nE 's/^[[:space:]]*BLACKSPIRE_WORKSPACE_ROOT=(.*)$/\1/p' -- "$env_file" | tail -n 1)"
 workspace_root="${workspace_root%\"}"; workspace_root="${workspace_root#\"}"
@@ -18,7 +19,7 @@ backup_dir="${BLACKSPIRE_GATE4_UNIT_BACKUP_DIR:-/var/backups/blackspire-command/
 systemctl_bin="${BLACKSPIRE_GATE4_SYSTEMCTL:-systemctl}"
 install_bin="${BLACKSPIRE_GATE4_INSTALL_BIN:-install}"
 units=("$api_unit" "$worker_unit" "$target_unit")
-non_units=("$env_file" "$workspace_root" "$logrotate_file")
+non_units=("$env_file" "$api_env_file" "$workspace_root" "$logrotate_file")
 
 [[ -f "$backup_dir/.complete" && ! -L "$backup_dir/.complete" ]] || { echo 'missing safe complete snapshot marker' >&2; exit 1; }
 for unit in "${units[@]}"; do
@@ -34,7 +35,7 @@ done
 for index in "${!non_units[@]}"; do
   item="${non_units[$index]}"
   [[ ! -e "$item" && ! -L "$item" ]] && continue
-  if (( index == 1 )); then
+  if (( index == 2 )); then
     [[ -d "$item" && ! -L "$item" ]] || { echo "unsafe rollback destination: $item" >&2; exit 1; }
   else
     [[ -f "$item" && ! -L "$item" ]] || { echo "unsafe rollback destination: $item" >&2; exit 1; }

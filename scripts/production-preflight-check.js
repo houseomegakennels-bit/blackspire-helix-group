@@ -183,9 +183,9 @@ if (unit === null) {
     execStartPre ? 'ExecStartPre runs the vps-production environment verification'
       : 'ExecStartPre must run scripts/verify-environment.sh vps-production');
 
-  const hardening = ['User=blackspire', 'Group=blackspire', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
-    'ProtectHome=yes', 'PrivateTmp=yes', 'RestrictSUIDSGID=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
-    'LogsDirectory=blackspire-command', 'LogsDirectoryMode=0750', 'UMask=0027',
+  const hardening = ['User=blackspire-api', 'Group=blackspire', 'SupplementaryGroups=blackspire-api', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
+    'ProtectHome=yes', 'PrivateTmp=yes', 'ProtectProc=invisible', 'RestrictSUIDSGID=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
+    'LogsDirectory=blackspire-command', 'LogsDirectoryMode=2770', 'UMask=0007',
     'StandardOutput=append:/var/log/blackspire-command/command.log',
     'StandardError=append:/var/log/blackspire-command/command.log'];
   const missingHardening = hardening.filter((directive) => !unit.includes(directive));
@@ -206,17 +206,20 @@ if (unit === null) {
 {
   const apiIsolated = unit !== null && /^ExecStart=.*production-supervisor\.js --api-only$/m.test(unit);
   const workerIsolated = workerUnit !== null && /^ExecStart=.*production-supervisor\.js --worker-only$/m.test(workerUnit);
+  const apiLoadsAuth = unit !== null && /^EnvironmentFile=\/etc\/blackspire\/command-api\.env$/m.test(unit);
+  const workerExcludesAuth = workerUnit !== null && !/command-api\.env|COMMAND_ADMIN_PASSWORD_HASH|COMMAND_ADMIN_TOKEN|SESSION_SECRET/.test(workerUnit);
   const targetStartsBoth = runtimeTarget !== null && /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m.test(runtimeTarget);
   const lifecycleIndependent = unit !== null && workerUnit !== null &&
     !/Requires=blackspire-command-worker\.service/.test(unit) && !/Requires=blackspire-command\.service/.test(workerUnit);
-  const workerHardening = workerUnit !== null && ['User=blackspire', 'Group=blackspire', 'NoNewPrivileges=yes',
-    'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'ReadWritePaths=/opt/blackspire-command/shared',
-    'CapabilityBoundingSet=', 'AmbientCapabilities=', 'TimeoutStopSec=35'].every((directive) => workerUnit.includes(directive));
-  const complete = apiIsolated && workerIsolated && targetStartsBoth && lifecycleIndependent && workerHardening;
+  const workerHardening = workerUnit !== null && ['User=blackspire-worker', 'Group=blackspire', 'NoNewPrivileges=yes',
+    'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'ProtectProc=invisible', 'ReadWritePaths=/opt/blackspire-command/shared',
+    'CapabilityBoundingSet=', 'AmbientCapabilities=', 'TimeoutStopSec=35', 'LogsDirectoryMode=2770',
+    'UMask=0007'].every((directive) => workerUnit.includes(directive));
+  const complete = apiIsolated && workerIsolated && apiLoadsAuth && workerExcludesAuth && targetStartsBoth && lifecycleIndependent && workerHardening;
   record('service-topology', complete, 'source',
     complete
-      ? 'API and worker have independent supervisors and restarts under one non-coupling target'
-      : 'API and hardened worker must use role-specific supervisors under a target without cross-service Requires coupling');
+      ? 'API and worker have independent supervisors, authentication environments, and restarts under one non-coupling target'
+      : 'API and hardened worker must use role-specific supervisors and authentication environments under a target without cross-service Requires coupling');
 }
 
 // --- Startup-path interpreter resolution ----------------------------------------------------
@@ -281,7 +284,7 @@ if (unit === null) {
 
   const requiredKeys = ['NODE_ENV', 'BLACKSPIRE_RUNTIME_MODE', 'BLACKSPIRE_STATE_OWNER', 'BIND_HOST', 'PORT',
     'PUBLIC_BASE_URL', 'SECURE_COOKIES', 'BLACKSPIRE_DB_PATH', 'BLACKSPIRE_BACKUP_DIR',
-    'BLACKSPIRE_RUNTIME_USER', 'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS',
+    'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS',
     'BLACKSPIRE_OPERATOR_PRINCIPAL_ID',
     // Required since the workspace-root preflight: ExecStartPre now refuses a production profile
     // that omits it, so a profile not documenting it would fail every start.
@@ -331,7 +334,8 @@ if (unit === null) {
   const logrotate = read('ops/blackspire-command-logrotate.conf') ?? '';
   const isolatedRotation = /^\/var\/log\/blackspire-command\/command\.log\s*\{/m.test(logrotate)
     && /\bmaxsize\s+50M\b/.test(logrotate)
-    && /\bcreate\s+0640\s+blackspire\s+blackspire\b/.test(logrotate)
+    && /\bcreate\s+0660\s+blackspire-api\s+blackspire\b/.test(logrotate)
+    && /\bcreate\s+0660\s+blackspire-worker\s+blackspire\b/.test(logrotate)
     && !/\/var\/lib\/docker|\*/.test(logrotate);
   record('activation-tooling', unusable.length === 0 && isolatedRotation, 'source',
     unusable.length === 0 && isolatedRotation

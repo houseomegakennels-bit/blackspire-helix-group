@@ -120,7 +120,8 @@ test('release creation is exact, idempotent, and switching is atomic', { skip: r
   for (const excluded of ['.agents', '.claude', '.devcontainer', '.github', '.githooks', '.vscode', 'AGENTS.md', 'tests']) {
     assert.equal(fs.existsSync(path.join(release, excluded)), false, `${excluded} is review or development metadata, not release content`);
   }
-  assert.equal(run('scripts/release-switch.sh', [sha], env).status, 0);
+  const switched = run('scripts/release-switch.sh', [sha], env);
+  assert.equal(switched.status, 0, switched.stderr);
   assert.equal(fs.realpathSync(path.join(releaseRoot, 'current')), release);
 });
 
@@ -356,7 +357,7 @@ test('archived unsafe symlinks fail before the completion marker and preserve ac
 });
 
 test('production verifier fails closed for provider credentials and test mode', () => {
-  const env = { NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_DB_PATH: '/opt/blackspire-vps-readiness/command.sqlite', BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40), OPENAI_API_KEY: 'forbidden' };
+  const env = { NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_DB_PATH: '/opt/blackspire-vps-readiness/command.sqlite', BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', COMMAND_ADMIN_PASSWORD_HASH: 'configured-test-hash', COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40), OPENAI_API_KEY: 'forbidden' };
   const result = run('scripts/verify-environment.sh', ['vps-production'], env);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /OPENAI_API_KEY/);
