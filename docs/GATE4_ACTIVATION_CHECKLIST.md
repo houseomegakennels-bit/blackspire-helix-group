@@ -3,7 +3,7 @@
 Gate 4 is production activation. **It is not authorized.** This document prepares for it and defines
 the boundary; it does not grant it. Nothing in this repository may start, enable, restart, or
 activate production, switch the `current` symlink, create credentials, or write
-`/etc/blackspire/command.env`. Those are operator actions taken under a separate, explicit, bounded
+`/etc/blackspire/command.env` or `/etc/blackspire/command-api.env`. Those are operator actions taken under a separate, explicit, bounded
 approval.
 
 The machine-checkable part of this checklist is `scripts/gate4-prepare.sh`. It is read-only, has no
@@ -27,8 +27,9 @@ None of these may be generated, invented, or defaulted by tooling.
 | Value | Where it goes | Notes |
 | --- | --- | --- |
 | Approved commit SHA | `BLACKSPIRE_GATE4_APPROVED_SHA` | Full 40-character lowercase SHA, reviewed and merged |
-| `COMMAND_ADMIN_TOKEN` | `/etc/blackspire/command.env` | Operator-generated secret |
-| `SESSION_SECRET` | `/etc/blackspire/command.env` | Operator-generated secret |
+| `COMMAND_ADMIN_PASSWORD_HASH` | `/etc/blackspire/command-api.env` | API-only; generated interactively with `npm run auth:hash-password` |
+| `COMMAND_ADMIN_TOKEN` | `/etc/blackspire/command-api.env` | API-only machine credential; required only if bearer auth is explicitly enabled |
+| `SESSION_SECRET` | `/etc/blackspire/command-api.env` | API-only operator-generated secret |
 | `PUBLIC_BASE_URL` | `/etc/blackspire/command.env` | The real production URL; the example ships a `.invalid` placeholder |
 | `PORT` | `/etc/blackspire/command.env` | Reviewed default 8789; confirm it is still free before use |
 | Approved repository URL | workspace seeding | The clone source for the Hermes workspace checkout |
@@ -44,10 +45,9 @@ Verified automatically by the checker:
 3. **Installed topology** — the installed `blackspire-command.service`,
    `blackspire-command-worker.service`, and `blackspire-command.target` are each byte-identical to
    their reviewed templates in `ops/runtime-ownership/`.
-4. **Environment file** — exists as a regular file, `root:blackspire` mode `0640`, declaring every
-   required key and carrying no provider or Telegram credentials. The reviewed profile pins
-   `BLACKSPIRE_RUNTIME_USER=blackspire`, startup timeout `30`, and health timeout `5`, matching the
-   requirements enforced by both `ExecStartPre` and `verifyVpsRuntime`. Values are never printed.
+4. **Environment files** — shared `command.env` is `root:blackspire` mode `0640` and contains no
+   authentication credential; API-only `command-api.env` is `root:blackspire-api` mode `0640`.
+   The service units override the shared runtime-user value with their distinct role identities.
 5. **Workspace checkout** — `BLACKSPIRE_WORKSPACE_ROOT` is absolute, a non-symlinked directory, a git
    checkout with `package.json`, `apps/`, and `packages/`, readable, traversable, and writable by the
    runtime account, and outside `releases/` and `current`. The checker applies exactly the rules
@@ -55,7 +55,8 @@ Verified automatically by the checker:
    report ready for a root the unit would then refuse.
 6. **Approved release** — a completed immutable release exists for the approved SHA.
 7. **Rollback target** — at least one other completed release is available to roll back to.
-8. **Runtime ownership** — the `blackspire` account exists and is non-root.
+8. **Runtime ownership** — distinct non-root, no-login `blackspire-api` and `blackspire-worker`
+   accounts exist and share only the `blackspire` runtime group needed for durable state.
 9. **Production backup** — a snapshot exists under `shared/backups`.
 10. **Log rotation** — the installed `/etc/logrotate.d/blackspire-command` is byte-identical to the
     reviewed service-isolated policy; mere file presence is not readiness.
@@ -68,31 +69,68 @@ Operator attestation required (the host cannot prove these):
 
 ## Preparation commands
 
-Safe, reversible, and non-activating. `scripts/gate4-prepare.sh --plan` prints these with the real
-paths already substituted.
+Non-activating. Reversible preparation steps are identified separately from the explicitly
+authorized identity and metadata prerequisites, which the rollback helper does not undo.
+`scripts/gate4-prepare.sh --plan` prints these with the real paths already substituted.
 
 ```sh
-# 1. Environment file, created with its final ownership and mode in one step
+# Identity provisioning is a separately authorized host prerequisite and is not undone by the
+# preparation rollback helper.
+getent group blackspire >/dev/null || groupadd --system blackspire
+provision_runtime_user() {
+  user_name="$1"
+  if id "$user_name" >/dev/null 2>&1; then
+    test "$(id -u "$user_name")" -ne 0
+    test "$(getent passwd "$user_name" | cut -d: -f7)" = /usr/sbin/nologin
+  else
+    useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$user_name"
+  fi
+  usermod --append --groups blackspire "$user_name"
+  id -Gn "$user_name" | tr ' ' '\n' | grep -qx blackspire
+}
+provision_runtime_user blackspire-api
+provision_runtime_user blackspire-worker
+test "$(id -u blackspire-api)" != "$(id -u blackspire-worker)"
+
+# 1. Shared and API-only environment files
 set -euo pipefail
 test ! -e /etc/blackspire/command.env && test ! -L /etc/blackspire/command.env
 install -o root -g blackspire -m 0640 \
   scripts/production-profile.env.example /etc/blackspire/command.env
-# then edit it and supply PUBLIC_BASE_URL, COMMAND_ADMIN_TOKEN, SESSION_SECRET
+test ! -e /etc/blackspire/command-api.env && test ! -L /etc/blackspire/command-api.env
+install -o root -g blackspire-api -m 0640 \
+  scripts/production-api.env.example /etc/blackspire/command-api.env
+# Set PUBLIC_BASE_URL in command.env. Set password hash and session secret only in command-api.env.
 bash scripts/with-node.sh scripts/select-production-port.js   # confirm PORT is free
 
 # 2. Workspace checkout — never inside releases/, never the release root
 test ! -e /opt/blackspire-command/shared/workspace && \
   test ! -L /opt/blackspire-command/shared/workspace
-install -d -o blackspire -g blackspire -m 0750 /opt/blackspire-command/shared/workspace
+install -d -o blackspire-api -g blackspire -m 2770 /opt/blackspire-command/shared/workspace
 git clone --no-hardlinks <approved-repository-url> /opt/blackspire-command/shared/workspace
 git -C /opt/blackspire-command/shared/workspace checkout --detach <approved-sha>
-chown -R blackspire:blackspire /opt/blackspire-command/shared/workspace
+chown -R blackspire-api:blackspire /opt/blackspire-command/shared/workspace
+find /opt/blackspire-command/shared/workspace -type d -exec chmod 2770 {} +
+find /opt/blackspire-command/shared/workspace -type f -exec chmod g+rw,o-rwx {} +
 
 # 3. Immutable release for the approved SHA (builds it; does not activate it)
 BLACKSPIRE_STATE_OWNER=vps-production bash scripts/release-create.sh <approved-sha>
 
 # 4. Production backup, through the pinned interpreter
 npm run db:backup -- /opt/blackspire-command/shared/backups
+
+# Separately authorize this metadata migration after the backup, while production is stopped.
+# Preparation rollback does not restore accounts, ownership, or modes.
+chown blackspire-api:blackspire /opt/blackspire-command/shared
+chown -R blackspire-api:blackspire /opt/blackspire-command/shared/database \
+  /opt/blackspire-command/shared/evidence /opt/blackspire-command/shared/backups \
+  /opt/blackspire-command/shared/workspace
+find /opt/blackspire-command/shared /opt/blackspire-command/shared/database \
+  /opt/blackspire-command/shared/evidence /opt/blackspire-command/shared/backups \
+  /opt/blackspire-command/shared/workspace -type d -exec chmod 2770 {} +
+find /opt/blackspire-command/shared/database /opt/blackspire-command/shared/evidence \
+  /opt/blackspire-command/shared/backups /opt/blackspire-command/shared/workspace \
+  -type f -exec chmod g+rw,o-rwx {} +
 
 # 5. Record the before-state of all three installed definitions, install the reviewed topology,
 # and reload definitions only (this does not start or enable anything)
@@ -131,7 +169,7 @@ logrotate --debug /etc/logrotate.d/blackspire-command
 ```
 
 Before authorization, force one rotation against a disposable service log and verify the recreated
-file is `0640 blackspire:blackspire`. See `docs/PRODUCTION_LOGGING_AND_RETENTION.md` for retention,
+files are role-owned, group `blackspire`, and mode `0660`. See `docs/PRODUCTION_LOGGING_AND_RETENTION.md` for retention,
 capacity, and `copytruncate` limitations.
 
 `/opt/blackspire-command/shared/workspace` is the reviewed location because the unit runs under
@@ -142,8 +180,10 @@ what its file permissions say.
 ## Validation
 
 ```sh
-sudo -u blackspire bash -c \
-  'set -a; . /etc/blackspire/command.env; set +a; exec bash scripts/verify-environment.sh vps-production'
+sudo -u blackspire-api bash -c \
+  'set -a; . /etc/blackspire/command.env; . /etc/blackspire/command-api.env; set +a; BLACKSPIRE_RUNTIME_USER=blackspire-api exec bash scripts/verify-environment.sh vps-production api'
+sudo -u blackspire-worker bash -c \
+  'set -a; . /etc/blackspire/command.env; set +a; BLACKSPIRE_RUNTIME_USER=blackspire-worker exec bash scripts/verify-environment.sh vps-production worker'
 npm run production:preflight:host
 BLACKSPIRE_GATE4_APPROVED_SHA=<sha> bash scripts/gate4-prepare.sh --validate-only
 systemctl show blackspire-command.target blackspire-command.service blackspire-command-worker.service \

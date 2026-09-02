@@ -1,10 +1,39 @@
 # Blackspire Canonical Source of Truth
 
+## PR #120 final P1/P2 correction (2026-09-02 UTC)
+
+Local follow-up to `759970c07c8b6c86f60179a687252edeff75200e` rejects API credential-group numeric
+aliasing with either worker-allowed GID. The offline session-fence primitive now independently
+requires a successful systemd proof that the API unit is `inactive` before revocation; the runbook
+is fail-fast and checks the same state before invoking it. Targeted regressions and mutations passed.
+This correction is local and unpushed; production changed: NO.
+
+## PR #120 finalization correction (2026-09-02 UTC)
+
+Local repair is based on remote PR #120 head `f00d1721b66d29052d6e0d9350328d19950fb231` and is
+not pushed. Gate4 now allowlists the worker's numeric account-derived groups to its private primary
+GID and shared `blackspire` runtime GID; API-credential, Docker, aliased, and arbitrary groups fail
+closed. Credential cutover now stops the target before changing the verifier and writes the durable
+session fence through the offline `scripts/revoke-all-sessions.js` primitive before restart, closing
+the old-token reissuance window. CI #529 failed one pre-existing order-sensitive persistence test
+(`401 !== 429`) while the isolated test passes; remote verification is required for this new SHA.
+Production changed: NO.
+
+## PR #120 final local P2 correction (2026-09-01 UTC)
+
+Local implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf` extends remote PR #120 head `660dfb63444069c734dcff50415cb84c4fd919b6`. Gate 4 now resolves the API credential group to its numeric GID and rejects the worker when that GID appears through primary, supplementary, stale initgroups, or alias-equivalent membership while preserving the shared non-secret runtime group. The primary iPhone guide places the password verifier, session secret, bearer opt-in, and optional machine token only in `/etc/blackspire/command-api.env` and identifies shared worker-safe settings in `/etc/blackspire/command.env`. The PWA distinguishes invalid credentials (401), rate limiting (429), and credential-neutral temporary authentication unavailability (503) without changing successful session establishment.
+
+Node 22.23.1 focused validation passed 313 tests with 310 passed, 0 failed, and 3 host-conditional skips. The trusted full lane passed 1,157 tests with 1,148 passed, 0 failed, and 9 host-conditional skips; inventory was 76/76 and containment left zero descendants. Root lint, typecheck, build, secret scan, zero-vulnerability high audit, shell syntax, whitespace, and living-memory checks passed. Production preflight passed 22/22 source checks and 2/4 deployment checks; the installed API and worker units differ from this unpushed source candidate and were not changed. Frontend lint/build passed with its existing trace warning; its unchanged-from-main lockfiles report 8 high and 1 low dependency advisories. Both targeted mutations failed their regressions before restoration. Push, exact-head CI/review, merge, deploy, and production verification remain unperformed; production changed: NO.
+
 ## ZOLA canonical identity roadmap (2026-08-31 UTC)
 
 Z.O.L.A. expands to **Zero-Trust Operations, Logic & Automation** and is the canonical future-facing Blackspire AI/operator identity. ZOLA is the user-facing intelligence and command experience; Blackspire Command remains the canonical control plane; Hermes remains the orchestration/runtime layer. The staged naming decision does not rename existing `jarvis-*` filenames, runtime routes, API identifiers, auth surfaces, service/deployment names, database keys, fixtures, persisted evidence, or historical records. Any runtime naming migration remains separate reviewed work.
 
 The bounded integration roadmap prioritizes Seller Engine, Buyer Engine, Deal Engine, and Nexus; then Harvester, Recon, and Sentinel; then Social OS and Book Studio. Recon retains its existing government-contract, grant, vendor-program, and bid-opportunity scope and remains separate from real-estate property discovery. Real-estate intake uses Seller Engine's authorized county/public-record sources, operator imports, and Harvester; broader property discovery requires a new separately reviewed bounded capability rather than repurposing Recon. Verified implementation/content anchor `7a20e804b384e90d44f8e8f20d01c7145a972a09` is PR #118's reviewed head covering the ZOLA canonical-memory allowlist, its focused regression coverage, and the naming documents. The following canonical-memory-only review correction reconciles its status and evidence without changing runtime or production state.
+
+## ZOLA password authentication reconciled and locally validated (2026-08-31 UTC)
+
+Branch `feature/jarvis-password-auth` is locally rebased onto trusted `origin/main` `5daab109830c84d8c62e700cfbdc4c8e8824c22b` and separates interactive browser authentication from optional bearer authentication. Production browser login verifies `COMMAND_ADMIN_PASSWORD_HASH` asynchronously using the versioned, salted Node scrypt representation and then issues the existing expiring secure session only for the server-resolved canonical operator. A process-wide four-derivation admission bound has no waiting queue and returns uniform temporary-unavailability on saturation; it releases capacity on every terminal path, rejects invalid bounds, and permanently refuses new work if its counter ever reaches an impossible state. `COMMAND_ADMIN_TOKEN` remains a distinct minimum-24-character machine credential only when `ALLOW_BEARER_AUTH=true`. The password policy remains exactly 13–128 characters with no trimming or composition rules. Trusted local validation passed 1,144 total tests with 1,135 passed, 0 failed, and 9 host-conditional skips; lint, typecheck, build, secret scan, zero-vulnerability root high audit, production preflight 22/22 source and 4/4 deployment, tracked-shell syntax, whitespace, and living-memory checks passed. Raising the aggregate cap killed its distributed-admission regression. The separately built frontend reports seven high dependency advisories and is outside this root auth change. This work is not pushed at the rebased head and has no exact-head CI or review; it is not merged, deployed, or provisioned with an operator password and does not advance the verified implementation anchor.
 
 ## Canonical Jarvis result implementation merged on origin/main (2026-08-30 UTC)
 

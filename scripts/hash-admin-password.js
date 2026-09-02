@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+import process from 'node:process';
+import readline from 'node:readline';
+import { hashAdminPassword, validPasswordInput, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../packages/shared/password-auth.js';
+if (!process.stdin.isTTY || !process.stdout.isTTY) { console.error('Refusing non-interactive input; run this command in a trusted terminal.'); process.exit(1); }
+function hiddenPrompt(label) { return new Promise((resolve, reject) => { const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true }); rl._writeToOutput = function masked(text) { if (text.includes(label) || /\r?\n/.test(text)) this.output.write(text); }; rl.question(label, (answer) => { rl.close(); resolve(answer); }); rl.once('SIGINT', () => { rl.close(); reject(new Error('Password entry cancelled.')); }); }); }
+try { const password = await hiddenPrompt(`New Jarvis administrator password (${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters): `); if (!validPasswordInput(password)) throw new Error(`Password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters.`); const confirmation = await hiddenPrompt('Confirm password: '); if (password !== confirmation) throw new Error('Passwords do not match.'); process.stdout.write(`\nSet COMMAND_ADMIN_PASSWORD_HASH to:\n${hashAdminPassword(password)}\n`); } catch (error) { process.stderr.write(`\n${error.message}\n`); process.exitCode = 1; }

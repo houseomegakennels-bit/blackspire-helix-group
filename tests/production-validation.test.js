@@ -11,12 +11,16 @@ fs.mkdirSync(writableDbDir, { recursive: true });
 fs.mkdirSync(writableAttachmentsDir, { recursive: true });
 
 const { requireProductionSafeConfig } = await import('../packages/shared/security.js');
+const { hashAdminPassword } = await import('../packages/shared/password-auth.js');
+const VALID_PASSWORD_HASH = hashAdminPassword('thirteen-char');
 
 function validEnv(overrides = {}) {
   return {
     NODE_ENV: 'production',
     BLACKSPIRE_OPERATOR_PRINCIPAL_ID: 'production-operator',
     COMMAND_ADMIN_TOKEN: 'a'.repeat(32),
+    COMMAND_ADMIN_PASSWORD_HASH: VALID_PASSWORD_HASH,
+    ALLOW_BEARER_AUTH: 'false',
     SESSION_SECRET: 'b'.repeat(40),
     SECURE_COOKIES: 'true',
     PUBLIC_BASE_URL: 'https://command.example.com',
@@ -61,9 +65,8 @@ test('application startup accepts only the coherent enabled Codex profile', () =
   ]) assert.equal(requireProductionSafeConfig({ ...enabled, ...overrides }, dirs()).ok, false);
 });
 
-test('rejects a missing or placeholder admin token', () => {
-  assert.match(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: 'dev-admin-token-change-me' }), dirs()).errors.join(), /COMMAND_ADMIN_TOKEN/);
-  assert.equal(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: '' }), dirs()).ok, false);
+test('bearer token is optional when bearer authentication is disabled', () => {
+  assert.equal(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: '' }), dirs()).ok, true);
 });
 
 test('rejects a missing or malformed canonical operator principal', () => {
@@ -72,7 +75,11 @@ test('rejects a missing or malformed canonical operator principal', () => {
 });
 
 test('rejects a weak (short) admin token', () => {
-  assert.match(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_TOKEN: 'short' }), dirs()).errors.join(), /COMMAND_ADMIN_TOKEN/);
+  assert.match(requireProductionSafeConfig(validEnv({ ALLOW_BEARER_AUTH: 'true', COMMAND_ADMIN_TOKEN: 'short' }), dirs()).errors.join(), /COMMAND_ADMIN_TOKEN/);
+});
+
+test('production requires a supported password hash', () => {
+  for (const value of ['', 'v2$scrypt$bad', 'v1$scrypt$1$1$1$bad$bad$p13-128']) assert.match(requireProductionSafeConfig(validEnv({ COMMAND_ADMIN_PASSWORD_HASH: value }), dirs()).errors.join(), /COMMAND_ADMIN_PASSWORD_HASH/);
 });
 
 test('rejects a weak or missing session secret', () => {

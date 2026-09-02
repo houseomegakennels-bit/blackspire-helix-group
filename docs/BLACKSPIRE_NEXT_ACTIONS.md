@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## ZOLA critical path (2026-08-31 UTC)
+
+1. NEXT — branch `fix/pr120-p2s-660dfb` contains the locally validated PR #120 candidate through implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf`, followed only by the canonical-memory checkpoint. All 16 review topics are fixed or superseded in the local tree; remote PR head `660dfb63444069c734dcff50415cb84c4fd919b6` lacks the three latest P2 corrections. Nothing is pushed. The single next action is operator authorization to push the final local candidate SHA, followed by fresh exact-head CI and independent remote review.
+2. AFTER #120 — reconcile `feature/jarvis-capability-registry` onto post-auth `main`, preserving its bounded Seller disclosure/finalization fences.
+3. AFTER #119 — reconcile draft `ui/jarvis-mobile-polish` onto the stable authentication UI and perform rendered mobile verification when approved tooling is available.
+
 ## Immediate ordered work (2026-08-30 UTC)
 
 1. DONE — PR #115 merged with expected-head protection as `a78bb4011a8b263845288351d22c68a500b3772b` from exact reviewed head `545f425d801151966ad2ddc0d01bb6d24d249d85`; CI run `33301410453` (#497) passed and the exact-head Codex review was clean.

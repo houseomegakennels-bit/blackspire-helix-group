@@ -40,7 +40,6 @@ function makeHost({ envFile = true, workspace = true, releases = ['a'.repeat(40)
   if (envFile) {
     fs.writeFileSync(envPath, [
       'NODE_ENV=production', 'BLACKSPIRE_RUNTIME_MODE=production', 'BLACKSPIRE_STATE_OWNER=vps-production',
-      'BLACKSPIRE_RUNTIME_USER=blackspire',
       'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS=30', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS=5',
       'BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true',
       'BLACKSPIRE_PROVIDER_MODE=manual', 'BLACKSPIRE_HERMES_MODE=restricted', 'TELEGRAM_MODE=dry-run',
@@ -88,6 +87,32 @@ function findings(host, options) {
   const result = run(host, { ...options, args: ['--json', ...(options?.args ?? [])] });
   const report = JSON.parse(result.stdout);
   return { result, report, state: (id) => report.findings.find((f) => f.id === id)?.state };
+}
+
+function identityFixture(host, workerGids, { apiGid = 1301, runtimeGid = 1200, primaryGid = 1202 } = {}) {
+  const bin = path.join(host.home, `identity-bin-${workerGids.join('-')}`);
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'id'), `#!/bin/sh
+case "$1:$2" in
+  -u:blackspire-api) echo 1201 ;;
+  -u:blackspire-worker) echo 1202 ;;
+  -Gn:blackspire-api) echo 'blackspire blackspire-api' ;;
+  -Gn:blackspire-worker) echo 'blackspire blackspire-worker legacy-name' ;;
+  -g:blackspire-worker) echo ${primaryGid} ;;
+  -G:blackspire-worker) echo '${workerGids.join(' ')}' ;;
+  *) exit 1 ;;
+esac
+`);
+  fs.writeFileSync(path.join(bin, 'getent'), `#!/bin/sh
+case "$1:$2" in
+  group:blackspire-api) echo 'blackspire-api:x:${apiGid}:' ;;
+  group:blackspire) echo 'blackspire:x:${runtimeGid}:' ;;
+  *) exit 2 ;;
+esac
+`);
+  fs.chmodSync(path.join(bin, 'id'), 0o755);
+  fs.chmodSync(path.join(bin, 'getent'), 0o755);
+  return `${bin}:${process.env.PATH}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +316,43 @@ test('gate4-prepare rejects an installed policy that differs from the reviewed r
   assert.equal(findings(host, { env: { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) } }).state('log-rotation'), 'FAILED');
 });
 
+test('gate4-prepare allowlists worker account-derived groups by numeric GID', () => {
+  const approved = { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) };
+  for (const [label, gids] of [
+    ['API credential group', [1301, 1202, 1200]],
+    ['API credential supplementary membership', [1202, 1200, 1301]],
+    ['equivalent aliased API group membership', [1202, 1200, 1301]],
+    ['privileged docker group', [1202, 1200, 999]],
+    ['arbitrary unexpected group', [1202, 1200, 1777]],
+  ]) {
+    const host = makeHost();
+    const { report, state } = findings(host, { env: { ...approved, PATH: identityFixture(host, gids) } });
+    assert.equal(state('runtime-ownership'), 'FAILED', label);
+    assert.match(report.findings.find((entry) => entry.id === 'runtime-ownership').detail, /unexpected GIDs/);
+  }
+});
+
+test('gate4-prepare preserves worker access to the shared non-secret runtime group', () => {
+  const host = makeHost();
+  const { state } = findings(host, { env: {
+    BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40),
+    PATH: identityFixture(host, [1202, 1200]),
+  } });
+  assert.equal(state('runtime-ownership'), 'READY');
+});
+
+test('gate4-prepare rejects API credential GID aliasing to any allowed worker group', () => {
+  const approved = { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) };
+  for (const [label, alias] of [['shared runtime', 1200], ['worker private primary', 1202]]) {
+    const host = makeHost();
+    const { report, state } = findings(host, {
+      env: { ...approved, PATH: identityFixture(host, [1202, 1200], { apiGid: alias }) },
+    });
+    assert.equal(state('runtime-ownership'), 'FAILED', label);
+    assert.match(report.findings.find((entry) => entry.id === 'runtime-ownership').detail, /API credential group.*distinct/);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // The authorization boundary
 // ---------------------------------------------------------------------------
@@ -404,7 +466,7 @@ test('the reviewed profile example never ships a real secret', () => {
   for (const key of ['COMMAND_ADMIN_TOKEN', 'SESSION_SECRET']) {
     assert.doesNotMatch(profile, new RegExp(`^${key}=.+$`, 'm'), `${key} must never carry a value in the example`);
   }
-  assert.match(profile, /^BLACKSPIRE_RUNTIME_USER=blackspire$/m);
+  assert.doesNotMatch(profile, /^BLACKSPIRE_RUNTIME_USER=/m, 'shared profile must not select either service identity');
   assert.match(profile, /^BLACKSPIRE_STARTUP_TIMEOUT_SECONDS=30$/m);
   assert.match(profile, /^BLACKSPIRE_HEALTH_TIMEOUT_SECONDS=5$/m);
 });

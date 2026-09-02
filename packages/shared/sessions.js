@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 import { run, all, get, transaction } from '../task-engine/db.js';
-import { ADMIN_TOKEN } from './config.js';
 
 const SESSION_TTL_MS = () => Number(process.env.SESSION_TTL_MS || 8 * 60 * 60 * 1000);
 const REVOKED_BEFORE_FLAG = 'sessions_revoked_before';
@@ -46,8 +45,7 @@ function validSession(session, { active = true, at = now() } = {}) {
   return !active || (session.revoked_at === null && at <= session.expires_at);
 }
 
-export function createSession(adminToken, { userAgent = '', ip = 'local', principalId = null, maxExpiresAt = null } = {}) {
-  if (adminToken !== ADMIN_TOKEN) return null;
+export function createSession({ userAgent = '', ip = 'local', principalId = null, maxExpiresAt = null } = {}) {
   // Binding is opt-in and performed only by a server-side caller after it has resolved a
   // configured canonical principal.  Invalid input becomes an unbound session; it never
   // selects an identity through a request field.

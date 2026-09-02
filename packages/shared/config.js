@@ -10,6 +10,7 @@ export const WORKSPACE_ROOT = resolveWorkspaceRoot();
 export const DB_PATH = process.env.BLACKSPIRE_DB_PATH || `${DATA_DIR}/command.sqlite`;
 export const ATTACHMENTS_DIR = process.env.TELEGRAM_TMP_DIR || `${DATA_DIR}/telegram-files`;
 export const ADMIN_TOKEN = process.env.COMMAND_ADMIN_TOKEN || '';
+export const ADMIN_PASSWORD_HASH = process.env.COMMAND_ADMIN_PASSWORD_HASH || '';
 export const TELEGRAM_ALLOWED_USERS = (process.env.TELEGRAM_ALLOWED_USERS || '1001').split(',').map((v)=>Number(v.trim())).filter(Boolean);
 // The listening port has exactly one source of truth: packages/shared/bind.js. Nothing imported
 // this module's former PORT export, and keeping a second `process.env.PORT || 8787` here would

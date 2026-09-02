@@ -8,7 +8,7 @@ minimum_node="22.5.0"
 fail() { printf 'environment verification failed: %s\n' "$1" >&2; exit 1; }
 has_value() { [[ -n "${!1:-}" ]]; }
 codex_probe() {
-  env -u COMMAND_ADMIN_TOKEN -u SESSION_SECRET -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
+  env -u COMMAND_ADMIN_TOKEN -u COMMAND_ADMIN_PASSWORD_HASH -u SESSION_SECRET -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
     -u CODEX_API_KEY -u CODEX_API_ENDPOINT -u GITHUB_TOKEN -u GH_TOKEN \
     -u TELEGRAM_BOT_TOKEN -u TELEGRAM_WEBHOOK_SECRET \
     HOME="${CODEX_HOME}" XDG_CONFIG_HOME="${CODEX_HOME}" XDG_DATA_HOME="${CODEX_HOME}" CODEX_HOME="${CODEX_HOME}" \
@@ -120,7 +120,16 @@ case "$mode" in
       done
     fi
     [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
-    [[ -n "${COMMAND_ADMIN_TOKEN:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production authentication is not configured"
+    if [[ "$runtime_role" == "api" ]]; then
+      [[ -n "${COMMAND_ADMIN_PASSWORD_HASH:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production API password authentication is not configured"
+      if [[ "${ALLOW_BEARER_AUTH:-false}" == "true" ]]; then
+        [[ -n "${COMMAND_ADMIN_TOKEN:-}" ]] || fail "production bearer authentication is enabled without COMMAND_ADMIN_TOKEN"
+      fi
+    else
+      for key in COMMAND_ADMIN_PASSWORD_HASH COMMAND_ADMIN_TOKEN SESSION_SECRET; do
+        ! has_value "$key" || fail "production worker environment must not contain $key"
+      done
+    fi
     [[ "${BLACKSPIRE_RUN_MIGRATIONS:-false}" != "true" ]] || fail "migrations must not run implicitly; approve them separately"
     # Loopback-only bind boundary. The production application port is private; the reverse
     # proxy is the only public surface, so a wildcard or non-loopback host is rejected here
@@ -190,7 +199,8 @@ case "$mode" in
     { [[ "$startup" =~ ^[0-9]+$ ]] && (( startup >= 1 && startup <= 600 )); } || fail "startup timeout must be a positive integer no greater than 600"
     health="${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-}"
     { [[ "$health" =~ ^[0-9]+$ ]] && (( health >= 1 && health <= 120 )); } || fail "health timeout must be a positive integer no greater than 120"
-    [[ -n "${BLACKSPIRE_RUNTIME_USER:-}" && "${BLACKSPIRE_RUNTIME_USER}" != "root" ]] || fail "BLACKSPIRE_RUNTIME_USER must be a non-root runtime user"
+    expected_runtime_user="blackspire-${runtime_role}"
+    [[ "${BLACKSPIRE_RUNTIME_USER:-}" == "$expected_runtime_user" ]] || fail "BLACKSPIRE_RUNTIME_USER must match the ${runtime_role} service identity"
     [[ "${BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT:-}" == "true" ]] || fail "production requires BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true"
     [[ "$(id -u)" -ne 0 ]] || fail "production runtime must not run as root"
     ;;
