@@ -85,7 +85,8 @@ function baseEnv(overrides = {}) {
     NODE_ENV: 'production',
     BLACKSPIRE_RUNTIME_MODE: 'production',
     BLACKSPIRE_STATE_OWNER: 'vps-production',
-    BLACKSPIRE_RUNTIME_USER: childUsername,
+    // The supervisor's API role supplies this value; the shared profile never does.
+    BLACKSPIRE_RUNTIME_USER: 'blackspire-api',
     BLACKSPIRE_PROVIDER_MODE: 'manual',
     BLACKSPIRE_HERMES_MODE: 'restricted-test',
     TELEGRAM_MODE: 'dry-run',

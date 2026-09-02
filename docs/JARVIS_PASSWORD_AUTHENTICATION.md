@@ -14,11 +14,24 @@ Enter the chosen 13–128 character password only at the hidden prompts. Put the
 
 Keep `ALLOW_BEARER_AUTH=false` in the API-only file unless a separately authorized machine client requires bearer access. With bearer disabled, `COMMAND_ADMIN_TOKEN` is not used for browser login and may be removed after all machine clients are confirmed migrated. With bearer enabled, retain a separate high-entropy `COMMAND_ADMIN_TOKEN` of at least 24 characters in that API-only file.
 
-Before restarting, use the existing release preflight. **Credential cutover requires session invalidation:**
-before changing the verifier or restarting, POST `/api/auth/revoke-all` from an authenticated operator
-session with its CSRF token, confirm `200`, and discard the old browser cookie. This durable fence
-invalidates every browser session issued under the token-era model and is safe to repeat. Machine
-bearer authentication is independent and is not revoked by this browser-session operation.
+Before changing credentials, use the existing release preflight and quiesce the API. **Credential
+cutover requires an offline durable session fence:** stop the target so the old process cannot issue
+another token-era session, replace the API-only verifier/configuration, then run the reviewed offline
+primitive as the API identity with the production environment loaded:
+
+```bash
+sudo systemctl stop blackspire-command.target
+sudo -u blackspire-api env NODE_ENV=production BLACKSPIRE_STATE_OWNER=vps-production \
+  BLACKSPIRE_DB_PATH=/opt/blackspire-command/shared/database/command.sqlite \
+  /opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/current/scripts/revoke-all-sessions.js
+```
+
+The offline command must succeed before starting the target; otherwise leave services stopped and
+repair the cutover. It advances the durable revocation fence and invalidates every prior browser
+session, so it is safe to repeat. Do not use the old live `/api/auth/revoke-all` endpoint as the
+cutover fence. Discard any old browser cookie after the fence. Machine bearer authentication is
+independent and is not revoked by this operation.
+
 Then restart through the established target and bounded readiness path:
 
 ```bash

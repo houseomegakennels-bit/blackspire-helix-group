@@ -98,13 +98,17 @@ case "$1:$2" in
   -u:blackspire-worker) echo 1202 ;;
   -Gn:blackspire-api) echo 'blackspire blackspire-api' ;;
   -Gn:blackspire-worker) echo 'blackspire blackspire-worker legacy-name' ;;
+  -g:blackspire-worker) echo 1202 ;;
   -G:blackspire-worker) echo '${workerGids.join(' ')}' ;;
   *) exit 1 ;;
 esac
 `);
   fs.writeFileSync(path.join(bin, 'getent'), `#!/bin/sh
-test "$1:$2" = 'group:blackspire-api' || exit 2
-echo 'blackspire-api:x:1301:'
+case "$1:$2" in
+  group:blackspire-api) echo 'blackspire-api:x:1301:' ;;
+  group:blackspire) echo 'blackspire:x:1200:' ;;
+  *) exit 2 ;;
+esac
 `);
   fs.chmodSync(path.join(bin, 'id'), 0o755);
   fs.chmodSync(path.join(bin, 'getent'), 0o755);
@@ -312,18 +316,19 @@ test('gate4-prepare rejects an installed policy that differs from the reviewed r
   assert.equal(findings(host, { env: { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) } }).state('log-rotation'), 'FAILED');
 });
 
-test('gate4-prepare rejects worker membership in the API credential group by numeric GID', () => {
+test('gate4-prepare allowlists worker account-derived groups by numeric GID', () => {
   const approved = { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) };
   for (const [label, gids] of [
-    ['primary membership', [1301, 1202, 1200]],
-    ['supplementary membership', [1202, 1200, 1301]],
-    ['equivalent aliased group membership', [1202, 1200, 1301]],
+    ['API credential group', [1301, 1202, 1200]],
+    ['API credential supplementary membership', [1202, 1200, 1301]],
+    ['equivalent aliased API group membership', [1202, 1200, 1301]],
+    ['privileged docker group', [1202, 1200, 999]],
+    ['arbitrary unexpected group', [1202, 1200, 1777]],
   ]) {
     const host = makeHost();
     const { report, state } = findings(host, { env: { ...approved, PATH: identityFixture(host, gids) } });
     assert.equal(state('runtime-ownership'), 'FAILED', label);
-    assert.match(report.findings.find((entry) => entry.id === 'runtime-ownership').detail,
-      /worker must not belong to API credential group blackspire-api \(GID 1301\)/);
+    assert.match(report.findings.find((entry) => entry.id === 'runtime-ownership').detail, /unexpected GIDs/);
   }
 });
 

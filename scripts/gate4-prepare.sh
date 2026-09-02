@@ -335,18 +335,32 @@ for checked_user in "$api_user" "$worker_user"; do
   fi
 done
 # Resolve numeric GIDs rather than trusting group names. `id -G` includes the primary and
-# supplementary groups systemd would initialize, while the numeric comparison also catches an NSS
-# alias that names the API credential group's GID differently.
+# supplementary groups systemd would initialize, while the numeric comparison also catches aliases.
+# The worker's account-derived groups are an allowlist: its private primary group and the shared
+# non-secret runtime group are permitted; every other group is rejected.
 if [[ -z "$runtime_identity_detail" ]]; then
   api_group_gid="$(getent group "$api_group" 2>/dev/null | awk -F: 'NR == 1 { print $3 }' || true)"
+  runtime_group_gid="$(getent group "$runtime_user" 2>/dev/null | awk -F: 'NR == 1 { print $3 }' || true)"
+  worker_primary_gid="$(id -g "$worker_user" 2>/dev/null || true)"
+  worker_group_gids="$(id -G "$worker_user" 2>/dev/null || true)"
   if [[ ! "$api_group_gid" =~ ^[0-9]+$ ]]; then
     record runtime-ownership PENDING "API credential group $api_group is absent or has no verifiable numeric GID"
-  elif id -G "$worker_user" | tr ' ' '\n' | grep -qx "$api_group_gid"; then
-    record runtime-ownership FAILED "worker must not belong to API credential group $api_group (GID $api_group_gid)"
-  elif [[ "$(id -u "$api_user")" != "$(id -u "$worker_user")" ]]; then
-    record runtime-ownership READY "distinct non-root API and worker accounts share only group $runtime_user"
+  elif [[ ! "$runtime_group_gid" =~ ^[0-9]+$ || ! "$worker_primary_gid" =~ ^[0-9]+$ || -z "$worker_group_gids" ]]; then
+    record runtime-ownership PENDING 'shared runtime or worker private primary group has no verifiable numeric identity'
   else
-    record runtime-ownership FAILED 'API and worker runtime accounts must have distinct UIDs'
+    unexpected_worker_gids=""
+    for worker_gid in $worker_group_gids; do
+      if [[ "$worker_gid" != "$worker_primary_gid" && "$worker_gid" != "$runtime_group_gid" ]]; then
+        unexpected_worker_gids+="${unexpected_worker_gids:+, }$worker_gid"
+      fi
+    done
+    if [[ -n "$unexpected_worker_gids" ]]; then
+      record runtime-ownership FAILED "worker account-derived groups are not allowlisted; unexpected GIDs: $unexpected_worker_gids"
+    elif [[ "$(id -u "$api_user")" != "$(id -u "$worker_user")" ]]; then
+      record runtime-ownership READY "distinct non-root API and worker accounts use only the worker private primary and shared runtime groups"
+    else
+      record runtime-ownership FAILED 'API and worker runtime accounts must have distinct UIDs'
+    fi
   fi
 else
   record runtime-ownership PENDING "$runtime_identity_detail"

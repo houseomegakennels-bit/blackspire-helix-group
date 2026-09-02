@@ -1,5 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## PR #120 finalization correction (2026-09-02 UTC)
+
+Local repair is based on remote PR #120 head `f00d1721b66d29052d6e0d9350328d19950fb231` and is
+not pushed. Gate4 now allowlists the worker's numeric account-derived groups to its private primary
+GID and shared `blackspire` runtime GID; API-credential, Docker, aliased, and arbitrary groups fail
+closed. Credential cutover now stops the target before changing the verifier and writes the durable
+session fence through the offline `scripts/revoke-all-sessions.js` primitive before restart, closing
+the old-token reissuance window. CI #529 failed one pre-existing order-sensitive persistence test
+(`401 !== 429`) while the isolated test passes; remote verification is required for this new SHA.
+Production changed: NO.
+
 ## PR #120 final local P2 correction (2026-09-01 UTC)
 
 Local implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf` extends remote PR #120 head `660dfb63444069c734dcff50415cb84c4fd919b6`. Gate 4 now resolves the API credential group to its numeric GID and rejects the worker when that GID appears through primary, supplementary, stale initgroups, or alias-equivalent membership while preserving the shared non-secret runtime group. The primary iPhone guide places the password verifier, session secret, bearer opt-in, and optional machine token only in `/etc/blackspire/command-api.env` and identifies shared worker-safe settings in `/etc/blackspire/command.env`. The PWA distinguishes invalid credentials (401), rate limiting (429), and credential-neutral temporary authentication unavailability (503) without changing successful session establishment.

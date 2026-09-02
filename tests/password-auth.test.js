@@ -104,10 +104,16 @@ test('HTTP login awaits the asynchronous verifier', () => {
 
 test('credential cutover runbook requires durable browser-session revocation', () => {
   const runbook = fs.readFileSync('docs/JARVIS_PASSWORD_AUTHENTICATION.md', 'utf8');
-  assert.match(runbook, /Credential cutover requires session invalidation/);
-  assert.match(runbook, /POST `\/api\/auth\/revoke-all`/);
-  assert.match(runbook, /discard the old browser cookie/);
-  assert.match(runbook, /Machine\s+bearer authentication is independent/);
+  assert.match(runbook, /Credential\s+cutover requires an offline durable session fence/);
+  assert.match(runbook, /offline durable session fence/);
+  assert.match(runbook, /systemctl stop blackspire-command\.target/);
+  assert.match(runbook, /revoke-all-sessions\.js/);
+  assert.doesNotMatch(runbook, /before changing the verifier or restarting, POST `\/api\/auth\/revoke-all`/);
+  const offline = fs.readFileSync('scripts/revoke-all-sessions.js', 'utf8');
+  assert.match(offline, /revokeAllSessions\(\)/);
+  assert.match(offline, /vps-production/);
+  assert.match(runbook, /discard any old browser cookie/i);
+  assert.match(runbook, /machine\s+bearer authentication is\s+independent/i);
 });
 
 test('browser login never submits or falls back to the machine admin token', () => {
