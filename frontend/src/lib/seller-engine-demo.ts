@@ -2,6 +2,7 @@ import { calculateSellerLeadScore, recommendedSellerAction, type SellerLeadStatu
 
 export type SellerLeadView = {
   id: string;
+  propertyId?: string;
   ownerName: string;
   ownerMailingAddress: string;
   ownerPhone?: string;
@@ -165,4 +166,3 @@ export const DEMO_SELLER_LEADS: SellerLeadView[] = seeds.map((lead, index) => {
     relatedDealId: null,
   };
 });
-

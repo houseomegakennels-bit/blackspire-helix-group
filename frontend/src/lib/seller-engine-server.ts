@@ -99,6 +99,7 @@ type SellerLeadJoin = {
     raw_skiptrace_response?: Record<string, unknown> | null;
   } | null;
   properties: {
+    id: string;
     property_address: string;
     parcel_id: string | null;
     county: string | null;
@@ -120,10 +121,10 @@ type SellerLeadJoin = {
 };
 
 const SELLER_LEAD_BASE_SELECT =
-  "id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(property_address,parcel_id,county,city,state,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))";
+  "id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state),properties(id,property_address,parcel_id,county,city,state,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))";
 
 const SELLER_LEAD_CONTACT_SELECT =
-  "id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state,primary_phone,primary_email,contact_confidence_score,dnc_flag,skip_trace_status,skip_trace_provider,raw_skiptrace_response),properties(property_address,parcel_id,county,city,state,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))";
+  "id,status,motivation_score,lead_category,motivation_reasons,recommended_action,ai_summary,created_at,owners(name,mailing_address,mailing_state,primary_phone,primary_email,contact_confidence_score,dnc_flag,skip_trace_status,skip_trace_provider,raw_skiptrace_response),properties(id,property_address,parcel_id,county,city,state,zip_code,property_type,assessed_value,estimated_equity,years_owned,tax_delinquent,foreclosure,probate,vacant,code_violation,owner_occupancy_status,data_sources(name,source_type,integration_type,source_url))";
 
 type SellerLeadNoteRow = {
   id: string;
@@ -156,6 +157,7 @@ function mapSellerLead(lead: SellerLeadJoin): SellerLeadView {
 
   return {
     id: lead.id,
+    propertyId: lead.properties?.id,
     ownerName: lead.owners?.name ?? "Unknown owner",
     ownerMailingAddress: lead.owners?.mailing_address ?? "Not available",
     ownerPhone,
@@ -830,6 +832,23 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
   );
 
   return leads.map((lead) => applyNexusContactToLead(lead, latestNexusContacts.get(lead.id) ?? null));
+}
+
+// The internal Blackspire capability boundary must distinguish a legitimate empty
+// pipeline from missing configuration and query/schema failures. Keep that stricter
+// contract separate from legacy UI callers which intentionally degrade to an empty list.
+export async function listSellerLeadsForCapability(limit: number): Promise<SellerLeadView[]> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) throw new Error("Seller Engine database is not configured");
+
+  const { data, error } = await supabase
+    .from("seller_leads")
+    .select(SELLER_LEAD_BASE_SELECT)
+    .order("motivation_score", { ascending: false })
+    .order("id", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error("Seller Engine opportunity query failed");
+  return ((data ?? []) as unknown as SellerLeadJoin[]).map(mapSellerLead);
 }
 
 export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | null> {

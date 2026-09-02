@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, run, get, transaction } from './db.js';
 
@@ -40,6 +41,16 @@ export function providerAttemptsForTasks(taskIds) {
   const ids = [...new Set(taskIds)].filter((taskId) => typeof taskId === 'string' && taskId);
   if (!ids.length) return [];
   return query(`SELECT * FROM provider_attempts WHERE task_id IN (${ids.map(esc).join(',')}) ORDER BY created_at;`);
+}
+
+export function taskRequiresCapabilityPermission(taskId, permission) {
+  if (permission !== 'seller.opportunities.read') return false;
+  return Boolean(get("SELECT 1 AS present FROM provider_attempts WHERE task_id=? AND provider='blackspire-capability' AND mode='seller.opportunities.search' LIMIT 1", [taskId]));
+}
+
+export function conversationRequiresCapabilityPermission(conversationId, permission) {
+  if (permission !== 'seller.opportunities.read') return false;
+  return Boolean(get("SELECT 1 AS present FROM tasks t JOIN provider_attempts p ON p.task_id=t.id WHERE t.conversation_id=? AND p.provider='blackspire-capability' AND p.mode='seller.opportunities.search' LIMIT 1", [conversationId]));
 }
 
 export function transition(taskId, status, patch = {}, ownership = null) {
@@ -172,6 +183,77 @@ export function finishCodexDispatchWithUsage(taskId, status, { attemptId = `code
     recordUsage(taskId, { ...usage, attemptId });
     faultInjector?.('after_usage_insert');
     return attempt;
+  });
+}
+
+function capabilityAttemptId(taskId, capabilityId) {
+  return `cap_dispatch_${taskId}_${String(capabilityId).replace(/[^a-z0-9]+/gi, '_')}`;
+}
+
+export function capabilityDispatchAuthority(ownership = null) {
+  return {
+    workerId: ownership?.workerId ?? null,
+    claimDigest: ownership?.claimToken ? crypto.createHash('sha256').update(ownership.claimToken).digest('hex') : null,
+  };
+}
+
+export function prepareCapabilityDispatch(taskId, capabilityId, requestPacket = {}) {
+  const attemptId = capabilityAttemptId(taskId, capabilityId);
+  return transaction(() => {
+    const existing = get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
+    if (existing) return { owned: false, attempt: existing };
+    run('INSERT INTO provider_attempts(id,task_id,provider,mode,status,request_packet,response_packet,error,latency_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)', [
+      attemptId, taskId, 'blackspire-capability', capabilityId, 'dispatching', redact(JSON.stringify(requestPacket)), '{}', '', 0, now(),
+    ]);
+    return { owned: true, attempt: get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]) };
+  });
+}
+
+export function finishCapabilityDispatch(taskId, capabilityId, status, { responsePacket = {}, error = '', latencyMs = 0 } = {}) {
+  if (!['completed','failed','outcome_unknown'].includes(status)) throw new Error('invalid capability dispatch terminal status');
+  const attemptId = capabilityAttemptId(taskId, capabilityId);
+  const result = run("UPDATE provider_attempts SET status=?,response_packet=?,error=?,latency_ms=? WHERE id=? AND task_id=? AND provider='blackspire-capability' AND mode=? AND status IN ('dispatching','started')", [
+    status, redact(JSON.stringify(responsePacket)), redact(error), Number(latencyMs || 0), attemptId, taskId, capabilityId,
+  ]);
+  if (Number(result.changes) !== 1) throw new Error('capability dispatch attempt is missing or already terminal');
+  return get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
+}
+
+export function finalizeCapabilitySuccess({ taskId, capabilityId, workspaceId, principalId, ownership = null, result, summary, evidence }, authorize) {
+  const attemptId = capabilityAttemptId(taskId, capabilityId);
+  return transaction(() => {
+    const task = get('SELECT * FROM tasks WHERE id=?', [taskId]);
+    const workspace = get('SELECT id FROM workspaces WHERE id=?', [workspaceId]);
+    const attempt = get('SELECT * FROM provider_attempts WHERE id=?', [attemptId]);
+    const flag = get('SELECT value FROM system_flags WHERE key=?', ['emergency_stop']);
+    let requestPacket = null;
+    try { requestPacket = JSON.parse(attempt?.request_packet || 'null'); } catch { /* fail below */ }
+    const expectedWorkerId = ownership?.workerId ?? '';
+    const expectedClaimToken = ownership?.claimToken ?? '';
+    const authorized = Boolean(task && task.actor_id === principalId && authorize?.(task));
+    if (!task || !workspace || task.workspace_id !== workspaceId || task.status !== 'running' || task.worker_id !== expectedWorkerId ||
+      task.claim_token !== expectedClaimToken || flag?.value === 'active' || !authorized || !attempt ||
+      attempt.task_id !== taskId || attempt.provider !== 'blackspire-capability' || attempt.mode !== capabilityId ||
+      attempt.status !== 'dispatching' || requestPacket?.workspaceId !== workspaceId || requestPacket?.principalId !== principalId ||
+      requestPacket?.workerId !== (ownership?.workerId ?? null) || requestPacket?.claimDigest !== capabilityDispatchAuthority(ownership).claimDigest) {
+      const error = new Error('capability authority fence changed before finalization');
+      error.code = 'CAPABILITY_FINALIZATION_REFUSED';
+      throw error;
+    }
+
+    const timestamp = now();
+    const responsePacket = redact(JSON.stringify({ result }));
+    const attemptUpdate = run("UPDATE provider_attempts SET status='completed',response_packet=?,error='',latency_ms=0 WHERE id=? AND status='dispatching'", [responsePacket, attemptId]);
+    if (Number(attemptUpdate.changes) !== 1) throw new Error('capability attempt finalization race');
+    const taskUpdate = run("UPDATE tasks SET status='completed',summary=?,evidence=?,current_stage='summarize',updated_at=? WHERE id=? AND status='running' AND worker_id IS ? AND claim_token IS ?", [JSON.stringify(summary), JSON.stringify(evidence), timestamp, taskId, expectedWorkerId, expectedClaimToken]);
+    if (Number(taskUpdate.changes) !== 1) throw new Error('capability task finalization race');
+    recordEvidence(taskId, 'capability_result', evidence);
+    recordEvidence(taskId, 'final', evidence);
+    recordTaskEvent(taskId, 'capability.completed', { capabilityId, resultCount: result.opportunities.length, status: 'completed' });
+    audit(taskId, 'hermes', 'capability.completed', { capabilityId, resultCount: result.opportunities.length });
+    audit(taskId, 'system', 'task.transition', { status: 'completed', summary, evidence, current_stage: 'summarize' });
+    recordTaskEvent(taskId, 'task.completed', { status: 'completed', summary, error: null, currentStage: 'summarize' });
+    return getTask(taskId);
   });
 }
 

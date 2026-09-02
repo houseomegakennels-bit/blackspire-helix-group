@@ -7,7 +7,7 @@ import { verifyAdminPasswordAsyncResult } from '../../packages/shared/password-a
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
-import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords, providerAttemptsForTasks } from '../../packages/task-engine/tasks.js';
+import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords, providerAttemptsForTasks, taskRequiresCapabilityPermission, conversationRequiresCapabilityPermission } from '../../packages/task-engine/tasks.js';
 import { attachmentsForTask } from '../../packages/task-engine/attachments.js';
 import { listWorkspaces, getWorkspace, upsertWorkspace } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
@@ -136,7 +136,7 @@ async function route(req, res) {
     if (memoryQueueMatch && req.method === 'GET') return memoryCandidateReviewQueueRoute(req, res, auth, u, memoryQueueMatch[1]);
     if (u.pathname === '/api/workspaces' && req.method === 'GET') return json(res, 200, { workspaces: listWorkspaces().filter((workspace) => authorizeWorkspaceRequest(auth, workspace.id, 'workspace.read')) });
     if (u.pathname === '/api/tasks' && req.method === 'GET') {
-      const authorized = listTasks().filter((task) => authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read'));
+      const authorized = listTasks().filter((task) => authorizeTaskDisclosure(auth, task));
       const attemptsByTask = new Map();
       for (const attempt of providerAttemptsForTasks(authorized.map((task) => task.id))) {
         const attempts = attemptsByTask.get(attempt.task_id) || [];
@@ -151,7 +151,8 @@ async function route(req, res) {
     const conversationMatch = u.pathname.match(/^\/api\/conversations\/([^/]+)(?:\/(events))?$/);
     if (conversationMatch && req.method === 'GET') {
       const conversationRecord = getConversationRecord(conversationMatch[1]);
-      if (!conversationRecord || !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'task.read')) return json(res, 404, { error: 'conversation not found' });
+      if (!conversationRecord || !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'task.read') ||
+        (conversationRequiresCapabilityPermission(conversationRecord.id, 'seller.opportunities.read') && !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'seller.opportunities.read'))) return json(res, 404, { error: 'conversation not found' });
       if (conversationMatch[2] === 'events') return json(res, 200, { conversationId: conversationMatch[1], events: conversationEvents(conversationMatch[1], u.searchParams.get('after') || '') });
       return json(res, 200, getConversation(conversationMatch[1]));
     }
@@ -214,6 +215,15 @@ function authorizeWorkspaceRequest(auth, workspaceId, permission) {
   if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(workspaceId)) return false;
   const principal = requestPrincipal(auth);
   return Boolean(principal && requireWorkspacePermission(principal, workspaceId, permission).allowed);
+}
+
+function authorizeTaskDisclosure(auth, task) {
+  return authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read') &&
+    authorizeCapabilityDisclosure(auth, task);
+}
+
+function authorizeCapabilityDisclosure(auth, task) {
+  return !taskRequiresCapabilityPermission(task.id, 'seller.opportunities.read') || authorizeWorkspaceRequest(auth, task.workspace_id, 'seller.opportunities.read');
 }
 
 function authorizeGlobalRuntimeControl(auth, selectedWorkspaceId) {
@@ -381,9 +391,11 @@ async function createTaskRoute(req, res, auth) {
   const decision = evaluateRequestPolicy({ request, channel: 'api', authority: 'authenticated_admin' });
   const executionIntent = body.executionIntent || 'workspace_mutation';
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) return json(res, 422, { error: 'executionIntent must be read_only or workspace_mutation' });
+  const principal = requestPrincipal(auth);
+  if (!principal) return json(res, 404, { error: 'not found' });
   let task;
   try {
-    task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', executionIntent, initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
+    task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actorId: principal.principalId, actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', executionIntent, initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
   } catch (error) {
     if (error?.code === 'TASK_IDEMPOTENCY_CONFLICT') return json(res, 409, { error: 'idempotency key conflicts with executionIntent' });
     throw error;
@@ -397,9 +409,11 @@ async function unifiedInputRoute(req, res, auth) {
   const body = await readJson(req);
   const workspaceId = TEST_MODE.enabled ? TEST_MODE.workspaceId : (body.workspaceId || 'blackspire-command');
   if (!authorizeWorkspaceRequest(auth, workspaceId, 'task.create')) return json(res, 404, { error: 'not found' });
+  const principal = TEST_MODE.enabled ? null : requestPrincipal(auth);
+  if (!TEST_MODE.enabled && !principal) return json(res, 404, { error: 'not found' });
   const result = createUnifiedInput({
     channel: TEST_MODE.enabled ? 'jarvis' : (body.channel === 'api' ? 'api' : 'jarvis'),
-    actorId: TEST_MODE.enabled ? TEST_MODE.testActor : (auth.session?.sessionId || auth.mode),
+    actorId: TEST_MODE.enabled ? TEST_MODE.testActor : principal.principalId,
     channelKey: TEST_MODE.enabled ? `test-session:${TEST_MODE.testActor}` : (body.channelKey || auth.session?.sessionId || `bearer:${clientIp(req)}`),
     conversationId: body.conversationId || null,
     workspaceId,
@@ -418,6 +432,7 @@ function taskRoute(req, res, auth, match) {
   if ((isRead && req.method !== 'GET') || (!isRead && req.method !== 'POST')) return json(res, 404, { error: 'not found' });
   const permission = ['approve', 'reject'].includes(match[2]) ? 'approval.grant' : ['pause', 'resume', 'cancel'].includes(match[2]) ? 'task.execute' : 'task.read';
   if (!authorizeWorkspaceRequest(auth, task.workspace_id, permission)) return json(res, 404, { error: 'not found' });
+  if (isRead && !authorizeCapabilityDisclosure(auth, task)) return json(res, 404, { error: 'not found' });
   if (!match[2]) return json(res, 200, { task: serializeTask(task) });
   if (match[2] === 'logs') return json(res, 200, { logs: logs(task.id) });
   if (match[2] === 'approvals') return json(res, 200, { approvals: taskRecords(task.id).approvals });
@@ -486,7 +501,7 @@ function buildEvidenceBundle(taskId) {
 
 function exportTask(res, auth, taskId, format) {
   const task = getTask(taskId);
-  if (!task || !authorizeWorkspaceRequest(auth, task.workspace_id, 'task.read')) return json(res, 404, { error: 'task not found' });
+  if (!task || !authorizeTaskDisclosure(auth, task)) return json(res, 404, { error: 'task not found' });
   const bundle = buildEvidenceBundle(taskId);
   if (!bundle) return json(res, 404, { error: 'task not found' });
   const redacted = redact(JSON.stringify(bundle, null, 2));
