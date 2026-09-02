@@ -299,6 +299,17 @@ test('Helix Core covers every system state and pauses safely', () => {
   assert.doesNotMatch(source, /arc reactor|stark|marvel/i, 'no film-derived references');
 });
 
+test('cosmetic state language and mobile rail remain durable without markup changes', () => {
+  for (const state of ['dormant', 'listening', 'processing', 'approval', 'completed', 'denied', 'failed', 'cancelled', 'offline', 'emergency', 'outcome_unknown']) {
+    assert.match(css, new RegExp(`\\[data-core="${state}"\\]`), `missing visual treatment: ${state}`);
+  }
+  assert.match(css, /nav\.views\{position:fixed/, 'phone navigation remains a floating bottom rail');
+  assert.match(css, /safe-area-inset-left/);
+  assert.match(css, /safe-area-inset-right/);
+  assert.match(css, /ol\.msgs li\[data-task-id\]/, 'Jarvis replies retain a distinct intelligence-response surface');
+  assert.doesNotMatch(css, /url\(\s*["']?https?:/i, 'visual system has no external assets');
+});
+
 test('Helix Core enhancement is a separate optional lazy chunk with a permanent fallback', () => {
   assert.ok(fs.existsSync(helixModulePath), 'lazy Helix module exists');
   const module = fs.readFileSync(helixModulePath, 'utf8');
