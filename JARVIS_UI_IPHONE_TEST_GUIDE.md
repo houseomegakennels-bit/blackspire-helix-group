@@ -8,16 +8,22 @@ credentials.
 
 ## Setup
 
-1. Start a disposable API (`BLACKSPIRE_DB_PATH` in a throwaway dir,
-   `COMMAND_ADMIN_TOKEN` set, `HERMES_TEST_PROVIDER=mock`), expose it to the
+1. Choose a disposable development-only password that is not used by any real
+   account or environment. Generate its hash with `npm run auth:hash-password`
+   using the hidden prompts, then start a disposable API with
+   `COMMAND_ADMIN_PASSWORD_HASH` set to that encoded hash,
+   `BLACKSPIRE_DB_PATH` in a throwaway directory, and
+   `HERMES_TEST_PROVIDER=mock`. Do not load production credentials or configure
+   a browser token fallback. Expose only this disposable environment to the
    iPhone (LAN or Quick Tunnel; HTTPS required for service-worker install).
 2. Open `/jarvis` in iPhone Safari. Verify dark chrome (`#04070C`) and no
    text-size zoom when tapping inputs (all inputs are 16px).
 
 ## Checks (each maps to a build requirement)
 
-1. **Sign-in**: nav rail hidden; token field is password-type; wrong token →
-   inline "Sign-in failed"; too many attempts → rate-limit message.
+1. **Sign-in**: nav rail hidden; password field uses `type=password`; enter the
+   same disposable password used to create the development hash. A wrong
+   password → inline "Sign-in failed"; too many attempts → rate-limit message.
 2. **Command slice**: submit a harmless command → accepted notice, jump to
    Conversation with canonical conversation ID + Copy; task appears with
    Queued state; Helix Core animates to Processing.

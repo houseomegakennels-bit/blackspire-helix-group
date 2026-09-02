@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { verifyVpsRuntime } from '../packages/shared/security.js';
 import { executeProviderRequest, selectProvider } from '../packages/providers/providers.js';
+import { hashAdminPassword } from '../packages/shared/password-auth.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-vps-hardening-'));
 const node = process.execPath;
@@ -329,16 +330,16 @@ const workspaceRootFixture = makeWorkspaceRoot('workspace-root-valid');
 
 // The shell preflight fixture. Every requirement other than the one under test is satisfied
 // deliberately, and all paths are disposable, so each case can only fail for its own reason.
-function preflightEnv(overrides = {}) {
+function preflightEnv(overrides = {}, role = 'api') {
   return {
     NODE_ENV: 'production', BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production',
     BLACKSPIRE_PROVIDER_MODE: 'manual', BLACKSPIRE_HERMES_MODE: 'restricted', TELEGRAM_MODE: 'dry-run',
     BLACKSPIRE_DB_PATH: disposableProductionDbPath, BLACKSPIRE_RELEASE_ROOT: productionRoot,
-    COMMAND_ADMIN_TOKEN: 'x'.repeat(32), SESSION_SECRET: 'y'.repeat(40),
+    COMMAND_ADMIN_TOKEN: 'x'.repeat(32), COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'), SESSION_SECRET: 'y'.repeat(40),
     BIND_HOST: '127.0.0.1', PORT: String(freeProductionPort()),
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',
-    BLACKSPIRE_RUNTIME_USER: 'blackspire',
+    BLACKSPIRE_RUNTIME_USER: `blackspire-${role}`,
     BLACKSPIRE_WORKSPACE_ROOT: workspaceRootFixture,
     ...overrides,
   };
@@ -388,12 +389,50 @@ test('worker preflight validates the bind contract without claiming the API port
   const env = preflightEnv({ PATH: `${fakeBin}:${process.env.PATH}` });
   const api = run('scripts/verify-environment.sh', ['vps-production', 'api'], env);
   assert.match(api.stderr, /already in use/, 'API preflight must retain exclusive port ownership');
-  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], env);
+  const workerEnv = {
+    ...env,
+    BLACKSPIRE_RUNTIME_USER: 'blackspire-worker',
+    COMMAND_ADMIN_PASSWORD_HASH: undefined,
+    COMMAND_ADMIN_TOKEN: undefined,
+    SESSION_SECRET: undefined,
+  };
+  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], workerEnv);
   assert.doesNotMatch(worker.stderr, /already in use/, 'worker restart must not be blocked by the healthy API listener');
   if (process.getuid() === 0) {
     assert.match(worker.stderr, /production runtime must not run as root/, 'the worker fixture must reach the final root boundary');
   } else {
     assert.equal(worker.status, 0, `a non-root worker must accept the otherwise valid profile: ${worker.stderr}`);
+  }
+});
+
+test('worker production preflight starts without API authentication secrets', () => {
+  const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], preflightEnv({
+    COMMAND_ADMIN_PASSWORD_HASH: undefined,
+    COMMAND_ADMIN_TOKEN: undefined,
+    SESSION_SECRET: undefined,
+  }, 'worker'));
+  assert.doesNotMatch(worker.stderr, /password authentication is not configured|COMMAND_ADMIN_PASSWORD_HASH|SESSION_SECRET/,
+    `worker startup must not depend on API authentication secrets: ${worker.stderr}`);
+  if (process.getuid() === 0) {
+    assert.match(worker.stderr, /production runtime must not run as root/,
+      'a credential-free worker fixture must reach the final runtime-identity boundary');
+  } else {
+    assert.equal(worker.status, 0, `a non-root credential-free worker must pass: ${worker.stderr}`);
+  }
+});
+
+test('worker production preflight refuses API authentication secrets instead of silently inheriting them', () => {
+  for (const key of ['COMMAND_ADMIN_PASSWORD_HASH', 'COMMAND_ADMIN_TOKEN', 'SESSION_SECRET']) {
+    const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], preflightEnv({
+      COMMAND_ADMIN_PASSWORD_HASH: undefined,
+      COMMAND_ADMIN_TOKEN: undefined,
+      SESSION_SECRET: undefined,
+      [key]: key === 'COMMAND_ADMIN_PASSWORD_HASH' ? hashAdminPassword('production-pass') : 'x'.repeat(40),
+    }, 'worker'));
+    assert.notEqual(worker.status, 0, `worker must refuse inherited API-only ${key}`);
+    assert.match(worker.stderr, new RegExp(key), `worker refusal must identify the forbidden key without printing its value: ${worker.stderr}`);
+    assert.doesNotMatch(worker.stderr, /production runtime must not run as root/,
+      `${key} must be refused before the generic root boundary`);
   }
 });
 

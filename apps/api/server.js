@@ -2,7 +2,8 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN_TOKEN, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
+import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
+import { verifyAdminPasswordAsyncResult } from '../../packages/shared/password-auth.js';
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
@@ -315,7 +316,23 @@ function memoryCandidateReviewQueueRoute(req, res, auth, url, workspaceId) {
 async function login(req, res) {
   const limit = checkLimit(req, 'login', Number(process.env.LOGIN_RATE_LIMIT || 5), 60000); if (!limit.allowed) return limited(res, limit);
   const body = await readJson(req);
-  const session = createSession(body.adminToken, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null });
+  const password = body && !Array.isArray(body) ? body.password : null;
+  // Compatibility is intentionally limited to legacy non-production API fixtures. The
+  // browser submits only `password` and must be configured with a password hash even in
+  // development; never reinterpret the machine token as a human-entered password.
+  const legacyDevelopmentFixtureToken = process.env.NODE_ENV !== 'production' && !ADMIN_PASSWORD_HASH && body?.adminToken;
+  const passwordResult = (process.env.NODE_ENV === 'production' || (password !== null && ADMIN_PASSWORD_HASH))
+    ? await verifyAdminPasswordAsyncResult(password, ADMIN_PASSWORD_HASH)
+    : null;
+  if (passwordResult?.status === 'overloaded') {
+    audit(null, 'auth', 'login.overloaded', { ip: clientIp(req) });
+    return writeJson(res, 503, { error: 'authentication temporarily unavailable' }, { 'retry-after': '1' });
+  }
+  const valid = passwordResult
+    ? passwordResult.status === 'verified'
+    : legacyDevelopmentFixtureToken === ADMIN_TOKEN;
+  const principal = valid ? configuredEvaluationAdminPrincipal() : null;
+  const session = principal ? createSession({ ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: principal.principalId }) : null;
   if (!session) { audit(null, 'auth', 'login.failed', { ip: clientIp(req) }); return json(res, 401, { error: 'invalid credentials' }); }
   audit(null, 'auth', 'login.succeeded', { ip: clientIp(req) });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: session.expiresAt }, { 'set-cookie': sessionCookie(session) });
@@ -331,7 +348,7 @@ async function testModeLogin(req, res) {
     audit(null, 'test-mode', 'session.denied', { actor: TEST_MODE.testActor });
     return json(res, 404, { error: 'test session unavailable' });
   }
-  const session = createSession(ADMIN_TOKEN, { ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null, maxExpiresAt: Date.parse(TEST_MODE.expiresAt) });
+  const session = createSession({ ip: clientIp(req), userAgent: req.headers['user-agent'] || '', principalId: configuredEvaluationAdminPrincipal()?.principalId || null, maxExpiresAt: Date.parse(TEST_MODE.expiresAt) });
   if (!session) return json(res, 503, { error: 'test session unavailable' });
   audit(null, 'test-mode', 'session.created', { actor: TEST_MODE.testActor });
   return writeJson(res, 200, { ok: true, csrfToken: session.csrfToken, expiresAt: Math.min(session.expiresAt, Date.parse(TEST_MODE.expiresAt)) }, { 'set-cookie': sessionCookie(session, { secure: true }) });
@@ -414,7 +431,8 @@ function taskRoute(req, res, auth, match) {
   const isRead = !match[2] || ['logs', 'approvals'].includes(match[2]);
   if ((isRead && req.method !== 'GET') || (!isRead && req.method !== 'POST')) return json(res, 404, { error: 'not found' });
   const permission = ['approve', 'reject'].includes(match[2]) ? 'approval.grant' : ['pause', 'resume', 'cancel'].includes(match[2]) ? 'task.execute' : 'task.read';
-  if (!authorizeWorkspaceRequest(auth, task.workspace_id, permission) || !authorizeCapabilityDisclosure(auth, task)) return json(res, 404, { error: 'not found' });
+  if (!authorizeWorkspaceRequest(auth, task.workspace_id, permission)) return json(res, 404, { error: 'not found' });
+  if (isRead && !authorizeCapabilityDisclosure(auth, task)) return json(res, 404, { error: 'not found' });
   if (!match[2]) return json(res, 200, { task: serializeTask(task) });
   if (match[2] === 'logs') return json(res, 200, { logs: logs(task.id) });
   if (match[2] === 'approvals') return json(res, 200, { approvals: taskRecords(task.id).approvals });

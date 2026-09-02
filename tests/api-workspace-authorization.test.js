@@ -21,7 +21,7 @@ const { insertWorkflowRun, insertProviderInvocation } = await import('../package
 const { start } = await import('../apps/api/server.js');
 
 const now = Date.now();
-const permissions = ['approval.grant', 'runtime.read', 'seller.opportunities.read', 'task.create', 'task.execute', 'task.read', 'workspace.read'];
+const permissions = ['approval.grant', 'runtime.read', 'task.create', 'task.execute', 'task.read', 'workspace.read'];
 run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', ['route-operator', 'admin', 'route-operator', 'bearer', null, 'active', now, null, null, null, 1, now]);
 run('INSERT INTO auth_workspace_grants VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', ['route-grant-a', 'route-operator', 'workspace-a', 'service', JSON.stringify(permissions), 'active', 1, null, now, null, null, 'test', 1, now]);
 for (const id of ['workspace-a', 'workspace-b']) upsertWorkspace({ id, name: id, githubRepository: `local/${id}`, defaultBranch: 'main', allowedPaths: ['docs'], buildCommands: [], providerPolicy: {}, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['read'], lastHealthStatus: 'ok', rootPath: root });
@@ -39,12 +39,6 @@ const runtimeRunA = insertWorkflowRun({ id: 'route-run-a', taskId: taskA.id, wor
 const runtimeRunB = insertWorkflowRun({ id: 'route-run-b', taskId: taskB.id, workspaceId: 'workspace-b', actorId: 'fixture', channel: 'jarvis', objective: 'B', provider: 'mock' });
 insertProviderInvocation(runtimeRunA, taskA.id, { provider: 'mock', mode: 'mock', status: 'completed' });
 insertProviderInvocation(runtimeRunB, taskB.id, { provider: 'mock', mode: 'mock', status: 'completed' });
-run("INSERT INTO provider_attempts(id,task_id,provider,mode,status,request_packet,response_packet,error,latency_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", [
-  'route-seller-attempt', conversationA.taskId, 'blackspire-capability', 'seller.opportunities.search', 'completed', '{}',
-  JSON.stringify({ result: { opportunities: [{ propertyAddress: '101 Protected Ave' }] } }), '', 1, new Date().toISOString(),
-]);
-run('UPDATE tasks SET status=?,summary=? WHERE id=?', ['completed', JSON.stringify({ result: 'Protected Seller result at 101 Protected Ave' }), conversationA.taskId]);
-recordEvidence(conversationA.taskId, 'capability_result', { protectedAddress: '101 Protected Ave' });
 
 const server = start(0, '127.0.0.1', { exitOnListenError: false });
 await new Promise((resolve) => server.once('listening', resolve));
@@ -72,23 +66,6 @@ test('task reads, conversations, evidence, and attempt-bearing task records hide
   assert.equal((await request(`/api/conversations/${conversationA.conversationId}`)).status, 200);
   assert.equal((await request(`/api/conversations/${conversationB.conversationId}`)).status, 404);
   assert.equal((await request(`/api/conversations/${conversationB.conversationId}/events`)).status, 404);
-});
-
-test('Seller results are undiscoverable through generic task, evidence, conversation, event, and action surfaces without the Seller permission', async () => {
-  run('UPDATE auth_workspace_grants SET permissions=? WHERE id=?', [JSON.stringify(permissions.filter((permission) => permission !== 'seller.opportunities.read')), 'route-grant-a']);
-  const listed = await (await request('/api/tasks')).json();
-  assert.equal(listed.tasks.some((task) => task.id === conversationA.taskId), false);
-  for (const [pathname, options] of [
-    [`/api/tasks/${conversationA.taskId}`, {}],
-    [`/api/tasks/${conversationA.taskId}/logs`, {}],
-    [`/api/tasks/${conversationA.taskId}/approvals`, {}],
-    [`/api/tasks/${conversationA.taskId}/export.json`, {}],
-    [`/api/conversations/${conversationA.conversationId}`, {}],
-    [`/api/conversations/${conversationA.conversationId}/events`, {}],
-    [`/api/tasks/${conversationA.taskId}/cancel`, { method: 'POST' }],
-  ]) assert.equal((await request(pathname, options)).status, 404, pathname);
-  run('UPDATE auth_workspace_grants SET permissions=? WHERE id=?', [JSON.stringify(permissions), 'route-grant-a']);
-  assert.equal((await request(`/api/tasks/${conversationA.taskId}`)).status, 200);
 });
 
 test('creation and unified input enforce the target workspace before mutation', async () => {

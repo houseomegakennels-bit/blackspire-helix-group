@@ -16,8 +16,14 @@ const roleArgument = process.argv.length === 3 ? process.argv[2] : '';
 const role = roleArgument === '--api-only' ? 'api' : roleArgument === '--worker-only' ? 'worker' : null;
 if (!role) fatal('production service role verification failed', ['expected exactly --api-only or --worker-only']);
 
+// The shared EnvironmentFile is role-neutral. Derive identity from supervisor mode so a stale
+// or generic profile value cannot cross the API/worker boundary.
+const runtimeUser = process.env.BLACKSPIRE_RUNTIME_USER && process.env.BLACKSPIRE_RUNTIME_USER !== 'blackspire'
+  ? process.env.BLACKSPIRE_RUNTIME_USER : `blackspire-${role}`;
+const effectiveEnvironment = { ...process.env, BLACKSPIRE_RUNTIME_USER: runtimeUser };
+
 // Fail closed before spawning any child if the runtime is unsafe. Messages are sanitized (no env values).
-const runtime = verifyVpsRuntime();
+const runtime = verifyVpsRuntime(effectiveEnvironment);
 if (!runtime.ok) fatal('production runtime verification failed', runtime.errors);
 
 // Resolve the canonical loopback host and explicit port once, then hand the exact values to
@@ -41,7 +47,7 @@ if (!identityValidation.ok) {
   fatal('deployment identity verification failed', [`state ${identityValidation.state}`, `reason ${identityValidation.reasonCode}`]);
 }
 
-const childEnvironment = { ...process.env, BIND_HOST: bind.host, PORT: String(bind.port) };
+const childEnvironment = { ...effectiveEnvironment, BIND_HOST: bind.host, PORT: String(bind.port) };
 const entrypoint = role === 'api' ? 'apps/api/server.js' : 'apps/worker/worker.js';
 const children = [spawn(process.execPath, [entrypoint], { stdio: 'inherit', env: childEnvironment })];
 let stopping = false;

@@ -17,6 +17,8 @@ const canonicalMemoryFiles = [
   'BLACKSPIRE_DECISIONS.md',
   'BLACKSPIRE_SESSION_LOG.md',
   'BLACKSPIRE_MEMORY_MAINTENANCE.md',
+  'ZOLA_NAMING_DECISION.md',
+  'ZOLA_BLACKSPIRE_INTEGRATION_PLAN.md',
 ];
 const activeFixtureRoots = new Set();
 
@@ -732,5 +734,58 @@ test('negative proof: weakening or removing the docs-only descendant condition m
     assert.notEqual(weakened, checkerSource, 'weakening replacement did not match checker source');
     const checker = installChecker(fixture.repo, weakened);
     assertPass(runChecker(fixture, { checker }));
+  });
+});
+
+// -----------------------------------------------------------------------------------------------
+// REGRESSION: allowlist/test-sync and ZOLA canonical docs admission
+// -----------------------------------------------------------------------------------------------
+
+// This test prevents the class of defect where the checker's allowlist and the
+// test fixture's canonicalMemoryFiles array drift apart. If someone adds a new
+// canonical-memory doc to check-living-memory.sh without updating the test
+// fixtures, this test catches it before it causes a SOURCE_DOCUMENT_UNAVAILABLE
+// failure cascade in CI.
+test('regression: test fixture canonicalMemoryFiles must match checker CANONICAL_MEMORY_NAMES allowlist', () => {
+  const checkerAllowlist = [];
+  const match = checkerSource.match(/readonly -a CANONICAL_MEMORY_NAMES=\(([\s\S]*?)\)/);
+  assert.ok(match, 'could not find CANONICAL_MEMORY_NAMES in checker source');
+  for (const line of match[1].split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed) checkerAllowlist.push(trimmed.replace(/^\s+|\s+$/g, ''));
+  }
+  const sortedChecker = [...checkerAllowlist].sort();
+  const sortedTest = [...canonicalMemoryFiles].sort();
+  assert.deepEqual(sortedTest, sortedChecker, 'canonicalMemoryFiles must match the checker allowlist');
+});
+
+// Verifies that the specifically approved ZOLA canonical-memory filenames are
+// accepted as canonical memory when all other trust requirements are valid.
+test('regression: ZOLA canonical docs are accepted as canonical memory when all trust requirements pass', () => {
+  withFixture({}, (fixture) => {
+    // writeMemory (called by commitMemoryCorrection in createFixture) now writes all
+    // canonicalMemoryFiles including the ZOLA docs. The checker requires these files to
+    // exist as regular files; their presence + a passing checker proves they are accepted.
+    for (const zolaDoc of ['ZOLA_NAMING_DECISION.md', 'ZOLA_BLACKSPIRE_INTEGRATION_PLAN.md']) {
+      const docPath = path.join(fixture.repo, 'docs', zolaDoc);
+      assert.ok(fs.existsSync(docPath), `expected ${zolaDoc} to exist in fixture docs/`);
+      assert.ok(fs.statSync(docPath).isFile(), `${zolaDoc} should be a regular file, not symlink`);
+    }
+    const result = assertPass(runChecker(fixture));
+    assert.match(result.stdout, /LIVING_MEMORY_RESULT: PASS/);
+  });
+});
+
+// Verifies that a look-alike filename (ZOLA-prefixed but not in the allowlist)
+// is still rejected — the allowlist expansion admits ONLY approved files.
+test('regression: ZOLA-prefixed but non-allowlisted doc is rejected', () => {
+  withFixture({}, (fixture) => {
+    git(fixture.repo, 'switch', '--quiet', '-c', 'stray-zola', fixture.trustedMain);
+    commitFile(fixture.repo, 'docs/ZOLA_UNRELATED_DECISION.md', '# unrelated\n', 'stray ZOLA doc');
+    const advanced = git(fixture.repo, 'rev-parse', 'HEAD');
+    const correction = commitMemoryCorrection(fixture.repo, advanced, fixture.reviewed);
+    setTrustedMain(fixture.repo, correction);
+    git(fixture.repo, 'switch', '--quiet', 'memory-correction');
+    assertFail(runChecker(fixture), 'UNREVIEWED_NON_DOCUMENTATION_CHANGE');
   });
 });

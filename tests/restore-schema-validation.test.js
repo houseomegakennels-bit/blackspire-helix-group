@@ -127,6 +127,8 @@ test('restore succeeds for a valid backup whose application tables are legitimat
   const target = path.join(dir, 'disposable', 'command.sqlite');
   const r = run('scripts/restore.js', [backup, target], restoreArgs(dir));
   assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.statSync(target).mode & 0o777, 0o660,
+    'a validated restore must remain writable by both production runtime roles after approved promotion');
   const restored = new DatabaseSync(target, { readOnly: true });
   try {
     assert.equal(restored.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
