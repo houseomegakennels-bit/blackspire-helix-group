@@ -102,6 +102,14 @@ test('HTTP login awaits the asynchronous verifier', () => {
   assert.doesNotMatch(server, /verifyAdminPassword\(submitted, ADMIN_PASSWORD_HASH\)/);
 });
 
+test('credential cutover runbook requires durable browser-session revocation', () => {
+  const runbook = fs.readFileSync('docs/JARVIS_PASSWORD_AUTHENTICATION.md', 'utf8');
+  assert.match(runbook, /Credential cutover requires session invalidation/);
+  assert.match(runbook, /POST `\/api\/auth\/revoke-all`/);
+  assert.match(runbook, /discard the old browser cookie/);
+  assert.match(runbook, /Machine\s+bearer authentication is independent/);
+});
+
 test('browser login never submits or falls back to the machine admin token', () => {
   const client = fs.readFileSync(new URL('../apps/jarvis-pwa/public/jarvis.js', import.meta.url), 'utf8');
   assert.match(client, /JSON\.stringify\(\{ password \}\)/);

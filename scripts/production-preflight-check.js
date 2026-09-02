@@ -284,7 +284,7 @@ if (unit === null) {
 
   const requiredKeys = ['NODE_ENV', 'BLACKSPIRE_RUNTIME_MODE', 'BLACKSPIRE_STATE_OWNER', 'BIND_HOST', 'PORT',
     'PUBLIC_BASE_URL', 'SECURE_COOKIES', 'BLACKSPIRE_DB_PATH', 'BLACKSPIRE_BACKUP_DIR',
-    'BLACKSPIRE_RUNTIME_USER', 'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS',
+    'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS',
     'BLACKSPIRE_OPERATOR_PRINCIPAL_ID',
     // Required since the workspace-root preflight: ExecStartPre now refuses a production profile
     // that omits it, so a profile not documenting it would fail every start.

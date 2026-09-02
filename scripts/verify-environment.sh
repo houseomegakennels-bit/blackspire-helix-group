@@ -199,7 +199,8 @@ case "$mode" in
     { [[ "$startup" =~ ^[0-9]+$ ]] && (( startup >= 1 && startup <= 600 )); } || fail "startup timeout must be a positive integer no greater than 600"
     health="${BLACKSPIRE_HEALTH_TIMEOUT_SECONDS:-}"
     { [[ "$health" =~ ^[0-9]+$ ]] && (( health >= 1 && health <= 120 )); } || fail "health timeout must be a positive integer no greater than 120"
-    [[ -n "${BLACKSPIRE_RUNTIME_USER:-}" && "${BLACKSPIRE_RUNTIME_USER}" != "root" ]] || fail "BLACKSPIRE_RUNTIME_USER must be a non-root runtime user"
+    expected_runtime_user="blackspire-${runtime_role}"
+    [[ "${BLACKSPIRE_RUNTIME_USER:-}" == "$expected_runtime_user" ]] || fail "BLACKSPIRE_RUNTIME_USER must match the ${runtime_role} service identity"
     [[ "${BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT:-}" == "true" ]] || fail "production requires BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true"
     [[ "$(id -u)" -ne 0 ]] || fail "production runtime must not run as root"
     ;;

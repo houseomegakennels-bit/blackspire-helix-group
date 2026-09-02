@@ -1122,6 +1122,14 @@ test('the unit pins the same interpreter the helpers resolve, after the operator
     'the pinned interpreter must be declared after EnvironmentFile to override it');
 });
 
+test('role-specific supervisor identity cannot be overwritten by the shared EnvironmentFile', () => {
+  const profile = fs.readFileSync('scripts/production-profile.env.example', 'utf8');
+  const supervisor = fs.readFileSync('scripts/production-supervisor.js', 'utf8');
+  assert.doesNotMatch(profile, /^BLACKSPIRE_RUNTIME_USER=/m);
+  assert.match(supervisor, /`blackspire-\$\{role\}`/);
+  assert.match(supervisor, /BLACKSPIRE_RUNTIME_USER: runtimeUser/);
+});
+
 test('activation package scripts never resolve Node through PATH', () => {
   const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
   for (const name of ['db:migrate', 'db:backup', 'db:restore', 'start:production']) {

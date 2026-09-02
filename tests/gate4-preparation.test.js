@@ -40,7 +40,6 @@ function makeHost({ envFile = true, workspace = true, releases = ['a'.repeat(40)
   if (envFile) {
     fs.writeFileSync(envPath, [
       'NODE_ENV=production', 'BLACKSPIRE_RUNTIME_MODE=production', 'BLACKSPIRE_STATE_OWNER=vps-production',
-      'BLACKSPIRE_RUNTIME_USER=blackspire',
       'BLACKSPIRE_STARTUP_TIMEOUT_SECONDS=30', 'BLACKSPIRE_HEALTH_TIMEOUT_SECONDS=5',
       'BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT=true',
       'BLACKSPIRE_PROVIDER_MODE=manual', 'BLACKSPIRE_HERMES_MODE=restricted', 'TELEGRAM_MODE=dry-run',
@@ -450,7 +449,7 @@ test('the reviewed profile example never ships a real secret', () => {
   for (const key of ['COMMAND_ADMIN_TOKEN', 'SESSION_SECRET']) {
     assert.doesNotMatch(profile, new RegExp(`^${key}=.+$`, 'm'), `${key} must never carry a value in the example`);
   }
-  assert.match(profile, /^BLACKSPIRE_RUNTIME_USER=blackspire$/m);
+  assert.doesNotMatch(profile, /^BLACKSPIRE_RUNTIME_USER=/m, 'shared profile must not select either service identity');
   assert.match(profile, /^BLACKSPIRE_STARTUP_TIMEOUT_SECONDS=30$/m);
   assert.match(profile, /^BLACKSPIRE_HEALTH_TIMEOUT_SECONDS=5$/m);
 });
