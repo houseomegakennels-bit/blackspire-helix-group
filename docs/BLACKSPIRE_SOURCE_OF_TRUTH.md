@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## PR #120 final P1/P2 correction (2026-09-02 UTC)
+
+Local follow-up to `759970c07c8b6c86f60179a687252edeff75200e` rejects API credential-group numeric
+aliasing with either worker-allowed GID. The offline session-fence primitive now independently
+requires a successful systemd proof that the API unit is `inactive` before revocation; the runbook
+is fail-fast and checks the same state before invoking it. Targeted regressions and mutations passed.
+This correction is local and unpushed; production changed: NO.
+
 ## PR #120 finalization correction (2026-09-02 UTC)
 
 Local repair is based on remote PR #120 head `f00d1721b66d29052d6e0d9350328d19950fb231` and is

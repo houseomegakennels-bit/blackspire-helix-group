@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { createPasswordDerivationLimiter, hashAdminPassword, parseAdminPasswordHash, validPasswordInput, verifyAdminPassword, verifyAdminPasswordAsync, verifyAdminPasswordAsyncResult } from '../packages/shared/password-auth.js';
 test('password policy accepts exact boundaries without trimming', () => { assert.equal(validPasswordInput('a'.repeat(12)), false); assert.equal(validPasswordInput('a'.repeat(13)), true); assert.equal(validPasswordInput('a'.repeat(128)), true); assert.equal(validPasswordInput('a'.repeat(129)), false); const spaced = '  exact spaces '; const encoded = hashAdminPassword(spaced); assert.equal(verifyAdminPassword(spaced, encoded), true); assert.equal(verifyAdminPassword(spaced.trim(), encoded), false); });
 test('scrypt hashes are salted, versioned, and fail closed', () => { const password = 'thirteen-char'; const first = hashAdminPassword(password); const second = hashAdminPassword(password); assert.notEqual(first, second); assert.ok(parseAdminPasswordHash(first)); assert.equal(verifyAdminPassword(password, first), true); assert.equal(verifyAdminPassword('incorrect-password', first), false); for (const malformed of ['', 'v2$scrypt$16384$8$1$x$x$p13-128', first.replace('$16384$', '$1$')]) { assert.equal(parseAdminPasswordHash(malformed), null); assert.equal(verifyAdminPassword(password, malformed), false); } assert.equal(verifyAdminPassword('x'.repeat(129), first), false); });
@@ -107,13 +111,44 @@ test('credential cutover runbook requires durable browser-session revocation', (
   assert.match(runbook, /Credential\s+cutover requires an offline durable session fence/);
   assert.match(runbook, /offline durable session fence/);
   assert.match(runbook, /systemctl stop blackspire-command\.target/);
+  assert.match(runbook, /set -euo pipefail/);
+  assert.match(runbook, /systemctl show blackspire-command\.service -p ActiveState --value/);
+  assert.match(runbook, /ActiveState[\s\S]*inactive/);
+  assert.ok(runbook.indexOf('systemctl stop blackspire-command.target') < runbook.indexOf('systemctl show blackspire-command.service'));
+  assert.ok(runbook.indexOf('systemctl show blackspire-command.service') < runbook.indexOf('revoke-all-sessions.js'));
   assert.match(runbook, /revoke-all-sessions\.js/);
   assert.doesNotMatch(runbook, /before changing the verifier or restarting, POST `\/api\/auth\/revoke-all`/);
   const offline = fs.readFileSync('scripts/revoke-all-sessions.js', 'utf8');
   assert.match(offline, /revokeAllSessions\(\)/);
   assert.match(offline, /vps-production/);
+  assert.match(offline, /systemctl/);
+  assert.match(offline, /ActiveState/);
+  assert.match(offline, /inactive/);
+  assert.match(offline, /if \(state !== 'inactive'\)/);
   assert.match(runbook, /discard any old browser cookie/i);
   assert.match(runbook, /machine\s+bearer authentication is\s+independent/i);
+});
+
+test('offline session fence refuses active or unreadable API state and succeeds only when inactive', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-cutover-fence-'));
+  const db = path.join(root, 'command.sqlite');
+  const fakeSystemctl = path.join(root, 'systemctl');
+  const database = new DatabaseSync(db);
+  database.exec('CREATE TABLE system_flags(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE sessions(id TEXT, csrf_token TEXT, created_at INTEGER, expires_at INTEGER, rotated_at INTEGER, user_agent TEXT, ip TEXT, revoked_at INTEGER, principal_id TEXT);');
+  database.close();
+  const run = (state, exit = 0) => {
+    fs.writeFileSync(fakeSystemctl, `#!/bin/sh\necho ${state}\nexit ${exit}\n`, { mode: 0o755 });
+    return spawnSync(process.execPath, ['scripts/revoke-all-sessions.js'], {
+      cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8',
+      env: { ...process.env, NODE_ENV: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_DB_PATH: db, BLACKSPIRE_SYSTEMCTL: fakeSystemctl },
+    });
+  };
+  assert.notEqual(run('active').status, 0);
+  assert.notEqual(run('', 1).status, 0);
+  assert.equal(run('inactive').status, 0);
+  const databaseAfter = new DatabaseSync(db);
+  assert.equal(databaseAfter.prepare('SELECT value FROM system_flags WHERE key=?').get('sessions_revoked_before')?.value !== undefined, true);
+  databaseAfter.close();
 });
 
 test('browser login never submits or falls back to the machine admin token', () => {

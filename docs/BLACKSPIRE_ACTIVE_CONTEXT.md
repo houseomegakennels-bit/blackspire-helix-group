@@ -211,3 +211,6 @@ Three rounds of independent exact-head review refined the branch. The first foun
 The local candidate adds a numeric supplementary-group allowlist for `blackspire-worker` and an
 offline, stop-before-fence session revocation primitive for password cutover. It is based on remote
 head `f00d1721b66d29052d6e0d9350328d19950fb231`, has not been pushed, and has not changed production.
+
+Follow-up correction adds numeric API-GID alias rejection and requires positive API `inactive` state
+before the offline session fence. Targeted lanes and mutations pass; this new candidate is unpushed.

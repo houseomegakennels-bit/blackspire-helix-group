@@ -20,7 +20,10 @@ another token-era session, replace the API-only verifier/configuration, then run
 primitive as the API identity with the production environment loaded:
 
 ```bash
+set -euo pipefail
 sudo systemctl stop blackspire-command.target
+api_state="$(sudo systemctl show blackspire-command.service -p ActiveState --value)"
+[[ "$api_state" == inactive ]] || { echo 'API is not inactive; refusing to write the session fence' >&2; exit 1; }
 sudo -u blackspire-api env NODE_ENV=production BLACKSPIRE_STATE_OWNER=vps-production \
   BLACKSPIRE_DB_PATH=/opt/blackspire-command/shared/database/command.sqlite \
   /opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/current/scripts/revoke-all-sessions.js

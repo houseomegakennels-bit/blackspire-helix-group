@@ -347,6 +347,8 @@ if [[ -z "$runtime_identity_detail" ]]; then
     record runtime-ownership PENDING "API credential group $api_group is absent or has no verifiable numeric GID"
   elif [[ ! "$runtime_group_gid" =~ ^[0-9]+$ || ! "$worker_primary_gid" =~ ^[0-9]+$ || -z "$worker_group_gids" ]]; then
     record runtime-ownership PENDING 'shared runtime or worker private primary group has no verifiable numeric identity'
+  elif [[ "$api_group_gid" == "$runtime_group_gid" || "$api_group_gid" == "$worker_primary_gid" ]]; then
+    record runtime-ownership FAILED "API credential group GID $api_group_gid aliases an allowed worker group; credential isolation requires distinct GIDs"
   else
     unexpected_worker_gids=""
     for worker_gid in $worker_group_gids; do

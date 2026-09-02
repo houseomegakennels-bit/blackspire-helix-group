@@ -89,7 +89,7 @@ function findings(host, options) {
   return { result, report, state: (id) => report.findings.find((f) => f.id === id)?.state };
 }
 
-function identityFixture(host, workerGids) {
+function identityFixture(host, workerGids, { apiGid = 1301, runtimeGid = 1200, primaryGid = 1202 } = {}) {
   const bin = path.join(host.home, `identity-bin-${workerGids.join('-')}`);
   fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, 'id'), `#!/bin/sh
@@ -98,15 +98,15 @@ case "$1:$2" in
   -u:blackspire-worker) echo 1202 ;;
   -Gn:blackspire-api) echo 'blackspire blackspire-api' ;;
   -Gn:blackspire-worker) echo 'blackspire blackspire-worker legacy-name' ;;
-  -g:blackspire-worker) echo 1202 ;;
+  -g:blackspire-worker) echo ${primaryGid} ;;
   -G:blackspire-worker) echo '${workerGids.join(' ')}' ;;
   *) exit 1 ;;
 esac
 `);
   fs.writeFileSync(path.join(bin, 'getent'), `#!/bin/sh
 case "$1:$2" in
-  group:blackspire-api) echo 'blackspire-api:x:1301:' ;;
-  group:blackspire) echo 'blackspire:x:1200:' ;;
+  group:blackspire-api) echo 'blackspire-api:x:${apiGid}:' ;;
+  group:blackspire) echo 'blackspire:x:${runtimeGid}:' ;;
   *) exit 2 ;;
 esac
 `);
@@ -339,6 +339,18 @@ test('gate4-prepare preserves worker access to the shared non-secret runtime gro
     PATH: identityFixture(host, [1202, 1200]),
   } });
   assert.equal(state('runtime-ownership'), 'READY');
+});
+
+test('gate4-prepare rejects API credential GID aliasing to any allowed worker group', () => {
+  const approved = { BLACKSPIRE_GATE4_APPROVED_SHA: 'a'.repeat(40) };
+  for (const [label, alias] of [['shared runtime', 1200], ['worker private primary', 1202]]) {
+    const host = makeHost();
+    const { report, state } = findings(host, {
+      env: { ...approved, PATH: identityFixture(host, [1202, 1200], { apiGid: alias }) },
+    });
+    assert.equal(state('runtime-ownership'), 'FAILED', label);
+    assert.match(report.findings.find((entry) => entry.id === 'runtime-ownership').detail, /API credential group.*distinct/);
+  }
 });
 
 // ---------------------------------------------------------------------------

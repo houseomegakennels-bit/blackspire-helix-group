@@ -1317,5 +1317,10 @@ Exact-head review of `407630f3faf152f7c1085e46703edc9c0de43c32` reproduced a pro
 - Implementation is committed locally as `09d9dfa39fb24cd3c683608080ede07e097ddcbf`. No push, merge, deploy, production edit, credential access, or live-user/group modification occurred. Fresh exact-head remote CI and review remain required after operator-authorized push. Production changed: NO.
 # 2026-09-02 — PR #120 finalization correction (Codex)
 
+## 2026-09-02 — PR #120 exact-head review correction (Codex)
+
+- Closed the fresh P1 by rejecting API credential-group GID aliases to the worker private-primary or shared-runtime GID, with numeric fixture coverage for both aliases. Closed the fresh P2 by making the offline revocation primitive and documented cutover require a positive API systemd `ActiveState=inactive` proof after fail-fast target stop.
+- Targeted Gate4 passed `36/36`; password-auth passed `13/13`. Alias-bypass mutation failed `35/36`; inactive-state bypass mutation failed `11/13`; both were restored. No push, production, #119, #121, or ZOLA migration change occurred.
+
 - Investigated GitHub Actions run #529 (`33617779968`) from exact head `f00d1721b66d29052d6e0d9350328d19950fb231`. The artifact reported one `tests/persistence.test.js` failure: restart-persistence rate-limit subtest 446 expected 429 and received 401; the isolated persistence lane passed, so this specific CI failure is classified as a pre-existing/order-sensitive CI failure, not a source regression in this correction. The same run stopped before exposing four role-fixture failures caused by f00d172's new role-specific runtime contract; those fixtures were corrected and their isolated lanes pass.
 - Added Gate4 numeric allowlist coverage for worker private-primary plus shared-runtime groups and rejection of API, Docker, aliased, and unexpected groups. Added offline session-fence tooling and runbook/contract coverage requiring target stop before revocation and restart. Focused validation and both targeted mutations passed after restoration. No production, push, merge, deploy, #119, or #121 change occurred.
