@@ -2,11 +2,25 @@ import crypto from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, run, get, transaction } from './db.js';
 
+const taskAbortControllers = new Map();
+
+export function registerTaskAbortController(taskId, controller) {
+  if (!taskId || !controller) return;
+  taskAbortControllers.set(taskId, controller);
+}
+export function unregisterTaskAbortController(taskId) {
+  taskAbortControllers.delete(taskId);
+}
+export function abortTaskController(taskId) {
+  const controller = taskAbortControllers.get(taskId);
+  if (controller && typeof controller.abort === 'function') controller.abort();
+}
+
 export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
 }
 
-export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'workspace_mutation', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
+export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'read_only', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) throw new Error('invalid task execution intent');
   const existing = idempotencyKey && query(`SELECT * FROM tasks WHERE idempotency_key=${esc(idempotencyKey)};`)[0];
   if (existing) {
@@ -44,13 +58,17 @@ export function providerAttemptsForTasks(taskIds) {
 }
 
 export function taskRequiresCapabilityPermission(taskId, permission) {
-  if (permission !== 'seller.opportunities.read') return false;
-  return Boolean(get("SELECT 1 AS present FROM provider_attempts WHERE task_id=? AND provider='blackspire-capability' AND mode='seller.opportunities.search' LIMIT 1", [taskId]));
+  const mode = permission === 'buyer.profiles.read' || permission === 'buyer.matches.read'
+    ? 'buyer.profiles.search'
+    : 'seller.opportunities.search';
+  return Boolean(get("SELECT 1 AS present FROM provider_attempts WHERE task_id=? AND provider='blackspire-capability' AND mode=? LIMIT 1", [taskId, mode]));
 }
 
 export function conversationRequiresCapabilityPermission(conversationId, permission) {
-  if (permission !== 'seller.opportunities.read') return false;
-  return Boolean(get("SELECT 1 AS present FROM tasks t JOIN provider_attempts p ON p.task_id=t.id WHERE t.conversation_id=? AND p.provider='blackspire-capability' AND p.mode='seller.opportunities.search' LIMIT 1", [conversationId]));
+  const mode = permission === 'buyer.profiles.read' || permission === 'buyer.matches.read'
+    ? 'buyer.profiles.search'
+    : 'seller.opportunities.search';
+  return Boolean(get("SELECT 1 AS present FROM tasks t JOIN provider_attempts p ON p.task_id=t.id WHERE t.conversation_id=? AND p.provider='blackspire-capability' AND p.mode=? LIMIT 1", [conversationId, mode]));
 }
 
 export function transition(taskId, status, patch = {}, ownership = null) {
@@ -66,6 +84,7 @@ export function transition(taskId, status, patch = {}, ownership = null) {
   const result = run(`UPDATE tasks SET ${sets.join(',')} WHERE id=?${predicate}`, values);
   const current = getTask(taskId);
   if (Number(result.changes) !== 1) return current;
+  if (status === 'cancelled') abortTaskController(taskId);
   audit(taskId, 'system', 'task.transition', { status, ...patch });
   recordTaskEvent(taskId, `task.${status}`, { status, summary: patch.summary || null, error: patch.error || null, currentStage: patch.current_stage || null });
   return getTask(taskId);
@@ -249,8 +268,9 @@ export function finalizeCapabilitySuccess({ taskId, capabilityId, workspaceId, p
     if (Number(taskUpdate.changes) !== 1) throw new Error('capability task finalization race');
     recordEvidence(taskId, 'capability_result', evidence);
     recordEvidence(taskId, 'final', evidence);
-    recordTaskEvent(taskId, 'capability.completed', { capabilityId, resultCount: result.opportunities.length, status: 'completed' });
-    audit(taskId, 'hermes', 'capability.completed', { capabilityId, resultCount: result.opportunities.length });
+    const resultCount = Array.isArray(result?.profiles) ? result.profiles.length : (Array.isArray(result?.opportunities) ? result.opportunities.length : 0);
+    recordTaskEvent(taskId, 'capability.completed', { capabilityId, resultCount, status: 'completed' });
+    audit(taskId, 'hermes', 'capability.completed', { capabilityId, resultCount });
     audit(taskId, 'system', 'task.transition', { status: 'completed', summary, evidence, current_stage: 'summarize' });
     recordTaskEvent(taskId, 'task.completed', { status: 'completed', summary, error: null, currentStage: 'summarize' });
     return getTask(taskId);

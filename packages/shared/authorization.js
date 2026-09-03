@@ -5,7 +5,7 @@ import { AUTHZ_PERMISSIONS, canonicalPermissions, validateGrant } from './authz-
 
 const ROLE_PERMISSIONS = Object.freeze({
   admin: AUTHZ_PERMISSIONS,
-  operator: ['workspace.read','task.read','task.create','task.execute','runtime.read','provider.use.development','seller.opportunities.read'],
+  operator: ['workspace.read','task.read','task.create','task.execute','runtime.read','provider.use.development','seller.opportunities.read','buyer.profiles.read','buyer.matches.read'],
   viewer: ['workspace.read','task.read','runtime.read'], service: [],
 });
 export const AUTHZ_POLICY_VERSION = 'authz-v1';
@@ -40,7 +40,11 @@ function validGrantRow(grant) {
   if ((grant.status === 'active' && (grant.revoked_at !== null || (grant.expires_at !== null && grant.expires_at <= Date.now()))) ||
     (grant.status === 'revoked' && grant.revoked_at === null) ||
     (grant.status === 'expired' && (grant.expires_at === null || grant.expires_at > Date.now()))) return false;
-  try { validateGrant({ ...grant, supersedesGrantId: grant.supersedes_grant_id }); } catch { return false; }
+  try {
+    const perms = typeof grant.permissions === 'string' ? JSON.parse(grant.permissions) : grant.permissions;
+    const normalizedGrant = { ...grant, supersedesGrantId: grant.supersedes_grant_id, permissions: [...new Set(perms)].sort() };
+    validateGrant(normalizedGrant);
+  } catch (e) { return false; }
   return true;
 }
 
@@ -129,7 +133,7 @@ function resolveWorkspacePermission(principal, workspaceId, permission) {
   if (!current || !AUTHZ_PERMISSIONS.includes(permission) || !workspaceId) return { principal: null, workspaceId: null, result: deny('invalid_scope') };
   const grant = activeGrant(current.principalId, workspaceId);
   if (!grant) return { principal: current, workspaceId: null, result: deny('grant_missing') };
-  const permissions = JSON.parse(canonicalPermissions(grant.permissions));
+  const permissions = JSON.parse(grant.permissions);
   const allowedPermission = permissions.includes(permission) || (current.principalType !== 'service' && grant.role !== 'service' && ROLE_PERMISSIONS[grant.role]?.includes(permission));
   return { principal: current, workspaceId: grant.workspace_id, result: allowedPermission ? allow('granted') : deny('permission_denied') };
 }

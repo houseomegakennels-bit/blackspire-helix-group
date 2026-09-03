@@ -3726,7 +3726,8 @@ export async function runBuyerReverseSearch(
   const matches = [...dedupedByAddress.values()].sort((left, right) => {
     if (right.matchScore !== left.matchScore) return right.matchScore - left.matchScore;
     if (right.motivationScore !== left.motivationScore) return right.motivationScore - left.motivationScore;
-    return right.estimatedArv - left.estimatedArv;
+    if (right.estimatedArv !== left.estimatedArv) return right.estimatedArv - left.estimatedArv;
+    return left.propertyAddress.localeCompare(right.propertyAddress);
   });
 
   return {

@@ -16,12 +16,12 @@ const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider
 const MAX_RETRIES = 2;
 const HIGH_RISK_ACTION = 'high_risk_execution';
 
-export async function processTask(task, { workerId = task.worker_id || null, claimToken = task.claim_token || null, dispatchHermesImpl = dispatchHermes, capabilityOptions = {} } = {}) {
+export async function processTask(task, { workerId = task?.worker_id || null, claimToken = task?.claim_token || null, dispatchHermesImpl = dispatchHermes, capabilityOptions = {} } = {}) {
   const ownership = workerId && claimToken ? { workerId, claimToken } : null;
   const move = (status, patch = {}) => transition(task.id, status, patch, ownership);
   const workspace = getWorkspace(task.workspace_id);
   if (!workspace) return move('failed', { error: 'Workspace not found' });
-  if (await shouldStop(task.id, ownership)) return;
+  if (await shouldStop(task.id, ownership)) return getTask(task.id);
 
   try {
     const authority = task.authority_class || (task.source_channel === 'telegram' ? 'telegram' : 'authenticated_admin');
@@ -35,7 +35,7 @@ export async function processTask(task, { workerId = task.worker_id || null, cla
     if (approval.status === 'blocked') return move('failed', { error: approval.reason });
     if (approval.status === 'pending') {
       recordApprovalPause(task.id, approval.reason);
-      return;
+      return getTask(task.id);
     }
 
     // Registered division capabilities are selected deterministically by Hermes and retain the
