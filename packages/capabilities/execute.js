@@ -1,15 +1,32 @@
 import { blackspireCapabilityRegistry } from './index.js';
 import { validateCapabilityInput, validateCapabilityOutput } from './contract.js';
 import { createDivisionAdapters } from './http-adapters.js';
-import { summarizeSellerOpportunities } from './seller-opportunities.js';
+import { sellerOpportunityCapability, summarizeSellerOpportunities } from './seller-opportunities.js';
+import { buyerProfilesCapability, summarizeBuyerProfiles } from './buyer-profiles.js';
+import { buyerMatchesCapability, summarizeBuyerMatches } from './buyer-matches.js';
 import { resolveAdminBearer, requireWorkspacePermission } from '../shared/authorization.js';
-import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition } from '../task-engine/tasks.js';
+import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition, registerTaskAbortController, unregisterTaskAbortController } from '../task-engine/tasks.js';
+
+function summarizeCapabilityResult(capability, result) {
+  if (capability.id === 'buyer.profiles.search') return summarizeBuyerProfiles(result);
+  if (capability.id === 'buyer.matches.search') return summarizeBuyerMatches(result);
+  return summarizeSellerOpportunities(result);
+}
+
+function capabilityResultCount(capability, result) {
+  if (capability.id === 'buyer.profiles.search') return Array.isArray(result?.profiles) ? result.profiles.length : 0;
+  if (capability.id === 'buyer.matches.search') return Array.isArray(result?.matches) ? result.matches.length : 0;
+  return Array.isArray(result?.opportunities) ? result.opportunities.length : 0;
+}
 
 export function selectCapabilityForTask(task, registry = blackspireCapabilityRegistry) {
   const objective = String(task?.request || '');
-  if (/\b(?:seller|motivated[- ]seller)\b/i.test(objective) && /\b(?:opportunit(?:y|ies)|lead(?:s)?|propert(?:y|ies)|pipeline|best|rank|show|inspect|search)\b/i.test(objective)) {
-    return registry.get('seller.opportunities.search');
-  }
+  const sellerMatch = /\b(?:seller|motivated[- ]seller)\b/i.test(objective) && /\b(?:opportunit(?:y|ies)|lead(?:s)?|propert(?:y|ies)|pipeline|best|rank|show|inspect|search)\b/i.test(objective);
+  const buyerProfileMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:profile|profiles|list|find|show|cash buyer)\b/i.test(objective);
+  const buyerMatchMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:match|matches|who would buy|opportunity|for this deal|for this property)\b/i.test(objective);
+  if (sellerMatch && !buyerProfileMatch && !buyerMatchMatch) return registry.get('seller.opportunities.search');
+  if (buyerMatchMatch) return registry.get('buyer.matches.search');
+  if (buyerProfileMatch) return registry.get('buyer.profiles.search');
   return null;
 }
 
@@ -22,12 +39,12 @@ export async function executeRegisteredCapability(task, workspace, {
   const fail = (reason, status = 'failed') => {
     recordEvidence(task.id, 'capability_prevented', { capabilityId: capability.id, reason });
     recordTaskEvent(task.id, 'capability.prevented', { capabilityId: capability.id, reason, status });
-    return transition(task.id, status, { error: reason, current_stage: 'capability_prevented' }, ownership);
+    return transition(task.id, status, { error: reason, summary: null, current_stage: 'capability_prevented' }, ownership);
   };
   if (task.workspace_id !== workspace.id) return fail('capability workspace binding mismatch');
   if (!ownsTask(task.id, ownership)) return getTask(task.id);
-  if (task.execution_intent !== capability.executionIntent) return fail('capability execution intent mismatch');
-  if (capability.approval !== 'none') return fail('capability approval was not satisfied');
+  if (task.execution_intent !== capability.executionIntent) return fail('capability execution intent mismatch', 'failed');
+  if (capability.approval !== 'none') return fail('capability approval was not satisfied', 'failed');
   if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') return fail('capability execution cancelled', 'cancelled');
 
   const principal = resolvePrincipal(task.actor_id);
@@ -53,19 +70,30 @@ export async function executeRegisteredCapability(task, workspace, {
   transition(task.id, 'running', { current_stage: 'capability_dispatch' }, ownership);
 
   const controller = new AbortController();
+  let abortedBySignal = false;
+  let cooperativeAbortHandled = false;
   const abort = () => controller.abort();
-  signal?.addEventListener?.('abort', abort, { once: true });
-  const timer = setTimeout(abort, capability.timeoutMs);
+  signal?.addEventListener?.('abort', () => { abortedBySignal = true; controller.abort(); }, { once: true });
+  const timer = setTimeout(() => { controller.abort(); }, capability.timeoutMs);
+  registerTaskAbortController(task.id, controller);
   try {
     beforeAdapter?.();
     if (!ownsTask(task.id, ownership)) throw ownershipError();
     if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') throw cancellationError();
     recordTaskEvent(task.id, 'capability.dispatch_started', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
     const raw = await capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal }, validatedInput);
+    if (abortedBySignal) {
+      recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'aborted_non_cooperative' });
+      try { finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Non-cooperative adapter returned despite abort signal', responsePacket: { discarded: true } }); } catch { /* already terminal */ }
+      const current = getTask(task.id);
+      if (current?.status === 'cancelled') return current;
+      if (!ownsTask(task.id, ownership)) return transition(task.id, 'failed', { error: 'Capability dispatch aborted; late result discarded', current_stage: 'cancelled' }, null);
+      return transition(task.id, 'failed', { error: 'Capability dispatch aborted; late result discarded', current_stage: 'cancelled' }, ownership);
+    }
     if (!ownsTask(task.id, ownership)) {
-      finishCapabilityDispatch(task.id, capability.id, 'completed', { responsePacket: { discarded: true } });
+      finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability task ownership changed during dispatch' });
       recordEvidence(task.id, 'capability_ownership_lost', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
-      return getTask(task.id);
+      return transition(task.id, 'failed', { error: 'Capability task ownership changed', current_stage: 'ownership_lost' }, null);
     }
     if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') {
       finishCapabilityDispatch(task.id, capability.id, 'completed', { responsePacket: { discarded: true } });
@@ -76,12 +104,13 @@ export async function executeRegisteredCapability(task, workspace, {
     const currentPrincipal = resolvePrincipal(task.actor_id);
     if (!currentPrincipal || capability.requiredPermissions.some((permission) => !requireWorkspacePermission(currentPrincipal, workspace.id, permission).allowed)) {
       finishCapabilityDispatch(task.id, capability.id, 'completed', { responsePacket: { discarded: true } });
+      recordEvidence(task.id, 'capability_authority_changed', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
       return fail('capability authority changed before result disclosure');
     }
     const result = validateCapabilityOutput(capability, raw);
-    if (result.opportunities.length > validatedInput.limit) throw new Error('Seller Engine capability exceeded the requested result limit');
-    const evidence = { capabilityId: capability.id, division: capability.division, readOnly: true, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt, resultCount: result.opportunities.length };
-    const summary = { result: summarizeSellerOpportunities(result), capabilityId: capability.id, division: capability.division, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt };
+    if (capabilityResultCount(capability, result) > validatedInput.limit) throw new Error('capability exceeded the requested result limit');
+    const evidence = { capabilityId: capability.id, division: capability.division, readOnly: true, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt, resultCount: capabilityResultCount(capability, result) };
+    const summary = { result: summarizeCapabilityResult(capability, result), capabilityId: capability.id, division: capability.division, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt };
     return finalizeCapabilitySuccess({ taskId: task.id, capabilityId: capability.id, workspaceId: workspace.id, principalId: task.actor_id, ownership, result, summary, evidence },
       (currentTask) => {
         const currentPrincipal = resolvePrincipal(currentTask.actor_id);
@@ -91,17 +120,26 @@ export async function executeRegisteredCapability(task, workspace, {
     if (error?.code === 'CAPABILITY_OWNERSHIP_LOST') {
       finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability task ownership changed during dispatch' });
       recordEvidence(task.id, 'capability_ownership_lost', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
-      return getTask(task.id);
+      return transition(task.id, 'failed', { error: 'Capability task ownership changed', current_stage: 'ownership_lost' }, null);
     }
-    if (error?.code === 'CAPABILITY_CANCELLED' || controller.signal.aborted || getTask(task.id)?.status === 'cancelled' || getFlag('emergency_stop') === 'active') {
-      finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch interrupted; outcome unknown' });
+    if (error?.code === 'CAPABILITY_CANCELLED' || getTask(task.id)?.status === 'cancelled' || getFlag('emergency_stop') === 'active') {
+      try { finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch interrupted; outcome unknown' }); } catch (_) {}
+      const current = getTask(task.id);
+      if (current?.status === 'cancelled') return current;
+      if (!ownsTask(task.id, ownership)) return transition(task.id, 'cancelled', { error: 'Capability execution cancelled', current_stage: 'cancelled' }, null);
       return transition(task.id, 'cancelled', { error: 'Capability execution cancelled', current_stage: 'cancelled' }, ownership);
+    }
+    if (error?.code === 'ABORTED' || (abortedBySignal && !cooperativeAbortHandled)) {
+      finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch aborted; late result discarded' });
+      recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'non_cooperative_abort' });
+      return transition(task.id, 'failed', { error: 'Capability dispatch aborted; late result discarded', current_stage: 'cancelled' }, ownership);
     }
     finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch failed after start; outcome unknown' });
     recordEvidence(task.id, 'capability_outcome_unknown', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
     return transition(task.id, 'outcome_unknown', { error: 'Capability dispatch outcome unknown; operator intervention required', current_stage: 'operator_intervention' }, ownership);
   } finally {
     clearTimeout(timer);
+    unregisterTaskAbortController(task.id);
     signal?.removeEventListener?.('abort', abort);
   }
 }
