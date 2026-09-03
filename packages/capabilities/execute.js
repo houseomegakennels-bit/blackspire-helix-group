@@ -4,30 +4,45 @@ import { createDivisionAdapters } from './http-adapters.js';
 import { sellerOpportunityCapability, summarizeSellerOpportunities } from './seller-opportunities.js';
 import { buyerProfilesCapability, summarizeBuyerProfiles } from './buyer-profiles.js';
 import { buyerMatchesCapability, summarizeBuyerMatches } from './buyer-matches.js';
+import { dealRecordsCapability, summarizeDealRecords } from './deal-records.js';
+import { dealAnalysisCapability, summarizeDealAnalysis } from './deal-analysis.js';
 import { resolveAdminBearer, requireWorkspacePermission } from '../shared/authorization.js';
 import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition, registerTaskAbortController, unregisterTaskAbortController } from '../task-engine/tasks.js';
 
 function summarizeCapabilityResult(capability, result) {
   if (capability.id === 'buyer.profiles.search') return summarizeBuyerProfiles(result);
   if (capability.id === 'buyer.matches.search') return summarizeBuyerMatches(result);
+  if (capability.id === 'deal.records.search') return summarizeDealRecords(result);
+  if (capability.id === 'deal.analysis.get') return summarizeDealAnalysis(result);
   return summarizeSellerOpportunities(result);
 }
 
 function capabilityResultCount(capability, result) {
   if (capability.id === 'buyer.profiles.search') return Array.isArray(result?.profiles) ? result.profiles.length : 0;
   if (capability.id === 'buyer.matches.search') return Array.isArray(result?.matches) ? result.matches.length : 0;
+  if (capability.id === 'deal.records.search') return Array.isArray(result?.deals) ? result.deals.length : 0;
+  if (capability.id === 'deal.analysis.get') return result?.dealId ? 1 : 0;
   return Array.isArray(result?.opportunities) ? result.opportunities.length : 0;
 }
 
 export function selectCapabilityForTask(task, registry = blackspireCapabilityRegistry) {
   const objective = String(task?.request || '');
   const sellerMatch = /\b(?:seller|motivated[- ]seller)\b/i.test(objective) && /\b(?:opportunit(?:y|ies)|lead(?:s)?|propert(?:y|ies)|pipeline|best|rank|show|inspect|search)\b/i.test(objective);
-  const buyerProfileMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:profile|profiles|list|find|show|cash buyer)\b/i.test(objective);
-  const buyerMatchMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:match|matches|who would buy|opportunity|for this deal|for this property)\b/i.test(objective);
-  if (sellerMatch && !buyerProfileMatch && !buyerMatchMatch) return registry.get('seller.opportunities.search');
+  const buyerProfileMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:profile|profiles|list|find|show|cash buyer)\b/i.test(objective) && !/\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
+  const buyerMatchMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:match|matches|who would buy|for this deal|for this property)\b/i.test(objective);
+  const dealAnalysisMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
+  const dealRecordsMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:list|search|show|active|all)\b/i.test(objective) && !dealAnalysisMatch;
+  if (sellerMatch && !buyerProfileMatch && !buyerMatchMatch && !dealRecordsMatch && !dealAnalysisMatch) return registry.get('seller.opportunities.search');
   if (buyerMatchMatch) return registry.get('buyer.matches.search');
   if (buyerProfileMatch) return registry.get('buyer.profiles.search');
+  if (dealAnalysisMatch) return registry.get('deal.analysis.get');
+  if (dealRecordsMatch) return registry.get('deal.records.search');
   return null;
+}
+
+function extractDealId(text) {
+  const match = String(text || '').match(/\bDE-\d{4}\b/i);
+  return match ? match[0].toUpperCase() : null;
 }
 
 export async function executeRegisteredCapability(task, workspace, {
@@ -52,7 +67,16 @@ export async function executeRegisteredCapability(task, workspace, {
   for (const permission of capability.requiredPermissions) {
     if (!requireWorkspacePermission(principal, workspace.id, permission).allowed) return fail('capability permission denied');
   }
-  const validatedInput = validateCapabilityInput(capability, { limit: 5 });
+  // For deal.analysis.get, extract dealId from the natural-language task request before
+  // capability input validation. This keeps the capability input contract strict (dealId
+  // is required; limit is not part of the deal.analysis input schema).
+  const rawInput = capability.id === 'deal.analysis.get' ? {} : { limit: 5 };
+  if (capability.id === 'deal.analysis.get') {
+    const dealId = extractDealId(task.request || '');
+    if (!dealId) return fail('deal identifier missing from task request');
+    rawInput.dealId = dealId;
+  }
+  const validatedInput = validateCapabilityInput(capability, rawInput);
   const dispatch = prepareCapabilityDispatch(task.id, capability.id, {
     workspaceId: workspace.id, principalId: task.actor_id, ...capabilityDispatchAuthority(ownership), input: validatedInput,
   });
@@ -81,7 +105,7 @@ export async function executeRegisteredCapability(task, workspace, {
     if (!ownsTask(task.id, ownership)) throw ownershipError();
     if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') throw cancellationError();
     recordTaskEvent(task.id, 'capability.dispatch_started', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
-    const raw = await capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal }, validatedInput);
+    const raw = await capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput);
     if (abortedBySignal) {
       recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'aborted_non_cooperative' });
       try { finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Non-cooperative adapter returned despite abort signal', responsePacket: { discarded: true } }); } catch { /* already terminal */ }
@@ -108,7 +132,7 @@ export async function executeRegisteredCapability(task, workspace, {
       return fail('capability authority changed before result disclosure');
     }
     const result = validateCapabilityOutput(capability, raw);
-    if (capabilityResultCount(capability, result) > validatedInput.limit) throw new Error('capability exceeded the requested result limit');
+    if (capabilityResultCount(capability, result) > (validatedInput._limit ?? validatedInput.limit ?? Infinity)) throw new Error('capability exceeded the requested result limit');
     const evidence = { capabilityId: capability.id, division: capability.division, readOnly: true, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt, resultCount: capabilityResultCount(capability, result) };
     const summary = { result: summarizeCapabilityResult(capability, result), capabilityId: capability.id, division: capability.division, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt };
     return finalizeCapabilitySuccess({ taskId: task.id, capabilityId: capability.id, workspaceId: workspace.id, principalId: task.actor_id, ownership, result, summary, evidence },

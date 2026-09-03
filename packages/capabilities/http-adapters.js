@@ -32,6 +32,37 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
       if (!response.ok) throw new Error(`Buyer Engine capability failed with HTTP ${response.status}`);
       try { return JSON.parse(text); } catch { throw new Error('Buyer Engine capability returned malformed JSON'); }
     },
+    dealRecords: async ({ workspaceId, limit, signal }) => {
+      const base = env.BLACKSPIRE_DEAL_CAPABILITY_URL;
+      const token = env.BLACKSPIRE_DEAL_CAPABILITY_TOKEN;
+      if (!base || !token) throw new Error('Deal Engine capability transport is not configured');
+      const url = new URL('/api/internal/capabilities/deal-records', base);
+      if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) throw new Error('Deal Engine capability transport must use HTTPS or loopback HTTP');
+      const response = await fetchImpl(url, {
+        method: 'POST', signal,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspaceId, limit }),
+      });
+      const text = await readBoundedResponse(response, 32 * 1024);
+      if (!response.ok) throw new Error(`Deal Engine capability failed with HTTP ${response.status}`);
+      try { return JSON.parse(text); } catch { throw new Error('Deal Engine capability returned malformed JSON'); }
+    },
+    dealAnalysis: async ({ workspaceId, dealId, signal }) => {
+      const base = env.BLACKSPIRE_DEAL_CAPABILITY_URL;
+      const token = env.BLACKSPIRE_DEAL_CAPABILITY_TOKEN;
+      if (!base || !token) throw new Error('Deal Engine capability transport is not configured');
+      const url = new URL('/api/internal/capabilities/deal-analysis', base);
+      if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) throw new Error('Deal Engine capability transport must use HTTPS or loopback HTTP');
+      const response = await fetchImpl(url, {
+        method: 'POST', signal,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspaceId, dealId }),
+      });
+      const text = await readBoundedResponse(response, 32 * 1024);
+      if (response.status === 404) return { ok: false, error: 'Deal not found' };
+      if (!response.ok) throw new Error(`Deal Engine capability failed with HTTP ${response.status}`);
+      try { return JSON.parse(text); } catch { throw new Error('Deal Engine capability returned malformed JSON'); }
+    },
   });
 }
 

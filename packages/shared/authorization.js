@@ -5,7 +5,7 @@ import { AUTHZ_PERMISSIONS, canonicalPermissions, validateGrant } from './authz-
 
 const ROLE_PERMISSIONS = Object.freeze({
   admin: AUTHZ_PERMISSIONS,
-  operator: ['workspace.read','task.read','task.create','task.execute','runtime.read','provider.use.development','seller.opportunities.read','buyer.profiles.read','buyer.matches.read'],
+  operator: ['workspace.read','task.read','task.create','task.execute','runtime.read','provider.use.development','seller.opportunities.read','buyer.profiles.read','buyer.matches.read','deal.records.read','deal.analysis.read'],
   viewer: ['workspace.read','task.read','runtime.read'], service: [],
 });
 export const AUTHZ_POLICY_VERSION = 'authz-v1';
@@ -146,6 +146,8 @@ export const canGrantApproval = (p,w) => requireWorkspacePermission(p,w,'approva
 export const canReadEvaluation = (p,w) => requireWorkspacePermission(p,w,'evaluation.read');
 export const canCorrectEvaluation = (p,w) => requireWorkspacePermission(p,w,'evaluation.correct');
 export const canReadSellerOpportunities = (p,w) => requireWorkspacePermission(p,w,'seller.opportunities.read');
+export const canReadDealRecords = (p,w) => requireWorkspacePermission(p,w,'deal.records.read');
+export const canReadDealAnalysis = (p,w) => requireWorkspacePermission(p,w,'deal.analysis.read');
 function allow(reasonCode) { return { allowed: true, reasonCode }; } function deny(reasonCode) { return { allowed: false, reasonCode }; }
 function currentPrincipal(principal) {
   if (!principal || !resolvedPrincipals.has(principal)) return null;
