@@ -35,19 +35,12 @@ function boundedText(value, key, { nullable = false } = {}) {
 
 function input(raw) {
   const value = raw ?? {};
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !['dealId','_limit','_taskRequest','limit'].includes(key))) throw new Error('invalid deal analysis input');
-  // If dealId is provided, validate it; otherwise leave null and let execute() extract from taskRequest.
-  if (value.dealId !== undefined) {
-    const normalized = String(value.dealId).trim().toUpperCase();
-    if (!/^DE-\d{4}$/.test(normalized)) throw new Error('invalid deal analysis input: deal identifier missing or malformed');
-    return Object.freeze({ dealId: normalized });
-  }
-  return Object.freeze({ dealId: null });
-}
-
-function extractDealId(text) {
-  const match = String(text).match(/\bDE-\d{4}\b/i);
-  return match ? match[0].toUpperCase() : null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid deal analysis input');
+  if (Object.keys(value).some((key) => key !== 'dealId')) throw new Error('invalid deal analysis input');
+  if (value.dealId === undefined || value.dealId === null || value.dealId === '') throw new Error('invalid deal analysis input: deal identifier missing');
+  const normalized = String(value.dealId).trim().toUpperCase();
+  if (!/^DE-\d{4}$/.test(normalized)) throw new Error('invalid deal analysis input: deal identifier missing or malformed');
+  return Object.freeze({ dealId: normalized });
 }
 
 function output(raw) {
@@ -124,14 +117,7 @@ export const dealAnalysisCapability = defineCapability({
   auditEvents: ['capability.selected','capability.dispatch_started','capability.completed','capability.prevented'],
   compensation: 'read-only; no rollback action; cancellation discards late output',
   execute: async (context, validatedInput) => {
-    // For deal.analysis, the dealId must be extracted from the natural-language task request
-    // since executeRegisteredCapability cannot know to pass it. We re-derive the dealId from
-    // context.taskRequest. The original validatedInput (with limit) is used so the limit check
-    // in executeRegisteredCapability remains consistent (capabilityResultCount returns 1 for
-    // deal.analysis which is <= the validatedInput.limit of 5).
-    const dealId = extractDealId(String(context.taskRequest || ''));
-    if (!dealId || !/^DE-\d{4}$/.test(dealId)) throw new Error('deal identifier missing from task request');
-    return context.adapters.dealAnalysis({ dealId, workspaceId: context.workspace.id, signal: context.signal });
+    return context.adapters.dealAnalysis({ dealId: validatedInput.dealId, workspaceId: context.workspace.id, signal: context.signal });
   },
 });
 

@@ -40,6 +40,11 @@ export function selectCapabilityForTask(task, registry = blackspireCapabilityReg
   return null;
 }
 
+function extractDealId(text) {
+  const match = String(text || '').match(/\bDE-\d{4}\b/i);
+  return match ? match[0].toUpperCase() : null;
+}
+
 export async function executeRegisteredCapability(task, workspace, {
   registry = blackspireCapabilityRegistry, adapters = createDivisionAdapters(), resolvePrincipal = resolveAdminBearer,
   signal = null, beforeAdapter = null, ownership = null,
@@ -62,7 +67,16 @@ export async function executeRegisteredCapability(task, workspace, {
   for (const permission of capability.requiredPermissions) {
     if (!requireWorkspacePermission(principal, workspace.id, permission).allowed) return fail('capability permission denied');
   }
-  const validatedInput = validateCapabilityInput(capability, { limit: 5 });
+  // For deal.analysis.get, extract dealId from the natural-language task request before
+  // capability input validation. This keeps the capability input contract strict (dealId
+  // is required; limit is not part of the deal.analysis input schema).
+  const rawInput = capability.id === 'deal.analysis.get' ? {} : { limit: 5 };
+  if (capability.id === 'deal.analysis.get') {
+    const dealId = extractDealId(task.request || '');
+    if (!dealId) return fail('deal identifier missing from task request');
+    rawInput.dealId = dealId;
+  }
+  const validatedInput = validateCapabilityInput(capability, rawInput);
   const dispatch = prepareCapabilityDispatch(task.id, capability.id, {
     workspaceId: workspace.id, principalId: task.actor_id, ...capabilityDispatchAuthority(ownership), input: validatedInput,
   });

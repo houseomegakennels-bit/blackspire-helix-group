@@ -132,7 +132,7 @@ test('Deal records input rejects unknown fields and out-of-range limit', () => {
 });
 
 test('Deal analysis input rejects malformed dealId', () => {
-  // {} is now accepted at the input level (dealId extracted from taskRequest in execute)
+  assert.throws(() => validateCapabilityInput(dealAnalysisCapability, {}), /invalid deal analysis input/);
   assert.throws(() => validateCapabilityInput(dealAnalysisCapability, { dealId:'DE-X' }), /invalid deal analysis input/);
   assert.throws(() => validateCapabilityInput(dealAnalysisCapability, { dealId:'INVALID' }), /invalid deal analysis input/);
   assert.throws(() => validateCapabilityInput(dealAnalysisCapability, { dealId:'DE-2417', unknown:'x' }), /invalid deal analysis input/);
@@ -205,12 +205,10 @@ test('Deal analysis: correct dispatch with canonical underwriting returned', asy
     adapters:{
       dealAnalysis:async ({ workspaceId, dealId }) => {
         adapterCalls += 1;
-        console.log('DEBUG: adapter called dealId=' + dealId + ' ws=' + workspaceId);
         return canonicalAnalysisResult();
       }
     }
   } });
-  console.log('DEBUG: adapterCalls=' + adapterCalls + ' status=' + completed.status + ' error=' + (completed.error || 'none'));
   assert.equal(completed.status, 'completed');
   assert.equal(adapterCalls, 1);
   assert.match(JSON.parse(completed.summary).result, /DE-2417/);
@@ -220,12 +218,10 @@ test('Deal analysis: correct dispatch with canonical underwriting returned', asy
 test('Deal analysis: non-existent deal fails gracefully from adapter', async () => {
   let adapterCalls = 0;
   const created = analysisTask('Show the underwriting for deal DE-9999.');
-  // The API route returns {ok: false} for 404, which fails JSON validation in the adapter
-  // and transitions to outcome_unknown
   const result = await processTask(created, { capabilityOptions:{ adapters:{ dealAnalysis:async () => { adapterCalls += 1; return { ok: false, error: 'Deal not found' }; } } } });
   assert.equal(adapterCalls, 1);
-  // Outcome is unknown because the adapter returned malformed/errored response
-  assert.ok(['outcome_unknown', 'failed'].includes(result.status), `expected outcome_unknown or failed, got ${result.status}`);
+  // Adapter returned clean {ok:false} — output validation fails (no dealId), transitioning to outcome_unknown
+  assert.equal(result.status, 'outcome_unknown');
 });
 
 test('revoked grant after response prevents disclosure', async () => {

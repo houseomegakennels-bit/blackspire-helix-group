@@ -59,6 +59,7 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
         body: JSON.stringify({ workspaceId, dealId }),
       });
       const text = await readBoundedResponse(response, 32 * 1024);
+      if (response.status === 404) return { ok: false, error: 'Deal not found' };
       if (!response.ok) throw new Error(`Deal Engine capability failed with HTTP ${response.status}`);
       try { return JSON.parse(text); } catch { throw new Error('Deal Engine capability returned malformed JSON'); }
     },
