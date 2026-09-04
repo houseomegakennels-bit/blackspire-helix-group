@@ -136,10 +136,6 @@ export async function executeRegisteredCapability(task, workspace, {
   let timedOut = false;
   const abort = () => { abortedBySignal = true; controller.abort(); };
   let rejectOnAbort;
-  const aborted = new Promise((_, reject) => {
-    rejectOnAbort = () => reject(abortionError());
-    controller.signal.addEventListener('abort', rejectOnAbort, { once: true });
-  });
   if (signal?.aborted) abort();
   else signal?.addEventListener?.('abort', abort, { once: true });
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, capability.timeoutMs);
@@ -148,12 +144,18 @@ export async function executeRegisteredCapability(task, workspace, {
     beforeAdapter?.();
     if (!ownsTask(task.id, ownership)) throw ownershipError();
     if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') throw cancellationError();
+    if (controller.signal.aborted) throw abortionError();
+    // Create the rejection only once execution can subscribe to it. A synchronous
+    // cancellation above must not leave an unobserved promise behind.
+    const aborted = new Promise((_, reject) => {
+      rejectOnAbort = () => reject(abortionError());
+      controller.signal.addEventListener('abort', rejectOnAbort, { once: true });
+    });
     recordTaskEvent(task.id, 'capability.dispatch_started', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
-    const execution = Promise.resolve().then(() => capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput));
-    // The abort promise may win while a cooperative adapter rejects at the same time. Keep the
-    // original promise in the race, but attach a rejection observer so the losing branch cannot
-    // surface as post-test/process unhandled activity.
-    execution.catch(() => {});
+    const execution = Promise.resolve().then(() => {
+      if (controller.signal.aborted) throw abortionError();
+      return capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput);
+    });
     const raw = await Promise.race([execution, aborted]);
     if (abortedBySignal) {
       recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'aborted_non_cooperative' });

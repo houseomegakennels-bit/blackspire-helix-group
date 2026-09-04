@@ -694,11 +694,14 @@ export async function createSearchJob(input: CreateSearchJobInput) {
 export async function listBuyerReports(searchJobId: string, limit = 8): Promise<BuyerReportRecord[]> {
   const env = getEnvState();
   if (!env.enabled) return [];
+  const operator = await getAuthenticatedOperator();
+  if (!operator?.id) return [];
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("BuyerReport")
-    .select("id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at,BuyerProfile(score_breakdown)")
+    .select("id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at,BuyerProfile(score_breakdown),SearchJob!inner(user_id)")
+    .eq("SearchJob.user_id", operator.id)
     .eq("search_job_id", searchJobId)
     .order("score", { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -720,7 +723,8 @@ export async function listAllBuyerReports({
   searchJobId?: string;
 } = {}): Promise<BuyerReportPage> {
   const env = getEnvState();
-  if (!env.enabled) {
+  const operator = env.enabled ? await getAuthenticatedOperator() : null;
+  if (!operator?.id) {
     return {
       reports: [],
       total: 0,
@@ -733,9 +737,10 @@ export async function listAllBuyerReports({
   let query = supabase
     .from("BuyerReport")
     .select(
-      "id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at,BuyerProfile(score_breakdown)",
+      "id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at,BuyerProfile(score_breakdown),SearchJob!inner(user_id)",
       { count: "exact" },
     )
+    .eq("SearchJob.user_id", operator.id)
     .order("created_at", { ascending: false })
     .range(offset, offset + Math.max(limit - 1, 0));
 
@@ -993,9 +998,10 @@ async function ensureBuyerGroupRegistrySeeded(
   return (seededData ?? []) as BuyerGroupRegistryDbRow[];
 }
 
-export async function listBuyerGroupRegistry(includeInactive = true): Promise<BuyerGroupRegistryRow[]> {
+export async function listBuyerGroupRegistry(includeInactive = true, { readOnly = false } = {}): Promise<BuyerGroupRegistryRow[]> {
   const env = getEnvState();
   if (!env.enabled) {
+    if (readOnly) throw new Error("Buyer registry unavailable");
     const seeds = seedBuyerGroupRows();
     return includeInactive ? seeds : seeds.filter((row) => row.active);
   }
@@ -1012,14 +1018,14 @@ export async function listBuyerGroupRegistry(includeInactive = true): Promise<Bu
 
   const { data, error } = await query;
   if (error) {
-    if (isMissingRelationError(error.message)) {
+    if (!readOnly && isMissingRelationError(error.message)) {
       const seeds = seedBuyerGroupRows();
       return includeInactive ? seeds : seeds.filter((row) => row.active);
     }
     throw new Error(error.message);
   }
 
-  const resolvedRows = await ensureBuyerGroupRegistrySeeded(
+  const resolvedRows = readOnly ? (data ?? []) as BuyerGroupRegistryDbRow[] : await ensureBuyerGroupRegistrySeeded(
     supabase,
     (data ?? []) as BuyerGroupRegistryDbRow[],
   );
@@ -1262,7 +1268,7 @@ export type BuyerCapabilityProfileInput = {
 /** Bounded, persisted BuyerProfile read for the internal Hermes capability. */
 export async function listBuyerProfilesForCapability(input: BuyerCapabilityProfileInput): Promise<BuyerProfileRow[]> {
   const env = getEnvState();
-  if (!env.enabled) return [];
+  if (!env.enabled) throw new Error("Buyer profiles unavailable");
 
   const supabase = getSupabaseAdmin();
   let query = supabase
@@ -1340,7 +1346,7 @@ function scoreBuyerProfile(row: BuyerProfileRow, bucket: "land" | "residential")
   return { score: Math.min(99, score), reasons };
 }
 
-export async function matchBuyersForProperty(input: BuyerForPropertyInput): Promise<BuyerForPropertyResult> {
+export async function matchBuyersForProperty(input: BuyerForPropertyInput, { readOnly = false } = {}): Promise<BuyerForPropertyResult> {
   const supabase = getSupabaseAdmin();
   const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(input.county, input.city);
   const bucket = resolvePropertyTypeBucket(input);
@@ -1352,7 +1358,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput): Prom
 
   // Real buyers from the BuyerProfile universe (the source of truth). Fetch the
   // top-200 by volume for scoring, and a true county-wide count for validation.
-  const [{ data: profileRows }, { count: countyBuyerCount }] = await Promise.all([
+  const [{ data: profileRows, error: profileError }, { count: countyBuyerCount, error: countError }] = await Promise.all([
     supabase
       .from("BuyerProfile")
       .select("id, buyer_name, county, state, is_llc, is_cash_buyer, purchase_count, total_spend, last_purchase_date, property_types, score")
@@ -1364,6 +1370,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput): Prom
       .select("id", { count: "exact", head: true })
       .ilike("county", `%${countyCore}%`),
   ]);
+  if (readOnly && (profileError || countError)) throw new Error("Buyer matches unavailable");
 
   const rows = (profileRows ?? []) as BuyerProfileRow[];
   const buyerCount = countyBuyerCount ?? rows.length;
@@ -1389,7 +1396,9 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput): Prom
   });
 
   // Institutional groups remain a secondary lane (no longer the only source).
-  const registry = await listBuyerGroupRegistry(false).catch(() => []);
+  const registry = readOnly
+    ? await listBuyerGroupRegistry(false, { readOnly: true })
+    : await listBuyerGroupRegistry(false).catch(() => []);
   const institutionalMatches: BuyerForPropertyMatch[] = registry
     .filter((group) => (group.counties ?? []).some((c) => normalizeCountyName(c) === countyCore))
     .map((group) => ({

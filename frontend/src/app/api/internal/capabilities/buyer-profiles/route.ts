@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     let result;
     try {
       const deal = data as DealLookupRow;
-      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit });
+      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true });
     } catch {
       return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
     }
