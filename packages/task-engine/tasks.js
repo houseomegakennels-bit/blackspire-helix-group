@@ -3,6 +3,7 @@ import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, run, get, transaction } from './db.js';
 
 const taskAbortControllers = new Map();
+const UNKNOWN_CAPABILITY_DISCLOSURE_PERMISSION = '__unknown_capability_mode__';
 
 export function registerTaskAbortController(taskId, controller) {
   if (!taskId || !controller) return;
@@ -55,6 +56,33 @@ export function providerAttemptsForTasks(taskIds) {
   const ids = [...new Set(taskIds)].filter((taskId) => typeof taskId === 'string' && taskId);
   if (!ids.length) return [];
   return query(`SELECT * FROM provider_attempts WHERE task_id IN (${ids.map(esc).join(',')}) ORDER BY created_at;`);
+}
+
+// Capability results retain the authority boundary of the capability that produced them.
+// Keep this mapping beside the durable provider-attempt lookup so every disclosure surface
+// derives its required permissions from persisted, server-selected capability modes rather
+// than from task text or caller-controlled fields.
+export const CAPABILITY_DISCLOSURE_PERMISSION_BY_MODE = Object.freeze({
+  'seller.opportunities.search': 'seller.opportunities.read',
+  'buyer.profiles.search': 'buyer.profiles.read',
+  'buyer.matches.search': 'buyer.matches.read',
+  'deal.records.search': 'deal.records.read',
+  'deal.analysis.get': 'deal.analysis.read',
+  'nexus.enrichment.status': 'nexus.enrichment.read',
+});
+
+function capabilityDisclosurePermissions(rows) {
+  return [...new Set(rows
+    .filter((row) => row.provider === 'blackspire-capability')
+    .map((row) => CAPABILITY_DISCLOSURE_PERMISSION_BY_MODE[row.mode] || UNKNOWN_CAPABILITY_DISCLOSURE_PERMISSION))].sort();
+}
+
+export function requiredCapabilityPermissionsForTask(taskId) {
+  return capabilityDisclosurePermissions(query(`SELECT provider,mode FROM provider_attempts WHERE task_id=${esc(taskId)}`));
+}
+
+export function requiredCapabilityPermissionsForConversation(conversationId) {
+  return capabilityDisclosurePermissions(query(`SELECT p.provider,p.mode FROM tasks t JOIN provider_attempts p ON p.task_id=t.id WHERE t.conversation_id=${esc(conversationId)}`));
 }
 
 export function taskRequiresCapabilityPermission(taskId, permission) {

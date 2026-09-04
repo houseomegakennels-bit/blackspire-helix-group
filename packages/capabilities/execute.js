@@ -6,6 +6,7 @@ import { buyerProfilesCapability, summarizeBuyerProfiles } from './buyer-profile
 import { buyerMatchesCapability, summarizeBuyerMatches } from './buyer-matches.js';
 import { dealRecordsCapability, summarizeDealRecords } from './deal-records.js';
 import { dealAnalysisCapability, summarizeDealAnalysis } from './deal-analysis.js';
+import { nexusEnrichmentCapability, summarizeNexusEnrichment } from './nexus-enrichment.js';
 import { resolveAdminBearer, requireWorkspacePermission } from '../shared/authorization.js';
 import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition, registerTaskAbortController, unregisterTaskAbortController } from '../task-engine/tasks.js';
 
@@ -14,6 +15,7 @@ function summarizeCapabilityResult(capability, result) {
   if (capability.id === 'buyer.matches.search') return summarizeBuyerMatches(result);
   if (capability.id === 'deal.records.search') return summarizeDealRecords(result);
   if (capability.id === 'deal.analysis.get') return summarizeDealAnalysis(result);
+  if (capability.id === 'nexus.enrichment.status') return summarizeNexusEnrichment(result);
   return summarizeSellerOpportunities(result);
 }
 
@@ -22,16 +24,19 @@ function capabilityResultCount(capability, result) {
   if (capability.id === 'buyer.matches.search') return Array.isArray(result?.matches) ? result.matches.length : 0;
   if (capability.id === 'deal.records.search') return Array.isArray(result?.deals) ? result.deals.length : 0;
   if (capability.id === 'deal.analysis.get') return result?.dealId ? 1 : 0;
+  if (capability.id === 'nexus.enrichment.status') return result?.ownerName || result?.propertyAddress ? 1 : 0;
   return Array.isArray(result?.opportunities) ? result.opportunities.length : 0;
 }
 
 export function selectCapabilityForTask(task, registry = blackspireCapabilityRegistry) {
   const objective = String(task?.request || '');
+  const nexusEnrichmentMatch = /\b(?:nexus|skip.?trace|contact.?enrichment|contact.?status|verified.?phone|verified.?email|skip.?trace.?status|contact.?confidence)\b/i.test(objective);
   const sellerMatch = /\b(?:seller|motivated[- ]seller)\b/i.test(objective) && /\b(?:opportunit(?:y|ies)|lead(?:s)?|propert(?:y|ies)|pipeline|best|rank|show|inspect|search)\b/i.test(objective);
   const buyerProfileMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:profile|profiles|list|find|show|cash buyer)\b/i.test(objective) && !/\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
   const buyerMatchMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:match|matches|who would buy|for this deal|for this property)\b/i.test(objective);
   const dealAnalysisMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
   const dealRecordsMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:list|search|show|active|all)\b/i.test(objective) && !dealAnalysisMatch;
+  if (nexusEnrichmentMatch && !sellerMatch && !buyerProfileMatch && !buyerMatchMatch && !dealAnalysisMatch && !dealRecordsMatch) return registry.get('nexus.enrichment.status');
   if (sellerMatch && !buyerProfileMatch && !buyerMatchMatch && !dealRecordsMatch && !dealAnalysisMatch) return registry.get('seller.opportunities.search');
   if (buyerMatchMatch) return registry.get('buyer.matches.search');
   if (buyerProfileMatch) return registry.get('buyer.profiles.search');
@@ -43,6 +48,24 @@ export function selectCapabilityForTask(task, registry = blackspireCapabilityReg
 function extractDealId(text) {
   const match = String(text || '').match(/\bDE-\d{4}\b/i);
   return match ? match[0].toUpperCase() : null;
+}
+
+function extractOwnerName(text) {
+  const s = String(text || '');
+  // Match "owner [is/named/called] Name" or "owner's name is Name" or bare "owner Name"
+  const match = s.match(/\bowner(?:'s)?\s*(?:name\s*(?:is|named|called)?)?\s*([A-Za-z][A-Za-z\s]{1,60})\b/i);
+  if (match) return match[1].trim();
+  return null;
+}
+
+function extractPropertyAddress(text) {
+  const s = String(text || '');
+  // Match optional comma-separated city segments, then mandatory space+state+space+zip.
+  // The {0,2} handles 0-2 comma-space(city) groups (e.g. ", Winston-Salem" after street).
+  // Each iteration consumes ", " so trailing space is left for the mandatory \s+ before state.
+  const parts = s.match(/\b(\d+\s+[A-Za-z][A-Za-z0-9\s-]{3,80}(?:,\s*[A-Za-z]+){0,2}\s+(?:NC|SC|GA|FL|VA|WV|NY|CA|TX|AZ|CO)\s+\d{5}(?:-\d{4})?)\b/);
+  if (parts) return parts[1].trim();
+  return null;
 }
 
 export async function executeRegisteredCapability(task, workspace, {
@@ -70,11 +93,21 @@ export async function executeRegisteredCapability(task, workspace, {
   // For deal.analysis.get, extract dealId from the natural-language task request before
   // capability input validation. This keeps the capability input contract strict (dealId
   // is required; limit is not part of the deal.analysis input schema).
-  const rawInput = capability.id === 'deal.analysis.get' ? {} : { limit: 5 };
+  const rawInput = {}; // eslint-disable-line prefer-const
   if (capability.id === 'deal.analysis.get') {
     const dealId = extractDealId(task.request || '');
     if (!dealId) return fail('deal identifier missing from task request');
     rawInput.dealId = dealId;
+  }
+  if (capability.id === 'deal.records.search') {
+    rawInput.limit = 5; // default limit for collection capability
+  }
+  if (capability.id === 'nexus.enrichment.status') {
+    const ownerName = extractOwnerName(task.request || '');
+    const propertyAddress = extractPropertyAddress(task.request || '');
+    if (!ownerName && !propertyAddress) return fail('nexus enrichment input requires ownerName or propertyAddress in the task request');
+    if (ownerName) rawInput.ownerName = ownerName;
+    if (propertyAddress) rawInput.propertyAddress = propertyAddress;
   }
   const validatedInput = validateCapabilityInput(capability, rawInput);
   const dispatch = prepareCapabilityDispatch(task.id, capability.id, {
@@ -95,17 +128,24 @@ export async function executeRegisteredCapability(task, workspace, {
 
   const controller = new AbortController();
   let abortedBySignal = false;
-  let cooperativeAbortHandled = false;
-  const abort = () => controller.abort();
-  signal?.addEventListener?.('abort', () => { abortedBySignal = true; controller.abort(); }, { once: true });
-  const timer = setTimeout(() => { controller.abort(); }, capability.timeoutMs);
+  let timedOut = false;
+  const abort = () => { abortedBySignal = true; controller.abort(); };
+  let rejectOnAbort;
+  const aborted = new Promise((_, reject) => {
+    rejectOnAbort = () => reject(abortionError());
+    controller.signal.addEventListener('abort', rejectOnAbort, { once: true });
+  });
+  if (signal?.aborted) abort();
+  else signal?.addEventListener?.('abort', abort, { once: true });
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, capability.timeoutMs);
   registerTaskAbortController(task.id, controller);
   try {
     beforeAdapter?.();
     if (!ownsTask(task.id, ownership)) throw ownershipError();
     if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') throw cancellationError();
     recordTaskEvent(task.id, 'capability.dispatch_started', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
-    const raw = await capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput);
+    const execution = Promise.resolve().then(() => capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput));
+    const raw = await Promise.race([execution, aborted]);
     if (abortedBySignal) {
       recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'aborted_non_cooperative' });
       try { finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Non-cooperative adapter returned despite abort signal', responsePacket: { discarded: true } }); } catch { /* already terminal */ }
@@ -153,7 +193,13 @@ export async function executeRegisteredCapability(task, workspace, {
       if (!ownsTask(task.id, ownership)) return transition(task.id, 'cancelled', { error: 'Capability execution cancelled', current_stage: 'cancelled' }, null);
       return transition(task.id, 'cancelled', { error: 'Capability execution cancelled', current_stage: 'cancelled' }, ownership);
     }
-    if (error?.code === 'ABORTED' || (abortedBySignal && !cooperativeAbortHandled)) {
+    if (timedOut) {
+      finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch timed out; outcome unknown' });
+      recordEvidence(task.id, 'capability_timeout', { capabilityId: capability.id, attemptId: dispatch.attempt.id, timeoutMs: capability.timeoutMs });
+      recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'hard_timeout' });
+      return transition(task.id, 'outcome_unknown', { error: 'Capability dispatch timed out; outcome unknown; automatic replay refused', current_stage: 'operator_intervention' }, ownership);
+    }
+    if (error?.code === 'ABORTED' || abortedBySignal) {
       finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch aborted; late result discarded' });
       recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'non_cooperative_abort' });
       return transition(task.id, 'failed', { error: 'Capability dispatch aborted; late result discarded', current_stage: 'cancelled' }, ownership);
@@ -164,12 +210,14 @@ export async function executeRegisteredCapability(task, workspace, {
   } finally {
     clearTimeout(timer);
     unregisterTaskAbortController(task.id);
+    controller.signal.removeEventListener('abort', rejectOnAbort);
     signal?.removeEventListener?.('abort', abort);
   }
 }
 
 function cancellationError() { const error = new Error('capability execution cancelled'); error.code = 'CAPABILITY_CANCELLED'; return error; }
 function ownershipError() { const error = new Error('capability task ownership lost'); error.code = 'CAPABILITY_OWNERSHIP_LOST'; return error; }
+function abortionError() { const error = new Error('capability execution aborted'); error.code = 'ABORTED'; return error; }
 function ownsTask(taskId, ownership) {
   if (!ownership) return true;
   const current = getTask(taskId);

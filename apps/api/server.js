@@ -7,7 +7,7 @@ import { verifyAdminPasswordAsyncResult } from '../../packages/shared/password-a
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
 import { json, readJson, id, redact } from '../../packages/shared/util.js';
-import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords, providerAttemptsForTasks, taskRequiresCapabilityPermission, conversationRequiresCapabilityPermission } from '../../packages/task-engine/tasks.js';
+import { createTask, getTask, listTasks, logs, transition, setFlag, getFlag, audit, createApproval, decideApproval, taskRecords, providerAttemptsForTasks, requiredCapabilityPermissionsForTask, requiredCapabilityPermissionsForConversation } from '../../packages/task-engine/tasks.js';
 import { attachmentsForTask } from '../../packages/task-engine/attachments.js';
 import { listWorkspaces, getWorkspace, upsertWorkspace } from '../../packages/workspace-registry/workspaces.js';
 import { activeModes } from '../../packages/providers/providers.js';
@@ -152,7 +152,7 @@ async function route(req, res) {
     if (conversationMatch && req.method === 'GET') {
       const conversationRecord = getConversationRecord(conversationMatch[1]);
       if (!conversationRecord || !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'task.read') ||
-        (conversationRequiresCapabilityPermission(conversationRecord.id, 'seller.opportunities.read') && !authorizeWorkspaceRequest(auth, conversationRecord.workspace_id, 'seller.opportunities.read'))) return json(res, 404, { error: 'conversation not found' });
+        !authorizeCapabilityPermissions(auth, conversationRecord.workspace_id, requiredCapabilityPermissionsForConversation(conversationRecord.id))) return json(res, 404, { error: 'conversation not found' });
       if (conversationMatch[2] === 'events') return json(res, 200, { conversationId: conversationMatch[1], events: conversationEvents(conversationMatch[1], u.searchParams.get('after') || '') });
       return json(res, 200, getConversation(conversationMatch[1]));
     }
@@ -223,7 +223,11 @@ function authorizeTaskDisclosure(auth, task) {
 }
 
 function authorizeCapabilityDisclosure(auth, task) {
-  return !taskRequiresCapabilityPermission(task.id, 'seller.opportunities.read') || authorizeWorkspaceRequest(auth, task.workspace_id, 'seller.opportunities.read');
+  return authorizeCapabilityPermissions(auth, task.workspace_id, requiredCapabilityPermissionsForTask(task.id));
+}
+
+function authorizeCapabilityPermissions(auth, workspaceId, permissions) {
+  return permissions.every((permission) => authorizeWorkspaceRequest(auth, workspaceId, permission));
 }
 
 function authorizeGlobalRuntimeControl(auth, selectedWorkspaceId) {

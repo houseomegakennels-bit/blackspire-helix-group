@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+- Last verified implementation commit: `96a8db5616d0753319bf16e6ee6826a5c32e928e`
+
+## Nexus read-only capability validation (2026-09-04 UTC)
+
+Local branch `feature/nexus-read-capabilities` is at `a26f93ddcf4a44f2e1a6e9490f2dc93adb34266e`, two commits ahead of `origin/main` at `96a8db5616d0753319bf16e6ee6826a5c32e928e`. It adds the server-owned `nexus.enrichment.status` capability with `nexus.enrichment.read`, backed by persisted `nexus_contacts` status reads only; raw phone, raw email, provider payload, paid provider calls, enrichment triggers, and read-path database mutations are not exposed or performed. Focused Nexus, Buyer, Deal, and capability-orchestration tests pass and exit naturally. The prior Deal mixed-routing discrepancy is fixed by restoring the `analysis` keyword to the existing Deal analysis matcher. Root lint, typecheck, build, secret scan, and high-severity npm audit pass locally. The repository trusted runner is `UNVERIFIED` in this sandbox because its required user-namespace snapshot `chown` fails before test execution; a direct uncontained full run is not valid evidence because it lacks the runner's isolation contract. Nexus has not been pushed, reviewed, merged, or deployed.
+
 ## PR #120 final P1/P2 correction (2026-09-02 UTC)
 
 Branch `feature/jarvis-password-auth` continues the authenticated Blackspire Command browser/PWA path on `origin/main`. It replaces token-shaped browser login with asynchronous password verification against `COMMAND_ADMIN_PASSWORD_HASH`, preserves `COMMAND_ADMIN_TOKEN` solely for explicitly enabled bearer clients, and enforces one process-wide four-derivation admission bound that refuses excess scrypt work immediately with no waiting queue. Session issuance still requires verified credentials and a server-resolved canonical principal. Production requires a valid supported password hash; development retains only an explicit non-browser legacy fixture path.

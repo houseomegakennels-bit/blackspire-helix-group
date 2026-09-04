@@ -4,7 +4,7 @@ const CAPABILITY_ID = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){2,5}$/;
 const EXECUTION_INTENTS = new Set(['read_only', 'workspace_mutation']);
 const RISKS = new Set(['low', 'medium', 'high']);
 const APPROVALS = new Set(['none', 'required']);
-const SECRET_KEY = /(?:secret|token|credential|authorization|cookie|password|api[-_]?key|private[-_]?key)/i;
+export const SECRET_KEY = /(?:secret|token|credential|authorization|cookie|password|api[-_]?key|private[-_]?key)/i;
 export const MAX_CAPABILITY_INPUT_BYTES = 8 * 1024;
 export const MAX_CAPABILITY_OUTPUT_BYTES = 32 * 1024;
 
