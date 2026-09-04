@@ -1235,7 +1235,7 @@ function monthsSince(date: string | null | undefined): number | null {
   return (Date.now() - t) / (1000 * 60 * 60 * 24 * 30.4);
 }
 
-type BuyerProfileRow = {
+export type BuyerProfileRow = {
   id: string;
   buyer_name: string | null;
   county: string | null;
@@ -1248,6 +1248,39 @@ type BuyerProfileRow = {
   property_types: string[] | null;
   score: number | null;
 };
+
+export type BuyerCapabilityProfileInput = {
+  buyerName?: string | null;
+  state?: string | null;
+  county?: string | null;
+  propertyType?: string | null;
+  cashBuyer?: boolean | null;
+  llcBuyer?: boolean | null;
+  limit: number;
+};
+
+/** Bounded, persisted BuyerProfile read for the internal Hermes capability. */
+export async function listBuyerProfilesForCapability(input: BuyerCapabilityProfileInput): Promise<BuyerProfileRow[]> {
+  const env = getEnvState();
+  if (!env.enabled) return [];
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("BuyerProfile")
+    .select("id,buyer_name,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,last_purchase_date,property_types,score")
+    .order("purchase_count", { ascending: false, nullsFirst: false })
+    .limit(input.limit);
+  if (input.buyerName) query = query.ilike("buyer_name", `%${input.buyerName.replace(/[\\%_]/g, "\\$&")}%`);
+  if (input.county) query = query.ilike("county", `%${normalizeCountyName(input.county)}%`);
+  if (input.state) query = query.ilike("state", input.state);
+  if (input.cashBuyer !== null && input.cashBuyer !== undefined) query = query.eq("is_cash_buyer", input.cashBuyer);
+  if (input.llcBuyer !== null && input.llcBuyer !== undefined) query = query.eq("is_llc", input.llcBuyer);
+  if (input.propertyType) query = query.contains("property_types", [input.propertyType.toLowerCase()]);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as BuyerProfileRow[];
+}
 
 function classifyBuyerType(row: BuyerProfileRow): BuyerForPropertyMatch["buyerType"] {
   const count = row.purchase_count ?? 0;

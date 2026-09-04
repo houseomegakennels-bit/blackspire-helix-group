@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { bulkUpdateSellerLeads } from "@/lib/seller-engine-server";
@@ -6,6 +7,8 @@ import type { SellerLeadStatus } from "@/lib/seller-engine";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as {
       ids?: string[];

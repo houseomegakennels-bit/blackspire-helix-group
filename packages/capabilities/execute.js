@@ -23,7 +23,7 @@ function capabilityResultCount(capability, result) {
   if (capability.id === 'buyer.profiles.search') return Array.isArray(result?.profiles) ? result.profiles.length : 0;
   if (capability.id === 'buyer.matches.search') return Array.isArray(result?.matches) ? result.matches.length : 0;
   if (capability.id === 'deal.records.search') return Array.isArray(result?.deals) ? result.deals.length : 0;
-  if (capability.id === 'deal.analysis.get') return result?.dealId ? 1 : 0;
+  if (capability.id === 'deal.analysis.get') return result?.found === false ? 0 : result?.dealId ? 1 : 0;
   if (capability.id === 'nexus.enrichment.status') return result?.ownerName || result?.propertyAddress ? 1 : 0;
   return Array.isArray(result?.opportunities) ? result.opportunities.length : 0;
 }
@@ -33,7 +33,7 @@ export function selectCapabilityForTask(task, registry = blackspireCapabilityReg
   const nexusEnrichmentMatch = /\b(?:nexus|skip.?trace|contact.?enrichment|contact.?status|verified.?phone|verified.?email|skip.?trace.?status|contact.?confidence)\b/i.test(objective);
   const sellerMatch = /\b(?:seller|motivated[- ]seller)\b/i.test(objective) && /\b(?:opportunit(?:y|ies)|lead(?:s)?|propert(?:y|ies)|pipeline|best|rank|show|inspect|search)\b/i.test(objective);
   const buyerProfileMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:profile|profiles|list|find|show|cash buyer)\b/i.test(objective) && !/\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
-  const buyerMatchMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:match|matches|who would buy|for this deal|for this property)\b/i.test(objective);
+  const buyerMatchMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:match|matches|who would buy|for (?:this )?deal|for (?:this )?property)\b/i.test(objective);
   const dealAnalysisMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
   const dealRecordsMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:list|search|show|active|all)\b/i.test(objective) && !dealAnalysisMatch;
   if (nexusEnrichmentMatch && !sellerMatch && !buyerProfileMatch && !buyerMatchMatch && !dealAnalysisMatch && !dealRecordsMatch) return registry.get('nexus.enrichment.status');
@@ -53,17 +53,15 @@ function extractDealId(text) {
 function extractOwnerName(text) {
   const s = String(text || '');
   // Match "owner [is/named/called] Name" or "owner's name is Name" or bare "owner Name"
-  const match = s.match(/\bowner(?:'s)?\s*(?:name\s*(?:is|named|called)?)?\s*([A-Za-z][A-Za-z\s]{1,60})\b/i);
+  const match = s.match(/\bowner(?:'s)?\s*(?:name\s*(?:is|named|called)?)?\s*([A-Za-z][A-Za-z .'-]{1,60}?)(?=\s+at\b|\s+for\b|\s*[,.?!]|$)/i);
   if (match) return match[1].trim();
   return null;
 }
 
 function extractPropertyAddress(text) {
   const s = String(text || '');
-  // Match optional comma-separated city segments, then mandatory space+state+space+zip.
-  // The {0,2} handles 0-2 comma-space(city) groups (e.g. ", Winston-Salem" after street).
-  // Each iteration consumes ", " so trailing space is left for the mandatory \s+ before state.
-  const parts = s.match(/\b(\d+\s+[A-Za-z][A-Za-z0-9\s-]{3,80}(?:,\s*[A-Za-z]+){0,2}\s+(?:NC|SC|GA|FL|VA|WV|NY|CA|TX|AZ|CO)\s+\d{5}(?:-\d{4})?)\b/);
+  // Require a complete state + ZIP suffix so prose and partial street mentions are not queried.
+  const parts = s.match(/\b(\d{1,6}\s+[A-Za-z0-9][A-Za-z0-9 .,'#\/-]{2,120}?\s*,?\s*(?:NC|SC|GA|FL|VA|WV|NY|CA|TX|AZ|CO)\s+\d{5}(?:-\d{4})?)\b/i);
   if (parts) return parts[1].trim();
   return null;
 }
@@ -102,10 +100,17 @@ export async function executeRegisteredCapability(task, workspace, {
   if (capability.id === 'deal.records.search') {
     rawInput.limit = 5; // default limit for collection capability
   }
+  if (capability.id === 'buyer.matches.search') {
+    const dealId = extractDealId(task.request || '');
+    if (dealId) rawInput.opportunityId = dealId;
+    rawInput.limit = 5;
+  }
   if (capability.id === 'nexus.enrichment.status') {
+    const dealId = extractDealId(task.request || '');
     const ownerName = extractOwnerName(task.request || '');
     const propertyAddress = extractPropertyAddress(task.request || '');
-    if (!ownerName && !propertyAddress) return fail('nexus enrichment input requires ownerName or propertyAddress in the task request');
+    if (!dealId && !ownerName && !propertyAddress) return fail('nexus enrichment input requires dealId, ownerName, or propertyAddress in the task request');
+    if (dealId) rawInput.dealId = dealId;
     if (ownerName) rawInput.ownerName = ownerName;
     if (propertyAddress) rawInput.propertyAddress = propertyAddress;
   }
@@ -145,6 +150,10 @@ export async function executeRegisteredCapability(task, workspace, {
     if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') throw cancellationError();
     recordTaskEvent(task.id, 'capability.dispatch_started', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
     const execution = Promise.resolve().then(() => capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput));
+    // The abort promise may win while a cooperative adapter rejects at the same time. Keep the
+    // original promise in the race, but attach a rejection observer so the losing branch cannot
+    // surface as post-test/process unhandled activity.
+    execution.catch(() => {});
     const raw = await Promise.race([execution, aborted]);
     if (abortedBySignal) {
       recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'aborted_non_cooperative' });

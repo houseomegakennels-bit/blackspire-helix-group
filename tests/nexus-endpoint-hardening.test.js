@@ -10,7 +10,7 @@ const routeSource = fs.readFileSync(
   'utf8',
 );
 const migrationSource = fs.readFileSync(
-  new URL('../frontend/supabase/migrations/011_nexus_read_security.sql', import.meta.url),
+  new URL('../frontend/supabase/migrations/20260904201014_nexus_read_security.sql', import.meta.url),
   'utf8',
 );
 
@@ -34,6 +34,8 @@ test('canonical Nexus not-found result validates with every persisted field abse
 test('Nexus endpoint performs one bounded deterministic persisted read with phone presence only', () => {
   assert.match(routeSource, /\.select\("id,seller_lead_id,owner_name,property_address,primary_phone,contact_confidence_score,provider,status,updated_at"\)/);
   assert.match(routeSource, /\.eq\("seller_lead_id", args\.sellerLeadId\)/);
+  assert.match(routeSource, /\.from\("deal_leads"\)[\s\S]*\.eq\("id", dealId\)[\s\S]*\.limit\(1\)[\s\S]*\.maybeSingle\(\)/);
+  assert.match(routeSource, /if \(!lookup\.sellerLeadId && !lookup\.ownerName && !lookup\.propertyAddress\) return notFoundResult\(\)/);
   assert.match(routeSource, /\.ilike\("owner_name", exactIlike\(args\.ownerName\)\)/);
   assert.match(routeSource, /\.ilike\("property_address", exactIlike\(args\.propertyAddress\)\)/);
   assert.match(routeSource, /\.order\("updated_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: false \}\)/);
@@ -42,6 +44,7 @@ test('Nexus endpoint performs one bounded deterministic persisted read with phon
   assert.doesNotMatch(routeSource, /primary_email|raw_response|raw_skiptrace_response/);
   assert.doesNotMatch(routeSource, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
   assert.doesNotMatch(routeSource, /tracerfy|fetch\(/i);
+  assert.doesNotMatch(routeSource, /contact\?\.owner_name\?\.trim\(\) \|\| \(hasOwnerName/);
 });
 
 test('Nexus migration removes browser-role policy and table grants', () => {

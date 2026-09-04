@@ -65,6 +65,25 @@ test('Buyer adapter transport is bounded and rejects oversized/malformed respons
   await assert.rejects(adapters.buyerProfiles({ workspaceId:'buyer-ws', limit:5, signal:null }), /malformed JSON/);
 });
 
+test('Buyer match execution carries an explicit deal identifier to the canonical adapter', async () => {
+  const created = task('Find buyers for deal DE-2417.');
+  let received = null;
+  const result = await processTask(created, {
+    capabilityOptions: {
+      adapters: {
+        buyerProfiles: async (input) => {
+          received = input;
+          return { matches: [{ ...canonicalMatches[0], opportunityId: 'DE-2417' }], sourceSnapshotAt: '2026-09-02T00:00:00.000Z' };
+        },
+      },
+    },
+  });
+  assert.equal(result.status, 'completed');
+  assert.equal(received.opportunityId, 'DE-2417');
+  assert.equal(received.matchesOnly, true);
+  assert.equal(received.limit, 5);
+});
+
 test('Buyer capability requires buyer read permission', async () => {
   const created = task('Find buyers without permission.');
   run("UPDATE auth_workspace_grants SET permissions='[\"task.create\",\"task.execute\",\"task.read\",\"workspace.read\"]' WHERE id='buyer-grant'");
