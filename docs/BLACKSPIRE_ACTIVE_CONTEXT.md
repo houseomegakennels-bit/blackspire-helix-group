@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-04 — Activation recovery delta
+
+Release implementation remains `df8c87c68868da1e980b8206ef65ee14a5c69047`; existing PR #125 was freshly OPEN/MERGEABLE with all five CI/Vercel contexts successful at that exact head. Main remains `53adf74e05c607c0d296923bae05d7ac023ecb57`; merge and deployment remain held. Auth's authenticated upstream probe confirms HTTP 402 `exceed_storage_size_quota`; Supabase management confirms the production organization is on the Free plan. Account-owner subscription action is required.
+
+A fresh canonical SQLite snapshot, `command-20260904T234621Z.sqlite`, was created using the reviewed backup script with a sanitized environment and Node 22.23.1. Both canonical units had MainPID zero and remained failed, with unchanged restart counts; no process held the database or its WAL/SHM files open. Independent verification passed checksum, integrity, freshness, and schema compatibility. This closes the fresh local snapshot gap only: Supabase recovery, current external n8n writer identity, private provider authentication, operator password, runtime identity/configuration, division grants/transports, and a healthy functional rollback remain unresolved. No source database, service configuration, migration, release pointer, or deployment changed.
+
 ## 2026-09-04 — ZOLA production release candidate validated
 
 Branch `release/zola-production-live` starts at the Nexus merge `53adf74e05c607c0d296923bae05d7ac023ecb57` and carries verified implementation `eed4f641fdc44b7ae88b0353b3c77a8df227211d`. Seller, Buyer, Deal, and Nexus reads now route through the existing Hermes capability authority path; operator-facing frontend routes are authenticated; Nexus remains persisted-read-only and redacted; the Telegram webhook fails closed; and dependency audits are clean. Focused validation passed 100/100, and the trusted lane passed 1,278 with zero failures, nine expected skips, natural exit, and zero remaining descendants. Root/frontend lint, typecheck, production builds, security scans, audits, and whitespace checks passed.
