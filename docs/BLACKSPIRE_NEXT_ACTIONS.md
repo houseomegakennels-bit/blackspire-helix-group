@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## ZOLA production-live critical path (2026-09-04 UTC)
+
+1. Push `release/zola-production-live` only at the final canonical-memory head following verified implementation `eed4f641fdc44b7ae88b0353b3c77a8df227211d`; create an exact-head PR to `main`, require green CI/Vercel checks, review the final GitHub diff, and merge only with the expected-head guard.
+2. Configure the real Vercel `frontend` production target with its public Supabase URL and anon/publishable key. Never substitute the service-role key. Verify `/auth` no longer reports missing configuration before attempting login.
+3. Authenticate to the exact Supabase project and apply the timestamped Nexus RLS migration through the repository-supported migration path; verify browser roles cannot read `nexus_contacts` while the service-role internal endpoint still can.
+4. Before VPS activation, record the merged release SHA and current `608b10fd233a5a2a94fd0ce4cc03d73894c5694d` target, take a verified database backup, create the operator-owned `COMMAND_ADMIN_PASSWORD_HASH`, restore a healthy private service Codex authentication state, install the reviewed split API/worker units and environment boundary, and add the six minimum capability read grants through the append-only grant chain.
+5. Deploy only the exact merged SHA through the immutable-release/Gate 4 mechanism. Require generation-fenced health/readiness before cutover, then run authenticated Seller, Buyer profile, Buyer match, Deal records, Deal analysis, Nexus, PWA, and configured integration smoke tests. Roll back immediately on a P0; do not call a paid Nexus provider or send outreach.
+
 ## ZOLA critical path (2026-08-31 UTC)
 
 1. NEXT — branch `fix/pr120-p2s-660dfb` contains the locally validated PR #120 candidate through implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf`, followed only by the canonical-memory checkpoint. All 16 review topics are fixed or superseded in the local tree; remote PR head `660dfb63444069c734dcff50415cb84c4fd919b6` lacks the three latest P2 corrections. Nothing is pushed. The single next action is operator authorization to push the final local candidate SHA, followed by fresh exact-head CI and independent remote review.

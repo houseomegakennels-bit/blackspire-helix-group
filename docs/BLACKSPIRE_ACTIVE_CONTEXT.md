@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-04 — ZOLA production release candidate validated
+
+Branch `release/zola-production-live` starts at the Nexus merge `53adf74e05c607c0d296923bae05d7ac023ecb57` and carries verified implementation `eed4f641fdc44b7ae88b0353b3c77a8df227211d`. Seller, Buyer, Deal, and Nexus reads now route through the existing Hermes capability authority path; operator-facing frontend routes are authenticated; Nexus remains persisted-read-only and redacted; the Telegram webhook fails closed; and dependency audits are clean. Focused validation passed 100/100, and the trusted lane passed 1,278 with zero failures, nine expected skips, natural exit, and zero remaining descendants. Root/frontend lint, typecheck, production builds, security scans, audits, and whitespace checks passed.
+
+The next step is an exact-head release PR and green CI. Production activation remains blocked at external configuration boundaries: the Vercel frontend lacks its Supabase browser key, no authenticated Supabase production migration path is available, and the VPS lacks the operator-created API password hash plus a healthy private Codex authentication state. Do not invent these values, copy service-role material into the browser, apply the RLS migration through an unverified target, or activate the failed canonical services. Preserve `608b10fd233a5a2a94fd0ce4cc03d73894c5694d` as the recorded previous production SHA while treating it as an unproven rollback target.
+
 ## 2026-09-01 — PR #120 local P2 candidate complete
 
 Local implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf` closes the three exact-head P2 findings after remote `660dfb63444069c734dcff50415cb84c4fd919b6`: Gate 4 rejects worker membership in the API credential group by numeric GID, current iPhone instructions preserve the shared/API-only environment split, and the PWA reports 503 saturation as credential-neutral temporary unavailability. Behavioral Gate4 and PWA mutations were load-bearing. The Node 22.23.1 trusted lane and secondary source gates are clean; installed production units remain older than the candidate and were not modified. A following canonical-memory commit records this verified checkpoint. Nothing is pushed, merged, deployed, or production-verified at the new local head.
