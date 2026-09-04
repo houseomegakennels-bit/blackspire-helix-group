@@ -128,17 +128,24 @@ export async function executeRegisteredCapability(task, workspace, {
 
   const controller = new AbortController();
   let abortedBySignal = false;
-  let cooperativeAbortHandled = false;
-  const abort = () => controller.abort();
-  signal?.addEventListener?.('abort', () => { abortedBySignal = true; controller.abort(); }, { once: true });
-  const timer = setTimeout(() => { controller.abort(); }, capability.timeoutMs);
+  let timedOut = false;
+  const abort = () => { abortedBySignal = true; controller.abort(); };
+  let rejectOnAbort;
+  const aborted = new Promise((_, reject) => {
+    rejectOnAbort = () => reject(abortionError());
+    controller.signal.addEventListener('abort', rejectOnAbort, { once: true });
+  });
+  if (signal?.aborted) abort();
+  else signal?.addEventListener?.('abort', abort, { once: true });
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, capability.timeoutMs);
   registerTaskAbortController(task.id, controller);
   try {
     beforeAdapter?.();
     if (!ownsTask(task.id, ownership)) throw ownershipError();
     if (getFlag('emergency_stop') === 'active' || getTask(task.id)?.status === 'cancelled') throw cancellationError();
     recordTaskEvent(task.id, 'capability.dispatch_started', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
-    const raw = await capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput);
+    const execution = Promise.resolve().then(() => capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput));
+    const raw = await Promise.race([execution, aborted]);
     if (abortedBySignal) {
       recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'aborted_non_cooperative' });
       try { finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Non-cooperative adapter returned despite abort signal', responsePacket: { discarded: true } }); } catch { /* already terminal */ }
@@ -186,7 +193,13 @@ export async function executeRegisteredCapability(task, workspace, {
       if (!ownsTask(task.id, ownership)) return transition(task.id, 'cancelled', { error: 'Capability execution cancelled', current_stage: 'cancelled' }, null);
       return transition(task.id, 'cancelled', { error: 'Capability execution cancelled', current_stage: 'cancelled' }, ownership);
     }
-    if (error?.code === 'ABORTED' || (abortedBySignal && !cooperativeAbortHandled)) {
+    if (timedOut) {
+      finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch timed out; outcome unknown' });
+      recordEvidence(task.id, 'capability_timeout', { capabilityId: capability.id, attemptId: dispatch.attempt.id, timeoutMs: capability.timeoutMs });
+      recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'hard_timeout' });
+      return transition(task.id, 'outcome_unknown', { error: 'Capability dispatch timed out; outcome unknown; automatic replay refused', current_stage: 'operator_intervention' }, ownership);
+    }
+    if (error?.code === 'ABORTED' || abortedBySignal) {
       finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Capability dispatch aborted; late result discarded' });
       recordEvidence(task.id, 'capability_late_response_ignored', { capabilityId: capability.id, attemptId: dispatch.attempt.id, reason: 'non_cooperative_abort' });
       return transition(task.id, 'failed', { error: 'Capability dispatch aborted; late result discarded', current_stage: 'cancelled' }, ownership);
@@ -197,12 +210,14 @@ export async function executeRegisteredCapability(task, workspace, {
   } finally {
     clearTimeout(timer);
     unregisterTaskAbortController(task.id);
+    controller.signal.removeEventListener('abort', rejectOnAbort);
     signal?.removeEventListener?.('abort', abort);
   }
 }
 
 function cancellationError() { const error = new Error('capability execution cancelled'); error.code = 'CAPABILITY_CANCELLED'; return error; }
 function ownershipError() { const error = new Error('capability task ownership lost'); error.code = 'CAPABILITY_OWNERSHIP_LOST'; return error; }
+function abortionError() { const error = new Error('capability execution aborted'); error.code = 'ABORTED'; return error; }
 function ownsTask(taskId, ownership) {
   if (!ownership) return true;
   const current = getTask(taskId);
