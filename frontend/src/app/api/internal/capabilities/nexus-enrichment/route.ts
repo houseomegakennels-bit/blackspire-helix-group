@@ -9,12 +9,11 @@ import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
 export const dynamic = "force-dynamic";
 
 type NexusContactRow = {
+  id: string;
   seller_lead_id: string | null;
-  owner_name: string;
-  property_address: string;
-  mailing_address: string | null;
+  owner_name: string | null;
+  property_address: string | null;
   primary_phone: string | null;
-  primary_email: string | null;
   contact_confidence_score: number | null;
   provider: string | null;
   status: string | null;
@@ -28,28 +27,29 @@ function getSupabaseAdmin(): SupabaseClient | null {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-function normalizeMatch(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+function exactIlike(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
 }
 
-function findStoredContact(
-  contacts: NexusContactRow[],
+async function findStoredContact(
+  supabase: SupabaseClient,
   args: { sellerLeadId?: string | null; ownerName?: string | null; propertyAddress?: string | null },
-): NexusContactRow | null {
+): Promise<{ contact: NexusContactRow | null; failed: boolean }> {
+  let query = supabase
+    .from("nexus_contacts")
+    .select("id,seller_lead_id,owner_name,property_address,primary_phone,contact_confidence_score,provider,status,updated_at")
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: false });
+
   if (args.sellerLeadId) {
-    const found = contacts.find((c) => c.seller_lead_id === args.sellerLeadId);
-    if (found) return found;
+    query = query.eq("seller_lead_id", args.sellerLeadId);
+  } else {
+    if (args.ownerName) query = query.ilike("owner_name", exactIlike(args.ownerName));
+    if (args.propertyAddress) query = query.ilike("property_address", exactIlike(args.propertyAddress));
   }
-  if (args.ownerName && args.propertyAddress) {
-    return (
-      contacts.find(
-        (c) =>
-          normalizeMatch(c.owner_name) === normalizeMatch(args.ownerName!) &&
-          normalizeMatch(c.property_address) === normalizeMatch(args.propertyAddress!),
-      ) ?? null
-    );
-  }
-  return null;
+
+  const { data, error } = await query.limit(1).maybeSingle();
+  return { contact: error ? null : (data as NexusContactRow | null), failed: Boolean(error) };
 }
 
 export async function POST(request: NextRequest) {
@@ -80,33 +80,12 @@ export async function POST(request: NextRequest) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ ok: false, error: "Nexus capability unavailable" }, { status: 503 });
 
-  const { data: contacts, error } = await supabase
-    .from("nexus_contacts")
-    .select("seller_lead_id,owner_name,property_address,mailing_address,contact_confidence_score,provider,status,updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(500);
-
-  if (error || !contacts?.length) {
-    return NextResponse.json(
-      {
-        ownerName: hasOwnerName ? String(input.ownerName).trim() : null,
-        propertyAddress: hasPropertyAddress ? String(input.propertyAddress).trim() : null,
-        skipTraceStatus: null,
-        phoneStatus: null,
-        contactConfidenceScore: null,
-        provider: null,
-        source: null,
-        updatedAt: null,
-        sourceSnapshotAt: new Date().toISOString(),
-      },
-    );
-  }
-
-  const contact = findStoredContact(contacts as NexusContactRow[], {
+  const { contact, failed } = await findStoredContact(supabase, {
     sellerLeadId: hasSellerLeadId ? String(input.sellerLeadId).trim() : null,
     ownerName: hasOwnerName ? String(input.ownerName).trim() : null,
     propertyAddress: hasPropertyAddress ? String(input.propertyAddress).trim() : null,
   });
+  if (failed) return NextResponse.json({ ok: false, error: "Nexus capability unavailable" }, { status: 503 });
 
   const primaryPhone = contact?.primary_phone?.trim() || null;
   const phoneStatus = primaryPhone ? "Trace Complete" : contact ? "Partial Match" : null;

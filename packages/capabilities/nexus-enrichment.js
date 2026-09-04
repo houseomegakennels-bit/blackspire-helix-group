@@ -53,9 +53,9 @@ function output(raw) {
     contactConfidenceScore = score;
   }
   return Object.freeze({
-    ownerName: boundedText(raw.ownerName, 'ownerName'),
-    propertyAddress: boundedText(raw.propertyAddress, 'propertyAddress'),
-    skipTraceStatus: boundedText(raw.skipTraceStatus, 'skipTraceStatus'),
+    ownerName: boundedText(raw.ownerName, 'ownerName', { nullable: true }),
+    propertyAddress: boundedText(raw.propertyAddress, 'propertyAddress', { nullable: true }),
+    skipTraceStatus: boundedText(raw.skipTraceStatus, 'skipTraceStatus', { nullable: true }),
     phoneStatus: boundedText(raw.phoneStatus, 'phoneStatus', { nullable: true }),
     contactConfidenceScore,
     provider: boundedText(raw.provider, 'provider', { nullable: true }),
