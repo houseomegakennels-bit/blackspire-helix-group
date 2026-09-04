@@ -347,7 +347,7 @@ test('duplicate execution and uncertain recovery never replay a capability dispa
 });
 
 test('cancelled late completion is absorbing and does not disclose results', async () => {
-  const created = task('Show nexus enrichment with a cancellation race.'); let release;
+  const created = task('Show nexus enrichment for 101 Oak St Winston-Salem NC 27101 with a cancellation race.'); let release;
   const pending = processTask(created, {
     capabilityOptions: {
       adapters: {
@@ -363,7 +363,7 @@ test('cancelled late completion is absorbing and does not disclose results', asy
 });
 
 test('worker ownership substitution during dispatch discards the capability result', async () => {
-  const created = task('Show nexus enrichment with an ownership race.');
+  const created = task('Show nexus enrichment for 101 Oak St Winston-Salem NC 27101 with an ownership race.');
   run("UPDATE tasks SET status='running',worker_id='worker-a',claim_token='claim-a' WHERE id=?", [created.id]);
   const owned = getTask(created.id);
   const result = await processTask(owned, {
@@ -385,7 +385,7 @@ test('worker ownership substitution during dispatch discards the capability resu
 test('emergency stop before dispatch prevents adapter call', async () => {
   let called = false;
   setFlag('emergency_stop', 'inactive');
-  const created = task('Show nexus enrichment with emergency stop.');
+  const created = task('Show nexus enrichment for 101 Oak St Winston-Salem NC 27101 with emergency stop.');
   setFlag('emergency_stop', 'active');
   const result = await processTask(created, {
     capabilityOptions: {
@@ -402,7 +402,7 @@ test('emergency stop before dispatch prevents adapter call', async () => {
 test('emergency stop mid-flight discards late result', async () => {
   let release;
   setFlag('emergency_stop', 'inactive');
-  const created = task('Show nexus enrichment with mid-flight emergency.');
+  const created = task('Show nexus enrichment for 101 Oak St Winston-Salem NC 27101 with mid-flight emergency.');
   const pending = processTask(created, {
     capabilityOptions: {
       adapters: {
