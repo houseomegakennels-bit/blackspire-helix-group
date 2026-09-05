@@ -4,7 +4,7 @@ import { rebuildReceivers } from '../scripts/zola-receiver-rebuild.mjs';
 const MAIN = '53adf74e05c607c0d296923bae05d7ac023ecb57';
 const PREVIEW = 'a'.repeat(40);
 const SECRET = 'test-only-never-log-this-secret';
-function harness({ drift = false, productionDrift = false, canceled = false, badIdentity = false, badProbe = false, badNegative = false, thrown = false, prebuilt = false, badProof = false } = {}) {
+function harness({ drift = false, productionDrift = false, canceled = false, badIdentity = false, badProbe = false, badNegative = false, thrown = false, prebuilt = false, badProof = false, blocked = false } = {}) {
   const writes = [], emitted = [];
   let current;
   const fetchImpl = async (url, options) => {
@@ -26,7 +26,7 @@ function harness({ drift = false, productionDrift = false, canceled = false, bad
         target: body.target ?? null, url: 'frontend-test.vercel.app', readyState: 'BUILDING' };
       return Response.json({ ...current, ...(badIdentity ? { gitSource: { ...body.gitSource, sha: 'b'.repeat(40) } } : {}) });
     }
-    return Response.json({ ...current, readyState: canceled ? 'CANCELED' : 'READY' });
+    return Response.json({ ...current, readyState: blocked ? 'BLOCKED' : canceled ? 'CANCELED' : 'READY' });
   };
   return { writes, emitted, run: () => rebuildReceivers({ vercelToken: SECRET, capabilityToken: SECRET,
     githubToken: SECRET, previewSha: PREVIEW, fetchImpl,
@@ -78,4 +78,10 @@ test('prebuilt source and digest identity are required before production', async
   const good = harness({ prebuilt: true }); assert.equal((await good.run()).status, 'READY'); assert.equal(good.writes.length, 2);
   const bad = harness({ prebuilt: true, badProof: true });
   assert.equal((await bad.run()).status, 'DEPLOYMENT IDENTITY MISMATCH'); assert.equal(bad.writes.length, 1);
+});
+
+test('blocked prebuilt deployment retains identity and stops before production', async () => {
+  const h = harness({ prebuilt: true, blocked: true }); const result = await h.run();
+  assert.equal(result.status, 'DEPLOYMENT BLOCKED'); assert.equal(h.writes.length, 1);
+  assert.equal(result.deployments[0].id, 'dpl_prebuilt1');
 });

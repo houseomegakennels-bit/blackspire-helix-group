@@ -86,7 +86,7 @@ export async function rebuildReceivers({ vercelToken, capabilityToken, githubTok
         value = await request(vercel(`/v13/deployments/${id}`), vercelToken);
         identity(value, sha, target, id, proof);
         if (value.readyState === 'READY') { ready = true; break; }
-        if (['ERROR', 'CANCELED'].includes(value.readyState)) fail(`DEPLOYMENT ${value.readyState}`);
+        if (['ERROR', 'CANCELED', 'BLOCKED'].includes(value.readyState)) fail(`DEPLOYMENT ${value.readyState}`);
         if (!['QUEUED', 'INITIALIZING', 'BUILDING'].includes(value.readyState)) fail('UNKNOWN DEPLOYMENT STATE');
         await sleep(3000);
       }

@@ -93,9 +93,15 @@ export function makePrebuiltCreator({ root, tempRoot, cliPath, vercelToken, run 
     const version = await command(cliPath, ['--version'], root, cleanEnv, 'version');
     if (!version.includes(VERSION)) throw new PrebuiltError('CLI VERSION MISMATCH');
     const cwd = path.join(privateDir, 'source');
-    await command('git', ['worktree', 'add', '--detach', cwd, sha], root, cleanEnv, 'checkout');
+    // CLI provenance discovery expects .git/config; linked worktrees have a .git
+    // file and lose the genuine public repository origin in CLI metadata.
+    await command('git', ['clone', '--no-hardlinks', '--no-checkout', root, cwd], root, cleanEnv, 'clone');
+    await command('git', ['remote', 'set-url', 'origin', 'https://github.com/houseomegakennels-bit/blackspire-helix-group.git'], cwd, cleanEnv, 'origin');
+    await command('git', ['checkout', '--detach', sha], cwd, cleanEnv, 'checkout');
     const verifySource = async () => {
       if (await command('git', ['rev-parse', 'HEAD'], cwd, cleanEnv, 'source') !== sha) throw new PrebuiltError('SOURCE SHA MISMATCH');
+      if (await command('git', ['config', '--get', 'remote.origin.url'], cwd, cleanEnv, 'source-origin') !==
+          'https://github.com/houseomegakennels-bit/blackspire-helix-group.git') throw new PrebuiltError('SOURCE ORIGIN MISMATCH');
       await command('git', ['diff', '--exit-code', 'HEAD', '--'], cwd, cleanEnv, 'source-clean');
     };
     await verifySource();
@@ -121,7 +127,7 @@ export function makePrebuiltCreator({ root, tempRoot, cliPath, vercelToken, run 
     if (await digest(output) !== artifactSha256) throw new PrebuiltError('ARTIFACT CHANGED');
     // Persist a nonsecret lookup key before upload; never retry an uncertain create.
     emit({ status: 'UPLOAD STARTING', sha, target, artifactSha256 });
-    const args = ['deploy', '--prebuilt', '--yes', ...(target === 'production' ? ['--prod'] : []),
+    const args = ['deploy', '--prebuilt', '--yes', '--no-wait', ...(target === 'production' ? ['--prod'] : []),
       '--meta', `githubCommitSha=${sha}`, '--meta', `githubCommitRef=${target === 'production' ? 'main' : BRANCH}`,
       '--meta', `zolaSourceSha=${sha}`, '--meta', `zolaArtifactSha256=${artifactSha256}`];
     const result = await command(cliPath, args, cwd, env, 'upload');

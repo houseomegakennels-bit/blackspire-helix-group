@@ -15,6 +15,7 @@ async function fixture(t, { drift = false, changed = false, uncertain = false } 
     calls.push({ file, args, env: options.env });
     assert.ok(!args.some((arg) => arg.includes(SECRET)));
     if (args[0] === '--version') return '59.11.7';
+    if (args[0] === 'config') return 'https://github.com/houseomegakennels-bit/blackspire-helix-group.git';
     if (args[0] === 'rev-parse') return drift ? 'b'.repeat(40) : MAIN;
     if (args[0] === 'pull') {
       await fs.writeFile(path.join(options.cwd, '.vercel/project.json'), JSON.stringify({ projectId: 'prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou', orgId: 'team_CaRyRaulJaFnCLSfTdyRYNIW', settings: { rootDirectory: 'frontend' } }));
@@ -24,6 +25,7 @@ async function fixture(t, { drift = false, changed = false, uncertain = false } 
       assert.equal(project.settings.installCommand, '');
     }
     if (args[0] === 'deploy') {
+      assert.ok(args.includes('--no-wait'));
       assert.ok(emitted.some(x => x.status === 'UPLOAD STARTING'));
       if (uncertain) throw new Error(SECRET);
       return 'https://synthetic.vercel.app';
@@ -40,7 +42,9 @@ test('prebuilt installs without credentials then builds isolated exact source an
   const deps = h.calls.find((x) => x.file === 'npm');
   assert.equal(deps.env.VERCEL_TOKEN, undefined);
   assert.equal(deps.env.UNRELATED_SECRET, undefined);
-  assert.ok(h.calls.some((x) => x.args?.slice(0, 3).join(' ') === 'worktree add --detach'));
+  assert.ok(h.calls.some((x) => x.args?.slice(0, 3).join(' ') === 'clone --no-hardlinks --no-checkout'));
+  assert.ok(h.calls.some((x) => x.args?.join(' ') === 'remote set-url origin https://github.com/houseomegakennels-bit/blackspire-helix-group.git'));
+  assert.ok(h.calls.some((x) => x.args?.join(' ') === `checkout --detach ${MAIN}`));
   assert.ok(h.calls.findIndex((x) => x.file === 'fence') < h.calls.findIndex((x) => x.args?.[0] === 'deploy'));
   assert.equal(result.proof.sourceSha, MAIN);
   assert.equal(JSON.stringify(h.emitted).includes(SECRET), false);

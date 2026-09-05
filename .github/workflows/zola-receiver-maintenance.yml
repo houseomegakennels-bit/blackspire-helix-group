@@ -44,10 +44,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/zola-receiver-rebuild.mjs
       - name: Install pinned CLI for the reviewed prebuilt transition
-        if: github.event.before == 'a487d9da739f8b4018113b7e3229e360e2d7c6ec'
+        if: github.event.before == '8ffc7b261ac2c4c98e544de473c8316b8bbd75ad'
         run: npm install --prefix "$RUNNER_TEMP/zola-vercel-cli" --ignore-scripts --no-audit --no-fund vercel@59.11.7
       - name: Build and verify exact sources with the supported prebuilt workflow
-        if: github.event.before == 'a487d9da739f8b4018113b7e3229e360e2d7c6ec'
+        if: github.event.before == '8ffc7b261ac2c4c98e544de473c8316b8bbd75ad'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           ZOLA_CAPABILITY_TOKEN: ${{ secrets.ZOLA_CAPABILITY_TOKEN }}
