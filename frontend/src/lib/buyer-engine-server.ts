@@ -1275,6 +1275,7 @@ export async function listBuyerProfilesForCapability(input: BuyerCapabilityProfi
     .from("BuyerProfile")
     .select("id,buyer_name,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,last_purchase_date,property_types,score")
     .order("purchase_count", { ascending: false, nullsFirst: false })
+    .order("id", { ascending: true })
     .limit(input.limit);
   if (input.buyerName) query = query.ilike("buyer_name", `%${input.buyerName.replace(/[\\%_]/g, "\\$&")}%`);
   if (input.county) query = query.ilike("county", `%${normalizeCountyName(input.county)}%`);

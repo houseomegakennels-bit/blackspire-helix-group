@@ -1,0 +1,33 @@
+name: ZOLA receiver audit
+
+on:
+  push:
+    branches: [release/zola-production-live]
+    paths:
+      - .github/workflows/zola-receiver-maintenance.yml
+      - scripts/zola-receiver-maintenance.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zola-receiver-maintenance
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.repository == 'houseomegakennels-bit/blackspire-helix-group' && github.ref == 'refs/heads/release/zola-production-live'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+      - name: Audit receiver settings without disclosing values
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ZOLA_CAPABILITY_TOKEN: ${{ secrets.ZOLA_CAPABILITY_TOKEN }}
+        run: node scripts/zola-receiver-maintenance.mjs

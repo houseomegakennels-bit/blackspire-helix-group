@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## ZOLA continuation critical path (2026-09-05 UTC)
+
+1. Local trusted validation and independent review pass for the narrow Deal exact-ID/failure and Buyer deterministic-limit corrections; push only the existing release branch/PR #125, then verify exact-head CI and the new audit-only receiver workflow. If the existing runner Vercel credential works, parent can synchronize the two receiver settings and rebuild pinned deployments without requiring new user access. Audit equality alone is not deployed receiver acceptance.
+2. Owner clears the Supabase organization quota and securely makes recovery evidence or DB access available. Owner completes `sudo /var/lib/blackspire-operator/login-codex` on the canonical VPS. Owner supplies management access to the actual current n8n Buyer workflow or authoritative successor. Recheck Auth and both provider-role paths, establish recovery and protected writer identity before the two reviewed security migrations.
+3. Preserve split API/worker preparation and six grants. Unchanged current-main cannot pass all six rollback reads (missing Buyer receiver and dropped match arguments); prepare a minimal recovery patch and obtain an explicit target/scope decision before claiming functional rollback. After dependency recovery and that decision, rehearse recovery and refresh backups, activate API then worker with generation-fenced health/readiness, and prove all six bounded reads. Merge #125 only with every gate closed and expected-head protection; deploy the resulting same SHA to frontend/VPS and complete production smoke without outreach or paid Nexus activity.
+
 ## ZOLA activation external gates (2026-09-05 UTC)
 
 1. Supabase organization owner clears storage quota and makes a verifiable recovery point or secure database backup access available. Then re-test authenticated upstream Auth and public auth status; account plan state alone is not health or recovery proof.

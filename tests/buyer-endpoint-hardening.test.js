@@ -26,14 +26,28 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
   const supabase = {
     from(table) {
       let countOnly = false;
+      const orders = [];
+      let limit = Infinity;
       const query = {
         select(_columns, options) { countOnly = options?.head === true; return query; },
-        order() { return query; }, limit() { return query; }, ilike() { return query; }, eq() { return query; }, contains() { return query; },
+        order(column, options) { orders.push({ column, ...options }); return query; },
+        limit(value) { limit = value; return query; },
+        ilike() { return query; }, eq() { return query; }, contains() { return query; },
         then(resolve, reject) {
           reads.push(table);
+          const orderedProfiles = [...profiles].sort((a, b) => {
+            for (const { column, ascending = true, nullsFirst = false } of orders) {
+              const left = a[column]; const right = b[column];
+              if (left === right) continue;
+              if (left == null) return nullsFirst ? -1 : 1;
+              if (right == null) return nullsFirst ? 1 : -1;
+              return (left < right ? -1 : 1) * (ascending ? 1 : -1);
+            }
+            return 0;
+          }).slice(0, limit);
           return Promise.resolve(table === 'buyer_group_registry'
             ? { data: registry, error: registryError }
-            : countOnly ? { count: profiles.length, error: countError } : { data: profiles, error: profileError }).then(resolve, reject);
+            : countOnly ? { count: profiles.length, error: countError } : { data: orderedProfiles, error: profileError }).then(resolve, reject);
         },
       };
       return query;
@@ -66,6 +80,24 @@ test('Buyer capability profiles reject missing configuration and query failure',
   await assert.rejects(buyerFixture({ enabled: false }).profiles({ limit: 5 }), /unavailable/);
   await assert.rejects(buyerFixture({ profileError: { message: 'synthetic query failure' } }).profiles({ limit: 5 }), /synthetic query failure/);
   assert.equal((await buyerFixture().profiles({ limit: 5 })).length, 0);
+});
+
+test('Buyer capability profile limits select stable IDs across purchase-count ties', async () => {
+  const tied = Array.from({ length: 14 }, (_, index) => ({
+    id: `buyer-${String(index + 1).padStart(2, '0')}`, purchase_count: 3,
+  }));
+  const highest = { id: 'buyer-highest', purchase_count: 9 };
+  const unknown = { id: 'buyer-00', purchase_count: null };
+  const expected = ['buyer-highest', 'buyer-01', 'buyer-02', 'buyer-03'];
+  for (const profiles of [
+    [unknown, ...tied.toReversed(), highest],
+    [...tied.slice(7), highest, ...tied.slice(0, 7), unknown],
+  ]) {
+    const fixture = buyerFixture({ profiles });
+    const result = await fixture.profiles({ limit: 4 });
+    assert.deepEqual(Array.from(result, (row) => row.id), expected);
+    assert.equal(fixture.seedCalls(), 0);
+  }
 });
 
 test('read-only Buyer matching rejects each failed persisted data source', async () => {
