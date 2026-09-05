@@ -63,6 +63,10 @@ test('artifact digest changes for content and rejects external symlinks', async 
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.writeFile(path.join(root, 'index'), 'first'); const first = await artifactDigest(root);
   await fs.writeFile(path.join(root, 'index'), 'second'); assert.notEqual(await artifactDigest(root), first);
+  await fs.symlink('index', path.join(root, 'internal'));
+  const withLink = await artifactDigest(root);
+  await fs.writeFile(path.join(root, 'index'), 'third');
+  assert.notEqual(await artifactDigest(root), withLink);
   await fs.symlink('/etc/passwd', path.join(root, 'external'));
   await assert.rejects(artifactDigest(root), /SELF CONTAINED/);
 });

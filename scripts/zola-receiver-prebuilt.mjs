@@ -40,6 +40,7 @@ export async function privateCommand(file, args, { cwd, env, log, timeout = 6000
 // --standalone ensures uploaded content is self-contained. Refuse external links.
 export async function artifactDigest(root) {
   const hash = createHash('sha256');
+  const canonicalRoot = await fs.realpath(root);
   let count = 0;
   async function walk(relative) {
     for (const name of (await fs.readdir(path.join(root, relative))).sort()) {
@@ -52,6 +53,13 @@ export async function artifactDigest(root) {
         hash.update(String(info.size)); hash.update('\0');
         const file = await fs.open(full, 'r');
         try { for await (const chunk of file.createReadStream()) hash.update(chunk); } finally { await file.close(); }
+      } else if (info.isSymbolicLink()) {
+        const link = await fs.readlink(full);
+        const resolved = await fs.realpath(full);
+        if (path.isAbsolute(link)) throw new PrebuiltError('ARTIFACT MUST BE SELF CONTAINED: ABSOLUTE LINK');
+        if (!resolved.startsWith(`${canonicalRoot}${path.sep}`)) throw new PrebuiltError('ARTIFACT MUST BE SELF CONTAINED: EXTERNAL LINK');
+        // Internal targets are hashed at their own path; also bind link identity.
+        hash.update(`link\0${link}\0`);
       } else throw new PrebuiltError('ARTIFACT MUST BE SELF CONTAINED');
     }
   }
