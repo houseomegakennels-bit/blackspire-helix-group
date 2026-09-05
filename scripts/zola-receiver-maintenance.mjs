@@ -11,12 +11,13 @@ class AuditError extends Error {}
 
 // Official API schemas: vercel/sdk src/funcs/projectsFilterProjectEnvs.ts and
 // projectsGetProjectEnv.ts. List encrypted metadata; decrypt only these two keys.
-async function requestJson(path, token, fetchImpl) {
+async function requestJson(path, token, fetchImpl, { method = 'GET', body } = {}) {
   const url = new URL(path, 'https://api.vercel.com');
   url.searchParams.set('teamId', TEAM);
   const response = await fetchImpl(url, {
-    method: 'GET', redirect: 'error', signal: AbortSignal.timeout(15000),
-    headers: { Authorization: `Bearer ${token}` },
+    method, redirect: 'error', signal: AbortSignal.timeout(15000),
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if ([401, 403].includes(response.status)) throw new AuditError('ACCESS REQUIRED');
   if (!response.ok) throw new AuditError('API REQUEST FAILED');
@@ -80,8 +81,53 @@ export async function auditReceiver({ vercelToken, capabilityToken, fetchImpl = 
   }
 }
 
+// Explicit activation operation: never replace an existing value or expand a scope.
+// A failed/uncertain POST stops here. A later operator run first re-reads all state,
+// so it can preserve successful desired rows without replaying an uncertain write.
+export async function provisionMissingReceiver(options) {
+  const before = await auditReceiver(options);
+  if (!before.scopes) return before;
+  const required = before.scopes.filter(({ scope }) => scope !== 'preview');
+  if (required.some(({ keys }) => keys.some(({ status }) => !['READY', 'MISSING'].includes(status)))) {
+    return { status: 'EXISTING CONFIGURATION CONFLICT' };
+  }
+  let created = 0;
+  try {
+    for (const { scope, keys } of required) {
+      for (const { key, status } of keys) {
+        if (status === 'READY') continue;
+        const result = await requestJson(`/v10/projects/${PROJECT}/env`, options.vercelToken, options.fetchImpl ?? fetch, {
+          method: 'POST',
+          body: { key, value: key === KEYS[0] ? options.capabilityToken.trim() : WORKSPACE,
+            type: key === KEYS[0] ? 'encrypted' : 'plain',
+            target: [scope === 'production' ? 'production' : 'preview'],
+            ...(scope === BRANCH ? { gitBranch: BRANCH } : {}) },
+        });
+        if (!Array.isArray(result.failed) || result.failed.length) throw new AuditError('CREATE NOT CONFIRMED');
+        const entries = Array.isArray(result.created) ? result.created : [result.created];
+        const record = entries[0];
+        if (entries.length !== 1 || !record || typeof record.id !== 'string' ||
+            !/^[A-Za-z0-9_-]{1,128}$/.test(record.id) || record.key !== key ||
+            !Array.isArray(record.target) || record.target.length !== 1 ||
+            record.target[0] !== (scope === 'production' ? 'production' : 'preview') ||
+            (record.gitBranch ?? null) !== (scope === BRANCH ? BRANCH : null)) {
+          throw new AuditError('CREATE NOT CONFIRMED');
+        }
+        created += 1;
+      }
+    }
+    return { ...(await auditReceiver(options)), created };
+  } catch (error) {
+    return { status: error instanceof AuditError ? error.message : 'REQUEST FAILED', created,
+      nextAction: 'RE-AUDIT BEFORE ANY RETRY; NO DEPLOYMENT' };
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const report = await auditReceiver({ vercelToken: process.env.VERCEL_TOKEN, capabilityToken: process.env.ZOLA_CAPABILITY_TOKEN });
+  const action = process.env.ZOLA_RECEIVER_ACTION ?? 'audit';
+  const options = { vercelToken: process.env.VERCEL_TOKEN, capabilityToken: process.env.ZOLA_CAPABILITY_TOKEN };
+  const report = action === 'provision-missing' ? await provisionMissingReceiver(options)
+    : action === 'audit' ? await auditReceiver(options) : { status: 'INVALID ACTION' };
   process.stdout.write(`${JSON.stringify(report)}\n`);
   if (report.status !== 'READY') process.exitCode = 1;
 }

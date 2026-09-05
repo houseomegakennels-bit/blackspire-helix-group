@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { auditReceiver } from '../scripts/zola-receiver-maintenance.mjs';
+import { auditReceiver, provisionMissingReceiver } from '../scripts/zola-receiver-maintenance.mjs';
 
 const secret = 'test-only-capability-credential-'.repeat(2);
 const tokenKey = 'BLACKSPIRE_CAPABILITY_TOKEN';
@@ -56,6 +56,80 @@ test('transport failures, invalid JSON, and oversized responses remain sanitized
     assert.notEqual(report.status, 'READY');
     assert.ok(!JSON.stringify(report).includes(secret));
   }
+});
+
+function mutableFixture({ initial = [], failAt = 0, lostResponseAt = 0, malformedResponse = false } = {}) {
+  const records = initial.map((row) => ({ ...row }));
+  const writes = [];
+  const fetchImpl = async (url, options) => {
+    assert.equal(url.origin, 'https://api.vercel.com');
+    assert.equal(options.redirect, 'error');
+    if (options.method === 'POST') {
+      const body = JSON.parse(options.body);
+      writes.push(body);
+      if (writes.length === failAt) throw new Error(secret);
+      const row = { ...body, id: `created-${records.length}` };
+      records.push(row);
+      if (writes.length === lostResponseAt) throw new Error(secret);
+      if (malformedResponse) return Response.json({ failed: [] });
+      return Response.json({ created: row, failed: [] });
+    }
+    assert.equal(options.method, 'GET');
+    return Response.json(url.pathname.endsWith('/env')
+      ? { envs: records.map(({ value: _value, ...row }) => row) }
+      : records.find((row) => row.id === url.pathname.split('/').at(-1)));
+  };
+  return { records, writes, fetchImpl };
+}
+const provision = (fetchImpl) => provisionMissingReceiver({ vercelToken: 'test-vercel-credential', capabilityToken: secret, fetchImpl });
+
+test('approved provisioning creates only absent production and release-preview settings', async () => {
+  const fixture = mutableFixture();
+  const result = await provision(fixture.fetchImpl);
+  assert.equal(result.status, 'READY');
+  assert.equal(result.created, 4);
+  assert.deepEqual(fixture.writes.map(({ key, target, gitBranch }) => [key, target, gitBranch]), [
+    [tokenKey, ['production'], undefined], [workspaceKey, ['production'], undefined],
+    [tokenKey, ['preview'], branch], [workspaceKey, ['preview'], branch],
+  ]);
+  assert.ok(!JSON.stringify(result).includes(secret));
+  assert.equal((await provision(fixture.fetchImpl)).created, 0);
+  assert.equal(fixture.writes.length, 4);
+});
+
+test('provisioning refuses existing mismatches before any mutation', async () => {
+  const fixture = mutableFixture({ initial: [{ ...base[0], value: 'different' }] });
+  assert.equal((await provision(fixture.fetchImpl)).status, 'EXISTING CONFIGURATION CONFLICT');
+  assert.equal(fixture.writes.length, 0);
+});
+
+test('uncertain provisioning stops; fresh reconciliation preserves completed desired settings', async () => {
+  const fixture = mutableFixture({ failAt: 2 });
+  const failed = await provision(fixture.fetchImpl);
+  assert.equal(failed.status, 'REQUEST FAILED');
+  assert.equal(fixture.writes.length, 2);
+  assert.ok(!JSON.stringify(failed).includes(secret));
+  const recovered = await provision(fixture.fetchImpl);
+  assert.equal(recovered.status, 'READY');
+  assert.equal(fixture.records.length, 4);
+  assert.equal(fixture.writes.filter(({ key, target }) => key === tokenKey && target[0] === 'production').length, 1);
+});
+
+test('lost create response is reconciled without duplicating the completed write', async () => {
+  const fixture = mutableFixture({ lostResponseAt: 1 });
+  assert.equal((await provision(fixture.fetchImpl)).status, 'REQUEST FAILED');
+  assert.equal(fixture.records.length, 1);
+  assert.equal((await provision(fixture.fetchImpl)).status, 'READY');
+  assert.equal(fixture.records.length, 4);
+  assert.equal(fixture.writes.length, 4);
+});
+
+test('malformed create acknowledgement stops further writes and cannot claim readiness', async () => {
+  const fixture = mutableFixture({ malformedResponse: true });
+  const report = await provision(fixture.fetchImpl);
+  assert.equal(report.status, 'CREATE NOT CONFIRMED');
+  assert.equal(report.created, 0);
+  assert.equal(fixture.writes.length, 1);
 });
 
 
