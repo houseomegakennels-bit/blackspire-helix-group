@@ -69,8 +69,18 @@ export function makePrebuiltCreator({ root, tempRoot, cliPath, vercelToken, run 
     const privateDir = await fs.mkdtemp(path.join(tempRoot, 'zola-prebuilt-'));
     await fs.chmod(privateDir, 0o700);
     const command = async (file, args, cwd, env = cleanEnv, label = 'command') => {
-      try { return await run(file, args, { cwd, env, log: path.join(privateDir, `${++serial}-${label}.log`) }); }
-      catch { throw new PrebuiltError(`PREBUILT ${label.toUpperCase()} FAILED`); }
+      const log = path.join(privateDir, `${++serial}-${label}.log`);
+      emit({ status: 'PREBUILT STEP', target, step: label });
+      try { return await run(file, args, { cwd, env, log }); }
+      catch {
+        const output = await fs.readFile(log, 'utf8').catch(() => '');
+        const signatures = ['ENOENT', 'EACCES', 'ERR_MODULE_NOT_FOUND', 'Cannot find module',
+          'Failed to compile', 'No Next.js version detected', 'Invalid token', 'npm error',
+          'Unable to download', 'not found', 'Root Directory', 'Environment Variables'];
+        emit({ status: 'PREBUILT STEP FAILED', target, step: label,
+          signatures: signatures.filter((value) => output.includes(value)) });
+        throw new PrebuiltError(`PREBUILT ${label.toUpperCase()} FAILED`);
+      }
     };
     const version = await command(cliPath, ['--version'], root, cleanEnv, 'version');
     if (!version.includes(VERSION)) throw new PrebuiltError('CLI VERSION MISMATCH');
@@ -115,8 +125,16 @@ export function makePrebuiltCreator({ root, tempRoot, cliPath, vercelToken, run 
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const emit = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
-  const creator = makePrebuiltCreator({ root: process.cwd(), tempRoot: process.env.RUNNER_TEMP ?? '/tmp',
+  const build = makePrebuiltCreator({ root: process.cwd(), tempRoot: process.env.RUNNER_TEMP ?? '/tmp',
     cliPath: process.env.ZOLA_VERCEL_BIN, vercelToken: process.env.VERCEL_TOKEN, emit });
+  const creator = async (options) => {
+    try { return await build(options); }
+    catch (error) {
+      emit({ status: error instanceof PrebuiltError ? error.message : 'PREBUILT PREPARATION FAILED',
+        ...(error?.code === 'ENOENT' ? { code: 'ENOENT' } : {}) });
+      throw error;
+    }
+  };
   const report = await rebuildReceivers({ vercelToken: process.env.VERCEL_TOKEN, capabilityToken: process.env.ZOLA_CAPABILITY_TOKEN,
     githubToken: process.env.GITHUB_TOKEN, previewSha: process.env.GITHUB_SHA, creator, emit });
   emit(report); if (report.status !== 'READY') process.exitCode = 1;

@@ -24,7 +24,7 @@ async function fixture(t, { drift = false, changed = false, uncertain = false } 
       assert.equal(project.settings.installCommand, '');
     }
     if (args[0] === 'deploy') {
-      assert.equal(emitted.at(-1).status, 'UPLOAD STARTING');
+      assert.ok(emitted.some(x => x.status === 'UPLOAD STARTING'));
       if (uncertain) throw new Error(SECRET);
       return 'https://synthetic.vercel.app';
     }
@@ -55,8 +55,8 @@ test('uncertain upload is attempted once and retains nonsecret lookup metadata',
   const h = await fixture(t, { uncertain: true });
   await assert.rejects(h.run(), /PREBUILT UPLOAD FAILED/);
   assert.equal(h.calls.filter((x) => x.args?.[0] === 'deploy').length, 1);
-  assert.equal(h.emitted.at(-1).sha, MAIN);
-  assert.match(h.emitted.at(-1).artifactSha256, /^[a-f0-9]{64}$/);
+  assert.equal(h.emitted.find(x => x.status === 'UPLOAD STARTING').sha, MAIN);
+  assert.match(h.emitted.find(x => x.status === 'UPLOAD STARTING').artifactSha256, /^[a-f0-9]{64}$/);
 });
 test('artifact digest changes for content and rejects external symlinks', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'zola-digest-test-'));
