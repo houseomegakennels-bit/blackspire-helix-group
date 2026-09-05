@@ -1,5 +1,15 @@
 # Blackspire Next Actions
 
+## ZOLA activation external gates (2026-09-05 UTC)
+
+1. Supabase organization owner clears storage quota and makes a verifiable recovery point or secure database backup access available. Then re-test authenticated upstream Auth and public auth status; account plan state alone is not health or recovery proof.
+2. Complete interactive Codex login with the protected VPS helper `/var/lib/blackspire-operator/login-codex`. The normal refresh was rejected with `invalid_refresh_token`. Recheck both service roles and required provider transports; do not change the provider contract or introduce failover.
+3. Provide Vercel frontend environment-management access or synchronize its internal capability token with the protected VPS token and bind the exact canonical workspace in production and candidate preview. Rebuild the candidate preview before six-capability acceptance. Caller configuration and minimum canonical grants are already provisioned.
+4. Provide management access to the canonical external n8n Buyer workflow so its active writer identity, current executions, protected rollback version, and authorized server-credential replacement can be verified. Then establish Supabase recovery and apply only the two reviewed security migrations with row-preservation and role probes.
+5. After external dependencies recover, Astra verifies a functional rollback, refreshes backups, and completes controlled API/worker preparation and generation-fenced capability acceptance. Only after every gate passes may PR #125 merge with expected-head protection, followed by same-main-SHA frontend/VPS deployment and live smoke. Services remain inactive/disabled; no merge or activation is claimed.
+
+Completed preparation: role split, API-only generated password/session profile, reviewed units/log policy, protected provider access, eight caller transport settings, canonical six-permission successor grant, verified fresh pre/post authority backups, and candidate immutable artifact. No application changes require another full trusted suite. Current report: `/tmp/zola-astra-activation-current.md`.
+
 ## ZOLA production-live critical path (2026-09-04 UTC)
 
 1. DONE — release implementation `df8c87c68868da1e980b8206ef65ee14a5c69047` is pushed to existing PR #125 with exact-head CI/Vercel success. Preserve the recorded trusted suite; no code changes require rerunning it. Hold merge because main automatically deploys production and recovery/configuration gates remain unmet.
