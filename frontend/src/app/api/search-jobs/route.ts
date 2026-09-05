@@ -1,3 +1,4 @@
+import { guardSignedInApi } from "@/lib/operator-access";
 import { after, NextResponse } from "next/server";
 import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
 import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
@@ -13,6 +14,8 @@ import {
 import { guardBetaAction } from "@/lib/beta-server";
 
 export async function GET(request: Request) {
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const highlight = searchParams.get("highlight");

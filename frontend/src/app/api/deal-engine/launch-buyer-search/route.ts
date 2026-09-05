@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { launchBuyerSearchFromDeal, recordBuyerSearchDispatchFailure } from "@/lib/deal-engine-server";
@@ -6,6 +7,8 @@ import { triggerBuyerEngineWorkflow } from "@/lib/buyer-engine-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as { dealId?: string };
     if (!body.dealId?.trim()) {

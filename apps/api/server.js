@@ -2,7 +2,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
+import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH, TELEGRAM_ALLOWED_USERS } from '../../packages/shared/config.js';
 import { verifyAdminPasswordAsyncResult } from '../../packages/shared/password-auth.js';
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
@@ -86,7 +86,12 @@ async function route(req, res) {
     if (u.pathname === '/api/test-mode/session' && req.method === 'POST') return testModeLogin(req, res);
     if (TEST_MODE.enabled && (u.pathname === '/api/auth/login' || u.pathname === '/telegram/webhook')) return json(res, 404, { error: 'not found' });
     if (u.pathname === '/api/auth/login' && req.method === 'POST') return login(req, res);
-    if (u.pathname === '/telegram/webhook' && req.method === 'POST') return telegramWebhook(req, res);
+    if (u.pathname === '/telegram/webhook' && req.method === 'POST') {
+      if (process.env.TELEGRAM_MODE !== 'webhook' || !process.env.TELEGRAM_WEBHOOK_SECRET || !process.env.TELEGRAM_BOT_TOKEN || TELEGRAM_ALLOWED_USERS.length === 0) {
+        return json(res, 404, { error: 'not found' });
+      }
+      return telegramWebhook(req, res);
+    }
 
     const auth = authContext(req);
     if (!isPublicAsset(req.url, u.pathname) && !auth.ok) return json(res, 401, { error: 'unauthorized' });
@@ -518,7 +523,7 @@ function exportTask(res, auth, taskId, format) {
 }
 
 async function telegramWebhook(req, res) {
-  if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { error: 'invalid telegram secret' });
+  if (req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { error: 'invalid telegram secret' });
   const body = await readJson(req);
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));

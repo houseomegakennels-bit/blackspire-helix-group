@@ -4130,7 +4130,10 @@ export async function saveDealCloseout(input: SaveDealCloseoutInput) {
   return { ok: true as const };
 }
 
-export async function getDealEngineDealDetail(dealId: string): Promise<DealEngineDealDetail | null> {
+export async function getDealEngineDealDetail(
+  dealId: string,
+  { persistScaffold = true }: { persistScaffold?: boolean } = {},
+): Promise<DealEngineDealDetail | null> {
   const [leads, sellerSignals, buyerSignals, drafts] = await Promise.all([
     listDealEngineLeads(100),
     listDealEngineSellerSignals(12),
@@ -4183,8 +4186,10 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
     sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
     sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
     packet = enrichPacketWithSellerContactStatus(packet, sellerContact);
-    await syncDealBuyerMatches(supabase, lead, relatedBuyerSignals).catch(() => null);
-    await ensureDealExecutionScaffold(supabase, lead, contractDraft, packet, room).catch(() => null);
+    if (persistScaffold) {
+      await syncDealBuyerMatches(supabase, lead, relatedBuyerSignals).catch(() => null);
+      await ensureDealExecutionScaffold(supabase, lead, contractDraft, packet, room).catch(() => null);
+    }
 
     const { data } = await supabase
       .from("deal_packets")

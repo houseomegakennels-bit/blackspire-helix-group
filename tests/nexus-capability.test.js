@@ -148,22 +148,28 @@ test('Nexus input: requires ownerName or propertyAddress', () => {
 
 test('Nexus input: accepts ownerName only', () => {
   const validated = validateCapabilityInput(nexusEnrichmentCapability, { ownerName: 'John Smith' });
-  assert.deepEqual(validated, { ownerName: 'John Smith', propertyAddress: null, sellerLeadId: null });
+  assert.deepEqual(validated, { ownerName: 'John Smith', propertyAddress: null, sellerLeadId: null, dealId: null });
 });
 
 test('Nexus input: accepts propertyAddress only', () => {
   const validated = validateCapabilityInput(nexusEnrichmentCapability, { propertyAddress: '101 Oak St, Winston-Salem, NC 27101' });
-  assert.deepEqual(validated, { ownerName: null, propertyAddress: '101 Oak St, Winston-Salem, NC 27101', sellerLeadId: null });
+  assert.deepEqual(validated, { ownerName: null, propertyAddress: '101 Oak St, Winston-Salem, NC 27101', sellerLeadId: null, dealId: null });
 });
 
 test('Nexus input: accepts sellerLeadId only', () => {
   const validated = validateCapabilityInput(nexusEnrichmentCapability, { sellerLeadId: 'lead-123' });
-  assert.deepEqual(validated, { ownerName: null, propertyAddress: null, sellerLeadId: 'lead-123' });
+  assert.deepEqual(validated, { ownerName: null, propertyAddress: null, sellerLeadId: 'lead-123', dealId: null });
 });
 
 test('Nexus input: accepts all three', () => {
   const validated = validateCapabilityInput(nexusEnrichmentCapability, { ownerName: 'John Smith', propertyAddress: '101 Oak St', sellerLeadId: 'lead-123' });
-  assert.deepEqual(validated, { ownerName: 'John Smith', propertyAddress: '101 Oak St', sellerLeadId: 'lead-123' });
+  assert.deepEqual(validated, { ownerName: 'John Smith', propertyAddress: '101 Oak St', sellerLeadId: 'lead-123', dealId: null });
+});
+
+test('Nexus input: accepts a canonical Deal identifier', () => {
+  assert.deepEqual(validateCapabilityInput(nexusEnrichmentCapability, { dealId: 'de-2417' }), {
+    ownerName: null, propertyAddress: null, sellerLeadId: null, dealId: 'DE-2417',
+  });
 });
 
 test('Nexus input: rejects unknown fields', () => {
@@ -293,6 +299,42 @@ test('Nexus: correct dispatch traverses durable task, capability, evidence, and 
   assert.equal(records.providerAttempts[0].mode, 'nexus.enrichment.status');
   assert.ok(records.evidence.some((row) => row.kind === 'capability_selection'));
   assert.ok(records.evidence.some((row) => row.kind === 'capability_result'));
+});
+
+test('Nexus: a Deal identifier reaches the adapter as bounded read-only input', async () => {
+  const created = task('Is skip trace complete for deal DE-2417?');
+  const completed = await processTask(created, { capabilityOptions: { adapters: {
+    nexusEnrichment: async (args) => {
+      assert.equal(args.dealId, 'DE-2417');
+      return canonicalNexusResult();
+    },
+  } } });
+  assert.equal(completed.status, 'completed');
+});
+
+test('Nexus extracts an owner terminator and a comma-separated hyphenated-city address exactly', async () => {
+  const created = task('Show verified phone for owner John Smith at 101 Oak St, Winston-Salem, NC 27101.');
+  const completed = await processTask(created, { capabilityOptions: { adapters: {
+    nexusEnrichment: async (args) => {
+      assert.equal(args.ownerName, 'John Smith');
+      assert.equal(args.propertyAddress, '101 Oak St, Winston-Salem, NC 27101');
+      return canonicalNexusResult();
+    },
+  } } });
+  assert.equal(completed.status, 'completed');
+});
+
+test('Nexus: canonical persisted miss is summarized as not found', async () => {
+  const created = task('Show contact status for owner Nobody Found.');
+  const completed = await processTask(created, { capabilityOptions: { adapters: {
+    nexusEnrichment: async () => ({
+      ownerName: null, propertyAddress: null, skipTraceStatus: null, phoneStatus: null,
+      contactConfidenceScore: null, provider: null, source: null, updatedAt: null,
+      sourceSnapshotAt: '2026-09-04T00:00:00.000Z',
+    }),
+  } } });
+  assert.equal(completed.status, 'completed');
+  assert.equal(JSON.parse(completed.summary).result, 'No Nexus enrichment status is available.');
 });
 
 test('Nexus: no stored contact returns null status gracefully', async () => {

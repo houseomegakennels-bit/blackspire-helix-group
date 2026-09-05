@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextResponse } from "next/server";
 
 import { listSellerLeads } from "@/lib/seller-engine-server";
@@ -9,6 +10,8 @@ function csvCell(value: unknown) {
 }
 
 export async function GET() {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   const gate = await guardBetaAction("export");
   if ("response" in gate) return gate.response;
 
