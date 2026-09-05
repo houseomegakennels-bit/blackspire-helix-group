@@ -11,7 +11,7 @@ class RebuildError extends Error {}
 
 export async function rebuildReceivers({ vercelToken, capabilityToken, githubToken, previewSha,
   fetchImpl = fetch, audit = auditReceiver, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  now = Date.now, emit = () => {} }) {
+  now = Date.now, emit = () => {}, creator }) {
   const deployments = [];
   const fail = (message) => { throw new RebuildError(message); };
   async function request(url, token, body) {
@@ -39,9 +39,13 @@ export async function rebuildReceivers({ vercelToken, capabilityToken, githubTok
     if (current.id !== PREVIOUS_PRODUCTION || current.projectId !== PROJECT ||
         current.target !== 'production' || current.meta?.githubCommitSha !== MAIN) fail('PRODUCTION DEPLOYMENT DRIFT');
   }
-  function identity(value, sha, target, expectedId) {
-    if (value.projectId !== PROJECT || value.gitSource?.sha !== sha || value.gitSource?.type !== 'github' ||
-        String(value.gitSource?.repoId) !== '1247069814' ||
+  function identity(value, sha, target, expectedId, proof) {
+    const sourceValid = proof
+      ? proof.sourceSha === sha && /^[a-f0-9]{64}$/.test(proof.artifactSha256 ?? '') &&
+        value.meta?.zolaSourceSha === sha && value.meta?.zolaArtifactSha256 === proof.artifactSha256 &&
+        value.meta?.githubCommitSha === sha && value.meta?.githubCommitRef === (target === 'production' ? 'main' : BRANCH)
+      : value.gitSource?.sha === sha && value.gitSource?.type === 'github' && String(value.gitSource?.repoId) === '1247069814';
+    if (value.projectId !== PROJECT || !sourceValid ||
         (target === 'production' ? value.target !== 'production' : value.target != null) ||
         typeof value.id !== 'string' || !/^dpl_[A-Za-z0-9]+$/.test(value.id) ||
         (expectedId && value.id !== expectedId) || typeof value.url !== 'string' ||
@@ -68,8 +72,10 @@ export async function rebuildReceivers({ vercelToken, capabilityToken, githubTok
       const sha = target === 'preview' ? previewSha : MAIN;
       const body = { name: 'frontend', project: PROJECT, gitSource: { type: 'github', repoId: '1247069814',
         ref: target === 'preview' ? BRANCH : 'main', sha }, ...(target === 'production' ? { target: 'production' } : {}) };
-      let value = await request(vercel('/v13/deployments?forceNew=1'), vercelToken, body);
-      identity(value, sha, target);
+      const created = creator ? await creator({ sha, target, beforeUpload: refs, lookup: (host) => request(vercel(`/v13/deployments/${host}`), vercelToken) }) : null;
+      const proof = created?.proof;
+      let value = created ? created.deployment : await request(vercel('/v13/deployments?forceNew=1'), vercelToken, body);
+      identity(value, sha, target, undefined, proof);
       const id = value.id;
       const summary = { id, sha, target, status: 'CREATED' };
       deployments.push(summary);
@@ -78,7 +84,7 @@ export async function rebuildReceivers({ vercelToken, capabilityToken, githubTok
       let ready = false;
       for (let poll = 0; poll < 80 && now() < deadline; poll++) {
         value = await request(vercel(`/v13/deployments/${id}`), vercelToken);
-        identity(value, sha, target, id);
+        identity(value, sha, target, id, proof);
         if (value.readyState === 'READY') { ready = true; break; }
         if (['ERROR', 'CANCELED'].includes(value.readyState)) fail(`DEPLOYMENT ${value.readyState}`);
         if (!['QUEUED', 'INITIALIZING', 'BUILDING'].includes(value.readyState)) fail('UNKNOWN DEPLOYMENT STATE');

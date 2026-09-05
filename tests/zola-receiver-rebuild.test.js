@@ -4,7 +4,7 @@ import { rebuildReceivers } from '../scripts/zola-receiver-rebuild.mjs';
 const MAIN = '53adf74e05c607c0d296923bae05d7ac023ecb57';
 const PREVIEW = 'a'.repeat(40);
 const SECRET = 'test-only-never-log-this-secret';
-function harness({ drift = false, productionDrift = false, canceled = false, badIdentity = false, badProbe = false, badNegative = false, thrown = false } = {}) {
+function harness({ drift = false, productionDrift = false, canceled = false, badIdentity = false, badProbe = false, badNegative = false, thrown = false, prebuilt = false, badProof = false } = {}) {
   const writes = [], emitted = [];
   let current;
   const fetchImpl = async (url, options) => {
@@ -29,7 +29,17 @@ function harness({ drift = false, productionDrift = false, canceled = false, bad
     return Response.json({ ...current, readyState: canceled ? 'CANCELED' : 'READY' });
   };
   return { writes, emitted, run: () => rebuildReceivers({ vercelToken: SECRET, capabilityToken: SECRET,
-    githubToken: SECRET, previewSha: PREVIEW, fetchImpl, audit: async () => ({ status: 'READY' }), sleep: async () => {}, emit: (entry) => emitted.push(entry) }) };
+    githubToken: SECRET, previewSha: PREVIEW, fetchImpl,
+    ...(prebuilt ? { creator: async ({ sha, target, beforeUpload }) => {
+      await beforeUpload();
+      writes.push({ target });
+      const artifactSha256 = 'a'.repeat(64);
+      current = { id: `dpl_prebuilt${writes.length}`, projectId: 'prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou',
+        target: target === 'production' ? 'production' : null, url: 'frontend-test.vercel.app',
+        meta: { githubCommitSha: sha, githubCommitRef: target === 'production' ? 'main' : 'release/zola-production-live',
+          zolaSourceSha: sha, zolaArtifactSha256: badProof ? 'b'.repeat(64) : artifactSha256 } };
+      return { deployment: current, proof: { sourceSha: sha, artifactSha256 } };
+    } } : {}), audit: async () => ({ status: 'READY' }), sleep: async () => {}, emit: (entry) => emitted.push(entry) }) };
 }
 test('pinned preview precedes only pinned-main production and targets cannot drift', async () => {
   const h = harness(); const result = await h.run();
@@ -62,4 +72,10 @@ test('reports and transport exceptions do not expose credentials', async () => {
     const h = harness(options); const result = await h.run();
     assert.ok(!JSON.stringify({ result, emitted: h.emitted }).includes(SECRET));
   }
+});
+
+test('prebuilt source and digest identity are required before production', async () => {
+  const good = harness({ prebuilt: true }); assert.equal((await good.run()).status, 'READY'); assert.equal(good.writes.length, 2);
+  const bad = harness({ prebuilt: true, badProof: true });
+  assert.equal((await bad.run()).status, 'DEPLOYMENT IDENTITY MISMATCH'); assert.equal(bad.writes.length, 1);
 });

@@ -1,5 +1,16 @@
 # Blackspire Active Context
 
+## 2026-09-05 — Timeout recovery and prebuilt receiver continuation
+
+Recovered exact local/remote/PR #125 head `342d9552aae97a8b39821d05383179567c2223c8`, main unchanged `53adf74e05c607c0d296923bae05d7ac023ecb57`. Preserved and completed the inherited unfinished prebuilt helper. Exact-head application CI `33996814293` passed; receiver maintenance `33996812763` stopped after the ignored-build cancellation of candidate `dpl_CmFxBh89HRAGKBnBQz4E5Bcu3Zb7`. No production rebuild occurred in that run. Configuration pairing remains established, deployed parity remains unverified.
+
+The supported prebuilt continuation uses pinned CLI 59.11.7, isolated exact-SHA source for both builds, credential-free dependency installation, an ephemeral local install-command override to prevent reinstall after environment pull, private drained logs, artifact digests, fresh Git/production identity fences, and nonsecret upload-intent evidence before any uncertain create. Candidate auth acceptance precedes unchanged-main production rebuild. No global project settings or ignore rules change. Twenty-three focused operational tests pass; the application trusted suite is not rerun because application code is unchanged. Deployment outcomes are recorded in `/tmp/zola-astra-activation-current.md`.
+
+Fresh checks confirm authenticated Supabase HTTP 402 `exceed_storage_size_quota`, frontend auth failure, unchanged expired provider login, and inaccessible historical n8n management. External quota/recovery, interactive login and actual n8n management access remain required. No webhook, migration, canonical service activation or grant change occurred.
+
+Isolated recovery assessment proves neither unchanged main nor the proposed three-file Buyer-only delta satisfies six safe reads. The delta passes nine selected Buyer tests and restores match transport arguments, with other source unchanged. Main accepts the post-v2 authority history and all twelve permissions, but its actual Deal helper fails all ten current safety regressions and invokes two synthetic mutation functions; Nexus still drops dealId. Parent independently reproduced the mutation, payload and authority evidence. Exact diff and tests are recorded in `/tmp/zola-proposed-recovery-buyer-delta.patch` and `/tmp/zola-rollback-delta-review-current.md`. Preserve immutable main; do not select or activate a broader recovery target without reporting and resolving its scope. Functional rollback remains unverified. Merge and VPS activation remain held.
+
+
 ## 2026-09-05 — Continuation fixes and scoped receiver-access audit
 
 A fresh read-only review of canonical PR #125 found two original findings still present despite the earlier preparation-complete checkpoint. The internal Deal Analysis path now resolves the exact persisted deal ID independently of the UI's top-100 ranked list and rejects missing configuration or failed persisted detail queries. It retains computed underwriting when the analysis row is genuinely absent and preserves the existing UI/scaffold behavior. Buyer Profiles now uses unique ascending ID as the secondary ordering before its bounded limit. Behavioral regressions failed on the previous implementation and pass with these corrections; no division redesign or production data write occurred.
