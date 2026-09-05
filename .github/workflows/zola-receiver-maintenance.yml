@@ -1,4 +1,4 @@
-name: ZOLA receiver audit
+name: ZOLA receiver maintenance
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/zola-receiver-maintenance.yml
       - scripts/zola-receiver-maintenance.mjs
+      - scripts/zola-receiver-rebuild.mjs
 
 permissions:
   contents: read
@@ -18,7 +19,7 @@ jobs:
   audit:
     if: github.repository == 'houseomegakennels-bit/blackspire-helix-group' && github.ref == 'refs/heads/release/zola-production-live'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,3 +34,10 @@ jobs:
           # One explicitly reviewed transition; subsequent pushes only audit.
           ZOLA_RECEIVER_ACTION: ${{ github.event.before == '42b7012fdd379d09f526924f11acddcff9cf2e70' && 'provision-missing' || 'audit' }}
         run: node scripts/zola-receiver-maintenance.mjs
+      - name: Rebuild the approved candidate and unchanged production main
+        if: github.event.before == '7072d929adce6766fb1e7e4adf56683002bd9068'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ZOLA_CAPABILITY_TOKEN: ${{ secrets.ZOLA_CAPABILITY_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/zola-receiver-rebuild.mjs
