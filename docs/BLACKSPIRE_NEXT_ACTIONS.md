@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-06 — Final gate continuation; exact acceptance pairing prepared
+
+Recovered clean expected release/PR head `464f05fde73f7a213d6d833b581ef89071a098b2`; remote main remains `53adf74e05c607c0d296923bae05d7ac023ecb57`. Parent and independent review confirm PR #125 OPEN with all five checks successful and exact-head CI `34002197446` successful. No application source changes, new PR, merge or canonical activation occurred.
+
+The isolated production recovery profile now explicitly pairs all four division transports to the existing frontend deployment at exact `2c0b600c268faa0571f08322e16d7f81f37789be`. The prior profile is privately preserved; parent verified only the four URL keys changed and canonical protected fingerprints remain unchanged. Inherited boot/generation proof remains PASS; this newly paired profile has not executed the six reads. Functional rollback remains NO. Canonical API/worker remain inactive/disabled/PID0 with the forbidden retained pointer unchanged.
+
+Fresh authenticated Supabase at 08:10:07 UTC still returns 402 `exceed_storage_size_quota`; public Auth returns 500/upstream 402, independently confirmed by parent. Current n8n management remains unavailable, with historical endpoint 404 and no successor/access found. Current writer, execution history, protected version and replacement identity remain UNVERIFIED. Owner quota/recovery and actual n8n management access remain required. Six reads remain NOT RUN; security migrations and merge stay held. Detailed continuation and local evidence paths are recorded in `/tmp/zola-astra-activation-current.md`.
+
 ## 2026-09-06 — Post-login provider recovered; production acceptance held
 
 The protected provider login is now verified HEALTHY under both API and worker identities. Each passes the exact contained authenticated provider probe and full production environment preflight, including credential, provider and WebSocket checks. The previous expired-login blocker is superseded; no further login or failover is required from this evidence.
