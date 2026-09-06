@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-09-06 23:17 UTC — continue writer implementation from reviewed protocol
+
+1. Preserve `packages/buyer-writer/protocol.js` and its seven isolated regression groups; this unmounted increment grants no production authority. Implement private PostgreSQL dispatch/receipt ledger and least-privilege routines, with transactional owner, expiry, generation, provenance and idempotency checks. Capture the real authenticated frontend operator before `after()` and before county fetches; default-user fallback is not permit authority.
+2. Implement secure n8n ingress and HTTP credential references consistently across nine write sites. Verify original backup immediately before live mutation; validate isolated five-table success and browser/cross-owner/error denial before publication. New writer SQL is separate from the two hash-pinned reviewed security migrations.
+3. Preserve only rollback `2c0b600`; six-read task dispatch needs no source compatibility patch. Resolve authenticated Buyer intake continuity separately without weakening public ingress or changing Command permission history.
+4. Obtain existing cross-owner witness access if available; primary Command password already exists. Complete authoritative observers using supported SQL/runtime logs where sufficient. Repair the outer supervisor lock/startup/cleanup boundary, private-file validation, generation-aware shutdown, bounded logs and descendant containment before any six-read run.
+5. Disk cleanup is complete for the proven 3.03 GiB npm content cache; free 5.16 GiB. Measure release/backup space needs. No broad cache, temp, worktree or artifact deletion to chase 8–10 GiB.
+6. Keep canonical activation, production migrations and PR125 merge held until every original release gate passes. Existing 9d2512e CI is green; reviewed local protocol changes need new-head CI after push. Continue from `/tmp/zola-astra-activation-current.md`; autonomous work is not complete.
+
 ## 2026-09-06 22:40 UTC — restored-access activation sequence
 
 The n8n access and Supabase dated-backup/Restore-control blockers are resolved. Do not repeat quota, provider or Vercel recovery. The current protected snapshot and exact writer map are in `docs/ZOLA_N8N_ACCESS_RESTORED.md`.
