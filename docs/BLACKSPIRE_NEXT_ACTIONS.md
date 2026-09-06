@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-06 16:09 UTC — Supabase quota cleared; recovery and writer gates remain held
+
+Fresh exact-path probes at 16:09:35 UTC confirm authenticated canonical `/auth/v1/settings` HTTP 200 and public production `https://blackspirehelix.com/api/auth/status` HTTP 200 with `{"ok":true,"authConfigured":true,"bootstrapRequired":false,"operator":null}`. Direct Auth settings without an API key returns expected HTTP 401: `{"message":"No API key found in request","hint":"No `apikey` request header or url param was found."}`. None contains `exceed_storage_size_quota`. Authentication used the existing active anon API key obtained through authenticated management; this is API-key Auth-settings health, not an end-user login test. Earlier quota/Free-plan blockers below are superseded.
+
+Live management confirms canonical project `kchtrvfcixnimvxxctkj`, `blackspire insight`, ACTIVE_HEALTHY, organization `cfqfpnhjhpqjvtzgezrx` / Blackspire Helix Group, now PRO. Official backup documentation establishes PRO daily-backup capability and seven-day retention, but an actual dated project recovery point and successful isolated restoration remain UNVERIFIED. Available connectors expose no backup inventory/export operation; no canonical database profile, Management API token or recovery artifact was found in the scoped operator/configuration locations. Existing SQLite backups are not Supabase backups. Recovery procedure and safe rollback remain documented in `docs/ZOLA_REMAINING_GATE_PREPARATION.md`.
+
+Fresh READ ONLY migration-history query returns no versions `20260904201014` or `20260904223151`; both reviewed Buyer/Nexus files retain their recorded SHA256 digests and remain unapplied. Historical n8n management returns HTTP 404, “No workspace here”; actual workflow/writer, protected version, executions and authorized server identity remain UNVERIFIED. Secure recovery access/artifact and actual n8n management access are still required. No migration, service activation, provider login, receiver rework, webhook or six-read task was performed. Remaining live activation is blocked on recovery, writer reconciliation and authoritative acceptance witnesses. Sanitized probe evidence: `/tmp/zola-quota-recheck-20260906.json`.
+
 ## 2026-09-06 — Final gate continuation; exact acceptance pairing prepared
 
 Recovered clean expected release/PR head `464f05fde73f7a213d6d833b581ef89071a098b2`; remote main remains `53adf74e05c607c0d296923bae05d7ac023ecb57`. Parent and independent review confirm PR #125 OPEN with all five checks successful and exact-head CI `34002197446` successful. No application source changes, new PR, merge or canonical activation occurred.

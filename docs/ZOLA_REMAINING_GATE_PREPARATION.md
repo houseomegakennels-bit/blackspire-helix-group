@@ -1,6 +1,6 @@
 # ZOLA remaining gate preparation — 2026-09-06
 
-Production remains BLOCKED. Fresh authenticated Supabase at 08:31:58 UTC returns HTTP 402 `exceed_storage_size_quota`; public Auth returns 500/upstream 402. Historical n8n management returns 404 “No workspace here.” Parent independently corroborated the public Auth and n8n responses. No task, webhook, migration, provider generation or service activation was performed during this continuation.
+Quota is CLEARED as of 2026-09-06 16:09:35 UTC: authenticated canonical Auth settings HTTP 200; public frontend Auth status HTTP 200; direct no-key Auth settings HTTP 401 with expected missing-key error. No quota marker remains. Organization plan is independently verified PRO. Production activation remains BLOCKED on actual recovery proof, n8n writer reconciliation and acceptance witnesses. Historical n8n management still returns HTTP 404 “No workspace here.” Both reviewed migration versions remain absent in fresh read-only migration history. No production mutation or activation occurred.
 
 ## Supabase recovery and migration answers
 
@@ -8,7 +8,7 @@ Production remains BLOCKED. Fresh authenticated Supabase at 08:31:58 UTC returns
 | --- | --- |
 | Canonical project | `kchtrvfcixnimvxxctkj`, organization `cfqfpnhjhpqjvtzgezrx`, PostgreSQL 17, us-west-1. Control-plane health does not establish Auth health. |
 | Backup mechanism | Inventory an owner-accessible dated backup or perform a consistent logical export with PostgreSQL-compatible/Supabase tooling. Available metadata access does not provide a dump or prove a recoverable backup exists. |
-| Restore ownership | Organization owner clears quota; project/database owner securely provides the canonical connection profile or recovery artifact and its scope/custody. Astra can install tooling and perform export/checksum/disposable restore once access exists. Credentials must remain protected. |
+| Restore ownership | Quota is cleared; project/database owner securely provides the canonical connection profile or recovery artifact and its scope/custody. Astra can install tooling and perform export/checksum/disposable restore once access exists. Credentials must remain protected. |
 | Recovery scope | Inventory schema/data, roles/grants, RLS, functions, extensions, migration history, Auth and Storage metadata. Preserve Storage object bytes and relevant credentials separately. Restore only to an isolated compatible target; verify scope, row digests, policies and errors. A four-table dump or local SQLite backup is insufficient whole-project recovery. |
 | Buyer prerequisites | Healthy Auth, proven recovery, reconciled current n8n writer and server identity, protected workflow version, documented rollback and prepared row/role/owner probes. |
 | Nexus prerequisites | The same migration gate; include browser denial and real service reads, plus correlated zero-paid-call and zero-enrichment-write evidence for Nexus acceptance. |
@@ -34,4 +34,10 @@ An additional source-conditioned mutation surface was identified and independent
 
 The original rehearsal service lifetime is 180 seconds, shorter than the collector's worst-case six-read budget. A separate local supervision/lifetime draft is prepared for review before execution. It must pin exact isolated units and generation, bound the collector and observers, terminate owned descendants, stop worker then API, verify process/listener quiescence, restore only the isolated emergency flag and collect authoritative final observations after drain. It must never target canonical services. Drafts are not installed or executed; no runtime proof is claimed for them.
 
-Keep every activation and merge gate held. After quota/recovery and n8n access are resolved, establish real witnesses and authoritative observers, review the prepared supervisor against the actual environment, and execute the six tasks through the exact candidate. Mark rollback functionally verified only after all required runtime and six-read evidence passes.
+Keep every activation and merge gate held. After recovery and n8n access are resolved, establish real witnesses and authoritative observers, review the prepared supervisor against the actual environment, and execute the six tasks through the exact candidate. Mark rollback functionally verified only after all required runtime and six-read evidence passes.
+
+## PRO backup availability and recovery-point verification
+
+[Supabase backup documentation](https://supabase.com/docs/guides/platform/backups), checked 2026-09-06, states PRO projects receive daily backups with seven-day retention. This is supported platform capability, not evidence that this newly upgraded project already has a usable dated backup. Inventory via the project Database > Backups dashboard or authenticated `GET /v1/projects/kchtrvfcixnimvxxctkj/database/backups`; record actual successful backup status/time/scope. PITR is a separate add-on and is not assumed enabled. Database backups exclude Storage object bytes and custom-role passwords; preserve those separately within the agreed scope.
+
+With protected access, select a pre-migration recovery point or create a consistent logical export, identify its canonical project and scope, preserve checksum/custody where exportable, and restore only to an isolated compatible target. Compare schema, migrations, roles/grants, policies, required counts/digests and Auth scope; record errors and exclusions. Existing detailed procedure remains applicable. A PRO subscription, healthy Auth or a documented procedure alone cannot pass recovery. Current recovery result: UNVERIFIED; no restoration attempted.
