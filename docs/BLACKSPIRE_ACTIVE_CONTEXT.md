@@ -1,5 +1,17 @@
 # Blackspire Active Context
 
+## 2026-09-06 — Post-login provider recovered; production acceptance held
+
+The protected provider login is now verified HEALTHY under both API and worker identities. Each passes the exact contained authenticated provider probe and full production environment preflight, including credential, provider and WebSocket checks. The previous expired-login blocker is superseded; no further login or failover is required from this evidence.
+
+Recovered clean release/remote/PR head `8d1582073e0c7ccc33e690db9fbde4e96b3ad88f`; main remains `53adf74e05c607c0d296923bae05d7ac023ecb57`. PR #125 is open with exact-head green validation and remains unmerged. Prepared identities, API-only password separation, eight caller settings, six grants, current authority integrity and fresh protected backup pass. Canonical callers still target public main, so complete six-read acceptance requires explicit pairing to the current candidate frontend.
+
+The nine-file rollback remains REJECTED. The recommended replacement candidate is exact reviewed `2c0b600c268faa0571f08322e16d7f81f37789be`, with ZERO source delta, packaged by the existing immutable release flow. The artifact is created and verified; all 190 packaged files match source and actual authorization modules accept current history and twelve permissions. Independent security tests pass 57/57, root/frontend audits report zero vulnerabilities, and separate disposable composition tests pass 99/99. This is same-source recovery for artifact/configuration failures, not an independent escape from shared application defects. It remains FUNCTIONALLY VERIFIED: NO, and six real reads remain NOT RUN.
+
+Fresh authenticated Supabase still returns HTTP 402 `exceed_storage_size_quota`; public auth returns 500/upstream402. Recovery evidence remains unavailable. Historical n8n management still returns404; current workflow, writer, executions and protected rollback version remain unverified. Owner actions are quota/recovery access and actual n8n management access, not provider login. No webhook, security migration, paid Nexus operation, enrichment or merge occurred.
+
+Detailed exact-source evidence and six-read acceptance requirements are in `docs/ZOLA_POST_LOGIN_ACTIVATION.md`. A separate persistent production-mode rehearsal now PASSES actual API -> health -> worker -> current-generation readiness -> stopped-worker rejection. The protected copy fenced 42 queued subtasks, preserved outcome_unknown without replay, revoked copied sessions and remapped workspace paths; emergency stop stayed active. Both hardened rehearsal services stopped cleanly, cgroups/listener are absent, and canonical files plus copied authority/queues/sessions remained unchanged. This proves isolated boot and generation gating, not six reads or functional rollback. Canonical units remain inactive/disabled/PID0 with forbidden retained608 pointer unchanged.
+
 ## 2026-09-06 — Nine-file rollback composition rejected
 
 Recovered clean local/remote/PR #125 head `f11b31ef9f4a3926d45d754892454983972b42e8`, with main unchanged `53adf74e05c607c0d296923bae05d7ac023ecb57`. Established Vercel receiver parity and release application validation were preserved, without redoing deployments or capability implementation.
