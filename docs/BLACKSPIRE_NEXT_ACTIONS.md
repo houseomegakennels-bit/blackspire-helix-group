@@ -8,6 +8,8 @@ The isolated production recovery profile now explicitly pairs all four division 
 
 Fresh authenticated Supabase at 08:10:07 UTC still returns 402 `exceed_storage_size_quota`; public Auth returns 500/upstream 402, independently confirmed by parent. Current n8n management remains unavailable, with historical endpoint 404 and no successor/access found. Current writer, execution history, protected version and replacement identity remain UNVERIFIED. Owner quota/recovery and actual n8n management access remain required. Six reads remain NOT RUN; security migrations and merge stay held. Detailed continuation and local evidence paths are recorded in `/tmp/zola-astra-activation-current.md`.
 
+Continuation preparation now records exact recovery ownership, migration/rollback procedures, service-lifetime containment and additional Storage mutation observations in `docs/ZOLA_REMAINING_GATE_PREPARATION.md`. Fresh 08:31:58 UTC dependency checks remain blocked; no live reads or activation occurred.
+
 ## 2026-09-06 — Post-login provider recovered; production acceptance held
 
 The protected provider login is now verified HEALTHY under both API and worker identities. Each passes the exact contained authenticated provider probe and full production environment preflight, including credential, provider and WebSocket checks. The previous expired-login blocker is superseded; no further login or failover is required from this evidence.
