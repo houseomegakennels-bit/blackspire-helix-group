@@ -7,6 +7,14 @@
 set local lock_timeout = '5s';
 set local statement_timeout = '30s';
 
+-- The live n8n workflow also inserts raw and normalized sales with anon.
+-- Reconcile those writes with the authorized server identity before applying.
+drop policy if exists "anon_insert_raw_sale" on public."RawSale";
+revoke all privileges on table public."RawSale" from anon, authenticated;
+
+drop policy if exists "anon_insert_clean_sale" on public."CleanSale";
+revoke all privileges on table public."CleanSale" from anon, authenticated;
+
 drop policy if exists "anon_insert_buyer_profile" on public."BuyerProfile";
 drop policy if exists "anon_select_buyer_profile" on public."BuyerProfile";
 drop policy if exists "anon_update_buyer_profile" on public."BuyerProfile";

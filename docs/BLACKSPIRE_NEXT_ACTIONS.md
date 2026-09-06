@@ -1,5 +1,16 @@
 # Blackspire Next Actions
 
+## 2026-09-06 22:40 UTC — restored-access activation sequence
+
+The n8n access and Supabase dated-backup/Restore-control blockers are resolved. Do not repeat quota, provider or Vercel recovery. The current protected snapshot and exact writer map are in `docs/ZOLA_N8N_ACCESS_RESTORED.md`.
+
+1. Resolve secure Buyer dispatch compatibility with ONLY rollback `2c0b600`: paused new Buyer intake on rollback requires an explicit operational decision. Do not accept legacy unauthenticated calls into privileged writer operations.
+2. Implement and independently test the owner-authorized job-scoped writer gateway, secure n8n ingress/HTTP credentials, fixed-operation routines, atomic receipts and generation fencing. Existing web owner authorization can issue workload permits without adding command permission history. No n8n mutation until snapshot, proven rollback method, reviewed implementation and isolated tests satisfy the user's gates.
+3. Preserve amended Buyer migration digest `61baa67314a77d4fa0f0b587821de9216dfa0220d1bb9e22b2808bc2002ae01e`; independent synthetic rehearsal passes, but exact-version/schema and actual dedicated-writer tests remain required. Both production migrations stay unapplied.
+4. Obtain protected real owner/cross-owner sessions and authoritative receiver/database/Storage/provider observations. Current SQL settings log DDL only, statement-duration logging is disabled and pgAudit logging is none; counters and unchanged snapshots alone cannot prove zero mutation attempts. Run the six actual reads only through the exact candidate pairing and reviewed supervision.
+5. Resolve read-only disk audit recommendation: approve only the regenerable npm content cache cleanup after active-install check, then verify at least 5 GiB free and a measured deployment/backup budget. No bulk /tmp, worktree, artifact, backup or runtime cleanup.
+6. Only after recovery, writer, full migration rehearsal, functional rollback, provider/authority, fresh backup and disk gates pass: canonical API health, worker generation readiness, six reads; reviewed migrations and immediate checks; exact-head CI/review/merge of PR125; frontend and VPS deployment of the same NEW_MAIN_SHA; live smoke.
+
 ## 2026-09-06 16:09 UTC — Supabase quota cleared; recovery and writer gates remain held
 
 Fresh exact-path probes at 16:09:35 UTC confirm authenticated canonical `/auth/v1/settings` HTTP 200 and public production `https://blackspirehelix.com/api/auth/status` HTTP 200 with `{"ok":true,"authConfigured":true,"bootstrapRequired":false,"operator":null}`. Direct Auth settings without an API key returns expected HTTP 401: `{"message":"No API key found in request","hint":"No `apikey` request header or url param was found."}`. None contains `exceed_storage_size_quota`. Authentication used the existing active anon API key obtained through authenticated management; this is API-key Auth-settings health, not an end-user login test. Earlier quota/Free-plan blockers below are superseded.

@@ -1,5 +1,7 @@
 # ZOLA remaining gate preparation — 2026-09-06
 
+Current restored-access evidence and superseding recovery procedure: [ZOLA n8n access restored](ZOLA_N8N_ACCESS_RESTORED.md). The dated physical backup and owner Restore controls are now verified; n8n management and protected snapshot are available. Historical unknown-access statements below are superseded. Writer safety, full rehearsal and real acceptance remain held.
+
 Quota is CLEARED as of 2026-09-06 16:09:35 UTC: authenticated canonical Auth settings HTTP 200; public frontend Auth status HTTP 200; direct no-key Auth settings HTTP 401 with expected missing-key error. No quota marker remains. Organization plan is independently verified PRO. Production activation remains BLOCKED on actual recovery proof, n8n writer reconciliation and acceptance witnesses. Historical n8n management still returns HTTP 404 “No workspace here.” Both reviewed migration versions remain absent in fresh read-only migration history. No production mutation or activation occurred.
 
 ## Supabase recovery and migration answers
