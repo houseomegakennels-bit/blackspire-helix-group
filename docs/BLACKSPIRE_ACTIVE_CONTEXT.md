@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## 2026-09-07 — combined migration and actual runtime rehearsal
+
+The canonical release branch no longer skips frontend preview builds for backend-only commits, so acceptance can pair exact frontend/VPS SHAs. Four deployment-boundary tests pass; other branches keep frontend-change filtering and the root VPS project remains ignored. Actual new-preview readiness must be verified after push.
+
+The combined PostgreSQL 17.6 suite passes 30 groups using both exact reviewed migration hashes in production order. It verifies six-table row preservation, atomic rollback after a forced error, browser table/column/MAINTAIN denial, both-direction SearchJob ownership isolation, unchanged private ledger and writer grants after migration reapplication, and subsequent dedicated-writer success across all five Buyer tables. Independent review approves this isolated proof; production migrations remain unapplied.
+
+Actual writer-disabled production supervisors now pass bounded isolated lifecycle rehearsal at release `6bc968d3f6f041640f6f6d3f703f77560a30f3d3` and recovery `2c0b600c268faa0571f08322e16d7f81f37789be`: API boot, missing-worker denial, worker readiness, stopped-worker denial, restart with a new generation, and preservation of fresh authority/queue/session state. Private loopback namespaces have no external route; generated authentication is synthetic. All owned units stopped and canonical services stayed inactive. Recovery artifact digest remains `0028052a7d08b1e7e73b8ce8cd441f90d10f16b288e10d10416891b5598f58bd`. This is not scoped-writer activation, stale task-result acceptance, six-read acceptance or complete functional rollback.
+
+A deterministic offline n8n package command now binds candidate bytes, source digests, expected revision and backup digest. Six package/VM tests pass. Actual protected CLI checks reject output collisions and symlinks; missing gateway/credential references produce only a requirements manifest, never a placeholder workflow. Live n8n is unchanged. Provider execution, scoped activation, secure rollback intake, actual credential resolution and the contained six-read harness remain unfinished. No production workflow change, migration, activation, merge or cutover occurred.
+
 ## 2026-09-07 — fresh provider authority and safe disk recovery
 
 Release `db9b82594e0aa67e6cfec42258078a7dec327594` is committed/pushed with all five checks green in CI `34123517394`. A fresh read-only PostgreSQL capture exactly matches the reviewed ACL baseline. Session/current role is `postgres`, not superuser, with neither SET access nor inherited authority to `supabase_admin`; all 31 affected net privilege grant-option checks are false. The protected package hashes remain exact. Provider execution is therefore required for this transaction; no escalation, extension call or production DDL occurred. The independently reviewed unsent request now specifies exact submission files, hashes, identity/window approval and post-execution evidence.

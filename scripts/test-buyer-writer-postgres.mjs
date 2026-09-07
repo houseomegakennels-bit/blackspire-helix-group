@@ -16,9 +16,9 @@ let creationAttempted = false;
 let containerId;
 const ownership = randomUUID();
 const run = (args, input) => spawnSync('docker', args, { input, encoding: 'utf8', timeout: 60000, maxBuffer: 1024 * 1024 });
-const sql = (statement, { fail = false } = {}) => {
+const sql = (statement, { fail = false, permissionDenied = false } = {}) => {
   const r = run(['exec','-i',name,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'], statement);
-  if (fail) { assert.notEqual(r.status, 0, 'expected database denial'); return; }
+  if (fail) { assert.notEqual(r.status, 0, 'expected database denial'); assert.match(r.stderr ?? '', permissionDenied ? /ERROR:  permission denied/ : /ERROR:/, 'denial must be the expected PostgreSQL error'); return; }
   assert.equal(r.status, 0, `isolated SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0, 600)}`);
   return r.stdout.trim();
 };
@@ -51,6 +51,19 @@ const other = '00000000-0000-4000-8000-000000000002';
 const workspace = 'isolated-buyer-workspace';
 const sourceContext={version:1,mode:'county_fetch',sources:[{sourceId:'00000000-0000-4000-8000-000000000003',sourceType:'arcgis',endpointId:'isolated',endpointConfigDigest:'b'.repeat(64),cashDisabled:false}],budgets:{maxRequests:500,maxRows:50000,maxBytes:67108864},rawPayload:null};
 const contextLiteral=literal(JSON.stringify(sourceContext))+'::jsonb';
+const migrations = [
+  ['20260904201014_nexus_read_security.sql','1be43afc6d6964752301f0c80806423dc6b82d054b09748813cf40dca7944e51'],
+  ['20260904223151_buyer_browser_security.sql','61baa67314a77d4fa0f0b587821de9216dfa0220d1bb9e22b2808bc2002ae01e'],
+].map(([file,sha256])=>{
+  const source=readFileSync(new URL('../frontend/supabase/migrations/'+file,import.meta.url),'utf8');
+  assert.equal(createHash('sha256').update(source).digest('hex'),sha256,'reviewed migration drift');
+  return source;
+}).join('\n');
+const buyerTables=['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport'];
+const snapshot=(ledger=false)=>sql(`select jsonb_build_object(${[
+  ...[...buyerTables,'nexus_contacts'].map(t=>`${literal(t)},(select coalesce(jsonb_agg(to_jsonb(x) order by id),'[]') from public."${t}" x)`),
+  ...(ledger?['dispatches','receipts','sales'].map(t=>`${literal(t)},(select coalesce(jsonb_agg(to_jsonb(x) order by to_jsonb(x)::text),'[]') from buyer_writer.${t} x)`):[]),
+].join(',')})`);
 const checks = [];
 const check = (name, fn) => { fn(); checks.push(name); };
 const capture = jobId => JSON.parse(sql(`select jsonb_build_object('criteria',buyer_writer.criteria(to_jsonb(j)),'updatedAt',j.updated_at) from public."SearchJob" j where id=${literal(jobId)}`));
@@ -93,7 +106,24 @@ try {
   assert.ok(ready,'isolated PostgreSQL readiness timed out');
   assert.match(sql('show server_version'),/^17\.6/);
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/schema.sql',import.meta.url),'utf8'));
-  sql('begin;'+readFileSync(new URL('../frontend/supabase/migrations/20260904223151_buyer_browser_security.sql',import.meta.url),'utf8')+'commit;');
+  sql(readFileSync(new URL('../tests/fixtures/buyer-writer/nexus.sql',import.meta.url),'utf8'));
+  sql(`insert into public."SearchJob"(id,user_id,state,county,property_type) values ('00000000-0000-4000-8000-000000000010',${literal(owner)},'NC','Wake','land');
+    insert into public."RawSale"(search_job_id,buyer_name) values ('00000000-0000-4000-8000-000000000010','PRESERVATION');
+    insert into public."CleanSale"(search_job_id,buyer_name) values ('00000000-0000-4000-8000-000000000010','PRESERVATION');
+    insert into public."BuyerProfile"(id,buyer_name) values ('00000000-0000-4000-8000-000000000011','PRESERVATION');
+    insert into public."BuyerReport"(search_job_id,buyer_profile_id) values ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000011');`);
+  check('exact Buyer and Nexus migrations preserve all six tables and roll back atomically on failure',()=>{
+    const before=snapshot();
+    const acl=()=>sql(`select jsonb_agg(jsonb_build_object('name',relname,'acl',relacl,'policies',
+      (select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p where p.schemaname='public' and p.tablename=c.relname)) order by relname)
+      from pg_class c where relnamespace='public'::regnamespace and relname in (${[...buyerTables,'nexus_contacts'].map(literal).join(',')})`);
+    const beforeAcl=acl();
+    const failed=run(['exec','-i',name,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'],
+      'begin;'+migrations+"\ndo $$begin raise exception 'EXPECTED_COMBINED_ABORT';end$$;commit;");
+    assert.notEqual(failed.status,0);assert.match(failed.stderr,/ERROR:  EXPECTED_COMBINED_ABORT/);
+    assert.equal(snapshot(),before);assert.equal(acl(),beforeAcl);
+    sql('begin;'+migrations+'commit;');assert.equal(snapshot(),before);
+  });
   sql('create role fixture_manager nologin nosuperuser createrole;grant create on database writer_test to fixture_manager;grant usage,create on schema public to fixture_manager;');
   for(const table of ['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport'])sql(`alter table public."${table}" owner to fixture_manager`);
   const installSql='set session authorization fixture_manager;'+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
@@ -217,13 +247,14 @@ try {
     apply(d,'start',{}, {},true);
   });
   check('scoped writes commit all five tables with receipts and no catalog response',()=>{
+    const before=Object.fromEntries(['RawSale','CleanSale','BuyerProfile','BuyerReport'].map(t=>[t,count(t)]));
     const d=issue();
     assert.equal(apply(d,'start').ok,true);
     assert.equal(apply(d,'raw.append',{rows:[sale]}).ok,true);
     assert.equal(apply(d,'clean.append',{rows:[sale]}).ok,true);
     assert.equal(apply(d,'buyers.commit').ok,true);
     const result=apply(d,'complete'); assert.equal(result.ok,true);
-    assert.equal(count('RawSale'),1);assert.equal(count('CleanSale'),1);assert.equal(count('BuyerProfile'),1);assert.equal(count('BuyerReport'),1);
+    for(const [table,rows] of Object.entries(before))assert.equal(count(table),rows+1);
     assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
     assert.equal(JSON.stringify(result).includes(sale.buyer_name),false);
     apply(d,'complete',{}, {},true);
@@ -311,6 +342,28 @@ try {
     let profiles=count('BuyerProfile');execute(sale);assert.equal(count('BuyerProfile'),profiles);
     execute({...sale,mailing_address:null});execute({...sale,mailing_address:null});assert.equal(count('BuyerProfile'),profiles+2);
     assert.equal(sql(`select bool_and(is_llc and is_cash_buyer and purchase_count=1 and total_spend=120000) from public."BuyerProfile" where buyer_name=${literal(sale.buyer_name)}`),'t');
+  });
+  check('both reviewed migrations reapply after scoped writes without changing rows, ledger or writer authority',()=>{
+    const before=snapshot(true);
+    const permissions=()=>sql(`select jsonb_agg(to_jsonb(x) order by to_jsonb(x)::text) from (
+      select table_name,column_name,grantee,privilege_type,is_grantable from information_schema.column_privileges where grantee like 'buyer_writer_%'
+      union all select routine_name,null,grantee,privilege_type,is_grantable from information_schema.routine_privileges where grantee like 'buyer_writer_%') x`);
+    const grants=permissions();sql('begin;'+migrations+'commit;');assert.equal(snapshot(true),before);assert.equal(permissions(),grants);
+    for(const r of ['anon','authenticated'])for(const t of ['RawSale','CleanSale','BuyerProfile','BuyerReport','nexus_contacts']){
+      assert.equal(sql(`select has_table_privilege(${literal(r)},${literal('public."'+t+'"')},'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')`),'f');
+      assert.equal(sql(`select has_any_column_privilege(${literal(r)},${literal('public."'+t+'"')},'SELECT,INSERT,UPDATE,REFERENCES')`),'f');
+      for(const statement of [`select * from public."${t}"`,`insert into public."${t}"(id) values(gen_random_uuid())`,
+        `update public."${t}" set id=id where false`,`delete from public."${t}" where false`])role(r,statement,{fail:true,permissionDenied:true});
+    }
+    for(const r of ['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'])role(r,'select * from public.nexus_contacts',{fail:true,permissionDenied:true});
+    assert.equal(role('service_role','select count(*) from public.nexus_contacts'),'2');
+    const d=issue();apply(d,'start');apply(d,'raw.append',{rows:[sale]});apply(d,'clean.append',{rows:[sale]});apply(d,'buyers.commit');apply(d,'complete');
+    assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
+    for(const t of ['RawSale','CleanSale','BuyerReport'])assert.equal(sql(`select count(*) from public."${t}" where search_job_id=${literal(d.jobId)}`),'1');
+    const otherJob=randomUUID();sql(`insert into public."SearchJob"(id,user_id,state,county,property_type) values(${literal(otherJob)},${literal(other)},'NC','Wake','land')`);
+    for(const who of [owner,other])for(const [id,jobOwner] of [[d.jobId,owner],[otherJob,other]])
+      assert.equal(role('authenticated',`set local fixture.user_id=${literal(who)};select count(*) from public."SearchJob" where id=${literal(id)}`),who===jobOwner?'1':'0');
+    role('anon','select * from public."SearchJob"',{fail:true});
   });
   check('installer reapplication preserves existing records and permissions',()=>{
     const before=sql('select count(*) from buyer_writer.receipts');

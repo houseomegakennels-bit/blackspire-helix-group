@@ -38,3 +38,19 @@ The runtime workspace is `blackspire-command`. Resolve the actual authenticated 
 | Nexus Status | actual contact linked to the same persisted deal; limit 1 | Status-only output, zero paid provider calls and zero enrichment writes |
 
 For every task, collect real route/workspace/principal/permission/transport evidence, generation-fenced task completion, bounded output, cross-owner denial and authoritative mutation observations. Stable before/after snapshots alone cannot rule out write-and-revert or caught failed mutations. The draft observer map documents those limitations; it does not establish completed acceptance.
+
+## Executable offline n8n packaging
+
+Run with Node 22.23.1 as root; neither command reads the n8n API key or contacts n8n:
+
+```bash
+env -i PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin   node scripts/prepare-buyer-workflow-package.js /protected/input.json /protected/new-package-directory
+```
+
+The input must be root-owned 0600 under trusted non-writable ancestors and contain exactly `version` (1), `workflowId`, `workflowVersion`, `releaseSha`, `backupSha256`, `gatewayOrigin`, `webhookId`, `ingressCredentialId` and `writerCredentialId`. The three unresolved gateway/credential fields may be null; in that case the command emits only `manifest.json` with `requirements-pending`. A complete configuration emits deterministic `workflow.json` and a manifest last, using exclusive protected files. Existing destinations are rejected. Credential values and legacy exports are not accepted inputs. Supplied references, revision and digest still require live verification before any mutation.
+
+The combined disposable PostgreSQL lane is `scripts/test-buyer-writer-postgres.mjs`, using the pinned PostgreSQL 17.6 image from canonical CI. It now runs both exact reviewed migrations before writer installation and reapplies both afterward, including private-ledger preservation and dedicated-writer success. This does not authorize production execution.
+
+Actual baseline lifecycle evidence is protected under `/var/lib/blackspire-zola-rehearsal/activation/2591e27f-74f6-4a32-923e-5c59e09d618d/operator-result.json` (release 6bc968d) and `/var/lib/blackspire-zola-rehearsal/activation/caf73888-8e6e-48ad-90a1-11044909a752/operator-result.json` (mandated recovery). Each uses an exact sealed artifact, fresh synthetic database/authentication, real role accounts, private loopback networking and actual supervisors. Startup, readiness, stopped-worker denial, new restart generation, all non-heartbeat state preservation and cleanup pass. Scoped writer is disabled in this baseline; the full writer activation and six-read commands remain incomplete. Do not execute the previously rejected six-read drafts.
+
+The frontend ignored-build hook explicitly builds `release/zola-production-live` even when frontend bytes are unchanged, using Vercel's [system-provided branch reference](https://vercel.com/docs/environment-variables/system-environment-variables#vercel_git_commit_ref). Verify the resulting deployment is READY at the exact pushed SHA before pairing; a green GitHub deployment status alone remains insufficient.

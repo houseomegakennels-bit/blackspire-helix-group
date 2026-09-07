@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — after combined migration and baseline lifecycle proofs
+
+1. Preserve the new 30-group combined migration evidence and actual current/recovery baseline lifecycle results; do not repeat them or label them full scoped activation.
+2. Complete actual scoped-writer activation with disposable TLS PostgreSQL, secure immutable rollback intake and the contained six-read collector/observer. These are still autonomous engineering work; provider ACL is not their sole remaining dependency.
+3. Use `scripts/prepare-buyer-workflow-package.js` with an explicit protected configuration. Resolve actual gateway and distinct credential references before generating a candidate; validate Cloud execution separately. Keep the live workflow unchanged while prerequisites are red.
+4. Obtain provider execution through the existing exact unsent request, and a READY exact-SHA frontend pairing. Preserve all original release gates. Root partition has no unused trailing extent; online partition/ext4 growth is possible only after provider disk expansion. No resize or further deletion was performed.
+
 ## 2026-09-07 — provider boundary verified; minimum disk headroom recovered
 
 1. Use the reviewed `ZOLA_PROVIDER_ACL_REQUEST.md` for the precise owner/provider submission. Fresh catalog equals the approved baseline, but current postgres cannot execute owner-granted net ACL changes. Do not retry or escalate this established boundary.

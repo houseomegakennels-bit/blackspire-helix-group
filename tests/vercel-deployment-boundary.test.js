@@ -48,7 +48,10 @@ test('the frontend ignored-build decision skips only frontend-identical descenda
   await writeFile(path.join(temporaryRoot, 'backend.js'), 'export const version = 2;\n');
   execFileSync('git', ['add', '.'], {cwd: temporaryRoot});
   execFileSync('git', ['commit', '--quiet', '-m', 'backend only'], {cwd: temporaryRoot});
-  assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base}), true);
+  assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base, branch:'feature/unrelated'}), true);
+  assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base, branch:'release/zola-production-live'}), false,
+    'canonical release previews must carry the exact candidate SHA even for backend-only changes');
+  assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base, branch:'release/zola-production-live-other'}), true);
 
   await writeFile(path.join(frontendRoot, 'app.js'), 'export const version = 2;\n');
   execFileSync('git', ['add', '.'], {cwd: temporaryRoot});
