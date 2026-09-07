@@ -103,3 +103,14 @@ export function parseWriterOperation({ jobId, body }) {
   const normalized = { jobId, ...value };
   return { ...normalized, payloadDigest: digest(canonical(normalized)) };
 }
+
+export function parseWriterReceipt({jobId,body}) {
+  if(!Buffer.isBuffer(body)) reject();
+  if(body.length>8192) reject(413);
+  let q;
+  try {q=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(body));} catch {reject();}
+  exactKeys(q,['version','dispatchId','generation','operation','chunkIndex']);
+  if(!uuid(jobId)||!uuid(q.dispatchId)||q.version!==1||!integer(q.generation,1,Number.MAX_SAFE_INTEGER)
+    ||!integer(q.chunkIndex,0,499)||!['start','raw.append','clean.append','buyers.commit','complete','fail'].includes(q.operation)) reject();
+  return {jobId,...q};
+}

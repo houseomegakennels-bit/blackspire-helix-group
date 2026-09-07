@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-07 00:22 UTC — next writer integration steps
+
+1. Complete final review and release checks for the isolated transactional writer, gateway adapters and PostgreSQL CI harness; commit reviewed code with memory updates and verify exact-head CI after push.
+2. Implement authenticated issuer/intake and canonical source policy while preserving sweep beta and admin route entitlements. Connect secure n8n HTTP nodes only after coordinated caller/rollback continuity is proven. Do not expose per-job permits through saved executions or browser responses.
+3. Finish secure Buyer intake compatibility for immutable `2c0b600`, repair acceptance supervision and obtain actual owner/cross-owner evidence. No legacy unauthenticated intake may gain privileged write authority.
+4. Recheck disk and budget release/backup space. Current approximately 3.77 GiB is below preferred deployment headroom; preserve tools and protected state.
+5. Keep original activation, migration, six-read, CI and merge gates. Isolated writer proof does not authorize claiming production continuity or functional rollback.
+
 ## 2026-09-06 23:17 UTC — continue writer implementation from reviewed protocol
 
 1. Preserve `packages/buyer-writer/protocol.js` and its seven isolated regression groups; this unmounted increment grants no production authority. Implement private PostgreSQL dispatch/receipt ledger and least-privilege routines, with transactional owner, expiry, generation, provenance and idempotency checks. Capture the real authenticated frontend operator before `after()` and before county fetches; default-user fallback is not permit authority.

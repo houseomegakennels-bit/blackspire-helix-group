@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-07 00:22 UTC — transactional writer isolated proof
+
+The private PostgreSQL writer ledger and fixed routines are implemented in `packages/buyer-writer/sql/install.sql`, with unmounted parameterized write/receipt adapters in `packages/buyer-writer/gateway.js`. Thirteen adversarial PostgreSQL 17.6 groups PASS, including all five Buyer tables, browser denial, owner/generation isolation, malformed/expired permits, replay rejection, atomic failure receipts, installer reapplication, and cancellation/expiry under lock contention. The harness applies the exact reviewed Buyer restriction migration to synthetic canonical-shaped tables and installs as a non-superuser CREATEROLE manager. It is not a full production restore or real six-read proof. Protocol/gateway tests PASS 12/12. Independent SQL review reproduced the managed-role test suite; final container cleanup and gateway reviews also APPROVE this isolated increment. Full root suite: 1,339 PASS, zero failures, nine skips; all 93 files completed with no remaining descendants. Build, lint, typecheck, secret scan, living-memory and whitespace checks PASS.
+
+No production writer installation, n8n change, Buyer search or provider call occurred. The live seven-node/nine-write anon workflow remains unchanged. Authenticated issuer/source-policy integration, secure n8n transformation, HTTP mounting and fixed-SHA rollback intake continuity remain engineering work. Production Buyer/Nexus migrations remain UNAPPLIED. Canonical API/worker remain inactive, functional rollback remains NO, and all six actual reads remain NOT RUN. Supabase quota/recovery and prior provider/receiver evidence are preserved.
+
+Baseline local/remote/PR head is `044a85c7e2c1836b9ac94a3ecd10f53747d6f4fa`; implementation changes are local and require final review, commit and new-head CI. Main remains `53adf74e05c607c0d296923bae05d7ac023ecb57`. Disk free is approximately 3.77 GiB; no cleanup occurred in this increment, and no safe path to 8 GiB was demonstrated. Release remains held. Autonomous work is incomplete; continue from `/tmp/zola-astra-activation-current.md`.
+
 ## 2026-09-06 23:17 UTC — writer protocol increment and disk recovery
 
 Recovered exact local/remote/PR head `9d2512ef91b1a74e64decf6f3c41fa0b193bc109`, main `53adf74e05c607c0d296923bae05d7ac023ecb57`, clean initial checkout. PR125 is the sole canonical release PR, OPEN/MERGEABLE, with all five exact-head checks successful (run `34065784801`, audit zero vulnerabilities). Subsequent local changes require their own CI before merge.

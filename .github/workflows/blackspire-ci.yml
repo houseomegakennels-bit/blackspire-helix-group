@@ -72,6 +72,15 @@ jobs:
       - name: Run test suite
         run: npm test 2>&1 | tee ci-logs/03-test.log
 
+      - name: Verify scoped Buyer writer on disposable PostgreSQL 17.6
+        timeout-minutes: 5
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          docker pull "$BUYER_WRITER_TEST_IMAGE"
+          env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            node scripts/test-buyer-writer-postgres.mjs 2>&1 | tee ci-logs/03-writer-postgres.log
+
       - name: Run build check
         run: npm run build 2>&1 | tee ci-logs/04-build.log
 
