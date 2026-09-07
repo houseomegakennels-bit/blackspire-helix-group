@@ -27,12 +27,16 @@ test('every operator API handler enforces admin authorization before route work'
   assert.ok(files.length > 0);
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8');
-    assert.match(source, /import \{ guardAdminApi \} from "@\/lib\/operator-access";/, path.relative(repositoryRoot, file));
+    assert.match(source, /import \{ guardAdminApi(?:Context)? \} from "@\/lib\/operator-access";/, path.relative(repositoryRoot, file));
     const handlers = [...source.matchAll(/export async function (?:GET|POST|PUT|PATCH|DELETE)\s*\([^]*?\)\s*\{/g)];
     assert.ok(handlers.length > 0, `no route handler found in ${path.relative(repositoryRoot, file)}`);
     for (const handler of handlers) {
       const opening = handler.index + handler[0].length;
-      assert.match(source.slice(opening, opening + 180), /const denied = await guardAdminApi\(\);\s*if \(denied\) return denied;/, path.relative(repositoryRoot, file));
+      const contextGuard = source.includes('import { guardAdminApiContext }');
+      const expected = contextGuard
+        ? /const gate = await guardAdminApiContext\(\);\s*if \("response" in gate\) return gate.response;/
+        : /const denied = await guardAdminApi\(\);\s*if \(denied\) return denied;/;
+      assert.match(source.slice(opening, opening + 180), expected, path.relative(repositoryRoot, file));
     }
   }
 });

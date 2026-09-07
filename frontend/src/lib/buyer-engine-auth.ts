@@ -34,12 +34,13 @@ export function hasAdminAuthEnv() {
   return Boolean(getSupabaseUrl() && getSupabaseServiceRoleKey());
 }
 
-export function createPublicSupabaseAuthClient() {
+export function createPublicSupabaseAuthClient(options: { signal?: AbortSignal } = {}) {
   if (!hasPublicAuthEnv()) {
     throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY for operator sign-in.");
   }
 
   return createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+    global: options.signal ? { fetch: (input, init) => fetch(input, { ...init, signal: options.signal }) } : undefined,
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -105,7 +106,7 @@ export async function countAuthUsers() {
   return payload.users?.length ?? 0;
 }
 
-export async function listAuthUsers() {
+export async function listAuthUsers(options: { signal?: AbortSignal } = {}) {
   if (!hasAdminAuthEnv()) {
     return [] as AuthAdminUserRecord[];
   }
@@ -117,6 +118,7 @@ export async function listAuthUsers() {
   while (true) {
     const response = await fetch(`${getSupabaseUrl()}/auth/v1/admin/users?page=${page}&per_page=${perPage}`, {
       method: "GET",
+      signal: options.signal,
       headers: {
         apikey: getSupabaseServiceRoleKey(),
         Authorization: `Bearer ${getSupabaseServiceRoleKey()}`,

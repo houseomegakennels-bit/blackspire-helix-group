@@ -1,4 +1,6 @@
 import "server-only";
+import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
+import { scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -2167,7 +2169,7 @@ async function createBuyerSearchJobWithFallback(input: {
   dateRangeStart: string;
   dateRangeEnd: string;
   minPurchases: number;
-}) {
+}, authority?: BuyerDispatchAuthority | null) {
   try {
     return await createSearchJob({
       title: `${input.county} buyer search`,
@@ -2178,9 +2180,9 @@ async function createBuyerSearchJobWithFallback(input: {
       dateRangeEnd: input.dateRangeEnd,
       minPurchases: input.minPurchases,
       notes: "",
-    });
+    }, authority);
   } catch (error) {
-    if (!isBuyerSearchAuthBlock(error)) throw error;
+    if (authority || scopedBuyerWriterEnabled() || !isBuyerSearchAuthBlock(error)) throw error;
   }
 
   const supabase = getSupabaseAdmin();
@@ -3321,7 +3323,10 @@ export async function estimateDealArv(input: EstimateDealArvInput) {
   };
 }
 
-export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDealInput) {
+export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDealInput, authority?: BuyerDispatchAuthority | null) {
+  if (scopedBuyerWriterEnabled() && !authority) {
+    return { ok: false as const, error: "Authenticated Buyer dispatch authority is required." };
+  }
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
@@ -3357,7 +3362,7 @@ export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDeal
       dateRangeStart: toIsoDateString(rangeStart),
       dateRangeEnd: toIsoDateString(rangeEnd),
       minPurchases: 2,
-    });
+    }, authority);
 
     const [dealUpdate, conversationUpdate, logInsert, taskInsert] = await Promise.all([
       supabase.from("deal_leads").update({

@@ -33,15 +33,23 @@ export async function getOperatorRole(): Promise<OperatorRole> {
  * For API route handlers. Returns a NextResponse to return early when the caller
  * is not an admin (401 anonymous, 403 signed-in non-admin), or null to proceed.
  */
-export async function guardAdminApi(): Promise<NextResponse | null> {
-  const { role } = await resolveRole();
-  if (role === "anonymous") {
-    return NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 });
+export async function guardAdminApiContext(): Promise<
+  | { response: NextResponse }
+  | { operatorId: string; role: "admin" }
+> {
+  const { role, operatorId } = await resolveRole();
+  if (role === "anonymous" || !operatorId) {
+    return { response: NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 }) };
   }
   if (role !== "admin") {
-    return NextResponse.json({ ok: false, error: "Admin access is required for this action." }, { status: 403 });
+    return { response: NextResponse.json({ ok: false, error: "Admin access is required for this action." }, { status: 403 }) };
   }
-  return null;
+  return { operatorId, role };
+}
+
+export async function guardAdminApi(): Promise<NextResponse | null> {
+  const gate = await guardAdminApiContext();
+  return "response" in gate ? gate.response : null;
 }
 
 /** For API route handlers — require any signed-in operator (beta or admin). */

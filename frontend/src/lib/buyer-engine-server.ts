@@ -1,4 +1,6 @@
 import "server-only";
+import { dispatchScopedBuyer, scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
+import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
 import { createBuyerSourceAdapters } from "@/lib/buyer-source-adapters";
 
 import { unstable_cache } from "next/cache";
@@ -610,12 +612,13 @@ export async function listSearchJobs(limit = 12): Promise<SearchJobRecord[]> {
   return (data ?? []) as SearchJobRecord[];
 }
 
-export async function getSearchJobById(searchJobId: string): Promise<SearchJobRecord | null> {
+export async function getSearchJobById(searchJobId: string, authority?: BuyerDispatchAuthority | null): Promise<SearchJobRecord | null> {
   const env = getEnvState();
   if (!env.enabled) return null;
 
   const supabase = getSupabaseAdmin();
-  const scope = await getOperatorScope("read");
+  if (authority) await authority.assertCurrentOwner({ user_id: authority.operatorId });
+  const scope = authority ? { operatorId: authority.operatorId, requiresAuth: false } : await getOperatorScope("read");
   if (scope.requiresAuth || !scope.operatorId) return null;
   let query = supabase
     .from("SearchJob")
@@ -656,13 +659,15 @@ export async function listSearchJobsByIds(searchJobIds: string[]): Promise<Searc
   return (data ?? []) as SearchJobRecord[];
 }
 
-export async function createSearchJob(input: CreateSearchJobInput) {
+export async function createSearchJob(input: CreateSearchJobInput, authority?: BuyerDispatchAuthority | null) {
   const env = getEnvState();
   if (!env.enabled) {
     throw new Error(`Missing Supabase env: ${env.missing.join(", ")}`);
   }
 
-  const scope = await getOperatorScope("write");
+  if (scopedBuyerWriterEnabled() && !authority) throw new Error("Buyer dispatch authorization unavailable.");
+  if (authority) await authority.assertCurrentOwner({ user_id: authority.operatorId });
+  const scope = authority ? { operatorId: authority.operatorId } : await getOperatorScope("write");
   const userId = scope.operatorId!;
 
   const supabase = getSupabaseAdmin();
@@ -1751,7 +1756,13 @@ async function postLegacyForsythJson(formattedPin: string) {
   }
 }
 
-export async function triggerBuyerEngineWorkflow(job: SearchJobRecord) {
+export async function triggerBuyerEngineWorkflow(job: SearchJobRecord, authority?: BuyerDispatchAuthority | null) {
+  // A captured scoped admission can never fall through to legacy dispatch,
+  // including if configuration becomes unavailable during asynchronous work.
+  if (authority || scopedBuyerWriterEnabled()) {
+    if (!authority) throw new Error("Buyer dispatch authorization unavailable.");
+    return dispatchScopedBuyer(job, authority, getSupabaseAdmin());
+  }
   const webhookUrl = `${getWebhookBaseUrl().replace(/\/$/, "")}/buyer-engine`;
   const payload: Record<string, unknown> = {
     search_job_id: job.id,

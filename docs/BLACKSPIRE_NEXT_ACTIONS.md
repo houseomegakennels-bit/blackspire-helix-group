@@ -2,11 +2,11 @@
 
 ## 2026-09-07 — authenticated writer composition remaining
 
-1. Issuer/reconciliation full checks pass: 1,402 tests, zero failures, nine skips, 104 files contained; PostgreSQL 27 groups pass. Finish final review/commit/push of this isolated delta and require its exact-head CI.
-2. Capture the actual successful route guard principal and private authentication material before asynchronous acquisition. Revalidate without consuming the beta action twice, bind canonical job ownership, and preserve the original criteria/revision and fresh attempt UUID through timeout reconciliation.
-3. Mount the bounded source acquisition, issuer and authenticated n8n delivery with separate verified PostgreSQL roles/pools and protected secure credentials. No legacy direct failure PATCH may overwrite an uncertain successful attempt.
+1. Frontend hidden-file exclusion build and full root regressions pass (1,422 passed, zero failed, nine skipped; 107 files contained). Finish final memory/security/diff checks, independent staged scope review, commit/push and exact-head CI. Issuer e22f1a0 is already CI green.
+2. Implement explicit dedicated PostgreSQL pools with live role/privilege verification and fixed statement allowlists. First add deterministic locked dependency packaging to the source-only release and isolated test snapshot flows; never install into the sealed rollback artifact.
+3. Mount the writer with authoritative health/readiness/emergency-stop/generation checks and separate protected credentials. Validate actual secure n8n Cloud execution before replacing the live workflow. Frontend scoped dispatch is implemented but not enabled in production.
 4. Complete immutable rollback intake continuity and the safe real six-read harness. Keep canonical activation, reviewed production migrations and PR125 merge held until every original gate passes.
-5. Current free disk is roughly 1.3–1.6 GiB during unrelated build activity. Preserve all unrelated/protected state; only independently verified disposable cleanup is authorized. No further deletion has occurred.
+5. Current free disk is roughly 1.6 GiB. Preserve all unrelated/protected state; only independently verified disposable cleanup is authorized. No further deletion has occurred.
 
 ## 2026-09-07 00:22 UTC — next writer integration steps
 

@@ -1,21 +1,27 @@
-import { guardAdminApi } from "@/lib/operator-access";
+import { captureBuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
+import { isBuyerDispatchUncertainError, scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
+import { guardAdminApiContext } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { launchBuyerSearchFromDeal, recordBuyerSearchDispatchFailure } from "@/lib/deal-engine-server";
 import { triggerBuyerEngineWorkflow } from "@/lib/buyer-engine-server";
 
+export const maxDuration = 300;
+
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const denied = await guardAdminApi();
-  if (denied) return denied;
+  const requestStartedAt = performance.now();
+  const gate = await guardAdminApiContext();
+  if ("response" in gate) return gate.response;
   try {
+    const authority = scopedBuyerWriterEnabled() ? await captureBuyerDispatchAuthority(gate, requestStartedAt) : null;
     const body = (await request.json()) as { dealId?: string };
     if (!body.dealId?.trim()) {
       return NextResponse.json({ ok: false, error: "dealId is required." }, { status: 400 });
     }
 
-    const result = await launchBuyerSearchFromDeal({ dealId: body.dealId.trim() });
+    const result = await launchBuyerSearchFromDeal({ dealId: body.dealId.trim() }, authority);
     if (!result.ok) {
       const status =
         result.error.startsWith("Sign in required")
@@ -27,8 +33,22 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await triggerBuyerEngineWorkflow(result.job);
+      await triggerBuyerEngineWorkflow(result.job, authority);
     } catch (error) {
+      if (authority) {
+        const uncertain = isBuyerDispatchUncertainError(error);
+        // Scoped outcomes cannot safely use legacy unfenced Deal/conversation
+        // rewrites or create an instruction to retry an uncertain transaction.
+        if (uncertain) console.error("Buyer dispatch reconciliation required", {
+          jobId: error.jobId, requestId: error.requestId, updatedAt: error.updatedAt,
+        });
+        return NextResponse.json({
+          ok: true, job: result.job,
+          workflow: { ...result.workflow, dispatch: uncertain ? "unknown" : "failed" },
+          warning: uncertain ? "Buyer dispatch completion could not be confirmed." : "Buyer Engine scoped dispatch failed.",
+          message: "Buyer search was created; this dispatch has no confirmed completion.",
+        }, { status: 202 });
+      }
       const message = error instanceof Error ? error.message : "Buyer Engine workflow dispatch failed.";
       await recordBuyerSearchDispatchFailure({
         dealId: body.dealId.trim(),

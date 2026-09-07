@@ -23,8 +23,9 @@ UUID tombstone. Never refresh the revision and reuse the same attempt UUID. A
 missing attempt has no database workspace association, so its workspace authority
 comes from the configured gateway and authenticated frontend guard. `absent` does
 not set SearchJob status to failed. Caller response handling must report failure.
-These routes remain unmounted; actual frontend guard capture, dedicated pool role
-verification and live n8n delivery are still required.
+The gateway routes remain unmounted. Frontend guard capture and opt-in scoped
+dispatch now compose acquisition, issuance, n8n transport and reconciliation.
+Dedicated pool role verification and actual live n8n integration remain required.
 
 Each five-minute permit binds a job, owner, workspace, immutable criteria and
 generation. Job locks serialize issuance, cancellation and writes. Operations
@@ -64,7 +65,7 @@ credential file, environment file, listener or database driver is loaded here.
 
 `http.js` composes these adapters into an explicitly created, initially unbound
 HTTP server. It authenticates before reading the body or checking availability,
-matches only the three exact operation/receipt/context routes, bounds bodies and sockets,
+matches only the fixed operation/receipt/context and optional issuer routes, bounds bodies and sockets,
 and checks availability again after body collection. Disconnected database
 operations retain their admission slot until settlement. Its availability hook
 is not atomic fencing against a separate authority database. Deployment must
