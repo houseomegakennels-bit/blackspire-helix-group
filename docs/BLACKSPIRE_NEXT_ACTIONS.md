@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — after actual scoped activation
+
+1. Preserve exact `8645ab2` scoped activation, official Node ownership and cleanup proofs. Actual API/worker startup, three committed activations, five-table writer/reconciliation, API/worker stale-binding rejection and seeded-state preservation now pass; do not repeat absent a relevant runtime change. Stale task-result rejection and real six reads remain separate acceptance witnesses.
+2. Finish secure retained Buyer admission for immutable rollback `2c0b600` and prove denial of all legacy direct deployment POST entrypoints. Its unauthenticated webhook and unfenced admin failure updates are not repaired by provider ACL. Rollback pre-ACL acceptance is not yet PASS.
+3. Finish the contained six-read lifecycle owner and authoritative observers, persist submission identity before sending once, and resolve real authorization/owner witnesses. Do not execute the rejected temporary harnesses.
+4. Resolve actual authenticated gateway and distinct n8n credential references, generate the exact candidate and validate isolated Cloud execution. Live n8n is unchanged; the existing actual package has requirements only.
+5. Keep the reviewed provider request ready for owner submission. Prepare the exact guarded combined migration transaction and post-provider release command; use connected Supabase access rather than inventing a direct database credential path. Provider approval alone does not close remaining engineering gates.
+6. Recheck approximately 5.75 GiB free and preserve installed uv tools and protected state. Finish review/checks/commit/push and exact-head CI for this evidence update. Merge only with every original gate green.
+
 ## 2026-09-07 — after combined migration and baseline lifecycle proofs
 
 1. Preserve the new 30-group combined migration evidence and actual current/recovery baseline lifecycle results; do not repeat them or label them full scoped activation.
