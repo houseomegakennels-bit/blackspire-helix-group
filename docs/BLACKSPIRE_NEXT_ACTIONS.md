@@ -2,7 +2,7 @@
 
 ## 2026-09-07 00:22 UTC — next writer integration steps
 
-1. Source-context b8666a0 is exact-head CI green. Offline n8n builder and known-failure path pass independent review and 31 focused writer tests; finish checks, commit/push and require its own exact-head CI.
+1. Offline n8n candidate37c0985 is exact-head CI green. Bounded source transport passes six isolated groups and independent review; finish checks/commit and require its own CI. Connect approved source policies and existing adapters before any production integration.
 2. Implement authenticated issuer/intake and canonical source policy while preserving sweep beta and admin route entitlements. Connect secure n8n HTTP nodes only after coordinated caller/rollback continuity is proven. Do not expose per-job permits through saved executions or browser responses.
 3. Finish secure Buyer intake compatibility for immutable `2c0b600`, repair acceptance supervision and obtain actual owner/cross-owner evidence. No legacy unauthenticated intake may gain privileged write authority.
 4. Recheck disk and budget release/backup space. Current approximately 3.77 GiB is below preferred deployment headroom; preserve tools and protected state.

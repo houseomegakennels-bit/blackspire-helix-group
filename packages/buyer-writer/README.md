@@ -88,6 +88,22 @@ from all transient Cloud storage. The returned definition includes empty pinData
 publishing must use the current management API's accepted projection and verify
 actual pinning/settings rather than assuming export shape equals update shape.
 
+`source-http.js` supplies an unmounted bounded county transport. Trusted endpoint
+policies fix URL, method and configuration digest; callers supply only an endpoint
+ID and adapter parameters. It pins vetted public IPv4 answers while retaining TLS
+hostname verification, uses an owned agent without environment proxies, and
+rejects redirects, HTTP/provider errors, compression, malformed JSON and truncated
+bodies. Request counts include failed attempts; response bytes and monotonic
+elapsed deadlines cover acquisition. Outgoing query/body and response headers
+have separate per-request limits. Form requests retain the existing fixed user
+agent; Forsyth's fixed tenant header is supported. There are no automatic retries.
+
+Six isolated mocked-transport groups verify these controls. They do not prove a
+real TLS exchange or deployed SSRF protection. County adapters still need this
+transport injected, exact reviewed endpoint policies, response-shape/row limits,
+and final 6 MiB payload enforcement. Strict HTTP failure intentionally replaces
+legacy partial acquisition after failed Forsyth detail calls.
+
 The installer is separate from the already-reviewed Buyer/Nexus migrations. It
 does not provision login passwords or revoke the legacy browser grants itself.
 Its managed installer needs CREATEROLE, ownership of the five Buyer tables and
