@@ -22,6 +22,10 @@ function credentialHeaders(rawHeaders) {
   return headers;
 }
 
+export function authenticateWriterRequest(rawHeaders,credential) {
+  return authenticateWriter({headers:credentialHeaders(rawHeaders),expectedCredential:credential});
+}
+
 // Deployment supplies an explicitly configured dedicated runtime connection.
 // query must use a single autocommit statement with bounded server-side statement
 // and lock timeouts. Never provide an admin pool or wrap calls in an uncommitted
@@ -33,7 +37,7 @@ export function createWriterGateway({credential,workspace,query}) {
   }
   return async function handle({rawHeaders,body,jobId}) {
     try {
-      const {permitDigest}=authenticateWriter({headers:credentialHeaders(rawHeaders),expectedCredential:credential});
+      const {permitDigest}=authenticateWriterRequest(rawHeaders,credential);
       const {payloadDigest: _localDigest,...operation}=parseWriterOperation({jobId,body});
       // SQL hashes its typed JSONB value itself. The local protocol digest is not
       // passed as authority and cannot override the authoritative receipt digest.
@@ -58,7 +62,7 @@ export function createWriterReceiptGateway({credential,workspace,query}) {
   }
   return async function handle({rawHeaders,body,jobId}) {
     try {
-      const {permitDigest}=authenticateWriter({headers:credentialHeaders(rawHeaders),expectedCredential:credential});
+      const {permitDigest}=authenticateWriterRequest(rawHeaders,credential);
       const q=parseWriterReceipt({jobId,body});
       const result=await query('select buyer_writer.receipt($1,$2,$3,$4,$5,$6,$7) as result',[
         permitDigest,workspace,q.jobId,q.dispatchId,q.generation,q.operation,q.chunkIndex,

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { parseWriterOperation } from '../packages/buyer-writer/protocol.js';
+import { createBuyerWriterHttpServer } from '../packages/buyer-writer/http.js';
 assert.equal(process.versions.node, '22.23.1');
 const image = process.env.BUYER_WRITER_TEST_IMAGE;
 assert.match(image ?? '', /^postgres@sha256:[a-f0-9]{64}$/);
@@ -53,7 +54,7 @@ const issue = (options = {}) => {
   const permit = randomBytes(32).toString('base64url');
   const permitDigest = createHash('sha256').update(permit).digest('hex');
   const dispatch = JSON.parse(role('buyer_writer_issuer', `select buyer_writer.issue(${literal(jobId)},${literal(owner)},${literal(workspace)},${literal(permitDigest)},false)`));
-  return { jobId, permitDigest, ...dispatch, ...options };
+  return { jobId, permit, permitDigest, ...dispatch, ...options };
 };
 const sale = { buyer_name:'ISOLATED HOLDINGS LLC',seller_name:'SYNTHETIC',property_address:'TEST ONLY',mailing_address:'TEST, NC',sale_price:120000,sale_date:'2026-08-01',property_type:'land',parcel_id:'SYNTHETIC-1',deed_type:'TEST',lender_name:'UNKNOWN' };
 const request = (d, operation, payload = {}, overrides = {}) => {
@@ -232,6 +233,49 @@ try {
     assert.equal((await cancel).status,0);assert.notEqual(operation.status,0);assert.match(operation.err,/42501/);
     assert.equal(sql(`select count(*) from public."RawSale" where search_job_id=${literal(d.jobId)}`),'0');
     checks.push('cancellation acknowledgement fences a concurrent waiting write');
+  }
+  {
+    // Actual local HTTP -> gateway -> dedicated PostgreSQL login. psql is a
+    // test-only transport: PREPARE preserves the gateway's fixed SQL parameters;
+    // no production database driver, credential, endpoint or pool is loaded.
+    const workload=randomBytes(32).toString('base64url');
+    const query=async(statement,parameters)=>{
+      const write=statement==='select buyer_writer.apply($1,$2,$3::jsonb) as result';
+      assert.ok(write||statement==='select buyer_writer.receipt($1,$2,$3,$4,$5,$6,$7) as result');
+      const types=write?'text,text,jsonb':'text,text,uuid,uuid,bigint,text,integer';
+      const result=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_runtime','-d','writer_test',
+        '-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate'],
+      `set statement_timeout='10s';set lock_timeout='5s';prepare writer_http(${types}) as ${statement};execute writer_http(${parameters.map(literal).join(',')});`);
+      if(result.status!==0) throw Object.assign(new Error('isolated writer database rejected'),{code:result.stderr.match(/ERROR:\s+([0-9A-Z]{5})/)?.[1]});
+      return{rows:[{result:JSON.parse(result.stdout.trim())}]};
+    };
+    const server=createBuyerWriterHttpServer({credential:workload,workspace,query,isAvailable:()=>true});
+    try {
+      await new Promise((resolve,reject)=>{
+        server.once('error',reject);
+        server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});
+      });
+      const d=issue();
+      const endpoint=`http://127.0.0.1:${server.address().port}/api/internal/buyer-writer/v1/jobs/${d.jobId}/operations`;
+      const send=async(operation,payload={},headers={})=>{
+        const {jobId,...body}=request(d,operation,payload);
+        const response=await fetch(endpoint,{method:'POST',redirect:'error',headers:{'content-type':'application/json',
+          'x-buyer-writer-key':workload,'x-buyer-job-permit':d.permit,...headers},body:JSON.stringify(body)});
+        return{status:response.status,body:await response.json()};
+      };
+      assert.equal((await send('start',{}, {'x-buyer-writer-key':'invalid'})).status,401);
+      assert.equal((await send('start')).status,200);
+      assert.equal((await send('start')).status,409);
+      for(const kind of ['raw','clean'])assert.equal((await send(`${kind}.append`,{rows:[{...sale,buyer_name:'HTTP ISOLATED LLC'}]})).status,200);
+      assert.equal((await send('buyers.commit')).status,200);
+      assert.equal((await send('complete')).status,200);
+      for(const table of ['RawSale','CleanSale','BuyerReport'])assert.equal(sql(`select count(*) from public."${table}" where search_job_id=${literal(d.jobId)}`),'1');
+      assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
+      assert.equal(sql(`select count(*) from public."BuyerProfile" where buyer_name='HTTP ISOLATED LLC'`),'1');
+      checks.push('real loopback HTTP commits all five tables under dedicated runtime login and rejects credentials/replay');
+    } finally {
+      server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
+    }
   }
   console.log(JSON.stringify({postgres:'17.6',checksPassed:checks.length,checks,productionConnections:0,providerCalls:0,outreach:0}));
 } finally {

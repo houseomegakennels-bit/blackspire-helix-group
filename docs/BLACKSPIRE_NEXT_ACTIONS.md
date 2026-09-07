@@ -2,7 +2,7 @@
 
 ## 2026-09-07 00:22 UTC — next writer integration steps
 
-1. Complete final review and release checks for the isolated transactional writer, gateway adapters and PostgreSQL CI harness; commit reviewed code with memory updates and verify exact-head CI after push.
+1. Transactional core bf769c0 is independently reviewed, pushed and CI green. HTTP composition and actual HTTP-to-PostgreSQL proof are independently reviewed and locally green; commit this increment with memory updates and verify its exact-head CI after push.
 2. Implement authenticated issuer/intake and canonical source policy while preserving sweep beta and admin route entitlements. Connect secure n8n HTTP nodes only after coordinated caller/rollback continuity is proven. Do not expose per-job permits through saved executions or browser responses.
 3. Finish secure Buyer intake compatibility for immutable `2c0b600`, repair acceptance supervision and obtain actual owner/cross-owner evidence. No legacy unauthenticated intake may gain privileged write authority.
 4. Recheck disk and budget release/backup space. Current approximately 3.77 GiB is below preferred deployment headroom; preserve tools and protected state.
