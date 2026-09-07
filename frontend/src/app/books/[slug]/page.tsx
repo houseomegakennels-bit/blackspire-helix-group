@@ -5,6 +5,7 @@ import { BookPlayer, type PlayerChapter } from "@/components/book-player";
 import { MarketingShell } from "@/components/marketing-shell";
 import { getPublishedBook } from "@/lib/book-studio/service";
 import { getAssetUrl } from "@/lib/book-studio/store";
+import { publicChapters, publicAssetAllowed } from "@/lib/book-studio/publication";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +18,13 @@ export default async function PublicBookDetailPage({
   const book = await getPublishedBook(slug);
   if (!book) notFound();
 
-  const cover = book.assets.find((asset) => asset.id === book.coverAssetId);
+  const cover = book.assets.find((asset) => asset.id === book.coverAssetId && publicAssetAllowed(book, asset.relativePath));
+  const releasedChapters = publicChapters(book);
+  const releasedSceneIds = new Set(releasedChapters.flatMap((chapter) => chapter.sceneIds));
 
   const assetById = new Map(book.assets.map((asset) => [asset.id, asset]));
   const sceneById = new Map(book.scenes.map((scene) => [scene.id, scene]));
-  const playerChapters: PlayerChapter[] = [...book.chapters]
+  const playerChapters: PlayerChapter[] = [...releasedChapters]
     .sort((a, b) => a.order - b.order)
     .map((chapter) => {
       const video = chapter.videoAssetId ? assetById.get(chapter.videoAssetId) : null;
@@ -32,7 +35,7 @@ export default async function PublicBookDetailPage({
         .sort((a, b) => a.order - b.order)
         .map((scene) => {
           const image = scene.imageAssetId ? assetById.get(scene.imageAssetId) : null;
-          return image ? { url: getAssetUrl(image), title: scene.title } : null;
+          return image && publicAssetAllowed(book, image.relativePath) ? { url: getAssetUrl(image), title: scene.title } : null;
         })
         .filter((image): image is { url: string; title: string } => Boolean(image));
 
@@ -42,7 +45,7 @@ export default async function PublicBookDetailPage({
         title: chapter.title,
         summary: chapter.summary,
         videoUrl: video ? getAssetUrl(video) : null,
-        audioUrl: audio ? getAssetUrl(audio) : null,
+        audioUrl: audio && publicAssetAllowed(book, audio.relativePath) ? getAssetUrl(audio) : null,
         sceneImages,
       };
     });
@@ -58,7 +61,7 @@ export default async function PublicBookDetailPage({
                   <Image src={getAssetUrl(cover)} alt={book.title} fill unoptimized className="object-cover" />
                 </div>
               ) : (
-                <div className="flex min-h-[420px] items-center justify-center rounded-[28px] border border-dashed border-[var(--line)] bg-black/25 text-sm text-[var(--copy-muted)]">
+                <div className="relative flex min-h-[420px] items-center justify-center rounded-[28px] border border-dashed border-[var(--line)] bg-black/25 text-sm text-[var(--copy-muted)]">
                   No cover art available
                 </div>
               )}
@@ -71,11 +74,11 @@ export default async function PublicBookDetailPage({
               </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="brand-card p-4">
-                  <div className="brand-display text-2xl text-white">{book.chapters.length}</div>
+                  <div className="brand-display text-2xl text-white">{releasedChapters.length}</div>
                   <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Chapters</div>
                 </div>
                 <div className="brand-card p-4">
-                  <div className="brand-display text-2xl text-white">{book.scenes.length}</div>
+                  <div className="brand-display text-2xl text-white">{releasedSceneIds.size}</div>
                   <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[var(--copy-muted)]">Scenes</div>
                 </div>
                 <div className="brand-card p-4">

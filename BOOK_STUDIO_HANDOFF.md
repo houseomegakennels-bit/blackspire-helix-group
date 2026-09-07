@@ -1,3 +1,5 @@
+> Historical July production handoff. For the current private pilot use [docs/GEMINARA_PRIVATE_PILOT.md](docs/GEMINARA_PRIVATE_PILOT.md). The credential-loading, npm-install, service-marker edits, automatic live-update and old chapter-progress instructions below are superseded for this task. Do not run these production commands in a disposable environment. The September read-only check found 20 existing chapter-video routes; no production mutation occurred.
+
 # Book Studio — Geminara Part One: Session Handoff
 
 Continuation guide for finishing the Geminara Part One audiobook from a fresh Claude Code cloud session. Written 2026-07-08.
