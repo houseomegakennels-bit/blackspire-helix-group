@@ -4,6 +4,8 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { parseWriterOperation } from '../packages/buyer-writer/protocol.js';
 import { createBuyerWriterHttpServer } from '../packages/buyer-writer/http.js';
+import { planBuyerWrites } from '../packages/buyer-writer/plan.js';
+import { normalizeBuyerSales } from '../packages/buyer-writer/normalize.js';
 assert.equal(process.versions.node, '22.23.1');
 const image = process.env.BUYER_WRITER_TEST_IMAGE;
 assert.match(image ?? '', /^postgres@sha256:[a-f0-9]{64}$/);
@@ -257,8 +259,8 @@ try {
       });
       const d=issue();
       const endpoint=`http://127.0.0.1:${server.address().port}/api/internal/buyer-writer/v1/jobs/${d.jobId}/operations`;
-      const send=async(operation,payload={},headers={})=>{
-        const {jobId,...body}=request(d,operation,payload);
+      const send=async(operation,payload={},headers={},chunks={})=>{
+        const {jobId,...body}=request(d,operation,payload,chunks);
         const response=await fetch(endpoint,{method:'POST',redirect:'error',headers:{'content-type':'application/json',
           'x-buyer-writer-key':workload,'x-buyer-job-permit':d.permit,...headers},body:JSON.stringify(body)});
         return{status:response.status,body:await response.json()};
@@ -266,17 +268,38 @@ try {
       assert.equal((await send('start',{}, {'x-buyer-writer-key':'invalid'})).status,401);
       assert.equal((await send('start')).status,200);
       assert.equal((await send('start')).status,409);
-      for(const kind of ['raw','clean'])assert.equal((await send(`${kind}.append`,{rows:[{...sale,buyer_name:'HTTP ISOLATED LLC'}]})).status,200);
-      assert.equal((await send('buyers.commit')).status,200);
-      assert.equal((await send('complete')).status,200);
-      for(const table of ['RawSale','CleanSale','BuyerReport'])assert.equal(sql(`select count(*) from public."${table}" where search_job_id=${literal(d.jobId)}`),'1');
+      const criteria={county:'Wake',state:'NC',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-12-31'};
+      const normalized=normalizeBuyerSales({...criteria,raw_sales:Array.from({length:201},(_,i)=>({...sale,buyer_name:'HTTP ISOLATED LLC',parcel_id:`HTTP-${i}`}))});
+      const plan=planBuyerWrites({...d,criteria,...normalized});
+      for(const item of plan)assert.equal((await send(item.operation,item.payload,{}, {chunkIndex:item.chunkIndex,chunkCount:item.chunkCount})).status,200);
+      for(const table of ['RawSale','CleanSale'])assert.equal(sql(`select count(*) from public."${table}" where search_job_id=${literal(d.jobId)}`),'201');
+      assert.equal(sql(`select count(*) from public."BuyerReport" where search_job_id=${literal(d.jobId)}`),'1');
       assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
       assert.equal(sql(`select count(*) from public."BuyerProfile" where buyer_name='HTTP ISOLATED LLC'`),'1');
-      checks.push('real loopback HTTP commits all five tables under dedicated runtime login and rejects credentials/replay');
+      checks.push('real loopback HTTP executes normalized multi-chunk plan through dedicated runtime and all five tables');
     } finally {
       server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
     }
   }
+  check('planner JSONB byte accounting and ISO calendar dates agree with actual PostgreSQL',()=>{
+    const d=issue();const criteria={property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-12-31'};
+    assert.equal(sql(`select buyer_writer.eligible(${literal(JSON.stringify(sale))}::jsonb,${literal(JSON.stringify({...criteria,property_type:'ALL'}))}::jsonb)`),'t');
+    const rows=Array.from({length:100},(_,i)=>({...sale,buyer_name:'漢'.repeat(512),seller_name:'漢'.repeat(512),
+      mailing_address:'漢'.repeat(512),property_address:'漢'.repeat(512),deed_type:'漢'.repeat(512),
+      lender_name:'漢'.repeat(512),parcel_id:String(i),sale_price:Number.MIN_VALUE}));
+    for(const body of planBuyerWrites({...d,criteria,raw:rows,clean:rows})) {
+      assert.ok(Number(sql(`select octet_length(${literal(JSON.stringify({jobId:d.jobId,...body}))}::jsonb::text)`))<=262144);
+    }
+    for(const stamp of ['2026-08-01T00:30:00+14:00','2026-08-31T23:30:00-05:00']) {
+      const normalized=normalizeBuyerSales({...criteria,county:'Cumberland',state:'NC',source_type:'arcgis_cumberland',
+        raw_sales:[{OWNER:'DATE TEST',PKG_SALE_DATE:stamp}]});
+      assert.equal(normalized.raw[0].sale_date,sql(`select ${literal(stamp)}::date::text`));
+    }
+    const empty=issue();apply(empty,'start');
+    for(const item of planBuyerWrites({...empty,criteria,raw:[],clean:[]}))apply(empty,item.operation,item.payload);
+    assert.equal(sql(`select status from public."SearchJob" where id=${literal(empty.jobId)}`),'completed');
+    assert.equal(sql(`select count(*) from public."BuyerReport" where search_job_id=${literal(empty.jobId)}`),'0');
+  });
   console.log(JSON.stringify({postgres:'17.6',checksPassed:checks.length,checks,productionConnections:0,providerCalls:0,outreach:0}));
 } finally {
   cleanup();

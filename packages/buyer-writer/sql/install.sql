@@ -165,7 +165,7 @@ end$$;
 create or replace function buyer_writer.eligible(r jsonb,c jsonb) returns boolean
 language sql immutable set search_path=pg_catalog as $$
  select coalesce((r->>'sale_date')::date between (c->>'date_range_start')::date and (c->>'date_range_end')::date
- and (coalesce(c->>'property_type','') in ('','all') or position(lower(c->>'property_type') in coalesce(r->>'property_type',''))>0),false)
+ and (lower(coalesce(c->>'property_type','')) in ('','all') or position(lower(c->>'property_type') in coalesce(r->>'property_type',''))>0),false)
 $$;
 
 -- Computes profile/report facts only from private, committed clean-sale evidence.

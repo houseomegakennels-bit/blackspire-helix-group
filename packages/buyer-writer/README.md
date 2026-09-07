@@ -36,6 +36,18 @@ is not atomic fencing against a separate authority database. Deployment must
 still provide the dedicated database pool, authoritative stop observation,
 private listener/TLS ingress and bounded database connection/query timeouts.
 
+`normalize.js` preserves the existing county field conversions and removes
+ownership fields from the returned sales. ISO timestamps now retain their source
+calendar date, matching PostgreSQL date input; epoch-based county conversions
+already produce UTC dates. Date-only filtering is independent of host timezone.
+Invalid dates and non-finite prices cannot be laundered into accepted writes.
+`plan.js` validates the entire ordered write sequence before sending it, including
+the exact eligible clean set, row/chunk/byte limits and detached payloads. Exact
+duplicate rows reject the entire plan; this intentionally prevents legacy
+duplicate counting rather than silently merging overlapping source records.
+The SQL layer independently repeats authorization, provenance and lifecycle
+checks. These helpers do not establish source-context authorization themselves.
+
 The installer is separate from the already-reviewed Buyer/Nexus migrations. It
 does not provision login passwords or revoke the legacy browser grants itself.
 Its managed installer needs CREATEROLE, ownership of the five Buyer tables and
@@ -53,6 +65,7 @@ env -i PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin \
   BUYER_WRITER_TEST_IMAGE=postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94 \
   node scripts/test-buyer-writer-postgres.mjs
 node --test tests/buyer-writer-protocol.test.js tests/buyer-writer-gateway.test.js tests/buyer-writer-http.test.js
+node --test tests/buyer-writer-plan.test.js
 ```
 
 The image must already be pulled. The harness uses PostgreSQL 17.6, synthetic
