@@ -99,8 +99,10 @@ have separate per-request limits. Form requests retain the existing fixed user
 agent; Forsyth's fixed tenant header is supported. There are no automatic retries.
 
 Six isolated mocked-transport groups verify these controls. They do not prove a
-real TLS exchange or deployed SSRF protection. County adapters still need this
-transport injected, exact reviewed endpoint policies, response-shape/row limits,
+real TLS exchange or deployed SSRF protection. The pure factory in `frontend/src/lib/buyer-source-adapters.ts` now supports
+injected source/transport callbacks while the current trigger preserves its legacy
+composition. The scoped composition still needs exact reviewed endpoint policies,
+response-shape/row limits,
 and final 6 MiB payload enforcement. Strict HTTP failure intentionally replaces
 legacy partial acquisition after failed Forsyth detail calls.
 
