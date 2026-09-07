@@ -8,6 +8,8 @@ on:
       - scripts/zola-receiver-maintenance.mjs
       - scripts/zola-receiver-rebuild.mjs
       - scripts/zola-receiver-prebuilt.mjs
+      - scripts/zola-vercel-protection-inventory.mjs
+      - tests/zola-vercel-protection-inventory.test.js
 
 permissions:
   contents: read
@@ -54,3 +56,16 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ZOLA_VERCEL_BIN: ${{ runner.temp }}/zola-vercel-cli/node_modules/.bin/vercel
         run: node scripts/zola-receiver-prebuilt.mjs
+
+      - name: Inventory rollback deployment protections (read only)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/zola-vercel-protection-inventory.mjs
+      - name: Retain sanitized rollback protection inventory
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zola-vercel-protection-inventory-${{ github.sha }}
+          path: zola-vercel-protection-inventory.json
+          if-no-files-found: error
+          retention-days: 7

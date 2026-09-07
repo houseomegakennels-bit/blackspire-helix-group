@@ -1,5 +1,16 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — current-head engineering continuation
+
+1. Preserve the completed scoped writer proof; its implementation remains unchanged. New frontend read-helper changes require their own frontend/full regression and exact-head CI evidence.
+2. Use the resolved protected n8n package and TLS-verified configuration under `n8n-current-74ae0e00-192c-4f82-ada6-ed2099bcb151`; re-pin its release SHA after commit. Never recreate its unused credentials or publish before ACL, writer gateway readiness and caller continuity.
+3. Use `scripts/prepare-buyer-migration-package.js` to create a new protected exact-HEAD package after commit. Never apply provider-owned SQL through this command. Production role provisioning, writer E2E, read acceptance and application migrations remain gated.
+4. Run and review the new read-only Vercel protection inventory at the pushed head. Finish separately retained authenticated rollback intake and prove all immutable/alias/domain direct POST denials; inventory or WAF presence alone is not acceptance.
+5. The executable offline six-read command is `bash scripts/with-node.sh scripts/zola-six-read-offline.js`. Its fresh SQLite dispatcher and actual six route contracts pass, but the production collector, real process-generation ownership and authoritative live attempt observer remain unfinished. Do not promote offline evidence into live PASS.
+6. Reconcile zero existing Nexus contacts and limited authenticated owner witnesses with the final live acceptance contract. The protected IDs-only witness manifest contains actual data; do not generate production fixture rows merely to obtain nonempty output.
+7. Recheck disk after cleanup: 7,300,689,920 bytes was free; another 1,289,244,672 usable bytes reaches 8 GiB. No other large disposable candidate is proven. Preserve all retained evidence and recovery artifacts.
+8. Provider support request remains ready/unsent. Finish guarded post-provider orchestration after actual rollback/read controls are established. All live gates remain red; PR125 stays open/unmerged.
+
 ## 2026-09-07 — after actual scoped activation
 
 1. Preserve exact `8645ab2` scoped activation, official Node ownership and cleanup proofs. Actual API/worker startup, three committed activations, five-table writer/reconciliation, API/worker stale-binding rejection and seeded-state preservation now pass; do not repeat absent a relevant runtime change. Stale task-result rejection and real six reads remain separate acceptance witnesses.

@@ -1,3 +1,7 @@
+import {planBuyerWrites} from '../packages/buyer-writer/plan.js';
+import { readFileSync } from 'node:fs';
+import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
+import {buyerWriterExtensionPostcondition} from '../packages/buyer-writer/extension-acl.js';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { EXTENSION_ACL_CATALOG_SQL } from '../packages/buyer-writer/extension-acl-catalog.js';
@@ -15,7 +19,7 @@ const ownership = process.env.BUYER_WRITER_ACL_OWNER;
 assert.match(ownership??'',/^[a-f0-9]{32}$/);
 const run = (args, input) => spawnSync('docker', args, { input, encoding: 'utf8', timeout: 60000, maxBuffer: 1024 * 1024 });
 const sql = (statement, { fail = false } = {}) => {
-  const r = run(['exec','-i',containerId,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'], statement);
+  const r = run(['exec','-i',containerId,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'], 'set client_min_messages=warning;'+statement);
   if (fail) { assert.equal(r.error,undefined);assert.equal(r.status,3,'expected psql SQL denial');assert.match(r.stderr,fail);return; }
   assert.equal(r.status, 0, `isolated SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0, 600)}`);
   return r.stdout.trim();
@@ -81,6 +85,7 @@ try {
    grant consumer to observer with inherit true,set true;`);
   const capture=()=>JSON.parse(sql(EXTENSION_ACL_CATALOG_SQL));
   sql(`alter table net._http_response rename column id to "column$zola_acl$\\'";`);
+  const makePlan=()=>{
   const baseline=capture();
   const effective=[];
   // One bounded catalog query for all effective privileges and grant options.
@@ -95,7 +100,9 @@ try {
     when o.value->>'kind'='S' then array['SELECT','UPDATE','USAGE'] else array['DELETE','INSERT','MAINTAIN','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE'] end) p;`);
   effective.push(...JSON.parse(rows));
   const schemaEffective=JSON.parse(sql(`select jsonb_agg(jsonb_build_array(rolname,s,has_schema_privilege(rolname,s,'USAGE'),has_schema_privilege(rolname,s,'CREATE')) order by rolname,s) from pg_roles cross join unnest(array['extensions','net']) s;`));
-  const plan=prepareBuyerWriterExtensionAcl({inventory:baseline,columns:baseline,effective:{effective,schemaEffective}});
+  return prepareBuyerWriterExtensionAcl({inventory:baseline,columns:baseline,effective:{effective,schemaEffective}});
+  };
+  const plan=makePlan(),baseline=capture();
   const same=(a,b)=>assert.deepEqual(a,b);
   sql('set standard_conforming_strings=off;'+plan.applySql);const applied=capture();checks.push('apply preserves complete consumer privilege and grant-option matrix');
   assert.equal(applied.objects.some(o=>o.edges.some(e=>e.grantee==='PUBLIC')),false);
@@ -116,5 +123,74 @@ try {
   assert.notEqual(fault,plan.applySql);sql(fault,{fail:/isolated post-mutation fault/});same(capture(),baseline);checks.push('post-mutation exception atomically restores all ACLs');
   sql('create role unrelated_drift nologin;');const drift=capture();sql(plan.applySql,{fail:/ACL catalog preconditions changed/});same(capture(),drift);
   sql('drop role unrelated_drift;');same(capture(),baseline);checks.push('unexpected role drift fails without mutation');
+  // Application package proof uses the exact canonical-shaped fixtures and
+  // inert provider objects. No provider credentials or extension functions run.
+  sql(readFileSync(new URL('../tests/fixtures/buyer-writer/schema.sql',import.meta.url),'utf8'));
+  sql(readFileSync(new URL('../tests/fixtures/buyer-writer/nexus.sql',import.meta.url),'utf8'));
+  const applicationAcl=makePlan();sql(applicationAcl.applySql);
+  const postcondition=buyerWriterExtensionPostcondition(applicationAcl.manifest);
+  sql('begin;'+postcondition+'commit;',{fail:/All scoped writer roles required/});
+  sql(readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8'));
+  sql(`insert into public."SearchJob"(id,user_id,state,county,property_type) values
+   ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000001','NC','Wake','land');
+   insert into public."RawSale"(search_job_id,buyer_name) values ('00000000-0000-4000-8000-000000000010','PRESERVE');
+   insert into public."CleanSale"(search_job_id,buyer_name) values ('00000000-0000-4000-8000-000000000010','PRESERVE');
+   insert into public."BuyerProfile"(id,buyer_name) values ('00000000-0000-4000-8000-000000000011','PRESERVE');
+   insert into public."BuyerReport"(search_job_id,buyer_profile_id) values ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000011');`);
+  const prepared=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:applicationAcl.manifest});
+  const appState=()=>sql(`select jsonb_agg(jsonb_build_array(c.oid,c.relacl,
+   (select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p where p.schemaname='public' and p.tablename=c.relname)) order by c.oid)
+   from pg_class c where c.relnamespace='public'::regnamespace and c.relkind='r'`);
+  const initialApp=appState();
+  const injected=prepared.sql.replace('DO $zola_rows$',"DO $$BEGIN RAISE EXCEPTION 'expected application abort';END$$;DO $zola_rows$");
+  sql(injected,{fail:/expected application abort/});same(appState(),initialApp);
+  checks.push('application package abort restores all application ACLs and policies');
+  sql(prepared.sql);const appliedApp=appState();sql(prepared.sql);same(appState(),appliedApp);
+  checks.push('exact application package preserves six tables/private ledgers and reapplies safely');
+  sql('grant select on net.http_request_queue to buyer_writer_runtime');
+  const driftedApp=appState();sql(prepared.sql,{fail:/Partial or unexpected ACL state/});same(appState(),driftedApp);
+  sql('revoke select on net.http_request_queue from buyer_writer_runtime');
+  checks.push('application package rejects provider ACL drift before application mutation');
+  sql('grant select on public."RawSale" to public');
+  const unsafeApp=appState();sql(prepared.sql,{fail:/Browser authority remains/});same(appState(),unsafeApp);
+  sql('revoke select on public."RawSale" from public');
+  checks.push('application postconditions detect inherited browser authority and atomically abort');
+  sql('create policy unexpected_browser on public."SearchJob" for select to authenticated using(true)');
+  const badPolicy=appState();sql(prepared.sql,{fail:/Unexpected SearchJob browser policy/});same(appState(),badPolicy);
+  sql('drop policy unexpected_browser on public."SearchJob"');
+  checks.push('application postconditions reject cross-owner browser policy');
+  const job='00000000-0000-4000-8000-000000000010';
+  const owner='00000000-0000-4000-8000-000000000001';
+  const other='00000000-0000-4000-8000-000000000002';
+  for(const user of [owner,other]){
+   assert.equal(sql(`set session authorization authenticated;set fixture.user_id=${literal(user)};select count(*) from public."SearchJob" where id=${literal(job)}`),user===owner?'1':'0');
+   assert.equal(sql(`set session authorization authenticated;set fixture.user_id=${literal(user)};with changed as(update public."SearchJob" set county='UNSAFE' where id=${literal(job)} returning id) select count(*) from changed`),'0');
+  }
+  checks.push('own-job visibility, cross-owner denial and browser updates remain RLS-denied');
+  sql(`update public."SearchJob" set date_range_start='2026-01-01',date_range_end='2026-12-31' where id=${literal(job)}`);
+  const criteria=JSON.parse(sql(`select buyer_writer.criteria(to_jsonb(j)) from public."SearchJob" j where id=${literal(job)}`));
+  const context={version:1,mode:'county_fetch',sources:[{sourceId:'00000000-0000-4000-8000-000000000003',sourceType:'arcgis',endpointId:'isolated',endpointConfigDigest:'b'.repeat(64),cashDisabled:false}],budgets:{maxRequests:500,maxRows:50000,maxBytes:67108864},rawPayload:null};
+  const revision=sql(`select updated_at from public."SearchJob" where id=${literal(job)}`);
+  const d=JSON.parse(sql(`set session authorization buyer_writer_issuer;select buyer_writer.issue(${literal(job)},${literal(owner)},'isolated',${literal('b'.repeat(64))},${literal(JSON.stringify(context))}::jsonb,${literal(JSON.stringify(criteria))}::jsonb,${literal(revision)}::timestamptz,'00000000-0000-4000-8000-000000000020')`));
+  const sale={buyer_name:'ISOLATED NEW LLC',seller_name:'SYNTHETIC',property_address:'TEST ONLY',mailing_address:'TEST, NC',sale_price:120000,sale_date:'2026-08-01',property_type:'land',parcel_id:'SYNTHETIC-1',deed_type:'TEST',lender_name:'UNKNOWN'};
+  const normalized={raw:[sale],clean:[sale]};
+  const writes=[{version:1,dispatchId:d.dispatchId,generation:d.generation,operation:'start',chunkIndex:0,chunkCount:1,payload:{}},...planBuyerWrites({...d,jobId:job,criteria,...normalized})];
+  const write=q=>JSON.parse(sql(`set session authorization buyer_writer_runtime;select buyer_writer.apply(${literal('b'.repeat(64))},'isolated',${literal(JSON.stringify({jobId:job,...q}))}::jsonb)`));
+  for(const q of writes)assert.equal(write(q).ok,true);
+  const completedState=sql(`select jsonb_build_array((select count(*) from public."RawSale"),(select count(*) from public."CleanSale"),(select count(*) from public."BuyerProfile"),(select count(*) from public."BuyerReport"),(select status from public."SearchJob" where id=${literal(job)}))`);
+  for(const q of writes){
+   sql(`set session authorization buyer_writer_runtime;select buyer_writer.apply(${literal('b'.repeat(64))},'isolated',${literal(JSON.stringify({jobId:job,...q}))}::jsonb)`,{fail:/Buyer writer request rejected/});
+   const receipt=JSON.parse(sql(`set session authorization buyer_writer_runtime;select buyer_writer.receipt(${literal('b'.repeat(64))},'isolated',${literal(job)},${literal(d.dispatchId)},${d.generation},${literal(q.operation)},${q.chunkIndex})`));
+   assert.equal(receipt.found,true);assert.equal(receipt.receipt.ok,true);
+  }
+  assert.equal(sql(`select jsonb_build_array((select count(*) from public."RawSale"),(select count(*) from public."CleanSale"),(select count(*) from public."BuyerProfile"),(select count(*) from public."BuyerReport"),(select status from public."SearchJob" where id=${literal(job)}))`),completedState);
+  assert.deepEqual(JSON.parse(completedState),[2,2,2,2,'completed']);
+  const ledgerState=()=>sql(`select jsonb_build_array((select jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text) from buyer_writer.dispatches t),(select jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text) from buyer_writer.receipts t),(select jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text) from buyer_writer.sales t))`);
+  const nonempty=ledgerState();assert.ok(JSON.parse(nonempty).every(rows=>Array.isArray(rows)&&rows.length>0));
+  sql(prepared.sql);assert.equal(ledgerState(),nonempty);
+  checks.push('package reapplication preserves nonempty dispatch, receipt and sale ledgers');
+  checks.push('dedicated scoped writer succeeds across all five tables after packaged migrations, duplicate replay creates no rows');
+  sql('begin;set local role consumer;'+postcondition+'commit;');
+  checks.push('provider postcondition requires no superuser and performs no grant or revoke');
   console.log(JSON.stringify({status:'PASS',checks,objects:17,paidProviderCalls:0,productionMutations:0,environment:'isolated PostgreSQL 17.6; inert extension stand-ins'},null,2));
 } finally { cleanup(); }

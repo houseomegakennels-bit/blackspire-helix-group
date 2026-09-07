@@ -2,6 +2,15 @@
 
 Status: production workflow replacement, database changes, canonical activation, real reads, merge and cutover remain held. The isolated scoped proof and host runtime ownership correction below do not authorize them. Provider ACL is a proven external boundary, but it is not the sole remaining rollback/acceptance requirement.
 
+## Current executable preparation
+
+- Offline six-route/authority rehearsal (source worktree only; frontend and test fixtures are not in the runtime archive): `bash scripts/with-node.sh scripts/zola-six-read-offline.js`. This reports offline scope and `productionReady:false`; it does not activate services or load production credentials.
+- Migration package (run from the clean release source worktree, not the sealed runtime archive; frontend SQL and Git identity are required): `env -i PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin node scripts/prepare-buyer-migration-package.js /protected/input.json /protected/new-package-directory`. The root-owned 0600 input contains exactly `releaseSha` (actual clean HEAD) and the reviewed `providerManifest` object. Output is standalone `application.sql`, transaction-only `application-body.sql` for an existing transaction, and `manifest.json`. Review all release prerequisites before execution. Use the body with an authorized migration API only when its transaction/history semantics are confirmed; never nest/commit an API-owned transaction inadvertently. No production command has been run.
+- Resolved n8n package: `/var/lib/blackspire-operator/preparation/n8n-current-74ae0e00-192c-4f82-ada6-ed2099bcb151/package`. Distinct credential references and gateway now exist; actual Cloud execution does not. Re-pin after the final commit. The gateway uses canonical port 8789, so draft preparation can precede activation but **publication must follow healthy scoped writer activation**.
+- Vercel protection inventory: the existing maintenance CI workflow runs the GET-only fixed-project script and uploads a sanitized exact-head artifact. Its `denialProven` remains false even if inventory completes. Inspect controls before preparing any routing mutation.
+
+The application package imposes a total transaction deadline and temporary exact row copies. Confirm database free/temp capacity and a coordinated window excluding role/ACL/extension changes; a timeout aborts the transaction. After committed application restrictions, code rollback retains those restrictions. The safe n8n rollback deactivates intake and preserves receipt ledgers; the legacy anonymous definition is not automatically republished.
+
 ## Verified anchors
 
 - Verified scoped runtime source: `8645ab219759cb637575150e48c2a3d0edbd3ce5`; PR125 remains canonical. Refresh exact HEAD, runtime-source equivalence and CI before execution.

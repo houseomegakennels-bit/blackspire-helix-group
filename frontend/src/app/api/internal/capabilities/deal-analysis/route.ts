@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
-import { getDealEngineDealDetail } from "@/lib/deal-engine-server";
+import { getDealEngineAnalysisForCapability } from "@/lib/deal-engine-server";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   if (!/^DE-\d{4}$/.test(dealId)) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
 
   let detail;
-  try { detail = await getDealEngineDealDetail(dealId, { persistScaffold: false }); }
+  try { detail = await getDealEngineAnalysisForCapability(dealId); }
   catch { return NextResponse.json({ ok: false, error: "Deal capability unavailable" }, { status: 503 }); }
 
   if (!detail) return NextResponse.json({ found: false, dealId, sourceSnapshotAt: new Date().toISOString() });

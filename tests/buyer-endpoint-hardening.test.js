@@ -228,8 +228,8 @@ test('Buyer internal endpoint is server-only, authorized, bounded, and read-only
   assert.match(routeSource, /matchBuyersForProperty\([^\n]*\{ readOnly: true \}\)/);
 });
 
-test('Deal analysis capability disables UI scaffold persistence on its read path', () => {
-  assert.match(dealRouteSource, /getDealEngineDealDetail\(dealId, \{ persistScaffold: false \}\)/);
+test('Deal analysis capability uses its dedicated persisted underwriting read path', () => {
+  assert.match(dealRouteSource, /getDealEngineAnalysisForCapability\(dealId\)/);
 });
 
 test('Buyer adapter preserves bounded profile and match inputs over HTTP', async () => {

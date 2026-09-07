@@ -61,19 +61,29 @@ export function prepareBuyerWriterExtensionAcl(input){
  }catch{throw new Error('Buyer writer extension ACL capture rejected');}
 }
 
-function transaction(manifest,rollback){
+// Read-only post-provider assertion for a separately reviewed application
+// transaction. It cannot grant/revoke or assume provider authority. Revalidate
+// untrusted manifests through the same generator before embedding any data.
+export function buyerWriterExtensionPostcondition(manifest){
+ const checked=prepareBuyerWriterExtensionAcl({inventory:manifest.baseline,columns:manifest.baseline,
+  effective:{effective:manifest.effective,schemaEffective:manifest.schemaEffective}}).manifest;
+ if(JSON.stringify(checked)!==JSON.stringify(manifest))throw new Error('ACL manifest drift');
+ return transaction(checked,false,true);
+}
+
+function transaction(manifest,rollback,verifyOnly=false){
  const serialized=JSON.stringify(manifest);
  let dataDelimiter='$zola_manifest$';
  for(let n=1;serialized.includes(dataDelimiter);n++)dataDelimiter=`$zola_manifest_${n}$`;
  let delimiter='$zola_acl$';
  for(let n=1;serialized.includes(delimiter);n++)delimiter=`$zola_acl_${n}$`;
- return `-- Review/rehearse first. Run standalone in a provider-controlled window
+ return `${verifyOnly?'':`-- Review/rehearse first. Run standalone in a provider-controlled window
 -- excluding concurrent ACL, role and extension changes. No network functions run.
 BEGIN;
 SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
 SET LOCAL search_path=pg_catalog;
 SET LOCAL lock_timeout='3s';
-SET LOCAL statement_timeout='30s';
+SET LOCAL statement_timeout='30s';`}
 DO ${delimiter}
 DECLARE
  m jsonb:=${dataDelimiter}${serialized}${dataDelimiter}::jsonb;
@@ -82,9 +92,11 @@ DECLARE
  initial_role text:=current_user; target text; target_oid oid; phase integer; writer_name text;
  rollback_mode boolean:=${rollback};
 BEGIN
- IF NOT coalesce((SELECT rolsuper FROM pg_roles WHERE rolname=session_user),false) THEN
+ ${verifyOnly?`IF (SELECT count(*) FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))<>3 THEN
+  RAISE EXCEPTION 'All scoped writer roles required';
+ END IF;`: `IF NOT coalesce((SELECT rolsuper FROM pg_roles WHERE rolname=session_user),false) THEN
   RAISE EXCEPTION 'Provider session authority required';
- END IF;
+ END IF;`}
  FOR phase IN 0..1 LOOP
   ${EXTENSION_ACL_CATALOG_SQL.replace(') as metadata', ') INTO observed_catalog')};
   IF EXISTS(SELECT FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')
@@ -120,7 +132,8 @@ BEGIN
   END LOOP;
   IF phase=0 THEN
    IF NOT before_ok AND NOT after_ok THEN RAISE EXCEPTION 'Partial or unexpected ACL state';END IF;
-   change_needed:=CASE WHEN rollback_mode THEN after_ok ELSE before_ok END;
+   ${verifyOnly?`IF NOT after_ok THEN RAISE EXCEPTION 'Provider ACL poststate required';END IF;
+   change_needed:=false;`:'change_needed:=CASE WHEN rollback_mode THEN after_ok ELSE before_ok END;'}
   ELSIF NOT (CASE WHEN rollback_mode THEN before_ok ELSE after_ok END) THEN RAISE EXCEPTION 'ACL result verification failed';
   END IF;
   FOR item IN SELECT value FROM jsonb_array_elements(m->'effective') LOOP
@@ -150,7 +163,7 @@ BEGIN
     END LOOP;
    END LOOP;
   END IF;
-  IF phase=0 AND change_needed THEN
+  ${verifyOnly?'':`IF phase=0 AND change_needed THEN
    FOR obj IN SELECT value FROM jsonb_array_elements(m->'objects') LOOP
     EXECUTE format('SET LOCAL ROLE %I',obj->>'owner');
     target:=CASE WHEN obj->>'kind'='function' THEN 'FUNCTION '||((obj->>'oid')::oid)::regprocedure::text
@@ -163,9 +176,9 @@ BEGIN
     END LOOP;
     EXECUTE format('SET LOCAL ROLE %I',initial_role);
    END LOOP;
-  END IF;
+  END IF;`}
  END LOOP;
 END ${delimiter};
-COMMIT;
+${verifyOnly?'':'COMMIT;'}
 `;
 }

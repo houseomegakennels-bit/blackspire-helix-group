@@ -1,6 +1,7 @@
+import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension-acl.js';
+import {prepareBuyerWriterExtensionAcl,buyerWriterExtensionPostcondition} from '../packages/buyer-writer/extension-acl.js';
 const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
 function fixture(){
  const roles=['postgres','supabase_admin','consumer'].map((name,i)=>({name,oid:String(i+10),superuser:false,inherit:true,login:false,createRole:false,createDb:false,replication:false,bypassRls:false}));
@@ -42,4 +43,22 @@ test('captured text cannot terminate the DO body and server version remains a pr
  const f=fixture();f.columns.columns[0].name='column$zola_acl$';const p=prepareBuyerWriterExtensionAcl(f);
  assert.equal(p.manifest.baseline.serverVersion,'17.6');assert.match(p.applySql,/DO \$zola_acl_1\$/);
  delete f.inventory.serverVersion;assert.throws(()=>prepareBuyerWriterExtensionAcl(f));
+});
+
+test('application package cannot execute provider mutations and rejects fabricated manifest edges',()=>{
+ const manifest=prepareBuyerWriterExtensionAcl(fixture()).manifest;
+ const assertion=buyerWriterExtensionPostcondition(manifest);
+ assert.doesNotMatch(assertion,/EXECUTE format|SET LOCAL ROLE|COMMIT;|Provider session authority required/);
+ assert.match(assertion,/All scoped writer roles required/);
+ assert.match(assertion,/Provider ACL poststate required/);
+ const p=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest});
+ assert.deepEqual(p,prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest}));
+ assert.match(p.sql,/transaction_timeout='120s'/);
+ assert.ok(p.sql.indexOf("lock_timeout='5s'")<p.sql.indexOf('drop policy'));
+ assert.equal((p.sql.match(/CREATE TEMP TABLE zola_rows_/g)||[]).length,9);
+ assert.equal(p.manifest.productionApplied,false);
+ assert.match(p.manifest.migrationHistory,/does not record Supabase migration history/);
+ assert.throws(()=>prepareBuyerMigrationPackage({releaseSha:'main',providerManifest:manifest}));
+ const tampered=structuredClone(manifest);tampered.objects[0].after=[];
+ assert.throws(()=>buyerWriterExtensionPostcondition(tampered),/ACL manifest drift/);
 });

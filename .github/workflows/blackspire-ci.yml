@@ -89,6 +89,16 @@ jobs:
           env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
             node scripts/test-buyer-writer-native.mjs 2>&1 | tee ci-logs/03-writer-native.log
 
+      - name: Verify guarded provider and application migration transactions
+        timeout-minutes: 3
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            BUYER_WRITER_ACL_RUN_ID="$(node -e 'process.stdout.write(require("crypto").randomBytes(16).toString("hex"))')" \
+            BUYER_WRITER_ACL_OWNER="$(node -e 'process.stdout.write(require("crypto").randomBytes(16).toString("hex"))')" \
+            node scripts/test-buyer-writer-acl.mjs 2>&1 | tee ci-logs/03-writer-acl-application.log
+
       - name: Run build check
         run: npm run build 2>&1 | tee ci-logs/04-build.log
 

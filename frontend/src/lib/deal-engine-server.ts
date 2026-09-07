@@ -1206,7 +1206,7 @@ async function getDealEnginePersistenceStatus() {
   };
 }
 
-export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> {
+export async function listDealEngineLeads(limit = 6, { readOnly = false } = {}): Promise<DealEngineLead[]> {
   const supabase = getSupabaseAdmin();
   const sellerHandoffFallback = async () => {
     const sellerLeads = await listSellerLeads().catch(() => []);
@@ -1216,7 +1216,10 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
       .slice(0, limit)
       .map(toDealLeadFromSellerHandoff);
   };
-  if (!supabase) return sellerHandoffFallback();
+  if (!supabase) {
+    if (readOnly) throw new Error("Deal capability unavailable");
+    return sellerHandoffFallback();
+  }
 
   const { data, error } = await supabase
     .from("deal_leads")
@@ -1226,6 +1229,7 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
     .order("motivation_score", { ascending: false })
     .limit(limit);
 
+  if (readOnly && error) throw new Error("Deal capability unavailable");
   if (isMissingDealTableError(error)) return sellerHandoffFallback();
   if (error || !data?.length) return [];
   return (data as unknown as DealLeadJoin[]).map(toLead);
@@ -4133,6 +4137,34 @@ export async function saveDealCloseout(input: SaveDealCloseoutInput) {
   }
 
   return { ok: true as const };
+}
+
+// The internal read capability needs only persisted underwriting inputs. Keep it
+// independent of the UI detail graph, which can scaffold state and tolerate errors.
+export async function getDealEngineAnalysisForCapability(dealId: string) {
+  if (!/^DE-\d{4}$/.test(dealId)) throw new Error("Deal capability unavailable");
+  const supabase = getSupabaseAdmin();
+  if (!supabase) throw new Error("Deal capability unavailable");
+  const { data, error } = await supabase
+    .from("deal_leads")
+    .select("id,owner_name,property_address,county,status,motivation_score,recommended_next_action,deal_analysis(maximum_allowable_offer,assignment_fee_target),seller_conversations(next_action),buyer_matches(exit_strategy)")
+    .eq("id", dealId)
+    .limit(1)
+    .limit(1, { referencedTable: "deal_analysis" })
+    .limit(1, { referencedTable: "seller_conversations" })
+    .limit(1, { referencedTable: "buyer_matches" })
+    .maybeSingle();
+  if (error) throw new Error("Deal capability unavailable");
+  if (!data) return null;
+  const lead = toLead(data as unknown as DealLeadJoin);
+  const { data: analysis, error: analysisError } = await supabase
+    .from("deal_analysis")
+    .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating")
+    .eq("lead_id", dealId)
+    .limit(1)
+    .maybeSingle();
+  if (analysisError) throw new Error("Deal capability unavailable");
+  return { lead, underwriting: buildUnderwritingSnapshot(lead, analysis as DealAnalysisRow | null) };
 }
 
 export async function getDealEngineDealDetail(

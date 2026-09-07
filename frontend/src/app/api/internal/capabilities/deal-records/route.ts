@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
 
   let deals;
-  try { deals = await listDealEngineLeads(limit); }
+  try { deals = await listDealEngineLeads(limit, { readOnly: true }); }
   catch { return NextResponse.json({ ok: false, error: "Deal capability unavailable" }, { status: 503 }); }
 
   const records = deals.map((lead) => ({
