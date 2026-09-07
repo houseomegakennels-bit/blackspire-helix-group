@@ -29,7 +29,8 @@ do $$declare ns oid; r text; begin
    or exists(select from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a
       where n.oid=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')))
    or exists(select from pg_proc where pronamespace=ns and oid::regprocedure::text not in(
-     'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,boolean)','buyer_writer.cancel(uuid,uuid,text)',
+     'buyer_writer.issue(uuid,uuid,text,text,boolean)','buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
+     'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb)','buyer_writer.cancel(uuid,uuid,text)',
      'buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.commit_buyers(buyer_writer.dispatches)',
      'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'))
    or exists(select from pg_class where relnamespace=ns and relname not in(
@@ -68,6 +69,10 @@ create table if not exists buyer_writer.dispatches (
  bytes_received bigint not null default 0,buyers_committed boolean not null default false,
  unique(job_id,generation)
 );
+-- Historical rows are preserved, but context-free permits cannot write again.
+alter table buyer_writer.dispatches add column if not exists source_context jsonb;
+alter table buyer_writer.dispatches add column if not exists source_context_digest text;
+drop function if exists buyer_writer.issue(uuid,uuid,text,text,boolean);
 create table if not exists buyer_writer.receipts (
  dispatch_id uuid not null references buyer_writer.dispatches(id),operation text not null,chunk_index integer not null,
  request_digest text not null,result jsonb not null,created_at timestamptz not null default clock_timestamp(),
@@ -104,15 +109,59 @@ language sql immutable set search_path=pg_catalog as $$
  'cash_buyers_only',j->'cash_buyers_only','llc_buyers_only',j->'llc_buyers_only')
 $$;
 
+-- Context contains policy references and digests, never URLs, notes or secrets.
+-- The authenticated issuer resolves their meaning from its reviewed registry.
+create or replace function buyer_writer.valid_context(c jsonb) returns boolean
+language plpgsql immutable set search_path=pg_catalog as $$
+declare s jsonb; b jsonb; r jsonb;
+begin
+ if c is null or jsonb_typeof(c)<>'object' or octet_length(c::text)>32768
+  or (select count(*) from jsonb_object_keys(c))<>5
+  or not c ?& array['version','mode','sources','budgets','rawPayload']
+  or c->'version' is distinct from '1'::jsonb
+  or c->>'mode' not in('county_fetch','frontend_payload') or c->>'mode' is null
+  or jsonb_typeof(c->'sources') is distinct from 'array' then return false;end if;
+ if jsonb_array_length(c->'sources') not between 1 and 32 then return false;end if;
+ for s in select value from jsonb_array_elements(c->'sources') loop
+  if jsonb_typeof(s)<>'object' or (select count(*) from jsonb_object_keys(s))<>5
+   or not s ?& array['sourceId','sourceType','endpointId','endpointConfigDigest','cashDisabled']
+   or jsonb_typeof(s->'sourceId') is distinct from 'string'
+   or s->>'sourceId' !~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+   or jsonb_typeof(s->'sourceType') is distinct from 'string' or s->>'sourceType' !~ '^[A-Za-z0-9_-]{1,128}$'
+   or jsonb_typeof(s->'endpointId') is distinct from 'string' or s->>'endpointId' !~ '^[A-Za-z0-9_-]{1,128}$'
+   or jsonb_typeof(s->'endpointConfigDigest') is distinct from 'string' or s->>'endpointConfigDigest' !~ '^[a-f0-9]{64}$'
+   or jsonb_typeof(s->'cashDisabled') is distinct from 'boolean' then return false;end if;
+ end loop;
+ if (select count(distinct value->>'sourceId') from jsonb_array_elements(c->'sources'))<>jsonb_array_length(c->'sources') then return false;end if;
+ b:=c->'budgets';
+ if jsonb_typeof(b) is distinct from 'object' or (select count(*) from jsonb_object_keys(b))<>3
+  or not b ?& array['maxRequests','maxRows','maxBytes'] then return false;end if;
+ if jsonb_typeof(b->'maxRequests') is distinct from 'number' or b->>'maxRequests' !~ '^[1-9][0-9]{0,2}$'
+  or (b->>'maxRequests')::numeric>500
+  or jsonb_typeof(b->'maxRows') is distinct from 'number' or b->>'maxRows' !~ '^[1-9][0-9]{0,4}$'
+  or (b->>'maxRows')::numeric>50000
+  or jsonb_typeof(b->'maxBytes') is distinct from 'number' or b->>'maxBytes' !~ '^[1-9][0-9]{0,7}$'
+  or (b->>'maxBytes')::numeric>67108864 then return false;end if;
+ r:=c->'rawPayload';
+ if c->>'mode'='county_fetch' then return r='null'::jsonb;end if;
+ if jsonb_typeof(r) is distinct from 'object' or (select count(*) from jsonb_object_keys(r))<>3
+  or not r ?& array['digest','rowCount','byteCount']
+  or jsonb_typeof(r->'digest') is distinct from 'string' or r->>'digest' !~ '^[a-f0-9]{64}$'
+  or jsonb_typeof(r->'rowCount') is distinct from 'number' or r->>'rowCount' !~ '^(0|[1-9][0-9]{0,4})$'
+  or jsonb_typeof(r->'byteCount') is distinct from 'number' or r->>'byteCount' !~ '^[1-9][0-9]{0,7}$' then return false;end if;
+ return (r->>'rowCount')::numeric<=(b->>'maxRows')::numeric and (r->>'byteCount')::numeric<=(b->>'maxBytes')::numeric;
+ exception when others then return false;
+end$$;
+
 -- Issuer is a separate trusted backend boundary: it must capture the real
 -- authenticated operator and route entitlement before async dispatch. Runtime
 -- cannot issue, renew or cancel permits, or nominate an owner/workspace.
-create or replace function buyer_writer.issue(p_job uuid,p_owner uuid,p_workspace text,p_digest text,p_no_cash boolean)
+create or replace function buyer_writer.issue(p_job uuid,p_owner uuid,p_workspace text,p_digest text,p_context jsonb)
 returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
 declare j record; g bigint; d uuid; c jsonb;
 begin
  if p_job is null or p_owner is null or p_workspace is null or length(p_workspace) not between 1 and 128
-    or p_digest is null or p_digest !~ '^[a-f0-9]{64}$' or p_no_cash is null then
+    or p_digest is null or p_digest !~ '^[a-f0-9]{64}$' or not buyer_writer.valid_context(p_context) then
   raise exception using errcode='22023',message='Buyer writer request rejected';
  end if;
  select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status
@@ -125,8 +174,8 @@ begin
  end if;
  select coalesce(max(generation),0)+1 into g from buyer_writer.dispatches where job_id=p_job;
  update buyer_writer.dispatches set state='cancelled' where job_id=p_job and state in('pending','processing');
- insert into buyer_writer.dispatches(job_id,owner_id,workspace,permit_digest,generation,criteria,no_cash_data,state,expires_at)
- values(p_job,p_owner,p_workspace,p_digest,g,c,p_no_cash,'pending',clock_timestamp()+interval '5 minutes') returning id into d;
+ insert into buyer_writer.dispatches(job_id,owner_id,workspace,permit_digest,generation,criteria,no_cash_data,state,expires_at,source_context,source_context_digest)
+ values(p_job,p_owner,p_workspace,p_digest,g,c,exists(select from jsonb_array_elements(p_context->'sources') s where s->'cashDisabled'='true'::jsonb),'pending',clock_timestamp()+interval '5 minutes',p_context,encode(sha256(convert_to(p_context::text,'UTF8')),'hex')) returning id into d;
  update public."SearchJob" set status='pending',error_message=null,updated_at=clock_timestamp() where id=p_job;
  return jsonb_build_object('dispatchId',d,'generation',g);
 end$$;
@@ -224,7 +273,9 @@ begin
  select * into d from buyer_writer.dispatches where id=(q->>'dispatchId')::uuid and job_id=j.id for update;
  if not found or d.permit_digest<>p_digest or d.workspace<>p_workspace or d.owner_id is distinct from j.user_id
     or d.criteria is distinct from buyer_writer.criteria(to_jsonb(j)) or d.generation is distinct from (q->>'generation')::bigint
-    or d.expires_at<=clock_timestamp() or d.state not in ('pending','processing') then
+    or d.expires_at<=clock_timestamp() or d.state not in ('pending','processing')
+    or not buyer_writer.valid_context(d.source_context)
+    or d.source_context_digest is distinct from encode(sha256(convert_to(d.source_context::text,'UTF8')),'hex') then
   raise exception using errcode='42501',message='Buyer writer request rejected';end if;
  op:=q->>'operation';idx:=(q->>'chunkIndex')::integer;chunks:=(q->>'chunkCount')::integer;
  if q->'version' is distinct from '1'::jsonb or jsonb_typeof(q->'generation') is distinct from 'number'
@@ -244,6 +295,9 @@ begin
    raise exception using errcode='22023',message='Buyer writer request rejected';end if;
   if d.bytes_received+octet_length(q::text)>67108864 then raise exception using errcode='54000',message='Buyer writer budget exceeded';end if;
   v_kind:=case when op='raw.append' then 'raw' else 'clean' end;
+  if v_kind='raw' and (d.raw_count+rows_count>(d.source_context->'budgets'->>'maxRows')::integer
+    or (d.source_context->>'mode'='frontend_payload' and d.raw_count+rows_count>(d.source_context->'rawPayload'->>'rowCount')::integer)) then
+   raise exception using errcode='54000',message='Buyer writer source row budget exceeded';end if;
   if v_kind='raw' and (idx<>d.raw_next or (d.raw_chunks is not null and chunks<>d.raw_chunks) or d.clean_next>0) then
    raise exception using errcode='22023',message='Buyer writer chunk rejected';end if;
   if v_kind='clean' and (d.raw_chunks is null or d.raw_next<>d.raw_chunks or idx<>d.clean_next or (d.clean_chunks is not null and chunks<>d.clean_chunks)) then
@@ -312,6 +366,26 @@ begin
  return result;
 end$$;
 
+-- Scoped read after start; cannot expose another job, renew or replay a write.
+create or replace function buyer_writer.context(p_digest text,p_workspace text,p_job uuid,p_dispatch uuid,p_generation bigint)
+returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
+declare d buyer_writer.dispatches; j record;
+begin
+ select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status
+ into j from public."SearchJob" where id=p_job for update;
+ if not found then raise exception using errcode='42501',message='Buyer writer request rejected';end if;
+ select * into d from buyer_writer.dispatches where id=p_dispatch and job_id=p_job;
+ if d.id is null or p_digest is null or p_workspace is null or p_generation is null
+  or d.permit_digest<>p_digest or d.workspace<>p_workspace or d.generation<>p_generation
+  or d.generation<>(select max(generation) from buyer_writer.dispatches where job_id=p_job)
+  or d.owner_id is distinct from j.user_id or d.criteria is distinct from buyer_writer.criteria(to_jsonb(j))
+  or d.state<>'processing' or d.expires_at<=clock_timestamp()
+  or not buyer_writer.valid_context(d.source_context)
+  or d.source_context_digest is distinct from encode(sha256(convert_to(d.source_context::text,'UTF8')),'hex') then
+  raise exception using errcode='42501',message='Buyer writer request rejected';end if;
+ return jsonb_build_object('criteria',d.criteria,'sourceContext',d.source_context,'sourceContextDigest',d.source_context_digest);
+end$$;
+
 -- Receipt lookup never retries a write or exposes job rows. Requires the same
 -- unexpired permit, current owner and generation even after terminal completion.
 create or replace function buyer_writer.receipt(p_digest text,p_workspace text,p_job uuid,p_dispatch uuid,p_generation bigint,p_operation text,p_index integer)
@@ -338,13 +412,14 @@ do $$declare t text; signature text; begin
   execute format('revoke all on buyer_writer.%I from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer',t);
  end loop;
  foreach signature in array array[
-  'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,boolean)','buyer_writer.cancel(uuid,uuid,text)',
+  'buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
+  'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb)','buyer_writer.cancel(uuid,uuid,text)',
   'buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.commit_buyers(buyer_writer.dispatches)',
   'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'] loop
   execute format('alter function %s owner to buyer_writer_owner',signature);
   execute format('revoke all on function %s from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer',signature);
  end loop;
 end$$;
-grant execute on function buyer_writer.issue(uuid,uuid,text,text,boolean),buyer_writer.cancel(uuid,uuid,text) to buyer_writer_issuer;
-grant execute on function buyer_writer.apply(text,text,jsonb),buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer) to buyer_writer_runtime;
+grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb),buyer_writer.cancel(uuid,uuid,text) to buyer_writer_issuer;
+grant execute on function buyer_writer.context(text,text,uuid,uuid,bigint),buyer_writer.apply(text,text,jsonb),buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer) to buyer_writer_runtime;
 commit;

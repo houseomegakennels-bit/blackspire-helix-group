@@ -4,7 +4,7 @@ This component is implemented and tested in isolation. It is not mounted in an
 HTTP server, installed in production, or connected to the live n8n workflow.
 
 `sql/install.sql` creates a private PostgreSQL permit, sale-evidence and receipt
-ledger. The dedicated runtime can execute only the fixed write and receipt
+ledger. The dedicated runtime can execute only the fixed write, receipt and scoped context
 routines; it cannot read Buyer tables, issue permits or assume the routine owner.
 The separate issuer is a trusted backend authority. It must receive an operator
 identity captured by the existing authenticated Buyer route, including its beta
@@ -20,6 +20,26 @@ an uncertain network outcome must use scoped receipt lookup, never blind replay.
 Database write failures roll back effects and persist a sanitized failure receipt
 and failed job status where the database can still record them.
 
+The issuer now requires an immutable source context instead of a caller-supplied
+cash-scoring flag. It records ordered source IDs, reviewed endpoint policy IDs
+and configuration digests, source request/row/byte budgets, and an optional raw
+payload digest/count/byte count. PostgreSQL computes the context digest from its
+JSONB serialization and derives `no_cash_data` from the source flags. The installer
+removes the old boolean issuer signature; historical ledger rows are preserved,
+but context-free permits cannot write. Cumulative raw rows respect the lower
+context and frontend-payload row limits.
+
+A scoped `context` endpoint returns only canonical criteria and source policy
+references after successful start, while the same permit remains current and
+unexpired. It rechecks ownership, criteria and state after acquiring the job lock.
+`source-context.js` verifies exact UTF-8 raw JSON-array bytes before parsing or
+normalization. That raw digest is distinct from the database's context digest and
+normalized-sale provenance. Structural validation does not approve an endpoint:
+the authenticated issuer and fetch executor still need the reviewed policy
+resolver and source request/byte-budget enforcement. SQL does not prove that
+normalized rows came from the bound raw bytes; the trusted execution path must
+call the verifier before normalization.
+
 `gateway.js` authenticates separate workload and permit credentials, rejects
 duplicate credential headers, and invokes fixed parameterized statements through
 an explicitly supplied dedicated runtime connection. The caller must use bounded
@@ -29,7 +49,7 @@ credential file, environment file, listener or database driver is loaded here.
 
 `http.js` composes these adapters into an explicitly created, initially unbound
 HTTP server. It authenticates before reading the body or checking availability,
-matches only the two exact operation/receipt routes, bounds bodies and sockets,
+matches only the three exact operation/receipt/context routes, bounds bodies and sockets,
 and checks availability again after body collection. Disconnected database
 operations retain their admission slot until settlement. Its availability hook
 is not atomic fencing against a separate authority database. Deployment must
@@ -65,7 +85,7 @@ env -i PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin \
   BUYER_WRITER_TEST_IMAGE=postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94 \
   node scripts/test-buyer-writer-postgres.mjs
 node --test tests/buyer-writer-protocol.test.js tests/buyer-writer-gateway.test.js tests/buyer-writer-http.test.js
-node --test tests/buyer-writer-plan.test.js
+node --test tests/buyer-writer-plan.test.js tests/buyer-writer-source-context.test.js
 ```
 
 The image must already be pulled. The harness uses PostgreSQL 17.6, synthetic

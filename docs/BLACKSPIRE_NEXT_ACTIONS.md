@@ -2,7 +2,7 @@
 
 ## 2026-09-07 00:22 UTC — next writer integration steps
 
-1. Transactional core bf769c0 was CI green; pushed HTTP a8e3dda exposed an existing restore timestamp-precision failure. Its independently reviewed fix, normalization and complete write planner are locally tested; commit and push reviewed changes, then require new-head CI green.
+1. Baseline75df6d7 is CI green. Full tests and independent review pass for the local immutable source-context/HTTP/raw-payload-verifier delta (20 isolated PostgreSQL groups, 28 focused JS tests, 1,356 full-root tests). Commit/push and require exact new-head CI.
 2. Implement authenticated issuer/intake and canonical source policy while preserving sweep beta and admin route entitlements. Connect secure n8n HTTP nodes only after coordinated caller/rollback continuity is proven. Do not expose per-job permits through saved executions or browser responses.
 3. Finish secure Buyer intake compatibility for immutable `2c0b600`, repair acceptance supervision and obtain actual owner/cross-owner evidence. No legacy unauthenticated intake may gain privileged write authority.
 4. Recheck disk and budget release/backup space. Current approximately 3.77 GiB is below preferred deployment headroom; preserve tools and protected state.

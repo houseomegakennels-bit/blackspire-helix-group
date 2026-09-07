@@ -48,6 +48,8 @@ const count = (table) => Number(sql(`select count(*) from public."${table}"`));
 const owner = '00000000-0000-4000-8000-000000000001';
 const other = '00000000-0000-4000-8000-000000000002';
 const workspace = 'isolated-buyer-workspace';
+const sourceContext={version:1,mode:'county_fetch',sources:[{sourceId:'00000000-0000-4000-8000-000000000003',sourceType:'arcgis',endpointId:'isolated',endpointConfigDigest:'b'.repeat(64),cashDisabled:false}],budgets:{maxRequests:500,maxRows:50000,maxBytes:67108864},rawPayload:null};
+const contextLiteral=literal(JSON.stringify(sourceContext))+'::jsonb';
 const checks = [];
 const check = (name, fn) => { fn(); checks.push(name); };
 const issue = (options = {}) => {
@@ -55,7 +57,7 @@ const issue = (options = {}) => {
   sql(`insert into public."SearchJob"(id,user_id,state,county,property_type,date_range_start,date_range_end) values(${literal(jobId)},${literal(owner)},'NC','Wake','land','2026-01-01','2026-12-31')`);
   const permit = randomBytes(32).toString('base64url');
   const permitDigest = createHash('sha256').update(permit).digest('hex');
-  const dispatch = JSON.parse(role('buyer_writer_issuer', `select buyer_writer.issue(${literal(jobId)},${literal(owner)},${literal(workspace)},${literal(permitDigest)},false)`));
+  const dispatch = JSON.parse(role('buyer_writer_issuer', `select buyer_writer.issue(${literal(jobId)},${literal(owner)},${literal(workspace)},${literal(permitDigest)},${literal(JSON.stringify(options.sourceContext??sourceContext))}::jsonb)`));
   return { jobId, permit, permitDigest, ...dispatch, ...options };
 };
 const sale = { buyer_name:'ISOLATED HOLDINGS LLC',seller_name:'SYNTHETIC',property_address:'TEST ONLY',mailing_address:'TEST, NC',sale_price:120000,sale_date:'2026-08-01',property_type:'land',parcel_id:'SYNTHETIC-1',deed_type:'TEST',lender_name:'UNKNOWN' };
@@ -100,6 +102,38 @@ try {
     role('buyer_writer_runtime','select * from buyer_writer.dispatches',{fail:true});
     role('buyer_writer_runtime',`select buyer_writer.issue(null,null,null,null,null)`,{fail:true});
   });
+  check('source context is mandatory, immutable, scoped after start and derived without caller cash overrides',()=>{
+    const d=issue();
+    const get=(item=d,fail=false)=>role('buyer_writer_runtime',`select buyer_writer.context(${literal(item.permitDigest)},${literal(workspace)},${literal(item.jobId)},${literal(item.dispatchId)},${item.generation})`,{fail});
+    get(d,true);apply(d,'start');
+    const result=JSON.parse(get());assert.deepEqual(result.sourceContext,sourceContext);
+    assert.match(result.sourceContextDigest,/^[a-f0-9]{64}$/);assert.equal(Object.hasOwn(result,'ownerId'),false);
+    const before=JSON.stringify(result);sql(installSql);assert.equal(JSON.stringify(JSON.parse(get())),before);
+    get({...d,permitDigest:'f'.repeat(64)},true);get({...d,generation:d.generation+1},true);
+    role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal('f'.repeat(64))},false)`,{fail:true});
+    for(const context of [null,{}, {...sourceContext,extra:true},{...sourceContext,mode:'frontend_payload'},
+      {...sourceContext,sources:[...sourceContext.sources,...sourceContext.sources]},
+      {...sourceContext,sources:[{...sourceContext.sources[0],endpointId:'https://evil.invalid'}]},
+      {...sourceContext,budgets:{...sourceContext.budgets,maxRows:50001}}]) {
+      role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${literal(JSON.stringify(context))}::jsonb)`,{fail:true});
+    }
+    assert.equal(JSON.stringify(JSON.parse(get())),before,'rejected issuance must not cancel current dispatch');
+    sql(`update buyer_writer.dispatches set source_context=null where id=${literal(d.dispatchId)}`);
+    get(d,true);apply(d,'raw.append',{rows:[sale]}, {},true);
+    const cash=issue();const bound={...sourceContext,sources:[{...sourceContext.sources[0],cashDisabled:true}]};
+    const issued=JSON.parse(role('buyer_writer_issuer',`select buyer_writer.issue(${literal(cash.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${literal(JSON.stringify(bound))}::jsonb)`));
+    assert.equal(sql(`select no_cash_data from buyer_writer.dispatches where id=${literal(issued.dispatchId)}`),'t');
+  });
+  check('upgrade removes legacy boolean issuer and preserves but rejects context-free dispatch history',()=>{
+    const d=issue();sql(`update buyer_writer.dispatches set source_context=null,source_context_digest=null where id=${literal(d.dispatchId)}`);
+    // Recreate the old signature/ownership/grants, not a production schema clone.
+    sql(`set role buyer_writer_owner;create function buyer_writer.issue(uuid,uuid,text,text,boolean) returns jsonb language sql security definer set search_path=pg_catalog as 'select null::jsonb';revoke all on function buyer_writer.issue(uuid,uuid,text,text,boolean) from public;grant execute on function buyer_writer.issue(uuid,uuid,text,text,boolean) to buyer_writer_issuer;`);
+    assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,boolean)') is not null"),'t');
+    sql(installSql);
+    assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,boolean)') is null"),'t');
+    assert.equal(sql(`select count(*) from buyer_writer.dispatches where id=${literal(d.dispatchId)} and source_context is null`),'1');
+    apply(d,'start',{}, {},true);
+  });
   check('scoped writes commit all five tables with receipts and no catalog response',()=>{
     const d=issue();
     assert.equal(apply(d,'start').ok,true);
@@ -111,6 +145,23 @@ try {
     assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
     assert.equal(JSON.stringify(result).includes(sale.buyer_name),false);
     apply(d,'complete',{}, {},true);
+  });
+  check('source row budgets and frontend raw-payload row binding reject excess writes',()=>{
+    for(const c of [
+      {...sourceContext,budgets:{...sourceContext.budgets,maxRows:1}},
+      {...sourceContext,mode:'frontend_payload',rawPayload:{digest:'d'.repeat(64),rowCount:1,byteCount:2}},
+    ]) {
+      const d=issue({sourceContext:c});apply(d,'start');
+      apply(d,'raw.append',{rows:[sale,{...sale,parcel_id:'OVER-LIMIT'}]}, {},true);
+      assert.equal(sql(`select count(*) from public."RawSale" where search_job_id=${literal(d.jobId)}`),'0');
+      assert.equal(apply(d,'raw.append',{rows:[sale]},{chunkCount:2}).ok,true);
+      apply(d,'raw.append',{rows:[{...sale,parcel_id:'SECOND-CHUNK'}]},{chunkIndex:1,chunkCount:2},true);
+    }
+  });
+  check('empty bound frontend payload permits completion but no appended raw row',()=>{
+    const d=issue({sourceContext:{...sourceContext,mode:'frontend_payload',rawPayload:{digest:'e'.repeat(64),rowCount:0,byteCount:2}}});
+    apply(d,'start');apply(d,'raw.append',{rows:[sale]}, {},true);
+    assert.equal(apply(d,'buyers.commit').ok,true);assert.equal(apply(d,'complete').ok,true);
   });
   check('malformed, wrong-job, wrong-workspace and expired permits fail closed',()=>{
     const d=issue();
@@ -125,7 +176,7 @@ try {
     apply(d,'start',{}, {},true);
     const c=issue();role('buyer_writer_issuer',`select buyer_writer.cancel(${literal(c.jobId)},${literal(owner)},${literal(workspace)})`);
     apply(c,'start',{}, {},true);
-    const g=issue();role('buyer_writer_issuer',`select buyer_writer.issue(${literal(g.jobId)},${literal(owner)},${literal(workspace)},${literal('a'.repeat(64))},false)`);
+    const g=issue();role('buyer_writer_issuer',`select buyer_writer.issue(${literal(g.jobId)},${literal(owner)},${literal(workspace)},${literal('a'.repeat(64))},${contextLiteral})`);
     apply(g,'start',{}, {},true);
   });
   check('replays and incomplete or forged provenance cannot report success',()=>{
@@ -147,7 +198,7 @@ try {
     assert.deepEqual(receipt,{found:true,receipt:{ok:false,code:'WRITE_FAILED'}});
     apply(d,'buyers.commit',{}, {},true);
     sql('alter table public."BuyerReport" drop constraint fixture_failure');
-    role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},false)`);
+    role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${contextLiteral})`);
     role('buyer_writer_runtime',`select buyer_writer.receipt(${literal(d.permitDigest)},${literal(workspace)},${literal(d.jobId)},${literal(d.dispatchId)},${d.generation},'buyers.commit',0)`,{fail:true});
   });
   check('direct SQL rejects NULL, unknown operations, owner fields and incomplete chunk streams',()=>{
@@ -236,6 +287,17 @@ try {
     assert.equal(sql(`select count(*) from public."RawSale" where search_job_id=${literal(d.jobId)}`),'0');
     checks.push('cancellation acknowledgement fences a concurrent waiting write');
   }
+  for(const change of ['expiry','owner','criteria','cancel']) {
+    const d=issue();apply(d,'start');
+    if(change==='expiry')sql(`update buyer_writer.dispatches set expires_at=clock_timestamp()+interval '1 second' where id=${literal(d.dispatchId)}`);
+    const mutation={expiry:'',owner:`update public."SearchJob" set user_id=${literal(other)} where id=${literal(d.jobId)};`,criteria:`update public."SearchJob" set county='Different' where id=${literal(d.jobId)};`,cancel:`update buyer_writer.dispatches set state='cancelled' where id=${literal(d.dispatchId)};`}[change];
+    const label=`writer_context_${change}`;
+    const lock=asyncSql(`set application_name=${literal(label)};begin;select id from public."SearchJob" where id=${literal(d.jobId)} for update;${mutation}select pg_sleep(2);commit;`);
+    await waitForSleeper(label);
+    const result=await asyncSql(`set session authorization buyer_writer_runtime;select buyer_writer.context(${literal(d.permitDigest)},${literal(workspace)},${literal(d.jobId)},${literal(d.dispatchId)},${d.generation});`);
+    assert.equal((await lock).status,0);assert.notEqual(result.status,0);assert.match(result.err,/42501/);
+  }
+  checks.push('context rechecks expiry ownership criteria and cancellation after waiting on the job lock');
   {
     // Actual local HTTP -> gateway -> dedicated PostgreSQL login. psql is a
     // test-only transport: PREPARE preserves the gateway's fixed SQL parameters;
@@ -243,8 +305,9 @@ try {
     const workload=randomBytes(32).toString('base64url');
     const query=async(statement,parameters)=>{
       const write=statement==='select buyer_writer.apply($1,$2,$3::jsonb) as result';
-      assert.ok(write||statement==='select buyer_writer.receipt($1,$2,$3,$4,$5,$6,$7) as result');
-      const types=write?'text,text,jsonb':'text,text,uuid,uuid,bigint,text,integer';
+      const context=statement==='select buyer_writer.context($1,$2,$3,$4,$5) as result';
+      assert.ok(write||context||statement==='select buyer_writer.receipt($1,$2,$3,$4,$5,$6,$7) as result');
+      const types=write?'text,text,jsonb':context?'text,text,uuid,uuid,bigint':'text,text,uuid,uuid,bigint,text,integer';
       const result=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_runtime','-d','writer_test',
         '-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate'],
       `set statement_timeout='10s';set lock_timeout='5s';prepare writer_http(${types}) as ${statement};execute writer_http(${parameters.map(literal).join(',')});`);
@@ -268,6 +331,9 @@ try {
       assert.equal((await send('start',{}, {'x-buyer-writer-key':'invalid'})).status,401);
       assert.equal((await send('start')).status,200);
       assert.equal((await send('start')).status,409);
+      const contextResponse=await fetch(endpoint.replace(/operations$/,'context'),{method:'POST',redirect:'error',headers:{'content-type':'application/json','x-buyer-writer-key':workload,'x-buyer-job-permit':d.permit},body:JSON.stringify({version:1,dispatchId:d.dispatchId,generation:d.generation})});
+      assert.equal(contextResponse.status,200);assert.deepEqual((await contextResponse.json()).sourceContext,sourceContext);
+
       const criteria={county:'Wake',state:'NC',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-12-31'};
       const normalized=normalizeBuyerSales({...criteria,raw_sales:Array.from({length:201},(_,i)=>({...sale,buyer_name:'HTTP ISOLATED LLC',parcel_id:`HTTP-${i}`}))});
       const plan=planBuyerWrites({...d,criteria,...normalized});

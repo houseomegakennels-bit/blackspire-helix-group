@@ -114,3 +114,13 @@ export function parseWriterReceipt({jobId,body}) {
     ||!integer(q.chunkIndex,0,499)||!['start','raw.append','clean.append','buyers.commit','complete','fail'].includes(q.operation)) reject();
   return {jobId,...q};
 }
+
+export function parseWriterContext({jobId,body}) {
+  if(!Buffer.isBuffer(body))reject();
+  if(body.length>8192)reject(413);
+  let q;
+  try {q=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(body));}catch{reject();}
+  exactKeys(q,['version','dispatchId','generation']);
+  if(!uuid(jobId)||!uuid(q.dispatchId)||q.version!==1||!integer(q.generation,1,Number.MAX_SAFE_INTEGER))reject();
+  return {jobId,...q};
+}

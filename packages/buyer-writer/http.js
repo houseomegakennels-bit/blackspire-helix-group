@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { authenticateWriterRequest, createWriterGateway, createWriterReceiptGateway } from './gateway.js';
+import { authenticateWriterRequest, createWriterGateway, createWriterReceiptGateway, createWriterContextGateway } from './gateway.js';
 import { WriterProtocolError } from './protocol.js';
 
 // Explicit composition only: the caller owns the dedicated database connection,
@@ -9,6 +9,8 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
   if(typeof isAvailable!=='function') throw new TypeError('Buyer writer availability check required');
   const operations=createWriterGateway({credential,workspace,query});
   const receipts=createWriterReceiptGateway({credential,workspace,query});
+  const context=createWriterContextGateway({credential,workspace,query});
+  const handlers={operations,receipts,context};
   let active=0;
   const repliedSockets=new WeakSet();
   const server=http.createServer({maxHeaderSize:32768,headersTimeout:5000,requestTimeout:15000,connectionsCheckingInterval:1000},(req,res)=>{
@@ -23,7 +25,7 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
     const deny=(status)=>reply(status,{ok:false,code:status===503?'WRITER_UNAVAILABLE':'WRITER_REJECTED'});
     // Match raw URL exactly. Encodings, query strings and additional path segments
     // do not select a job or an operation endpoint.
-    const match=/^\/api\/internal\/buyer-writer\/v1\/jobs\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/(operations|receipts)$/.exec(req.url??'');
+    const match=/^\/api\/internal\/buyer-writer\/v1\/jobs\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/(operations|receipts|context)$/.exec(req.url??'');
     if(!match) return deny(404);
     if(req.method!=='POST') return deny(405);
     if(req.headers['content-type']!=='application/json'||req.headers['content-encoding']) return deny(415);
@@ -42,7 +44,7 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
         if(await isAvailable()!==true) return deny(503);
         if(disconnected) return;
         const chunks=[];let bytes=0;
-        const limit=match[2]==='receipts'?8192:262144;
+        const limit=match[2]==='operations'?262144:8192;
         for await(const chunk of req) {
           bytes+=chunk.length;
           if(bytes>limit) return deny(413);
@@ -52,7 +54,7 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
         if(disconnected) return;
         if(await isAvailable()!==true) return deny(503);
         if(disconnected) return;
-        const result=await (match[2]==='receipts'?receipts:operations)({
+        const result=await handlers[match[2]]({
           jobId:match[1],rawHeaders:req.rawHeaders,body:Buffer.concat(chunks,bytes),
         });
         if(!disconnected) reply(result.status,result.body);

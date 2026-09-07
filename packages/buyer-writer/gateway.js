@@ -1,4 +1,5 @@
-import { authenticateWriter, parseWriterOperation, parseWriterReceipt, WriterProtocolError } from './protocol.js';
+import { authenticateWriter, parseWriterOperation, parseWriterReceipt, parseWriterContext, WriterProtocolError } from './protocol.js';
+import { validateBuyerSourceContext } from './source-context.js';
 
 const errorStatus = new Map([
   ['42501',403], ['23505',409], ['22023',400], ['22P02',400], ['22003',400], ['22008',400], ['54000',413],
@@ -78,6 +79,37 @@ export function createWriterReceiptGateway({credential,workspace,query}) {
       return {status:200,body:value};
     } catch(error) {
       if(error instanceof WriterProtocolError) return rejected(error.status);
+      return rejected(errorStatus.get(error?.code)??503);
+    }
+  };
+}
+
+export function createWriterContextGateway({credential,workspace,query}) {
+  if(typeof workspace!=='string'||!workspace.length||workspace.length>128||typeof query!=='function') {
+    throw new TypeError('Buyer writer configuration unavailable');
+  }
+  return async function handle({rawHeaders,body,jobId}) {
+    try {
+      const {permitDigest}=authenticateWriterRequest(rawHeaders,credential);
+      const q=parseWriterContext({jobId,body});
+      const result=await query('select buyer_writer.context($1,$2,$3,$4,$5) as result',[
+        permitDigest,workspace,q.jobId,q.dispatchId,q.generation,
+      ]);
+      const value=result?.rows?.length===1?result.rows[0]?.result:null;
+      if(!value||Object.keys(value).sort().join(',')!=='criteria,sourceContext,sourceContextDigest'
+        ||typeof value.sourceContextDigest!=='string'||!/^[a-f0-9]{64}$/.test(value.sourceContextDigest))return rejected(503);
+      const c=value.criteria;
+      // Return only the canonical, non-secret criteria projection from SQL.
+      if(!c||Object.keys(c).sort().join(',')!=='cash_buyers_only,county,date_range_end,date_range_start,llc_buyers_only,min_purchases,property_type,state')return rejected(503);
+      for(const field of ['state','county','property_type','date_range_start','date_range_end']) {
+        if(typeof c[field]!=='string'||c[field].length>128)return rejected(503);
+      }
+      if(c.min_purchases!==null&&(!Number.isSafeInteger(c.min_purchases)||c.min_purchases<1||c.min_purchases>5))return rejected(503);
+      for(const field of ['cash_buyers_only','llc_buyers_only'])if(c[field]!==null&&typeof c[field]!=='boolean')return rejected(503);
+      try {validateBuyerSourceContext(value.sourceContext);}catch{return rejected(503);}
+      return {status:200,body:value};
+    }catch(error) {
+      if(error instanceof WriterProtocolError)return rejected(error.status);
       return rejected(errorStatus.get(error?.code)??503);
     }
   };
