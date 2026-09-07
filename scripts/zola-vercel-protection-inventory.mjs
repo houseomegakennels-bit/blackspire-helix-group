@@ -96,6 +96,50 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
     evidence.aliases = rows.map((row) => ({ alias: host(row.alias), deploymentId: row.deploymentId == null ? null : identifier(row.deploymentId) }));
     return { count: rows.length, paginationComplete: true };
   });
+  // Official SDK projectRoutesGetRoutes: unfiltered endpoint returns the full
+  // route array and version, with no cursor/limit request parameters. Never infer
+  // live coverage from a staged/default response; preserve explicit isLive only.
+  await observe('projectRouting', async () => {
+    const data = await get(`/v1/projects/${PROJECT}/routes`);
+    if (!Array.isArray(data.routes) || data.routes.length > 10000 || !data.version ||
+        data.pagination != null || (data.version.ruleCount != null && data.version.ruleCount !== data.routes.length)) fail('INCOMPLETE_ROUTING_SCHEMA');
+    const intake = ['/api/search-jobs', '/api/search-jobs/:id/trigger', '/api/deal-engine/launch-buyer-search'];
+    const conditions = (rows) => {
+      if (rows == null) return [];
+      if (!Array.isArray(rows) || rows.length > 128) fail('INVALID_ROUTING_CONDITIONS');
+      return rows.map((condition) => ({
+        type: ['host', 'header', 'cookie', 'query'].includes(condition.type) ? condition.type : 'UNKNOWN',
+        operators: typeof condition.value === 'object' && condition.value !== null
+          ? Object.keys(condition.value).filter((key) => ['eq', 'neq', 'inc', 'ninc', 'pre', 'suf', 're', 'gt', 'gte', 'lt', 'lte'].includes(key))
+          : [condition.value == null ? 'exists' : 'eq'],
+        valuesRedacted: true,
+      }));
+    };
+    return { fullUnfilteredArray: true, versionId: identifier(data.version.id),
+      isLive: typeof data.version.isLive === 'boolean' ? data.version.isLive : null,
+      isStaging: typeof data.version.isStaging === 'boolean' ? data.version.isStaging : null,
+      count: data.routes.length, maxRoutes: Number.isSafeInteger(data.limit?.maxRoutes) ? data.limit.maxRoutes : null,
+      rules: data.routes.map((row, index) => {
+        if (!row.route || typeof row.route.src !== 'string') fail('INVALID_ROUTING_RULE');
+        const route = row.route;
+        const source = row.rawSrc ?? route.src;
+        const destination = route.dest ?? route.destination;
+        let destinationClass = destination == null ? 'none' : 'redacted';
+        if (typeof destination === 'string') {
+          if (destination.startsWith('/') && !destination.startsWith('//')) destinationClass = 'internal';
+          else { try { const url = new URL(destination); destinationClass = url.protocol === 'https:' && url.hostname === 'jarvis.blackspirehelix.com' ? 'canonical_gateway' : 'external_other'; } catch { /* Unknown remains redacted. */ } }
+        }
+        return { index, enabled: typeof row.enabled === 'boolean' ? row.enabled : null,
+          routeType: ['rewrite', 'redirect', 'set_status', 'transform'].includes(row.routeType) ? row.routeType : 'UNKNOWN',
+          srcSyntax: ['equals', 'path-to-regexp', 'regex'].includes(row.srcSyntax) ? row.srcSyntax : 'UNKNOWN',
+          recognizedIntakePath: intake.includes(source) ? source : null, sourceRedacted: !intake.includes(source),
+          destinationClass, status: Number.isInteger(route.status) && route.status >= 100 && route.status <= 599 ? route.status : null,
+          methods: Array.isArray(route.methods) ? route.methods.map((method) => ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method) ? method : 'UNKNOWN') : null,
+          has: conditions(route.has), missing: conditions(route.missing),
+          transformCount: Array.isArray(route.transforms) ? route.transforms.length : 0,
+          privateValueReviewRequired: true };
+      }), denialProven: false };
+  });
   await observe('firewall', async () => {
     const config = await get('/v1/security/firewall/config/active', { projectId: PROJECT });
     if (!Array.isArray(config.rules)) fail('INVALID_FIREWALL_CONFIG');

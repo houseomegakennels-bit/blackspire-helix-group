@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — protected package correction and routing discovery
+
+Re-run the protected migration CLI at the next clean committed head with the separate bounded metadata reader, then re-pin n8n using the existing unused credentials. Canonical CI is green at 5ff763f; reverify the next exact head. Inspect the new project-routing inventory observation; deployment/alias/domain enumeration is complete at 5ff763f, but firewall404 and bypass402 do not establish denial or absence of all alternative controls. Secure legacy authority containment, production six-read collection and final orchestration remain unfinished. No live activation, database migration or PR merge is permitted while release gates are red.
+
 ## 2026-09-07 — current-head engineering continuation
 
 1. Preserve the completed scoped writer proof; its implementation remains unchanged. New frontend read-helper changes require their own frontend/full regression and exact-head CI evidence.

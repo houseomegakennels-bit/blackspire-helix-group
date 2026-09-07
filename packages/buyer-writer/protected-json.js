@@ -8,11 +8,21 @@ export function readRootOwnedJson(filename,options) {
   return readRootOwnedJsonSnapshot(filename,options).value;
 }
 
-export function readRootOwnedJsonSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}={}) {
+export function readRootOwnedJsonSnapshot(filename,options={}) {
+  return readSnapshot(filename,options,65536);
+}
+
+// Offline catalog manifests are larger than credentials. Keep the credential
+// reader's existing ceiling unchanged; metadata has a separate fixed bound.
+export function readRootOwnedMetadataSnapshot(filename,{groupId,io=fs,aclTool=spawnSync}={}) {
+  return readSnapshot(filename,{groupId,io,aclTool,maxBytes:2*1024*1024},2*1024*1024);
+}
+
+function readSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}={},ceiling) {
   let fd;
   try {
     if(!Number.isInteger(groupId)||groupId<0||groupId>4294967294||typeof filename!=='string'||filename.length>4096||!path.isAbsolute(filename)
-      ||path.resolve(filename)!==filename||filename==='/'||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>65536)throw new Error();
+      ||path.resolve(filename)!==filename||filename==='/'||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>ceiling)throw new Error();
     let current='/';
     const ancestors=['/',...filename.split('/').slice(1,-1).map(part=>{current=path.join(current,part);return current;})];
     for(const ancestor of ancestors){

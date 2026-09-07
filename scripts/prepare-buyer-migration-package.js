@@ -3,12 +3,12 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {readRootOwnedJsonSnapshot} from '../packages/buyer-writer/protected-json.js';
+import {readRootOwnedMetadataSnapshot} from '../packages/buyer-writer/protected-json.js';
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 try {
  if(process.versions.node!=='22.23.1'||process.getuid?.()!==0||process.argv.length!==4)throw new Error();
  const [configuration,output]=process.argv.slice(2);
- const input=readRootOwnedJsonSnapshot(configuration,{groupId:0});
+ const input=readRootOwnedMetadataSnapshot(configuration,{groupId:0});
  if(Object.keys(input.value).sort().join(',')!=='providerManifest,releaseSha')throw new Error();
  const root=fileURLToPath(new URL('..',import.meta.url));
  const gitArgs=['--no-replace-objects','-c','core.useReplaceRefs=false','-C',root];
