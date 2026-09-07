@@ -68,6 +68,26 @@ duplicate counting rather than silently merging overlapping source records.
 The SQL layer independently repeats authorization, provenance and lifecycle
 checks. These helpers do not establish source-context authorization themselves.
 
+`n8n-workflow.js` builds an offline replacement definition without reading the
+old export or credential values. It references separate secure ingress/writer
+credentials, authenticates the webhook, verifies bound bytes, bundles the pure
+helpers for Cloud Code nodes, and sends fixed HTTP operations through a sequential
+receipt loop. Known pre-write verification failures produce a scoped failure
+operation; only a complete matching receipt sequence permits success. Redirects,
+automatic retries, execution saving and pinned data are disabled. This is not a
+published workflow or proof of actual Cloud execution/item linking.
+
+The candidate accepts only frontend-prefetched payloads, capped at 6 MiB decoded
+and transported as canonical base64, and requests a 90-second execution timeout.
+The trusted issuer must apply the same limits before issuance. County fetching
+must be moved into the bounded authenticated server path first. Workload timing,
+Cloud execution and timeout reconciliation remain required: transport/context
+errors can leave a processing job with an unknown outcome and require scoped
+receipt lookup rather than blind replay. Saving controls do not establish absence
+from all transient Cloud storage. The returned definition includes empty pinData;
+publishing must use the current management API's accepted projection and verify
+actual pinning/settings rather than assuming export shape equals update shape.
+
 The installer is separate from the already-reviewed Buyer/Nexus migrations. It
 does not provision login passwords or revoke the legacy browser grants itself.
 Its managed installer needs CREATEROLE, ownership of the five Buyer tables and
