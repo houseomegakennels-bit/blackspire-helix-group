@@ -141,3 +141,17 @@ integration and the immutable rollback intake bridge.
 Keep the old protected workflow snapshot available. Do not switch the live
 workflow until its callers and the new writer have a reviewed coordinated path.
 All release gates, including actual six-read acceptance, remain required.
+
+`source-policy.js` checks a complete active county registry snapshot against an
+independently reviewed release manifest, including exact URL hash, cash/type
+policy and microsecond creation order. It does not generate approvals from live
+rows. `acquisition.js` composes the extracted frontend adapter factory with the
+bounded source client, preserves first-source precedence and all-source cash
+policy, and binds exact finite JSON bytes capped at 6 MiB. It rejects malformed
+features, mismatched source markers, extra query keys, and late payloads. Forsyth
+parcel requests share budgets and their full fixed policy is in the context
+digest. Empty arrays remain valid; unsupported adapters fail closed.
+
+The production approval manifest, explicit virtual Mecklenburg fallback, generic
+n8n-source adapters, authenticated caller and frontend deployment packaging are
+still unfinished. Injected test transports are not production source witnesses.

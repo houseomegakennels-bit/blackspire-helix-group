@@ -2,10 +2,10 @@
 
 ## 2026-09-07 00:22 UTC — next writer integration steps
 
-1. Source-client3c52dc5 is exact-head CI green. County-adapter extraction passes independent parity review, five adapter groups, frontend type/lint checks and 1,370 root tests. Finish commit/push/new-head CI, then connect strict approved source policies and authenticated issuance.
+1. County-adapter69a1730 is exact-head CI green. Source-policy/acquisition passes independent review and 14 isolated groups; its full suite passes 1,384 tests with zero failures and all checks pass. Finish reviewed commit/push/new-head CI, then complete the production approval manifest, generic source adapters and authenticated issuance before coordinated integration.
 2. Implement authenticated issuer/intake and canonical source policy while preserving sweep beta and admin route entitlements. Connect secure n8n HTTP nodes only after coordinated caller/rollback continuity is proven. Do not expose per-job permits through saved executions or browser responses.
 3. Finish secure Buyer intake compatibility for immutable `2c0b600`, repair acceptance supervision and obtain actual owner/cross-owner evidence. No legacy unauthenticated intake may gain privileged write authority.
-4. Recheck disk and budget release/backup space. Current approximately 3.77 GiB is below preferred deployment headroom; preserve tools and protected state.
+4. Recheck disk and budget release/backup space. Current approximately 3.24 GiB is below preferred deployment headroom; preserve tools and protected state.
 5. Keep original activation, migration, six-read, CI and merge gates. Isolated writer proof does not authorize claiming production continuity or functional rollback.
 
 ## 2026-09-06 23:17 UTC — continue writer implementation from reviewed protocol
