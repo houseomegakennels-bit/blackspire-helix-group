@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — complete activation approval and production prerequisites
+
+1. The API integration full root regression passes 1,478 tests with zero failures, nine skips and all 119 files contained. Build/lint/typecheck/security/audit/memory checks pass; finish independent final diff review, commit/push and exact-head CI. The previous runtime head `0005168` is CI green; it does not validate this local API delta.
+2. Implement the root activation-binding publisher with exact supervisor/child executable identity, generation, cgroup and current base readiness checks. Publish only a protected new inode, refuse existing bindings, and recheck after publication with exact-inode cleanup on failure. The API mount now initializes explicitly and stays unavailable without valid approval; no production configuration is enabled.
+3. Prepare and rehearse the provider-authorized ACL transaction that preserves existing consumers while removing PUBLIC extension authority from the writer identities. Current postgres authority cannot revoke provider-owned grants; do not bypass that boundary.
+4. Validate actual secure n8n execution and coordinated caller replacement. Complete secure Buyer intake on immutable rollback `2c0b600`, then finish the safe paired six-read supervisor and real acceptance. Keep every activation, migration and merge gate.
+5. Recheck disk and prove safe deployment/backup headroom. Approximately 1.6 GiB remains free; preserve unrelated and protected state. No additional cleanup occurred.
+
 ## 2026-09-07 — runtime integration remaining
 
 1. Frontend cc2702e is committed and exact-head CI green. Dedicated PostgreSQL pools, real TLS/lock-timeout acceptance and fresh release packaging now pass isolated validation. The full root suite passes 1,436 tests with zero failures, nine skips and all 109 files contained. Finish final memory/security/diff review, commit/push and exact-head CI.

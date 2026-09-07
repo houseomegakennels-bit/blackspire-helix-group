@@ -6,7 +6,7 @@ import { authenticateBuyerIssuer, createBuyerIssuer, createBuyerReconciler } fro
 // Explicit composition only: the caller owns the dedicated database connection,
 // listener binding, TLS ingress and authoritative availability/stop observation.
 // No production configuration or credential file is loaded by this module.
-export function createBuyerWriterHttpServer({credential,workspace,query,isAvailable,issuer}) {
+export function createBuyerWriterRequestHandler({credential,workspace,query,isAvailable,issuer}) {
   if(typeof isAvailable!=='function') throw new TypeError('Buyer writer availability check required');
   const operations=createWriterGateway({credential,workspace,query});
   const receipts=createWriterReceiptGateway({credential,workspace,query});
@@ -17,9 +17,10 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
     handlers.issuance=createBuyerIssuer({credential:issuer.credential,workspace,query:issuer.query});
     handlers.reconciliation=createBuyerReconciler({credential:issuer.credential,workspace,query:issuer.query});
   }
-  let active=0;
+  let active=0,stopped=false;
+  const sockets=new Set();
   const repliedSockets=new WeakSet();
-  const server=http.createServer({maxHeaderSize:32768,headersTimeout:5000,requestTimeout:15000,connectionsCheckingInterval:1000},(req,res)=>{
+  const handleRequest=(req,res)=>{
     const reply=(status,body)=>{
       if(res.destroyed||res.writableEnded) return;
       const data=JSON.stringify(body);
@@ -40,7 +41,12 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
       else authenticateWriterRequest(req.rawHeaders,credential);
     }
     catch(error){return deny(error instanceof WriterProtocolError?error.status:503);}
-    if(active>=32) return deny(503);
+    if(stopped||active>=32||(!sockets.has(req.socket)&&sockets.size>=64)) return deny(503);
+    if(!sockets.has(req.socket)){
+      sockets.add(req.socket);
+      req.socket.once('close',()=>sockets.delete(req.socket));
+      req.socket.setTimeout(15000,()=>req.socket.destroy());
+    }
     active++;
     let disconnected=false;
     const deadline=setTimeout(()=>{disconnected=true;deny(503);},15000);
@@ -50,8 +56,9 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
       try {
         // Failed observation means unavailable. This is an availability gate,
         // not a claim of atomic fencing with an unrelated authority database.
-        if(await isAvailable()!==true) return deny(503);
+        if(stopped||await isAvailable()!==true) return deny(503);
         if(disconnected) return;
+        if(stopped) return deny(503);
         const chunks=[];let bytes=0;
         const limit=match[2]==='operations'?262144:match[2]==='issuance'?65536:8192;
         for await(const chunk of req) {
@@ -59,10 +66,12 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
           if(bytes>limit) return deny(413);
           chunks.push(chunk);
           if(disconnected) return;
+          if(stopped) return deny(503);
         }
         if(disconnected) return;
-        if(await isAvailable()!==true) return deny(503);
+        if(stopped||await isAvailable()!==true) return deny(503);
         if(disconnected) return;
+        if(stopped) return deny(503);
         const result=await handlers[match[2]]({
           jobId:match[1],rawHeaders:req.rawHeaders,body:Buffer.concat(chunks,bytes),
         });
@@ -72,14 +81,22 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
       // Releasing early would permit unbounded outstanding database operations.
       finally {active--;clearTimeout(deadline);}
     })();
-  });
-  server.maxRequestsPerSocket=1;
-  server.maxConnections=64;
-  server.setTimeout(15000);
-  server.on('clientError',(_error,socket)=>{
+  };
+  const handleClientError=(_error,socket)=>{
     if(repliedSockets.has(socket)) return socket.destroy();
     if(socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
     else socket.destroy();
-  });
+  };
+  return Object.freeze({handleRequest,handleClientError,stopAdmission:()=>{stopped=true;},isDrained:()=>active===0});
+}
+
+export function createBuyerWriterHttpServer(options) {
+  const writer=createBuyerWriterRequestHandler(options);
+  const server=http.createServer({maxHeaderSize:32768,headersTimeout:5000,requestTimeout:15000,connectionsCheckingInterval:1000},writer.handleRequest);
+  server.maxRequestsPerSocket=1;
+  server.maxConnections=64;
+  server.setTimeout(15000);
+  server.on('clientError',writer.handleClientError);
+  server.once('close',writer.stopAdmission);
   return server;
 }

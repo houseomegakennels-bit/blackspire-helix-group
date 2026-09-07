@@ -1,7 +1,8 @@
 # Scoped Buyer writer
 
-This component is implemented and tested in isolation. It is not mounted in an
-HTTP server, installed in production, or connected to the live n8n workflow.
+This component is implemented and tested in isolation, with an opt-in canonical
+API mount. It is not enabled or installed in production, and the live n8n workflow
+still uses its previous writer.
 
 `sql/install.sql` creates a private PostgreSQL permit, sale-evidence and receipt
 ledger. The dedicated runtime can execute only the fixed write, receipt and scoped context
@@ -23,9 +24,9 @@ UUID tombstone. Never refresh the revision and reuse the same attempt UUID. A
 missing attempt has no database workspace association, so its workspace authority
 comes from the configured gateway and authenticated frontend guard. `absent` does
 not set SearchJob status to failed. Caller response handling must report failure.
-The gateway routes remain unmounted. Frontend guard capture and opt-in scoped
-dispatch now compose acquisition, issuance, n8n transport and reconciliation.
-Dedicated pool role verification and actual live n8n integration remain required.
+Frontend guard capture and opt-in scoped dispatch compose acquisition, issuance,
+n8n transport and reconciliation. The API mount uses dedicated verified pools;
+actual live n8n integration and production validation remain required.
 
 Each five-minute permit binds a job, owner, workspace, immutable criteria and
 generation. Job locks serialize issuance, cancellation and writes. Operations
@@ -151,9 +152,9 @@ database login, using test-only prepared psql calls, and verifies all five table
 The fixture matches the exercised Buyer column and unique-key semantics, but is
 not a full production database restore or the complete Nexus rehearsal.
 
-Before deployment, finish authenticated issuer/intake integration, source-policy
-validation, secure n8n HTTP credentials and execution handling, emergency-stop
-integration and the immutable rollback intake bridge.
+Before deployment, finish the root activation-binding publisher, secure n8n HTTP
+credentials and actual execution validation, provider-authorized extension ACL
+changes, and the immutable rollback intake bridge.
 Keep the old protected workflow snapshot available. Do not switch the live
 workflow until its callers and the new writer have a reviewed coordinated path.
 All release gates, including actual six-read acceptance, remain required.
@@ -179,8 +180,8 @@ preserve exact approved parameters and override only the legacy response caps.
 Malformed responses now reject instead of silently becoming empty results.
 
 Authenticated frontend issuance and acquisition/revision fencing are implemented.
-Actual API lifecycle mounting, secure live n8n integration and production validation
-remain unfinished. Injected transports are not production source witnesses.
+API lifecycle mounting is implemented. Secure live n8n integration and production
+validation remain unfinished. Injected transports are not production source witnesses.
 
 
 `postgres.js` composes separate fixed issuer/runtime `pg` 8.23.0 pools from explicit
@@ -207,3 +208,44 @@ and real lock timeout/connection replacement. Run only with Node 22.23.1, the
 explicit pinned image and outer process/memory/temp/output limits. This does not
 replace production acceptance or prove atomic fencing across the authority and
 PostgreSQL databases.
+
+
+## Canonical API integration
+
+The API entrypoint initializes the writer only with explicit `BUYER_WRITER_MODE`
+scoped mode, production startup checks and verified release/environment identity.
+`BUYER_WRITER_CONFIG_FILE` names a protected JSON file;
+`BUYER_WRITER_WORKSPACE_ID` supplies its required workspace scope. The API uses the
+actual inherited systemd invocation identifier. Development/test entrypoints do
+not discover or load the production configuration.
+
+Configuration has exactly `version`, `workspace`, `bindingFile`, `writerCredential`,
+`issuerCredential`, `runtime` and `issuer`. Each database configuration has `host`,
+`port`, `database`, `password` and optional `ca`; roles are fixed by the driver.
+All four credentials must be distinct canonical 32-byte base64url values. Never
+commit a populated configuration or put it in workflow code or saved executions.
+The protected reader requires safe root-owned ancestors, one regular inode, mode
+0600 or private-API-group 0640, and no extended POSIX ACL. The API's shared primary
+group is not acceptable credential separation.
+
+The writer remains unavailable until its protected activation binding matches the
+release, workspace and API/worker invocations. API observation verifies its own
+process and supervisor, their parent relationship, cgroup, IDs, groups and zero
+capabilities. Worker process restrictions come from a root-protected supervisor
+and child attestation matched against live systemd metadata. `ProtectProc` remains
+invisible; this is not a claim that the API can inspect the worker's live process.
+The root publisher and complete production activation proof remain unfinished.
+
+Public readiness requires a fresh availability verdict and a final emergency-stop
+check. Base snapshots exclude the writer's own verdict to avoid circular startup.
+A missing binding permits API boot but denies writer operations. Bindings have an
+invocation lifetime, not an implicit periodic renewal; restart or removal requires
+new controlled approval. Observations do not provide an atomic fence across the
+authority database, systemd and PostgreSQL.
+
+Shutdown stops admission and drains the listener. The writer also gives admitted
+queries whose HTTP clients disconnected up to two seconds to settle before the
+bounded pool closure. Forced closure leaves an uncertain transaction outcome;
+use the receipt/reconciliation protocol rather than retrying the write. Termination
+during asynchronous initialization prevents a late listener and closes initialized
+pools before the authority database.
