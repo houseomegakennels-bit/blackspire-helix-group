@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — after isolated provider ACL rehearsal
+
+1. Finish independent review and required checks for the local ACL generator/rehearsal and environment-validator increment. Commit and push only after review, then verify CI for the resulting head.
+2. Use the concrete unsent provider request and protected transaction package for authorized Supabase review/execution. Do not bypass provider ownership; reject any catalog drift. Production remains unchanged.
+3. Finish the isolated supervised API/worker launcher and actual activation proof, then secure n8n integration, immutable rollback intake continuity and six real reads as their prerequisites permit.
+4. Obtain safe deployment disk headroom. Preserve protected and unrelated state; the current approximately 2 GiB remains below the release budget.
+5. Retain all original production activation, migration, continuity, merge and same-SHA cutover gates.
+
+
 ## 2026-09-07 — finish root activation and remaining release prerequisites
 
 1. Preserve the local activation implementation. The independently reviewed synthetic commit-marker termination proof passes. Complete the isolated launcher, including real path validation and both roles' environment checks before either supervisor starts. The protected root CLI is implemented, but complete actual activation is unverified. Keep the reviewed production supervisor unchanged. Then prove actual publication with the real supervised API/worker in an isolated production-profile fixture.

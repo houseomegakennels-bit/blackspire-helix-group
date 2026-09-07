@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-07 — provider ACL transaction isolated rehearsal
+
+Current release and PR125 head is `115f07e000986ba63f8afc731365f2bad5d0301f`; its five checks passed in CI run `34102179630`. PR125 remains open and unmerged. The new offline provider ACL generator freezes catalog/role/version preconditions, preserves consumer grants and grant options, removes only captured PUBLIC edges and provides guarded exact rollback. Three focused generator tests and nine actual PostgreSQL 17.6 ACL checks pass. Independent review prompted collision-safe SQL literals and strict negative-test assertions; actual SQL execution caught and corrected syntax/precedence errors before the successful run.
+
+The isolated fixture used inert extension stand-ins and no production credentials or network access. It proves ACL preservation, reapplication, drift rejection, writer denial and atomic rollback after a forced failure. Parent verification confirmed owned container/cgroup absence. The protected production review package and unsent provider request are recorded in `docs/ZOLA_PROVIDER_ACL_REQUEST.md`; no production ACL transaction was applied. Provider-authorized execution remains required because current database authority cannot revoke provider-owned grants.
+
+The separate both-role rehearsal environment validator has two passing focused groups, but complete actual supervised activation remains unverified. Canonical API/worker remain inactive; live n8n still uses seven anon nodes and nine unsafe writes. Production migrations remain unapplied, rollback `2c0b600` remains functionally unverified, and all six real reads remain unrun. Disk is approximately 2 GiB free and remains below the release budget. No live integration, activation, merge or cutover occurred.
+
+
 ## 2026-09-07 — activation verification and isolated rehearsal preparation
 
 API integration is committed and pushed at `4f188c6bc9bf5944b2ae6c34810e517482d36a50`; all five checks passed in CI run `34091871599`. PR125 remains open, unmerged and mergeable. The following activation work is local. Full regression passes 1,530 tests with zero failures and nine skips; all 132 files complete with bounded output and an empty owned cgroup. Build, lint, typecheck, secret scan, living-memory and whitespace checks pass. Independent reviews approve the implementation; final reviewed commit/push and exact-head CI remain required.
