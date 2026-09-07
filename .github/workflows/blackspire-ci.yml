@@ -61,7 +61,7 @@ jobs:
         run: mkdir -p ci-logs
 
       - name: npm ci
-        run: npm ci --ignore-scripts 2>&1 | tee ci-logs/01-install.log
+        run: node scripts/install-runtime-dependencies.js "$PWD" 2>&1 | tee ci-logs/01-install.log
 
       - name: Clean local Blackspire Command state
         run: rm -rf .blackspire-command
@@ -81,6 +81,14 @@ jobs:
           env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
             node scripts/test-buyer-writer-postgres.mjs 2>&1 | tee ci-logs/03-writer-postgres.log
 
+      - name: Verify native Buyer driver TLS and lock timeout
+        timeout-minutes: 2
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            node scripts/test-buyer-writer-native.mjs 2>&1 | tee ci-logs/03-writer-native.log
+
       - name: Run build check
         run: npm run build 2>&1 | tee ci-logs/04-build.log
 
@@ -88,6 +96,7 @@ jobs:
         run: |
           mkdir -p ci-artifacts/release-package
           git archive HEAD -- .node-version package.json package-lock.json apps packages scripts ops | tar -x -C ci-artifacts/release-package
+          node scripts/install-runtime-dependencies.js "$PWD/ci-artifacts/release-package"
           git rev-parse HEAD > ci-artifacts/release-package/COMMIT_SHA
           BLACKSPIRE_EXPECTED_ENVIRONMENT=disposable-staging \
           BLACKSPIRE_BUILD_TIMESTAMP="$(git show -s --format=%cI HEAD)" \
@@ -148,6 +157,7 @@ jobs:
             ci-artifacts/release-package
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true
 
       - name: Upload logs on failure
         if: failure()

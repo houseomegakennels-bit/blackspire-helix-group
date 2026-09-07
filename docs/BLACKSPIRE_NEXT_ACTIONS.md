@@ -1,12 +1,12 @@
 # Blackspire Next Actions
 
-## 2026-09-07 — authenticated writer composition remaining
+## 2026-09-07 — runtime integration remaining
 
-1. Frontend hidden-file exclusion build and full root regressions pass (1,422 passed, zero failed, nine skipped; 107 files contained). Finish final memory/security/diff checks, independent staged scope review, commit/push and exact-head CI. Issuer e22f1a0 is already CI green.
-2. Implement explicit dedicated PostgreSQL pools with live role/privilege verification and fixed statement allowlists. First add deterministic locked dependency packaging to the source-only release and isolated test snapshot flows; never install into the sealed rollback artifact.
-3. Mount the writer with authoritative health/readiness/emergency-stop/generation checks and separate protected credentials. Validate actual secure n8n Cloud execution before replacing the live workflow. Frontend scoped dispatch is implemented but not enabled in production.
-4. Complete immutable rollback intake continuity and the safe real six-read harness. Keep canonical activation, reviewed production migrations and PR125 merge held until every original gate passes.
-5. Current free disk is roughly 1.6 GiB. Preserve all unrelated/protected state; only independently verified disposable cleanup is authorized. No further deletion has occurred.
+1. Frontend cc2702e is committed and exact-head CI green. Dedicated PostgreSQL pools, real TLS/lock-timeout acceptance and fresh release packaging now pass isolated validation. The full root suite passes 1,436 tests with zero failures, nine skips and all 109 files contained. Finish final memory/security/diff review, commit/push and exact-head CI.
+2. Mount the writer with authoritative health/readiness/emergency-stop checks and an expected worker generation supplied by controlled activation evidence. Preserve separate protected credentials and close initialized pools on startup/shutdown failure. No production configuration is enabled.
+3. Prepare and rehearse a provider-authorized ACL transaction preserving existing consumers while removing PUBLIC extension authority from the dedicated writer identities. Current postgres authority cannot revoke the provider-owned grants; do not bypass that boundary.
+4. Validate actual secure n8n Cloud execution before replacing the legacy workflow. Complete immutable rollback intake continuity and safe paired six-read acceptance; retain every original activation/migration/merge gate.
+5. Disk remains roughly 1.6 GiB free. Preserve unrelated/protected state; no additional deletion has occurred and deployment headroom is not green.
 
 ## 2026-09-07 00:22 UTC — next writer integration steps
 

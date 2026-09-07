@@ -178,6 +178,32 @@ override is a separate fixed endpoint included in its digest. Generic queries
 preserve exact approved parameters and override only the legacy response caps.
 Malformed responses now reject instead of silently becoming empty results.
 
-Authenticated issuance, acquisition/issue criteria and lifecycle fencing, actual
-frontend/runtime mounting and deployment packaging remain unfinished. Injected
-test transports are not production source witnesses.
+Authenticated frontend issuance and acquisition/revision fencing are implemented.
+Actual API lifecycle mounting, secure live n8n integration and production validation
+remain unfinished. Injected transports are not production source witnesses.
+
+
+`postgres.js` composes separate fixed issuer/runtime `pg` 8.23.0 pools from explicit
+configuration. It never loads ambient PostgreSQL variables or credential files.
+TLS verification, actual role/catalog checks on every checkout, bounded admission,
+server lock/statement deadlines, connection destruction on failure and bounded
+shutdown fail closed. PUBLIC extension privileges count as effective authority;
+provider-owned ACLs must be corrected through authorized administration before
+production identities can pass these checks.
+
+`scripts/install-runtime-dependencies.js` installs only fresh unsealed copies with
+locked registry integrity, disabled lifecycle scripts and private empty npm
+configuration/cache. Release creation and CI hash the installed dependency bytes;
+completed recovery artifacts are never modified. Test snapshot preparation now
+requires npm registry access. The post-install size check is not a peak disk bound;
+operator validation uses an additional private temporary-filesystem limit.
+
+`scripts/test-buyer-writer-native.mjs` separately verifies real driver/TLS behavior
+against a pinned disposable PostgreSQL container. It uses an owned internal Docker
+network and a bounded loopback byte proxy preserving end-to-end TLS, synthetic
+credentials, no host mounts and no provider calls. It covers all five tables,
+receipt reconciliation after explicit response-loss injection, privilege drift,
+and real lock timeout/connection replacement. Run only with Node 22.23.1, the
+explicit pinned image and outer process/memory/temp/output limits. This does not
+replace production acceptance or prove atomic fencing across the authority and
+PostgreSQL databases.

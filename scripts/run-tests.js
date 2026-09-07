@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { runContainedProcess } from './test-process-supervisor.js';
+import { installRuntimeDependencies } from './install-runtime-dependencies.js';
 
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const namespaceArguments = ['--pid', '--fork', '--kill-child=SIGKILL', '--mount-proc'];
@@ -54,6 +55,7 @@ try {
     else if (sourceType.isFile()) fs.copyFileSync(source, destination);
     else throw new Error(`snapshot inventory contains an unsupported entry: ${relative}`);
   }
+  installRuntimeDependencies(snapshotDirectory);
   const gitSteps = [
     ['init', '--quiet'],
     ['add', '--all'],

@@ -6,6 +6,7 @@ import { parseWriterOperation } from '../packages/buyer-writer/protocol.js';
 import { createBuyerWriterHttpServer } from '../packages/buyer-writer/http.js';
 import { planBuyerWrites } from '../packages/buyer-writer/plan.js';
 import { normalizeBuyerSales } from '../packages/buyer-writer/normalize.js';
+import { WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
 assert.equal(process.versions.node, '22.23.1');
 const image = process.env.BUYER_WRITER_TEST_IMAGE;
 assert.match(image ?? '', /^postgres@sha256:[a-f0-9]{64}$/);
@@ -335,6 +336,36 @@ try {
     assert.equal(login.status,0);assert.equal(login.stdout.trim(),'buyer_writer_runtime');
     const denied=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_runtime','-d','writer_test','-v','ON_ERROR_STOP=1'], 'set role buyer_writer_owner;');
     assert.notEqual(denied.status,0);
+  });
+  check('pool identity query accepts actual separate logins and rejects privilege or routine drift',()=>{
+    const functions={
+      runtime:['buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'],
+      issuer:['buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'],
+    };
+    const identity=(kind='runtime',substitute=false)=>{
+      const user=`buyer_writer_${kind}`;
+      const statement=`${substitute?`set role ${user};`:''}set statement_timeout='10s';set lock_timeout='5s';set search_path=pg_catalog;
+        prepare zola_identity(text,text[]) as ${WRITER_IDENTITY_SQL};execute zola_identity(${literal(user)},array[${functions[kind].map(literal).join(',')}]);`;
+      const result=run(['exec','-i',name,'psql','-X','-qAt','-U',substitute?'postgres':user,'-d','writer_test','-v','ON_ERROR_STOP=1'],statement);
+      assert.equal(result.status,0,'isolated identity query must execute');return result.stdout.trim();
+    };
+    assert.equal(identity(),'t');assert.equal(identity('issuer'),'t');assert.equal(identity('runtime',true),'f');
+    const denied=(grant,revoke)=>{sql(grant);assert.equal(identity(),'f');sql(revoke);assert.equal(identity(),'t');};
+    denied('grant create on schema buyer_writer to buyer_writer_runtime','revoke create on schema buyer_writer from buyer_writer_runtime');
+    denied('grant select(user_id) on public."SearchJob" to buyer_writer_runtime','revoke select(user_id) on public."SearchJob" from buyer_writer_runtime');
+    denied('grant usage on sequence buyer_writer.sales_ordinal_seq to buyer_writer_runtime','revoke usage on sequence buyer_writer.sales_ordinal_seq from buyer_writer_runtime');
+    denied('grant execute on function buyer_writer.cancel(uuid,uuid,text) to buyer_writer_runtime','revoke execute on function buyer_writer.cancel(uuid,uuid,text) from buyer_writer_runtime');
+    denied('alter role buyer_writer_runtime inherit','alter role buyer_writer_runtime noinherit');
+    denied('alter role buyer_writer_owner login','alter role buyer_writer_owner nologin');
+    sql('create role isolated_membership nologin');
+    denied('grant isolated_membership to buyer_writer_runtime','revoke isolated_membership from buyer_writer_runtime');sql('drop role isolated_membership');
+    denied('alter function buyer_writer.context(text,text,uuid,uuid,bigint) security invoker','alter function buyer_writer.context(text,text,uuid,uuid,bigint) security definer');
+    denied('alter function buyer_writer.context(text,text,uuid,uuid,bigint) set search_path=public','alter function buyer_writer.context(text,text,uuid,uuid,bigint) set search_path=pg_catalog');
+    sql('create schema net;grant usage on schema net to public;create table net.http_request_queue(id integer);');
+    denied('grant all on net.http_request_queue to public','revoke all on net.http_request_queue from public');
+    sql("create function net.isolated_network_function() returns integer language sql as 'select 1'");
+    assert.equal(identity(),'f');sql('revoke execute on function net.isolated_network_function() from public');assert.equal(identity(),'t');
+    sql('drop schema net cascade');
   });
   const asyncSql=(statement)=>new Promise((resolve,reject)=>{
     const child=spawn('docker',['exec','-i',name,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate'],{stdio:['pipe','pipe','pipe']});
