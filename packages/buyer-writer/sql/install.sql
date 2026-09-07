@@ -29,8 +29,8 @@ do $$declare ns oid; r text; begin
    or exists(select from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a
       where n.oid=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')))
    or exists(select from pg_proc where pronamespace=ns and oid::regprocedure::text not in(
-     'buyer_writer.issue(uuid,uuid,text,text,boolean)','buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
-     'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb)','buyer_writer.cancel(uuid,uuid,text)',
+     'buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone)','buyer_writer.issue(uuid,uuid,text,text,boolean)','buyer_writer.issue(uuid,uuid,text,text,jsonb)','buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
+     'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)',
      'buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.commit_buyers(buyer_writer.dispatches)',
      'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'))
    or exists(select from pg_class where relnamespace=ns and relname not in(
@@ -73,6 +73,8 @@ create table if not exists buyer_writer.dispatches (
 alter table buyer_writer.dispatches add column if not exists source_context jsonb;
 alter table buyer_writer.dispatches add column if not exists source_context_digest text;
 drop function if exists buyer_writer.issue(uuid,uuid,text,text,boolean);
+drop function if exists buyer_writer.issue(uuid,uuid,text,text,jsonb);
+drop function if exists buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone);
 create table if not exists buyer_writer.receipts (
  dispatch_id uuid not null references buyer_writer.dispatches(id),operation text not null,chunk_index integer not null,
  request_digest text not null,result jsonb not null,created_at timestamptz not null default clock_timestamp(),
@@ -84,7 +86,7 @@ create table if not exists buyer_writer.sales (
  primary key(dispatch_id,kind,row_digest)
 );
 -- The NOLOGIN owner can only reach public Buyer columns needed by fixed routines.
-grant select(id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status)
+grant select(id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,updated_at)
  on public."SearchJob" to buyer_writer_owner;
 grant update(status,total_sales_analyzed,total_buyers_found,error_message,updated_at) on public."SearchJob" to buyer_writer_owner;
 grant insert(search_job_id,buyer_name,seller_name,property_address,mailing_address,county,state,sale_price,sale_date,property_type,parcel_id,deed_type,lender_name)
@@ -156,38 +158,79 @@ end$$;
 -- Issuer is a separate trusted backend boundary: it must capture the real
 -- authenticated operator and route entitlement before async dispatch. Runtime
 -- cannot issue, renew or cancel permits, or nominate an owner/workspace.
-create or replace function buyer_writer.issue(p_job uuid,p_owner uuid,p_workspace text,p_digest text,p_context jsonb)
+create or replace function buyer_writer.issue(p_job uuid,p_owner uuid,p_workspace text,p_digest text,p_context jsonb,p_expected_criteria jsonb,p_expected_updated_at timestamptz,p_request uuid)
 returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
 declare j record; g bigint; d uuid; c jsonb;
 begin
- if p_job is null or p_owner is null or p_workspace is null or length(p_workspace) not between 1 and 128
+ if p_request is null or p_job is null or p_owner is null or p_workspace is null or length(p_workspace) not between 1 and 128
     or p_digest is null or p_digest !~ '^[a-f0-9]{64}$' or not buyer_writer.valid_context(p_context) then
   raise exception using errcode='22023',message='Buyer writer request rejected';
  end if;
- select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status
+ select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,updated_at
  into j from public."SearchJob" where id=p_job for update;
  if not found or j.user_id is distinct from p_owner then raise exception using errcode='42501',message='Buyer writer request rejected';end if;
  c:=buyer_writer.criteria(to_jsonb(j));
+ if p_expected_criteria is distinct from c or p_expected_updated_at is distinct from j.updated_at
+    or (j.updated_at is not null and not isfinite(j.updated_at)) then
+  raise exception using errcode='42501',message='Buyer writer request rejected';
+ end if;
  if j.state !~ '^[A-Z]{2}$' or length(j.county) not between 1 and 128 or j.date_range_start is null
-    or j.date_range_end is null or j.date_range_start>j.date_range_end then
+    or j.date_range_end is null or j.date_range_start>j.date_range_end or coalesce(j.min_purchases,1) not between 1 and 5 then
   raise exception using errcode='22023',message='Buyer writer request rejected';
  end if;
  select coalesce(max(generation),0)+1 into g from buyer_writer.dispatches where job_id=p_job;
  update buyer_writer.dispatches set state='cancelled' where job_id=p_job and state in('pending','processing');
- insert into buyer_writer.dispatches(job_id,owner_id,workspace,permit_digest,generation,criteria,no_cash_data,state,expires_at,source_context,source_context_digest)
- values(p_job,p_owner,p_workspace,p_digest,g,c,exists(select from jsonb_array_elements(p_context->'sources') s where s->'cashDisabled'='true'::jsonb),'pending',clock_timestamp()+interval '5 minutes',p_context,encode(sha256(convert_to(p_context::text,'UTF8')),'hex')) returning id into d;
- update public."SearchJob" set status='pending',error_message=null,updated_at=clock_timestamp() where id=p_job;
+ insert into buyer_writer.dispatches(id,job_id,owner_id,workspace,permit_digest,generation,criteria,no_cash_data,state,expires_at,source_context,source_context_digest)
+ values(p_request,p_job,p_owner,p_workspace,p_digest,g,c,exists(select from jsonb_array_elements(p_context->'sources') s where s->'cashDisabled'='true'::jsonb),'pending',clock_timestamp()+interval '5 minutes',p_context,encode(sha256(convert_to(p_context::text,'UTF8')),'hex')) returning id into d;
+ update public."SearchJob" set status='pending',error_message=null,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=p_job;
  return jsonb_build_object('dispatchId',d,'generation',g);
 end$$;
 
 create or replace function buyer_writer.cancel(p_job uuid,p_owner uuid,p_workspace text)
 returns void language plpgsql security definer set search_path=pg_catalog as $$
-declare actual uuid;
+declare j record;
 begin
- select user_id into actual from public."SearchJob" where id=p_job for update;
- if actual is null or p_owner is null or actual<>p_owner or p_workspace is null then
+ select user_id,updated_at into j from public."SearchJob" where id=p_job for update;
+ if not found or j.user_id is null or p_owner is null or j.user_id<>p_owner or p_workspace is null
+    or (j.updated_at is not null and not isfinite(j.updated_at)) then
   raise exception using errcode='42501',message='Buyer writer request rejected';end if;
  update buyer_writer.dispatches set state='cancelled' where job_id=p_job and owner_id=p_owner and workspace=p_workspace and state in('pending','processing');
+ -- Advance even before the first dispatch, invalidating in-flight acquisition.
+ update public."SearchJob" set updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=p_job;
+end$$;
+
+-- Resolve an uncertain issuance/workflow outcome without touching a successor.
+-- The caller supplied dispatch UUID exists before the original HTTP request.
+create or replace function buyer_writer.reconcile(p_job uuid,p_owner uuid,p_workspace text,p_request uuid,p_expected_updated_at timestamptz)
+returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
+declare j record; d buyer_writer.dispatches;
+begin
+ if p_job is null or p_owner is null or p_request is null or p_workspace is null or length(p_workspace) not between 1 and 128
+    or (p_expected_updated_at is not null and not isfinite(p_expected_updated_at)) then
+  raise exception using errcode='22023',message='Buyer writer request rejected';end if;
+ select user_id,updated_at into j from public."SearchJob" where id=p_job for update;
+ if not found or j.user_id is distinct from p_owner or (j.updated_at is not null and not isfinite(j.updated_at)) then
+  raise exception using errcode='42501',message='Buyer writer request rejected';end if;
+ select * into d from buyer_writer.dispatches where id=p_request for update;
+ if not found then
+  -- A pending issue must compare its original revision AFTER this lock. Only
+  -- invalidate the captured version; never overwrite a later job/dispatch.
+  if j.updated_at is not distinct from p_expected_updated_at then
+   update public."SearchJob" set updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=p_job;
+  end if;
+  return jsonb_build_object('dispatchId',p_request,'generation',null,'state','absent');
+ end if;
+ if d.job_id<>p_job or d.owner_id<>p_owner or d.workspace<>p_workspace then
+  raise exception using errcode='42501',message='Buyer writer request rejected';end if;
+ if d.state in ('pending','processing') then
+  update buyer_writer.dispatches set state='cancelled' where id=d.id;
+  if d.generation=(select max(generation) from buyer_writer.dispatches where job_id=p_job) then
+   update public."SearchJob" set status='failed',error_message='Buyer writer dispatch cancelled',
+    updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=p_job;
+  end if;
+  d.state:='cancelled';
+ end if;
+ return jsonb_build_object('dispatchId',d.id,'generation',d.generation,'state',d.state);
 end$$;
 
 create or replace function buyer_writer.valid_sale(r jsonb) returns boolean
@@ -267,11 +310,12 @@ begin
     or not q ?& array['jobId','version','dispatchId','generation','operation','chunkIndex','chunkCount','payload'] then
   raise exception using errcode='22023',message='Buyer writer request rejected';end if;
  -- Lock canonical job FIRST for every operation, issuance and cancellation.
- select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status
+ select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,updated_at
  into j from public."SearchJob" where id=(q->>'jobId')::uuid for update;
  if not found then raise exception using errcode='42501',message='Buyer writer request rejected';end if;
  select * into d from buyer_writer.dispatches where id=(q->>'dispatchId')::uuid and job_id=j.id for update;
  if not found or d.permit_digest<>p_digest or d.workspace<>p_workspace or d.owner_id is distinct from j.user_id
+    or (j.updated_at is not null and not isfinite(j.updated_at))
     or d.criteria is distinct from buyer_writer.criteria(to_jsonb(j)) or d.generation is distinct from (q->>'generation')::bigint
     or d.expires_at<=clock_timestamp() or d.state not in ('pending','processing')
     or not buyer_writer.valid_context(d.source_context)
@@ -340,17 +384,17 @@ begin
    else update buyer_writer.dispatches set clean_chunks=chunks,clean_next=clean_next+1,clean_count=clean_count+rows_count,bytes_received=bytes_received+octet_length(q::text) where id=d.id;end if;
   elsif op='start' then
    update buyer_writer.dispatches set state='processing' where id=d.id;
-   update public."SearchJob" set status='processing',updated_at=clock_timestamp() where id=d.job_id and user_id=d.owner_id;
+   update public."SearchJob" set status='processing',updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=d.job_id and user_id=d.owner_id;
    get diagnostics changed=row_count;if changed<>1 then raise exception 'No job updated';end if;
   elsif op='buyers.commit' then
    changed:=buyer_writer.commit_buyers(d);
    update buyer_writer.dispatches set buyers_committed=true,buyer_count=changed where id=d.id;
   elsif op='complete' then
-   update public."SearchJob" set status='completed',total_sales_analyzed=d.clean_count,total_buyers_found=d.buyer_count,error_message=null,updated_at=clock_timestamp() where id=d.job_id and user_id=d.owner_id;
+   update public."SearchJob" set status='completed',total_sales_analyzed=d.clean_count,total_buyers_found=d.buyer_count,error_message=null,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=d.job_id and user_id=d.owner_id;
    get diagnostics changed=row_count;if changed<>1 then raise exception 'No job updated';end if;
    update buyer_writer.dispatches set state='completed' where id=d.id;
   elsif op='fail' then
-   update public."SearchJob" set status='failed',error_message=q->'payload'->>'code',updated_at=clock_timestamp() where id=d.job_id and user_id=d.owner_id;
+   update public."SearchJob" set status='failed',error_message=q->'payload'->>'code',updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=d.job_id and user_id=d.owner_id;
    get diagnostics changed=row_count;if changed<>1 then raise exception 'No job updated';end if;
    update buyer_writer.dispatches set state='failed' where id=d.id;
   end if;
@@ -358,7 +402,7 @@ begin
  end;
  if failure then
   update buyer_writer.dispatches set state='failed' where id=d.id;
-  update public."SearchJob" set status='failed',error_message='WRITE_FAILED',updated_at=clock_timestamp() where id=d.job_id and user_id=d.owner_id;
+  update public."SearchJob" set status='failed',error_message='WRITE_FAILED',updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=d.job_id and user_id=d.owner_id;
   get diagnostics changed=row_count;if changed<>1 then raise exception using errcode='55000',message='Buyer writer failure could not be recorded';end if;
   result:=jsonb_build_object('ok',false,'code','WRITE_FAILED');
  else result:=jsonb_build_object('ok',true,'operation',op,'chunkIndex',idx);end if;
@@ -371,7 +415,7 @@ create or replace function buyer_writer.context(p_digest text,p_workspace text,p
 returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
 declare d buyer_writer.dispatches; j record;
 begin
- select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status
+ select id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,updated_at
  into j from public."SearchJob" where id=p_job for update;
  if not found then raise exception using errcode='42501',message='Buyer writer request rejected';end if;
  select * into d from buyer_writer.dispatches where id=p_dispatch and job_id=p_job;
@@ -413,13 +457,13 @@ do $$declare t text; signature text; begin
  end loop;
  foreach signature in array array[
   'buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
-  'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb)','buyer_writer.cancel(uuid,uuid,text)',
+  'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)',
   'buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.commit_buyers(buyer_writer.dispatches)',
   'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'] loop
   execute format('alter function %s owner to buyer_writer_owner',signature);
   execute format('revoke all on function %s from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer',signature);
  end loop;
 end$$;
-grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb),buyer_writer.cancel(uuid,uuid,text) to buyer_writer_issuer;
+grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid),buyer_writer.cancel(uuid,uuid,text),buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone) to buyer_writer_issuer;
 grant execute on function buyer_writer.context(text,text,uuid,uuid,bigint),buyer_writer.apply(text,text,jsonb),buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer) to buyer_writer_runtime;
 commit;

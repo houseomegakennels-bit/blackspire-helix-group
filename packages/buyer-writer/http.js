@@ -1,16 +1,22 @@
 import http from 'node:http';
 import { authenticateWriterRequest, createWriterGateway, createWriterReceiptGateway, createWriterContextGateway } from './gateway.js';
 import { WriterProtocolError } from './protocol.js';
+import { authenticateBuyerIssuer, createBuyerIssuer, createBuyerReconciler } from './issuer.js';
 
 // Explicit composition only: the caller owns the dedicated database connection,
 // listener binding, TLS ingress and authoritative availability/stop observation.
 // No production configuration or credential file is loaded by this module.
-export function createBuyerWriterHttpServer({credential,workspace,query,isAvailable}) {
+export function createBuyerWriterHttpServer({credential,workspace,query,isAvailable,issuer}) {
   if(typeof isAvailable!=='function') throw new TypeError('Buyer writer availability check required');
   const operations=createWriterGateway({credential,workspace,query});
   const receipts=createWriterReceiptGateway({credential,workspace,query});
   const context=createWriterContextGateway({credential,workspace,query});
   const handlers={operations,receipts,context};
+  if(issuer!==undefined) {
+    if(!issuer||issuer.credential===credential||issuer.query===query)throw new TypeError('Buyer issuer separation required');
+    handlers.issuance=createBuyerIssuer({credential:issuer.credential,workspace,query:issuer.query});
+    handlers.reconciliation=createBuyerReconciler({credential:issuer.credential,workspace,query:issuer.query});
+  }
   let active=0;
   const repliedSockets=new WeakSet();
   const server=http.createServer({maxHeaderSize:32768,headersTimeout:5000,requestTimeout:15000,connectionsCheckingInterval:1000},(req,res)=>{
@@ -25,11 +31,14 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
     const deny=(status)=>reply(status,{ok:false,code:status===503?'WRITER_UNAVAILABLE':'WRITER_REJECTED'});
     // Match raw URL exactly. Encodings, query strings and additional path segments
     // do not select a job or an operation endpoint.
-    const match=/^\/api\/internal\/buyer-writer\/v1\/jobs\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/(operations|receipts|context)$/.exec(req.url??'');
-    if(!match) return deny(404);
+    const match=/^\/api\/internal\/buyer-writer\/v1\/jobs\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/(operations|receipts|context|issuance|reconciliation)$/.exec(req.url??'');
+    if(!match||!handlers[match[2]]) return deny(404);
     if(req.method!=='POST') return deny(405);
     if(req.headers['content-type']!=='application/json'||req.headers['content-encoding']) return deny(415);
-    try {authenticateWriterRequest(req.rawHeaders,credential);}
+    try {
+      if(match[2]==='issuance'||match[2]==='reconciliation')authenticateBuyerIssuer(req.rawHeaders,issuer.credential);
+      else authenticateWriterRequest(req.rawHeaders,credential);
+    }
     catch(error){return deny(error instanceof WriterProtocolError?error.status:503);}
     if(active>=32) return deny(503);
     active++;
@@ -44,7 +53,7 @@ export function createBuyerWriterHttpServer({credential,workspace,query,isAvaila
         if(await isAvailable()!==true) return deny(503);
         if(disconnected) return;
         const chunks=[];let bytes=0;
-        const limit=match[2]==='operations'?262144:8192;
+        const limit=match[2]==='operations'?262144:match[2]==='issuance'?65536:8192;
         for await(const chunk of req) {
           bytes+=chunk.length;
           if(bytes>limit) return deny(413);

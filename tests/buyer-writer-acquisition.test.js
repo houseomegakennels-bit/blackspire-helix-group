@@ -9,7 +9,8 @@ import { verifyBuyerRawPayload } from '../packages/buyer-writer/source-context.j
 import { createBuyerSourceClient } from '../packages/buyer-writer/source-http.js';
 import { approvedBuyerSources } from '../packages/buyer-writer/source-approvals.js';
 
-const job={county:'Ashe',state:'NC',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-08-31'};
+const job={county:'Ashe',state:'NC',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-08-31',
+  min_purchases:1,cash_buyers_only:false,llc_buyers_only:false,updated_at:'2026-09-07T00:00:00.123456Z'};
 const row={id:'00000000-0000-4000-8000-000000000001',state:'NC',county:'Ashe',source_type:'arcgis',
   source_url:'https://source.example.invalid/query?discard=legacy',active:true,cash_disabled:false,created_at:'2026-01-01T00:00:00Z'};
 const approval={sourceId:row.id,state:'NC',county:'Ashe',registeredSourceType:'arcgis',

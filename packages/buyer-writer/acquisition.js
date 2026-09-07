@@ -4,6 +4,7 @@ import { BuyerSourceError, createBuyerSourceClient } from './source-http.js';
 import { resolveBuyerSources, resolveMecklenburgFallback } from './source-policy.js';
 import { validateBuyerSourceContext } from './source-context.js';
 import { fetchRemainingBuyerSources } from './legacy-sources.js';
+import { captureBuyerJobVersion } from './criteria.js';
 
 const reject=(code='SOURCE_POLICY_REJECTED')=>{throw new BuyerSourceError(code);};
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
@@ -40,6 +41,7 @@ export async function acquireBuyerSources({job,rows,approved,budgets,adapterFact
   const deadline=performance.now()+budgets.maxElapsedMs;
   const checkTime=()=>{if(performance.now()>=deadline)reject('SOURCE_TIMEOUT');};
   const captured=structuredClone(job);const limits={...budgets};
+  const version=captureBuyerJobVersion(captured);
   const snapshot=Array.isArray(rows)&&rows.length===0&&captured.county?.trim().toLowerCase()==='mecklenburg'
     ?resolveMecklenburgFallback({rows,approved,job:captured}):resolveBuyerSources({rows,approved,job:captured});
   const selected=snapshot.sources[0];
@@ -114,7 +116,7 @@ export async function acquireBuyerSources({job,rows,approved,budgets,adapterFact
         endpointConfigDigest:s.endpointConfigDigest,cashDisabled:s.cashDisabled})),
       budgets:{maxRequests:limits.maxRequests,maxRows:limits.maxRows,maxBytes:limits.maxBytes},
       rawPayload:{digest:hash(bytes),rowCount:result.length,byteCount:bytes.length}});
-    checkTime();return{context,bytes,usage:client.usage()};
+    checkTime();return{context,bytes,criteria:version.criteria,updatedAt:version.updatedAt,usage:client.usage()};
   }catch(error) {
     throw error instanceof BuyerSourceError?error:new BuyerSourceError('SOURCE_ACQUISITION_FAILED');
   }finally{client.close();}

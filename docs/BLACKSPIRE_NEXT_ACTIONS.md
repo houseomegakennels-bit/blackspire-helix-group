@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — authenticated writer composition remaining
+
+1. Issuer/reconciliation full checks pass: 1,402 tests, zero failures, nine skips, 104 files contained; PostgreSQL 27 groups pass. Finish final review/commit/push of this isolated delta and require its exact-head CI.
+2. Capture the actual successful route guard principal and private authentication material before asynchronous acquisition. Revalidate without consuming the beta action twice, bind canonical job ownership, and preserve the original criteria/revision and fresh attempt UUID through timeout reconciliation.
+3. Mount the bounded source acquisition, issuer and authenticated n8n delivery with separate verified PostgreSQL roles/pools and protected secure credentials. No legacy direct failure PATCH may overwrite an uncertain successful attempt.
+4. Complete immutable rollback intake continuity and the safe real six-read harness. Keep canonical activation, reviewed production migrations and PR125 merge held until every original gate passes.
+5. Current free disk is roughly 1.3–1.6 GiB during unrelated build activity. Preserve all unrelated/protected state; only independently verified disposable cleanup is authorized. No further deletion has occurred.
+
 ## 2026-09-07 00:22 UTC — next writer integration steps
 
 1. Source-acquisition31c14e3 is exact-head CI green. Legacy sources, static approval manifest and explicit virtual Mecklenburg policy pass independent review and 24 focused groups; their full suite passes 1,394 tests with zero failures and all checks pass. Finish reviewed commit/push/new-head CI, then bind captured acquisition criteria and lifecycle fencing in transactional issuance, mount authenticated frontend/runtime composition and validate actual secure n8n execution.

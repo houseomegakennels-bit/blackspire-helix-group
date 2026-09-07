@@ -11,6 +11,21 @@ identity captured by the existing authenticated Buyer route, including its beta
 or admin entitlement, before asynchronous work begins. A caller-supplied owner
 UUID or a persisted job ID is not proof of authorization.
 
+`criteria.js` captures exact criteria and the untruncated database revision before
+source acquisition. Issuance compares both after locking the job and advances a
+monotonic timestamp. The trusted caller creates a fresh request UUID before the
+HTTP request; SQL uses it as the dispatch primary key and rejects duplicates.
+`issuer.js` provides separately authenticated issuance and absorbing reconciliation.
+Reconciliation never reveals a permit or replays a write: it cancels only that
+attempt and preserves terminal outcomes and successor generations. For an absent
+attempt it advances only the original matching revision; that is not a permanent
+UUID tombstone. Never refresh the revision and reuse the same attempt UUID. A
+missing attempt has no database workspace association, so its workspace authority
+comes from the configured gateway and authenticated frontend guard. `absent` does
+not set SearchJob status to failed. Caller response handling must report failure.
+These routes remain unmounted; actual frontend guard capture, dedicated pool role
+verification and live n8n delivery are still required.
+
 Each five-minute permit binds a job, owner, workspace, immutable criteria and
 generation. Job locks serialize issuance, cancellation and writes. Operations
 recheck ownership, criteria, generation and expiry after acquiring the lock.

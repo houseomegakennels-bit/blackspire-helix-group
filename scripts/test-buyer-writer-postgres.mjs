@@ -52,12 +52,15 @@ const sourceContext={version:1,mode:'county_fetch',sources:[{sourceId:'00000000-
 const contextLiteral=literal(JSON.stringify(sourceContext))+'::jsonb';
 const checks = [];
 const check = (name, fn) => { fn(); checks.push(name); };
+const capture = jobId => JSON.parse(sql(`select jsonb_build_object('criteria',buyer_writer.criteria(to_jsonb(j)),'updatedAt',j.updated_at) from public."SearchJob" j where id=${literal(jobId)}`));
+const expected = snapshot => `${literal(JSON.stringify(snapshot.criteria))}::jsonb,${snapshot.updatedAt===null?'null':literal(snapshot.updatedAt)}::timestamptz`;
+const issueStatement=(jobId,snapshot,context=sourceContext,requestId=randomUUID())=>`select buyer_writer.issue(${literal(jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${literal(JSON.stringify(context))}::jsonb,${expected(snapshot)},${literal(requestId)})`;
 const issue = (options = {}) => {
   const jobId = randomUUID();
   sql(`insert into public."SearchJob"(id,user_id,state,county,property_type,date_range_start,date_range_end) values(${literal(jobId)},${literal(owner)},'NC','Wake','land','2026-01-01','2026-12-31')`);
   const permit = randomBytes(32).toString('base64url');
   const permitDigest = createHash('sha256').update(permit).digest('hex');
-  const dispatch = JSON.parse(role('buyer_writer_issuer', `select buyer_writer.issue(${literal(jobId)},${literal(owner)},${literal(workspace)},${literal(permitDigest)},${literal(JSON.stringify(options.sourceContext??sourceContext))}::jsonb)`));
+  const dispatch = JSON.parse(role('buyer_writer_issuer', `select buyer_writer.issue(${literal(jobId)},${literal(owner)},${literal(workspace)},${literal(permitDigest)},${literal(JSON.stringify(options.sourceContext??sourceContext))}::jsonb,${expected(capture(jobId))},${literal(randomUUID())})`));
   return { jobId, permit, permitDigest, ...dispatch, ...options };
 };
 const sale = { buyer_name:'ISOLATED HOLDINGS LLC',seller_name:'SYNTHETIC',property_address:'TEST ONLY',mailing_address:'TEST, NC',sale_price:120000,sale_date:'2026-08-01',property_type:'land',parcel_id:'SYNTHETIC-1',deed_type:'TEST',lender_name:'UNKNOWN' };
@@ -100,7 +103,81 @@ try {
     }
     role('buyer_writer_runtime','set role buyer_writer_owner',{fail:true});
     role('buyer_writer_runtime','select * from buyer_writer.dispatches',{fail:true});
-    role('buyer_writer_runtime',`select buyer_writer.issue(null,null,null,null,null)`,{fail:true});
+    role('buyer_writer_runtime',`select buyer_writer.issue(null,null,null,null,null,null,null)`,{fail:true});
+  });
+  check('issuance rejects changed or malformed captured criteria/revision without changing job or dispatches',()=>{
+    const d=issue();const snapshot=capture(d.jobId);
+    const state=()=>sql(`select jsonb_build_object('job',to_jsonb(j),'dispatches',(select jsonb_agg(to_jsonb(x) order by generation) from buyer_writer.dispatches x where x.job_id=j.id)) from public."SearchJob" j where id=${literal(d.jobId)}`);
+    const before=state();
+    for(const criteria of [null,{},[],{...snapshot.criteria,extra:true},{...snapshot.criteria,county:'Changed'}]) {
+      role('buyer_writer_issuer',issueStatement(d.jobId,{...snapshot,criteria}),{fail:true});assert.equal(state(),before);
+    }
+    role('buyer_writer_issuer',issueStatement(d.jobId,{...snapshot,updatedAt:null}),{fail:true});assert.equal(state(),before);
+    sql(`update public."SearchJob" set county='Changed' where id=${literal(d.jobId)}`);const changed=state();
+    role('buyer_writer_issuer',issueStatement(d.jobId,snapshot),{fail:true});assert.equal(state(),changed);
+    sql(`update public."SearchJob" set min_purchases=6 where id=${literal(d.jobId)}`);const unsupported=state();
+    role('buyer_writer_issuer',issueStatement(d.jobId,capture(d.jobId)),{fail:true});assert.equal(state(),unsupported);
+  });
+  check('competing issuance and cancellation before any dispatch fence stale acquisitions',()=>{
+    const d=issue();const captured=capture(d.jobId);
+    const next=JSON.parse(role('buyer_writer_issuer',issueStatement(d.jobId,captured)));
+    assert.equal(next.generation,d.generation+1);
+    role('buyer_writer_issuer',issueStatement(d.jobId,captured),{fail:true});
+    assert.equal(sql(`select count(*) from buyer_writer.dispatches where job_id=${literal(d.jobId)}`),'2');
+    const fresh=issue();sql(`delete from buyer_writer.dispatches where job_id=${literal(fresh.jobId)}`);
+    const beforeCancel=capture(fresh.jobId);role('buyer_writer_issuer',`select buyer_writer.cancel(${literal(fresh.jobId)},${literal(owner)},${literal(workspace)})`);
+    role('buyer_writer_issuer',issueStatement(fresh.jobId,beforeCancel),{fail:true});
+    assert.equal(sql(`select count(*) from buyer_writer.dispatches where job_id=${literal(fresh.jobId)}`),'0');
+  });
+  check('NULL revision/criteria fields are preserved and future timestamps advance monotonically at microsecond precision',()=>{
+    const d=issue();sql(`update public."SearchJob" set updated_at=null,min_purchases=null,cash_buyers_only=null,llc_buyers_only=null where id=${literal(d.jobId)}`);
+    const empty=capture(d.jobId);assert.equal(empty.updatedAt,null);assert.equal(empty.criteria.min_purchases,null);
+    role('buyer_writer_issuer',issueStatement(d.jobId,empty));assert.notEqual(capture(d.jobId).updatedAt,null);
+    sql(`update public."SearchJob" set updated_at='2050-01-01T00:00:00.123456Z' where id=${literal(d.jobId)}`);
+    const future=capture(d.jobId);const next=JSON.parse(role('buyer_writer_issuer',issueStatement(d.jobId,future)));
+    assert.equal(sql(`select updated_at='2050-01-01T00:00:00.123457Z'::timestamptz from public."SearchJob" where id=${literal(d.jobId)}`),'t');
+    role('buyer_writer_issuer',`select buyer_writer.cancel(${literal(d.jobId)},${literal(owner)},${literal(workspace)})`);
+    assert.equal(sql(`select updated_at='2050-01-01T00:00:00.123458Z'::timestamptz from public."SearchJob" where id=${literal(d.jobId)}`),'t');
+    assert.equal(sql(`select state from buyer_writer.dispatches where id=${literal(next.dispatchId)}`),'cancelled');
+    sql(`update public."SearchJob" set updated_at='infinity' where id=${literal(d.jobId)}`);
+    role('buyer_writer_issuer',issueStatement(d.jobId,capture(d.jobId)),{fail:true});
+    role('buyer_writer_issuer',`select buyer_writer.cancel(${literal(d.jobId)},${literal(owner)},${literal(workspace)})`,{fail:true});
+    const running=issue();sql(`update public."SearchJob" set updated_at='2050-01-01T00:00:00.123456Z' where id=${literal(running.jobId)}`);
+    apply(running,'start');apply(running,'fail',{code:'SOURCE_FAILED'});
+    assert.equal(sql(`select updated_at='2050-01-01T00:00:00.123458Z'::timestamptz from public."SearchJob" where id=${literal(running.jobId)}`),'t');
+  });
+  check('attempt reconciliation fences absent issuance and never cancels a successor',()=>{
+    const d=issue();const snapshot=capture(d.jobId),attempt=randomUUID();
+    const reconcile=(id,revision,job=d.jobId,who=owner,space=workspace,fail=false)=>role('buyer_writer_issuer',
+      `select buyer_writer.reconcile(${literal(job)},${literal(who)},${literal(space)},${literal(id)},${revision===null?'null':literal(revision)}::timestamptz)`,{fail});
+    assert.equal(JSON.parse(reconcile(attempt,snapshot.updatedAt)).state,'absent');
+    role('buyer_writer_issuer',issueStatement(d.jobId,snapshot,sourceContext,attempt),{fail:true});
+    const original=capture(d.jobId);const issued=JSON.parse(role('buyer_writer_issuer',issueStatement(d.jobId,original,sourceContext,attempt)));
+    assert.equal(issued.dispatchId,attempt);
+    const successor=JSON.parse(role('buyer_writer_issuer',issueStatement(d.jobId,capture(d.jobId))));
+    const state=()=>sql(`select row_to_json(j) from public."SearchJob" j where id=${literal(d.jobId)}`);
+    const before=state();assert.equal(JSON.parse(reconcile(attempt,original.updatedAt)).state,'cancelled');assert.equal(state(),before);
+    assert.equal(sql(`select state from buyer_writer.dispatches where id=${literal(successor.dispatchId)}`),'pending');
+    reconcile(attempt,original.updatedAt,d.jobId,other,workspace,true);reconcile(attempt,original.updatedAt,d.jobId,owner,'wrong',true);
+    const another=issue();reconcile(attempt,original.updatedAt,another.jobId,owner,workspace,true);
+    role('buyer_writer_issuer',issueStatement(d.jobId,capture(d.jobId),sourceContext,attempt),{fail:true});assert.equal(state(),before);
+    assert.equal(JSON.parse(reconcile(successor.dispatchId,original.updatedAt)).state,'cancelled');
+    const cancelled=state();reconcile(successor.dispatchId,original.updatedAt);assert.equal(state(),cancelled);
+    const absent=randomUUID();reconcile(absent,original.updatedAt);assert.equal(state(),cancelled);
+    sql(`update public."SearchJob" set updated_at=null where id=${literal(d.jobId)}`);
+    reconcile(absent,null);assert.notEqual(capture(d.jobId).updatedAt,null);
+    role('buyer_writer_runtime',`select buyer_writer.reconcile(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(absent)},null)`,{fail:true});
+  });
+  check('reconciliation preserves terminal receipts and completed or failed job state',()=>{
+    for(const terminal of ['completed','failed']) {
+      const d=issue({sourceContext:{...sourceContext,mode:'frontend_payload',rawPayload:{digest:'e'.repeat(64),rowCount:0,byteCount:2}}});
+      apply(d,'start');if(terminal==='completed'){apply(d,'buyers.commit');apply(d,'complete');}else apply(d,'fail',{code:'INVALID_SOURCE_DATA'});
+      const state=()=>sql(`select row_to_json(j) from public."SearchJob" j where id=${literal(d.jobId)}`);
+      const before=state();const receipts=sql(`select jsonb_agg(to_jsonb(r)) from buyer_writer.receipts r where dispatch_id=${literal(d.dispatchId)}`);
+      const result=JSON.parse(role('buyer_writer_issuer',`select buyer_writer.reconcile(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(d.dispatchId)},null)`));
+      assert.equal(result.state,terminal);assert.equal(state(),before);
+      assert.equal(sql(`select jsonb_agg(to_jsonb(r)) from buyer_writer.receipts r where dispatch_id=${literal(d.dispatchId)}`),receipts);
+    }
   });
   check('source context is mandatory, immutable, scoped after start and derived without caller cash overrides',()=>{
     const d=issue();
@@ -115,22 +192,26 @@ try {
       {...sourceContext,sources:[...sourceContext.sources,...sourceContext.sources]},
       {...sourceContext,sources:[{...sourceContext.sources[0],endpointId:'https://evil.invalid'}]},
       {...sourceContext,budgets:{...sourceContext.budgets,maxRows:50001}}]) {
-      role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${literal(JSON.stringify(context))}::jsonb)`,{fail:true});
+      role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${literal(JSON.stringify(context))}::jsonb,${expected(capture(d.jobId))},${literal(randomUUID())})`,{fail:true});
     }
     assert.equal(JSON.stringify(JSON.parse(get())),before,'rejected issuance must not cancel current dispatch');
     sql(`update buyer_writer.dispatches set source_context=null where id=${literal(d.dispatchId)}`);
     get(d,true);apply(d,'raw.append',{rows:[sale]}, {},true);
     const cash=issue();const bound={...sourceContext,sources:[{...sourceContext.sources[0],cashDisabled:true}]};
-    const issued=JSON.parse(role('buyer_writer_issuer',`select buyer_writer.issue(${literal(cash.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${literal(JSON.stringify(bound))}::jsonb)`));
+    const issued=JSON.parse(role('buyer_writer_issuer',`select buyer_writer.issue(${literal(cash.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${literal(JSON.stringify(bound))}::jsonb,${expected(capture(cash.jobId))},${literal(randomUUID())})`));
     assert.equal(sql(`select no_cash_data from buyer_writer.dispatches where id=${literal(issued.dispatchId)}`),'t');
   });
   check('upgrade removes legacy boolean issuer and preserves but rejects context-free dispatch history',()=>{
     const d=issue();sql(`update buyer_writer.dispatches set source_context=null,source_context_digest=null where id=${literal(d.dispatchId)}`);
     // Recreate the old signature/ownership/grants, not a production schema clone.
     sql(`set role buyer_writer_owner;create function buyer_writer.issue(uuid,uuid,text,text,boolean) returns jsonb language sql security definer set search_path=pg_catalog as 'select null::jsonb';revoke all on function buyer_writer.issue(uuid,uuid,text,text,boolean) from public;grant execute on function buyer_writer.issue(uuid,uuid,text,text,boolean) to buyer_writer_issuer;`);
+    sql(`set role buyer_writer_owner;create function buyer_writer.issue(uuid,uuid,text,text,jsonb) returns jsonb language sql security definer set search_path=pg_catalog as 'select null::jsonb';revoke all on function buyer_writer.issue(uuid,uuid,text,text,jsonb) from public;grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb) to buyer_writer_issuer;`);
     assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,boolean)') is not null"),'t');
+    sql(`set role buyer_writer_owner;create function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz) returns jsonb language sql security definer set search_path=pg_catalog as 'select null::jsonb';revoke all on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz) from public;grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz) to buyer_writer_issuer;`);
     sql(installSql);
+    assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz)') is null"),'t');
     assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,boolean)') is null"),'t');
+    assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,jsonb)') is null"),'t');
     assert.equal(sql(`select count(*) from buyer_writer.dispatches where id=${literal(d.dispatchId)} and source_context is null`),'1');
     apply(d,'start',{}, {},true);
   });
@@ -176,7 +257,7 @@ try {
     apply(d,'start',{}, {},true);
     const c=issue();role('buyer_writer_issuer',`select buyer_writer.cancel(${literal(c.jobId)},${literal(owner)},${literal(workspace)})`);
     apply(c,'start',{}, {},true);
-    const g=issue();role('buyer_writer_issuer',`select buyer_writer.issue(${literal(g.jobId)},${literal(owner)},${literal(workspace)},${literal('a'.repeat(64))},${contextLiteral})`);
+    const g=issue();role('buyer_writer_issuer',`select buyer_writer.issue(${literal(g.jobId)},${literal(owner)},${literal(workspace)},${literal('a'.repeat(64))},${contextLiteral},${expected(capture(g.jobId))},${literal(randomUUID())})`);
     apply(g,'start',{}, {},true);
   });
   check('replays and incomplete or forged provenance cannot report success',()=>{
@@ -198,7 +279,7 @@ try {
     assert.deepEqual(receipt,{found:true,receipt:{ok:false,code:'WRITE_FAILED'}});
     apply(d,'buyers.commit',{}, {},true);
     sql('alter table public."BuyerReport" drop constraint fixture_failure');
-    role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${contextLiteral})`);
+    role('buyer_writer_issuer',`select buyer_writer.issue(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(randomBytes(32).toString('hex'))},${contextLiteral},${expected(capture(d.jobId))},${literal(randomUUID())})`);
     role('buyer_writer_runtime',`select buyer_writer.receipt(${literal(d.permitDigest)},${literal(workspace)},${literal(d.jobId)},${literal(d.dispatchId)},${d.generation},'buyers.commit',0)`,{fail:true});
   });
   check('direct SQL rejects NULL, unknown operations, owner fields and incomplete chunk streams',()=>{
@@ -269,6 +350,31 @@ try {
     }
     assert.fail('lock-holder barrier not observed');
   };
+  for(const first of ['reconcile','issue']) {
+    const d=issue(),snapshot=capture(d.jobId),attempt=randomUUID(),label=`reconcile_race_${first}`;
+    const issuance=issueStatement(d.jobId,snapshot,sourceContext,attempt);
+    const reconciliation=`select buyer_writer.reconcile(${literal(d.jobId)},${literal(owner)},${literal(workspace)},${literal(attempt)},${literal(snapshot.updatedAt)}::timestamptz)`;
+    const lock=asyncSql(`set application_name=${literal(label)};begin;${first==='reconcile'?reconciliation:issuance};select pg_sleep(2);commit;`);
+    await waitForSleeper(label);
+    const second=await asyncSql(`set session authorization buyer_writer_issuer;${first==='reconcile'?issuance:reconciliation};`);
+    assert.equal((await lock).status,0);
+    if(first==='reconcile'){assert.notEqual(second.status,0);assert.match(second.err,/42501/);assert.equal(sql(`select count(*) from buyer_writer.dispatches where id=${literal(attempt)}`),'0');}
+    else{assert.equal(second.status,0);assert.equal(JSON.parse(second.out.trim()).state,'cancelled');}
+  }
+  checks.push('reconciliation and issuance serialize both lock orders without late dispatch survival');
+  for(const change of ['criteria','cancel','revision']) {
+    const d=issue();const snapshot=capture(d.jobId);const label=`issuer_snapshot_${change}`;
+    const mutation=change==='criteria'?`update public."SearchJob" set county='Changed' where id=${literal(d.jobId)};`
+      :change==='cancel'?`select buyer_writer.cancel(${literal(d.jobId)},${literal(owner)},${literal(workspace)});`
+        :`update public."SearchJob" set updated_at=updated_at+interval '1 microsecond' where id=${literal(d.jobId)};`;
+    const lock=asyncSql(`set application_name=${literal(label)};begin;select id from public."SearchJob" where id=${literal(d.jobId)} for update;${mutation}select pg_sleep(2);commit;`);
+    await waitForSleeper(label);
+    const rejected=await asyncSql(`set session authorization buyer_writer_issuer;${issueStatement(d.jobId,snapshot)};`);
+    assert.equal((await lock).status,0);assert.notEqual(rejected.status,0);assert.match(rejected.err,/42501/);
+    assert.equal(sql(`select count(*) from buyer_writer.dispatches where job_id=${literal(d.jobId)}`),'1');
+    assert.equal(sql(`select state from buyer_writer.dispatches where id=${literal(d.dispatchId)}`),change==='cancel'?'cancelled':'pending');
+  }
+  checks.push('issuance rechecks captured criteria cancellation and precise revision after waiting on the job lock');
   {
     const d=issue();sql(`update buyer_writer.dispatches set expires_at=clock_timestamp()+interval '1 second' where id=${literal(d.dispatchId)}`);
     const lock=asyncSql(`set application_name='writer_expiry_lock';begin;select id from public."SearchJob" where id=${literal(d.jobId)} for update;select pg_sleep(2);commit;`);
@@ -303,6 +409,11 @@ try {
     // test-only transport: PREPARE preserves the gateway's fixed SQL parameters;
     // no production database driver, credential, endpoint or pool is loaded.
     const workload=randomBytes(32).toString('base64url');
+    const issuerCredential=randomBytes(32).toString('base64url');
+    const httpRawSales=Array.from({length:201},(_,i)=>({OWNER:'HTTP ISOLATED LLC',PIN_NUM:`HTTP-${i}`,TOTSALPRICE:120000,
+      SALE_DATE:Date.parse('2026-08-01T00:00:00Z'),ADDR1:'TEST ONLY',ADDR2:'NC',SITE_ADDRESS:'TEST ONLY',_source_type:'arcgis_wake'}));
+    const httpRawBytes=Buffer.from(JSON.stringify(httpRawSales));
+    const httpSourceContext={...sourceContext,sources:[{...sourceContext.sources[0],sourceType:'arcgis_wake'}],mode:'frontend_payload',rawPayload:{digest:createHash('sha256').update(httpRawBytes).digest('hex'),rowCount:201,byteCount:httpRawBytes.length}};
     const query=async(statement,parameters)=>{
       const write=statement==='select buyer_writer.apply($1,$2,$3::jsonb) as result';
       const context=statement==='select buyer_writer.context($1,$2,$3,$4,$5) as result';
@@ -314,13 +425,25 @@ try {
       if(result.status!==0) throw Object.assign(new Error('isolated writer database rejected'),{code:result.stderr.match(/ERROR:\s+([0-9A-Z]{5})/)?.[1]});
       return{rows:[{result:JSON.parse(result.stdout.trim())}]};
     };
-    const server=createBuyerWriterHttpServer({credential:workload,workspace,query,isAvailable:()=>true});
+    const issuerQuery=async(statement,parameters)=>{
+      assert.equal(statement,'select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result');
+      const result=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_issuer','-d','writer_test','-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate'],
+        `set statement_timeout='10s';set lock_timeout='5s';prepare issuer_http(uuid,uuid,text,text,jsonb,jsonb,timestamptz,uuid) as ${statement};execute issuer_http(${parameters.map(v=>v===null?'null':literal(v)).join(',')});`);
+      if(result.status!==0)throw Object.assign(new Error('isolated issuer database rejected'),{code:result.stderr.match(/ERROR:\s+([0-9A-Z]{5})/)?.[1]});
+      return{rows:[{result:JSON.parse(result.stdout.trim())}]};
+    };
+    const server=createBuyerWriterHttpServer({credential:workload,workspace,query,isAvailable:()=>true,issuer:{credential:issuerCredential,query:issuerQuery}});
     try {
       await new Promise((resolve,reject)=>{
         server.once('error',reject);
         server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});
       });
-      const d=issue();
+      const prior=issue();const captured=capture(prior.jobId);
+      const issuedResponse=await fetch(`http://127.0.0.1:${server.address().port}/api/internal/buyer-writer/v1/jobs/${prior.jobId}/issuance`,{
+        method:'POST',redirect:'error',headers:{'content-type':'application/json','x-buyer-issuer-key':issuerCredential},
+        body:JSON.stringify({version:1,ownerId:owner,requestId:randomUUID(),criteria:captured.criteria,updatedAt:captured.updatedAt,sourceContext:httpSourceContext})});
+      assert.equal(issuedResponse.status,200);const issuedBody=await issuedResponse.json();
+      const d={...prior,...issuedBody,permitDigest:createHash('sha256').update(issuedBody.permit).digest('hex')};
       const endpoint=`http://127.0.0.1:${server.address().port}/api/internal/buyer-writer/v1/jobs/${d.jobId}/operations`;
       const send=async(operation,payload={},headers={},chunks={})=>{
         const {jobId,...body}=request(d,operation,payload,chunks);
@@ -332,17 +455,17 @@ try {
       assert.equal((await send('start')).status,200);
       assert.equal((await send('start')).status,409);
       const contextResponse=await fetch(endpoint.replace(/operations$/,'context'),{method:'POST',redirect:'error',headers:{'content-type':'application/json','x-buyer-writer-key':workload,'x-buyer-job-permit':d.permit},body:JSON.stringify({version:1,dispatchId:d.dispatchId,generation:d.generation})});
-      assert.equal(contextResponse.status,200);assert.deepEqual((await contextResponse.json()).sourceContext,sourceContext);
+      assert.equal(contextResponse.status,200);assert.deepEqual((await contextResponse.json()).sourceContext,httpSourceContext);
 
       const criteria={county:'Wake',state:'NC',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-12-31'};
-      const normalized=normalizeBuyerSales({...criteria,raw_sales:Array.from({length:201},(_,i)=>({...sale,buyer_name:'HTTP ISOLATED LLC',parcel_id:`HTTP-${i}`}))});
+      const normalized=normalizeBuyerSales({...criteria,raw_sales:httpRawSales});
       const plan=planBuyerWrites({...d,criteria,...normalized});
       for(const item of plan)assert.equal((await send(item.operation,item.payload,{}, {chunkIndex:item.chunkIndex,chunkCount:item.chunkCount})).status,200);
       for(const table of ['RawSale','CleanSale'])assert.equal(sql(`select count(*) from public."${table}" where search_job_id=${literal(d.jobId)}`),'201');
       assert.equal(sql(`select count(*) from public."BuyerReport" where search_job_id=${literal(d.jobId)}`),'1');
       assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
       assert.equal(sql(`select count(*) from public."BuyerProfile" where buyer_name='HTTP ISOLATED LLC'`),'1');
-      checks.push('real loopback HTTP executes normalized multi-chunk plan through dedicated runtime and all five tables');
+      checks.push('real loopback HTTP issues through separate issuer login then executes multi-chunk plan through dedicated runtime and all five tables');
     } finally {
       server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
     }
