@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — provider boundary verified; minimum disk headroom recovered
+
+1. Use the reviewed `ZOLA_PROVIDER_ACL_REQUEST.md` for the precise owner/provider submission. Fresh catalog equals the approved baseline, but current postgres cannot execute owner-granted net ACL changes. Do not retry or escalate this established boundary.
+2. Preserve the safe cleanup evidence. Latest measured 2.404 GiB exceeds the minimum release budget; recheck actual free space and account for concurrent growth before any startup/deployment. Keep installed tools and all protected/session/repository state.
+3. Continue the actual isolated supervised API/worker proof, secure immutable rollback intake, isolated n8n Cloud validation and safe six-read harness. Follow `ZOLA_POST_ACL_ACCEPTANCE_SEQUENCE.md`; do not claim these are complete or blocked solely by ACL.
+4. Obtain a READY frontend deployment for the exact accepted candidate. The db9b825 deployment is CANCELED despite GitHub's green status; do not treat it as paired acceptance evidence or redo prior receiver verification.
+5. Keep canonical activation, reviewed production migrations, live continuity, merge and same-SHA cutover subject to every original gate. Complete independent review/commit/push and exact-head CI for this documentation/evidence increment.
+
+
 ## 2026-09-07 — after isolated provider ACL rehearsal
 
 1. Finish independent review and required checks for the local ACL generator/rehearsal and environment-validator increment. Commit and push only after review, then verify CI for the resulting head.

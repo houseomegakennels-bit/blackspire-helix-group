@@ -1,5 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-07 — fresh provider authority and safe disk recovery
+
+Release `db9b82594e0aa67e6cfec42258078a7dec327594` is committed/pushed with all five checks green in CI `34123517394`. A fresh read-only PostgreSQL capture exactly matches the reviewed ACL baseline. Session/current role is `postgres`, not superuser, with neither SET access nor inherited authority to `supabase_admin`; all 31 affected net privilege grant-option checks are false. The protected package hashes remain exact. Provider execution is therefore required for this transaction; no escalation, extension call or production DDL occurred. The independently reviewed unsent request now specifies exact submission files, hashes, identity/window approval and post-execution evidence.
+
+Twenty focused writer lifecycle/runtime/issuer/n8n tests pass. Fresh n8n authentication passes; the published workflow/version and nodes/connections match its protected pre-change backup, retaining seven anon nodes and nine unsafe writes. The exact rollback artifact digest still matches saved boot evidence, whose six-read result is explicitly NOT RUN. Secure intake and complete functional rollback remain unfinished.
+
+Independent read-only disk inventory and parent rechecks authorized removal of only apt binary caches/downloads, Node V8 compile cache and downloaded apt indexes. The first cleanup recovered 346,402,816 bytes; apt indexes recovered another 198,045,696 bytes. Free space increased from 2,036,023,296 bytes before cleanup to 2,581,192,704 bytes (about 2.404 GiB), above the 2 GiB reserve plus 256 MiB minimum budget. Another 6,008,741,888 usable bytes would reach 8 GiB at that observation. Recent pip-cache activity caused its exclusion. Installed tools, repositories/worktrees, credentials, backups, authority, audit, rollback/releases, queues and browser sessions were preserved. Recheck ongoing usage immediately before deployment.
+
+Direct Vercel API inspection found the db9b825 frontend deployment CANCELED despite its green GitHub status. It is not a ready exact-SHA acceptance pairing. The local Vercel CLI lacks saved authentication; its automatically attempted login was immediately canceled, with no login repeated. No deployment occurred. The concrete post-ACL sequence records actual credential/witness/containment/pairing prerequisites and does not mark the harness ready. Canonical API/worker remain inactive, production Buyer/Nexus migrations unapplied, six real reads unrun, PR125 unmerged and production unchanged.
+
+
 ## 2026-09-07 — provider ACL transaction isolated rehearsal
 
 Current release and PR125 head is `115f07e000986ba63f8afc731365f2bad5d0301f`; its five checks passed in CI run `34102179630`. PR125 remains open and unmerged. The new offline provider ACL generator freezes catalog/role/version preconditions, preserves consumer grants and grant options, removes only captured PUBLIC edges and provides guarded exact rollback. Three focused generator tests and nine actual PostgreSQL 17.6 ACL checks pass. Independent review prompted collision-safe SQL literals and strict negative-test assertions; actual SQL execution caught and corrected syntax/precedence errors before the successful run.

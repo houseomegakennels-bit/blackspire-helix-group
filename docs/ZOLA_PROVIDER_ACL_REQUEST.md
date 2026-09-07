@@ -56,3 +56,25 @@ Protected review package: `/tmp/zola-provider-acl-reviewed-KDmBB8` (not applied)
 The manifest replaces 33 PUBLIC edges with 1,021 missing owner-granted consumer edges. `scripts/test-buyer-writer-acl.mjs` passes nine actual PostgreSQL checks: consumer/grant-option preservation, repeat apply, exact rollback, repeat rollback, enabled-writer rollback refusal, scoped-writer denial, column drift refusal, atomic rollback after an injected post-mutation exception, and unrelated-role drift refusal. The fixture also runs with `standard_conforming_strings=off` and adversarial captured column text.
 
 Evidence: `/tmp/zola-acl-postgres-tests.log` and `/tmp/zola-acl-postgres-tests-budget.json`. The fixture used network-disabled disposable PostgreSQL with inert extension stand-ins; no actual extension network function, production credential or production row was used. Parent verification confirmed both the owned cgroup and container were absent afterward. This proves ACL transaction semantics, not production extension execution or complete writer/n8n continuity. The earlier failed syntax runs are retained as audit evidence.
+
+## Fresh authority verification — 2026-09-07
+
+A new read-only catalog capture exactly matches the reviewed manifest baseline: PostgreSQL 17.6, 17 objects, 32 roles, 22 membership edges, both extension versions, schema/object ACLs, function signatures/digests and 65 NULL column ACLs. Fresh `session_user` and `current_user` are both `postgres`, neither is superuser. `pg_has_role(session_user, 'supabase_admin', 'SET')` and inherited `USAGE` are both false. All 31 captured PUBLIC privilege edges on `net` objects also return false for the current role's corresponding `WITH GRANT OPTION` check; the two owned-view SELECT checks are true.
+
+The exact package requires a superuser session, then executes each grant/revoke as the captured object owner. The current session fails that prerequisite and cannot assume `supabase_admin`. Owning the two views does not grant authority over the fifteen `net` objects. No SET ROLE attempt, privilege escalation, extension function invocation or production DDL was performed.
+
+Fresh sanitized evidence:
+
+| File | SHA-256 |
+| --- | --- |
+| `/tmp/zola-provider-acl-fresh-20260907.json` | `a25fbbb6595c7535cf15e1f02983cedb23f24a5ea5b98585ff814f4ec49d4b97` |
+| `/tmp/zola-provider-authority-20260907.json` | `26ffab234fa1b6802985abceb07c3c13aca2bd3e11cb485443d33a2e986bbe92` |
+| `/tmp/zola-provider-grant-options-20260907.json` | `ed74d9740d9c91ed9682c6fcece28f1f5eaa83c7d1d9b1d75cbc72d4ebe8580f` |
+
+## Exact owner submission
+
+Open [Supabase's new support request](https://supabase.com/dashboard/support/new), select project `kchtrvfcixnimvxxctkj`, and use the subject **Provider-authorized scoped ACL replacement for pg_net / pg_stat_statements**. Provide this document as the request text, the three protected reviewed package files, and the sanitized evidence files listed above. Do not attach credentials, environment files, database rows or n8n exports.
+
+Request this specific response: confirm whether Supabase can execute the attached exact guarded transaction as an authorized provider session during a coordinated window excluding concurrent role/ACL/extension changes. If approved, return the approved apply/rollback SHA-256 digests, execution identity and scheduled window. After coordinated execution, return transaction COMMIT/ABORT status, timestamp, and sanitized post-change catalog/consumer-privilege evidence. If Supabase requires different SQL or an extension change, return the exact proposed change for a new review and rehearsal before execution. Do not supply a superuser credential to this thread.
+
+The owner submission is still unsent. Supabase's approval or execution result must be verified against fresh database metadata; a support acknowledgement alone does not make the ACL gate green.
