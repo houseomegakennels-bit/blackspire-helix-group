@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { estimateDealArv } from "@/lib/deal-engine-server";
@@ -5,6 +6,8 @@ import { estimateDealArv } from "@/lib/deal-engine-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as {
       dealId?: string;

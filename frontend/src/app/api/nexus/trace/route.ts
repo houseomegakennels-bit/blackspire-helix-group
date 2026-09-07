@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getNexusSnapshot, runNexusSkipTrace } from "@/lib/nexus-server";
+import { guardAdminApi } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as { leadId?: string };
     if (!body.leadId?.trim()) {
@@ -18,7 +21,9 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await runNexusSkipTrace(lead);
-    return NextResponse.json({ ok: true, result });
+    const safeResult = { ...result } as Record<string, unknown>;
+    delete safeResult.raw_skiptrace_response;
+    return NextResponse.json({ ok: true, result: safeResult });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Skip trace run failed." },

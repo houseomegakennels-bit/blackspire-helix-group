@@ -28,37 +28,74 @@ function task(text, overrides = {}) {
   return getTask(created.taskId);
 }
 
-function delayedAdapter(result, signal, delayMs = 200) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => resolve(result), delayMs);
-    const onAbort = () => { clearTimeout(timer); reject(new Error('aborted')); };
-    signal?.addEventListener?.('abort', onAbort, { once: true });
-    return { release: () => clearTimeout(timer), done: () => resolve(result) };
-  });
+const buyerResult = {
+  profiles: [{ id:'buyer-1', displayName:'ABC Capital', buyerType:'cash buyer', county:'Wake', state:'NC', city:null, postalCode:null, propertyType:null, minBeds:null, maxPrice:null, preferredRadius:null, cashBuyer:true, llcBuyer:true, active:true, scoreSummary:null, buyBoxSummary:null, source:'BuyerProfile' }],
+  matches: [], sourceSnapshotAt:'2026-09-02T00:00:00.000Z',
+};
+
+function pendingAdapter(cooperative) {
+  const started = Promise.withResolvers();
+  const response = Promise.withResolvers();
+  let signal;
+  const abort = () => response.reject(new Error('aborted'));
+  return {
+    started: started.promise,
+    response: response.promise,
+    buyerProfiles({ signal: suppliedSignal }) {
+      signal = suppliedSignal;
+      if (cooperative) signal.addEventListener('abort', abort, { once: true });
+      started.resolve();
+      // Return synchronously: no suspension gap may leave a rejectable response unobserved.
+      return response.promise;
+    },
+    release() {
+      signal?.removeEventListener('abort', abort);
+      response.resolve(buyerResult);
+    },
+    aborted: () => signal?.aborted,
+  };
 }
 
-test('late cancellation while adapter is pending does not disclose Buyer data', async () => {
-  const created = task('Find buyers with cancellation race.');
-  const pending = processTask(created, { capabilityOptions:{ adapters:{ buyerProfiles:async ({ signal })=>{ const delayed = delayedAdapter({ profiles:[{ displayName:'ABC Capital', source:'buyer_group_registry' }], matches:[], sourceSnapshotAt:'2026-09-02T00:00:00.000Z' }, signal, 500); await new Promise((resolve)=>setImmediate(resolve)); return await delayed; } } } });
-  await new Promise((resolve)=>setTimeout(resolve, 50));
-  transition(created.id, 'cancelled', { error:'operator cancelled' });
-  const result = await pending;
-  assert.ok(result);
-  assert.ok(['cancelled','failed'].includes(result.status));
-  assert.doesNotMatch(String(result?.summary||'') + ' ' + String(result?.error||''), /ABC Capital/);
-});
+function assertNoDisclosure(taskId, emergency) {
+  const persisted = getTask(taskId);
+  assert.equal(persisted.status, 'cancelled');
+  assert.equal(persisted.summary, '');
+  assert.doesNotMatch(JSON.stringify(taskRecords(taskId)), /ABC Capital/);
+  const attempts = all('SELECT * FROM provider_attempts WHERE task_id=?', [taskId]);
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].status, emergency ? 'completed' : 'outcome_unknown');
+  if (emergency) assert.deepEqual(JSON.parse(attempts[0].response_packet), { discarded: true });
+  assert.doesNotMatch(JSON.stringify(attempts), /ABC Capital/);
+}
 
-test('emergency stop while adapter is pending prevents Buyer finalization', async () => {
-  const created = task('Find buyers with cancellation timing test.');
-  const pending = processTask(created, { capabilityOptions:{ adapters:{ buyerProfiles:async ({ signal })=>{ const delayed = delayedAdapter({ profiles:[{ displayName:'ABC Capital', source:'buyer_group_registry' }], matches:[], sourceSnapshotAt:'2026-09-02T00:00:00.000Z' }, signal, 500); await new Promise((resolve)=>setImmediate(resolve)); return await delayed; } } } });
-  await new Promise((resolve)=>setTimeout(resolve, 50));
-  setFlag('emergency_stop','active');
-  try {
-    const result = await pending;
-    assert.ok(result);
-    assert.ok(['cancelled','failed'].includes(result.status));
-    assert.doesNotMatch(String(result?.summary||'') + ' ' + String(result?.error||''), /ABC Capital/);
-  } finally {
-    setFlag('emergency_stop','inactive');
+for (const emergency of [false, true]) {
+  for (const cooperative of emergency ? [false] : [true, false]) {
+    test(`${emergency ? 'emergency stop' : 'cancellation'} fences ${cooperative ? 'abort rejection' : 'non-cooperative late Buyer completion'}`, async () => {
+      const created = task('Find buyers with cancellation race.');
+      const adapter = pendingAdapter(cooperative);
+      const pending = processTask(created, { capabilityOptions: { adapters: { buyerProfiles: adapter.buyerProfiles } } });
+      await adapter.started;
+      try {
+        assert.equal(getTask(created.id).status, 'running');
+        if (emergency) {
+          setFlag('emergency_stop', 'active');
+          // The persisted flag is checked when the adapter returns; setFlag itself does not abort.
+          adapter.release();
+        }
+        else transition(created.id, 'cancelled', { error: 'operator cancelled' });
+        const result = await pending;
+        assert.equal(result.status, 'cancelled');
+        assert.equal(adapter.aborted(), true);
+        assertNoDisclosure(created.id, emergency);
+        if (!cooperative) {
+          adapter.release();
+          await adapter.response;
+          assertNoDisclosure(created.id, emergency);
+        }
+      } finally {
+        adapter.release();
+        if (emergency) setFlag('emergency_stop', 'inactive');
+      }
+    });
   }
-});
+}

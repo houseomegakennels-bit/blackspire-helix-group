@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { after, NextResponse } from "next/server";
 
 import {
@@ -10,6 +11,8 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const { id } = await context.params;
     const job = await getSearchJobById(id);

@@ -99,7 +99,9 @@ export function runDisposableRestoreCutover({ repository, root, environment = 'd
     // Aliasing the restore target to the SOURCE database is the real identity violation.
     if (fault === 'source_equals_target') target=source;
     const sourceTargetDistinct = path.resolve(source)!==path.resolve(target);
-    const backupStat = fs.statSync(backupPath); const createdAt = new Date(backupStat.mtimeMs).toISOString(); const ageMs = Date.now()-backupStat.mtimeMs;
+    // Align fractional filesystem time with Date.now() and manifest precision.
+    // A same-millisecond backup is not future-dated; later milliseconds are.
+    const backupStat = fs.statSync(backupPath); const createdAt = new Date(backupStat.mtimeMs).toISOString(); const ageMs = Date.now()-Math.floor(backupStat.mtimeMs);
     backupManifest = { version:1, environment, createdAt, ageMs, sourceFingerprint:digest(`${environment}:${sourceReport.schemaFingerprint}:${JSON.stringify(sourceReport.rowCounts)}`), backupSha256:fileDigest(backupPath), checksumPath:path.basename(`${backupPath}.sha256`), schemaFingerprint:sourceReport.schemaFingerprint, rowCounts:sourceReport.rowCounts };
     // Real schema drift: the source advances past the schema the backup manifest recorded. An index
     // is used rather than a table so that row counts stay identical and the fingerprint comparison

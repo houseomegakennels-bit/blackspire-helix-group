@@ -6,10 +6,13 @@ import {
   listOutreachDraftRecords,
   persistOutreachDraftRecord,
 } from "@/lib/buyer-engine-server";
+import { guardSignedInApi } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const searchJobId = request.nextUrl.searchParams.get("searchJobId")?.trim() || undefined;
     const drafts = await listOutreachDraftRecords(searchJobId);
@@ -43,6 +46,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const record = (await request.json()) as Partial<OutreachDraftRecord>;
 

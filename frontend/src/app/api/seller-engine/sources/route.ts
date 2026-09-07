@@ -12,13 +12,15 @@ import {
 import { guardAdminApi } from "@/lib/operator-access";
 
 export async function GET() {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   return NextResponse.json({ ok: true, sources: await listSellerSources() });
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
-    const denied = await guardAdminApi();
-    if (denied) return denied;
     const body = await request.json() as {
       action?: string;
       name?: string;
@@ -48,9 +50,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
-    const denied = await guardAdminApi();
-    if (denied) return denied;
     const body = await request.json() as { id?: string; active?: boolean };
     if (!body.id || typeof body.active !== "boolean") {
       return NextResponse.json({ ok: false, error: "id and active are required." }, { status: 400 });

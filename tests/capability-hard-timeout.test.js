@@ -15,7 +15,7 @@ prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { run } = await import('../packages/task-engine/db.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { createUnifiedInput } = await import('../packages/unified-input/unified.js');
-const { getTask, taskRecords } = await import('../packages/task-engine/tasks.js');
+const { getTask, taskRecords, transition } = await import('../packages/task-engine/tasks.js');
 const { processTask } = await import('../packages/hermes/hermes.js');
 const { createCapabilityRegistry } = await import('../packages/capabilities/registry.js');
 const { sellerOpportunityCapability } = await import('../packages/capabilities/seller-opportunities.js');
@@ -92,4 +92,49 @@ test('external AbortSignal listener is removed with the callback that was added'
   assert.equal(result.status, 'completed');
   assert.equal(typeof addedCallback, 'function');
   assert.equal(removedCallback, addedCallback);
+});
+
+test('cancellation before adapter subscription does not dispatch or leave an unhandled abort', async () => {
+  const created = createTask('cancel-before-adapter');
+  let calls = 0;
+  const result = await processTask(created, {
+    capabilityOptions: {
+      beforeAdapter: () => transition(created.id, 'cancelled', { error: 'operator cancelled' }),
+      registry: registryWith(async () => { calls += 1; return canonicalResult(); }),
+    },
+  });
+  assert.equal(result.status, 'cancelled');
+  assert.equal(calls, 0);
+  assert.equal(result.summary || null, null);
+  await new Promise((resolve) => setImmediate(resolve));
+});
+
+test('an already-aborted external signal prevents adapter dispatch', async () => {
+  const created = createTask('already-aborted');
+  let calls = 0;
+  const result = await processTask(created, {
+    capabilityOptions: {
+      signal: AbortSignal.abort(),
+      registry: registryWith(async () => { calls += 1; return canonicalResult(); }),
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.summary || null, null);
+});
+
+test('an abort queued before the adapter microtask prevents dispatch', async () => {
+  const created = createTask('abort-before-microtask');
+  const controller = new AbortController();
+  let calls = 0;
+  const result = await processTask(created, {
+    capabilityOptions: {
+      signal: controller.signal,
+      beforeAdapter: () => queueMicrotask(() => controller.abort()),
+      registry: registryWith(async () => { calls += 1; return canonicalResult(); }),
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.summary || null, null);
 });

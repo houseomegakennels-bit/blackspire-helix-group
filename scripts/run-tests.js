@@ -44,6 +44,10 @@ try {
     }
     const source = path.join(rootDirectory, relative);
     const destination = path.join(snapshotDirectory, relative);
+    // `git ls-files --cached` includes tracked paths intentionally deleted or
+    // renamed in the working tree. The immutable snapshot must reflect the
+    // working tree under test, not resurrect those index entries.
+    if (!fs.existsSync(source)) continue;
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     const sourceType = fs.lstatSync(source);
     if (sourceType.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(source), destination);

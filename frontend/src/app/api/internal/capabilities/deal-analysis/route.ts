@@ -17,14 +17,15 @@ export async function POST(request: NextRequest) {
   if (!/^DE-\d{4}$/.test(dealId)) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
 
   let detail;
-  try { detail = await getDealEngineDealDetail(dealId); }
+  try { detail = await getDealEngineDealDetail(dealId, { persistScaffold: false }); }
   catch { return NextResponse.json({ ok: false, error: "Deal capability unavailable" }, { status: 503 }); }
 
-  if (!detail) return NextResponse.json({ ok: false, error: "Deal not found" }, { status: 404 });
+  if (!detail) return NextResponse.json({ found: false, dealId, sourceSnapshotAt: new Date().toISOString() });
 
   const { lead, underwriting } = detail;
 
   return NextResponse.json({
+    found: true,
     dealId: lead.id,
     propertyAddress: lead.propertyAddress,
     county: lead.county || null,
