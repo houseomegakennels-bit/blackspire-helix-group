@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { resolveBuyerSources } from '../packages/buyer-writer/source-policy.js';
+import { approvedBuyerSources } from '../packages/buyer-writer/source-approvals.js';
 
 const hash=s=>createHash('sha256').update(s).digest('hex');
 const row={id:'00000000-0000-4000-8000-000000000001',state:'NC',county:'Ashe',source_type:'arcgis',
@@ -49,4 +50,23 @@ test('source ordering and approval retain PostgreSQL microsecond timestamp preci
   const approvals=[{...approval,createdAt:later.created_at},{...approval,sourceId:earlier.id,createdAt:earlier.created_at}];
   assert.deepEqual(resolve([later,earlier],approvals).sources.map(s=>s.sourceId),[earlier.id,later.id]);
   assert.throws(()=>resolve([{...later,created_at:'2026-01-01T00:00:00.000003Z'}],[approvals[0]]),{code:'SOURCE_POLICY_REJECTED'});
+});
+test('reviewed manifest selects land and fallback authority without activating absent sources',()=>{
+  const land=approvedBuyerSources({property_type:'land'});const residential=approvedBuyerSources({property_type:'residential'});
+  assert.equal(land.length,75);assert.equal(new Set(land.map(s=>s.sourceId)).size,75);
+  assert.ok(land.every(s=>!['Wake','Mecklenburg'].includes(s.county)));
+  assert.equal(land.find(s=>s.county==='Lincoln').method,'POST');assert.equal(residential.find(s=>s.county==='Lincoln').method,'GET');
+  assert.equal(land.find(s=>s.county==='Ashe').sourceType,'arcgis_ashe');
+  assert.equal(land.find(s=>s.county==='Guilford').sourceType,'arcgis_guilford');
+  assert.equal(land.find(s=>s.county==='Stanly').pathTransform,'stanly_fixed');
+  assert.equal(land.find(s=>s.county==='Robeson').pathTransform,'preserve_query');
+  // Validate the real manifest field formats through the resolver without
+  // loading production URLs: add a separate synthetic county to its allowlist.
+  assert.equal(resolve([{...row,county:'Synthetic'}],[...land,{...approval,createdAt:'2026-01-01 00:00:00+00',county:'Synthetic'}],{state:'NC',county:'Synthetic'}).sources.length,1);
+});
+test('Stanly fixed destination is explicit in the resolved config and changes the permit digest',()=>{
+  const stanly={...row,county:'Stanly'};const a={...approval,county:'Stanly',sourceType:'arcgis',adapterId:'legacy-stanly-v1',pathTransform:'stanly_fixed'};
+  const fixed=resolve([stanly],[a],{state:'NC',county:'Stanly'}).sources[0];
+  assert.equal(fixed.url,'https://services6.arcgis.com/w1igg0Q14weqYXUh/arcgis/rest/services/parcel_records_base_2/FeatureServer/3/query');
+  assert.notEqual(fixed.endpointConfigDigest,resolve([stanly],[{...a,pathTransform:'strip_query'}],{state:'NC',county:'Stanly'}).sources[0].endpointConfigDigest);
 });

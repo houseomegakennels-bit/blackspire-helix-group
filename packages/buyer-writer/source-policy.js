@@ -9,7 +9,7 @@ const uuid=s=>typeof s==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9
 const normalize=s=>typeof s==='string'?s.trim().toLowerCase():'';
 const timestamp=value=>{
   if(typeof value!=='string')reject();
-  const match=/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(?:Z|\+00:00)$/.exec(value);
+  const match=/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(?:Z|\+00(?::00)?)$/.exec(value);
   if(!match)reject();
   const base=`${match[1]}T${match[2]}`;
   const date=new Date(`${base}Z`);
@@ -19,6 +19,26 @@ const timestamp=value=>{
 export const FORSYTH_PARCEL_POLICY=Object.freeze({id:'forsyth-parcel-v1',
   url:'https://lrcpwa.ncptscloud.com/api/GetParcelDetailsByQueryParam',method:'POST',encoding:'json',
   headers:Object.freeze({'X-Tenant':'forsyth'}),timeoutMs:15000,queryPolicy:'formatted-pin-v1'});
+export const STANLY_SOURCE_URL='https://services6.arcgis.com/w1igg0Q14weqYXUh/arcgis/rest/services/parcel_records_base_2/FeatureServer/3/query';
+const MECKLENBURG_FALLBACK_URL='https://gis.charlottenc.gov/arcgis/rest/services/CLT_Ex/CLTEx_MoreInfo/MapServer/4';
+
+// Explicit release policy for the existing Mecklenburg fallback. This is a
+// logical source identity, not a fabricated active CountyDataSource row. It is
+// allowed only after a successful, complete query returns zero county sources
+// and the reviewed registry also records their absence. Query errors must never
+// be converted to [] by the caller.
+export function resolveMecklenburgFallback({rows,approved,job}) {
+  if(!Array.isArray(rows)||rows.length!==0||!Array.isArray(approved)
+    ||normalize(job?.county)!=='mecklenburg'||normalize(job?.state)!=='nc'
+    ||approved.some(a=>normalize(a.county)==='mecklenburg'&&normalize(a.state)==='nc'))reject();
+  const bound={version:1,kind:'virtual',sourceId:'2d5b27d4-6c3f-4cb7-b226-e7a09d7fd9c7',
+    state:'nc',county:'mecklenburg',registeredSourceType:'virtual_mecklenburg',
+    sourceUrlSha256:hash(MECKLENBURG_FALLBACK_URL),cashDisabled:false,adapterId:'mecklenburg-v1',sourceType:'arcgis_mecklenburg',
+    method:'POST',pathTransform:'append_query',timeoutMs:30000,queryPolicy:'frontend-arcgis-v1',
+    url:`${MECKLENBURG_FALLBACK_URL}/query`,createdAt:null,secondary:null};
+  const source=Object.freeze({...bound,endpointId:'mecklenburg-fallback-v1',endpointConfigDigest:hash(JSON.stringify(bound)),registryUrl:MECKLENBURG_FALLBACK_URL});
+  return Object.freeze({sources:Object.freeze([source]),cashDisabled:false});
+}
 
 // Both arguments come from trusted server code: rows are one complete active
 // county registry query, approved is an independently reviewed release manifest.
@@ -34,7 +54,9 @@ export function resolveBuyerSources({rows,approved,job}) {
       ||typeof a.sourceUrlSha256!=='string'||!/^[a-f0-9]{64}$/.test(a.sourceUrlSha256)
       ||!timestamp(a.createdAt)
       ||typeof a.cashDisabled!=='boolean'||!['GET','POST'].includes(a.method)
-      ||!['strip_query','append_query'].includes(a.pathTransform)
+      ||!['strip_query','append_query','preserve_query','stanly_fixed'].includes(a.pathTransform)
+      ||(['preserve_query','stanly_fixed'].includes(a.pathTransform)&&a.method!=='GET')
+      ||(a.pathTransform==='stanly_fixed'&&(normalize(a.county)!=='stanly'||normalize(a.state)!=='nc'))
       ||!Number.isSafeInteger(a.timeoutMs)||a.timeoutMs<1||a.timeoutMs>30000)reject();
     policies.set(a.sourceId,a);
   }
@@ -57,10 +79,11 @@ export function resolveBuyerSources({rows,approved,job}) {
     // discarded only for these frontend adapters. Generic sources need a
     // separate policy that preserves their reviewed configured query semantics.
     if(a.pathTransform==='append_query')url.pathname+='/query';
+    if(a.pathTransform==='stanly_fixed')url=new URL(STANLY_SOURCE_URL);
     const bound={version:1,sourceId:row.id,state:normalize(row.state),county:normalize(row.county),
       registeredSourceType:a.registeredSourceType,sourceUrlSha256:a.sourceUrlSha256,cashDisabled:a.cashDisabled,
       adapterId:a.adapterId,sourceType:a.sourceType,method:a.method,pathTransform:a.pathTransform,timeoutMs:a.timeoutMs,
-      queryPolicy:'frontend-arcgis-v1',url:url.href,createdAt:timestamp(a.createdAt),
+      queryPolicy:a.pathTransform==='preserve_query'?'registry-generic-v1':'frontend-arcgis-v1',url:url.href,createdAt:timestamp(a.createdAt),
       secondary:a.adapterId==='forsyth-v1'&&normalize(a.county)==='forsyth'&&normalize(a.state)==='nc'?FORSYTH_PARCEL_POLICY:null};
     return Object.freeze({...bound,endpointId:row.id,endpointConfigDigest:hash(JSON.stringify(bound)),
       registryUrl:row.source_url});

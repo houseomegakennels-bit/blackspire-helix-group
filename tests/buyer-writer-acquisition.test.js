@@ -7,6 +7,7 @@ import { createBuyerSourceAdapters } from '../frontend/src/lib/buyer-source-adap
 import { acquireBuyerSources } from '../packages/buyer-writer/acquisition.js';
 import { verifyBuyerRawPayload } from '../packages/buyer-writer/source-context.js';
 import { createBuyerSourceClient } from '../packages/buyer-writer/source-http.js';
+import { approvedBuyerSources } from '../packages/buyer-writer/source-approvals.js';
 
 const job={county:'Ashe',state:'NC',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-08-31'};
 const row={id:'00000000-0000-4000-8000-000000000001',state:'NC',county:'Ashe',source_type:'arcgis',
@@ -59,7 +60,7 @@ test('wrong normalization markers and unsupported adapters fail without issuing 
   const h=harness({factory:()=>({prefetch:async()=>[{_source_type:'forged'}]})});
   await assert.rejects(h.run(),{code:'SOURCE_DATA_REJECTED'});assert.equal(h.closed(),1);
   const unsupported=harness({factory:()=>({prefetch:async()=>null})});
-  await assert.rejects(unsupported.run(),{code:'SOURCE_ADAPTER_UNAVAILABLE'});assert.equal(unsupported.closed(),1);
+  await assert.rejects(unsupported.run(),{code:'SOURCE_POLICY_REJECTED'});assert.equal(unsupported.closed(),1);
 });
 test('adapter processing cannot return a permit payload after the aggregate deadline',async()=>{
   const h=harness({budgets:{maxElapsedMs:1},factory:()=>({prefetch:async()=>{
@@ -120,4 +121,66 @@ test('Forsyth acquisition uses the real bounded client with shared primary/secon
       assert.deepEqual(JSON.parse(calls[1].body),{searchKey:'pin',searchValue:'1234-56-7890'});
     }
   }
+});
+test('generic fallback uses checked configured queries and binds all ordered source outputs',async()=>{
+  const sources=[{...row,county:'Robeson',source_url:'https://source.example.invalid/query?where=approved&outFields=OWNER'},
+    {...row,county:'Robeson',id:'00000000-0000-4000-8000-000000000002',source_url:'https://source.example.invalid/other?where=approved&outFields=OWNER',cash_disabled:true}];
+  const approved=sources.map(s=>({...approval,county:s.county,sourceId:s.id,sourceType:'arcgis',adapterId:'generic-v1',cashDisabled:s.cash_disabled,
+    pathTransform:'preserve_query',sourceUrlSha256:createHash('sha256').update(s.source_url).digest('hex')}));
+  const calls=[];let closed=0;
+  const result=await acquireBuyerSources({job:{...job,county:'Robeson'},rows:sources.slice().reverse(),approved,
+    budgets:{maxRequests:5,maxRows:10,maxBytes:10000,maxElapsedMs:1000},adapterFactory:createBuyerSourceAdapters,
+    clientFactory:({endpoints})=>({close:()=>closed++,usage:()=>({requests:calls.length,bytes:10}),request:async input=>{
+      const policy=endpoints.find(p=>p.id===input.endpointId);const query=policy.buildParameters(input.parameters).query;
+      assert.equal(query.get('where'),'approved');assert.equal(query.get('resultRecordCount'),'500');calls.push(policy.url);
+      return{data:{results:[{name:`SYNTHETIC-${calls.length}`}]}};
+    }})});
+  assert.deepEqual(calls,['https://source.example.invalid/query','https://source.example.invalid/other']);assert.equal(closed,1);
+  assert.deepEqual(verifyBuyerRawPayload(result.context,result.bytes).map(r=>r._no_cash_data),[false,true]);
+  assert.deepEqual(result.context.sources.map(s=>s.sourceId),sources.map(s=>s.id));
+});
+test('later legacy source errors and cross-source row limits prevent a completed payload',async()=>{
+  for(const fail of [true,false]) {
+    const sources=[row,{...row,id:'00000000-0000-4000-8000-000000000002'}].map(r=>({...r,county:'Robeson',source_url:'https://source.example.invalid/query?f=json'}));
+    const approved=sources.map(s=>({...approval,sourceId:s.id,county:s.county,sourceType:'arcgis',pathTransform:'preserve_query',sourceUrlSha256:createHash('sha256').update(s.source_url).digest('hex')}));
+    let calls=0,closed=0;
+    await assert.rejects(acquireBuyerSources({job:{...job,county:'Robeson'},rows:sources,approved,
+      budgets:{maxRequests:5,maxRows:1,maxBytes:10000,maxElapsedMs:1000},adapterFactory:createBuyerSourceAdapters,
+      clientFactory:()=>({close:()=>closed++,usage:()=>({requests:calls,bytes:10}),request:async()=>{
+        if(++calls===2&&fail)throw new Error('synthetic downstream failure');return{data:[{name:'SYNTHETIC'}]};
+      }})}),{code:fail?'SOURCE_ACQUISITION_FAILED':'SOURCE_BUDGET_EXCEEDED'});
+    assert.equal(calls,2);assert.equal(closed,1);
+  }
+});
+test('generic duplicate queries preserve exact approved values and reject any injected alteration',async()=>{
+  for(const mutate of [false,true]) {
+    const source={...row,county:'Robeson',source_url:'https://source.example.invalid/query?where=first&where=second&outFields=OWNER'};
+    const a={...approval,county:source.county,sourceType:'arcgis',pathTransform:'preserve_query',sourceUrlSha256:createHash('sha256').update(source.source_url).digest('hex')};
+    let closed=0;
+    const result=acquireBuyerSources({job:{...job,county:'Robeson'},rows:[source],approved:[a],
+      budgets:{maxRequests:5,maxRows:10,maxBytes:10000,maxElapsedMs:1000},adapterFactory:createBuyerSourceAdapters,
+      clientFactory:({endpoints})=>({close:()=>closed++,usage:()=>({requests:1,bytes:10}),request:async input=>{
+        if(mutate)input.parameters.set('where','changed');
+        const q=endpoints[0].buildParameters(input.parameters).query;assert.deepEqual(q.getAll('where'),['first','second']);return{data:[]};
+      }})});
+    if(mutate)await assert.rejects(result,{code:'SOURCE_POLICY_REJECTED'});else assert.equal((await result).bytes.toString(),'[]');
+    assert.equal(closed,1);
+  }
+});
+test('explicit Mecklenburg fallback is bound only to verified registry absence and never applies to Wake',async()=>{
+  const input={job:{...job,county:'Mecklenburg'},rows:[],approved:approvedBuyerSources(job),
+    budgets:{maxRequests:5,maxRows:10,maxBytes:10000,maxElapsedMs:1000},adapterFactory:createBuyerSourceAdapters};
+  let calls=0;
+  const clientFactory=({endpoints})=>({close:()=>{},usage:()=>({requests:calls,bytes:10}),request:async input=>{
+    assert.equal(endpoints[0].url,'https://gis.charlottenc.gov/arcgis/rest/services/CLT_Ex/CLTEx_MoreInfo/MapServer/4/query');
+    endpoints[0].buildParameters(input.parameters);calls++;return{data:{features:[]}};
+  }});
+  const result=await acquireBuyerSources({...input,clientFactory});assert.equal(calls,1);
+  assert.equal(result.context.sources[0].sourceType,'arcgis_mecklenburg');assert.equal(result.context.sources[0].cashDisabled,false);
+  assert.equal(result.bytes.toString(),'[]');
+  for(const patch of [{rows:null},{rows:[{...row,county:'Mecklenburg'}]},{approved:[{...approval,county:'Mecklenburg'}]},
+    {job:{...job,county:'Wake'}},{job:{...job,county:'Mecklenburg',state:'SC'}}]) {
+    await assert.rejects(acquireBuyerSources({...input,...patch,clientFactory}),{code:'SOURCE_POLICY_REJECTED'});
+  }
+  assert.equal(calls,1);
 });

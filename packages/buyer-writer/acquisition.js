@@ -1,20 +1,27 @@
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { BuyerSourceError, createBuyerSourceClient } from './source-http.js';
-import { resolveBuyerSources } from './source-policy.js';
+import { resolveBuyerSources, resolveMecklenburgFallback } from './source-policy.js';
 import { validateBuyerSourceContext } from './source-context.js';
+import { fetchRemainingBuyerSources } from './legacy-sources.js';
 
 const reject=(code='SOURCE_POLICY_REJECTED')=>{throw new BuyerSourceError(code);};
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v,min,max)=>Number.isSafeInteger(v)&&v>=min&&v<=max;
 const hash=s=>createHash('sha256').update(s).digest('hex');
 const keys=new Set(['where','outFields','returnGeometry','orderByFields','resultRecordCount','resultOffset','f']);
-function checkedQuery(input) {
+function checkedQuery(input,source) {
   if(!(input instanceof URLSearchParams))reject();
   const q=new URLSearchParams(input);const seen=new Set();
   for(const [key,value]of q) {
-    if(!keys.has(key)||seen.has(key)||value.length>8192||/[\x00-\x1f\x7f]/.test(value))reject();
+    if(!keys.has(key)||(seen.has(key)&&source?.queryPolicy!=='registry-generic-v1')||value.length>8192||/[\x00-\x1f\x7f]/.test(value))reject();
     seen.add(key);
+  }
+  if(source?.queryPolicy==='registry-generic-v1') {
+    const expected=new URL(source.registryUrl).searchParams;
+    expected.set('f','json');expected.set('returnGeometry','false');expected.set('resultRecordCount','500');
+    if(q.toString()!==expected.toString())reject();
+    return q;
   }
   if(q.get('f')!=='json'||q.get('returnGeometry')!=='false'||!q.get('where')||!q.get('outFields')
     ||!/^\d{1,5}$/.test(q.get('resultRecordCount')??'')||!integer(Number(q.get('resultRecordCount')),1,10000)
@@ -33,11 +40,12 @@ export async function acquireBuyerSources({job,rows,approved,budgets,adapterFact
   const deadline=performance.now()+budgets.maxElapsedMs;
   const checkTime=()=>{if(performance.now()>=deadline)reject('SOURCE_TIMEOUT');};
   const captured=structuredClone(job);const limits={...budgets};
-  const snapshot=resolveBuyerSources({rows,approved,job:captured});
+  const snapshot=Array.isArray(rows)&&rows.length===0&&captured.county?.trim().toLowerCase()==='mecklenburg'
+    ?resolveMecklenburgFallback({rows,approved,job:captured}):resolveBuyerSources({rows,approved,job:captured});
   const selected=snapshot.sources[0];
-  const endpoints=[{id:selected.endpointId,url:selected.url,method:selected.method,
-    encoding:selected.method==='POST'?'form':'json',digest:selected.endpointConfigDigest,timeoutMs:selected.timeoutMs,
-    buildParameters:parameters=>selected.method==='POST'?{query:new URLSearchParams(),body:checkedQuery(parameters)}:{query:checkedQuery(parameters)}}];
+  const endpoints=snapshot.sources.map(s=>({id:s.endpointId,url:s.url,method:s.method,
+    encoding:s.method==='POST'?'form':'json',digest:s.endpointConfigDigest,timeoutMs:s.timeoutMs,
+    buildParameters:parameters=>s.method==='POST'?{query:new URLSearchParams(),body:checkedQuery(parameters,s)}:{query:checkedQuery(parameters,s)}}));
   // Secondary URL/method/headers/query policy are included in the parent digest
   // and cannot be independently selected by the incoming workload.
   const forsyth=selected.secondary;
@@ -48,16 +56,17 @@ export async function acquireBuyerSources({job,rows,approved,budgets,adapterFact
     }});
   const client=clientFactory({endpoints,budgets:limits});let featureRows=0;
   try {
-    const request=async(method,url,params,timeout)=>{
+    const request=async(source,method,url,params,timeout,legacyLimit=null)=>{
       checkTime();
       let parsed;try{parsed=new URL(url);}catch{reject();}
       const query=method==='GET'?new URLSearchParams(parsed.searchParams):params;
       if(method==='POST'&&parsed.search)reject();
       parsed.search='';
-      if(parsed.href!==selected.url||method!==selected.method||timeout!==selected.timeoutMs)reject();
-      const checked=checkedQuery(query);
-      const response=await client.request({endpointId:selected.endpointId,endpointConfigDigest:selected.endpointConfigDigest,parameters:checked});
+      if(parsed.href!==source.url||method!==source.method||timeout!==source.timeoutMs)reject();
+      const checked=checkedQuery(query,source);
+      const response=await client.request({endpointId:source.endpointId,endpointConfigDigest:source.endpointConfigDigest,parameters:checked});
       const data=response.data;
+      if(legacyLimit!==null)return data; // Legacy decoder enforces shared cumulative row limit.
       if(!object(data)||Object.hasOwn(data,'error')||!Array.isArray(data.features)
         ||data.features.some(f=>!object(f)||(!object(f.attributes)&&!object(f.properties))))reject('SOURCE_DATA_REJECTED');
       featureRows+=data.features.length;
@@ -69,8 +78,8 @@ export async function acquireBuyerSources({job,rows,approved,budgets,adapterFact
         if(county.trim().toLowerCase()!==selected.county||state.trim().toLowerCase()!==selected.state)reject();
         return{source_url:selected.registryUrl};
       },
-      getJson:(url,timeout)=>request('GET',url,null,timeout),
-      postFormJson:(url,params,timeout)=>request('POST',url,params,timeout),
+      getJson:(url,timeout)=>request(selected,'GET',url,null,timeout),
+      postFormJson:(url,params,timeout)=>request(selected,'POST',url,params,timeout),
       postForsythJson:async pin=>{
         checkTime();
         if(!forsyth)reject();
@@ -79,10 +88,13 @@ export async function acquireBuyerSources({job,rows,approved,budgets,adapterFact
         return result.data;
       },
     });
-    const result=await adapters.prefetch(captured);
+    let result=await adapters.prefetch(captured);
+    const legacy=result===null;
+    if(legacy)result=await fetchRemainingBuyerSources({job:captured,sources:snapshot.sources,maxRows:limits.maxRows,
+      request:(source,url,limit)=>request(source,'GET',url,null,source.timeoutMs,limit)});
     checkTime();
-    if(result===null)reject('SOURCE_ADAPTER_UNAVAILABLE');
-    if(!Array.isArray(result)||result.some(r=>!object(r)||r._source_type!==selected.sourceType))reject('SOURCE_DATA_REJECTED');
+    const markers=new Set(legacy?snapshot.sources.map(s=>s.sourceType):[selected.sourceType]);
+    if(!Array.isArray(result)||result.some(r=>!object(r)||!markers.has(r._source_type)))reject('SOURCE_DATA_REJECTED');
     if(result.length>limits.maxRows)reject('SOURCE_BUDGET_EXCEEDED');
     // Bound serialization incrementally rather than building an unbounded
     // aggregate string. The same exact bytes go to the n8n permit-bound payload.

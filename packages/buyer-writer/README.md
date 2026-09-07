@@ -150,8 +150,18 @@ bounded source client, preserves first-source precedence and all-source cash
 policy, and binds exact finite JSON bytes capped at 6 MiB. It rejects malformed
 features, mismatched source markers, extra query keys, and late payloads. Forsyth
 parcel requests share budgets and their full fixed policy is in the context
-digest. Empty arrays remain valid; unsupported adapters fail closed.
+digest. Empty arrays remain valid and bypass fallback acquisition. The remaining legacy
+source branches share the same bounded client and abort on partial failures.
 
-The production approval manifest, explicit virtual Mecklenburg fallback, generic
-n8n-source adapters, authenticated caller and frontend deployment packaging are
-still unfinished. Injected test transports are not production source witnesses.
+The static `approved-source-registry.json` manifest pins the 75 observed active
+NC sources without storing URL values. `source-approvals.js` selects reviewed
+frontend/legacy query policy, including Lincoln land/non-land behavior. The
+explicit virtual Mecklenburg policy requires a successful empty registry query
+and manifest absence; it creates no CountyDataSource row. Stanly's existing
+override is a separate fixed endpoint included in its digest. Generic queries
+preserve exact approved parameters and override only the legacy response caps.
+Malformed responses now reject instead of silently becoming empty results.
+
+Authenticated issuance, acquisition/issue criteria and lifecycle fencing, actual
+frontend/runtime mounting and deployment packaging remain unfinished. Injected
+test transports are not production source witnesses.

@@ -2,7 +2,7 @@
 
 ## 2026-09-07 00:22 UTC — next writer integration steps
 
-1. County-adapter69a1730 is exact-head CI green. Source-policy/acquisition passes independent review and 14 isolated groups; its full suite passes 1,384 tests with zero failures and all checks pass. Finish reviewed commit/push/new-head CI, then complete the production approval manifest, generic source adapters and authenticated issuance before coordinated integration.
+1. Source-acquisition31c14e3 is exact-head CI green. Legacy sources, static approval manifest and explicit virtual Mecklenburg policy pass independent review and 24 focused groups; their full suite passes 1,394 tests with zero failures and all checks pass. Finish reviewed commit/push/new-head CI, then bind captured acquisition criteria and lifecycle fencing in transactional issuance, mount authenticated frontend/runtime composition and validate actual secure n8n execution.
 2. Implement authenticated issuer/intake and canonical source policy while preserving sweep beta and admin route entitlements. Connect secure n8n HTTP nodes only after coordinated caller/rollback continuity is proven. Do not expose per-job permits through saved executions or browser responses.
 3. Finish secure Buyer intake compatibility for immutable `2c0b600`, repair acceptance supervision and obtain actual owner/cross-owner evidence. No legacy unauthenticated intake may gain privileged write authority.
 4. Recheck disk and budget release/backup space. Current approximately 3.24 GiB is below preferred deployment headroom; preserve tools and protected state.
