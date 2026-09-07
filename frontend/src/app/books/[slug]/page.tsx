@@ -5,7 +5,7 @@ import { BookPlayer, type PlayerChapter } from "@/components/book-player";
 import { MarketingShell } from "@/components/marketing-shell";
 import { getPublishedBook } from "@/lib/book-studio/service";
 import { getAssetUrl } from "@/lib/book-studio/store";
-import { publicChapters } from "@/lib/book-studio/publication";
+import { publicChapters, publicAssetAllowed } from "@/lib/book-studio/publication";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export default async function PublicBookDetailPage({
   const book = await getPublishedBook(slug);
   if (!book) notFound();
 
-  const cover = book.assets.find((asset) => asset.id === book.coverAssetId);
+  const cover = book.assets.find((asset) => asset.id === book.coverAssetId && publicAssetAllowed(book, asset.relativePath));
   const releasedChapters = publicChapters(book);
   const releasedSceneIds = new Set(releasedChapters.flatMap((chapter) => chapter.sceneIds));
 
@@ -35,7 +35,7 @@ export default async function PublicBookDetailPage({
         .sort((a, b) => a.order - b.order)
         .map((scene) => {
           const image = scene.imageAssetId ? assetById.get(scene.imageAssetId) : null;
-          return image ? { url: getAssetUrl(image), title: scene.title } : null;
+          return image && publicAssetAllowed(book, image.relativePath) ? { url: getAssetUrl(image), title: scene.title } : null;
         })
         .filter((image): image is { url: string; title: string } => Boolean(image));
 
@@ -45,7 +45,7 @@ export default async function PublicBookDetailPage({
         title: chapter.title,
         summary: chapter.summary,
         videoUrl: video ? getAssetUrl(video) : null,
-        audioUrl: audio ? getAssetUrl(audio) : null,
+        audioUrl: audio && publicAssetAllowed(book, audio.relativePath) ? getAssetUrl(audio) : null,
         sceneImages,
       };
     });

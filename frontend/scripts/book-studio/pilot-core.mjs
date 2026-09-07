@@ -7,23 +7,26 @@ const safeId = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id);
 const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
 
 /** Build a scoped, read-only plan. Never picks the first book. */
-export function planPrivateChapter(book, bookId, chapterOrder) {
+export function planPrivateChapter(book, bookId, chapterOrder, productionInputs = null) {
   requireThat(safeId(bookId) && book?.id === bookId, 'Exact book ID is required.');
+  requireThat(bookId !== 'book_hk7iuemqv2j5ld', 'Protected production book ID.');
   requireThat(book.status === 'Draft' || book.status === 'ApprovedForRender', 'Published or unknown-status books are protected.');
   requireThat(Number.isSafeInteger(chapterOrder) && chapterOrder > 0, 'A positive integer chapter order is required.');
   const chapters = book.chapters.filter((c) => c.order === chapterOrder);
   requireThat(chapters.length === 1, 'Chapter must exist exactly once.');
   const chapter = chapters[0];
-  requireThat(safeId(chapter.id), 'Invalid chapter ID.');
+  requireThat(safeId(chapter.id) && book.chapters.filter((c) => c.id === chapter.id).length === 1, 'Invalid or duplicate chapter ID.');
   requireThat(chapter.sceneIds.length > 0, 'Chapter has no prepared scenes.');
   requireThat(new Set(chapter.sceneIds).size === chapter.sceneIds.length, 'Duplicate scene links.');
   const scenes = chapter.sceneIds.map((id) => {
-    const matches = book.scenes.filter((s) => s.id === id && s.chapterId === chapter.id);
+    const matches = book.scenes.filter((s) => s.id === id);
+    requireThat(matches.every((s) => s.chapterId === chapter.id), 'Cross-chapter scene link.');
     requireThat(matches.length === 1 && safeId(id), 'Scene is missing, ambiguous, or belongs to another chapter.');
     requireThat(typeof matches[0].sourceText === 'string' && matches[0].sourceText.trim(), 'Prepared source text is required.');
     return matches[0];
   }).sort((a, b) => a.order - b.order);
-  requireThat(new Set(scenes.map((s) => s.order)).size === scenes.length, 'Duplicate scene order.');
+  requireThat(scenes.every((s) => Number.isSafeInteger(s.order) && s.order > 0) && new Set(scenes.map((s) => s.order)).size === scenes.length, 'Invalid or duplicate scene order.');
+  requireThat(chapter.sceneIds.every((id, index) => id === scenes[index].id), 'Chapter scene links must follow approved narration order.');
   const assetById = new Map();
   for (const asset of book.assets) {
     requireThat(!assetById.has(asset.id), 'Duplicate asset IDs.');
@@ -51,9 +54,9 @@ export function planPrivateChapter(book, bookId, chapterOrder) {
   }
   // Deliberately exclude generated output IDs, but bind every creative input.
   const source = { bookId, chapterId: chapter.id, order: chapter.order, title: chapter.title,
-    style: book.styleProfile, characters: book.characters, references: book.references.filter((r) => r.approved === true && r.source !== 'scene_generation'),
+    productionInputs, style: book.styleProfile, characters: book.characters, references: book.references.filter((r) => r.approved === true && r.source !== 'scene_generation'),
     scenes: scenes.map((s) => ({ id: s.id, order: s.order, title: s.title, sourceText: s.sourceText,
-      imagePrompt: s.imagePrompt, characterIds: s.characterIds, modifiers: s.modifiers,
+      summary: s.summary, characterIds: s.characterIds, modifiers: s.modifiers,
       mood: s.mood, location: s.location, timeOfDay: s.timeOfDay, renderManifest: s.renderManifest })) };
   // renderManifest is output from image generation; don't let that invalidate the source approval.
   for (const scene of source.scenes) delete scene.renderManifest;
@@ -69,6 +72,7 @@ export function planPrivateChapter(book, bookId, chapterOrder) {
 export function assertGenerationApproval(plan, approval) {
   requireThat(approval?.sourceDigest === plan.sourceDigest && approval?.bookId === plan.bookId && approval?.chapterId === plan.chapterId,
     'Approval must match this exact book, chapter, and source digest.');
+  requireThat(approval.revoked !== true && approval.cancelled !== true, "Approval revoked or cancelled.");
   requireThat(typeof approval.approvedBy === 'string' && approval.approvedBy.trim(), 'Named human approval is required.');
   requireThat(Number.isFinite(Date.parse(approval.expiresAt)) && Date.parse(approval.expiresAt) > Date.now(), 'Approval is expired or has no expiry.');
   requireThat(Number.isSafeInteger(approval.maxNewImages) && approval.maxNewImages >= plan.missingImages.length, 'Image workload exceeds approval.');
@@ -102,6 +106,7 @@ export async function writeVerifiedBackup(root, entries, metadata) {
 
 /** A receipt is evidence to validate, not a flag supplied by a browser. */
 export function assertReleaseEvidence(manifest, receipt, approval, qa) {
+  requireThat(approval?.revoked !== true && approval?.cancelled !== true, 'Publication approval revoked or cancelled.');
   requireThat(manifest.localBackupVerified === true, 'Local backup is not verified.');
   const video = manifest.files.find((f) => f.name.endsWith('.mp4'));
   requireThat(video && /^[a-f0-9]{64}$/.test(video.sha256), 'Verified MP4 is required.');
@@ -115,4 +120,15 @@ export function assertReleaseEvidence(manifest, receipt, approval, qa) {
     'Explicit publication approval for the exact finished video is required.');
   requireThat(Number.isFinite(Date.parse(approval.expiresAt)) && Date.parse(approval.expiresAt) > Date.now(), 'Publication approval expired.');
   return { eligibleForRelease: true, bookId: manifest.bookId, chapterId: manifest.chapterId, videoSha256: video.sha256 };
+}
+
+export async function verifyReusedAssets(plan, approval, readAsset) {
+  for (const asset of plan.reusedAssets) {
+    const bytes = await readAsset(asset.relativePath);
+    const sha256 = digest(bytes);
+    requireThat(bytes.length > 0, 'Empty reused asset.');
+    const produced = asset.metadata?.pilotSourceDigest === plan.sourceDigest && asset.metadata?.pilotSha256 === sha256;
+    const approved = approval.reusedAssets?.some((item) => item.id === asset.id && item.sha256 === sha256);
+    requireThat(produced || approved, 'Reused bytes require source-bound production evidence or explicit reuse approval.');
+  }
 }

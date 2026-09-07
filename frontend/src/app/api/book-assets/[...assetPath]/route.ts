@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { guardAdminApi } from "@/lib/operator-access";
@@ -30,6 +31,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ asse
     // Resolve visibility BEFORE reading bytes. Only the existing admin role may preview drafts.
     if (!publicAssetAllowed(book, relativePath) && await guardAdminApi()) return notFound();
     const bytes = await readAssetBuffer(relativePath);
+    const asset = book.assets.find((item) => item.relativePath === relativePath)!;
+    if (asset.metadata?.releaseStatus === "approved" && createHash("sha256").update(bytes).digest("hex") !== asset.metadata.releaseSha256) return notFound();
     const extension = path.extname(target).toLowerCase();
     const mimeType = extension === ".png" ? "image/png"
       : extension === ".jpg" || extension === ".jpeg" ? "image/jpeg"
