@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBuyerWriterBindingObserver} from '../packages/buyer-writer/binding.js';
+import {createBuyerWriterCommitRecord} from '../packages/buyer-writer/commit-record.js';
 function fixture(){
   const binding={version:1,workspace:'isolated',releaseSha:'a'.repeat(40),apiGeneration:'b'.repeat(32),workerGeneration:'c'.repeat(32),createdAt:'2026-01-01T00:00:00.000Z'};
   const process=(unit,user,uid,pid,invocationId,groups)=>({unit,user,uid,euid:uid,suid:uid,fsuid:uid,pid,invocationId,state:'active',subState:'running',gid:986,egid:986,sgid:986,fsgid:986,groups,capEffective:'0',capPermitted:'0',capAmbient:'0',capInheritable:'0',noNewPrivileges:true,startTime:'123',type:'simple',notifyAccess:'none',pidFile:'',parentPid:1,controlGroup:`/system.slice/${unit}`});
@@ -12,8 +13,9 @@ function fixture(){
   const serviceKeys=['unit','user','state','subState','pid','invocationId','type','notifyAccess','pidFile','controlGroup'];
   const inspectRuntime=async()=>({api:structuredClone(runtime.api),worker:Object.fromEntries(serviceKeys.map(key=>[key,runtime.worker[key]]))});
   const snapshot={value:binding,identity:{dev:1,ino:2,mtimeMs:1}};
-  const options={filename:'/etc/blackspire/binding.json',credentialGroupId:984,workspace:'isolated',releaseSha:binding.releaseSha,apiGeneration:binding.apiGeneration,apiUid:994,apiPid:111,workerUid:993,readSnapshot:()=>structuredClone(snapshot),inspectRuntime};
-  return{binding,runtime,snapshot,options,inspectRuntime};
+  const commit={value:{...createBuyerWriterCommitRecord(snapshot)},identity:{dev:1,ino:3,mtimeMs:1}};
+  const options={filename:'/etc/blackspire/binding.json',credentialGroupId:984,workspace:'isolated',releaseSha:binding.releaseSha,apiGeneration:binding.apiGeneration,apiUid:994,apiPid:111,workerUid:993,readSnapshot:name=>structuredClone(name.endsWith('.commit.json')?commit:snapshot),inspectRuntime};
+  return{binding,runtime,snapshot,commit,options,inspectRuntime};
 }
 test('binding accepts only a stable approved release and both current isolated process identities',async()=>{
   const f=fixture();assert.deepEqual(await createBuyerWriterBindingObserver(f.options)(),{approved:true,credentialsSeparated:true,workspace:'isolated',releaseSha:f.binding.releaseSha,apiGeneration:f.binding.apiGeneration,workerGeneration:f.binding.workerGeneration});
@@ -54,4 +56,14 @@ test('both supervisor and child confinement are required',async()=>{
   for(const mutate of [f=>{f.runtime.api.supervisor.capInheritable='1';},f=>{f.runtime.api.parentPid=999;},f=>{f.runtime.api.supervisor.controlGroup='/wrong';},f=>{f.binding.workerAttestation.child.groups.push(984);},f=>{f.binding.workerAttestation.child.parentPid=999;}]){
     const f=fixture();mutate(f);assert.equal(await createBuyerWriterBindingObserver(f.options)(),null);
   }
+});
+test('a provisional binding cannot admit writes; only explicit preparation inspection may omit commitment',async()=>{
+  const f=fixture();f.options.readSnapshot=name=>{if(name.endsWith('.commit.json'))throw new Error('missing');return structuredClone(f.snapshot);};
+  assert.equal(await createBuyerWriterBindingObserver(f.options)(),null);
+  assert.equal((await createBuyerWriterBindingObserver({...f.options,requireCommit:false})()).approved,true);
+});
+test('a mismatched commit or marker replacement during observation invalidates approval',async()=>{
+  const f=fixture();f.commit.value.bindingInode=999;assert.equal(await createBuyerWriterBindingObserver(f.options)(),null);
+  const other=fixture();let calls=0;other.options.inspectRuntime=async()=>{if(++calls===2)other.commit.identity.ino=4;return other.inspectRuntime();};
+  assert.equal(await createBuyerWriterBindingObserver(other.options)(),null);
 });

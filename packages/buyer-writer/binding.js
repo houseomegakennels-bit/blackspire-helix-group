@@ -1,4 +1,5 @@
 import {readRootOwnedJsonSnapshot} from './protected-json.js';
+import {matchesBuyerWriterCommitRecord} from './commit-record.js';
 const id=value=>Number.isInteger(value)&&value>0&&value<=4294967294;
 const generation=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 
@@ -7,11 +8,11 @@ const generation=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 // observation. Live API/systemd observations are combined with root-attested
 // worker restrictions; API ProtectProc intentionally hides the worker process.
 export function createBuyerWriterBindingObserver({filename,credentialGroupId,workspace,releaseSha,apiGeneration,apiUid,apiPid=process.pid,workerUid,
-  apiUnit='blackspire-command.service',workerUnit='blackspire-command-worker.service',readSnapshot=readRootOwnedJsonSnapshot,inspectRuntime}) {
+  apiUnit='blackspire-command.service',workerUnit='blackspire-command-worker.service',requireCommit=true,readSnapshot=readRootOwnedJsonSnapshot,inspectRuntime}) {
   if(typeof filename!=='string'||!id(credentialGroupId)||!id(apiUid)||!id(workerUid)||apiUid===workerUid||!id(apiPid)
     ||typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)||!/^[a-f0-9]{40}$/.test(releaseSha??'')||!generation(apiGeneration)
     ||[apiUnit,workerUnit].some(value=>typeof value!=='string'||!/^[A-Za-z0-9_.@:-]{1,128}\.service$/.test(value))||apiUnit===workerUnit
-    ||typeof readSnapshot!=='function'||typeof inspectRuntime!=='function')throw new Error('Buyer writer binding configuration rejected');
+    ||typeof requireCommit!=='boolean'||typeof readSnapshot!=='function'||typeof inspectRuntime!=='function')throw new Error('Buyer writer binding configuration rejected');
   const read=()=>{
     const snapshot=readSnapshot(filename,{groupId:credentialGroupId,maxBytes:4096}),value=snapshot?.value;
     const keys=['version','workspace','releaseSha','apiGeneration','workerGeneration','createdAt','workerAttestation'];
@@ -19,7 +20,12 @@ export function createBuyerWriterBindingObserver({filename,credentialGroupId,wor
       ||value.version!==1||value.workspace!==workspace||value.releaseSha!==releaseSha||value.apiGeneration!==apiGeneration||!generation(value.workerGeneration)
       ||typeof value.createdAt!=='string'||new Date(value.createdAt).toISOString()!==value.createdAt||Date.parse(value.createdAt)>Date.now()+5000
       ||!snapshot.identity||typeof snapshot.identity!=='object')throw new Error();
-    return {fingerprint:JSON.stringify(snapshot),workerGeneration:value.workerGeneration,workerAttestation:value.workerAttestation};
+    let commit=null;
+    if(requireCommit){
+      commit=readSnapshot(`${filename}.commit.json`,{groupId:credentialGroupId,maxBytes:4096});
+      if(!commit?.identity||!matchesBuyerWriterCommitRecord(commit.value,snapshot))throw new Error();
+    }
+    return {fingerprint:JSON.stringify({snapshot,commit}),workerGeneration:value.workerGeneration,workerAttestation:value.workerAttestation};
   };
   const validate=(runtime,attestation)=>{
     const serviceKeys=['unit','user','state','subState','pid','invocationId','type','notifyAccess','pidFile','controlGroup'];

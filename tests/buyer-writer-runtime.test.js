@@ -60,3 +60,28 @@ test('shutdown drains an admitted query even after its HTTP client disconnects',
     complete();controller.abort();await runtime.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
   }
 });
+test('isolated production runtime verifies a separate protected descriptor and resolved context before pools',async()=>{
+  for(const valid of [true,false]){
+    const f=fixture(),id='00000000-0000-4000-8000-000000000001',root=`/var/lib/blackspire-zola-rehearsal/activation/${id}`,events=[];
+    const descriptor={version:1,kind:'isolated-production-rehearsal',id,releaseSha:f.options.releaseSha,workspace:'isolated',port:45000,postgresPort:45001};
+    f.options.environment='production';f.options.configurationFile=`${root}/config/writer.json`;
+    f.options.startup={stateOwner:'vps-production',releaseRoot:root,artifactRoot:`${root}/releases/${f.options.releaseSha}`,databasePath:`${root}/shared/database/command.sqlite`,dataDirectory:`${root}/shared`,host:'127.0.0.1',port:valid?45000:8789};
+    f.config.rehearsalFile=`${root}/config/rehearsal.json`;f.config.bindingFile=`${root}/config/binding.json`;
+    f.config.units={api:`zola-writer-api-${id}.service`,worker:`zola-writer-worker-${id}.service`};
+    for(const target of [f.config.runtime,f.config.issuer])Object.assign(target,{host:'localhost',port:45001,database:`zola_writer_${id.replaceAll('-','')}`,ca:'-----BEGIN CERTIFICATE-----\nsynthetic'});
+    f.options.readConfiguration=(name,options)=>{assert.equal(options.groupId,984);events.push(name===f.options.configurationFile?'configuration':'descriptor');assert.ok([f.options.configurationFile,f.config.rehearsalFile].includes(name));return name===f.options.configurationFile?f.config:descriptor;};
+    const original=f.options.createPostgres;f.options.createPostgres=async value=>{events.push('pool');return original(value);};
+    f.options.createBinding=value=>{assert.equal(value.apiUnit,f.config.units.api);assert.equal(value.workerUnit,f.config.units.worker);return async()=>null;};
+    if(valid){const runtime=await createBuyerWriterRuntime(f.options);await runtime.close();assert.deepEqual(events,['configuration','descriptor','pool']);}
+    else{await assert.rejects(createBuyerWriterRuntime(f.options),/Buyer writer runtime initialization failed/);assert.deepEqual(events,['configuration','descriptor']);assert.equal(f.counts().poolCreates,0);}
+  }
+});
+test('preparation observation is separate from committed writer admission',async()=>{
+  const f=fixture();f.options.createBinding=options=>async()=>options.requireCommit===false?{
+    approved:true,credentialsSeparated:true,workspace:'isolated',releaseSha:f.options.releaseSha,apiGeneration:f.options.apiGeneration,workerGeneration:'c'.repeat(32),
+  }:null;
+  const runtime=await createBuyerWriterRuntime(f.options);
+  try{assert.equal(await runtime.checkPreparation(),true);assert.equal(await runtime.checkAvailability(),false);}
+  finally{await runtime.close();}
+  assert.equal(await runtime.checkPreparation(),false);
+});

@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — finish root activation and remaining release prerequisites
+
+1. Preserve the local activation implementation. The independently reviewed synthetic commit-marker termination proof passes. Complete the isolated launcher, including real path validation and both roles' environment checks before either supervisor starts. The protected root CLI is implemented, but complete actual activation is unverified. Keep the reviewed production supervisor unchanged. Then prove actual publication with the real supervised API/worker in an isolated production-profile fixture.
+2. Full regression passes 1,530 tests with zero failures and nine skips across 132 completed files; build/lint/typecheck/security/memory checks pass. Finish independent staged diff review, commit/push and exact-head CI for this activation increment. Committed API head `4f188c6` has all five checks green; that does not validate these later changes.
+3. Prepare and rehearse the concrete provider-authorized PUBLIC ACL replacement transaction. Preserve existing consumers and do not bypass provider ownership. Complete actual secure n8n replacement and immutable `2c0b600` Buyer intake continuity.
+4. Finish the safe paired six-read supervisor and actual acceptance. Disk remains below the release budget despite the audited cache cleanup to approximately 1.99 GiB free. Preserve all protected and unrelated state.
+5. Keep canonical activation, production migrations, merge and cutover held until every original release gate passes.
+
 ## 2026-09-07 — complete activation approval and production prerequisites
 
 1. The API integration full root regression passes 1,478 tests with zero failures, nine skips and all 119 files contained. Build/lint/typecheck/security/audit/memory checks pass; finish independent final diff review, commit/push and exact-head CI. The previous runtime head `0005168` is CI green; it does not validate this local API delta.

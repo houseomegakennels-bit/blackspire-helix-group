@@ -26,3 +26,14 @@ test('malformed scope, paths, secrets, database settings and unexpected fields f
     v=>{v.runtime.ca='PRIVATE';},v=>{delete v.issuer;},
   ]){const value=fixture();mutate(value);assert.throws(()=>validateBuyerWriterConfiguration(value,{workspace:'isolated'}),error=>error.message==='Buyer writer configuration rejected'&&!error.cause);}
 });
+test('only verified staging configuration accepts a distinct noncanonical unit pair',()=>{
+  const config=fixture();config.units={api:'zola-isolated-api.service',worker:'zola-isolated-worker.service'};
+  assert.throws(()=>validateBuyerWriterConfiguration(config,{workspace:'isolated',environment:'production'}));
+  assert.throws(()=>validateBuyerWriterConfiguration(config,{workspace:'isolated'}));
+  for(const environment of ['staging','disposable-staging']){
+    assert.deepEqual(validateBuyerWriterConfiguration(config,{workspace:'isolated',environment}).units,config.units);
+  }
+  for(const units of [{api:'blackspire-command.service',worker:'zola-worker.service'},{api:'zola-api.service',worker:'blackspire-command-worker.service'},
+    {api:'same.service',worker:'same.service'},{api:'../other.service',worker:'zola-worker.service'},{api:'one.service'},
+  ])assert.throws(()=>validateBuyerWriterConfiguration({...config,units},{workspace:'isolated',environment:'disposable-staging'}));
+});

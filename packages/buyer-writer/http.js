@@ -6,7 +6,7 @@ import { authenticateBuyerIssuer, createBuyerIssuer, createBuyerReconciler } fro
 // Explicit composition only: the caller owns the dedicated database connection,
 // listener binding, TLS ingress and authoritative availability/stop observation.
 // No production configuration or credential file is loaded by this module.
-export function createBuyerWriterRequestHandler({credential,workspace,query,isAvailable,issuer}) {
+export function createBuyerWriterRequestHandler({credential,workspace,query,isAvailable,isPrepared,issuer}) {
   if(typeof isAvailable!=='function') throw new TypeError('Buyer writer availability check required');
   const operations=createWriterGateway({credential,workspace,query});
   const receipts=createWriterReceiptGateway({credential,workspace,query});
@@ -33,11 +33,13 @@ export function createBuyerWriterRequestHandler({credential,workspace,query,isAv
     // Match raw URL exactly. Encodings, query strings and additional path segments
     // do not select a job or an operation endpoint.
     const match=/^\/api\/internal\/buyer-writer\/v1\/jobs\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/(operations|receipts|context|issuance|reconciliation)$/.exec(req.url??'');
-    if(!match||!handlers[match[2]]) return deny(404);
-    if(req.method!=='POST') return deny(405);
-    if(req.headers['content-type']!=='application/json'||req.headers['content-encoding']) return deny(415);
+    const preparation=req.url==='/api/internal/buyer-writer/v1/preparation'&&typeof isPrepared==='function'&&issuer!==undefined;
+    if(!preparation&&(!match||!handlers[match[2]])) return deny(404);
+    if(req.method!==(preparation?'GET':'POST')) return deny(405);
+    if((!preparation&&req.headers['content-type']!=='application/json')||req.headers['content-encoding']) return deny(415);
+    if(preparation&&(![undefined,'0'].includes(req.headers['content-length'])||req.headers['transfer-encoding']!==undefined))return deny(400);
     try {
-      if(match[2]==='issuance'||match[2]==='reconciliation')authenticateBuyerIssuer(req.rawHeaders,issuer.credential);
+      if(preparation||match[2]==='issuance'||match[2]==='reconciliation')authenticateBuyerIssuer(req.rawHeaders,issuer.credential);
       else authenticateWriterRequest(req.rawHeaders,credential);
     }
     catch(error){return deny(error instanceof WriterProtocolError?error.status:503);}
@@ -54,6 +56,13 @@ export function createBuyerWriterRequestHandler({credential,workspace,query,isAv
     res.once('close',()=>{disconnected=true;});
     void (async()=>{
       try {
+        if(preparation){
+          // Preparation grants no write authority and never calls a database
+          // routine. Commitment remains mandatory for every operation below.
+          if(stopped||await isPrepared()!==true||stopped)return deny(503);
+          if(!disconnected)reply(200,{ok:true,prepared:true});
+          return;
+        }
         // Failed observation means unavailable. This is an availability gate,
         // not a claim of atomic fencing with an unrelated authority database.
         if(stopped||await isAvailable()!==true) return deny(503);

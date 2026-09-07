@@ -2,7 +2,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH, TELEGRAM_ALLOWED_USERS } from '../../packages/shared/config.js';
+import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH, TELEGRAM_ALLOWED_USERS, DB_PATH, DATA_DIR } from '../../packages/shared/config.js';
 import { verifyAdminPasswordAsyncResult } from '../../packages/shared/password-auth.js';
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
@@ -775,6 +775,15 @@ if (IS_ENTRY_POINT) {
         releaseSha: identity.build.value,
         apiGeneration: process.env.INVOCATION_ID,
         environment: identity.environment.value,
+        startup: {
+          stateOwner: process.env.BLACKSPIRE_STATE_OWNER,
+          releaseRoot: process.env.BLACKSPIRE_RELEASE_ROOT,
+          artifactRoot: process.cwd(),
+          databasePath: DB_PATH,
+          dataDirectory: DATA_DIR,
+          host: resolveBindTarget().host,
+          port: resolveBindTarget().port,
+        },
         getHealth: () => healthSnapshot({ includeBuyerWriter: false }),
         getReadiness: () => readinessSnapshot({ includeBuyerWriter: false }),
       });

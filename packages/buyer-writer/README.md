@@ -152,7 +152,7 @@ database login, using test-only prepared psql calls, and verifies all five table
 The fixture matches the exercised Buyer column and unique-key semantics, but is
 not a full production database restore or the complete Nexus rehearsal.
 
-Before deployment, finish the root activation-binding publisher, secure n8n HTTP
+Before deployment, finish the real supervised activation rehearsal, secure n8n HTTP
 credentials and actual execution validation, provider-authorized extension ACL
 changes, and the immutable rollback intake bridge.
 Keep the old protected workflow snapshot available. Do not switch the live
@@ -219,9 +219,10 @@ scoped mode, production startup checks and verified release/environment identity
 actual inherited systemd invocation identifier. Development/test entrypoints do
 not discover or load the production configuration.
 
-Configuration has exactly `version`, `workspace`, `bindingFile`, `writerCredential`,
+Configuration requires `version`, `workspace`, `bindingFile`, `writerCredential`,
 `issuerCredential`, `runtime` and `issuer`. Each database configuration has `host`,
 `port`, `database`, `password` and optional `ca`; roles are fixed by the driver.
+Optional `units` overrides require verified staging identity or a separately protected, exactly matching isolated production rehearsal descriptor. Production defaults remain the canonical API and worker units.
 All four credentials must be distinct canonical 32-byte base64url values. Never
 commit a populated configuration or put it in workflow code or saved executions.
 The protected reader requires safe root-owned ancestors, one regular inode, mode
@@ -229,12 +230,12 @@ The protected reader requires safe root-owned ancestors, one regular inode, mode
 group is not acceptable credential separation.
 
 The writer remains unavailable until its protected activation binding matches the
-release, workspace and API/worker invocations. API observation verifies its own
+release, workspace and API/worker invocations, and a separate protected commit marker matches the binding inode and digest. API observation verifies its own
 process and supervisor, their parent relationship, cgroup, IDs, groups and zero
 capabilities. Worker process restrictions come from a root-protected supervisor
 and child attestation matched against live systemd metadata. `ProtectProc` remains
 invisible; this is not a claim that the API can inspect the worker's live process.
-The root publisher and complete production activation proof remain unfinished.
+The root publisher is implemented; the complete supervised activation proof remains unfinished.
 
 Public readiness requires a fresh availability verdict and a final emergency-stop
 check. Base snapshots exclude the writer's own verdict to avoid circular startup.
@@ -249,3 +250,33 @@ bounded pool closure. Forced closure leaves an uncertain transaction outcome;
 use the receipt/reconciliation protocol rather than retrying the write. Termination
 during asynchronous initialization prevents a late listener and closes initialized
 pools before the authority database.
+
+
+## Protected activation commitment
+
+`activation-entry.js` accepts only a protected root profile path. It verifies its
+own bounded root systemd container before reading configuration, derives actual
+API identity, and checks the fixed service pair and protected snapshots. Artifact
+verification runs in a fixed bounded subprocess. No arbitrary approval callback
+is exposed by the CLI. The isolated rehearsal launcher must still validate actual
+paths and both roles' environments before either supervisor starts.
+
+A published binding is provisional. The issuer-authenticated, bodyless GET
+`/api/internal/buyer-writer/v1/preparation` checks the same base readiness and
+identity prerequisites without requiring a commit marker or calling SQL. It
+cannot admit writes or make public readiness pass. The issuer credential remains
+inside a private closure and is sent only to this loopback preparation endpoint.
+
+After preparation passes, a final synchronous protected-configuration check
+precedes commit publication. A matching `.commit.json` marker with exactly one
+link is the commit point. Before the pending link is removed, the two-link marker
+is rejected. Any uncertainty after linking, or failure after commitment, preserves
+the actual state and reports an unknown outcome for explicit reconciliation.
+Never delete `.buyer-commit-*.pending` files as cache or temporary cleanup: removing
+a pending link could activate its marker. Revoke the marker first during an
+explicit controlled reconciliation. Existing bindings and markers are never
+overwritten by publication. Restart requires fresh invocation-bound approval.
+
+Focused tests and a bounded root filesystem SIGKILL fixture cover the commit
+boundary; these do not establish full API/worker activation, live n8n continuity
+or atomic fencing across systemd, authority storage and PostgreSQL.
