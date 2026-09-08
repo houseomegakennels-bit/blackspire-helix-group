@@ -55,11 +55,11 @@ test('buyer beta surfaces and persisted helper APIs require an authenticated ope
   assert.match(jobs, /export async function POST[^]*?guardBetaAction\("sweep"\)/);
 });
 
-test('global search and paid Nexus trace are admin-only and do not return raw contact fields', () => {
+test('global search remains admin-only and direct Nexus trace is retired', () => {
   const search = fs.readFileSync(path.join(apiRoot, 'search/route.ts'), 'utf8');
   const nexus = fs.readFileSync(path.join(apiRoot, 'nexus/trace/route.ts'), 'utf8');
   assert.match(search, /export async function GET[^]*?guardAdminApi\(\)/);
   assert.doesNotMatch(search, /select\([^)]*(?:primary_phone|primary_email)/);
-  assert.match(nexus, /export async function POST[^]*?guardAdminApi\(\)[^]*?runNexusSkipTrace/);
-  assert.match(nexus, /delete safeResult\.raw_skiptrace_response/);
+  assert.match(nexus, /export async function POST[^]*?guardAdminApi\(\)[^]*?status: 410/);
+  assert.doesNotMatch(nexus, /runNexusSkipTrace|getNexusSnapshot/);
 });

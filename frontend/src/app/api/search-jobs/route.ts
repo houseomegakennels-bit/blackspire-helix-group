@@ -53,6 +53,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const requestStartedAt = performance.now();
   try {
+    const denied = await guardSignedInApi();
+    if (denied) return denied;
+    // Beta admission records activity. Refuse configuration before that write.
+    scopedBuyerWriterEnabled();
     const gate = await guardBetaAction("sweep");
     if ("response" in gate) return gate.response;
     const authority = scopedBuyerWriterEnabled() ? await captureBuyerDispatchAuthority(gate, requestStartedAt) : null;

@@ -32,7 +32,7 @@ export function isBuyerDispatchUncertainError(error: unknown): error is BuyerDis
 
 export function scopedBuyerWriterEnabled() {
   const mode = process.env.BUYER_WRITER_MODE;
-  if (!mode) return false;
+  // Missing configuration is a closed launch gate, never legacy permission.
   if (mode !== "scoped") throw unavailable();
   return true;
 }

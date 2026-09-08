@@ -1,7 +1,6 @@
 import "server-only";
 import { dispatchScopedBuyer, scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
 import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
-import { createBuyerSourceAdapters } from "@/lib/buyer-source-adapters";
 
 import { unstable_cache } from "next/cache";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -158,15 +157,6 @@ type CreateExportInput = {
   fileName: string;
   rowCount: number;
   storagePath?: string;
-};
-
-type CountyDataSourceRecord = {
-  county: string;
-  state: string;
-  source_type: string;
-  source_url: string | null;
-  active: boolean;
-  notes: string | null;
 };
 
 type EnvState = {
@@ -1647,207 +1637,10 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   };
 }
 
-function getWebhookBaseUrl() {
-  return process.env.N8N_WEBHOOK_BASE_URL?.trim() || "https://cpearson0312.app.n8n.cloud/webhook";
-}
-
-async function getActiveCountySource(county: string, state: string): Promise<CountyDataSourceRecord | null> {
-  const env = getEnvState();
-  if (!env.enabled) return null;
-
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("CountyDataSource")
-    .select("county,state,source_type,source_url,active,notes")
-    .eq("county", county)
-    .eq("state", state)
-    .eq("active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (data as CountyDataSourceRecord | null) ?? null;
-}
-
-async function fetchJsonWithTimeout(url: string, timeoutMs = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Wake source fetch failed with status ${response.status}.`);
-    }
-
-    return (await response.json()) as {
-      features?: Array<{ attributes?: Record<string, unknown>; properties?: Record<string, unknown> }>;
-      error?: { message?: string };
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function postArcgisQueryWithTimeout(url: string, params: URLSearchParams, timeoutMs = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "Mozilla/5.0",
-      },
-      body: params,
-    });
-
-    if (!response.ok) {
-      throw new Error(`ArcGIS source fetch failed with status ${response.status}.`);
-    }
-
-    return (await response.json()) as {
-      features?: Array<{ attributes?: Record<string, unknown>; properties?: Record<string, unknown> }>;
-      error?: { message?: string };
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function postLegacyForsythJson(formattedPin: string) {
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const response = await fetch("https://lrcpwa.ncptscloud.com/api/GetParcelDetailsByQueryParam", {
-      method: "POST",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "X-Tenant": "forsyth",
-      },
-      body: JSON.stringify({
-        searchKey: "pin",
-        searchValue: formattedPin,
-      }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return (await response.json()) as Record<string, unknown>;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export async function triggerBuyerEngineWorkflow(job: SearchJobRecord, authority?: BuyerDispatchAuthority | null) {
-  // A captured scoped admission can never fall through to legacy dispatch,
-  // including if configuration becomes unavailable during asynchronous work.
-  if (authority || scopedBuyerWriterEnabled()) {
-    if (!authority) throw new Error("Buyer dispatch authorization unavailable.");
-    return dispatchScopedBuyer(job, authority, getSupabaseAdmin());
-  }
-  const webhookUrl = `${getWebhookBaseUrl().replace(/\/$/, "")}/buyer-engine`;
-  const payload: Record<string, unknown> = {
-    search_job_id: job.id,
-    user_id: job.user_id,
-    state: job.state,
-    county: job.county,
-    property_type: job.property_type,
-    date_range_start: job.date_range_start,
-    date_range_end: job.date_range_end,
-    min_purchases: job.min_purchases ?? 1,
-    cash_buyers_only: job.cash_buyers_only ?? false,
-    llc_buyers_only: job.llc_buyers_only ?? false,
-  };
-
-  // Preserve the current composition until the coordinated scoped-writer switch.
-  // The scoped issuer uses the same pure adapters with a fixed source snapshot
-  // and bounded transport; it must never inherit these legacy network callbacks.
-  const adapters = createBuyerSourceAdapters({
-    resolveSource: (county, state) => county.trim().toLowerCase() === "mecklenburg"
-      ? getActiveCountySource(county, state).catch(() => null)
-      : getActiveCountySource(county, state),
-    getJson: fetchJsonWithTimeout,
-    postFormJson: postArcgisQueryWithTimeout,
-    postForsythJson: postLegacyForsythJson,
-  });
-  const rawSales = await adapters.prefetch(job);
-  if (rawSales !== null) {
-    payload.raw_sales = rawSales;
-    payload.raw_count = rawSales.length;
-  }
-
-  try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      cache: "no-store",
-    });
-
-    let parsed: unknown = null;
-    let rawText = "";
-    try {
-      rawText = await response.text();
-      parsed = rawText ? JSON.parse(rawText) : null;
-    } catch {
-      parsed = null;
-    }
-
-    if (!response.ok) {
-      const supabase = getSupabaseAdmin();
-      const detail = rawText.trim() ? ` Response: ${rawText.trim().slice(0, 400)}.` : "";
-      await supabase
-        .from("SearchJob")
-        .update({
-          status: "failed",
-          error_message: `Workflow trigger failed with status ${response.status}.${detail}`,
-        })
-        .eq("id", job.id);
-
-      throw new Error(`Workflow trigger failed with status ${response.status}.${detail}`);
-    }
-
-    return {
-      webhookUrl,
-      status: response.status,
-      response: parsed,
-    };
-  } catch (error) {
-    const supabase = getSupabaseAdmin();
-    await supabase
-      .from("SearchJob")
-      .update({
-        status: "failed",
-        error_message: error instanceof Error ? error.message : "Workflow trigger failed.",
-      })
-      .eq("id", job.id);
-
-    throw error;
-  }
+  scopedBuyerWriterEnabled();
+  if (!authority) throw new Error("Buyer dispatch authorization unavailable.");
+  return dispatchScopedBuyer(job, authority, getSupabaseAdmin());
 }
 
 function normalizeBuyerReverseSearchCriteria(criteria: BuyerReverseSearchCriteria): BuyerReverseSearchCriteria {

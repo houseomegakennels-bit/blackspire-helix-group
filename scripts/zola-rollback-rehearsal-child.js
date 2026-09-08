@@ -4,12 +4,25 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { computeArtifactDigest } from '../packages/shared/release-evidence.js';
 import { createRehearsalIntake, RECOVERY_SHA, RECOVERY_ARTIFACT, INTAKE_PATH, RETIRED_PATHS } from '../packages/zola-rollback/intake.js';
 
 try {
   assert.equal(process.argv.length, 2);
-  assert.ok(Object.keys(process.env).every((key) => ['PATH', 'NODE_NO_WARNINGS', 'ZOLA_SIX_READ_DISPOSABLE_DIR'].includes(key)));
+  assert.deepEqual(Object.keys(process.env).sort(), ['PATH', 'NODE_NO_WARNINGS', 'ZOLA_SIX_READ_DISPOSABLE_DIR', 'ZOLA_CANDIDATE_PARENT_NET'].sort());
+  assert.equal(process.getuid(), 0);
+  assert.match(process.env.ZOLA_CANDIDATE_PARENT_NET, /^net:\[\d+\]$/);
+  const namespace = fs.readlinkSync('/proc/self/ns/net');
+  assert.notEqual(namespace, process.env.ZOLA_CANDIDATE_PARENT_NET);
+  const assertNetwork = () => {
+    assert.equal(fs.readlinkSync('/proc/self/ns/net'), namespace);
+    const ip = args => execFileSync('/usr/sbin/ip', args, { encoding: 'utf8', timeout: 2000, maxBuffer: 65536,
+      env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } });
+    assert.deepEqual(JSON.parse(ip(['-j', 'link', 'show'])).map(link => link.ifname), ['lo']);
+    for (const family of ['-4', '-6']) assert.equal(ip([family, 'route', 'show', 'default']).trim(), '');
+  };
+  assertNetwork();
   const { createOfflineFixture, cases } = await import('../packages/zola-six-reads/offline.js');
   const { prepareDisposableDatabase } = await import('../tests/helpers/prepare-disposable-database.js');
   const artifact = `/var/lib/blackspire-zola-rehearsal/releases/${RECOVERY_SHA}`;
@@ -104,7 +117,9 @@ try {
     const revoked = snapshot(); assert.equal(handle(request(cases[0])).status, 404); assert.deepEqual(snapshot(), revoked);
     assert.equal(all('SELECT * FROM provider_usage WHERE cost_cents > 0').length, 0);
     assert.equal(fixture.events.filter((event) => /attempt$/.test(event.kind)).length, 0);
+    assertNetwork();
     process.stdout.write(`${JSON.stringify({ scope: 'isolated recovery admission and dispatch', recoverySha: RECOVERY_SHA, artifactDigest: RECOVERY_ARTIFACT,
+      networkIsolation: 'private kernel namespace; only loopback; no IPv4/IPv6 default route before and after rehearsal',
       productionAccepted: false, reads, retiredWrapperPathsDenied: true, revokedGrantDenied: true, staleAdmissionGenerationDenied: true, staleWorkerResultRejected: true, reclaimedDispatchNotReplayed: true,
       syntheticMutationAttempts: 0, paidProviderCalls: 0, intendedAuthorizationAuditAppends: all('SELECT COUNT(*) AS count FROM auth_decisions')[0].count,
       limitations: ['No canonical services or live frontend URL containment', 'No production database or owner policies', 'Generation supplied by fixture; real supervisor fence acceptance still required', 'Recovery backend uses current offline route fixtures; no recovery frontend live claim'] })}\n`);

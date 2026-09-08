@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-08 — fail-closed launch retirement and isolated recovery
+
+Recovered clean local/remote release `20d0eb8` with no unpublished commits or dirty timeout work. Three read-only audit groups covered the twelve requested lanes. They confirmed an unset Buyer writer mode still permitted legacy source acquisition and unauthenticated webhook dispatch. Missing, empty and invalid modes now refuse; the legacy dispatch implementation and its unbounded transport helpers are removed. Search creation authenticates and checks configuration before beta activity reservation, body parsing, job insertion or dispatch. Existing scoped authority and uncertain-outcome reconciliation remain in place.
+
+The direct Nexus trace POST is retired: anonymous callers retain authentication denial and authenticated admins receive 410 without body consumption, queue access or provider invocation. The shared action component now shows stored status and a contact-profile link instead of offering the retired operation. This does not claim global provider containment across unrelated application operations or historical deployments.
+
+The exact `2c0b600c268faa0571f08322e16d7f81f37789be` recovery rehearsal now requires a private kernel network namespace, verifies loopback-only interfaces and absent IPv4/IPv6 default routes before and after execution, and retains its fixed artifact integrity check. Actual rehearsal passes six durable reads and stale-worker/replay rejection. Current synthetic frontend fixtures and fixture generations remain explicit limitations; full rollback and immutable URL containment remain UNVERIFIED.
+
+Parent focused route tests pass 22/22 and independent route/authority/intake review passes 26/26. Root build/lint/typecheck and frontend typecheck pass. The full local suite passes 1,648 tests with zero failures and 23 skips; all 154 files complete with clean child containment. Frontend lint passes without warnings. Exact new-head CI results remain required and will be recorded in the protected checkpoint. Fresh read-only checks retain stopped canonical API/worker, unchanged active/published n8n baseline, and exact provider ZIP checksums. Production collector acceptance and the global release commander remain unfinished. No production SQL, workflow mutation, canonical activation or merge occurred; autonomous work is not complete and provider action is not the sole blocker.
+
 ## 2026-09-08 — timeout recovery, strict CI and connected migration preparation
 
 The timeout left release `a92ef6a` on local, remote and PR125, plus one legitimate journal regression edit. That edit now holds the competing recovery winner until both processes report, removing its scheduler-dependent timeout. It was preserved and independently verified. The sole landed commit after `6ccfd46` contains the candidate collector, n8n transition command, configuration installer and corrected routing canary; those were not rebuilt from scratch.
