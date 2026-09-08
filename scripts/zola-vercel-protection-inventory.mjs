@@ -4,7 +4,24 @@ import { pathToFileURL } from 'node:url';
 const PROJECT = 'prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou';
 const TEAM = 'team_CaRyRaulJaFnCLSfTdyRYNIW';
 const MAX_BYTES = 4 * 1024 * 1024;
-class InventoryError extends Error {}
+class InventoryError extends Error {
+  constructor(code, diagnostic) { super(code); this.diagnostic = diagnostic; }
+}
+// Fixed keys and types only. Unknown keys/values may themselves be credentials.
+export function routingSchemaDiagnostic(data) {
+  const type = (value) => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  const object = data !== null && typeof data === 'object' && !Array.isArray(data);
+  const has = (key) => object && Object.hasOwn(data, key);
+  const version = object ? data.version : undefined;
+  return { topLevelType: type(data), routesPresent: has('routes'),
+    routesType: type(object ? data.routes : undefined),
+    routesCount: Array.isArray(data?.routes) ? data.routes.length : null,
+    versionPresent: has('version'), versionType: type(version),
+    versionIdPresent: version !== null && typeof version === 'object' && Object.hasOwn(version, 'id'),
+    ruleCountType: type(version?.ruleCount),
+    ruleCount: Number.isSafeInteger(version?.ruleCount) && version.ruleCount >= 0 && version.ruleCount <= 10000 ? version.ruleCount : null,
+    paginationPresent: has('pagination'), limitPresent: has('limit') };
+}
 const fail = (code) => { throw new InventoryError(code); };
 const identifier = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v) ? v : fail('INVALID_IDENTIFIER');
 const host = (v) => typeof v === 'string' && /^(?=.{1,253}$)[a-zA-Z0-9.-]+$/.test(v) ? v : fail('INVALID_HOST');
@@ -59,7 +76,8 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
   }
   async function observe(name, run) {
     try { const value = await run(); evidence.observations.push({ name, status: 'COMPLETE', value }); }
-    catch (error) { evidence.observations.push({ name, status: 'INCOMPLETE', code: error instanceof InventoryError ? error.message : 'REQUEST_FAILED' }); }
+    catch (error) { evidence.observations.push({ name, status: 'INCOMPLETE', code: error instanceof InventoryError ? error.message : 'REQUEST_FAILED',
+      ...(error instanceof InventoryError && error.diagnostic ? { diagnostic: error.diagnostic } : {}) }); }
   }
   if (typeof token !== 'string' || token.length < 16) return { ...evidence, code: 'CREDENTIAL_REQUIRED' };
   await observe('project', async () => {
@@ -101,8 +119,8 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
   // live coverage from a staged/default response; preserve explicit isLive only.
   await observe('projectRouting', async () => {
     const data = await get(`/v1/projects/${PROJECT}/routes`);
-    if (!Array.isArray(data.routes) || data.routes.length > 10000 || !data.version ||
-        data.pagination != null || (data.version.ruleCount != null && data.version.ruleCount !== data.routes.length)) fail('INCOMPLETE_ROUTING_SCHEMA');
+    if (!data || !Array.isArray(data.routes) || data.routes.length > 10000 || !data.version ||
+        data.pagination != null || (data.version.ruleCount != null && data.version.ruleCount !== data.routes.length)) throw new InventoryError('INCOMPLETE_ROUTING_SCHEMA', routingSchemaDiagnostic(data));
     const intake = ['/api/search-jobs', '/api/search-jobs/:id/trigger', '/api/deal-engine/launch-buyer-search'];
     const conditions = (rows) => {
       if (rows == null) return [];

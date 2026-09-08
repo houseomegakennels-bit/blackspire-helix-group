@@ -1590,3 +1590,8 @@ Recovered exact clean fe88883/main53adf74 and verified PR125 current-head checks
 ## 2026-09-07 — metadata package boundary and CDN routing inventory
 
 Verified canonical CI34166379571 success at5ff763f, including all mandatory lanes. Actual migration CLI rejected the large catalog at the credential-size boundary; added a separate metadata reader without changing credential ceilings and verified positive/negative preparation in a protected synthetic checkout. Independent reviews and focused tests pass. Read-only Vercel inventory enumerated358deployments/3domains/102aliases, correctly failed closed on firewall404/bypass402, and now includes a reviewed project-routing GET for the remaining immutable-intake investigation. No routing, live workflow, production SQL, canonical activation, merge or cutover mutation occurred.
+
+
+## 2026-09-08 — pre-provider engineering continuation
+
+Recovered exact release 450b52f and unchanged main53adf74. Added sanitized routing-schema diagnostics, principal-bound replay checks and a rehearsal-only strict intake. Actual sealed recovery passes six synthetic-route dispatcher receipts and stale-worker result/replay rejection; production rollback acceptance remains UNVERIFIED. Focused tests and independent reviews found and corrected SQLite null normalization and array capability coercion. n8n/provider package checks remain valid, ticket UNSENT; no sufficient safe disk cleanup candidate. Collector/observer and guarded fast path remain unfinished. No production activation, migrations, workflow replacement or merge.

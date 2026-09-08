@@ -20,15 +20,18 @@ export function createUnifiedInput({ channel, actorId, channelKey, conversationI
   const key = String(idempotencyKey || id('idem'));
   const taskKey = `unified:${channel}:${key}`;
   return transaction(() => {
-    const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,t.workspace_id task_workspace_id,t.execution_intent task_execution_intent,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
+    const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,t.workspace_id task_workspace_id,t.execution_intent task_execution_intent,t.actor_id task_actor_id,t.authority_class task_authority_class,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
     if (duplicate) {
+      if (duplicate.actor_id !== String(actorId || '') || (duplicate.task_id &&
+          (duplicate.task_actor_id !== String(actorId || '') || duplicate.task_authority_class !== authority))) return { error: 'input not found', status: 404 };
       if (duplicate.workspace_id !== workspaceId || (duplicate.task_id && duplicate.task_workspace_id !== workspaceId)) return { error: 'input not found', status: 404 };
       if (duplicate.task_id && duplicate.task_execution_intent !== executionIntent) return { error: 'idempotency key conflicts with executionIntent', status: 409 };
       return responseFor(duplicate.conversation_id, duplicate.id, duplicate.task_id, duplicate.task_status, true, duplicate.policy_status === 'denied' ? denialReason(channel) : null);
     }
 
-    const existingTask = query(`SELECT id,workspace_id FROM tasks WHERE idempotency_key=${esc(taskKey)};`)[0];
-    if (existingTask) return existingTask.workspace_id === workspaceId
+    const existingTask = query(`SELECT id,workspace_id,actor_id,source_channel,authority_class FROM tasks WHERE idempotency_key=${esc(taskKey)};`)[0];
+    if (existingTask) return existingTask.workspace_id === workspaceId && existingTask.actor_id === String(actorId || '') &&
+        existingTask.source_channel === channel && existingTask.authority_class === authority
       ? { error: 'idempotency key conflict', status: 409 }
       : { error: 'input not found', status: 404 };
 

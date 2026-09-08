@@ -25,6 +25,12 @@ export function createTask({ workspaceId, request, idempotencyKey, budgetCents =
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) throw new Error('invalid task execution intent');
   const existing = idempotencyKey && query(`SELECT * FROM tasks WHERE idempotency_key=${esc(idempotencyKey)};`)[0];
   if (existing) {
+    if (existing.workspace_id !== workspaceId || String(existing.actor_id ?? '') !== String(actorId ?? '') ||
+        String(existing.source_channel ?? '') !== String(sourceChannel ?? '') || String(existing.authority_class ?? '') !== String(authorityClass ?? '')) {
+      const error = new Error('task not found');
+      error.code = 'TASK_IDEMPOTENCY_BINDING';
+      throw error;
+    }
     if (existing.workspace_id === workspaceId && existing.execution_intent !== executionIntent) {
       const error = new Error('task idempotency key conflicts with execution intent');
       error.code = 'TASK_IDEMPOTENCY_CONFLICT';

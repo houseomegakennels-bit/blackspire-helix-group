@@ -124,3 +124,19 @@ test('routing count drift and unknown empty schema remain incomplete', async () 
     assert.equal(result.observations.find((x) => x.name === 'projectRouting').code, 'INCOMPLETE_ROUTING_SCHEMA');
   }
 });
+
+
+test('routing schema diagnostics never emit arbitrary keys or values and never imply denial', async () => {
+  for (const body of [null, [], {}, { [token]: token, routes: token, version: { id: token, ruleCount: token }, pagination: token },
+    { routes: [], version: { id: token, ruleCount: 12 } }]) {
+    const { fetchImpl } = fixture((url) => url.pathname.endsWith('/routes') ? response(body) : undefined);
+    const result = await inventoryProtection({ token, fetchImpl });
+    const observation = result.observations.find((row) => row.name === 'projectRouting');
+    assert.equal(observation.code, 'INCOMPLETE_ROUTING_SCHEMA');
+    assert.equal(typeof observation.diagnostic.routesPresent, 'boolean');
+    assert.equal(result.denialProven, false);
+    assert.equal(JSON.stringify(result).includes(token), false);
+    if (body === null) assert.equal(observation.diagnostic.topLevelType, 'null');
+    if (body?.version?.ruleCount === 12) assert.equal(observation.diagnostic.ruleCount, 12);
+  }
+});
