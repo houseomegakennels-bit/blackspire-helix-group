@@ -60,7 +60,7 @@ export function openCollectorJournal(directory, runId, { owner = 0 } = {}) {
   }
 }
 
-async function boundedRequest(config, pathname, { method = 'GET', headers = {}, body } = {}) {
+export async function boundedRequest(config, pathname, { method = 'GET', headers = {}, body } = {}) {
   const response = await fetch(`http://127.0.0.1:${config.port}${pathname}`, { method, headers: { ...headers, ...(body ? { 'content-type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(4000), redirect: 'error', cache: 'no-store' });
   if (!/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '') || response.redirected || !response.body) refuse('HTTP_RESPONSE_REJECTED');
@@ -112,7 +112,6 @@ export function createProductionCollectorHost(config) {
       typeof credentials.deniedCookie !== 'string' || credentials.deniedCookie.length < 10 || credentials.deniedCookie.length > 8192 || /[\r\n]/.test(credentials.deniedCookie)) refuse('CREDENTIAL_CONTRACT_REJECTED');
   const reader = openCollectorDatabaseReader(config);
   const inspect = createBuyerWriterRuntimeInspector({ apiPid: config.apiPid });
-  const bearer = { authorization: `Bearer ${credentials.bearer}` }, denied = { cookie: credentials.deniedCookie };
   return {
     async generation() {
       assertListener(config);
@@ -135,25 +134,8 @@ export function createProductionCollectorHost(config) {
       return { apiGeneration: runtime.api.invocationId, apiPid: config.apiPid, apiStartTime: runtime.api.startTime,
         workerGeneration: runtime.worker.invocationId, workerId, workerPid: config.workerPid, workerStartTime: worker.startTime };
     },
-    async deniedIdentity() {
-      const { status, data } = await boundedRequest(config, '/api/auth/session', { headers: denied });
-      if (status !== 200 || data.authenticated !== true || data.principalId !== config.deniedPrincipal) refuse('DENIAL_PRINCIPAL_UNAVAILABLE');
-    },
+    ...createCollectorHttpBoundary(config, credentials),
     lookup: key => reader.lookup(key),
-    async admit(body) {
-      const { status, data } = await boundedRequest(config, '/api/unified-input', { method: 'POST', headers: bearer, body });
-      if (status !== 202 || data.denied || data.error) refuse('ADMISSION_NOT_ACCEPTED');
-      return data;
-    },
-    async disclosure(task) {
-      await this.deniedIdentity();
-      const url = `/api/tasks/${encodeURIComponent(task.id)}`;
-      const own = await boundedRequest(config, url, { headers: bearer });
-      if (own.status !== 200 || own.data.task?.id !== task.id || own.data.task?.evidence !== task.evidence || own.data.task?.status !== 'completed') refuse('TASK_HTTP_DISCLOSURE_MISMATCH');
-      const foreign = await boundedRequest(config, url, { headers: denied });
-      if (foreign.status !== 404 || JSON.stringify(foreign.data) !== '{"error":"not found"}') refuse('CROSS_PRINCIPAL_DENIAL_FAILED');
-      await this.deniedIdentity();
-    },
     pause: () => new Promise(resolve => setTimeout(resolve, 500)),
     close: () => reader.close(),
   };
@@ -187,5 +169,31 @@ export function openCollectorDatabaseReader(config) {
       } finally { database.exec('ROLLBACK'); }
     },
     close: () => database.close(),
+  };
+}
+
+// Shared by the protected production host and the isolated actual-API rehearsal.
+// This boundary cannot establish host generation or deployment identity.
+export function createCollectorHttpBoundary(config, credentials) {
+  const bearer = { authorization: `Bearer ${credentials.bearer}` }, denied = { cookie: credentials.deniedCookie };
+  return {
+    async deniedIdentity() {
+      const { status, data } = await boundedRequest(config, '/api/auth/session', { headers: denied });
+      if (status !== 200 || data.authenticated !== true || data.principalId !== config.deniedPrincipal) refuse('DENIAL_PRINCIPAL_UNAVAILABLE');
+    },
+    async admit(body) {
+      const { status, data } = await boundedRequest(config, '/api/unified-input', { method: 'POST', headers: bearer, body });
+      if (status !== 202 || data.denied || data.error) refuse('ADMISSION_NOT_ACCEPTED');
+      return data;
+    },
+    async disclosure(task) {
+      await this.deniedIdentity();
+      const url = `/api/tasks/${encodeURIComponent(task.id)}`;
+      const own = await boundedRequest(config, url, { headers: bearer });
+      if (own.status !== 200 || own.data.task?.id !== task.id || own.data.task?.evidence !== task.evidence || own.data.task?.status !== 'completed') refuse('TASK_HTTP_DISCLOSURE_MISMATCH');
+      const foreign = await boundedRequest(config, url, { headers: denied });
+      if (foreign.status !== 404 || JSON.stringify(foreign.data) !== '{"error":"not found"}') refuse('CROSS_PRINCIPAL_DENIAL_FAILED');
+      await this.deniedIdentity();
+    },
   };
 }

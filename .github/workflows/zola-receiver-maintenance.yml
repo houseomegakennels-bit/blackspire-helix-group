@@ -95,15 +95,15 @@ jobs:
       # then the exact canary is removed. All application authentication remains unchanged.
       # Other pushes stay read-only. A same-head rerun uses the same bounded canary.
       - name: Exercise the explicitly reviewed unique routing canary
-        if: always() && ((github.event_name == 'workflow_dispatch' && (inputs.action == 'run-exclusive-reviewed-canary' || inputs.action == 'cleanup-exclusive-reviewed-canary') && inputs.expected_head == github.sha) || (github.event_name == 'push' && github.event.before == '3473d648b4d3b4184555e4ed8bd790d4f4baafa4'))
+        if: always() && ((github.event_name == 'workflow_dispatch' && (inputs.action == 'run-exclusive-reviewed-canary' || inputs.action == 'cleanup-exclusive-reviewed-canary') && inputs.expected_head == github.sha) || (github.event_name == 'push' && github.event.before == '6ccfd4602e852b600b242abfd77b05ed5e0eea3c'))
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           ZOLA_CANARY_ACTION: ${{ github.event_name == 'push' && 'run-exclusive-reviewed-canary' || inputs.action }}
           ZOLA_CANARY_EXPECTED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.expected_head }}
-          ZOLA_CANARY_NONCE: ${{ github.event_name == 'push' && '64f900b8de032db89be7d8a682070094' || inputs.canary_nonce }}
+          ZOLA_CANARY_NONCE: ${{ github.event_name == 'push' && 'dadcc16451f1b9a1e2ac47f3cdc27103' || inputs.canary_nonce }}
         run: node scripts/zola-routing-canary.mjs
       - name: Retain routing canary intent journal even after failure
-        if: always() && ((github.event_name == 'workflow_dispatch' && (inputs.action == 'run-exclusive-reviewed-canary' || inputs.action == 'cleanup-exclusive-reviewed-canary')) || (github.event_name == 'push' && github.event.before == '3473d648b4d3b4184555e4ed8bd790d4f4baafa4'))
+        if: always() && ((github.event_name == 'workflow_dispatch' && (inputs.action == 'run-exclusive-reviewed-canary' || inputs.action == 'cleanup-exclusive-reviewed-canary')) || (github.event_name == 'push' && github.event.before == '6ccfd4602e852b600b242abfd77b05ed5e0eea3c'))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: zola-routing-canary-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

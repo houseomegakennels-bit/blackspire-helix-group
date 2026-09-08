@@ -33,7 +33,7 @@ export const cases = Object.freeze([
   ['nexus.enrichment.status', 'nexus-enrichment', { dealId: 'DE-0001' }, null],
 ].map(([id, route, input, collection]) => Object.freeze({ id, route: `/api/internal/capabilities/${route}`, input: Object.freeze(input), collection })));
 
-export function createOfflineFixture({ databaseError = false, errorTable = null, configured = true } = {}) {
+export function createOfflineFixture({ databaseError = false, errorTable = null, configured = true, releaseSha = "a".repeat(40) } = {}) {
   const events = [];
   const token = 'synthetic-capability-fixture-value-00001';
   const workspace = 'six-read-fixture';
@@ -91,7 +91,7 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
   const dependencies = {
     NextResponse: { json: (body, options) => Response.json(body, options) },
     process: Object.freeze({ env }), Buffer, timingSafeEqual,
-    productionCapabilityReadScope: () => { if (!configured) throw new Error("fixture unavailable"); return makeReadScope({ origin: "https://abcdefghijklmnopqrst.supabase.co", key: "synthetic-read-key", releaseSha: "a".repeat(40), fetchImpl: rest }); },
+    productionCapabilityReadScope: () => { if (!configured) throw new Error("fixture unavailable"); return makeReadScope({ origin: "https://abcdefghijklmnopqrst.supabase.co", key: "synthetic-read-key", releaseSha, fetchImpl: rest }); },
     createClient: () => db, getSupabaseAdmin: () => configured ? db : null,
     getEnvState: () => ({ enabled: configured }),
     fetch: () => reject('external_network_attempt'),

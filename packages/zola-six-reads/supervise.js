@@ -5,9 +5,9 @@ import { spawn } from 'node:child_process';
 
 // The parent remains responsive even if trusted route code blocks its child VM.
 // Child has no ambient credentials, stdin, inherited NODE_OPTIONS or extra FDs.
-export function supervise(args, { timeoutMs = 15_000, maxBytes = 64 * 1024 } = {}) {
+export function supervise(args, { timeoutMs = 15_000, maxBytes = 64 * 1024, isolatedNetwork = false } = {}) {
   return new Promise((resolve, reject) => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zola-six-read-'));
+    const root = fs.mkdtempSync(path.join(isolatedNetwork ? '/root' : os.tmpdir(), 'zola-six-read-'));
     let cleaned = false;
     let child; let timer; let killTimer; let bytes = 0; let output = ''; let failure = null;
     const signalHandlers = new Map();
@@ -26,7 +26,7 @@ export function supervise(args, { timeoutMs = 15_000, maxBytes = 64 * 1024 } = {
         cleaned = true;
         try {
           for (const name of fs.readdirSync(root)) {
-            if (!['command.sqlite', 'command.sqlite-wal', 'command.sqlite-shm'].includes(name)) throw new Error('unexpected disposable artifact');
+            if (!['command.sqlite', 'command.sqlite-wal', 'command.sqlite-shm', ...(isolatedNetwork ? ['candidate.jsonl', 'candidate.lock'] : [])].includes(name)) throw new Error('unexpected disposable artifact');
             fs.unlinkSync(path.join(root, name));
           }
           fs.rmdirSync(root);
@@ -34,7 +34,8 @@ export function supervise(args, { timeoutMs = 15_000, maxBytes = 64 * 1024 } = {
       }
     };
     try {
-      child = spawn(process.execPath, args, { env: { PATH: '/usr/bin:/bin', NODE_NO_WARNINGS: '1', ZOLA_SIX_READ_DISPOSABLE_DIR: root }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      if (isolatedNetwork && process.getuid() !== 0) throw new Error('root required for isolated candidate');
+      child = spawn(isolatedNetwork ? '/usr/bin/unshare' : process.execPath, isolatedNetwork ? ['--net', process.execPath, ...args] : args, { env: { PATH: '/usr/bin:/bin', NODE_NO_WARNINGS: '1', ZOLA_SIX_READ_DISPOSABLE_DIR: root, ...(isolatedNetwork ? { ZOLA_CANDIDATE_PARENT_NET: fs.readlinkSync('/proc/self/ns/net') } : {}) }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch { clean(); reject(new Error('offline child spawn failed')); return; }
     timer = setTimeout(() => fail('offline child deadline'), timeoutMs);
     for (const signal of ['SIGINT', 'SIGTERM']) {
