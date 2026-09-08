@@ -99,6 +99,15 @@ jobs:
             BUYER_WRITER_ACL_OWNER="$(node -e 'process.stdout.write(require("crypto").randomBytes(16).toString("hex"))')" \
             node scripts/test-buyer-writer-acl.mjs 2>&1 | tee ci-logs/03-writer-acl-application.log
 
+      - name: Verify dedicated application migration executor and reconciliation
+        timeout-minutes: 4
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          sudo -n env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            timeout --signal=TERM --kill-after=15s 180s "$(command -v node)" \
+            scripts/test-buyer-migration-executor-postgres.mjs 2>&1 | tee ci-logs/03-migration-executor.log
+
       - name: Run build check
         run: npm run build 2>&1 | tee ci-logs/04-build.log
 

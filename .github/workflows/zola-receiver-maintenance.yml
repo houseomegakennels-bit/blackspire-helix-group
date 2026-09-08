@@ -1,6 +1,22 @@
 name: ZOLA receiver maintenance
 
 on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Reviewed exclusive routing canary; default makes no routing mutation
+        type: choice
+        options: [audit, run-exclusive-reviewed-canary, cleanup-exclusive-reviewed-canary]
+        default: audit
+        required: true
+      expected_head:
+        description: Exact reviewed release SHA (40 lowercase hex characters)
+        type: string
+        required: true
+      canary_nonce:
+        description: Reviewed unique canary nonce (32 lowercase hex characters)
+        type: string
+        required: true
   push:
     branches: [release/zola-production-live]
     paths:
@@ -10,6 +26,8 @@ on:
       - scripts/zola-receiver-prebuilt.mjs
       - scripts/zola-vercel-protection-inventory.mjs
       - tests/zola-vercel-protection-inventory.test.js
+      - scripts/zola-routing-canary.mjs
+      - tests/zola-routing-canary.test.js
 
 permissions:
   contents: read
@@ -58,6 +76,7 @@ jobs:
         run: node scripts/zola-receiver-prebuilt.mjs
 
       - name: Inventory rollback deployment protections (read only)
+        id: routing_inventory
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: node scripts/zola-vercel-protection-inventory.mjs
@@ -67,5 +86,25 @@ jobs:
         with:
           name: zola-vercel-protection-inventory-${{ github.sha }}
           path: zola-vercel-protection-inventory.json
+          if-no-files-found: error
+          retention-days: 7
+
+      # One reviewed transition: only a random unused path changes to 418,
+      # then the exact canary is removed. All application authentication remains unchanged.
+      # Other pushes stay read-only. A same-head rerun uses the same bounded canary.
+      - name: Exercise the explicitly reviewed unique routing canary
+        if: always() && ((github.event_name == 'workflow_dispatch' && (inputs.action == 'run-exclusive-reviewed-canary' || inputs.action == 'cleanup-exclusive-reviewed-canary') && inputs.expected_head == github.sha) || (github.event_name == 'push' && github.event.before == '3473d648b4d3b4184555e4ed8bd790d4f4baafa4'))
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ZOLA_CANARY_ACTION: ${{ github.event_name == 'push' && 'run-exclusive-reviewed-canary' || inputs.action }}
+          ZOLA_CANARY_EXPECTED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.expected_head }}
+          ZOLA_CANARY_NONCE: ${{ github.event_name == 'push' && '64f900b8de032db89be7d8a682070094' || inputs.canary_nonce }}
+        run: node scripts/zola-routing-canary.mjs
+      - name: Retain routing canary intent journal even after failure
+        if: always() && ((github.event_name == 'workflow_dispatch' && (inputs.action == 'run-exclusive-reviewed-canary' || inputs.action == 'cleanup-exclusive-reviewed-canary')) || (github.event_name == 'push' && github.event.before == '3473d648b4d3b4184555e4ed8bd790d4f4baafa4'))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zola-routing-canary-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: zola-routing-canary-evidence/
           if-no-files-found: error
           retention-days: 7

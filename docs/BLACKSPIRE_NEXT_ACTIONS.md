@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-08 — integrate the remaining release controls
+
+1. Finish independent review, commit this tooling tranche, push only release/zola-production-live and verify exact-head CI. Preserve additive main eb3f5d1 changes. Re-pin source-bound preparation packages after the final commit.
+2. Run the reviewed exact-path routing canary through the protected maintenance workflow and reconcile any unknown mutation before further routing changes. Canary coverage alone is never direct-URL authority denial.
+3. Complete production read acceptance with authoritative division mutation/owner-policy evidence and complete reviewed egress scope. The new collector CLI refuses unsupported full live PASS; its dry-run opens no credentials/database/network.
+4. Integrate the guarded migration executor, actual-kernel activation-profile builder and measured disk gate into a durable release commander; finish protected configuration installation and n8n mutation reconciliation. Keep production inactive while prerequisites are red.
+5. Preserve the reviewed provider package and unchanged n8n credentials/workflow. Provider action remains required, but independent engineering remains and autonomous work is not complete. Never merge PR125 on CI alone.
+
 ## 2026-09-07 — protected package correction and routing discovery
 
 Re-run the protected migration CLI at the next clean committed head with the separate bounded metadata reader, then re-pin n8n using the existing unused credentials. Canonical CI is green at 5ff763f; reverify the next exact head. Inspect the new project-routing inventory observation; deployment/alias/domain enumeration is complete at 5ff763f, but firewall404 and bypass402 do not establish denial or absence of all alternative controls. Secure legacy authority containment, production six-read collection and final orchestration remain unfinished. No live activation, database migration or PR merge is permitted while release gates are red.

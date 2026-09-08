@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-08 — recovered state and executable acceptance primitives
+
+Release baseline local/remote/PR125 is 3473d64 with successful exact-head CI34187163944 and Vercel checks. Main advanced to eb3f5d1 with additive Pearson Triad work; preserve it. New source-only collector, migration executor, measured disk check, activation-profile builder and narrow routing canary require independent review and new exact-head CI before readiness claims. Provider ACL remains unchanged and canonical API/worker remain stopped. Production six reads, complete rollback and the end-to-end release commander are still UNVERIFIED. The collector's partial observation evidence must not be promoted into full production acceptance. See the latest source-of-truth section and protected checkpoint for current execution evidence.
+
 ## 2026-09-07 — exact-head CI and protected metadata sizing
 
 Release `5ff763f509b71222ba2ea16beb91cd54f0624744` passed canonical CI `34166379571`, including the full suite, writer PostgreSQL/TLS/lock checks, eighteen guarded ACL/application groups, build/lint/typecheck/security/audit and immutable release cross-checks. PR125 remains open and unmerged. Its separate read-only protection inventory completed deployment/domain/alias pagination (358/3/102), but firewall configuration returned 404 and system bypass returned 402; it correctly remains INCOMPLETE. Protected artifact SHA256 is `d96b18972c84c53e402b12afd0858ab9c87e38870d4f3228436bc2a81f9261ad`. A reviewed GET-only project-routing extension now discovers the CDN control that runs before immutable deployment routes; it still makes no denial claim and performs no routing mutation.
