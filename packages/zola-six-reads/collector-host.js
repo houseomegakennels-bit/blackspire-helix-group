@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { createBuyerWriterRuntimeInspector, readBuyerWriterProcess } from '../buyer-writer/runtime-inspection.js';
 import { readRootOwnedJson } from '../buyer-writer/protected-json.js';
+import { createProductionDatabaseObserver } from './database-host.js';
 import { digest, refuse } from './collector.js';
 
 // Called in production by root; tests may use a private directory owned by the
@@ -135,6 +136,7 @@ export function createProductionCollectorHost(config) {
         workerGeneration: runtime.worker.invocationId, workerId, workerPid: config.workerPid, workerStartTime: worker.startTime };
     },
     ...createCollectorHttpBoundary(config, credentials),
+    ...(config.version === 2 ? { observeDatabase: createProductionDatabaseObserver(config) } : {}),
     lookup: key => reader.lookup(key),
     pause: () => new Promise(resolve => setTimeout(resolve, 500)),
     close: () => reader.close(),

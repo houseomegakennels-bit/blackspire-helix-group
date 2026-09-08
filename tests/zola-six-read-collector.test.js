@@ -123,3 +123,28 @@ test('exact-key SQLite reconciliation reads a task beyond latest-50 and rejects 
     assert.throws(() => reader.lookup('exact-key'), /INPUT_BINDING_MISMATCH/);
   } finally { reader?.close(); writer?.close(); fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('v2 database observation precedes admission, persists baseline, checks after and never overclaims attempt/egress evidence', async () => {
+  const { DIVISION_TABLES } = await import('../packages/zola-six-reads/database-observer.js');
+  const v2 = { ...config, version: 2, observerDatabaseConfigPath: '/protected/explicit.json' };
+  assert.equal(validateCollectorConfig(v2).version, 2);
+  const observed = phase => ({ snapshot: { version:1, releaseSha:config.releaseSha, runId:config.runId, phase,capturedAt:'2026-09-08T00:00:00Z',database:'postgres',role:'postgres',readOnly:true,primary:true,bypassRls:true,ordinaryTables:15,
+    tables:DIVISION_TABLES.map(name=>({name,rows:1,digest:'a'.repeat(64),version_digest:'b'.repeat(64)})) },
+    owner:{version:1,releaseSha:config.releaseSha,runId:config.runId,phase,capturedAt:'2026-09-08T00:00:00Z',database:'postgres',role:'authenticated',readOnly:true,witness:'e'.repeat(64),realDistinctUsers:true,ownVisible:1,foreignVisible:0} });
+  const f=await fixture(), phases=[];
+  f.host.observeDatabase=async phase=>{phases.push(phase);if(phase==='before')assert.equal(f.posts(),0);return observed(phase);};
+  const report=await collectSixReads(v2,f.host,f.store);
+  assert.equal(report.databaseEvidence.netMutationDelta,0);assert.equal(report.livePass,false);assert.deepEqual(phases,['before','after']);
+  assert.equal(f.events.findIndex(e=>e.type==='database_before')<f.events.findIndex(e=>e.type==='intent'),true);
+  await collectSixReads(v2,f.host,f.store);assert.deepEqual(phases,['before','after','after']);assert.equal(f.posts(),6);
+  const misplaced=await fixture();misplaced.host.observeDatabase=async phase=>observed(phase);
+  await collectSixReads(v2,misplaced.host,misplaced.store);
+  const position=misplaced.events.findIndex(e=>e.type==='database_before');const [baseline]=misplaced.events.splice(position,1);misplaced.events.push(baseline);
+  await assert.rejects(collectSixReads(v2,misplaced.host,misplaced.store),/DATABASE_OBSERVATION_AFTER_ADMISSION/);
+  const extra=await fixture();extra.host.observeDatabase=async phase=>({...observed(phase),private:'must not persist'});
+  await assert.rejects(collectSixReads(v2,extra.host,extra.store),/DATABASE_OBSERVATION_ENVELOPE/);assert.equal(extra.events.some(e=>e.type==='database_before'),false);
+  const denied=await fixture();denied.host.observeDatabase=async phase=>{const v=observed(phase);v.owner.foreignVisible=1;return v;};
+  await assert.rejects(collectSixReads(v2,denied.host,denied.store),/DATABASE_OWNER_DENIAL_FAILED/);assert.equal(denied.posts(),0);
+  const mutated=await fixture();mutated.host.observeDatabase=async phase=>{const v=observed(phase);if(phase==='after')v.snapshot.tables[0].version_digest='f'.repeat(64);return v;};
+  await assert.rejects(collectSixReads(v2,mutated.host,mutated.store),/DIVISION_ROWS_CHANGED/);
+});

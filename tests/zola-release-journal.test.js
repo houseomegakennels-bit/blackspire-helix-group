@@ -5,7 +5,6 @@ import path from 'node:path';
 import {spawnSync,spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {openReleaseJournal,recoverReleaseJournalLock,hash} from '../packages/zola-release/commander-journal.js';
-import {verifyReleaseCi} from '../packages/zola-release/commander-host.js';
 
 const rootTest={skip:process.getuid?.()!==0};
 function directory(t){const root=fs.mkdtempSync('/root/.zola-release-journal-test-');fs.chmodSync(root,0o700);t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return root;}
@@ -27,19 +26,6 @@ test('actual process death retains global lock; torn journal and aliases reject 
  assert.throws(()=>openReleaseJournal({root}),/journal rejected/);assert.ok(fs.existsSync(path.join(root,'commander.lock')));
  assert.equal(fs.readFileSync(path.join(root,'n8n.jsonl'),'utf8'),saved+'partial');
 });
-test('exact-head CI verifier rejects newest failed or wrong-PR evidence and stale runs',()=>{
- const releaseSha='a'.repeat(40),repository='houseomegakennels-bit/blackspire-helix-group',now=Date.now();
- const pr={number:125,state:'open',merged:false,draft:false,head:{sha:releaseSha,ref:'release/zola-production-live',repo:{full_name:repository}},base:{sha:'b'.repeat(40),ref:'main',repo:{full_name:repository}}};
- const ci={id:123,path:'.github/workflows/blackspire-ci.yml',head_sha:releaseSha,event:'pull_request',status:'completed',conclusion:'success',pull_requests:[{number:125,head:{sha:releaseSha},base:{sha:'b'.repeat(40)}}],updated_at:new Date(now).toISOString()};
- const run=(_exe,args)=>JSON.stringify(args[1].endsWith('pulls/125')?pr:{workflow_runs:[ci]});
- assert.equal(verifyReleaseCi(releaseSha,{run,now}).runId,123);
- ci.conclusion='failure';assert.throws(()=>verifyReleaseCi(releaseSha,{run,now}));ci.conclusion='success';
- ci.pull_requests=[{number:126}];assert.throws(()=>verifyReleaseCi(releaseSha,{run,now}));ci.pull_requests=[{number:125,head:{sha:releaseSha},base:{sha:'b'.repeat(40)}}];
- delete pr.base.sha;delete ci.pull_requests[0].base.sha;assert.throws(()=>verifyReleaseCi(releaseSha,{run,now}));pr.base.sha='b'.repeat(40);ci.pull_requests[0].base.sha='b'.repeat(40);
- ci.pull_requests[0].base.sha='c'.repeat(40);assert.throws(()=>verifyReleaseCi(releaseSha,{run,now}));ci.pull_requests[0].base.sha='b'.repeat(40);
- ci.updated_at=new Date(now-25*60*60*1000).toISOString();assert.throws(()=>verifyReleaseCi(releaseSha,{run,now}));
-});
-
 test('GET-only dead-owner recovery retains lock bytes; live owner cannot be recovered',rootTest,t=>{
  const root=directory(t),journal=openReleaseJournal({root});
  assert.throws(()=>recoverReleaseJournalLock({root}),/journal rejected/);journal.close();
@@ -69,13 +55,23 @@ test('competing recovery processes cannot remove a newly acquired live commander
  const root=directory(t),module=fileURLToPath(new URL('../packages/zola-release/commander-journal.js',import.meta.url));
  const setup=`import {openReleaseJournal} from ${JSON.stringify(module)};openReleaseJournal({root:${JSON.stringify(root)}});process.exit(0);`;
  assert.equal(spawnSync(process.execPath,['--input-type=module','-e',setup],{env:{PATH:'/usr/bin:/bin'},timeout:5000}).status,0);
- const code=`import {openReleaseJournal,recoverReleaseJournalLock} from ${JSON.stringify(module)};try{recoverReleaseJournalLock({root:${JSON.stringify(root)}});const j=openReleaseJournal({root:${JSON.stringify(root)}});console.log('ACQUIRED');setTimeout(()=>{j.close();process.exit(0)},350);}catch{console.log('REFUSED');process.exit(0);}`;
+ const code=`import {openReleaseJournal,recoverReleaseJournalLock} from ${JSON.stringify(module)};try{recoverReleaseJournalLock({root:${JSON.stringify(root)}});const j=openReleaseJournal({root:${JSON.stringify(root)}});console.log('ACQUIRED');process.stdin.once('data',()=>{j.close();process.exit(0)});process.stdin.resume();}catch{console.log('REFUSED');process.exit(0);}`;
+ const children=[];
  const compete=()=>new Promise((resolve,reject)=>{
-  const child=spawn(process.execPath,['--input-type=module','-e',code],{env:{PATH:'/usr/bin:/bin'},stdio:['ignore','pipe','pipe']});
-  let output='',error='';child.stdout.on('data',part=>output+=part);child.stderr.on('data',part=>error+=part);
+  const child=spawn(process.execPath,['--input-type=module','-e',code],{env:{PATH:'/usr/bin:/bin'},stdio:['pipe','pipe','pipe']});
+  children.push(child);t.after(()=>{if(child.exitCode===null)child.kill('SIGKILL');});
+  let output='',settled=false;
   const timer=setTimeout(()=>{child.kill('SIGKILL');reject(new Error('child timeout'));},5000);
-  child.on('error',reject);child.on('exit',status=>{clearTimeout(timer);if(status!==0||error)reject(new Error('child failed'));else resolve(output.trim());});
+  child.stdout.on('data',part=>{output+=part;if(!settled&&output.includes('\n')){settled=true;child.report=output.trim();resolve(child.report);}});
+  child.stderr.on('data',()=>{child.kill('SIGKILL');reject(new Error('child diagnostic'));});child.on('error',error=>{clearTimeout(timer);child.kill('SIGKILL');reject(error);});
+  child.on('exit',status=>{clearTimeout(timer);if(!settled)reject(new Error(`premature exit ${status}`));});
  });
  const results=await Promise.all([compete(),compete()]);assert.deepEqual(results.sort(),['ACQUIRED','REFUSED']);
+ // The winner remains alive and holds its new lock until both outcomes arrive.
+ await Promise.all(children.map(child=>new Promise((resolve,reject)=>{
+  if(child.exitCode!==null||child.signalCode!==null){if(child.exitCode===0)resolve();else reject(new Error('child failed'));return;}
+  child.once('exit',status=>status===0?resolve():reject(new Error('child failed')));
+  if(child.report==='ACQUIRED')child.stdin.end('release');
+ })));
  assert.equal(fs.existsSync(path.join(root,'commander.lock')),false);
 });

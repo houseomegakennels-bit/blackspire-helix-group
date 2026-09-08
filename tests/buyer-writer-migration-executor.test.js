@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension-acl.js';
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 import {prepareBuyerMigrationExecution,executeBuyerMigration} from '../packages/buyer-writer/migration-executor.js';
+import {prepareConnectedBuyerMigration,reconcileConnectedBuyerMigration} from '../packages/buyer-writer/migration-connected.js';
 const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
 function fixture(){
  const roles=['postgres','supabase_admin','consumer'].map((name,i)=>({name,oid:String(i+10),superuser:false,inherit:true,login:false,createRole:false,createDb:false,replication:false,bypassRls:false}));
@@ -78,4 +79,32 @@ test('body failure rolls back and commit response loss remains unknown without r
  assert.equal(failed.calls.at(-1).sql,'ROLLBACK');assert.equal(failed.history,undefined);
  const lost=session({commitLost:true});await assert.rejects(executeBuyerMigration({client:lost,plan,mode:'apply'}),e=>e.code==='OUTCOME_UNKNOWN'&&!e.message.includes('SECRET'));
  assert.equal(lost.calls.at(-1).sql,'COMMIT');assert.equal(lost.calls.filter(x=>x.sql===prepared.body).length,1);
+});
+
+
+test('connected migration binds exact body and leaves transaction/history to API',()=>{
+ const p=prepareConnectedBuyerMigration(args);
+ assert.equal(p.request.project_id,'kchtrvfcixnimvxxctkj');
+ assert.match(p.request.query,/^SET LOCAL statement_timeout='30s';/);
+ assert.match(p.request.query,/DO \$zola_connected\$/);
+ assert.ok(p.request.query.includes(prepared.body));
+ assert.ok(!p.request.query.includes('COMMIT;'));
+ assert.match(p.request.query,/pg_try_advisory_xact_lock\(206994,125\)/);
+ assert.ok(p.request.query.includes('zola_guarded_application_'+releaseSha));
+ assert.equal(p.productionAcceptance,false);
+ for(const change of [{body:args.body+'SELECT 1;'}, {manifestBytes:args.manifestBytes+' '}, {releaseSha:'b'.repeat(40)}])
+  assert.throws(()=>prepareConnectedBuyerMigration({...args,...change}),/rejected/);
+});
+test('connected history verifies actual API version, rejects unknown/foreign/rewritten histories',()=>{
+ const p=prepareConnectedBuyerMigration(args);
+ const row={actor:'postgres',database:'postgres',superuser:false,acquired:true,history:[]};
+ assert.equal(reconcileConnectedBuyerMigration(p,[row]).status,'not-recorded-retry-not-authorized');
+ const entry={version:'20260908123456',name:p.request.name,statementCount:1,querySha256:p.querySha256};
+ const result=reconcileConnectedBuyerMigration(p,[{...row,history:[entry]}]);
+ assert.equal(result.status,'committed-history-verified');assert.equal(result.migrationVersion,entry.version);
+ for(const bad of [{...row,acquired:false},{...row,superuser:true},{...row,actor:'supabase_admin'},
+  {...row,history:[{...entry,statementCount:2}]},{...row,history:[{...entry,querySha256:'0'.repeat(64)}]},
+  {...row,history:[{...entry,version:20260908123456}]},{...row,history:[entry,entry]},{...row,history:[{...entry,name:'zola_guarded_application_'+releaseSha}]}])
+  assert.throws(()=>reconcileConnectedBuyerMigration(p,[bad]),/rejected/);
+ assert.throws(()=>reconcileConnectedBuyerMigration({...p},[row]),/rejected/);
 });

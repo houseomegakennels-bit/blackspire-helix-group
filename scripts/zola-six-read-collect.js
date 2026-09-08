@@ -15,9 +15,15 @@ try {
     process.stdout.write(`${JSON.stringify(report)}\n`);
     process.stderr.write('Candidate collector passed actual API/SQLite integration in an isolated network. Production acceptance remains unverified.\n');
   } else {
-    if (!['--dry-run','--production'].includes(mode) || !configPath || extra.length) throw new Error('ARGUMENTS_REJECTED');
+    if (!['--dry-run','--production','--observer-sql-before','--observer-sql-after'].includes(mode) || !configPath || extra.length) throw new Error('ARGUMENTS_REJECTED');
     const config = validateCollectorConfig(readRootOwnedJson(configPath, { groupId: 0 }));
-    if (mode === '--dry-run') {
+    if (mode.startsWith('--observer-sql-')) {
+      const { divisionSnapshotSQL, ownerWitnessSQL, DIVISION_TABLES } = await import('../packages/zola-six-reads/database-observer.js');
+      const phase = mode.endsWith('-before') ? 'before' : 'after';
+      process.stdout.write(`${JSON.stringify({ version: 1, mode, projectId: 'kchtrvfcixnimvxxctkj', releaseSha: config.releaseSha, runId: config.runId, phase,
+        queries: { snapshot: divisionSnapshotSQL(config, phase), owner: ownerWitnessSQL(config, phase) }, tables: DIVISION_TABLES,
+        scope: 'Fixed read-only SQL for connected Supabase execute_sql; metadata preparation only. External results do not establish collector interval pairing or production acceptance.', livePass: false })}\n`);
+    } else if (mode === '--dry-run') {
       process.stdout.write(`${JSON.stringify({ version: 1, mode: 'dry-run', status: 'PLAN_VALIDATED', productionExecuted: false,
         releaseSha: config.releaseSha, configDigest: digest(config),
         reads: readCases(config.dealId).map(({ capability, route, permissions }) => ({ capability, route, permissions })),

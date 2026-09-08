@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import pg from 'pg';
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 import {prepareBuyerMigrationExecution,executeBuyerMigration} from '../packages/buyer-writer/migration-executor.js';
+import {prepareConnectedBuyerMigration,reconcileConnectedBuyerMigration} from '../packages/buyer-writer/migration-connected.js';
 assert.equal(process.env.ZOLA_DISPOSABLE_EXECUTOR,'1');
 assert.equal(process.versions.node,'22.23.1');
 const namespace=fs.readlinkSync('/proc/self/ns/net');
@@ -52,5 +53,47 @@ try{
  await client.query("UPDATE supabase_migrations.schema_migrations SET statements=ARRAY['tampered'] WHERE version='20260908000000'");
  await assert.rejects(executeBuyerMigration({client,plan,mode:'reconcile'}),e=>e.code==='MIGRATION_FAILED');
  checks.push('tampered history rejected');
+
+ const connectedSha='d'.repeat(40),packageD=prepareBuyerMigrationPackage({releaseSha:connectedSha,providerManifest});
+ const connected=prepareConnectedBuyerMigration({releaseSha:connectedSha,providerManifest,body:packageD.body,manifestBytes:packageD.manifestBytes,
+  expectedManifestSha256:createHash('sha256').update(packageD.manifestBytes).digest('hex')});
+ const observe=async()=>{
+  const results=await client.query(connected.reconciliationQuery);
+  return reconcileConnectedBuyerMigration(connected,results.find(r=>r.command==='SELECT').rows);
+ };
+ assert.equal((await observe()).status,'not-recorded-retry-not-authorized');
+ await locker.query('BEGIN; SELECT pg_advisory_xact_lock(206994,125)');
+ await client.query('BEGIN');await assert.rejects(client.query(connected.request.query),/competing execution/);await client.query('ROLLBACK');
+ await locker.query('ROLLBACK');
+ const packageA=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest});
+ const afterNative=prepareConnectedBuyerMigration({releaseSha:'a'.repeat(40),providerManifest,body:packageA.body,manifestBytes:packageA.manifestBytes,
+  expectedManifestSha256:createHash('sha256').update(packageA.manifestBytes).digest('hex')});
+ await client.query('BEGIN');await assert.rejects(client.query(afterNative.request.query),/already recorded/);await client.query('ROLLBACK');
+ checks.push('connected execution refuses competing backend and existing native history');
+
+ const countBefore=(await client.query('SELECT count(*)::int AS count FROM public."SearchJob"')).rows[0].count;
+ // Model the documented API-owned transaction and its history append. This
+ // proves PostgreSQL behavior, not the actual Cloud endpoint's implementation.
+ await client.query('BEGIN');
+ await client.query(connected.request.query);
+ await client.query('INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES($1,$2,$3)',
+  ['20260908000003',connected.request.name,[connected.request.query]]);
+ await client.query('COMMIT');
+ assert.equal((await observe()).migrationVersion,'20260908000003');
+ assert.equal((await client.query('SELECT count(*)::int AS count FROM public."SearchJob"')).rows[0].count,countBefore);
+ await client.query('BEGIN');await assert.rejects(client.query(connected.request.query),/already recorded/);await client.query('ROLLBACK');
+ await assert.rejects(executeBuyerMigration({client,plan:makePlan('d','20260908000004'),mode:'apply'}),e=>e.code==='MIGRATION_FAILED');
+ checks.push('connected envelope actual PG atomic body/history, row preservation, exact reconciliation, duplicate and cross-transport rejection');
+ const freshSha='e'.repeat(40),packageE=prepareBuyerMigrationPackage({releaseSha:freshSha,providerManifest});
+ const fresh=prepareConnectedBuyerMigration({releaseSha:freshSha,providerManifest,body:packageE.body,manifestBytes:packageE.manifestBytes,
+  expectedManifestSha256:createHash('sha256').update(packageE.manifestBytes).digest('hex')});
+ // Splitting SET LOCAL away from the DO cannot silently lose timeout guards.
+ await assert.rejects(client.query(fresh.request.query.slice(fresh.request.query.indexOf('DO $zola_connected$'))),/one API-owned transaction/);
+ await client.query('BEGIN');await client.query(fresh.request.query);
+ await assert.rejects(client.query("INSERT INTO supabase_migrations.schema_migrations(version) VALUES('20260908000003')"));
+ await client.query('ROLLBACK');
+ const absent=await client.query('SELECT count(*)::int AS count FROM supabase_migrations.schema_migrations WHERE name=$1',[fresh.request.name]);
+ assert.equal(absent.rows[0].count,0);
+ checks.push('split API transaction rejected and failed history append aborts connected transaction');
  console.log(JSON.stringify({status:'PASS',checks,environment:'isolated PostgreSQL17.6 nonsuperuser postgres; inert provider stand-ins',productionMutations:0,paidProviderCalls:0}));
 }finally{for(const c of clients){try{await c.end();}catch{}}}

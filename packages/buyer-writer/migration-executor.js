@@ -46,7 +46,7 @@ export async function executeBuyerMigration({client,plan,mode}) {
     // try-lock means an old backend could still commit: never infer absence.
     const lock=await client.query('SELECT pg_try_advisory_xact_lock(206994,125) AS acquired');
     if(lock.rows?.[0]?.acquired!==true)throw new Error();
-    const prior=await client.query('SELECT version,name,statements,idempotency_key FROM supabase_migrations.schema_migrations WHERE version=$1 OR idempotency_key=$2 OR name=$3',[plan.migrationVersion,data.key,data.name]);
+    const prior=await client.query('SELECT version,name,statements,idempotency_key FROM supabase_migrations.schema_migrations WHERE version=$1 OR idempotency_key=$2 OR name=$3 OR name=$4',[plan.migrationVersion,data.key,data.name,`zola_guarded_connected_${plan.releaseSha}`]);
     if(!Array.isArray(prior.rows)||prior.rows.length>1)throw new Error();
     if(prior.rows.length===1){
       const row=prior.rows[0];

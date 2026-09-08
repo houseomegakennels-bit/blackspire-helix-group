@@ -22,7 +22,8 @@ function fixture(override = () => undefined) {
     if (url.pathname === '/v6/deployments') return response({ deployments: [{ uid: 'dpl_one' }], pagination: { next: null } });
     if (url.pathname.startsWith('/v13/deployments/')) return response({ id: url.pathname.split('/').at(-1), projectId: PROJECT, url: 'fixture.vercel.app', alias: ['fixture.example.com'], readyState: 'READY', env: { TOKEN: token }, routes: [{ headers: { token } }] });
     if (url.pathname.endsWith('/domains')) return response({ domains: [{ name: 'fixture.example.com', verified: true }] });
-    if (url.pathname === '/v4/aliases') return response({ aliases: [{ alias: 'branch.vercel.app', deploymentId: 'dpl_one', projectId: PROJECT }] });
+    if (url.pathname === '/v4/aliases') return response({ aliases: ['branch.vercel.app', 'frontend-c06ce2-routes-houseomegakennels-4825s-projects.vercel.app', 'frontend-tau-woad-73.vercel.app'].map(alias => ({ alias, deploymentId: 'dpl_one', projectId: PROJECT })) });
+    if (url.pathname.startsWith('/v4/aliases/')) return response({ alias: url.pathname.split('/').at(-1), deploymentId: 'dpl_one', projectId: PROJECT, protectionBypass: { [token]: {} }, routes: [{ headers: { token } }] });
     if (url.pathname.endsWith('/routes/versions')) return response({ versions: [] });
     if (url.pathname.endsWith('/routes')) return response({ routes: [], version: { id: 'routes-version-one', isLive: true, ruleCount: 0 } });
     if (url.pathname.endsWith('/config/active')) return response({ firewallEnabled: true, rules: [{ active: true, action: { mitigate: { action: 'deny' } }, conditionGroup: [{ conditions: [{ value: token }] }] }] });
@@ -152,5 +153,18 @@ test('routing history retains only typed control metadata and refuses partial/du
     assert.equal(history.status, invalid ? 'INCOMPLETE' : 'COMPLETE');
     assert.equal(JSON.stringify(result).includes(token), false);
     if (!invalid) { assert.equal(history.value.count, 1); assert.equal(history.value.denialProven, false); }
+  }
+});
+
+
+test('coverage alias details require exact inventory binding and redact values', async () => {
+  for (const drift of [false, true]) {
+    const { fetchImpl } = fixture(url => url.pathname.startsWith('/v4/aliases/') && drift
+      ? response({ alias: url.pathname.split('/').at(-1), deploymentId: 'dpl_other', projectId: PROJECT }) : undefined);
+    const result = await inventoryProtection({ token, fetchImpl });
+    const detail = result.observations.find(row => row.name === 'coverageGapAliases');
+    assert.equal(detail.status, drift ? 'INCOMPLETE' : 'COMPLETE');
+    assert.equal(JSON.stringify(result).includes(token), false);
+    if (!drift) { assert.equal(detail.value.length, 2); assert.equal(detail.value[0].routesCount, 1); assert.equal(detail.value[0].denialProven, false); }
   }
 });

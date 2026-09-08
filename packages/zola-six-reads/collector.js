@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import { blackspireCapabilityRegistry } from '../capabilities/index.js';
 import { validateCapabilityOutput } from '../capabilities/contract.js';
+import { compareDivisionSnapshots, validateDivisionSnapshot, validateOwnerWitness } from './database-observer.js';
 import { decodeObservedResponse, observationForResult } from '../capabilities/read-observation.js';
 
 export const digest = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
@@ -23,7 +24,8 @@ export function readCases(dealId) {
 }
 export function validateCollectorConfig(value) {
   const keys = ['version','releaseSha','frontendOrigin','workspace','principal','deniedPrincipal','dealId','apiPid','workerPid','port','databasePath','credentialPath','journalDirectory','runId'];
-  if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length || keys.some(k => !Object.hasOwn(value,k)) || value.version !== 1 ||
+  if (value?.version === 2) keys.push('observerDatabaseConfigPath');
+  if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length || keys.some(k => !Object.hasOwn(value,k)) || ![1,2].includes(value.version) || (value.version === 2 && (typeof value.observerDatabaseConfigPath !== 'string' || !value.observerDatabaseConfigPath.startsWith('/') || value.observerDatabaseConfigPath.includes('\0'))) ||
       !sha(value.releaseSha) || ![value.workspace,value.principal,value.deniedPrincipal,value.runId].every(id) || value.principal === value.deniedPrincipal ||
       !Number.isInteger(value.port) || value.port < 1 || value.port > 65535 ||
       ![value.apiPid,value.workerPid].every(n => Number.isInteger(n) && n > 1) || value.apiPid === value.workerPid ||
@@ -81,6 +83,33 @@ export async function collectSixReads(config, host, store) {
   const generation = await host.generation();
   const sameGeneration = async () => { if (JSON.stringify(await host.generation()) !== JSON.stringify(generation)) refuse('GENERATION_CHANGED'); };
   await host.deniedIdentity(); // Requires a real authenticated, differently bound principal.
+  const databaseEvents = store.events();
+  const beforeEvents = databaseEvents.filter(e => e.type === 'database_before');
+  if (beforeEvents.length > 1) refuse('DATABASE_OBSERVATION_DUPLICATE');
+  const validateDatabaseEnvelope = value => {
+    if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'owner,snapshot') refuse('DATABASE_OBSERVATION_ENVELOPE');
+  };
+  let databaseBefore;
+  if (config.version === 2) {
+    if (typeof host.observeDatabase !== 'function') refuse('DATABASE_OBSERVER_UNAVAILABLE');
+    if (!beforeEvents.length) {
+      if (store.events().some(e => e.type === 'intent')) refuse('DATABASE_OBSERVATION_MISSING_BEFORE_ADMISSION');
+      databaseBefore = await host.observeDatabase('before');
+      validateDatabaseEnvelope(databaseBefore);
+      validateDivisionSnapshot(databaseBefore.snapshot, config, 'before');
+      validateOwnerWitness(databaseBefore.owner, config, 'before');
+      store.append({ type: 'database_before', observation: databaseBefore, generation });
+    } else {
+      if (JSON.stringify(beforeEvents[0].generation) !== JSON.stringify(generation)) refuse('DATABASE_OBSERVATION_GENERATION_CHANGED');
+      const firstIntent = databaseEvents.findIndex(e => e.type === 'intent');
+      if (firstIntent >= 0 && databaseEvents.findIndex(e => e.type === 'database_before') > firstIntent) refuse('DATABASE_OBSERVATION_AFTER_ADMISSION');
+      databaseBefore = beforeEvents[0].observation;
+      validateDatabaseEnvelope(databaseBefore);
+      validateDivisionSnapshot(databaseBefore.snapshot, config, 'before');
+      validateOwnerWitness(databaseBefore.owner, config, 'before');
+    }
+    await sameGeneration();
+  }
   const results = [];
   for (const [index, entry] of readCases(config.dealId).entries()) {
     await sameGeneration();
@@ -119,9 +148,25 @@ export async function collectSixReads(config, host, store) {
     store.append({ type: 'collected', index, taskId: record.task.id, evidenceDigest: digest(row) });
   }
   await sameGeneration();
+  let databaseEvidence;
+  if (config.version === 2) {
+    const after = await host.observeDatabase('after');
+    validateDatabaseEnvelope(after);
+    validateOwnerWitness(after.owner, config, 'after');
+    if (after.owner.witness !== databaseBefore.owner.witness) refuse('DATABASE_OWNER_WITNESS_CHANGED');
+    databaseEvidence = { ...compareDivisionSnapshots(databaseBefore.snapshot, after.snapshot, config),
+      ownerDenial: 'PASS: actual authenticated PostgreSQL role, existing real owner sees exact job and distinct real user cannot',
+      ownerScope: 'SearchJob database policy only; browser authentication and other application authorization remain distinct boundaries' };
+    store.append({ type: 'database_after', observation: after, evidence: databaseEvidence });
+    await sameGeneration();
+    for (const row of results) {
+      row.mutationDelta = 0; row.mutationScope = databaseEvidence.scope;
+      if (row.capability === 'nexus.enrichment.status') row.enrichmentMutations = '0 net persisted row/tuple-version delta across observation interval; attempted mutations unverified';
+    }
+  }
   const report = { version: 1, releaseSha: config.releaseSha, collectedAt: new Date().toISOString(),
-    status: 'COLLECTED_NOT_RELEASE_ACCEPTED', livePass: false, productionCollector: true, results,
-    remainingGates: ['Authoritative division mutation delta', 'Process-wide paid-provider/egress observation', 'Supabase row-owner denial (Command task denial is a separate boundary)'],
+    status: 'COLLECTED_NOT_RELEASE_ACCEPTED', livePass: false, productionCollector: true, results, ...(databaseEvidence ? { databaseEvidence } : {}),
+    remainingGates: databaseEvidence ? ['Complete mutation-attempt and paid-provider/egress observation', 'Other capability/application owner boundaries (database witness covers SearchJob only)'] : ['Authoritative division mutation delta', 'Process-wide paid-provider/egress observation', 'Supabase row-owner denial (Command task denial is a separate boundary)'],
     intentionalCommandWrites: 'Six durable read tasks, dispatch receipts, permission/audit records; never claim zero SQLite writes' };
   store.append({ type: 'report', digest: digest(report), status: report.status });
   return report;

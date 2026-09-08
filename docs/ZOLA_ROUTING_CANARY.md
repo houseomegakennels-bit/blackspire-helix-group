@@ -59,3 +59,37 @@ The next runner accepts actual optional content flags, validates every present f
 Lost add or promotion acknowledgement goes directly to reconciliation and cleanup. Lost delete acknowledgement can advance only after exact empty staging and the prior exact live canary are proven. Lost cleanup-promotion acknowledgement can complete only after that exact empty version is affirmatively live. Each identical mutation is attempted at most once per run. Durable journal and directory fsync precede management operations; management calls have a 160-request cap and 15-minute deadline.
 
 The actual-schema fixture covers empty 204 acknowledgements, optional flags, read propagation, explicit version lookup, historical live/staging transitions, lost acknowledgements, wrong bytes, malformed/duplicate flags and replay refusal. These tests validate the runner; deployment coverage and all application denial gates remain unverified until real retained evidence is reviewed.
+
+
+## Retained a92 experiment: coverage partial, restoration verified
+
+Maintenance run `34224612648`, attempt 2, executed the reviewed experiment at
+`a92ef6afbf002de818cd8c1f2dbacee9bae63cce`. Its protected retained journal SHA256 is
+`0450ad7f5c3523071559a895a0503f0e3000aa8447aee73c66e645696e3f338a`.
+There were 280 hosts in each phase: 242 returned HTTP 418 with the exact nonce
+while active, 37 returned HTTP 410 without the marker, and one returned HTTP 404
+without it. The 242 include the canonical domains, release branch alias, exact
+candidate immutable deployment and fixed `2c0b600` recovery immutable deployment.
+
+The uncovered application alias is
+`frontend-c06ce2-routes-houseomegakennels-4825s-projects.vercel.app`.
+It and the covered `frontend-tau-woad-73.vercel.app` inventory alias point to the
+same deployment, `dpl_2QjHSBLmtNtiNBpJSTR5UzP5azit`. A subsequent anonymous GET
+of the harmless canary path returned normal Next `/404` routing headers on both;
+the gap cannot be dismissed as deployment unavailability. The read-only inventory
+now compares exact details for these two aliases without emitting rule values,
+bypass values, creator information, credentials or arbitrary response data.
+
+The journal records exactly add, publish, exact-rule delete, and empty-version
+publish. Two final observations agree on empty live version
+`0a0ae2b9-78f3-4c2e-8034-0faad8118406`, no staging, zero live routes and two history
+versions. All 280 final probes regained their initial HTTP 404/410 status and no
+marker. The canary was restored; rerunning creation against retained history is
+refused. Preserve history and journal as rollback evidence.
+
+`CANARY_COVERAGE_PASS = false`; `applicationDenialProven = false`.
+No application write request was sent. Coverage of a harmless unique path does
+not prove authentication, normalization/alternate route handling, Server Action
+containment, downstream non-dispatch or full rollback compatibility. Historical
+all-path containment must handle the uncovered alias and retain an authenticated
+functional route for required reads before it can be approved for activation.

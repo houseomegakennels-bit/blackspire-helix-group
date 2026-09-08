@@ -49,25 +49,66 @@ export async function verifyCanonicalWriter(releaseSha,configurationFile){
  return{releaseSha,apiGeneration:before.profile.context.apiGeneration,workerGeneration:before.workerGeneration,artifactDigest:before.artifactDigest};
 }
 
+// Deliberately explicit: a green aggregate does not prove required work ran.
+export const REQUIRED_RELEASE_CI_STEPS=Object.freeze([
+ 'Checkout','Set up Node.js (project-required version)','npm ci','Run database migrations','Run test suite',
+ 'Verify scoped Buyer writer on disposable PostgreSQL 17.6','Verify native Buyer driver TLS and lock timeout',
+ 'Verify guarded provider and application migration transactions','Verify dedicated application migration executor and reconciliation',
+ 'Verify six-read database observer on disposable PostgreSQL 17.6',
+ 'Run build check','Package immutable release evidence','Run lint check','Run typecheck','Run secret scan',
+ 'Run npm audit (high severity and above)','Validate tracked shell syntax','Validate whitespace','Run read-only production preflight',
+ 'Record immutable build metadata','Cross-check packaged release and CI metadata','Upload build metadata',
+]);
 export function verifyReleaseCi(releaseSha,{run=execFileSync,now=Date.now()}={}){
  try{
-  if(!/^[a-f0-9]{40}$/.test(releaseSha??''))refuse();
-  const repository='houseomegakennels-bit/blackspire-helix-group';
+  if(!/^[a-f0-9]{40}$/.test(releaseSha??'')||!Number.isFinite(now))refuse();
+  const repository='houseomegakennels-bit/blackspire-helix-group',branch='release/zola-production-live';
   const options={encoding:'utf8',timeout:15000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],
    env:{PATH:'/usr/bin:/bin',HOME:'/root',GH_CONFIG_DIR:'/root/.config/gh',GH_PROMPT_DISABLED:'1',LC_ALL:'C'}};
   const api=route=>JSON.parse(run('/usr/bin/gh',['api',`repos/${repository}/${route}`],options));
-  const pr=api('pulls/125');
-  if(pr.number!==125||pr.state!=='open'||pr.merged!==false||pr.draft!==false||pr.head?.sha!==releaseSha
-   ||pr.head?.ref!=='release/zola-production-live'||pr.head?.repo?.full_name!==repository
-   ||pr.base?.ref!=='main'||pr.base?.repo?.full_name!==repository)refuse();
-  const result=api(`actions/workflows/blackspire-ci.yml/runs?head_sha=${releaseSha}&per_page=10`);
-  if(!Array.isArray(result.workflow_runs)||result.workflow_runs.length===0)refuse();
-  const ciRun=result.workflow_runs[0],age=now-Date.parse(ciRun.updated_at);
-  if(ciRun.head_sha!==releaseSha||ciRun.path!=='.github/workflows/blackspire-ci.yml'||ciRun.event!=='pull_request'
-   ||ciRun.status!=='completed'||ciRun.conclusion!=='success'||!Number.isSafeInteger(ciRun.id)||ciRun.id<1
-   ||!Array.isArray(ciRun.pull_requests)||!ciRun.pull_requests.some(link=>link.number===125&&link.head?.sha===pr.head.sha&&link.base?.sha===pr.base.sha)
-   ||!(/^[a-f0-9]{40}$/).test(pr.base?.sha??'')
-   ||!Number.isFinite(age)||age<0||age>24*60*60*1000)refuse();
-  return{releaseSha,runId:ciRun.id,status:'success'};
+  const identity=()=>{
+   const pr=api('pulls/125'),main=api('git/ref/heads/main');
+   if(pr.number!==125||pr.state!=='open'||pr.merged!==false||pr.draft!==false||pr.head?.sha!==releaseSha
+    ||pr.head?.ref!==branch||pr.head?.repo?.full_name!==repository||pr.base?.ref!=='main'||pr.base?.repo?.full_name!==repository
+    ||main.ref!=='refs/heads/main'||main.object?.type!=='commit'||!(/^[a-f0-9]{40}$/).test(main.object?.sha??'')
+    ||pr.base.sha!==main.object.sha)refuse();
+   return main.object.sha;
+  };
+  const mainSha=identity();
+  const latest=()=>{
+   const result=api(`actions/workflows/blackspire-ci.yml/runs?head_sha=${releaseSha}&per_page=100`);
+   // Refuse truncated/ambiguous histories rather than trusting API array order.
+   if(!Array.isArray(result.workflow_runs)||result.workflow_runs.length===0||result.total_count!==result.workflow_runs.length
+    ||new Set(result.workflow_runs.map(row=>row.id)).size!==result.workflow_runs.length)refuse();
+   for(const row of result.workflow_runs)if(!Number.isSafeInteger(row.id)||row.id<1||row.head_sha!==releaseSha||!Number.isFinite(Date.parse(row.created_at)))refuse();
+   const ordered=[...result.workflow_runs].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)||b.id-a.id);
+   return ordered[0];
+  };
+  const validate=ci=>{
+   const age=now-Date.parse(ci.updated_at);
+   if(ci.head_sha!==releaseSha||ci.path!=='.github/workflows/blackspire-ci.yml'||ci.event!=='pull_request'
+    ||ci.head_branch!==branch||ci.repository?.full_name!==repository||ci.head_repository?.full_name!==repository
+    ||ci.status!=='completed'||ci.conclusion!=='success'||!Number.isSafeInteger(ci.id)||ci.id<1
+    ||!Number.isSafeInteger(ci.run_attempt)||ci.run_attempt<1
+    ||!Array.isArray(ci.pull_requests)||ci.pull_requests.length!==1||ci.pull_requests[0].number!==125
+    ||ci.pull_requests[0].head?.sha!==releaseSha||ci.pull_requests[0].base?.sha!==mainSha
+    ||!Number.isFinite(age)||age<0||age>24*60*60*1000)refuse();
+   return JSON.stringify([ci.id,ci.run_attempt,ci.updated_at,ci.created_at]);
+  };
+  const listed=latest(),ci=api(`actions/runs/${listed.id}`),stamp=validate(ci);
+  if(validate(listed)!==stamp)refuse();
+  const result=api(`actions/runs/${ci.id}/attempts/${ci.run_attempt}/jobs?per_page=100`);
+  if(result.total_count!==1||!Array.isArray(result.jobs)||result.jobs.length!==1)refuse();
+  const job=result.jobs[0];
+  if(job.name!=='Install, migrate, test, build, lint, typecheck, scan, audit'||job.head_sha!==releaseSha
+   ||job.run_id!==ci.id||job.run_attempt!==ci.run_attempt||job.status!=='completed'||job.conclusion!=='success'||!Array.isArray(job.steps))refuse();
+  for(const name of REQUIRED_RELEASE_CI_STEPS){
+   const steps=job.steps.filter(step=>step.name===name);
+   if(steps.length!==1||steps[0].status!=='completed'||steps[0].conclusion!=='success')refuse();
+  }
+  // Catch branch movement, reruns and newer pending/failed runs during inspection.
+  // This remains a point-in-time gate; callers must recheck immediately before mutation.
+  if(identity()!==mainSha||validate(latest())!==stamp||validate(api(`actions/runs/${ci.id}`))!==stamp)refuse();
+  return{releaseSha,mainSha,runId:ci.id,runAttempt:ci.run_attempt,status:'success'};
  }catch{refuse();}
 }

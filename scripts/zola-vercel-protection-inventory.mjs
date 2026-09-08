@@ -114,6 +114,28 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
     evidence.aliases = rows.map((row) => ({ alias: host(row.alias), deploymentId: row.deploymentId == null ? null : identifier(row.deploymentId) }));
     return { count: rows.length, paginationComplete: true };
   });
+  // Bound read-only comparison of the one observed application-level coverage
+  // gap with its covered sibling alias. Never emit arbitrary route/header values.
+  await observe('coverageGapAliases', async () => {
+    const names = ['frontend-c06ce2-routes-houseomegakennels-4825s-projects.vercel.app', 'frontend-tau-woad-73.vercel.app'];
+    const result = [];
+    for (const name of names) {
+      const listed = evidence.aliases.find(row => row.alias === name);
+      if (!listed) fail('COVERAGE_ALIAS_NOT_IN_INVENTORY');
+      const data = await get(`/v4/aliases/${name}`, { projectId: PROJECT });
+      if (data.alias !== name || data.projectId !== PROJECT || data.deploymentId !== listed.deploymentId ||
+          (data.deployment?.id != null && data.deployment.id !== listed.deploymentId)) fail('COVERAGE_ALIAS_DRIFT');
+      result.push({ alias: name, deploymentId: listed.deploymentId,
+        redirectConfigured: data.redirect == null ? false : typeof data.redirect === 'string' ? true : null,
+        microfrontendsConfigured: data.microfrontends == null ? false : typeof data.microfrontends === 'object' && !Array.isArray(data.microfrontends) ? true : null,
+        routesPresent: Object.hasOwn(data, 'routes'), routesCount: Array.isArray(data.routes) ? data.routes.length : null,
+        protectionBypassConfigured: data.protectionBypass == null ? null : typeof data.protectionBypass === 'object' && !Array.isArray(data.protectionBypass) ? Object.keys(data.protectionBypass).length > 0 : null,
+        updatedAt: Number.isSafeInteger(data.updatedAt) ? data.updatedAt : null,
+        createdAt: Number.isSafeInteger(data.createdAt) ? data.createdAt : null,
+        denialProven: false });
+    }
+    return result;
+  });
   // Official SDK projectRoutesGetRoutes: unfiltered endpoint returns the full
   // route array and version, with no cursor/limit request parameters. Never infer
   // live coverage from a staged/default response; preserve explicit isLive only.
