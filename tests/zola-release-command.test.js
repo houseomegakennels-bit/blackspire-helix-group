@@ -86,9 +86,10 @@ test('malformed CI proof, reordered journal stages, and journal append failure f
 
 test('artifact/disk primitive rejects SHA mismatch, digest movement, unsafe capacity and malformed envelope',async()=>{
  const releaseSha='a'.repeat(40),configuration={artifactRoot:'/artifact/'+releaseSha,databasePath:'/db',releaseRoot:'/releases',buildPeakBytes:0,packagePeakBytes:0,logTempReserveBytes:1};
- const artifact={releaseSha,environment:'production',artifactDigest:'b'.repeat(64)};
+ const artifact={releaseSha,environment:'production',artifactDigest:'b'.repeat(64),status:'SEALED_ARTIFACT_VERIFIED',deployed:false,productionAccepted:false};
  const deps={inspect:async()=>({...artifact}),measure:()=>({deploymentSafe:true,freeBytes:10,requiredBytes:5})};
  assert.equal((await verifyReleaseArtifactDisk({releaseSha,configuration},deps)).artifact.releaseSha,releaseSha);
+ await assert.rejects(verifyReleaseArtifactDisk({releaseSha,configuration},{...deps,inspect:async()=>({...artifact,deployed:true})}));
  await assert.rejects(verifyReleaseArtifactDisk({releaseSha,configuration:{...configuration,artifactRoot:'/wrong'}},deps));
  await assert.rejects(verifyReleaseArtifactDisk({releaseSha,configuration},{...deps,measure:()=>({deploymentSafe:true,freeBytes:1,requiredBytes:5})}));
  let n=0;await assert.rejects(verifyReleaseArtifactDisk({releaseSha,configuration},{...deps,inspect:async()=>({...artifact,artifactDigest:(++n===1?'b':'c').repeat(64)})}));

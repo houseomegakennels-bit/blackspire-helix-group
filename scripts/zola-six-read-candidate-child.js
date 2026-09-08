@@ -71,6 +71,7 @@ try {
   const host = { ...createCollectorHttpBoundary(config, { bearer: token, deniedCookie: `bc_session=${deniedSession.sessionId}` }),
     generation: async () => { assertNetwork(); assert.equal(server.address().address, '127.0.0.1'); reader.assertIdentity(); return structuredClone(generation); },
     lookup: key => reader.lookup(key),
+    denialSnapshot: () => reader.denialSnapshot(),
     pause: async () => {
       const task = claimNext({ workerId: generation.workerId }); assert.ok(task);
       assert.equal((await processTask(task, { capabilityOptions: { adapters: fixture.adapters } })).status, 'completed');
@@ -83,11 +84,13 @@ try {
   }
   assert.equal(count(), beforeDenial);
   const report = await collectSixReads(config, host, journal);
+  assert.equal(report.admissionDenial.status,'AUTHENTICATED_ADMISSION_DENIED');
   assert.equal(report.results.length, 6); assert.equal(report.livePass, false); assert.equal(count(), 6);
   const dispatchCount = fixture.events.filter(e => e.kind === 'route_dispatch').length;
   assert.equal(dispatchCount, 6);
   journal.close(); journal = openCollectorJournal(root, 'candidate');
-  await collectSixReads(config, host, journal);
+  const replay=await collectSixReads(config, host, journal);
+  assert.equal(replay.admissionDenial.reused,true);
   assert.equal(count(), 6); assert.equal(fixture.events.filter(e => e.kind === 'route_dispatch').length, dispatchCount);
   assert.equal(all("SELECT id FROM provider_attempts WHERE provider <> 'blackspire-capability'").length, 0);
   assert.equal(all('SELECT * FROM provider_usage WHERE cost_cents > 0').length, 0);
@@ -97,7 +100,7 @@ try {
   output(`${JSON.stringify({ version: 1, mode: 'candidate', status: 'PASS_ISOLATED_API_COLLECTOR', candidatePass: true, livePass: false, releaseSha,
     sourceDigestFiles: sourceFiles, sourceDigest: digest(sourceFiles.map(file => [file, digest(fs.readFileSync(path.join(sourceRoot, file),'utf8'))])),
     scope: 'Actual API HTTP admission/disclosure, SQLite claim/dispatcher/receipt and collector with synthetic frontend database in private loopback-only network namespace',
-    results: report.results.map(row => ({ ...row, frontendIdentityScope: 'Synthetic route source, not deployed frontend identity', runtimeIdentityScope: 'Current checkout in disposable test process, not sealed production runtime' })), exactRerunNewTasks: 0, exactRerunNewDispatches: 0, anonymousWrongTokenAdmissions: 0,
+    results: report.results.map(row => ({ ...row, frontendIdentityScope: 'Synthetic route source, not deployed frontend identity', runtimeIdentityScope: 'Current checkout in disposable test process, not sealed production runtime' })), admissionDenial:report.admissionDenial, exactRerunNewTasks: 0, exactRerunNewDispatches: 0, anonymousWrongTokenAdmissions: 0,
     paidProviderCalls: 0, paidProviderScope: 'Child network namespace has only loopback, no default route; synthetic frontend executes in process', observedFixtureMutationAttempts: 0,
     remainingGates: ['Production systemd API/worker collector integration', 'Authoritative production division row deltas and owner-policy witnesses', 'Production egress containment and real frontend deployment pairing'] })}\n`);
 } catch {

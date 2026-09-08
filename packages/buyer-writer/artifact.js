@@ -7,7 +7,13 @@ const identity=stat=>fields.map(key=>stat[key]);
 // Run in the root publisher's bounded verifier child. Reuse the canonical tree
 // digest and independently require a completed, root-controlled release. No
 // module or script from the inspected artifact is executed by this verifier.
-export function verifyBuyerWriterArtifact({artifactRoot,releaseSha,environment,uid=process.getuid(),io=fs,verifyEvidence=verifyReleaseEvidence}){
+export function verifyBuyerWriterArtifact(options){return verifyArtifact(options,false);}
+
+// Preparation has no deployment authority. Require the deployment record to
+// be absent and return a distinct proof that runtime callers cannot accept.
+export function verifySealedBuyerWriterArtifact(options){return verifyArtifact(options,true);}
+
+function verifyArtifact({artifactRoot,releaseSha,environment,uid=process.getuid(),io=fs,verifyEvidence=verifyReleaseEvidence},sealed){
   try{
     const started=performance.now();
     if(uid!==0||typeof artifactRoot!=='string'||artifactRoot.length>4096||!/^\/[A-Za-z0-9_./-]+$/.test(artifactRoot)
@@ -49,11 +55,19 @@ export function verifyBuyerWriterArtifact({artifactRoot,releaseSha,environment,u
       }finally{if(fd!==undefined)io.closeSync(fd);}
     };
     if(!io.lstatSync(path.join(artifactRoot,'.release-complete')).isFile()||read('COMMIT_SHA',128).trim()!==releaseSha)throw new Error();
-    const record=JSON.parse(read('.deployment-record.json',4096));
-    if(!record||record.schema!=='blackspire-deployment-record'||record.version!==1
+    let record=null;
+    if(sealed){
+      try{io.lstatSync(path.join(artifactRoot,'.deployment-record.json'));throw new Error();}
+      catch(error){if(error.code!=='ENOENT')throw error;}
+    }else{
+      record=JSON.parse(read('.deployment-record.json',4096));
+      if(!record||record.schema!=='blackspire-deployment-record'||record.version!==1
       ||typeof record.recordedAt!=='string'||new Date(record.recordedAt).toISOString()!==record.recordedAt)throw new Error();
+    }
     const result=verifyEvidence({artifactRoot,packagedCommitSha:releaseSha,expectedCommitSha:releaseSha,expectedEnvironment:environment,deploymentRecord:record});
-    if(result?.state!=='VERIFIED'||!/^[a-f0-9]{64}$/.test(result.actualDigest??'')||snapshot()!==before||performance.now()-started>8000)throw new Error();
+    const accepted=sealed?result?.state==='UNVERIFIED'&&JSON.stringify(result.reasons)==='["DEPLOYMENT_RECORD_MISSING"]':result?.state==='VERIFIED';
+    if(!accepted||!/^[a-f0-9]{64}$/.test(result.actualDigest??'')||snapshot()!==before||performance.now()-started>8000)throw new Error();
+    if(sealed)return Object.freeze({releaseSha,environment,artifactDigest:result.actualDigest,status:'SEALED_ARTIFACT_VERIFIED',deployed:false,productionAccepted:false});
     return Object.freeze({releaseSha,environment,artifactDigest:result.actualDigest});
   }catch{throw new Error('Buyer writer artifact verification rejected');}
 }

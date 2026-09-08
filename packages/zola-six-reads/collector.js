@@ -77,6 +77,53 @@ export function verifyCollectedTask({ task, attempts }, config, entry, key, gene
 
 // Store.append MUST fsync intent before returning. No caller-supplied PASS flags.
 // A recorded intent is never admitted again, including a crash before the POST.
+export async function collectAdmissionDenial(config,host,store,generation){
+  const binding=digest(config),key=`zola-denial:${config.runId}`;
+  const sameGeneration=async()=>{if(JSON.stringify(await host.generation())!==JSON.stringify(generation))refuse('GENERATION_CHANGED');};
+  const rows=store.events().filter(e=>['denial_intent','denial_confirmed'].includes(e.type));
+  const body={channel:'jarvis',workspaceId:config.workspace,text:readCases(config.dealId)[0].text,idempotencyKey:key,executionIntent:'read_only'};
+  const expected={binding,key,requestDigest:digest(body),generation};
+  const validateSnapshot=value=>{
+    if(!value||Object.keys(value).sort().join(',')!=='databaseIdentity,tables'||
+      !value.databaseIdentity||Object.keys(value.databaseIdentity).sort().join(',')!=='device,inode'||
+      ![value.databaseIdentity.device,value.databaseIdentity.inode].every(n=>Number.isSafeInteger(n)&&n>=0)||
+      !Array.isArray(value.tables)||value.tables.length!==4)refuse('DENIAL_SNAPSHOT_INVALID');
+    for(const [i,name] of ['tasks','unified_inputs','provider_attempts','provider_usage'].entries()){
+      const row=value.tables[i];
+      if(!row||Object.keys(row).sort().join(',')!=='digest,name,rows'||row.name!==name||
+        !Number.isSafeInteger(row.rows)||row.rows<0||row.rows>100000||!/^[a-f0-9]{64}$/.test(row.digest??''))refuse('DENIAL_SNAPSHOT_INVALID');
+    }
+    return value;
+  };
+  const matches=row=>Object.keys(row).sort().join(',')==='binding,generation,key,requestDigest,type'&&
+    ['binding','key','requestDigest','generation'].every(k=>JSON.stringify(row[k])===JSON.stringify(expected[k]));
+  if(rows.length){
+    if(rows.length!==2||rows[0].type!=='denial_intent'||!matches(rows[0])||rows[1].type!=='denial_confirmed'||
+      Object.keys(rows[1]).sort().join(',')!=='binding,generation,key,requestDigest,snapshotDigest,type'||
+      !matches(Object.fromEntries(Object.entries(rows[1]).filter(([k])=>k!=='snapshotDigest')))||!/^[a-f0-9]{64}$/.test(rows[1].snapshotDigest??''))refuse('DENIAL_UNKNOWN_NO_RETRY');
+    await host.deniedIdentity();
+    // The retained denial is historical, but the principal must still have no
+    // grants now. Intended reads legitimately changed these tables since then.
+    if(typeof host.denialSnapshot!=='function')refuse('ADMISSION_DENIAL_OBSERVER_UNAVAILABLE');
+    validateSnapshot(host.denialSnapshot());await sameGeneration();
+    return{status:'AUTHENTICATED_ADMISSION_DENIED',reused:true,snapshotDigest:rows[1].snapshotDigest};
+  }
+  if(store.events().some(e=>e.type==='intent'))refuse('DENIAL_EVIDENCE_MISSING');
+  if(typeof host.denialSnapshot!=='function'||typeof host.denyAdmission!=='function')refuse('ADMISSION_DENIAL_OBSERVER_UNAVAILABLE');
+  await host.deniedIdentity();await sameGeneration();
+  const before=validateSnapshot(host.denialSnapshot());
+  store.append({type:'denial_intent',...expected});
+  try{
+    const result=await host.denyAdmission(body);
+    if(result?.authorityDenied!==true||result.status!==404)refuse('AUTHENTICATED_ADMISSION_DENIAL_FAILED');
+    const after=validateSnapshot(host.denialSnapshot());
+    if(digest(before)!==digest(after))refuse('DENIAL_COMMAND_MUTATION');
+    await sameGeneration();
+    const snapshotDigest=digest(before);store.append({type:'denial_confirmed',...expected,snapshotDigest});
+    return{status:'AUTHENTICATED_ADMISSION_DENIED',reused:false,snapshotDigest};
+  }catch{refuse('DENIAL_UNKNOWN_NO_RETRY');}
+}
+
 export async function collectSixReads(config, host, store) {
   const binding = digest(config);
   const existing = store.events();
@@ -116,6 +163,7 @@ export async function collectSixReads(config, host, store) {
     }
     await sameGeneration();
   }
+  const admissionDenial=await collectAdmissionDenial(config,host,store,generation);
   const results = [];
   for (const [index, entry] of readCases(config.dealId).entries()) {
     await sameGeneration();
@@ -171,7 +219,7 @@ export async function collectSixReads(config, host, store) {
     }
   }
   const report = { version: 1, releaseSha: config.releaseSha, collectedAt: new Date().toISOString(),
-    status: 'COLLECTED_NOT_RELEASE_ACCEPTED', livePass: false, productionCollector: true, results, ...(databaseEvidence ? { databaseEvidence } : {}),
+    status: 'COLLECTED_NOT_RELEASE_ACCEPTED', livePass: false, productionCollector: true, results, admissionDenial:{...admissionDenial,scope:'Authenticated no-grant Command principal; valid CSRF; task admission denied; unchanged persisted tasks, inputs, provider attempts and usage. Audit/session activity and transient/provider-wide effects are not covered.'}, ...(databaseEvidence ? { databaseEvidence } : {}),
     remainingGates: databaseEvidence ? ['Complete mutation-attempt and paid-provider/egress observation', 'Other capability/application owner boundaries (database witness covers SearchJob only)'] : ['Authoritative division mutation delta', 'Process-wide paid-provider/egress observation', 'Supabase row-owner denial (Command task denial is a separate boundary)'],
     intentionalCommandWrites: 'Six durable read tasks, dispatch receipts, permission/audit records; never claim zero SQLite writes' };
   store.append({ type: 'report', digest: digest(report), status: report.status });

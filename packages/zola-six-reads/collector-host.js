@@ -151,6 +151,7 @@ export function createProductionCollectorHost(config) {
     ...(config.version === 2 ? { observeDatabase: createProductionDatabaseObserver(config) } : {}),
     ...([3,4].includes(config.version) ? { observeDatabase: createProductionConnectedDatabaseObserver(config) } : {}),
     lookup: key => reader.lookup(key),
+    denialSnapshot: () => reader.denialSnapshot(),
     pause: () => new Promise(resolve => setTimeout(resolve, 500)),
     close: () => reader.close(),
   };
@@ -169,6 +170,23 @@ export function openCollectorDatabaseReader(config) {
   assertIdentity();
   return {
     assertIdentity,
+    denialSnapshot() {
+      assertIdentity();database.exec('BEGIN');
+      try {
+        if(database.prepare("SELECT count(*) AS n FROM auth_workspace_grants WHERE principal_id=? AND status='active'").get(config.deniedPrincipal).n!==0)refuse('DENIAL_PRINCIPAL_HAS_AUTHORITY');
+        const tables=[];let bytes=0;
+        for(const name of ['tasks','unified_inputs','provider_attempts','provider_usage']){
+          let rows=0,chain='0'.repeat(64);
+          for(const row of database.prepare(`SELECT * FROM ${name} ORDER BY id`).iterate()){
+            const value=JSON.stringify(row);bytes+=Buffer.byteLength(value);
+            if(++rows>100000||bytes>16*1024*1024)refuse('DENIAL_SNAPSHOT_BOUND');
+            chain=digest(chain+value);
+          }
+          tables.push({name,rows,digest:chain});
+        }
+        assertIdentity();return{databaseIdentity:{device:dbstat.dev,inode:dbstat.ino},tables};
+      }finally{database.exec('ROLLBACK');}
+    },
     verifyDenialReceipt(receipt) {
       assertIdentity();
       database.exec('BEGIN');
@@ -202,10 +220,23 @@ export function openCollectorDatabaseReader(config) {
 // This boundary cannot establish host generation or deployment identity.
 export function createCollectorHttpBoundary(config, credentials) {
   const bearer = { authorization: `Bearer ${credentials.bearer}` }, denied = { cookie: credentials.deniedCookie };
+  const deniedSession=async()=>{
+    const {status,data}=await boundedRequest(config,'/api/auth/session',{headers:denied});
+    if(status!==200||data.authenticated!==true||data.principalId!==config.deniedPrincipal)refuse('DENIAL_PRINCIPAL_UNAVAILABLE');
+    return data;
+  };
   return {
     async deniedIdentity() {
-      const { status, data } = await boundedRequest(config, '/api/auth/session', { headers: denied });
-      if (status !== 200 || data.authenticated !== true || data.principalId !== config.deniedPrincipal) refuse('DENIAL_PRINCIPAL_UNAVAILABLE');
+      await deniedSession();
+    },
+    async denyAdmission(body) {
+      await this.deniedIdentity();
+      const session=await deniedSession();
+      if(!/^[a-f0-9]{48}$/.test(session.csrfToken??''))refuse('DENIAL_CSRF_UNAVAILABLE');
+      const response=await boundedRequest(config,'/api/unified-input',{method:'POST',headers:{...denied,'x-csrf-token':session.csrfToken},body});
+      if(response.status!==404||JSON.stringify(response.data)!=='{"error":"not found"}')refuse('AUTHENTICATED_ADMISSION_DENIAL_FAILED');
+      await this.deniedIdentity();
+      return{authorityDenied:true,status:404};
     },
     async admit(body) {
       const { status, data } = await boundedRequest(config, '/api/unified-input', { method: 'POST', headers: bearer, body });

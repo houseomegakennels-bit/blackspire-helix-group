@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {writeReleaseEvidence,verifyReleaseEvidence} from '../packages/shared/release-evidence.js';
-import {verifyBuyerWriterArtifact} from '../packages/buyer-writer/artifact.js';
+import {verifyBuyerWriterArtifact,verifySealedBuyerWriterArtifact} from '../packages/buyer-writer/artifact.js';
 function fixture(){
   const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-artifact-')),releaseSha='a'.repeat(40),root=path.join(temporary,'releases',releaseSha);
   fs.mkdirSync(root,{recursive:true});fs.writeFileSync(path.join(root,'COMMIT_SHA'),releaseSha+'\n');fs.writeFileSync(path.join(root,'app.js'),'export const synthetic = true;\n');
@@ -31,4 +31,24 @@ test('tree changes after digest verification and oversized entries fail closed',
     f=>{f.options.verifyEvidence=args=>{const result=verifyReleaseEvidence(args);fs.writeFileSync(path.join(f.root,'app.js'),'changed after hashing');return result;};},
     f=>{const old=f.options.io.lstatSync;f.options.io.lstatSync=name=>{const s=old(name);return name.endsWith('app.js')?Object.assign(Object.create(s),{size:33554433}):s;};},
   ]){const f=fixture();try{mutate(f);assert.throws(()=>verifyBuyerWriterArtifact(f.options),/Buyer writer artifact verification rejected/);}finally{f.cleanup();}}
+});
+test('sealed preparation verifies exact bytes without inventing deployment or weakening runtime checks',()=>{
+  const f=fixture();try{
+    assert.throws(()=>verifySealedBuyerWriterArtifact(f.options));
+    fs.unlinkSync(path.join(f.root,'.deployment-record.json'));
+    const proof=verifySealedBuyerWriterArtifact(f.options);
+    assert.equal(proof.status,'SEALED_ARTIFACT_VERIFIED');assert.equal(proof.deployed,false);assert.equal(proof.productionAccepted,false);
+    assert.equal(fs.existsSync(path.join(f.root,'.deployment-record.json')),false);
+    assert.throws(()=>verifyBuyerWriterArtifact(f.options));
+    assert.throws(()=>verifySealedBuyerWriterArtifact({...f.options,environment:'staging'}));
+    fs.writeFileSync(path.join(f.root,'app.js'),'tampered');assert.throws(()=>verifySealedBuyerWriterArtifact(f.options));
+  }finally{f.cleanup();}
+});
+test('sealed preparation rejects additional evidence gaps, unsafe records and changed trees',()=>{
+  for(const mutate of [
+    f=>fs.symlinkSync('missing',path.join(f.root,'.deployment-record.json')),
+    f=>fs.unlinkSync(path.join(f.root,'.release-complete')),
+    f=>{const p=path.join(f.root,'RELEASE_EVIDENCE.json'),m=JSON.parse(fs.readFileSync(p));m.buildId='';fs.writeFileSync(p,JSON.stringify(m));},
+    f=>{f.options.verifyEvidence=args=>{const r=verifyReleaseEvidence(args);fs.writeFileSync(path.join(f.root,'app.js'),'changed');return r;};},
+  ]){const f=fixture();try{fs.unlinkSync(path.join(f.root,'.deployment-record.json'));mutate(f);assert.throws(()=>verifySealedBuyerWriterArtifact(f.options));}finally{f.cleanup();}}
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { collectSixReads, readCases, validateCollectorConfig, verifyCollectedTask, digest } from '../packages/zola-six-reads/collector.js';
+import { collectSixReads, collectAdmissionDenial, readCases, validateCollectorConfig, verifyCollectedTask, digest } from '../packages/zola-six-reads/collector.js';
 import { openCollectorJournal } from '../packages/zola-six-reads/collector-host.js';
 import { createOfflineFixture, cases } from '../packages/zola-six-reads/offline.js';
 import { blackspireCapabilityRegistry } from '../packages/capabilities/index.js';
@@ -12,12 +12,14 @@ import { observationForResult } from '../packages/capabilities/read-observation.
 
 const config = { version: 1, releaseSha: 'a'.repeat(40), frontendOrigin: 'https://frontend.invalid', workspace: 'six-read-fixture', principal: 'reader', deniedPrincipal: 'other', dealId: 'DE-0001', apiPid: 100, workerPid: 101, port: 8789, databasePath: '/does/not/exist.sqlite', credentialPath: '/does/not/exist.json', journalDirectory: '/does/not/exist', runId: 'fixture-run' };
 const generation = { apiGeneration: 'b'.repeat(32), workerGeneration: 'c'.repeat(32), workerId: 'canonical-worker', apiPid: 100, workerPid: 101, apiStartTime: '1', workerStartTime: '2' };
+const denialSnapshot=()=>({databaseIdentity:{device:1,inode:1},tables:['tasks','unified_inputs','provider_attempts','provider_usage'].map(name=>({name,rows:0,digest:'0'.repeat(64)}))});
 async function fixture() {
   const offline = createOfflineFixture(), records = new Map(), events = []; let posts = 0;
   const store = { events: () => structuredClone(events), append: e => events.push(structuredClone(e)) };
   const host = {
     generation: async () => structuredClone(generation), deniedIdentity: async () => {}, lookup: key => records.get(key) ?? null,
     pause: async () => {}, disclosure: async () => {},
+    denialSnapshot,denyAdmission:async()=>({authorityDenied:true,status:404}),
     async admit(body) {
       posts++;
       const index = readCases(config.dealId).findIndex(e => e.text === body.text), entry = cases[index], capability = blackspireCapabilityRegistry.get(entry.id);
@@ -44,6 +46,35 @@ test('six actual synthetic route observations are collected; rerun never admits 
   assert.equal(report.results[5].nexusStoredContact, 'PRESENT');
   assert.equal(report.results.every(r => r.observedForbiddenAttempts === 0 && r.frontendSha === config.releaseSha), true);
   await collectSixReads(config, f.host, f.store); assert.equal(f.posts(), 6);
+});
+test('authenticated negative admission journals intent first and never repeats an uncertain POST',async()=>{
+  for(const fault of ['lost','csrf','mutation','generation','confirmation']){
+    const f=await fixture();let calls=0,snapshots=0,changed=false;
+    f.host.denyAdmission=async()=>{calls++;assert.equal(f.events.at(-1).type,'denial_intent');if(fault==='lost')throw new Error('SECRET');changed=true;return{authorityDenied:true,status:fault==='csrf'?403:404};};
+    f.host.denialSnapshot=()=>{const v=denialSnapshot();if(++snapshots>1&&fault==='mutation')v.tables[0].digest='1'.repeat(64);return v;};
+    f.host.generation=async()=>changed&&fault==='generation'?{...generation,workerGeneration:'d'.repeat(32)}:generation;
+    const append=f.store.append;f.store.append=e=>{if(fault==='confirmation'&&e.type==='denial_confirmed')throw new Error('disk');append(e);};
+    await assert.rejects(collectAdmissionDenial(config,f.host,f.store,generation),/DENIAL_UNKNOWN_NO_RETRY/);
+    await assert.rejects(collectAdmissionDenial(config,f.host,f.store,generation),/DENIAL_UNKNOWN_NO_RETRY/);
+    assert.equal(calls,1);assert.equal(f.posts(),0);
+  }
+});
+test('negative admission refuses missing observer, malformed state or unwritten intent before POST',async()=>{
+  for(const fault of ['missing','malformed','journal']){
+    const f=await fixture();let calls=0;f.host.denyAdmission=async()=>{calls++;return{authorityDenied:true,status:404};};
+    if(fault==='missing')delete f.host.denialSnapshot;
+    if(fault==='malformed')f.host.denialSnapshot=()=>({});
+    if(fault==='journal')f.store.append=()=>{throw new Error('journal');};
+    await assert.rejects(collectAdmissionDenial(config,f.host,f.store,generation));assert.equal(calls,0);
+  }
+});
+test('retained negative admission cannot attest a principal that gained authority; no POST is repeated',async()=>{
+  const f=await fixture();let posts=0;
+  f.host.denyAdmission=async()=>{posts++;return{authorityDenied:true,status:404};};
+  await collectAdmissionDenial(config,f.host,f.store,generation);
+  f.host.denialSnapshot=()=>{throw new Error('DENIAL_PRINCIPAL_HAS_AUTHORITY');};
+  await assert.rejects(collectAdmissionDenial(config,f.host,f.store,generation),/DENIAL_PRINCIPAL_HAS_AUTHORITY/);
+  assert.equal(posts,1);
 });
 test('lost POST with durable task reconciles without redispatch', async () => {
   const f = await fixture(), admit = f.host.admit;

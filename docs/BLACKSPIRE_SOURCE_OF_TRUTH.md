@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-08 — sealed release preparation and authenticated admission denial
+
+Recovered clean local/remote/PR `87fefd2`; the supplied `21a82af` reference was historical. Three read-only audit groups retained the existing green work and confirmed unfinished release containment, integrated rollback and complete collector observation. The provider archive, all eleven member checksums and canonical request match their pinned bytes; provider execution remains unverified.
+
+Preparation now uses a distinct sealed-artifact verifier in a fixed bounded child. It requires exact source SHA, environment, digest, protected unchanged tree and an absent deployment record; the only permitted missing evidence is that record. Its proof explicitly says undeployed and not production accepted. Runtime verification still requires a genuine deployment record and cannot consume the sealed proof. Twenty-three focused checks and independent actual inspection of the retained artifact pass without creating a record. This repairs the preflight dependency that previously rejected every merely sealed artifact.
+
+The six-read collector now verifies authenticated admission denial before normal admissions, using the distinct principal's actual session and valid CSRF token. Durable intent precedes the POST; only the exact authorization-denial response plus unchanged bounded snapshots of tasks, unified inputs, provider attempts and provider usage can confirm it. Active grants on the denied principal refuse. Lost response, state change, generation change or failed confirmation leaves an unretryable intent. Independent review caught and corrected a replay gap: retained proof now rechecks current no-grant authority without comparing historical task contents or resending the POST. Existing journals without denial proof cannot bypass this prerequisite. Twenty-eight independent tests pass, including actual isolated API collection and cleanup.
+
+These are preparation and Command admission proofs, not full owner-policy, transient mutation-attempt or process-wide egress acceptance. Integrated fixed recovery production service/frontend acceptance, durable intake-held boot and complete release orchestration remain unfinished. No production SQL, session issuance, n8n publication, routing mutation, canonical activation or merge occurred. Exact new-head CI and preparation evidence are retained in the protected checkpoint after commit.
+
 ## 2026-09-08 — historical target closure and durable migration integration
 
 Preserved `dace62f` and the clean `21a82af` continuation. Historical route discovery now follows distinct alias deployment targets omitted from project pagination, validates normalized hostnames and rejects duplicate aliases. The retained inventory has 37 aliases whose target IDs were absent from its 380 deployments. New GET-only closure code reports inaccessible targets as incomplete; metadata, 404/410 and prior canary coverage remain insufficient denial proof. Fourteen route groups pass independently; fresh remote closure evidence is still required.

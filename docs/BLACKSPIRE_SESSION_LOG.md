@@ -1636,3 +1636,7 @@ Continued clean dace62f with three parallel implementation/review lanes. Added a
 ## 2026-09-08 — ten-lane continuation integration
 
 Preserved dace62f/21a82af. Implemented historical alias-target discovery closure, protected migration package integration and durable native migration adapter with no-retry reconciliation; corrected offline bundle ACL publication acceptance. Parallel implementation and independent reviews retain production gates closed. Actual immutable frontend HTTP rehearsal passes six strict synthetic reads and eighteen pre-database denials in a private network namespace. Final validation is recorded in the protected continuation checkpoint; development runtime and reused dependency limits remain explicit, and no complete rollback or production acceptance is claimed.
+
+## 2026-09-08 — sealed preparation and denied-admission integration
+
+Preserved current87fefd2 and prior ancestry. Parent separated sealed artifact proof from runtime deployment authority and integrated durable authenticated foreign-principal admission denial with bounded SQLite observation. Independent review corrected grant changes on denial replay; real sealed-artifact and candidate API checks pass. Production gates remain closed; full validation and current-head preparation are recorded in /tmp/zola-astra-activation-current.md.
