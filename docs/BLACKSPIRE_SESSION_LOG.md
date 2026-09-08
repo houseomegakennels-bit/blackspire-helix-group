@@ -1600,3 +1600,5 @@ Recovered exact release 450b52f and unchanged main53adf74. Added sanitized routi
 ## 2026-09-08 — current-head observer completion increment
 
 Implemented a closed read client across all six routes, bounded nested queries, sticky forbidden-operation denial, sanitized observations and authority-fenced evidence persistence. Actual-scope offline integration and 119 capability regressions pass; independent reviews approved after fixes. Captured eight safe live recovery anonymous denials and measured a 32 MiB minimum deployment envelope against 7.25 GB free. Provider/n8n artifacts remain unchanged. Full live containment, production collector orchestration and executable release fast path remain unfinished; no production mutation or merge.
+
+The same continuation adds sanitized GET-only project-routing version history; ten tests and independent review pass. No routing mutation or denial inference.

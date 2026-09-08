@@ -158,6 +158,22 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
           privateValueReviewRequired: true };
       }), denialProven: false };
   });
+  // Official unpaginated version history. Never emit creator, S3 key, comments,
+  // rule values, or infer active denial from an empty history.
+  await observe('projectRoutingVersions', async () => {
+    const data = await get(`/v1/projects/${PROJECT}/routes/versions`);
+    if (!data || !Array.isArray(data.versions) || data.versions.length > 10000 || data.pagination != null) fail('INVALID_ROUTING_VERSIONS');
+    const seen = new Set();
+    const versions = data.versions.map((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) fail('INVALID_ROUTING_VERSION');
+      const id = identifier(row.id);
+      if (seen.has(id)) fail('DUPLICATE_ROUTING_VERSION'); seen.add(id);
+      return { id, isLive: typeof row.isLive === 'boolean' ? row.isLive : null,
+        isStaging: typeof row.isStaging === 'boolean' ? row.isStaging : null,
+        ruleCount: Number.isSafeInteger(row.ruleCount) && row.ruleCount >= 0 && row.ruleCount <= 10000 ? row.ruleCount : null };
+    });
+    return { versions, count: versions.length, denialProven: false };
+  });
   await observe('firewall', async () => {
     const config = await get('/v1/security/firewall/config/active', { projectId: PROJECT });
     if (!Array.isArray(config.rules)) fail('INVALID_FIREWALL_CONFIG');

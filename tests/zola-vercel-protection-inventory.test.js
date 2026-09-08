@@ -23,6 +23,7 @@ function fixture(override = () => undefined) {
     if (url.pathname.startsWith('/v13/deployments/')) return response({ id: url.pathname.split('/').at(-1), projectId: PROJECT, url: 'fixture.vercel.app', alias: ['fixture.example.com'], readyState: 'READY', env: { TOKEN: token }, routes: [{ headers: { token } }] });
     if (url.pathname.endsWith('/domains')) return response({ domains: [{ name: 'fixture.example.com', verified: true }] });
     if (url.pathname === '/v4/aliases') return response({ aliases: [{ alias: 'branch.vercel.app', deploymentId: 'dpl_one', projectId: PROJECT }] });
+    if (url.pathname.endsWith('/routes/versions')) return response({ versions: [] });
     if (url.pathname.endsWith('/routes')) return response({ routes: [], version: { id: 'routes-version-one', isLive: true, ruleCount: 0 } });
     if (url.pathname.endsWith('/config/active')) return response({ firewallEnabled: true, rules: [{ active: true, action: { mitigate: { action: 'deny' } }, conditionGroup: [{ conditions: [{ value: token }] }] }] });
     if (url.pathname.endsWith('/bypass')) return response({ result: [{ ip: '192.0.2.1', note: token }] });
@@ -138,5 +139,18 @@ test('routing schema diagnostics never emit arbitrary keys or values and never i
     assert.equal(JSON.stringify(result).includes(token), false);
     if (body === null) assert.equal(observation.diagnostic.topLevelType, 'null');
     if (body?.version?.ruleCount === 12) assert.equal(observation.diagnostic.ruleCount, 12);
+  }
+});
+
+
+test('routing history retains only typed control metadata and refuses partial/duplicate schemas', async () => {
+  for (const invalid of [false, true, 'duplicate']) {
+    const version = { id: 'version-one', isLive: true, ruleCount: 2, s3Key: token, createdBy: token, note: token };
+    const { fetchImpl } = fixture((url) => url.pathname.endsWith('/routes/versions') ? response({ versions: invalid === 'duplicate' ? [version, version] : [version], ...(invalid === true ? { pagination: { next: 1 } } : {}) }) : undefined);
+    const result = await inventoryProtection({ token, fetchImpl });
+    const history = result.observations.find(row => row.name === 'projectRoutingVersions');
+    assert.equal(history.status, invalid ? 'INCOMPLETE' : 'COMPLETE');
+    assert.equal(JSON.stringify(result).includes(token), false);
+    if (!invalid) { assert.equal(history.value.count, 1); assert.equal(history.value.denialProven, false); }
   }
 });
