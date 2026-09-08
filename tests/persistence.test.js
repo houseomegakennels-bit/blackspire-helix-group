@@ -10,7 +10,10 @@ import { prepareDisposableDatabase } from './helpers/prepare-disposable-database
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blackspire-persistence-'));
 const dbPath = path.join(root, 'command.sqlite');
 const port = 8894;
-const base = `http://localhost:${port}`;
+// Pin one address family: `localhost` may resolve to ::1 and 127.0.0.1 across separate fetch
+// connections, which would correctly create different IP rate-limit buckets and make this
+// persistence assertion nondeterministic on dual-stack CI runners.
+const base = `http://127.0.0.1:${port}`;
 // Set these in this process's own env too (not just the spawned child's), so that any direct import of
 // packages/shared/config.js from this test file (which freezes constants at first import) resolves the
 // same values the child API processes use.
