@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { createBuyerWriterRuntimeInspector, readBuyerWriterProcess } from '../buyer-writer/runtime-inspection.js';
 import { readRootOwnedJson } from '../buyer-writer/protected-json.js';
+import { createProductionConnectedDatabaseObserver } from './database-connected-host.js';
 import { createProductionDatabaseObserver } from './database-host.js';
 import { digest, refuse } from './collector.js';
 
@@ -108,11 +109,21 @@ export function createProductionCollectorHost(config) {
   if (execFileSync('/usr/bin/git', ['rev-parse','--verify','HEAD'], gitOptions).trim() !== config.releaseSha ||
       execFileSync('/usr/bin/git', ['status','--porcelain=v1','--untracked-files=all'], gitOptions).trim()) refuse('COLLECTOR_SOURCE_SHA_OR_DIRTY_TREE');
   const credentials = readRootOwnedJson(config.credentialPath, { groupId: 0 });
+  const denialReceipt = config.version === 4 ? readRootOwnedJson(config.denialReceiptPath, { groupId: 0 }) : null;
+  if (config.version === 4) {
+    if (Object.keys(credentials).join(',') !== 'bearer') refuse('CREDENTIAL_CONTRACT_REJECTED');
+    credentials.deniedCookie = denialReceipt.deniedCookie;
+  }
   if (Object.keys(credentials).sort().join(',') !== 'bearer,deniedCookie' ||
       typeof credentials.bearer !== 'string' || credentials.bearer.length < 24 || credentials.bearer.length > 4096 || /[\r\n]/.test(credentials.bearer) ||
       typeof credentials.deniedCookie !== 'string' || credentials.deniedCookie.length < 10 || credentials.deniedCookie.length > 8192 || /[\r\n]/.test(credentials.deniedCookie)) refuse('CREDENTIAL_CONTRACT_REJECTED');
   const reader = openCollectorDatabaseReader(config);
-  const inspect = createBuyerWriterRuntimeInspector({ apiPid: config.apiPid });
+  let httpBoundary, inspect;
+  try {
+    if (denialReceipt) reader.verifyDenialReceipt(denialReceipt);
+    httpBoundary = createCollectorHttpBoundary(config, credentials);
+    inspect = createBuyerWriterRuntimeInspector({ apiPid: config.apiPid });
+  } catch (error) { reader.close(); throw error; }
   return {
     async generation() {
       assertListener(config);
@@ -135,8 +146,10 @@ export function createProductionCollectorHost(config) {
       return { apiGeneration: runtime.api.invocationId, apiPid: config.apiPid, apiStartTime: runtime.api.startTime,
         workerGeneration: runtime.worker.invocationId, workerId, workerPid: config.workerPid, workerStartTime: worker.startTime };
     },
-    ...createCollectorHttpBoundary(config, credentials),
+    ...httpBoundary,
+    ...(denialReceipt ? { async deniedIdentity() { reader.verifyDenialReceipt(denialReceipt); await httpBoundary.deniedIdentity(); } } : {}),
     ...(config.version === 2 ? { observeDatabase: createProductionDatabaseObserver(config) } : {}),
+    ...([3,4].includes(config.version) ? { observeDatabase: createProductionConnectedDatabaseObserver(config) } : {}),
     lookup: key => reader.lookup(key),
     pause: () => new Promise(resolve => setTimeout(resolve, 500)),
     close: () => reader.close(),
@@ -156,6 +169,17 @@ export function openCollectorDatabaseReader(config) {
   assertIdentity();
   return {
     assertIdentity,
+    verifyDenialReceipt(receipt) {
+      assertIdentity();
+      database.exec('BEGIN');
+      try {
+        verifyCollectorDenialReceipt(receipt, config, dbstat, {
+          session: database.prepare('SELECT * FROM sessions WHERE id=?').get(receipt?.sessionId ?? ''),
+          audits: database.prepare("SELECT actor,details FROM audit_events WHERE action='auth.delegated-denial.issued' AND json_extract(details,'$.runId')=?").all(config.runId),
+          activeGrants: database.prepare("SELECT count(*) AS n FROM auth_workspace_grants WHERE principal_id=? AND status='active'").get(config.deniedPrincipal).n,
+        });
+      } finally { database.exec('ROLLBACK'); }
+    },
     lookup(key) {
       assertIdentity();
       database.exec('BEGIN');
@@ -198,4 +222,20 @@ export function createCollectorHttpBoundary(config, credentials) {
       await this.deniedIdentity();
     },
   };
+}
+
+// Receipt metadata alone never authenticates: production supplies the actual
+// protected DB inode and read-only session/audit rows, then verifies HTTP identity.
+export function verifyCollectorDenialReceipt(receipt, config, databaseIdentity, {session, audits, activeGrants}) {
+  const keys='authentication,createdAt,databaseIdentity,deniedCookie,deniedPrincipal,expiresAt,marker,operatorPrincipal,releaseSha,runId,sessionId,version,workspace';
+  if (!receipt || Object.keys(receipt).sort().join(',') !== keys || receipt.version !== 1 || receipt.authentication !== 'root-delegated-existing-principal' ||
+    receipt.releaseSha !== config.releaseSha || receipt.runId !== config.runId || receipt.workspace !== config.workspace || receipt.operatorPrincipal !== config.principal || receipt.deniedPrincipal !== config.deniedPrincipal ||
+    !/^[a-f0-9]{48}$/.test(receipt.sessionId ?? '') || receipt.deniedCookie !== `bc_session=${receipt.sessionId}` ||
+    typeof receipt.marker !== 'string' || !receipt.marker.startsWith(`zola-denial:${config.runId}:`) || !/^[a-f0-9]{32}$/.test(receipt.marker.slice(`zola-denial:${config.runId}:`.length)) ||
+    !Number.isSafeInteger(receipt.createdAt) || !Number.isSafeInteger(receipt.expiresAt) || receipt.createdAt > Date.now() || receipt.expiresAt <= Date.now() || receipt.expiresAt <= receipt.createdAt || receipt.expiresAt-receipt.createdAt > 900000 ||
+    !receipt.databaseIdentity || Object.keys(receipt.databaseIdentity).sort().join(',') !== 'dev,ino,uid' || ['dev','ino','uid'].some(k => receipt.databaseIdentity[k] !== databaseIdentity[k]) || activeGrants !== 0) refuse('DELEGATED_DENIAL_RECEIPT_REJECTED');
+  if (!session || session.id !== receipt.sessionId || session.principal_id !== receipt.deniedPrincipal || session.revoked_at !== null || session.created_at !== receipt.createdAt || session.expires_at !== receipt.expiresAt || session.user_agent !== receipt.marker || session.ip !== 'root-local-delegation' || !Array.isArray(audits) || audits.length !== 1 || audits[0].actor !== receipt.operatorPrincipal) refuse('DELEGATED_DENIAL_SESSION_REJECTED');
+  let details; try { details = JSON.parse(audits[0].details); } catch { refuse('DELEGATED_DENIAL_AUDIT_REJECTED'); }
+  const expected = {runId:receipt.runId,releaseSha:receipt.releaseSha,deniedPrincipal:receipt.deniedPrincipal,workspace:receipt.workspace,sessionDigest:digest(receipt.sessionId),expiresAt:receipt.expiresAt};
+  if (!details || Object.keys(details).sort().join(',') !== Object.keys(expected).sort().join(',') || Object.keys(expected).some(k => details[k] !== expected[k])) refuse('DELEGATED_DENIAL_AUDIT_REJECTED');
 }

@@ -7,6 +7,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { computeArtifactDigest } from '../packages/shared/release-evidence.js';
 import { createRehearsalIntake, RECOVERY_SHA, RECOVERY_ARTIFACT, INTAKE_PATH, RETIRED_PATHS } from '../packages/zola-rollback/intake.js';
+import { rehearseRecoveryBoot } from '../packages/zola-rollback/boot.js';
 
 try {
   assert.equal(process.argv.length, 2);
@@ -39,11 +40,15 @@ try {
   // Run the artifact's own migration entrypoint, through the approved disposable boundary.
   const cwd = process.cwd(); process.chdir(artifact);
   try { prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH); } finally { process.chdir(cwd); }
+  const boot = await rehearseRecoveryBoot({ artifact, root });
   const load = (name) => import(pathToFileURL(path.join(artifact, name)).href);
   const { DB_PATH } = await load('packages/shared/config.js');
   assert.equal(DB_PATH, process.env.BLACKSPIRE_DB_PATH);
   const { run, all, closeDb } = await load('packages/task-engine/db.js');
   try {
+    for (const table of ['tasks', 'unified_inputs', 'conversations', 'provider_attempts', 'provider_usage']) {
+      assert.equal(all(`SELECT COUNT(*) AS count FROM ${table}`)[0].count, 0);
+    }
     const { upsertWorkspace } = await load('packages/workspace-registry/workspaces.js');
     const { resolveAdminBearer, requireWorkspacePermission } = await load('packages/shared/authorization.js');
     const { createUnifiedInput } = await load('packages/unified-input/unified.js');
@@ -120,8 +125,8 @@ try {
     assertNetwork();
     process.stdout.write(`${JSON.stringify({ scope: 'isolated recovery admission and dispatch', recoverySha: RECOVERY_SHA, artifactDigest: RECOVERY_ARTIFACT,
       networkIsolation: 'private kernel namespace; only loopback; no IPv4/IPv6 default route before and after rehearsal',
-      productionAccepted: false, reads, retiredWrapperPathsDenied: true, revokedGrantDenied: true, staleAdmissionGenerationDenied: true, staleWorkerResultRejected: true, reclaimedDispatchNotReplayed: true,
+      productionAccepted: false, boot, reads, retiredWrapperPathsDenied: true, revokedGrantDenied: true, staleAdmissionGenerationDenied: true, staleWorkerResultRejected: true, reclaimedDispatchNotReplayed: true,
       syntheticMutationAttempts: 0, paidProviderCalls: 0, intendedAuthorizationAuditAppends: all('SELECT COUNT(*) AS count FROM auth_decisions')[0].count,
-      limitations: ['No canonical services or live frontend URL containment', 'No production database or owner policies', 'Generation supplied by fixture; real supervisor fence acceptance still required', 'Recovery backend uses current offline route fixtures; no recovery frontend live claim'] })}\n`);
+      limitations: ['No canonical services or live frontend URL containment', 'No production database or owner policies', 'Dispatch generation supplied by fixture; systemd supervisor fence acceptance still required', 'Recovery backend uses current offline route fixtures; no recovery frontend live claim'] })}\n`);
   } finally { closeDb(); }
 } catch { process.stderr.write('isolated recovery child failed\n'); process.exitCode = 1; }

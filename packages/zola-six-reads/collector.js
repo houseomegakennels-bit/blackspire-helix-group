@@ -24,8 +24,10 @@ export function readCases(dealId) {
 }
 export function validateCollectorConfig(value) {
   const keys = ['version','releaseSha','frontendOrigin','workspace','principal','deniedPrincipal','dealId','apiPid','workerPid','port','databasePath','credentialPath','journalDirectory','runId'];
-  if (value?.version === 2) keys.push('observerDatabaseConfigPath');
-  if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length || keys.some(k => !Object.hasOwn(value,k)) || ![1,2].includes(value.version) || (value.version === 2 && (typeof value.observerDatabaseConfigPath !== 'string' || !value.observerDatabaseConfigPath.startsWith('/') || value.observerDatabaseConfigPath.includes('\0'))) ||
+  if ([2,3,4].includes(value?.version)) keys.push('observerDatabaseConfigPath');
+  if (value?.version === 4) keys.push('denialReceiptPath');
+  if (value?.version === 4 && (typeof value.denialReceiptPath !== 'string' || !value.denialReceiptPath.startsWith('/') || value.denialReceiptPath.includes('\0'))) refuse('INVALID_CONFIGURATION');
+  if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length || keys.some(k => !Object.hasOwn(value,k)) || ![1,2,3,4].includes(value.version) || ([2,3,4].includes(value.version) && (typeof value.observerDatabaseConfigPath !== 'string' || !value.observerDatabaseConfigPath.startsWith('/') || value.observerDatabaseConfigPath.includes('\0'))) ||
       !sha(value.releaseSha) || ![value.workspace,value.principal,value.deniedPrincipal,value.runId].every(id) || value.principal === value.deniedPrincipal ||
       !Number.isInteger(value.port) || value.port < 1 || value.port > 65535 ||
       ![value.apiPid,value.workerPid].every(n => Number.isInteger(n) && n > 1) || value.apiPid === value.workerPid ||
@@ -79,6 +81,9 @@ export async function collectSixReads(config, host, store) {
   const binding = digest(config);
   const existing = store.events();
   if (existing.length && (existing[0].type !== 'run' || existing[0].binding !== binding)) refuse('JOURNAL_CONFIG_MISMATCH');
+  // An after query closes this interval. Replaying it as a freshly collected
+  // report would misrepresent old observations; retain the historical journal.
+  if ([3,4].includes(config.version) && existing.some(e => e.type === 'database_query_intent' && e.binding?.phase === 'after')) refuse('CONNECTED_OBSERVER_INTERVAL_CLOSED');
   if (!existing.length) store.append({ type: 'run', binding, releaseSha: config.releaseSha });
   const generation = await host.generation();
   const sameGeneration = async () => { if (JSON.stringify(await host.generation()) !== JSON.stringify(generation)) refuse('GENERATION_CHANGED'); };
@@ -90,11 +95,11 @@ export async function collectSixReads(config, host, store) {
     if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'owner,snapshot') refuse('DATABASE_OBSERVATION_ENVELOPE');
   };
   let databaseBefore;
-  if (config.version === 2) {
+  if ([2,3,4].includes(config.version)) {
     if (typeof host.observeDatabase !== 'function') refuse('DATABASE_OBSERVER_UNAVAILABLE');
     if (!beforeEvents.length) {
       if (store.events().some(e => e.type === 'intent')) refuse('DATABASE_OBSERVATION_MISSING_BEFORE_ADMISSION');
-      databaseBefore = await host.observeDatabase('before');
+      databaseBefore = await host.observeDatabase('before', { generation, store });
       validateDatabaseEnvelope(databaseBefore);
       validateDivisionSnapshot(databaseBefore.snapshot, config, 'before');
       validateOwnerWitness(databaseBefore.owner, config, 'before');
@@ -104,6 +109,7 @@ export async function collectSixReads(config, host, store) {
       const firstIntent = databaseEvents.findIndex(e => e.type === 'intent');
       if (firstIntent >= 0 && databaseEvents.findIndex(e => e.type === 'database_before') > firstIntent) refuse('DATABASE_OBSERVATION_AFTER_ADMISSION');
       databaseBefore = beforeEvents[0].observation;
+      if ([3,4].includes(config.version) && digest(await host.observeDatabase('before', { generation, store })) !== digest(databaseBefore)) refuse('CONNECTED_OBSERVER_BASELINE_MISMATCH');
       validateDatabaseEnvelope(databaseBefore);
       validateDivisionSnapshot(databaseBefore.snapshot, config, 'before');
       validateOwnerWitness(databaseBefore.owner, config, 'before');
@@ -149,8 +155,8 @@ export async function collectSixReads(config, host, store) {
   }
   await sameGeneration();
   let databaseEvidence;
-  if (config.version === 2) {
-    const after = await host.observeDatabase('after');
+  if ([2,3,4].includes(config.version)) {
+    const after = await host.observeDatabase('after', { generation, store });
     validateDatabaseEnvelope(after);
     validateOwnerWitness(after.owner, config, 'after');
     if (after.owner.witness !== databaseBefore.owner.witness) refuse('DATABASE_OWNER_WITNESS_CHANGED');

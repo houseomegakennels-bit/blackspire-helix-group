@@ -141,7 +141,13 @@ async function route(req, res) {
       audit(null, 'auth', 'session.rotated', { ip: clientIp(req) });
       return writeJson(res, 200, { ok: true, csrfToken: rotated.csrfToken, expiresAt: rotated.expiresAt }, { 'set-cookie': sessionCookie(rotated) });
     }
-    if (u.pathname === '/api/auth/revoke-all' && req.method === 'POST') { revokeAllSessions(); audit(null, 'administrator', 'sessions.revoked'); return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() }); }
+    if (u.pathname === '/api/auth/revoke-all' && req.method === 'POST') {
+      // Session possession permits self logout/rotation, not global revocation.
+      // Resolve current persisted operator authority before changing any session.
+      if (!requestPrincipal(auth)) return json(res, 404, { error: 'not found' });
+      revokeAllSessions(); audit(null, 'administrator', 'sessions.revoked');
+      return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() });
+    }
     if (u.pathname === '/health') return json(res, 200, healthSnapshot());
     if (u.pathname === '/ready') {
       const writer = activeBuyerWriter;
@@ -395,6 +401,7 @@ async function testModeLogin(req, res) {
 function testModeActive() { return Number.isFinite(Date.parse(TEST_MODE.expiresAt)) && Date.now() < Date.parse(TEST_MODE.expiresAt); }
 
 async function testTelegramInput(req, res) {
+  if (!TEST_MODE.enabled || !TEST_MODE.ok || !testModeActive()) return json(res, 404, { error: 'not found' });
   const body = await readJson(req);
   const updateId = String(body.updateId || '').trim();
   if (!updateId || updateId.length > 120) return json(res, 422, { error: 'updateId is required' });
@@ -403,6 +410,7 @@ async function testTelegramInput(req, res) {
 }
 
 async function testQueuedTask(req, res) {
+  if (!TEST_MODE.enabled || !TEST_MODE.ok || !testModeActive()) return json(res, 404, { error: 'not found' });
   const body = await readJson(req);
   setFlag('test_worker_hold', 'active');
   const result = createUnifiedInput({ channel: 'jarvis', actorId: TEST_MODE.testActor, channelKey: `test-session:${TEST_MODE.testActor}`, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: 'Report queued task status without changing files.', idempotencyKey: body.idempotencyKey || id('test-held'), authority: 'test_operator', executionIntent: 'read_only' });
@@ -411,6 +419,7 @@ async function testQueuedTask(req, res) {
 }
 
 async function testDeliveryFailure(req, res) {
+  if (!TEST_MODE.enabled || !TEST_MODE.ok || !testModeActive()) return json(res, 404, { error: 'not found' });
   const body = await readJson(req);
   const requested = Number(body.attempts || 1);
   if (!Number.isInteger(requested)) return json(res, 422, { error: 'attempts must be an integer from 1 to 3' });

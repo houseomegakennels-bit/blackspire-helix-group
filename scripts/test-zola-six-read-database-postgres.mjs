@@ -1,3 +1,5 @@
+import { createJournaledConnectedObserver } from '../packages/zola-six-reads/database-connected.js';
+import { digest } from '../packages/zola-six-reads/collector.js';
 import {randomBytes} from 'node:crypto';
 import { readFileSync,readlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -80,6 +82,16 @@ try {
   const witness=()=>JSON.parse(sql(ownerWitnessSQL(config,'before')).split('\n').at(-1));
   const before=observe('before');assert.equal(validateOwnerWitness(witness(),config,'before').foreignVisible,0);
   assert.equal(compareDivisionSnapshots(before,observe('after'),config).netMutationDelta,0);
+  const journalEvents=[{type:'run',binding:digest(config),releaseSha:config.releaseSha}];
+  const store={events:()=>structuredClone(journalEvents),append:event=>journalEvents.push(structuredClone(event))};
+  const generation={apiGeneration:'isolated-api',workerGeneration:'isolated-worker'};let connectedQueries=0;
+  const connected=createJournaledConnectedObserver(config,async query=>{connectedQueries++;return JSON.parse(sql(query).split('\n').at(-1));});
+  const connectedBefore=await connected('before',{store,generation});
+  assert.equal(connectedBefore.owner.foreignVisible,0);
+  assert.deepEqual(await connected('before',{store,generation}),connectedBefore);assert.equal(connectedQueries,2);
+  for(let index=0;index<6;index++){store.append({type:'intent',index});store.append({type:'collected',index});}
+  const connectedAfter=await connected('after',{store,generation});assert.equal(connectedQueries,4);
+  assert.equal(compareDivisionSnapshots(connectedBefore.snapshot,connectedAfter.snapshot,config).netMutationDelta,0);
   sql(`UPDATE public."BuyerProfile" SET payload=payload;`);
   const after=observe('after');assert.equal(before.tables.find(t=>t.name==='BuyerProfile').digest,after.tables.find(t=>t.name==='BuyerProfile').digest);
   assert.throws(()=>compareDivisionSnapshots(before,after,config),/DIVISION_ROWS_CHANGED/);
@@ -91,5 +103,5 @@ try {
   if(missing.status===0)assert.throws(()=>validateOwnerWitness(JSON.parse(missing.stdout.trim().split('\n').at(-1)),config,'before'));
   else assert.equal(missing.status,3);
   sql('BEGIN READ ONLY; UPDATE public."BuyerProfile" SET payload=payload; ROLLBACK;', {fail:/read-only transaction/});
-  console.log(JSON.stringify({status:'PASS',groups:6,postgresVersion:'17.6',scope:'Disposable PostgreSQL, full row and tuple digests, actual role and real fixture-owner policy, policy drift, missing owner and read-only write denial',productionExecuted:false}));
+  console.log(JSON.stringify({status:'PASS',groups:7,postgresVersion:'17.6',scope:'Disposable PostgreSQL, connected query binding/journal roundtrip (not HTTPS/provider acceptance), full row and tuple digests, actual role and real fixture-owner policy, policy drift, missing owner and read-only write denial',productionExecuted:false}));
 } finally { cleanup(); }

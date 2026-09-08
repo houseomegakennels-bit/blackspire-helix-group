@@ -148,3 +148,32 @@ test('v2 database observation precedes admission, persists baseline, checks afte
   const mutated=await fixture();mutated.host.observeDatabase=async phase=>{const v=observed(phase);if(phase==='after')v.snapshot.tables[0].version_digest='f'.repeat(64);return v;};
   await assert.rejects(collectSixReads(v2,mutated.host,mutated.store),/DIVISION_ROWS_CHANGED/);
 });
+
+for (const version of [3,4]) test(`v${version} connected queries durably bracket six synthetic dispatches; replay preserves baseline and never claims release acceptance`, async () => {
+  const { createJournaledConnectedObserver } = await import('../packages/zola-six-reads/database-connected.js');
+  const { DIVISION_TABLES } = await import('../packages/zola-six-reads/database-observer.js');
+  const v3 = validateCollectorConfig({ ...config, version, observerDatabaseConfigPath:'/explicit/protected/management-token.json', ...(version===4?{denialReceiptPath:'/explicit/protected/denial-receipt.json'}:{}) });
+  const f = await fixture();let queries=0;
+  f.host.observeDatabase=createJournaledConnectedObserver(v3,async query=>{
+    queries++;
+    const phase=query.includes("'phase','before'")?'before':'after';
+    assert.equal(f.posts(),phase==='before'?0:6);
+    const common={version:1,releaseSha:config.releaseSha,runId:config.runId,phase,capturedAt:new Date().toISOString(),database:'postgres',readOnly:true,
+      collectorBinding:query.match(/'collectorBinding','([a-f0-9]{64})'/)[1]};
+    return query.includes('AS version_digest')?{...common,role:'postgres',primary:true,bypassRls:true,ordinaryTables:15,
+      tables:DIVISION_TABLES.map(name=>({name,rows:1,digest:'b'.repeat(64),version_digest:'c'.repeat(64)}))}:
+      {...common,role:'authenticated',witness:'d'.repeat(64),realDistinctUsers:true,ownVisible:1,foreignVisible:0};
+  });
+  const report=await collectSixReads(v3,f.host,f.store);
+  assert.equal(report.livePass,false);assert.equal(report.results.length,6);assert.equal(report.databaseEvidence.netMutationDelta,0);
+  assert.equal(queries,4);assert.equal(f.posts(),6);
+  const baseline=f.events.find(e=>e.type==='database_before');
+  const queryResults=f.events.filter(e=>e.type==='database_query_result');assert.equal(queryResults.length,4);
+  assert.ok(f.events.indexOf(baseline)<f.events.findIndex(e=>e.type==='intent'));
+  const previousEvents=f.events.length;
+  await assert.rejects(collectSixReads(v3,f.host,f.store),/CONNECTED_OBSERVER_INTERVAL_CLOSED/);assert.equal(queries,4);assert.equal(f.posts(),6);assert.equal(f.events.length,previousEvents);
+  // A baseline altered before the after interval opens also fails restoration.
+  f.events.splice(f.events.findIndex(e=>e.type==='database_query_intent' && e.binding.phase==='after'));
+  baseline.observation.snapshot.tables[0].rows=2;
+  await assert.rejects(collectSixReads(v3,f.host,f.store),/CONNECTED_OBSERVER_BASELINE_MISMATCH/);assert.equal(f.posts(),6);
+});

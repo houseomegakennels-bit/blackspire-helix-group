@@ -1628,3 +1628,7 @@ Recovered clean 20d0eb8 and completed three read-only audit groups across the tw
 ## 2026-09-08 — timeout recovery v2 journal and merged identity
 
 Recovered clean c9cd379 local/remote/PR state and reviewed its landed delta. Added independently reviewed same-lock workflow/global journal streams and a GET-only exact merged-main identity verifier; preserved standalone inspection/reconciliation/deactivation recovery. Focused26PASS, independent18PASS, build/lint/typecheck/audit PASS. Routing audit34265913708 retained partial historical inventory; denial remains UNVERIFIED. Global orchestration, full rollback and connected collector acceptance remain internal work. No production mutation or merge.
+
+## 2026-09-08 — executable preparation, connected observation and session authority
+
+Continued clean dace62f with three parallel implementation/review lanes. Added actual fixed recovery process lifecycle, durable authenticated connected collection, supported bounded delegated-session receipt integration, protected consistent backup capture and exact-head bundle/preflight tooling. Fixed independently reproduced global session-revocation and disabled-test-handler authority bypasses.27focusedAPItestsPASS;7disposablePGgroupsPASS;independent36collector/sessiontestsPASS and18backup/preflighttestsPASS. Actual fixed recovery rehearsal and committed-WAL snapshot witness passed. No production mutation/activation/merge; full live acceptance and global sequencing remain incomplete. Protected checkpoint retains integration and exact-head verification details.

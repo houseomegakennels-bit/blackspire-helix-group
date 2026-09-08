@@ -34,7 +34,7 @@ Configuration and credentials must be explicitly supplied, root-owned 0600 JSON 
   "apiPid": 100,
   "workerPid": 101,
   "port": 8789,
-  "databasePath": "/var/lib/blackspire-command/command.sqlite",
+  "databasePath": "/opt/blackspire-command/shared/database/command.sqlite",
   "credentialPath": "/var/lib/blackspire-operator/preparation/six-read-credentials.json",
   "journalDirectory": "/var/lib/blackspire-operator/preparation/six-read-journals",
   "runId": "release-acceptance-before-migration"
@@ -72,3 +72,41 @@ bash scripts/with-node.sh scripts/zola-six-read-collect.js --observer-sql-after 
 These modes emit separately executable snapshot/owner queries for the fixed project. They prepare metadata only; imported external JSON is not accepted as proof that observations bracketed a collector run. Actual connected development observations covered all fifteen tables and demonstrated SearchJob own/foreign policy behavior without data mutation. Those standalone observations are not six-read production acceptance. The native integrated observer still needs its explicit credential capability, and a real second Command session remains a separate prerequisite.
 
 `tests/zola-six-read-database-observer.test.js` covers strict metadata, coverage, row/version drift and sanitized rollback. `scripts/test-zola-six-read-database-postgres.mjs`, using the existing pinned `BUYER_WRITER_TEST_IMAGE`, exercises the actual SQL in a disposable PostgreSQL 17.6 container with no network or host mounts. It verifies own/foreign visibility, unchanged snapshots, same-value update detection, permissive-policy rejection, missing witnesses and actual read-only write rejection.
+
+
+## Connected transport and delegated session (versions 3 and 4)
+
+Version 3 uses the fixed HTTPS Supabase Management API `POST /v1/projects/kchtrvfcixnimvxxctkj/database/query` with `read_only: true`, verified TLS and no redirects. Its explicit protected `observerDatabaseConfigPath` contains exactly `projectId` and `accessToken`. It never extracts the connected MCP application's token or accepts imported query results. The [official query contract](https://supabase.com/docs/reference/api/v1-run-a-query) requires a supported Management API token. The separate `/read-only` endpoint uses a different role and cannot satisfy the current observer's postgres/SET ROLE witness contract. Live Management API result batching and role compatibility remain unverified until a gated observation actually succeeds; HTTP errors or incompatible result shapes stop the run.
+
+Every connected query records a fsynced intent before transmission. PostgreSQL echoes a digest binding the release, complete config, runtime generations, run, phase, query kind, unpredictable nonce and preceding journal prefix. Query/result digests and bounded database clock observations are persisted before the baseline can authorize admissions. A request without its durable validated result remains UNKNOWN and is never automatically retried. Once an after query has begun, a collector rerun fails closed before creating new collected events or timestamps: retained historical evidence cannot be relabeled as fresh collection.
+
+Version 4 adds `denialReceiptPath` and consumes the protected receipt from the root-only delegated session tool. Its API `credentialPath` contains **only** `bearer`; no manual copying of session cookies is needed. The receipt is verified against release/run/workspace/principal, canonical DB inode, original session, exact issuance audit, expiry and absence of active grants across all workspaces. The collector then checks the actual authenticated HTTP identity, including before and after task disclosure. A forged, expired, revoked or mismatched receipt fails before admissions.
+
+Example version 4 metadata (illustrative values only):
+
+```json
+{
+  "version": 4,
+  "releaseSha": "0000000000000000000000000000000000000000",
+  "frontendOrigin": "https://verified-deployment.example",
+  "workspace": "blackspire-command",
+  "principal": "blackspire-operator",
+  "deniedPrincipal": "existing-other-principal",
+  "dealId": "DE-0001",
+  "apiPid": 100,
+  "workerPid": 101,
+  "port": 8789,
+  "databasePath": "/opt/blackspire-command/shared/database/command.sqlite",
+  "credentialPath": "/var/lib/blackspire-operator/preparation/six-read-bearer.json",
+  "denialReceiptPath": "/var/lib/blackspire-operator/preparation/denial-receipt.json",
+  "observerDatabaseConfigPath": "/var/lib/blackspire-operator/preparation/observer-management.json",
+  "journalDirectory": "/var/lib/blackspire-operator/preparation/six-read-journals",
+  "runId": "release-acceptance-before-migration"
+}
+```
+
+`scripts/zola-denial-session.js --issue <protected-input.json>` is an explicit root-authenticated delegation to an **existing** distinct active canonical admin principal. It requires no active grants in any workspace, exact clean release source, actual canonical API/worker activation identity and the canonical API's configured operator/database. Issue input has exactly `configurationFile`, `deniedPrincipal`, `outputPath`, `releaseSha`, `runId`, and `workspace`; paths refer to protected existing configuration and a new exclusive receipt file. It creates a session through the shared session subsystem, with an audited maximum 15-minute lifetime. This is operator-issued authentication, not a second person's password login. It creates no principal or grant. The receipt is fsynced before transaction commit; on uncertainty, preserve it and reconcile instead of repeating issuance.
+
+`scripts/zola-denial-session.js --revoke <protected-input.json>` accepts exactly `receiptFile`. Revocation uses root authentication, the original protected receipt, canonical DB inode and exact original session/audit binding. It remains available after service shutdown or release movement, revoking the original and bounded rotated descendants only. Restore/inode mismatch fails for explicit reconciliation. The tool never prints session IDs, cookies, CSRF values or bearer credentials. Tests exercise issuance, rollback on failed publication, cross-workspace grant rejection, real non-root refusal, bounded rotation/revocation and receipt forgery denial on disposable SQLite.
+
+These additions prepare supported authentication and connected observation paths. They have not issued a production session or made production database observations. Missing live deployment acceptance, other capability owner witnesses and complete mutation-attempt/provider-egress evidence keep `livePass: false`.
