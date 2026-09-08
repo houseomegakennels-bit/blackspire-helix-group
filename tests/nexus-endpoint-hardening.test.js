@@ -35,7 +35,7 @@ test('Nexus endpoint performs one bounded deterministic persisted read with phon
   assert.match(routeSource, /\.select\("id,seller_lead_id,owner_name,property_address,primary_phone,contact_confidence_score,provider,status,updated_at"\)/);
   assert.match(routeSource, /\.eq\("seller_lead_id", args\.sellerLeadId\)/);
   assert.match(routeSource, /\.from\("deal_leads"\)[\s\S]*\.eq\("id", dealId\)[\s\S]*\.limit\(1\)[\s\S]*\.maybeSingle\(\)/);
-  assert.match(routeSource, /if \(!lookup\.sellerLeadId && !lookup\.ownerName && !lookup\.propertyAddress\) return notFoundResult\(\)/);
+  assert.match(routeSource, /if \(!lookup\.sellerLeadId && !lookup\.ownerName && !lookup\.propertyAddress\) return scope\.respond\(notFoundResult\(\)\)/);
   assert.match(routeSource, /\.ilike\("owner_name", exactIlike\(args\.ownerName\)\)/);
   assert.match(routeSource, /\.ilike\("property_address", exactIlike\(args\.propertyAddress\)\)/);
   assert.match(routeSource, /\.order\("updated_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: false \}\)/);

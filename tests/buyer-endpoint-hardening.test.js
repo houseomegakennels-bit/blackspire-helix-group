@@ -46,7 +46,7 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
             return 0;
           }).slice(0, limit);
           return Promise.resolve(table === 'buyer_group_registry'
-            ? { data: registry, error: registryError }
+            ? { data: registry.slice(0, limit), error: registryError }
             : countOnly ? { count: profiles.length, error: countError } : { data: orderedProfiles, error: profileError }).then(resolve, reject);
         },
       };
@@ -73,13 +73,16 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
     registry: dependencies.listBuyerGroupRegistry,
     seedCalls: () => seedCalls,
     reads,
+    readClient: supabase,
   };
 }
 
 test('Buyer capability profiles reject missing configuration and query failure', async () => {
   await assert.rejects(buyerFixture({ enabled: false }).profiles({ limit: 5 }), /unavailable/);
-  await assert.rejects(buyerFixture({ profileError: { message: 'synthetic query failure' } }).profiles({ limit: 5 }), /synthetic query failure/);
-  assert.equal((await buyerFixture().profiles({ limit: 5 })).length, 0);
+  const failed = buyerFixture({ profileError: { message: 'synthetic query failure' } });
+  await assert.rejects(failed.profiles({ limit: 5 }, failed.readClient), /synthetic query failure/);
+  const empty = buyerFixture();
+  assert.equal((await empty.profiles({ limit: 5 }, empty.readClient)).length, 0);
 });
 
 test('Buyer capability profile limits select stable IDs across purchase-count ties', async () => {
@@ -94,7 +97,7 @@ test('Buyer capability profile limits select stable IDs across purchase-count ti
     [...tied.slice(7), highest, ...tied.slice(0, 7), unknown],
   ]) {
     const fixture = buyerFixture({ profiles });
-    const result = await fixture.profiles({ limit: 4 });
+    const result = await fixture.profiles({ limit: 4 }, fixture.readClient);
     assert.deepEqual(Array.from(result, (row) => row.id), expected);
     assert.equal(fixture.seedCalls(), 0);
   }
@@ -109,20 +112,21 @@ test('read-only Buyer matching rejects each failed persisted data source', async
     { registryError: { message: 'relation buyer_group_registry does not exist' } },
   ]) {
     const fixture = buyerFixture(options);
-    await assert.rejects(fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true }));
+    const expected = (options.profileError || options.countError) ? 'Buyer matches unavailable' : options.registryError?.message || 'Buyer registry unavailable';
+    await assert.rejects(fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient }), (error) => error.message.includes(expected));
     assert.equal(fixture.seedCalls(), 0);
   }
 });
 
 test('read-only Buyer registry rejects missing configuration without synthetic fallback', async () => {
   const fixture = buyerFixture({ enabled: false });
-  await assert.rejects(fixture.registry(false, { readOnly: true }), /unavailable/);
+  await assert.rejects(fixture.registry(false, { readOnly: true, readClient: fixture.readClient }), /unavailable/);
   assert.equal(fixture.seedCalls(), 0);
 });
 
 test('read-only Buyer matching accepts empty persisted rows without seeding', async () => {
   const fixture = buyerFixture();
-  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true });
+  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
   assert.equal(result.matches.length, 0);
   assert.equal(result.buyerCount, 0);
   assert.equal(fixture.seedCalls(), 0);
@@ -134,7 +138,7 @@ test('read-only Buyer matching returns persisted profiles and institutional grou
     profiles: [{ id: 'buyer-1', buyer_name: 'Persisted buyer', purchase_count: 3 }],
     registry: [{ id: 'group-1', canonicalName: 'Persisted group', counties: ['Forsyth'], active: true }],
   });
-  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true });
+  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
   assert.deepEqual(Array.from(result.matches, (row) => row.buyerId), ['buyer-1', 'group-1']);
   assert.equal(result.buyerCount, 1);
   assert.equal(fixture.seedCalls(), 0);
@@ -225,11 +229,11 @@ test('Buyer internal endpoint is server-only, authorized, bounded, and read-only
   assert.doesNotMatch(routeSource, /primary_phone|primary_email|mailing_address_snapshot/);
   assert.match(routeSource, /\.from\("deal_leads"\)[\s\S]*\.eq\("id", opportunityId\.toUpperCase\(\)\)[\s\S]*\.limit\(1\)/);
   assert.match(routeSource, /matchBuyersForProperty/);
-  assert.match(routeSource, /matchBuyersForProperty\([^\n]*\{ readOnly: true \}\)/);
+  assert.match(routeSource, /matchBuyersForProperty\([^\n]*\{ readOnly: true, readClient: scope\.client \}\)/);
 });
 
 test('Deal analysis capability uses its dedicated persisted underwriting read path', () => {
-  assert.match(dealRouteSource, /getDealEngineAnalysisForCapability\(dealId\)/);
+  assert.match(dealRouteSource, /getDealEngineAnalysisForCapability\(dealId, scope\.client\)/);
 });
 
 test('Buyer adapter preserves bounded profile and match inputs over HTTP', async () => {
