@@ -20,7 +20,7 @@ Every management mutation has a synchronous fsynced intent written before the re
 
 The workflow always uploads `zola-routing-canary-evidence/`, including `plan.json`, `journal.jsonl` and `result.json` when available. These contain no Vercel token or application credentials. Retain them in protected operator storage immediately after the run. A killed job may leave the harmless canary or staging in place; no completed/restore claim may be made until reconciliation succeeds.
 
-A normal same-head push-job rerun first reconciles any exact retained canary. It performs only cleanup, records `RECOVERED_PRIOR_CANARY`, and exits nonzero without starting another experiment. An additional deliberate rerun can begin a fresh experiment after that restoration. This recovery works before default-branch dispatch is available.
+The original normal-run recovery recognizes an exact canary returned by the default routing GET. Actual attempt 2 showed that an unpublished stage is not returned there. Do not rely on that path for retained unpublished stages; use the exact-version reconciler below.
 
 For a retained exact canary, the explicit `cleanup-exclusive-reviewed-canary` action uses the same nonce and reviewed SHA, requires exact current canary bytes, and only removes/discards that canary. It never creates or publishes a canary. Normal GitHub dispatch becomes usable once this workflow exists on the default branch; before then, recovery requires a separately reviewed one-time push action using this same cleanup code. Never merge PR125 to make dispatch available.
 
@@ -38,3 +38,11 @@ Reviewed primary sources:
 - https://raw.githubusercontent.com/vercel/sdk/main/docs/sdks/projectroutes/README.md
 
 The current API exposes no method matcher in these project rules. Headers, cookies, query and host conditions are not application authorization. Actual canary coverage must be established before designing any separate historical-host containment rule.
+
+## Actual 2026-09-08 stage recovery
+
+Run `34190899875` attempt 1 stopped before management requests because its initial inventory captured the candidate as BUILDING. A fresh read confirmed exact-head READY and the authorized attempt 2 ran 274 anonymous baseline probes (237 HTTP 404, 37 HTTP 410). It sent exactly one add request and received version `2a1d0b0b-e755-4438-899e-0327dd69621e`. No promotion request occurred. The optional `isStaging` field was absent from the add response; the strict original checker stopped. Its default GET could not inspect the retained stage.
+
+The reviewed SDK provides `GET /routes?versionId=<id>` for explicit version retrieval. `scripts/zola-routing-canary-reconcile.mjs` is pinned to that exact version and original nonce. It records sanitized diagnostics, then permits only DISCARD after complete history proves the matching staged/non-live identity, explicit version bytes match the entire sole canary, and default live routing remains empty. Every observation is repeated before the one possible discard. Ambiguous metadata or any drift stops with GET-only evidence.
+
+The rescue workflow transition is pinned to predecessor `3cb830bbcc4284b7c763bd994a21b63ff12b7f97`; the original add/promote transition does not match that predecessor. Rescue journal writes and both new directory entries are fsynced before mutation. A successful empty 204 response is allowed. Lost acknowledgements trigger read-only reconciliation, never another discard. Complete history excluding the known version, unchanged empty default live routing, and explicit version HTTP 404 together prove `KNOWN_STAGE_ABSENT`; 404 alone does not. No actual rescue completion is claimed until its retained production evidence confirms the result.

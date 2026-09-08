@@ -28,6 +28,8 @@ on:
       - tests/zola-vercel-protection-inventory.test.js
       - scripts/zola-routing-canary.mjs
       - tests/zola-routing-canary.test.js
+      - scripts/zola-routing-canary-reconcile.mjs
+      - tests/zola-routing-canary-reconcile.test.js
 
 permissions:
   contents: read
@@ -106,5 +108,24 @@ jobs:
         with:
           name: zola-routing-canary-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: zola-routing-canary-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
+      # Exact recovery of the single UNPUBLISHED canary from run34190899875/2.
+      # This transition can only GET and DISCARD that stage after independent
+      # identity/byte/non-live verification. It cannot create or promote rules.
+      - name: Reconcile and discard the exact retained unpublished canary
+        if: always() && github.event_name == 'push' && github.event.before == '3cb830bbcc4284b7c763bd994a21b63ff12b7f97'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ZOLA_CANARY_EXPECTED_SHA: ${{ github.sha }}
+          ZOLA_CANARY_RECONCILE_ACTION: discard-known-stage
+        run: node scripts/zola-routing-canary-reconcile.mjs
+      - name: Retain exact-stage reconciliation journal even after failure
+        if: always() && github.event_name == 'push' && github.event.before == '3cb830bbcc4284b7c763bd994a21b63ff12b7f97'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zola-routing-reconcile-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: zola-routing-reconcile-evidence/
           if-no-files-found: error
           retention-days: 7
