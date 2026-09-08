@@ -12,7 +12,7 @@ The resulting JSON contains `request` with the fixed project, deterministic migr
 
 The query establishes local timeouts before its outer `DO`, which asserts they survived within the API-owned transaction. It verifies the nonsuperuser `postgres` identity, acquires the same transaction advisory lock as the native executor, rejects existing native or connected history, and runs the exact reviewed body. That body checks provider ACLs, preserves exact row multisets and private writer authority, applies the two reviewed restrictions, and checks their postconditions. The query contains no `BEGIN` or `COMMIT`; the API owns its transaction and history version.
 
-After success **or any uncertain response**, execute only the generated read-only reconciliation query through the connected SQL tool. Save its parsed rows in a protected JSON file; add `observationFile` to the input and run:
+After success **or any uncertain response**, execute only the generated read-only reconciliation query through the connected SQL tool. Save its parsed rows as `{"rows": [...]}` in a protected JSON file; this object envelope follows the protected metadata reader's contract. Add `observationFile` to the input and run:
 
 ```sh
 bash scripts/with-node.sh scripts/zola-connected-migration.js --reconcile /absolute/protected/reconcile-input.json /absolute/protected/new-result.json

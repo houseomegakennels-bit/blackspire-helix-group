@@ -19,8 +19,9 @@ try{
  verifyReleaseSource(input.releaseSha,{requireRemote:mode==='--claim'});
  let result;
  if(mode==='--reconcile'){
-  const rows=readRootOwnedMetadataSnapshot(input.observationFile,{groupId:0}).value;
-  result=reconcileConnectedBuyerMigration(plan,rows);
+  const observation=readRootOwnedMetadataSnapshot(input.observationFile,{groupId:0}).value;
+  if(Object.keys(observation).join(',')!=='rows')throw new Error();
+  result=reconcileConnectedBuyerMigration(plan,observation.rows);
  }else if(mode==='--claim'){
   // Share the native transport's exact release/body intent namespace. The API
   // chooses the actual migration version, so this timestamp is an intent ID

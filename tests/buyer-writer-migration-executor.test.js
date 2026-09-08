@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import fs from 'node:fs';
+import {readRootOwnedMetadataSnapshot} from '../packages/buyer-writer/protected-json.js';
 import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension-acl.js';
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 import {prepareBuyerMigrationExecution,executeBuyerMigration} from '../packages/buyer-writer/migration-executor.js';
@@ -107,4 +109,24 @@ test('connected history verifies actual API version, rejects unknown/foreign/rew
   {...row,history:[{...entry,version:20260908123456}]},{...row,history:[entry,entry]},{...row,history:[{...entry,name:'zola_guarded_application_'+releaseSha}]}])
   assert.throws(()=>reconcileConnectedBuyerMigration(p,[bad]),/rejected/);
  assert.throws(()=>reconcileConnectedBuyerMigration({...p},[row]),/rejected/);
+});
+
+
+test('protected connected history requires an object envelope and unwraps rows for reconciliation',()=>{
+ const p=prepareConnectedBuyerMigration(args);
+ const rows=[{actor:'postgres',database:'postgres',superuser:false,acquired:true,history:[]}];
+ const read=value=>{
+  const bytes=Buffer.from(JSON.stringify(value));let offset=0,closed=0;
+  const stat={uid:0,gid:0,mode:0o100600,nlink:1,size:bytes.length,dev:1,ino:2,mtimeMs:1,ctimeMs:1,isFile:()=>true};
+  const io={lstatSync:()=>({uid:0,mode:0o40755,isDirectory:()=>true,isSymbolicLink:()=>false}),
+   openSync:(_path,flags)=>{assert.ok(flags&fs.constants.O_NOFOLLOW);return 7;},fstatSync:()=>stat,
+   readSync:(_fd,buffer,start,length)=>{const count=Math.min(length,bytes.length-offset);bytes.copy(buffer,start,offset,offset+count);offset+=count;return count;},
+   closeSync:()=>{closed++;}};
+  try{return readRootOwnedMetadataSnapshot('/protected/connected-observation.json',{groupId:0,io,aclTool:()=>({status:0,stdout:'',stderr:''})}).value;}
+  finally{assert.equal(closed,1);}
+ };
+ assert.throws(()=>read(rows),/protected configuration unavailable/);
+ const observation=read({rows});assert.deepEqual(Object.keys(observation),['rows']);
+ assert.throws(()=>reconcileConnectedBuyerMigration(p,observation),/rejected/);
+ assert.equal(reconcileConnectedBuyerMigration(p,observation.rows).status,'not-recorded-retry-not-authorized');
 });
