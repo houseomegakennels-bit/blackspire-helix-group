@@ -98,3 +98,38 @@ test('CLI rejects execute mode before opening journals or loading credentials',(
  const result=spawnSync(process.execPath,['scripts/zola-release-command.js','--execute','/no-such-input'],{encoding:'utf8'});
  assert.equal(result.status,1);assert.equal(JSON.parse(result.stdout).reason,'COMMAND_FAILED_CLOSED');
 });
+
+test('migration-aware preflight retains exact package proof and rechecks before stopping closed',async()=>{
+ const f=fixture();await f.run(); // Preserve and read historical schema-one records.
+ f.input.migrationConfigurationFile='/bundle/migration-input.json';
+ let calls=0;
+ f.deps.verifyMigration=async ({releaseSha,configurationFile})=>{
+  calls++;assert.equal(configurationFile,f.input.migrationConfigurationFile);
+  return{releaseSha,manifestSha256:'1'.repeat(64),bodySha256:'2'.repeat(64),nativeSqlSha256:'3'.repeat(64),
+   connectedQuerySha256:'4'.repeat(64),projectId:'kchtrvfcixnimvxxctkj',status:'PACKAGE_VERIFIED_EXECUTION_GATED',productionAcceptance:false};
+ };
+ const result=await f.run();assert.equal(result.preflightCompleted,true);assert.equal(result.releaseReady,false);
+ assert.equal(calls,2);
+ const records=f.streams.release.filter(row=>row.schema===2);
+ assert.deepEqual(records.filter(row=>row.type==='preflight_passed').map(row=>row.stage),
+  ['source','ci','artifact_disk','protected_backup','migration_package','n8n_package','n8n_live','identity_recheck']);
+ assert.equal(inspectReleaseCommander(f.journal).status,'OBSERVED');
+ records[1].schema=1;assert.throws(()=>inspectReleaseCommander(f.journal));
+});
+
+test('migration rejection prevents network observation; proof drift and forged approval never pass',async()=>{
+ for(const mutation of ['failure','forged','drift']){
+  const f=fixture();f.input.migrationConfigurationFile='/bundle/migration-input.json';let calls=0;
+  f.deps.verifyMigration=async ()=>{
+   if(mutation==='failure')throw new Error('PRIVATE_DATABASE_DETAIL');
+   return{releaseSha:f.input.releaseSha,manifestSha256:'1'.repeat(64),bodySha256:'2'.repeat(64),nativeSqlSha256:'3'.repeat(64),
+    connectedQuerySha256:(++calls>1?'5':'4').repeat(64),projectId:'kchtrvfcixnimvxxctkj',
+    status:'PACKAGE_VERIFIED_EXECUTION_GATED',productionAcceptance:mutation==='forged'};
+  };
+  const result=await f.run();assert.equal(result.preflightCompleted,false);assert.equal(result.releaseReady,false);
+  assert.equal(result.stage,mutation==='drift'?'identity_recheck':'migration_package');
+  if(mutation!=='drift')assert.equal(f.calls.includes('GET'),false);
+  assert.equal(JSON.stringify(result).includes('PRIVATE_DATABASE'),false);
+  assert.equal(inspectReleaseCommander(f.journal).status,'OBSERVED');
+ }
+});

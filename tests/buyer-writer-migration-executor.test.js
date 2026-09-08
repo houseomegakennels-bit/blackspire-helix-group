@@ -7,6 +7,9 @@ import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 import {prepareBuyerMigrationExecution,executeBuyerMigration} from '../packages/buyer-writer/migration-executor.js';
 import {prepareConnectedBuyerMigration,reconcileConnectedBuyerMigration} from '../packages/buyer-writer/migration-connected.js';
+import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,inspectReleaseMigrationHistory} from '../packages/zola-release/commander-migration.js';
+import {openReleaseJournal} from '../packages/zola-release/commander-journal.js';
+import {claimBuyerMigrationIntent} from '../packages/buyer-writer/migration-journal.js';
 const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
 function fixture(){
  const roles=['postgres','supabase_admin','consumer'].map((name,i)=>({name,oid:String(i+10),superuser:false,inherit:true,login:false,createRole:false,createDb:false,replication:false,bypassRls:false}));
@@ -32,6 +35,24 @@ const prepared=prepareBuyerMigrationPackage({releaseSha,providerManifest});
 const args={releaseSha,providerManifest,manifestBytes:prepared.manifestBytes,body:prepared.body,
  expectedManifestSha256:createHash('sha256').update(prepared.manifestBytes).digest('hex'),migrationVersion};
 const plan=prepareBuyerMigrationExecution(args);
+test('release adapter independently regenerates both migration transports and refuses changed protected bytes',()=>{
+ const input={releaseSha,configurationFile:'/bundle/migration-input.json'};
+ const files={'migration-manifest.json':prepared.manifestBytes,'application-body.sql':prepared.body,'application.sql':prepared.sql};
+ const deps={readJson:()=>({releaseSha,providerManifest}),readBytes:file=>files[file.split('/').at(-1)]};
+ const proof=verifyReleaseMigrationPackage(input,deps);
+ assert.equal(proof.productionAcceptance,false);assert.equal(proof.status,'PACKAGE_VERIFIED_EXECUTION_GATED');
+ assert.equal(proof.connectedQuerySha256,prepareConnectedBuyerMigration(args).querySha256);
+ assert.equal(JSON.stringify(proof).includes('CREATE'),false);
+ for(const file of Object.keys(files)){
+  const value=files[file];files[file]+=' ';
+  assert.throws(()=>verifyReleaseMigrationPackage(input,deps),/preparation rejected/);files[file]=value;
+ }
+ assert.throws(()=>verifyReleaseMigrationPackage({...input,releaseSha:'b'.repeat(40)},deps));
+ assert.throws(()=>verifyReleaseMigrationPackage({...input,configurationFile:'/bundle/../migration-input.json'},deps));
+ let reads=0;
+ assert.throws(()=>verifyReleaseMigrationPackage(input,{...deps,readBytes:file=>++reads>3?deps.readBytes(file)+' ':deps.readBytes(file)}));
+ assert.throws(()=>verifyReleaseMigrationPackage(input,{...deps,readJson:()=>({releaseSha,providerManifest,approved:true})}));
+});
 function session({prior=[],fail='',locked=true,actor='postgres',superuser=false,commitLost=false}={}){
  const calls=[];let history;
  return {processID:77,calls,get history(){return history;},async query(sql,params){
@@ -45,6 +66,64 @@ function session({prior=[],fail='',locked=true,actor='postgres',superuser=false,
   return {rows:[]};
  }};
 }
+test('global migration adapter records intent before shared claim and SQL, then only reconciles',async()=>{
+ const events=[],order=[],client=session();
+ const query=client.query.bind(client);client.query=async (...a)=>{order.push('SQL');return query(...a);};
+ const journal={stream:name=>{assert.equal(name,'release');return{events:()=>structuredClone(events),append:row=>{order.push(row.type);events.push(structuredClone(row));}};}};
+ const options={claim:()=>{order.push('claim');}};
+ const result=await executeReleaseNativeMigration({input:args,client,journal,mode:'apply'},options);
+ assert.equal(result.status,'committed');assert.equal(result.productionAcceptance,false);
+ assert.deepEqual(order.slice(0,3),['release_migration_intent','claim','SQL']);
+ const count=client.calls.length;
+ assert.equal((await executeReleaseNativeMigration({input:args,client,journal,mode:'apply'},options)).status,'STOPPED');
+ assert.equal(client.calls.length,count);
+ const reconcile=session({prior:[client.history]});
+ assert.equal((await executeReleaseNativeMigration({input:args,client:reconcile,journal,mode:'reconcile'},options)).status,'committed-history-verified');
+ assert.equal(reconcile.calls[0].sql,'BEGIN READ ONLY');assert.ok(!reconcile.calls.some(row=>row.sql===prepared.body));
+ assert.equal(inspectReleaseMigrationHistory(events).releaseSha,releaseSha);
+});
+test('global migration uncertainty, failed claim and failed durable append never authorize retry',async()=>{
+ for(const failure of ['claim','intent','result','commit']){
+  const events=[],client=session({commitLost:failure==='commit'});
+  const journal={stream:()=>({events:()=>structuredClone(events),append:row=>{
+   if(failure==='intent'||failure==='result'&&row.type==='release_migration_result')throw new Error('disk full');
+   events.push(structuredClone(row));
+  }})};
+  let claims=0;const options={claim:()=>{claims++;if(failure==='claim')throw new Error('PRIVATE_DETAIL');}};
+  const result=await executeReleaseNativeMigration({input:args,client,journal,mode:'apply'},options);
+  assert.equal(result.status,'STOPPED');assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
+  if(['claim','intent'].includes(failure))assert.equal(client.calls.length,0);
+  if(failure==='intent')assert.equal(claims,0);
+  if(failure!=='intent'){
+   const count=client.calls.length;
+   assert.equal((await executeReleaseNativeMigration({input:args,client,journal,mode:'apply'},options)).status,'STOPPED');
+   assert.equal(client.calls.length,count);assert.equal(claims,1);
+   const empty=session();
+   await executeReleaseNativeMigration({input:args,client:empty,journal,mode:'reconcile'},options);
+   assert.equal(empty.calls[0].sql,'BEGIN READ ONLY');assert.ok(!empty.calls.some(row=>row.sql===prepared.body));
+  }
+ }
+});
+test('real protected global and migration journals retain uncertainty across close and reopen',{skip:process.getuid?.()!==0},async t=>{
+ const root=fs.mkdtempSync('/root/.zola-migration-release-test-');fs.chmodSync(root,0o700);
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const journalRoot=root+'/release';fs.mkdirSync(journalRoot,{mode:0o700});
+ const options={claim:plan=>claimBuyerMigrationIntent(plan,{root:root+'/migration'})};
+ let journal=openReleaseJournal({root:journalRoot});
+ try{
+  const result=await executeReleaseNativeMigration({input:args,client:session({commitLost:true}),journal,mode:'apply'},options);
+  assert.equal(result.reason,'MIGRATION_OUTCOME_UNKNOWN');assert.equal(fs.readdirSync(root+'/migration').length,1);
+ }finally{journal.close();}
+ journal=openReleaseJournal({root:journalRoot});
+ try{
+  const client=session();
+  assert.equal((await executeReleaseNativeMigration({input:args,client,journal,mode:'apply'},options)).status,'STOPPED');
+  assert.equal(client.calls.length,0);
+  const result=await executeReleaseNativeMigration({input:args,client,journal,mode:'reconcile'},options);
+  assert.equal(result.status,'not-recorded-retry-not-authorized');
+  assert.equal(client.calls[0].sql,'BEGIN READ ONLY');assert.equal(fs.readdirSync(root+'/migration').length,1);
+ }finally{journal.close();}
+});
 test('only exact independently regenerated package becomes an execution plan',()=>{
  for(const change of [{body:args.body+'SELECT 1;'}, {manifestBytes:args.manifestBytes+' '}, {releaseSha:'b'.repeat(40)},
   {expectedManifestSha256:'0'.repeat(64)}, {migrationVersion:'2026;DROP'}])assert.throws(()=>prepareBuyerMigrationExecution({...args,...change}),/package rejected/);

@@ -24,7 +24,9 @@ export function routingSchemaDiagnostic(data) {
 }
 const fail = (code) => { throw new InventoryError(code); };
 const identifier = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v) ? v : fail('INVALID_IDENTIFIER');
-const host = (v) => typeof v === 'string' && /^(?=.{1,253}$)[a-zA-Z0-9.-]+$/.test(v) ? v : fail('INVALID_HOST');
+const host = (v) => typeof v === 'string' && v.length <= 253 && v.split('.').length > 1 &&
+  v.split('.').every(label => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label))
+  ? v.toLowerCase() : fail('INVALID_HOST');
 const protection = (row) => ({
   ssoProtectionConfigured: row.ssoProtection == null ? null : Boolean(row.ssoProtection),
   passwordProtectionConfigured: row.passwordProtection == null ? null : Boolean(row.passwordProtection),
@@ -36,7 +38,7 @@ const protection = (row) => ({
 // Raw responses, rule values, bypass IPs, comments, and API errors never leave memory.
 export async function inventoryProtection({ token, fetchImpl = fetch, now = () => performance.now(), deadlineMs = 720000 }) {
   const evidence = { schema: 1, status: 'INCOMPLETE', projectId: PROJECT, teamId: TEAM,
-    readOnly: true, denialProven: false, deployments: [], domains: [], aliases: [], observations: [] };
+    readOnly: true, denialProven: false, deployments: [], domains: [], aliases: [], aliasTargetDeployments: [], observations: [] };
   const started = now();
   let requests = 0;
   async function get(path, parameters = {}) {
@@ -85,6 +87,16 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
     if (project.id !== PROJECT || project.accountId !== TEAM) fail('PROJECT_MISMATCH');
     return { ...protection(project), updatedAt: Number.isFinite(project.updatedAt) ? project.updatedAt : null };
   });
+  async function deploymentDetail(id) {
+    const detail = await get(`/v13/deployments/${id}`);
+    if (detail.id !== id || (detail.projectId ?? detail.project?.id) !== PROJECT) fail('DEPLOYMENT_MISMATCH');
+    return { id, url: host(detail.url),
+      sha: /^[a-f0-9]{40}$/.test(detail.meta?.githubCommitSha ?? '') ? detail.meta.githubCommitSha : null,
+      state: ['READY', 'ERROR', 'CANCELED', 'BUILDING', 'QUEUED', 'INITIALIZING'].includes(detail.readyState) ? detail.readyState : 'UNKNOWN',
+      target: ['production', 'preview'].includes(detail.target) ? detail.target : null,
+      aliases: Array.isArray(detail.alias) ? detail.alias.map(host) : [], ...protection(detail),
+      routeCount: Array.isArray(detail.routes) ? detail.routes.length : null };
+  }
   await observe('deployments', async () => {
     const rows = await paged('/v6/deployments', 'deployments', { projectId: PROJECT });
     const seen = new Set();
@@ -92,14 +104,7 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
       const id = identifier(row.uid ?? row.id);
       if (seen.has(id)) fail('DUPLICATE_DEPLOYMENT');
       seen.add(id);
-      const detail = await get(`/v13/deployments/${id}`);
-      if (detail.id !== id || (detail.projectId ?? detail.project?.id) !== PROJECT) fail('DEPLOYMENT_MISMATCH');
-      evidence.deployments.push({ id, url: host(detail.url),
-        sha: /^[a-f0-9]{40}$/.test(detail.meta?.githubCommitSha ?? '') ? detail.meta.githubCommitSha : null,
-        state: ['READY', 'ERROR', 'CANCELED', 'BUILDING', 'QUEUED', 'INITIALIZING'].includes(detail.readyState) ? detail.readyState : 'UNKNOWN',
-        target: ['production', 'preview'].includes(detail.target) ? detail.target : null,
-        aliases: Array.isArray(detail.alias) ? detail.alias.map(host) : [], ...protection(detail),
-        routeCount: Array.isArray(detail.routes) ? detail.routes.length : null });
+      evidence.deployments.push(await deploymentDetail(id));
     }
     return { count: evidence.deployments.length, paginationComplete: true };
   });
@@ -111,8 +116,37 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
   await observe('aliases', async () => {
     const rows = await paged('/v4/aliases', 'aliases', { projectId: PROJECT });
     if (rows.some((row) => row.projectId !== PROJECT)) fail('ALIAS_PROJECT_MISMATCH');
-    evidence.aliases = rows.map((row) => ({ alias: host(row.alias), deploymentId: row.deploymentId == null ? null : identifier(row.deploymentId) }));
+    const seen = new Set();
+    evidence.aliases = rows.map((row) => {
+      const alias = host(row.alias);
+      if (seen.has(alias)) fail('DUPLICATE_ALIAS');
+      seen.add(alias);
+      return { alias, deploymentId: row.deploymentId == null ? null : identifier(row.deploymentId) };
+    });
     return { count: rows.length, paginationComplete: true };
+  });
+  // Project deployment pagination may omit older/deleted alias targets. Follow
+  // every distinct missing target through the fixed authenticated metadata API;
+  // 404/410 does not prove the alias or its request authority is contained.
+  await observe('aliasDeploymentClosure', async () => {
+    if (['deployments', 'aliases'].some(name =>
+      evidence.observations.find(row => row.name === name)?.status !== 'COMPLETE')) fail('ALIAS_CLOSURE_INPUT_INCOMPLETE');
+    const known = new Set(evidence.deployments.map(row => row.id));
+    const missing = [...new Set(evidence.aliases.map(row => row.deploymentId).filter(id => id !== null && !known.has(id)))];
+    for (const id of missing) {
+      try {
+        const detail = await deploymentDetail(id);
+        evidence.deployments.push(detail);
+        evidence.aliasTargetDeployments.push({ id, status: 'COMPLETE', denialProven: false });
+      } catch (error) {
+        evidence.aliasTargetDeployments.push({ id, status: 'INCOMPLETE',
+          code: error instanceof InventoryError ? error.message : 'REQUEST_FAILED', denialProven: false });
+      }
+    }
+    if (evidence.aliases.some(row => row.deploymentId === null) ||
+        evidence.aliasTargetDeployments.some(row => row.status !== 'COMPLETE')) fail('ALIAS_TARGETS_UNRESOLVED');
+    return { referencedTargets: new Set(evidence.aliases.map(row => row.deploymentId)).size,
+      additionalDeployments: missing.length, denialProven: false };
   });
   // Bound read-only comparison of the one observed application-level coverage
   // gap with its covered sibling alias. Never emit arbitrary route/header values.

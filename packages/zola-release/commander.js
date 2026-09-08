@@ -1,5 +1,6 @@
 import {verifyProtectedReleaseBackup} from './commander-backup.js';
 import {verifyReleaseArtifactDisk} from './commander-preconditions.js';
+import {verifyReleaseMigrationPackage,inspectReleaseMigrationHistory} from './commander-migration.js';
 import {randomUUID} from 'node:crypto';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {hash} from './commander-journal.js';
@@ -25,26 +26,38 @@ function ciProof(value,releaseSha){
   ||!/^sha256:[a-f0-9]{64}$/.test(value.artifactZipDigest??'')||!(/^[a-f0-9]{64}$/).test(value.ciArtifactDigest??'')||value.status!=='success')reject();
  return structuredClone(value);
 }
+function migrationProof(value,releaseSha){
+ keys(value,'releaseSha,manifestSha256,bodySha256,nativeSqlSha256,connectedQuerySha256,projectId,status,productionAcceptance');
+ if(value.releaseSha!==releaseSha||value.projectId!=='kchtrvfcixnimvxxctkj'
+  ||value.status!=='PACKAGE_VERIFIED_EXECUTION_GATED'||value.productionAcceptance!==false
+  ||!['manifestSha256','bodySha256','nativeSqlSha256','connectedQuerySha256'].every(key=>/^[a-f0-9]{64}$/.test(value[key]??'')))reject();
+ return structuredClone(value);
+}
 const PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','protected_backup','n8n_package','n8n_live','identity_recheck']);
+const MIGRATION_PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','protected_backup','migration_package','n8n_package','n8n_live','identity_recheck']);
 function history(journal){
  const events=journal.stream('release').events();
+ inspectReleaseMigrationHistory(events);
  // Unknown events may represent a future/crashed mutation. Never reinterpret
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
-  if(row?.schema!==1||!['preflight_started','preflight_passed','preflight_stopped'].includes(row.type)
+  if(['release_migration_intent','release_migration_result'].includes(row?.type))continue;
+  if(![1,2].includes(row?.schema)||!['preflight_started','preflight_passed','preflight_stopped'].includes(row.type)
    ||!sha(row.releaseSha)||typeof row.runId!=='string'||!(/^[a-f0-9-]{36}$/).test(row.runId))reject();
   keys(row,'schema,type,runId,releaseSha'+(row.type==='preflight_started'?'':row.type==='preflight_passed'?',stage,proof':',stage'));
   if(row.type==='preflight_started'){
-   if(runs.has(row.runId))reject();runs.set(row.runId,{releaseSha:row.releaseSha,next:0,closed:false});
+   if(runs.has(row.runId))reject();runs.set(row.runId,{schema:row.schema,releaseSha:row.releaseSha,next:0,closed:false});
   }else{
    const run=runs.get(row.runId);
-   if(!run||run.closed||row.releaseSha!==run.releaseSha)reject();
+   if(!run||run.closed||row.schema!==run.schema||row.releaseSha!==run.releaseSha)reject();
+   const stages=run.schema===2?MIGRATION_PREFLIGHT_STAGES:PREFLIGHT_STAGES;
    if(row.type==='preflight_passed'){
-    if(row.stage!==PREFLIGHT_STAGES[run.next++])reject();
+    if(row.stage!==stages[run.next++])reject();
     if(row.stage==='ci'||row.stage==='identity_recheck')ciProof(row.proof,row.releaseSha);
+    if(row.stage==='migration_package')migrationProof(row.proof,row.releaseSha);
    }else{
-    if(row.stage!==(PREFLIGHT_STAGES[run.next]??'unwired_release_gates'))reject();run.closed=true;
+    if(row.stage!==(stages[run.next]??'unwired_release_gates'))reject();run.closed=true;
    }
   }
  }
@@ -53,7 +66,9 @@ function history(journal){
 }
 export function inspectReleaseCommander(journal){
  const events=history(journal);
- return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:false,
+ const migration=inspectReleaseMigrationHistory(events);
+ return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration?null:false,
+  migrationReconciliationRequired:Boolean(migration),
   remainingGates:[...UNWIRED_RELEASE_GATES]};
 }
 
@@ -63,14 +78,17 @@ export async function runReleasePreflight({input,journal},{
  readJson=filename=>readRootOwnedJson(filename,{groupId:0}),readBytes=readReleaseProtectedBytes,
  verifySource=verifyReleaseSource,verifyCi=verifyReleaseCi,transport=createN8nTransport,
  verifyArtifactDisk=verifyReleaseArtifactDisk,verifyBackup=verifyProtectedReleaseBackup,
+ verifyMigration=verifyReleaseMigrationPackage,
 }={}){
- let stage='input',runId,releaseSha;
- const record=(type,detail={})=>journal.stream('release').append({schema:1,type,runId,releaseSha,...detail});
+ let stage='input',runId,releaseSha,schema=1;
+ const record=(type,detail={})=>journal.stream('release').append({schema,type,runId,releaseSha,...detail});
  try{
-  keys(input,'releaseSha,packageConfigurationFile,backupFile,diskConfigurationFile,backupManifestFile');
+  schema=Object.hasOwn(input??{},'migrationConfigurationFile')?2:1;
+  keys(input,'releaseSha,packageConfigurationFile,backupFile,diskConfigurationFile,backupManifestFile'+(schema===2?',migrationConfigurationFile':''));
   releaseSha=input.releaseSha;if(!sha(releaseSha))reject();
   for(const field of ['packageConfigurationFile','backupFile','diskConfigurationFile','backupManifestFile'])if(typeof input[field]!=='string'||!input[field].startsWith('/'))reject();
   history(journal);
+  if(inspectReleaseMigrationHistory(journal.stream('release').events()))reject();
   runId=randomUUID();record('preflight_started');
   const passed=proof=>record('preflight_passed',{stage,proof});
   stage='source';verifySource(releaseSha);passed({releaseSha});
@@ -79,6 +97,10 @@ export async function runReleasePreflight({input,journal},{
   const diskConfiguration=readJson(input.diskConfigurationFile),diskConfigDigest=hash(diskConfiguration);
   const local=await verifyArtifactDisk({releaseSha,configuration:diskConfiguration});passed(local);
   stage='protected_backup';const backupProof=await verifyBackup({releaseSha,manifestFile:input.backupManifestFile});passed(backupProof);
+  let migration;
+  if(schema===2){
+   stage='migration_package';migration=migrationProof(await verifyMigration({releaseSha,configurationFile:input.migrationConfigurationFile}),releaseSha);passed(migration);
+  }
   stage='n8n_package';
   const configuration=readJson(input.packageConfigurationFile);
   const backupBytes=readBytes(input.backupFile,2*1024*1024);
@@ -103,6 +125,7 @@ export async function runReleasePreflight({input,journal},{
   if(n8nEvents.some(e=>e.type==='intent'&&!n8nEvents.some(done=>done.type==='confirmed'&&done.operation===e.operation)))reject();
   stable();passed({namespace:plan.namespace});
   stage='identity_recheck';verifySource(releaseSha);stable();
+  if(schema===2&&JSON.stringify(migrationProof(await verifyMigration({releaseSha,configurationFile:input.migrationConfigurationFile}),releaseSha))!==JSON.stringify(migration))reject();
   if(JSON.stringify(await verifyBackup({releaseSha,manifestFile:input.backupManifestFile}))!==JSON.stringify(backupProof))reject();
   if(JSON.stringify(ciProof(await verifyCi(releaseSha),releaseSha))!==JSON.stringify(ci))reject();
   passed(ci);

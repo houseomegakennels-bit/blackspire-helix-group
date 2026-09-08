@@ -168,3 +168,49 @@ test('coverage alias details require exact inventory binding and redact values',
     if (!drift) { assert.equal(detail.value.length, 2); assert.equal(detail.value[0].routesCount, 1); assert.equal(detail.value[0].denialProven, false); }
   }
 });
+
+test('alias targets omitted from deployment pagination are independently discovered once', async () => {
+  const names = ['older.vercel.app', 'older-branch.vercel.app', 'frontend-c06ce2-routes-houseomegakennels-4825s-projects.vercel.app', 'frontend-tau-woad-73.vercel.app'];
+  const {fetchImpl, calls} = fixture(url => url.pathname === '/v4/aliases'
+    ? response({aliases: names.map(alias => ({alias, deploymentId: alias.startsWith('older') ? 'dpl_old' : 'dpl_one', projectId: PROJECT}))}) : undefined);
+  const result = await inventoryProtection({token, fetchImpl});
+  assert.equal(result.status, 'INVENTORY_COMPLETE');
+  assert.equal(result.deployments.length, 2);
+  assert.equal(calls.filter(({url}) => url.pathname === '/v13/deployments/dpl_old').length, 1);
+  assert.deepEqual(result.aliasTargetDeployments, [{id: 'dpl_old', status: 'COMPLETE', denialProven: false}]);
+  assert.equal(result.observations.find(row => row.name === 'aliasDeploymentClosure').value.additionalDeployments, 1);
+  assert.equal(result.denialProven, false);
+});
+
+test('inaccessible or foreign-project historical targets never become containment proof', async () => {
+  for (const mode of ['404', '410', 'foreign']) {
+    const {fetchImpl} = fixture(url => {
+      if (url.pathname === '/v4/aliases') return response({aliases: ['missing.vercel.app', 'other.vercel.app'].map((alias, i) => ({alias, projectId: PROJECT, deploymentId: `dpl_old_${i}`}))});
+      if (url.pathname.startsWith('/v13/deployments/dpl_old_')) return mode === 'foreign'
+        ? response({id: url.pathname.split('/').at(-1), projectId: 'other', url: 'other.vercel.app'})
+        : response({message: token}, Number(mode));
+    });
+    const result = await inventoryProtection({token, fetchImpl});
+    assert.equal(result.status, 'INCOMPLETE');
+    assert.equal(result.aliasTargetDeployments.length, 2);
+    assert.ok(result.aliasTargetDeployments.every(row => row.status === 'INCOMPLETE' && row.denialProven === false));
+    assert.equal(result.observations.find(row => row.name === 'aliasDeploymentClosure').code, 'ALIAS_TARGETS_UNRESOLVED');
+    assert.equal(result.deployments.length, 1);
+    assert.equal(JSON.stringify(result).includes(token), false);
+  }
+});
+
+test('duplicate normalized aliases, missing targets and malformed DNS names cannot close discovery', async () => {
+  for (const aliases of [
+    [{alias: 'Same.vercel.app', deploymentId: 'dpl_one'}, {alias: 'same.vercel.app', deploymentId: 'dpl_one'}],
+    [{alias: 'unknown.vercel.app', deploymentId: null}],
+    ...['.vercel.app', '-bad.vercel.app', 'bad..vercel.app', `${'a'.repeat(64)}.vercel.app`].map(alias => [{alias, deploymentId: 'dpl_one'}]),
+  ]) {
+    const {fetchImpl} = fixture(url => url.pathname === '/v4/aliases'
+      ? response({aliases: aliases.map(row => ({...row, projectId: PROJECT}))}) : undefined);
+    const result = await inventoryProtection({token, fetchImpl});
+    assert.equal(result.status, 'INCOMPLETE');
+    assert.equal(result.observations.find(row => row.name === 'aliasDeploymentClosure').status, 'INCOMPLETE');
+    assert.equal(result.denialProven, false);
+  }
+});

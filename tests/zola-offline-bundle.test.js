@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension-acl.js';
 import {prepareOfflineReleaseBundle,writeOfflineReleaseBundle} from '../packages/zola-release/offline-bundle.js';
 import {WORKFLOW_ID} from '../packages/zola-release/commander-n8n.js';
@@ -65,4 +66,12 @@ test('protected bundle write is durable and exact rerun refuses partial, altered
  fs.writeFileSync(target,original);fs.linkSync(target,path.join(parent,'alias'));assert.throws(()=>writeOfflineReleaseBundle(root,bundle));fs.unlinkSync(path.join(parent,'alias'));
  fs.unlinkSync(path.join(root,'manifest.json'));assert.throws(()=>writeOfflineReleaseBundle(root,bundle));assert.equal(fs.existsSync(path.join(root,'manifest.json')),false);
  const link=path.join(parent,'link');fs.symlinkSync(root,link);assert.throws(()=>writeOfflineReleaseBundle(link,bundle));
+});
+test('default ACL refuses first bundle publication before any payload is written',{skip:process.getuid?.()!==0},t=>{
+ const parent=fs.mkdtempSync('/root/.zola-bundle-acl-test-');fs.chmodSync(parent,0o700);
+ t.after(()=>fs.rmSync(parent,{recursive:true,force:true}));
+ execFileSync('/usr/bin/setfacl',['-m','d:u:993:r--',parent]);
+ const root=path.join(parent,'bundle');
+ assert.throws(()=>writeOfflineReleaseBundle(root,prepareOfflineReleaseBundle(input())));
+ assert.equal(fs.existsSync(root),false);
 });
