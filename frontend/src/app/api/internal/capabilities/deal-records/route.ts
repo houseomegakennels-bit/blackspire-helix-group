@@ -1,3 +1,4 @@
+import { productionCapabilityReadScope } from "@/lib/capability-read-client";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
@@ -6,6 +7,11 @@ import { listDealEngineLeads } from "@/lib/deal-engine-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  try { return await handleRead(request); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
+}
+
+async function handleRead(request: NextRequest) {
   let body: unknown;
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 }); }
@@ -16,8 +22,11 @@ export async function POST(request: NextRequest) {
   const limit = Number(input.limit ?? 5);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
 
+  let scope;
+  try { scope = productionCapabilityReadScope(); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
   let deals;
-  try { deals = await listDealEngineLeads(limit, { readOnly: true }); }
+  try { deals = await listDealEngineLeads(limit, { readOnly: true, readClient: scope.client }); }
   catch { return NextResponse.json({ ok: false, error: "Deal capability unavailable" }, { status: 503 }); }
 
   const records = deals.map((lead) => ({
@@ -35,5 +44,5 @@ export async function POST(request: NextRequest) {
     missingInputs: [],
   }));
 
-  return NextResponse.json({ deals: records, sourceSnapshotAt: new Date().toISOString() });
+  return scope.respond({ deals: records, sourceSnapshotAt: new Date().toISOString() });
 }

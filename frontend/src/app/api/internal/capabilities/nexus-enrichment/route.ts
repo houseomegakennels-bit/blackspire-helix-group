@@ -1,8 +1,9 @@
+import { productionCapabilityReadScope } from "@/lib/capability-read-client";
 import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { type SupabaseClient } from "@supabase/supabase-js";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
 
@@ -26,12 +27,6 @@ type DealLookupRow = {
   property_address: string | null;
 };
 
-function getSupabaseAdmin(): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL?.trim();
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !key) return null;
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-}
 
 function exactIlike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
@@ -59,6 +54,11 @@ async function findStoredContact(
 }
 
 export async function POST(request: NextRequest) {
+  try { return await handleRead(request); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
+}
+
+async function handleRead(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
@@ -85,7 +85,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
+  let scope;
+  try { scope = productionCapabilityReadScope(); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
+  const supabase = scope.client;
   if (!supabase) return NextResponse.json({ ok: false, error: "Nexus capability unavailable" }, { status: 503 });
 
   let lookup = {
@@ -101,14 +104,14 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .maybeSingle();
     if (error) return NextResponse.json({ ok: false, error: "Nexus capability unavailable" }, { status: 503 });
-    if (!data) return notFoundResult();
+    if (!data) return scope.respond(notFoundResult());
     const deal = data as DealLookupRow;
     lookup = {
       sellerLeadId: deal.seller_lead_id,
       ownerName: deal.owner_name?.trim() || null,
       propertyAddress: deal.property_address?.trim() || null,
     };
-    if (!lookup.sellerLeadId && !lookup.ownerName && !lookup.propertyAddress) return notFoundResult();
+    if (!lookup.sellerLeadId && !lookup.ownerName && !lookup.propertyAddress) return scope.respond(notFoundResult());
   }
   const { contact, failed } = await findStoredContact(supabase, lookup);
   if (failed) return NextResponse.json({ ok: false, error: "Nexus capability unavailable" }, { status: 503 });
@@ -116,8 +119,8 @@ export async function POST(request: NextRequest) {
   const primaryPhone = contact?.primary_phone?.trim() || null;
   const phoneStatus = primaryPhone ? "Trace Complete" : contact ? "Partial Match" : null;
 
-  if (!contact) return notFoundResult();
-  return NextResponse.json({
+  if (!contact) return scope.respond(notFoundResult());
+  return scope.respond({
     ownerName: contact.owner_name?.trim() || null,
     propertyAddress: contact.property_address?.trim() || null,
     skipTraceStatus: contact?.status?.trim() || null,
@@ -131,9 +134,9 @@ export async function POST(request: NextRequest) {
 }
 
 function notFoundResult() {
-  return NextResponse.json({
+  return {
     ownerName: null, propertyAddress: null, skipTraceStatus: null, phoneStatus: null,
     contactConfidenceScore: null, provider: null, source: null, updatedAt: null,
     sourceSnapshotAt: new Date().toISOString(),
-  });
+  };
 }

@@ -69,13 +69,33 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
     }
     return query;
   } }, { get(target, key) { if (key in target) return target[key]; return reject(key === 'storage' ? 'storage_attempt' : 'database_mutation_attempt'); } });
+  // Real closed production query client over synthetic REST; no permissive
+  // respond stub, so caught errors and missing finalization cannot be hidden.
+  const makeReadScope = load('createCapabilityReadScope', read('lib/capability-read-client.ts'), {
+    URL, URLSearchParams, performance, AbortController, AbortSignal, TextDecoder, Response, Uint8Array,
+  });
+  const rest = async (url, options) => {
+    assert.equal(url.origin, 'https://abcdefghijklmnopqrst.supabase.co');
+    assert.ok(['GET', 'HEAD'].includes(options.method)); assert.equal(options.redirect, 'error');
+    const table = url.pathname.split('/').at(-1);
+    let q = db.from(table).select(url.searchParams.get('select'), options.method === 'HEAD' ? { head: true } : undefined);
+    for (const [key, value] of url.searchParams) {
+      if (key === 'limit') q = q.limit(Number(value));
+      else if (value.startsWith('eq.')) q = q.eq(key, value.slice(3) === 'true' ? true : value.slice(3));
+    }
+    const result = await q;
+    if (result.error) return Response.json({ error: 'synthetic failure' }, { status: 503 });
+    if (options.method === 'HEAD') return new Response(null, { headers: { 'content-range': `*/${result.count}` } });
+    return Response.json(result.data);
+  };
   const dependencies = {
     NextResponse: { json: (body, options) => Response.json(body, options) },
     process: Object.freeze({ env }), Buffer, timingSafeEqual,
+    productionCapabilityReadScope: () => { if (!configured) throw new Error("fixture unavailable"); return makeReadScope({ origin: "https://abcdefghijklmnopqrst.supabase.co", key: "synthetic-read-key", releaseSha: "a".repeat(40), fetchImpl: rest }); },
     createClient: () => db, getSupabaseAdmin: () => configured ? db : null,
     getEnvState: () => ({ enabled: configured }),
     fetch: () => reject('external_network_attempt'),
-    SELLER_LEAD_BASE_SELECT: '*', mapSellerLead: (row) => row,
+    SELLER_LEAD_BASE_SELECT: read('lib/seller-engine-server.ts').match(/const SELLER_LEAD_BASE_SELECT =\s*"([^"]+)"/)[1], mapSellerLead: (row) => row,
     normalizeCountyName: (value) => value.toLowerCase(),
     resolveBuyerCounty: () => ({ core: 'forsyth', display: 'Forsyth' }),
     resolvePropertyTypeBucket: () => 'residential', scoreBuyerProfile: () => ({ score: 80, reasons: ['Fixture'] }),

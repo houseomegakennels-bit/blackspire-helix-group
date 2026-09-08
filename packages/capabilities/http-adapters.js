@@ -1,3 +1,4 @@
+import { decodeObservedResponse } from './read-observation.js';
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
 
 export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
@@ -9,13 +10,13 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
       const url = new URL('/api/internal/capabilities/seller-opportunities', base);
       if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) throw new Error('Seller Engine capability transport must use HTTPS or loopback HTTP');
       const response = await fetchImpl(url, {
-        method: 'POST', signal,
+        method: 'POST', signal, redirect: 'error',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ workspaceId, limit }),
       });
       const text = await readBoundedResponse(response, 32 * 1024);
       if (!response.ok) throw new Error(`Seller Engine capability failed with HTTP ${response.status}`);
-      try { return JSON.parse(text); } catch { throw new Error('Seller Engine capability returned malformed JSON'); }
+      try { return decodeObservedResponse(text, response, url.pathname); } catch { throw new Error('Seller Engine capability returned malformed JSON'); }
     },
     buyerProfiles: async ({ workspaceId, signal, ...input }) => {
       const base = env.BLACKSPIRE_BUYER_CAPABILITY_URL;
@@ -24,13 +25,13 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
       const url = new URL('/api/internal/capabilities/buyer-profiles', base);
       if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) throw new Error('Buyer Engine capability transport must use HTTPS or loopback HTTP');
       const response = await fetchImpl(url, {
-        method: 'POST', signal,
+        method: 'POST', signal, redirect: 'error',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ workspaceId, ...input }),
       });
       const text = await readBoundedResponse(response, 32 * 1024);
       if (!response.ok) throw new Error(`Buyer Engine capability failed with HTTP ${response.status}`);
-      try { return JSON.parse(text); } catch { throw new Error('Buyer Engine capability returned malformed JSON'); }
+      try { return decodeObservedResponse(text, response, url.pathname); } catch { throw new Error('Buyer Engine capability returned malformed JSON'); }
     },
     dealRecords: async ({ workspaceId, limit, signal }) => {
       const base = env.BLACKSPIRE_DEAL_CAPABILITY_URL;
@@ -39,13 +40,13 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
       const url = new URL('/api/internal/capabilities/deal-records', base);
       if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) throw new Error('Deal Engine capability transport must use HTTPS or loopback HTTP');
       const response = await fetchImpl(url, {
-        method: 'POST', signal,
+        method: 'POST', signal, redirect: 'error',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ workspaceId, limit }),
       });
       const text = await readBoundedResponse(response, 32 * 1024);
       if (!response.ok) throw new Error(`Deal Engine capability failed with HTTP ${response.status}`);
-      try { return JSON.parse(text); } catch { throw new Error('Deal Engine capability returned malformed JSON'); }
+      try { return decodeObservedResponse(text, response, url.pathname); } catch { throw new Error('Deal Engine capability returned malformed JSON'); }
     },
     dealAnalysis: async ({ workspaceId, dealId, signal }) => {
       const base = env.BLACKSPIRE_DEAL_CAPABILITY_URL;
@@ -54,13 +55,13 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
       const url = new URL('/api/internal/capabilities/deal-analysis', base);
       if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) throw new Error('Deal Engine capability transport must use HTTPS or loopback HTTP');
       const response = await fetchImpl(url, {
-        method: 'POST', signal,
+        method: 'POST', signal, redirect: 'error',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ workspaceId, dealId }),
       });
       const text = await readBoundedResponse(response, 32 * 1024);
       if (!response.ok) throw new Error(`Deal Engine capability failed with HTTP ${response.status}`);
-      try { return JSON.parse(text); } catch { throw new Error('Deal Engine capability returned malformed JSON'); }
+      try { return decodeObservedResponse(text, response, url.pathname); } catch { throw new Error('Deal Engine capability returned malformed JSON'); }
     },
     nexusEnrichment: async ({ workspaceId, ownerName, propertyAddress, sellerLeadId, dealId, signal }) => {
       const base = env.BLACKSPIRE_NEXUS_CAPABILITY_URL;
@@ -74,13 +75,13 @@ export function createDivisionAdapters(env = process.env, fetchImpl = fetch) {
       if (sellerLeadId) body.sellerLeadId = sellerLeadId;
       if (dealId) body.dealId = dealId;
       const response = await fetchImpl(url, {
-        method: 'POST', signal,
+        method: 'POST', signal, redirect: 'error',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       });
       const text = await readBoundedResponse(response, 32 * 1024);
       if (!response.ok) throw new Error(`Nexus capability failed with HTTP ${response.status}`);
-      try { return JSON.parse(text); } catch { throw new Error('Nexus capability returned malformed JSON'); }
+      try { return decodeObservedResponse(text, response, url.pathname); } catch { throw new Error('Nexus capability returned malformed JSON'); }
     },
   });
 }

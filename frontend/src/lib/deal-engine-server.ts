@@ -1206,8 +1206,9 @@ async function getDealEnginePersistenceStatus() {
   };
 }
 
-export async function listDealEngineLeads(limit = 6, { readOnly = false } = {}): Promise<DealEngineLead[]> {
-  const supabase = getSupabaseAdmin();
+export async function listDealEngineLeads(limit = 6, { readOnly = false, readClient }: { readOnly?: boolean; readClient?: SupabaseClient } = {}): Promise<DealEngineLead[]> {
+  if (readOnly && !readClient) throw new Error("Observed read client required");
+  const supabase = readClient ?? getSupabaseAdmin();
   const sellerHandoffFallback = async () => {
     const sellerLeads = await listSellerLeads().catch(() => []);
     return sellerLeads
@@ -4141,9 +4142,9 @@ export async function saveDealCloseout(input: SaveDealCloseoutInput) {
 
 // The internal read capability needs only persisted underwriting inputs. Keep it
 // independent of the UI detail graph, which can scaffold state and tolerate errors.
-export async function getDealEngineAnalysisForCapability(dealId: string) {
+export async function getDealEngineAnalysisForCapability(dealId: string, readClient: SupabaseClient) {
   if (!/^DE-\d{4}$/.test(dealId)) throw new Error("Deal capability unavailable");
-  const supabase = getSupabaseAdmin();
+  const supabase = readClient;
   if (!supabase) throw new Error("Deal capability unavailable");
   const { data, error } = await supabase
     .from("deal_leads")

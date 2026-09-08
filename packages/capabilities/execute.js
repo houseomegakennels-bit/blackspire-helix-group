@@ -1,3 +1,4 @@
+import { observationForResult } from './read-observation.js';
 import { blackspireCapabilityRegistry } from './index.js';
 import { validateCapabilityInput, validateCapabilityOutput } from './contract.js';
 import { createDivisionAdapters } from './http-adapters.js';
@@ -184,7 +185,8 @@ export async function executeRegisteredCapability(task, workspace, {
     }
     const result = validateCapabilityOutput(capability, raw);
     if (capabilityResultCount(capability, result) > (validatedInput._limit ?? validatedInput.limit ?? Infinity)) throw new Error('capability exceeded the requested result limit');
-    const evidence = { capabilityId: capability.id, division: capability.division, readOnly: true, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt, resultCount: capabilityResultCount(capability, result) };
+    const readObservation = observationForResult(raw);
+    const evidence = { ...(readObservation ? { readObservation } : {}), capabilityId: capability.id, division: capability.division, readOnly: true, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt, resultCount: capabilityResultCount(capability, result) };
     const summary = { result: summarizeCapabilityResult(capability, result), capabilityId: capability.id, division: capability.division, changedFiles: [], sourceSnapshotAt: result.sourceSnapshotAt };
     return finalizeCapabilitySuccess({ taskId: task.id, capabilityId: capability.id, workspaceId: workspace.id, principalId: task.actor_id, ownership, result, summary, evidence },
       (currentTask) => {

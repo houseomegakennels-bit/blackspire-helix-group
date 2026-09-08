@@ -837,8 +837,8 @@ export async function listSellerLeads(): Promise<SellerLeadView[]> {
 // The internal Blackspire capability boundary must distinguish a legitimate empty
 // pipeline from missing configuration and query/schema failures. Keep that stricter
 // contract separate from legacy UI callers which intentionally degrade to an empty list.
-export async function listSellerLeadsForCapability(limit: number): Promise<SellerLeadView[]> {
-  const supabase = getSupabaseAdmin();
+export async function listSellerLeadsForCapability(limit: number, readClient: SupabaseClient): Promise<SellerLeadView[]> {
+  const supabase = readClient;
   if (!supabase) throw new Error("Seller Engine database is not configured");
 
   const { data, error } = await supabase

@@ -52,6 +52,9 @@ export async function runAuthority(root) {
         assert.equal(JSON.parse(attempts[0].request_packet).principalId, 'read-principal');
       } } };
       assert.equal((await processTask(created, options)).status, 'completed', entry.id);
+      const observed = JSON.parse(getTask(created.id).evidence).readObservation;
+      assert.equal(observed.releaseSha, 'a'.repeat(40)); assert.equal(observed.route, entry.route);
+      assert.equal(observed.forbiddenAttempts, 0); assert.ok(observed.requests >= 1);
       const dispatchCount = fixture.events.slice(before).filter((event) => event.kind === 'route_dispatch').length;
       assert.equal(dispatchCount, 1);
       await processTask({ ...getTask(created.id), status: 'queued' }, options);

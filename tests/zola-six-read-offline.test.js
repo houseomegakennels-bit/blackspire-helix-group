@@ -68,8 +68,8 @@ test('strict Deal records rejects missing configuration, ordinary SQL errors and
       toDealLeadFromSellerHandoff: (row) => row, toLead: (row) => row,
       isMissingDealTableError: (value) => value?.message === 'missing-relation',
     });
-    if (['unconfigured', 'query-error', 'missing-relation'].includes(scenario)) await assert.rejects(helper(5, { readOnly: true }), /unavailable/);
-    else assert.equal((await helper(5, { readOnly: true })).length, scenario === 'rows' ? 1 : 0);
+    if (['unconfigured', 'query-error', 'missing-relation'].includes(scenario)) await assert.rejects(helper(5, { readOnly: true, readClient: scenario === 'unconfigured' ? undefined : { from: () => query } }), /unavailable|required/);
+    else assert.equal((await helper(5, { readOnly: true, readClient: scenario === 'unconfigured' ? undefined : { from: () => query } })).length, scenario === 'rows' ? 1 : 0);
     assert.equal(fallbackCalls, 0);
     await helper(5);
     assert.equal(fallbackCalls, ['unconfigured', 'missing-relation'].includes(scenario) ? 1 : 0);
@@ -120,4 +120,17 @@ test('parent supervisor kills a synchronous infinite child and rejects excess ou
   await assert.rejects(supervise(['--eval', 'process.stdout.write("x".repeat(10000))'], { maxBytes: 100 }), /output bound/);
   await assert.rejects(supervise(['--eval', 'process.exit(2)']), /failed/);
   assert.equal(await supervise(['--eval', 'process.stdout.write(String(process.env.COMMAND_ADMIN_TOKEN))']), 'undefined');
+});
+
+test('all six actual routes finalize the real read scope and expose bounded sanitized observation', async () => {
+  for (const entry of cases) {
+    const response = await request(createOfflineFixture(), entry);
+    assert.equal(response.status, 200, entry.id);
+    const evidence = JSON.parse(response.headers.get('x-zola-read-observation'));
+    assert.equal(evidence.releaseSha, 'a'.repeat(40));
+    assert.ok(evidence.requests >= 1 && evidence.requests <= 12);
+    assert.equal(evidence.forbiddenAttempts, 0);
+    assert.ok(evidence.responseBytes <= 2 * 1024 * 1024);
+    assert.equal(JSON.stringify(evidence).includes('synthetic-read-key'), false);
+  }
 });

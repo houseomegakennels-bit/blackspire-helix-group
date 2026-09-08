@@ -1,7 +1,7 @@
+import { productionCapabilityReadScope } from "@/lib/capability-read-client";
 import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
 import { listBuyerProfilesForCapability, matchBuyersForProperty } from "@/lib/buyer-engine-server";
@@ -21,14 +21,13 @@ type DealLookupRow = {
   property_type: string | null;
 };
 
-function getSupabaseAdmin(): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL?.trim();
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !key) return null;
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-}
 
 export async function POST(request: NextRequest) {
+  try { return await handleRead(request); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
+}
+
+async function handleRead(request: NextRequest) {
   let body: unknown;
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 }); }
@@ -41,12 +40,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
   }
 
+  let scope;
+  try { scope = productionCapabilityReadScope(); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
   const sourceSnapshotAt = new Date().toISOString();
   if (input.matchesOnly === true) {
     const opportunityId = typeof input.opportunityId === "string" ? input.opportunityId.trim() : "";
     if (opportunityId && !/^DE-\d{4}$/i.test(opportunityId)) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
-    if (!opportunityId) return NextResponse.json({ matches: [], sourceSnapshotAt });
-    const supabase = getSupabaseAdmin();
+    if (!opportunityId) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
+    const supabase = scope.client;
     if (!supabase) return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
     const { data, error } = await supabase
       .from("deal_leads")
@@ -55,11 +57,11 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .maybeSingle();
     if (error) return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
-    if (!data) return NextResponse.json({ matches: [], sourceSnapshotAt });
+    if (!data) return scope.respond({ matches: [], sourceSnapshotAt });
     let result;
     try {
       const deal = data as DealLookupRow;
-      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true });
+      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true, readClient: scope.client });
     } catch {
       return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
     }
@@ -72,7 +74,7 @@ export async function POST(request: NextRequest) {
       recommendedAction: row.recommendedAction,
       source: row.source,
     }));
-    return NextResponse.json({ matches, sourceSnapshotAt });
+    return scope.respond({ matches, sourceSnapshotAt });
   }
 
   let rows;
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
       cashBuyer: typeof input.cashBuyer === "boolean" ? input.cashBuyer : null,
       llcBuyer: typeof input.llcBuyer === "boolean" ? input.llcBuyer : null,
       limit,
-    });
+    }, scope.client);
   } catch {
     return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
   }
@@ -101,5 +103,5 @@ export async function POST(request: NextRequest) {
     scoreSummary: row.score == null ? null : `Buyer score ${Math.max(0, Math.min(99, Math.round(row.score)))}/100`,
     source: "BuyerProfile",
   }));
-  return NextResponse.json({ profiles, matches: [], sourceSnapshotAt });
+  return scope.respond({ profiles, matches: [], sourceSnapshotAt });
 }

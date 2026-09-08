@@ -1004,7 +1004,7 @@ async function ensureBuyerGroupRegistrySeeded(
   return (seededData ?? []) as BuyerGroupRegistryDbRow[];
 }
 
-export async function listBuyerGroupRegistry(includeInactive = true, { readOnly = false } = {}): Promise<BuyerGroupRegistryRow[]> {
+export async function listBuyerGroupRegistry(includeInactive = true, { readOnly = false, readClient }: { readOnly?: boolean; readClient?: SupabaseClient } = {}): Promise<BuyerGroupRegistryRow[]> {
   const env = getEnvState();
   if (!env.enabled) {
     if (readOnly) throw new Error("Buyer registry unavailable");
@@ -1012,7 +1012,8 @@ export async function listBuyerGroupRegistry(includeInactive = true, { readOnly 
     return includeInactive ? seeds : seeds.filter((row) => row.active);
   }
 
-  const supabase = getSupabaseAdmin();
+  if (readOnly && !readClient) throw new Error("Observed read client required");
+  const supabase = readClient ?? getSupabaseAdmin();
   let query = supabase
     .from("buyer_group_registry")
     .select("id,canonical_name,group_type,aliases,states,counties,website,notes,active,created_at,updated_at")
@@ -1022,7 +1023,9 @@ export async function listBuyerGroupRegistry(includeInactive = true, { readOnly 
     query = query.eq("active", true);
   }
 
+  if (readOnly) query = query.limit(201);
   const { data, error } = await query;
+  if (readOnly && data && data.length > 200) throw new Error("Buyer registry exceeds read bound");
   if (error) {
     if (!readOnly && isMissingRelationError(error.message)) {
       const seeds = seedBuyerGroupRows();
@@ -1272,11 +1275,11 @@ export type BuyerCapabilityProfileInput = {
 };
 
 /** Bounded, persisted BuyerProfile read for the internal Hermes capability. */
-export async function listBuyerProfilesForCapability(input: BuyerCapabilityProfileInput): Promise<BuyerProfileRow[]> {
+export async function listBuyerProfilesForCapability(input: BuyerCapabilityProfileInput, readClient: SupabaseClient): Promise<BuyerProfileRow[]> {
   const env = getEnvState();
   if (!env.enabled) throw new Error("Buyer profiles unavailable");
 
-  const supabase = getSupabaseAdmin();
+  const supabase = readClient;
   let query = supabase
     .from("BuyerProfile")
     .select("id,buyer_name,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,last_purchase_date,property_types,score")
@@ -1353,8 +1356,9 @@ function scoreBuyerProfile(row: BuyerProfileRow, bucket: "land" | "residential")
   return { score: Math.min(99, score), reasons };
 }
 
-export async function matchBuyersForProperty(input: BuyerForPropertyInput, { readOnly = false } = {}): Promise<BuyerForPropertyResult> {
-  const supabase = getSupabaseAdmin();
+export async function matchBuyersForProperty(input: BuyerForPropertyInput, { readOnly = false, readClient }: { readOnly?: boolean; readClient?: SupabaseClient } = {}): Promise<BuyerForPropertyResult> {
+  if (readOnly && !readClient) throw new Error("Observed read client required");
+  const supabase = readClient ?? getSupabaseAdmin();
   const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(input.county, input.city);
   const bucket = resolvePropertyTypeBucket(input);
   const limit = input.limit ?? 10;
@@ -1404,7 +1408,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
 
   // Institutional groups remain a secondary lane (no longer the only source).
   const registry = readOnly
-    ? await listBuyerGroupRegistry(false, { readOnly: true })
+    ? await listBuyerGroupRegistry(false, { readOnly: true, readClient: supabase })
     : await listBuyerGroupRegistry(false).catch(() => []);
   const institutionalMatches: BuyerForPropertyMatch[] = registry
     .filter((group) => (group.counties ?? []).some((c) => normalizeCountyName(c) === countyCore))

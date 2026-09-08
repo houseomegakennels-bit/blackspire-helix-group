@@ -1595,3 +1595,8 @@ Verified canonical CI34166379571 success at5ff763f, including all mandatory lane
 ## 2026-09-08 — pre-provider engineering continuation
 
 Recovered exact release 450b52f and unchanged main53adf74. Added sanitized routing-schema diagnostics, principal-bound replay checks and a rehearsal-only strict intake. Actual sealed recovery passes six synthetic-route dispatcher receipts and stale-worker result/replay rejection; production rollback acceptance remains UNVERIFIED. Focused tests and independent reviews found and corrected SQLite null normalization and array capability coercion. n8n/provider package checks remain valid, ticket UNSENT; no sufficient safe disk cleanup candidate. Collector/observer and guarded fast path remain unfinished. No production activation, migrations, workflow replacement or merge.
+
+
+## 2026-09-08 — current-head observer completion increment
+
+Implemented a closed read client across all six routes, bounded nested queries, sticky forbidden-operation denial, sanitized observations and authority-fenced evidence persistence. Actual-scope offline integration and 119 capability regressions pass; independent reviews approved after fixes. Captured eight safe live recovery anonymous denials and measured a 32 MiB minimum deployment envelope against 7.25 GB free. Provider/n8n artifacts remain unchanged. Full live containment, production collector orchestration and executable release fast path remain unfinished; no production mutation or merge.

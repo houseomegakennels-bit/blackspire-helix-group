@@ -1,3 +1,4 @@
+import { productionCapabilityReadScope } from "@/lib/capability-read-client";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
@@ -6,6 +7,11 @@ import { listSellerLeadsForCapability } from "@/lib/seller-engine-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  try { return await handleRead(request); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
+}
+
+async function handleRead(request: NextRequest) {
   let body: unknown;
   try { body = await request.json(); }
   catch { return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 }); }
@@ -16,8 +22,11 @@ export async function POST(request: NextRequest) {
   const limit = Number(input.limit ?? 5);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
 
+  let scope;
+  try { scope = productionCapabilityReadScope(); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
   let leads;
-  try { leads = await listSellerLeadsForCapability(limit); }
+  try { leads = await listSellerLeadsForCapability(limit, scope.client); }
   catch { return NextResponse.json({ ok: false, error: "Seller capability unavailable" }, { status: 503 }); }
   const opportunities = leads.map((lead) => ({
     leadId: lead.id, propertyId: lead.propertyId, propertyAddress: lead.propertyAddress,
@@ -27,5 +36,5 @@ export async function POST(request: NextRequest) {
     recommendedAction: lead.recommendedAction || null, source: lead.sourceName,
   }));
   if (opportunities.some((row) => !row.propertyId)) return NextResponse.json({ ok: false, error: "canonical property identity unavailable" }, { status: 503 });
-  return NextResponse.json({ opportunities, sourceSnapshotAt: new Date().toISOString() });
+  return scope.respond({ opportunities, sourceSnapshotAt: new Date().toISOString() });
 }
