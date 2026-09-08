@@ -12,6 +12,51 @@ const MIME_EXTENSIONS = { 'text/plain': '.txt', 'text/markdown': '.md', 'applica
 const ALLOWED_MIME_TYPES = Object.keys(MIME_EXTENSIONS);
 const TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'application/json']);
 
+const DEFAULT_TELEGRAM_TIMEOUT_MS = 15_000;
+const DEFAULT_TELEGRAM_MAX_ATTEMPTS = 3;
+
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function retryDelay(attempt, retryAfter) {
+  const serverDelay = Number(retryAfter);
+  if (Number.isFinite(serverDelay) && serverDelay >= 0) return Math.min(serverDelay * 1000, 30_000);
+  return Math.min(250 * (2 ** (attempt - 1)), 2_000);
+}
+
+function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+function telegramError(method, body, status) {
+  const description = redact(body?.description || `HTTP ${status}`);
+  const error = new Error(`Telegram ${method} failed: ${description}`);
+  error.retryable = status === 429 || status >= 500 || Number(body?.error_code) === 429 || Number(body?.error_code) >= 500;
+  error.retryAfter = body?.parameters?.retry_after;
+  return error;
+}
+
+export async function telegramRequest(method, token, { query = '', init, timeoutMs, maxAttempts, fetchImpl = fetch, wait = delay } = {}) {
+  const attempts = positiveInteger(maxAttempts ?? process.env.TELEGRAM_MAX_ATTEMPTS, DEFAULT_TELEGRAM_MAX_ATTEMPTS);
+  const timeout = positiveInteger(timeoutMs ?? process.env.TELEGRAM_REQUEST_TIMEOUT_MS, DEFAULT_TELEGRAM_TIMEOUT_MS);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetchImpl(`https://api.telegram.org/bot${token}/${method}${query}`, { ...init, signal: AbortSignal.timeout(timeout) });
+      let body;
+      try { body = await response.json(); } catch { throw telegramError(method, null, response.status); }
+      if (!response.ok || body?.ok !== true) throw telegramError(method, body, response.status);
+      return body;
+    } catch (error) {
+      lastError = error;
+      const retryable = error?.retryable || error?.name === 'AbortError' || error?.name === 'TimeoutError' || error instanceof TypeError;
+      if (!retryable || attempt === attempts) throw error;
+      await wait(retryDelay(attempt, error.retryAfter));
+    }
+  }
+  throw lastError;
+}
+
 const sessions = new Map();
 const conversations = new Map();
 const seen = new Set();
@@ -92,16 +137,30 @@ function deliverPayload(chatId, payload, filename, send) {
 }
 
 export async function telegramGetFile(token, fileId) {
-  const response = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`);
-  const body = await response.json();
-  if (!body.ok) throw new Error(`Telegram getFile failed: ${body.description || 'unknown error'}`);
-  return body.result;
+  return (await telegramRequest('getFile', token, { query: `?file_id=${encodeURIComponent(fileId)}` })).result;
 }
 
 export async function telegramDownloadFile(token, filePath) {
-  const response = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
-  if (!response.ok) throw new Error(`Telegram file download failed with status ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  const attempts = positiveInteger(process.env.TELEGRAM_MAX_ATTEMPTS, DEFAULT_TELEGRAM_MAX_ATTEMPTS);
+  const timeout = positiveInteger(process.env.TELEGRAM_REQUEST_TIMEOUT_MS, DEFAULT_TELEGRAM_TIMEOUT_MS);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`, { signal: AbortSignal.timeout(timeout) });
+      if (!response.ok) {
+        const error = new Error(`Telegram file download failed with status ${response.status}`);
+        error.retryable = response.status === 429 || response.status >= 500;
+        throw error;
+      }
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      lastError = error;
+      const retryable = error?.retryable || error?.name === 'AbortError' || error?.name === 'TimeoutError' || error instanceof TypeError;
+      if (!retryable || attempt === attempts) throw error;
+      await delay(retryDelay(attempt));
+    }
+  }
+  throw lastError;
 }
 
 function safeFileName(file, mime) {
@@ -189,20 +248,18 @@ export async function sendTelegramDocument(token, chatId, filePath, caption = ''
   body.append('chat_id', String(chatId));
   body.append('caption', caption);
   body.append('document', new Blob([fs.readFileSync(filePath)]), path.basename(filePath));
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body });
-  return response.json();
+  return telegramRequest('sendDocument', token, { init: { method: 'POST', body } });
 }
 
 export async function sendTelegramMessage(token, chatId, text, extra = {}) {
   const chunks = chunk(text);
   const sent = [];
   for (const part of chunks) {
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    sent.push(await telegramRequest('sendMessage', token, { init: {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: part, parse_mode: 'MarkdownV2', ...extra }),
-    });
-    sent.push(await response.json());
+    } }));
   }
   return sent;
 }
@@ -234,9 +291,10 @@ export async function runPolling({ token = process.env.TELEGRAM_BOT_TOKEN, apiBa
   async function poll() {
     if (stopped) return;
     try {
-      const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates?timeout=10&offset=${offset}`);
-      const payload = await response.json();
-      for (const update of payload.result || []) {
+      const updates = (await telegramRequest('getUpdates', token, { query: `?timeout=10&offset=${offset}` })).result;
+      if (!Array.isArray(updates)) throw new TypeError('Telegram getUpdates result must be an array');
+      for (const update of [...updates].sort((a, b) => Number(a.update_id) - Number(b.update_id))) {
+        if (!Number.isSafeInteger(update?.update_id) || update.update_id < offset) continue;
         offset = Math.max(offset, update.update_id + 1);
         const reply = await handleTelegramUpdate(update, apiBase);
         await dispatchReply(token, reply);
