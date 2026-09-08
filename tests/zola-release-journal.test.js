@@ -8,6 +8,28 @@ import {openReleaseJournal,recoverReleaseJournalLock,hash} from '../packages/zol
 
 const rootTest={skip:process.getuid?.()!==0};
 function directory(t){const root=fs.mkdtempSync('/root/.zola-release-journal-test-');fs.chmodSync(root,0o700);t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return root;}
+test('global and workflow streams retain independent histories under one host lock',rootTest,t=>{
+ const root=directory(t),journal=openReleaseJournal({root});
+ const release=journal.stream('release'),workflow=journal.stream('n8n');
+ release.append({type:'intent',operation:'merge',releaseSha:'a'.repeat(40)});
+ workflow.append({type:'intent',operation:'deactivate',namespace:'b'.repeat(64)});
+ assert.equal(journal.events()[0].operation,'deactivate');
+ assert.equal(release.events()[0].operation,'merge');
+ assert.throws(()=>openReleaseJournal({root}));
+ for(const name of ['../release','commander','release.jsonl',''])assert.throws(()=>journal.stream(name));
+ const bytes=fs.readFileSync(path.join(root,'n8n.jsonl'),'utf8');journal.close();
+ assert.throws(()=>release.append({type:'late'}));assert.throws(()=>workflow.events());
+ const reopened=openReleaseJournal({root});assert.equal(reopened.stream('release').events()[0].operation,'merge');
+ assert.equal(fs.readFileSync(path.join(root,'n8n.jsonl'),'utf8'),bytes);reopened.close();
+});
+test('torn or linked global stream blocks workflow access and retains host lock',rootTest,t=>{
+ for(const tamper of ['torn','linked']){
+  const root=directory(t),journal=openReleaseJournal({root});journal.close();
+  const filename=path.join(root,'release.jsonl');
+  if(tamper==='torn')fs.appendFileSync(filename,'partial');else fs.linkSync(filename,path.join(root,'alias'));
+  assert.throws(()=>openReleaseJournal({root}));assert.ok(fs.existsSync(path.join(root,'commander.lock')));
+ }
+});
 test('actual protected journal serializes all operations and preserves intent across reopen',rootTest,t=>{
  const root=directory(t),first=openReleaseJournal({root});
  first.append({type:'intent',operation:'deactivate'});

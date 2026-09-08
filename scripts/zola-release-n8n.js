@@ -28,6 +28,9 @@ try{
   try{fs.mkdirSync(RELEASE_OPERATION_ROOT,{mode:0o700});}catch(e){if(e.code!=='EEXIST')throw e;}
   if(mode==='reconcile')recoverReleaseJournalLock();
   journal=openReleaseJournal();
+  // Global operations own forward transitions under the same lock. Retain the
+  // GET-only reconciliation and exact candidate deactivation recovery paths.
+  if(journal.stream('release').events().length&&!['inspect','reconcile','rollback'].includes(mode))throw new Error();
   const key=readReleaseProtectedBytes('/var/lib/blackspire-operator/n8n-api-key',16384).trim();
   const request=createN8nTransport(key);
   const stable=()=>{

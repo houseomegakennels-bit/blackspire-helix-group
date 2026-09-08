@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-08 — timeout recovery v2 release identity and journal isolation
+
+Recovery resolved local, remote and PR125 to `c9cd379`, with no unpublished commits or uncommitted timeout work. The landed retirement/network-isolation delta was reviewed before implementation. Three concurrent read-only audit groups covered the requested lanes; focused collector/migration checks passed 34 tests and exact-head CI was independently reverified.
+
+The host-wide release journal now exposes fixed `n8n` and `release` streams under one lock, validates both histories before use, and preserves existing n8n bytes. Torn or linked global history blocks workflow access. Standalone forward workflow transitions refuse when global history exists; inspection, reconciliation and exact candidate-deactivation rollback remain available. A separate GET-only merged-identity command verifies PR125 closed/merged at the expected head, exact new main, both ordered parents and the same tested CI tree, repeating observations. Its protected input must come from durably retained authenticated premerge CI evidence and the confirmed merge result; it does not authenticate supplied CI proof or declare deployment acceptance.
+
+Parent focused verification passed 26 tests and independent final review passed 18; build, lint, typecheck and dependency audit passed. Fresh read-only routing audit `34265913708` inventoried 380 deployments, 106 aliases and three domains, including both gap aliases pointing at the same deployment without redirect/microfrontend/route fields. Firewall HTTP404 and system-bypass HTTP402 leave the inventory incomplete and historical URL denial UNVERIFIED. No routing change occurred.
+
+The global executable commander, actual recovery frontend/API/worker generation acceptance, connected read-observation transport, supported real second-principal authentication and complete owner/mutation-attempt/provider-egress evidence remain unfinished internal work. Canonical activation, production migration, workflow publication, merge and production cutover are not claimed. Provider action is not the sole blocker.
+
 ## 2026-09-08 — fail-closed launch retirement and isolated recovery
 
 Recovered clean local/remote release `20d0eb8` with no unpublished commits or dirty timeout work. Three read-only audit groups covered the twelve requested lanes. They confirmed an unset Buyer writer mode still permitted legacy source acquisition and unauthenticated webhook dispatch. Missing, empty and invalid modes now refuse; the legacy dispatch implementation and its unbounded transport helpers are removed. Search creation authenticates and checks configuration before beta activity reservation, body parsing, job insertion or dispatch. Existing scoped authority and uncertain-outcome reconciliation remain in place.

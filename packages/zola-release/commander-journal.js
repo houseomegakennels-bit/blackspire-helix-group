@@ -10,8 +10,8 @@ function directorySync(root){const fd=fs.openSync(root,fs.constants.O_RDONLY|fs.
 // One host-wide lock, including different release SHAs. Crashes retain the lock;
 // no PID-only stale-lock deletion, and no new run ID can bypass an old intent.
 export function openReleaseJournal({root=RELEASE_OPERATION_ROOT,owner=0}={}){
- let fd,lockFd;
- const lock=path.join(root,'commander.lock'),filename=path.join(root,'n8n.jsonl');
+ let lockFd;const descriptors=[];
+ const lock=path.join(root,'commander.lock');
  try{
   if(!path.isAbsolute(root)||path.resolve(root)!==root)reject();
   for(let p=root;;p=path.dirname(p)){
@@ -24,30 +24,45 @@ export function openReleaseJournal({root=RELEASE_OPERATION_ROOT,owner=0}={}){
   fs.writeFileSync(lockFd,JSON.stringify({pid:process.pid,bootId:fs.readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim(),
    startTime:fs.readFileSync(`/proc/${process.pid}/stat`,'utf8').split(')').at(-1).trim().split(/\s+/)[19]})+'\n');
   fs.fsyncSync(lockFd);directorySync(root);
-  fd=fs.openSync(filename,fs.constants.O_CREAT|fs.constants.O_APPEND|fs.constants.O_RDWR|fs.constants.O_NOFOLLOW,0o600);
-  const stat=fs.fstatSync(fd);
-  if(!stat.isFile()||stat.uid!==owner||stat.nlink!==1||(stat.mode&0o7777)!==0o600||stat.size>1024*1024)reject();
-  directorySync(root);
-  const bytes=fs.readFileSync(fd,'utf8');if(bytes&&!bytes.endsWith('\n'))reject();
-  const events=[];let previous='0'.repeat(64),closed=false;
-  for(const line of bytes.split('\n').filter(Boolean)){
-   const row=JSON.parse(line),body={sequence:events.length,previous,event:row.event};
-   if(Object.keys(row).sort().join(',')!=='digest,event,previous,sequence'||row.sequence!==events.length||row.previous!==previous||row.digest!==hash(body))reject();
-   previous=row.digest;events.push(row.event);
-  }
+  let closed=false;
+  const streams=new Map();
+  const openStream=name=>{
+   if(closed||!['n8n','release'].includes(name))reject();
+   if(streams.has(name))return streams.get(name);
+   const filename=path.join(root,`${name}.jsonl`);
+   const fd=fs.openSync(filename,fs.constants.O_CREAT|fs.constants.O_APPEND|fs.constants.O_RDWR|fs.constants.O_NOFOLLOW,0o600);
+   descriptors.push(fd);
+   const stat=fs.fstatSync(fd);
+   if(!stat.isFile()||stat.uid!==owner||stat.nlink!==1||(stat.mode&0o7777)!==0o600||stat.size>1024*1024)reject();
+   directorySync(root);
+   const bytes=fs.readFileSync(fd,'utf8');if(bytes&&!bytes.endsWith('\n'))reject();
+   const events=[];let previous='0'.repeat(64);
+   for(const line of bytes.split('\n').filter(Boolean)){
+    const row=JSON.parse(line),body={sequence:events.length,previous,event:row.event};
+    if(Object.keys(row).sort().join(',')!=='digest,event,previous,sequence'||row.sequence!==events.length||row.previous!==previous||row.digest!==hash(body))reject();
+    previous=row.digest;events.push(row.event);
+   }
+   const stream=Object.freeze({
+    events(){if(closed)reject();return structuredClone(events);},
+    append(event){
+     if(closed)reject();
+     const body={sequence:events.length,previous,event};const row={...body,digest:hash(body)},bytes=Buffer.from(JSON.stringify(row)+'\n');
+     if(bytes.length>16384||fs.fstatSync(fd).size+bytes.length>1024*1024)reject();
+     let offset=0;while(offset<bytes.length){const count=fs.writeSync(fd,bytes,offset,bytes.length-offset);if(count<1)reject();offset+=count;}
+     fs.fsyncSync(fd);previous=row.digest;events.push(structuredClone(event));
+    },
+   });
+   streams.set(name,stream);return stream;
+  };
+  // Validate both streams before exposing either. A torn global operation must
+  // block a standalone workflow command too. Existing n8n bytes stay unchanged.
+  const workflow=openStream('n8n');openStream('release');
   return{
-   events:()=>structuredClone(events),
-   append(event){
-    if(closed)reject();
-    const body={sequence:events.length,previous,event};const row={...body,digest:hash(body)},bytes=Buffer.from(JSON.stringify(row)+'\n');
-    if(bytes.length>16384||fs.fstatSync(fd).size+bytes.length>1024*1024)reject();
-    let offset=0;while(offset<bytes.length){const count=fs.writeSync(fd,bytes,offset,bytes.length-offset);if(count<1)reject();offset+=count;}
-    fs.fsyncSync(fd);previous=row.digest;events.push(structuredClone(event));
-   },
-   close(){if(!closed){closed=true;fs.closeSync(fd);fd=undefined;fs.closeSync(lockFd);lockFd=undefined;fs.unlinkSync(lock);directorySync(root);}},
+   events:workflow.events,append:workflow.append,stream:openStream,
+   close(){if(!closed){closed=true;while(descriptors.length)fs.closeSync(descriptors.pop());fs.closeSync(lockFd);lockFd=undefined;fs.unlinkSync(lock);directorySync(root);}},
   };
  }catch{
-  if(fd!==undefined)try{fs.closeSync(fd);}catch{/* preserve fail-closed state */}
+  while(descriptors.length)try{fs.closeSync(descriptors.pop());}catch{/* preserve fail-closed state */}
   if(lockFd!==undefined)try{fs.closeSync(lockFd);}catch{/* retain lock even if open failed */}
   reject();
  }
