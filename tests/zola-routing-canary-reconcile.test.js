@@ -6,6 +6,7 @@ function fixture(mode) {
   let discarded = mode === 'already-absent', observations = 0; const calls = [], journal = [];
   const route = { id: 'the-route', name: `ZOLA routing canary ${nonce}`, enabled: true, route: { src: `^/zola-routing-canary-${nonce}$`, status: 418, headers: { 'x-zola-routing-canary': nonce, 'cache-control': 'no-store' } } };
   const fetchImpl = async (url, options) => {
+    const visibleDiscarded = () => discarded && !(mode === 'propagation-delay' && observations < 4);
     calls.push({ url: String(url), method: options.method, body: options.body });
     assert.equal(url.origin, 'https://api.vercel.com'); assert.equal(url.searchParams.get('teamId'), 'team_CaRyRaulJaFnCLSfTdyRYNIW'); assert.equal(options.redirect, 'error'); assert.equal(options.headers.Authorization, `Bearer ${token}`);
     const response = value => new Response(JSON.stringify(value));
@@ -16,26 +17,29 @@ function fixture(mode) {
     }
     assert.equal(options.method, 'GET');
     if (url.pathname.endsWith('/versions')) {
-      const row = { id: versionId, isStaging: true, isLive: false };
+      const row = { id: versionId, isStaging: true };
       if (mode === 'ambiguous') delete row.isStaging;
-      if (mode === 'live') { row.isLive = true; row.isStaging = false; }
+      if (mode === 'malformed-live') row.isLive = 'true';
+      if (mode === 'null-live') row.isLive = null;
+      if (mode === 'wrong-count') row.ruleCount = 2;
+      if (mode === 'live' || mode === 'contradictory-history') { row.isLive = true; }
       if (mode === 'drift' && observations > 1) row.ruleCount = 3;
-      return response({ versions: discarded ? [] : [row] });
+      return response({ versions: visibleDiscarded() ? [] : mode === 'foreign-history' ? [row, { id: 'foreign', isStaging: false }] : [row] });
     }
     if (url.searchParams.has('versionId')) {
       assert.equal(url.searchParams.get('versionId'), versionId);
-      if (discarded || mode === '404-only') return new Response(null, { status: 404 });
+      if (visibleDiscarded() || mode === '404-only') return new Response(null, { status: 404 });
       const value = structuredClone(route);
       if (mode === 'extra-field') value.route.dest = 'https://attacker.test';
       if (mode === 'wrong-bytes') value.route.headers['x-zola-routing-canary'] = token;
       return response({ version: { id: versionId, ...(mode === 'contradictory-version' ? { isLive: true } : {}) }, routes: [value] });
     }
     observations++;
-    return response({ routes: mode === 'live-default' ? [route] : [], version: mode === 'live-default' ? { id: versionId } : null });
+    return response({ routes: visibleDiscarded() ? [] : [route], version: visibleDiscarded() ? null : { id: mode === 'current-mismatch' ? 'foreign' : versionId } });
   };
-  return { fetchImpl, record: value => journal.push(value), calls, journal };
+  return { fetchImpl, pause: async () => {}, record: value => journal.push(value), calls, journal };
 }
-test('reads explicit versionId for staged bytes while default GET remains live; exact staged discard never promotes', async () => {
+test('reads explicit versionId for staged bytes while default GET returns the same current stage; exact staged discard never promotes', async () => {
   const f = fixture(); const result = await reconcileKnownCanary({ token, discard: true, ...f });
   assert.equal(result.status, 'KNOWN_STAGE_DISCARDED'); assert.equal(result.routingPublished, false); assert.equal(result.applicationDenialProven, false);
   assert.equal(f.calls.filter(row => row.method === 'POST').length, 1); assert.equal(f.journal.filter(row => row.event === 'discard_intent').length, 1);
@@ -49,7 +53,7 @@ test('inspection mode uses only GET and sanitized diagnostics exclude arbitrary 
   }
 });
 test('unknown staging identity, live stage, changed baseline, extra route fields and concurrent drift never discard', async () => {
-  for (const mode of ['ambiguous','live','live-default','extra-field','wrong-bytes','drift','404-only','contradictory-version']) {
+  for (const mode of ['ambiguous','live','current-mismatch','extra-field','wrong-bytes','drift','404-only','contradictory-version','contradictory-history','foreign-history','malformed-live','null-live','wrong-count']) {
     const f = fixture(mode); const result = await reconcileKnownCanary({ token, discard: true, ...f });
     assert.equal(result.status, 'INCOMPLETE', mode); assert.equal(f.calls.some(row => row.method !== 'GET'), false, mode);
   }
@@ -62,7 +66,7 @@ test('lost discard acknowledgement and empty 204 response use read-only confirma
     assert.equal(f.calls.filter(row => row.method === 'POST').length, 1); assert.equal(JSON.stringify(f.journal).includes(token), false);
   }
 });
-test('a replay proves stage absent through liveempty, complete history and explicit version404; 404 alone cannot pass', async () => {
+test('a replay proves stage absent through currentempty, complete empty history and explicit version404; 404 alone cannot pass', async () => {
   const f = fixture('already-absent'); const result = await reconcileKnownCanary({ token, discard: true, ...f });
   assert.equal(result.status, 'KNOWN_STAGE_ABSENT'); assert.equal(result.discardAttempted, false); assert.equal(f.calls.some(row => row.method !== 'GET'), false);
 });
@@ -71,4 +75,10 @@ test('uncertain discard that did not apply remains incomplete after read-only re
   const f = fixture('uncertain-not-applied'); const result = await reconcileKnownCanary({ token, discard: true, ...f });
   assert.equal(result.status, 'INCOMPLETE'); assert.equal(result.code, 'DISCARD_NOT_CONFIRMED');
   assert.equal(f.calls.filter(row => row.method !== 'GET').length, 1);
+});
+
+test('propagation delay retries only bounded read observations and never repeats discard', async () => {
+  const f = fixture('propagation-delay'); const result = await reconcileKnownCanary({ token, discard: true, ...f });
+  assert.equal(result.status, 'KNOWN_STAGE_DISCARDED'); assert.equal(f.calls.filter(row => row.method !== 'GET').length, 1);
+  assert.equal(f.calls.filter(row => new URL(row.url).searchParams.has('versionId')).length, 4);
 });

@@ -17,12 +17,12 @@ const check = (condition, code) => { if (!condition) throw new ReconcileError(co
 
 // This rescue operation is pinned to the sole unpromoted canary from CI
 // 34190899875 attempt 2. Only GET and one exact version DISCARD are possible.
-export async function reconcileKnownCanary({ token, discard = false, fetchImpl = fetch, record }) {
+export async function reconcileKnownCanary({ token, discard = false, fetchImpl = fetch, record, pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)) }) {
   check(typeof token === 'string' && token.length >= 16 && typeof record === 'function', 'PROTECTED_INPUT_REQUIRED');
   const result = { schema: 1, versionId: VERSION, status: 'INCOMPLETE', routingPublished: false, discardAttempted: false, applicationDenialProven: false };
   let requests = 0;
   async function api(suffix = '', versionId, method = 'GET') {
-    check(++requests <= 12, 'REQUEST_LIMIT');
+    check(++requests <= 20, 'REQUEST_LIMIT');
     const url = new URL(`/v1/projects/${PROJECT}/routes${suffix}`, 'https://api.vercel.com');
     url.searchParams.set('teamId', TEAM); if (versionId) url.searchParams.set('versionId', versionId);
     check(method === 'GET' || (discard && method === 'POST' && suffix === '/versions' && !versionId), 'MUTATION_SCOPE');
@@ -38,12 +38,14 @@ export async function reconcileKnownCanary({ token, discard = false, fetchImpl =
     return value;
   }
   const metadata = version => ({ id: id(version?.id) ? version.id : null,
+    isLivePresent: version != null && Object.hasOwn(version, 'isLive'),
     isLive: typeof version?.isLive === 'boolean' ? version.isLive : null,
+    isStagingPresent: version != null && Object.hasOwn(version, 'isStaging'),
     isStaging: typeof version?.isStaging === 'boolean' ? version.isStaging : null,
     ruleCount: Number.isSafeInteger(version?.ruleCount) ? version.ruleCount : null });
-  function diagnostic(live, history, staged) {
+  function diagnostic(current, history, staged) {
     const rows = Array.isArray(staged?.routes) ? staged.routes : [];
-    return { event: 'routing_observation', live: { routeCount: Array.isArray(live?.routes) ? live.routes.length : null, version: metadata(live?.version), nullVersion: live?.version === null },
+    return { event: 'routing_observation', current: { routeCount: Array.isArray(current?.routes) ? current.routes.length : null, version: metadata(current?.version), nullVersion: current?.version === null },
       versions: Array.isArray(history?.versions) ? history.versions.map(metadata) : null,
       staged: { notFound: staged?.notFound === true, version: metadata(staged?.version), routeCount: Array.isArray(staged?.routes) ? staged.routes.length : null,
         rows: rows.map(row => ({ id: id(row?.id) ? row.id : null, enabled: typeof row?.enabled === 'boolean' ? row.enabled : null,
@@ -54,39 +56,49 @@ export async function reconcileKnownCanary({ token, discard = false, fetchImpl =
           unknownRouteKeyCount: row?.route && typeof row.route === 'object' ? Object.keys(row.route).filter(key => !['src','status','headers','dest','destination','caseSensitive','has','missing','transforms','methods','respectOriginCacheControl'].includes(key)).length : null })) } };
   }
   async function observe() {
-    const live = await api(); const history = await api('/versions'); const staged = await api('', VERSION);
-    const safe = diagnostic(live, history, staged); record(safe);
-    return { live, history, staged };
+    const current = await api(); const history = await api('/versions'); const staged = await api('', VERSION);
+    const safe = diagnostic(current, history, staged); record(safe);
+    return { current, history, staged };
   }
-  function verify({ live, history, staged }) {
-    check(live?.version === null && Array.isArray(live.routes) && live.routes.length === 0 && live.pagination == null, 'LIVE_NOT_EMPTY');
-    check(Array.isArray(history?.versions) && history.pagination == null && history.versions.length <= 10000, 'HISTORY_SCHEMA');
-    const matches = history.versions.filter(row => row.id === VERSION);
-    check(matches.length === 1 && matches[0].isStaging === true && matches[0].isLive === false, 'STAGED_IDENTITY_UNPROVEN');
-    check(history.versions.every(row => row.id === VERSION || (row.isStaging === false && row.isLive === false)), 'FOREIGN_ROUTING_STATE');
-    check(staged?.version?.id === VERSION && Array.isArray(staged.routes) && staged.routes.length === 1 && staged.pagination == null, 'VERSION_CONTENT_MISMATCH');
-    check(staged.version.isLive !== true && staged.version.isStaging !== false, 'CONTRADICTORY_VERSION_STATE');
-    const row = staged.routes[0];
-    check(id(row.id) && row.enabled === true && row.name === `ZOLA routing canary ${NONCE}` && canonical(row.route) === canonical(EXPECTED), 'CANARY_BYTES_MISMATCH');
+  function verify({ current, history, staged }) {
+    check(Array.isArray(history?.versions) && history.pagination == null && history.versions.length === 1, 'FOREIGN_ROUTING_STATE');
+    const item = history.versions[0];
+    // Official isStaging=true means staged AND not yet promoted; isLive is
+    // optional. Explicit contradictory true isLive is always rejected.
+    check((item.ruleCount === undefined || item.ruleCount === 1), 'ROUTE_COUNT_MISMATCH');
+    check(item.id === VERSION && item.isStaging === true && (item.isLive === undefined || item.isLive === false), 'STAGED_IDENTITY_UNPROVEN');
+    for (const content of [current, staged]) {
+      check(content?.version?.id === VERSION && Array.isArray(content.routes) && content.routes.length === 1 && content.pagination == null, 'VERSION_CONTENT_MISMATCH');
+      check((content.version.isLive === undefined || content.version.isLive === false) && (content.version.isStaging === undefined || content.version.isStaging === true), 'CONTRADICTORY_VERSION_STATE');
+      check((content.version.ruleCount === undefined || content.version.ruleCount === 1) && (content.limit?.currentRoutes === undefined || content.limit.currentRoutes === 1), 'ROUTE_COUNT_MISMATCH');
+      const row = content.routes[0];
+      check(id(row.id) && row.enabled === true && row.name === `ZOLA routing canary ${NONCE}` && canonical(row.route) === canonical(EXPECTED), 'CANARY_BYTES_MISMATCH');
+    }
+    check(canonical(current.routes) === canonical(staged.routes), 'CURRENT_VERSION_DRIFT');
   }
-  function absent({ live, history, staged }) {
-    return live?.version === null && Array.isArray(live.routes) && live.routes.length === 0 && live.pagination == null
+  function absent({ current, history, staged }) {
+    return current?.version === null && Array.isArray(current.routes) && current.routes.length === 0 && current.pagination == null
       && Array.isArray(history?.versions) && history.pagination == null && history.versions.length <= 10000
-      && history.versions.every(row => id(row.id) && row.id !== VERSION)
+      && history.versions.length === 0
       && staged?.notFound === true && staged.status === 404;
   }
   try {
     const first = await observe();
-    if (absent(first)) { result.status = 'KNOWN_STAGE_ABSENT'; record({ event: 'stage_absence_verified', liveRuleCount: 0, liveVersion: null, stageAbsent: true }); return result; }
+    if (absent(first)) { result.status = 'KNOWN_STAGE_ABSENT'; record({ event: 'stage_absence_verified', currentRuleCount: 0, currentVersion: null, stageAbsent: true }); return result; }
     verify(first);
     if (!discard) { result.status = 'KNOWN_STAGE_VERIFIED'; return result; }
     const second = await observe(); verify(second);
     check(canonical(first) === canonical(second), 'ROUTING_DRIFT');
     try { await api('/versions', undefined, 'POST'); }
     catch { result.discardResponseUnknown = true; record({ event: 'discard_response_unknown' }); }
-    const after = await observe();
-    check(absent(after), 'DISCARD_NOT_CONFIRMED');
-    record({ event: 'discard_verified', liveRuleCount: 0, liveVersion: null, stageAbsent: true });
+    let after;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { after = await observe(); if (absent(after)) break; }
+      catch { record({ event: 'discard_postcheck_unavailable', attempt: attempt + 1 }); }
+      if (attempt < 2) await pause(1000);
+    }
+    check(after && absent(after), 'DISCARD_NOT_CONFIRMED');
+    record({ event: 'discard_verified', currentRuleCount: 0, currentVersion: null, stageAbsent: true });
     result.status = 'KNOWN_STAGE_DISCARDED';
   } catch (error) { result.code = error instanceof ReconcileError ? error.message : 'REQUEST_FAILED'; }
   finally { record({ event: 'complete', ...result }); }
