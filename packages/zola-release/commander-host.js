@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {verifyReleaseCiArtifact} from './commander-ci-artifact.js';
 import {collectZolaActivationProfile} from './activation-profile.js';
 import {checkBuyerWriterActivationReadiness} from '../buyer-writer/activation-readiness.js';
 
@@ -70,8 +71,7 @@ export function verifyReleaseCi(releaseSha,{run=execFileSync,now=Date.now()}={})
    const pr=api('pulls/125'),main=api('git/ref/heads/main');
    if(pr.number!==125||pr.state!=='open'||pr.merged!==false||pr.draft!==false||pr.head?.sha!==releaseSha
     ||pr.head?.ref!==branch||pr.head?.repo?.full_name!==repository||pr.base?.ref!=='main'||pr.base?.repo?.full_name!==repository
-    ||main.ref!=='refs/heads/main'||main.object?.type!=='commit'||!(/^[a-f0-9]{40}$/).test(main.object?.sha??'')
-    ||pr.base.sha!==main.object.sha)refuse();
+    ||main.ref!=='refs/heads/main'||main.object?.type!=='commit'||!(/^[a-f0-9]{40}$/).test(main.object?.sha??''))refuse();
    return main.object.sha;
   };
   const mainSha=identity();
@@ -91,7 +91,7 @@ export function verifyReleaseCi(releaseSha,{run=execFileSync,now=Date.now()}={})
     ||ci.status!=='completed'||ci.conclusion!=='success'||!Number.isSafeInteger(ci.id)||ci.id<1
     ||!Number.isSafeInteger(ci.run_attempt)||ci.run_attempt<1
     ||!Array.isArray(ci.pull_requests)||ci.pull_requests.length!==1||ci.pull_requests[0].number!==125
-    ||ci.pull_requests[0].head?.sha!==releaseSha||ci.pull_requests[0].base?.sha!==mainSha
+    ||ci.pull_requests[0].head?.sha!==releaseSha
     ||!Number.isFinite(age)||age<0||age>24*60*60*1000)refuse();
    return JSON.stringify([ci.id,ci.run_attempt,ci.updated_at,ci.created_at]);
   };
@@ -106,9 +106,10 @@ export function verifyReleaseCi(releaseSha,{run=execFileSync,now=Date.now()}={})
    const steps=job.steps.filter(step=>step.name===name);
    if(steps.length!==1||steps[0].status!=='completed'||steps[0].conclusion!=='success')refuse();
   }
+  const artifact=verifyReleaseCiArtifact({ci,releaseSha,mainSha,api,run,options});
   // Catch branch movement, reruns and newer pending/failed runs during inspection.
   // This remains a point-in-time gate; callers must recheck immediately before mutation.
   if(identity()!==mainSha||validate(latest())!==stamp||validate(api(`actions/runs/${ci.id}`))!==stamp)refuse();
-  return{releaseSha,mainSha,runId:ci.id,runAttempt:ci.run_attempt,status:'success'};
+  return{releaseSha,mainSha,runId:ci.id,runAttempt:ci.run_attempt,...artifact,status:'success'};
  }catch{refuse();}
 }
