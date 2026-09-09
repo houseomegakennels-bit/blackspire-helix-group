@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-09 — continue beyond integrated recovery
+
+1. Preserve the integrated fixed recovery process/HTTP witness. Remaining rollback work is production build and installed dependency integrity, secure external intake/route containment, real owner policies and production supervisor fencing; do not repeat the green synthetic six-read path without a relevant change.
+2. Implement the durable release hold across public API intake, direct library admission, atomic worker claims and outbox delivery. Serialize hold publication with admissions/claims or require stopped/drained transitions; bind opening to the observed run, SHA and both generations. Emergency stop is not a substitute.
+3. Wire held activation and remaining real writer, migration, n8n, merge and deployment adapters into the existing protected release journal. Complete real-principal and all-owner/attempt/egress collection before production acceptance.
+4. Finish repeated historical/immutable routing authority evidence. Retained null protection metadata, inaccessible alias targets, 404/410 and path canaries do not establish all-path denial.
+5. Preserve the verified provider package. Owner submission/execution remains external; internal engineering remains actionable. Re-pin packages and reverify exact-head CI after each reviewed source tranche; never merge PR125 on CI alone.
+
 ## 2026-09-08 — integrate the remaining release controls
 
 1. Finish independent review, commit this tooling tranche, push only release/zola-production-live and verify exact-head CI. Preserve additive main eb3f5d1 changes. Re-pin source-bound preparation packages after the final commit.

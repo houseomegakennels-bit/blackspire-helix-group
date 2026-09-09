@@ -21,7 +21,7 @@ process.on('SIGTERM', async () => {
 });
 `;
 
-export async function rehearseRecoveryBoot({ artifact, root }) {
+export async function rehearseRecoveryBoot({ artifact, root, frontend = null, principalId = null, exercise = null }) {
   assert.equal(process.getuid(), 0);
   assert.match(process.env.ZOLA_CANDIDATE_PARENT_NET || '', /^net:\[\d+\]$/);
   assert.notEqual(fs.readlinkSync('/proc/self/ns/net'), process.env.ZOLA_CANDIDATE_PARENT_NET);
@@ -42,6 +42,19 @@ export async function rehearseRecoveryBoot({ artifact, root }) {
     COMMAND_ADMIN_TOKEN: randomBytes(32).toString('base64url'),
     BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true', WORKER_ID: 'recovery-boot',
     WORKER_POLL_MS: '25', WORKER_HEARTBEAT_INTERVAL_MS: '25' };
+  if (frontend) {
+    assert.equal(typeof exercise, 'function');
+    assert.match(principalId || '', /^[a-z][a-z0-9-]{1,63}$/);
+    assert.match(frontend.origin, /^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/);
+    assert.match(frontend.token, /^[a-f0-9]{64}$/);
+    env.BLACKSPIRE_OPERATOR_PRINCIPAL_ID = principalId;
+    for (const division of ['SELLER','BUYER','DEAL','NEXUS']) {
+      env[`BLACKSPIRE_${division}_CAPABILITY_URL`] = frontend.origin;
+      env[`BLACKSPIRE_${division}_CAPABILITY_TOKEN`] = frontend.token;
+    }
+  } else assert.equal(exercise, null);
+  const apiGeneration = randomBytes(16).toString('hex');
+  let integrated = null;
   const children = [];
   function launch(args, generation = null) {
     const processHandle = spawn(process.execPath, args, { cwd: artifact,
@@ -83,7 +96,7 @@ export async function rehearseRecoveryBoot({ artifact, root }) {
     assert.equal(child.code, 0);
   }
   try {
-    const api = launch(['--input-type=module', '--eval', apiEntry]);
+    const api = launch(['--input-type=module', '--eval', apiEntry], apiGeneration);
     await until(() => api.port !== null);
     const base = `http://127.0.0.1:${api.port}`;
     async function get(route) {
@@ -105,6 +118,18 @@ export async function rehearseRecoveryBoot({ artifact, root }) {
         const ready = await get('/ready');
         return ready.status === 200 && ready.body.ok === true && ready.body.dependencies.worker.generationId === generation;
       });
+      if (exercise && generation === generations[1]) {
+        for (const [child, expectedGeneration] of [[api, apiGeneration], [worker, generation]]) {
+          assert.equal(fs.realpathSync(`/proc/${child.process.pid}/cwd`), artifact);
+          assert.equal(fs.realpathSync(`/proc/${child.process.pid}/exe`), fs.realpathSync(process.execPath));
+          const actualEnvironment=fs.readFileSync(`/proc/${child.process.pid}/environ`, 'utf8').split('\0');
+          assert.ok(actualEnvironment.includes(`INVOCATION_ID=${expectedGeneration}`), 'actual child generation mismatch');
+        }
+        integrated = await exercise({ base, token: env.COMMAND_ADMIN_TOKEN, apiGeneration, workerGeneration: generation,
+          apiPid: api.process.pid, workerPid: worker.process.pid });
+        assert.equal(api.closed, false); assert.equal(worker.closed, false);
+        assert.equal((await get('/ready')).body.dependencies.worker.generationId, generation);
+      }
       await stop(worker);
       const stopped = await get('/ready');
       assert.equal(stopped.status, 503);
@@ -125,6 +150,7 @@ export async function rehearseRecoveryBoot({ artifact, root }) {
       apiBoot: 'PASS', workerBoot: 'PASS', workerRestart: 'PASS', readinessLifecycle: 'PASS',
       stoppedWorkerReadinessDenied: true, heartbeatGenerationChangeObserved: true,
       anonymousPostDenials: RETIRED_PATHS.length, invalidTokenPostDenials: RETIRED_PATHS.length, gracefulProcessExit: 'PASS',
+      ...(integrated ? { integrated } : {}),
       productionAccepted: false, generationAuthority: 'disposable process supervisor; not systemd',
       limitations: ['Test runtime configuration; production launchers and writer dependencies not exercised',
         'No recovery frontend included in sealed backend artifact', 'No production routing or owner-policy acceptance'] };

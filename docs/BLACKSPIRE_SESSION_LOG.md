@@ -1640,3 +1640,7 @@ Preserved dace62f/21a82af. Implemented historical alias-target discovery closure
 ## 2026-09-08 — sealed preparation and denied-admission integration
 
 Preserved current87fefd2 and prior ancestry. Parent separated sealed artifact proof from runtime deployment authority and integrated durable authenticated foreign-principal admission denial with bounded SQLite observation. Independent review corrected grant changes on denial replay; real sealed-artifact and candidate API checks pass. Production gates remain closed; full validation and current-head preparation are recorded in /tmp/zola-astra-activation-current.md.
+
+## 2026-09-09 — integrated fixed recovery continuation
+
+Recovered clean bce467c and preserved main eb3f5d1. Three read-only audit groups completed. Parent extracted the immutable frontend fixture lifecycle and implemented actual fixed API → separate fixed worker → exact fixed Next HTTP recovery acceptance, with six unique bounded durable receipts, actor/workspace/claim binding, denial-before-observed-dispatch and idempotent replay. Independent review corrected nested report scope escalation and shutdown mutation observation. Actual isolated rehearsal passes; backend/source digests remain unchanged and all owned children close. Production and full rollback acceptance remain unverified; release hold, historical routing, complete collector and production adapters remain internal work. No production mutation or merge occurred. Final verification and exact committed-head preparation/CI are recorded in the protected checkpoint.

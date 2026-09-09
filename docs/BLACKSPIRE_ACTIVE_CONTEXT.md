@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-09 — actual integrated fixed recovery, production still held
+
+The exact fixed recovery API and separate worker now complete six durable reads through the exact fixed frontend's real Next HTTP routes in a private network namespace. Run `bash scripts/with-node.sh scripts/zola-recovery-integrated.js`; the public command validates fixed artifact/source pairing, six unique receipts, denial/replay observations and explicit nonproduction limits. This closes the previously separate process/frontend rehearsal gap within the synthetic development scope. It does not complete production rollback acceptance.
+
+Canonical services remain inactive, PR125 unmerged, and provider support submission/execution unverified. Remaining internal work includes durable release hold covering public intake, direct library admission, worker claims and outbox delivery; complete historical routing containment; production build/owner/generation recovery acceptance; complete collector observations; and real release adapters. A protected file precheck alone has an admission/claim race: hold publication must serialize with these critical sections or require verified stopped/drained transitions. Do not install a superficially fail-closed hold or open release gates on these rehearsal results. Current exact-head CI and preparation paths are recorded in `/tmp/zola-astra-activation-current.md` after the tranche is committed.
+
 ## 2026-09-08 — recovered state and executable acceptance primitives
 
 Release baseline local/remote/PR125 is 3473d64 with successful exact-head CI34187163944 and Vercel checks. Main advanced to eb3f5d1 with additive Pearson Triad work; preserve it. New source-only collector, migration executor, measured disk check, activation-profile builder and narrow routing canary require independent review and new exact-head CI before readiness claims. Provider ACL remains unchanged and canonical API/worker remain stopped. Production six reads, complete rollback and the end-to-end release commander are still UNVERIFIED. The collector's partial observation evidence must not be promoted into full production acceptance. See the latest source-of-truth section and protected checkpoint for current execution evidence.
