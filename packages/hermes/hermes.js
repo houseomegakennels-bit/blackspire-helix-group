@@ -1,3 +1,4 @@
+import { withReleaseAdmission } from '../shared/release-admission.js';
 import path from 'node:path';
 import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, prepareCodexDispatch, finishCodexDispatchWithUsage, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
@@ -16,7 +17,7 @@ const STAGES = ['inspect_workspace', 'build_plan', 'decompose', 'select_provider
 const MAX_RETRIES = 2;
 const HIGH_RISK_ACTION = 'high_risk_execution';
 
-export async function processTask(task, { workerId = task?.worker_id || null, claimToken = task?.claim_token || null, dispatchHermesImpl = dispatchHermes, capabilityOptions = {} } = {}) {
+async function processTaskAdmitted(task, { workerId = task?.worker_id || null, claimToken = task?.claim_token || null, dispatchHermesImpl = dispatchHermes, capabilityOptions = {} } = {}) {
   const ownership = workerId && claimToken ? { workerId, claimToken } : null;
   const move = (status, patch = {}) => transition(task.id, status, patch, ownership);
   const workspace = getWorkspace(task.workspace_id);
@@ -351,3 +352,5 @@ async function validateWorkspace(taskId, workspace) {
 export function createImprovementProposal(text) {
   return { type: 'self_improvement_proposal', status: 'backlog', text, requiresApproval: true };
 }
+
+export async function processTask(...args) { return withReleaseAdmission(() => processTaskAdmitted(...args)); }

@@ -6,6 +6,7 @@ import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {hash} from './commander-journal.js';
 import {readReleaseProtectedBytes,verifyReleaseSource,verifyReleaseCi} from './commander-host.js';
 import {prepareN8nTransition,executeN8nTransition,createN8nTransport} from './commander-n8n.js';
+import {inspectAdmissionHoldHistory} from './admission-hold.js';
 
 // This is an executable observational prefix, not permission to perform the
 // remaining release. No production mutation adapter exists in this module.
@@ -38,11 +39,13 @@ const MIGRATION_PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','p
 function history(journal){
  const events=journal.stream('release').events();
  inspectReleaseMigrationHistory(events);
+ const pendingHold=inspectAdmissionHoldHistory(events);
+ if(pendingHold)reject();
  // Unknown events may represent a future/crashed mutation. Never reinterpret
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
-  if(['release_migration_intent','release_migration_result'].includes(row?.type))continue;
+  if(['release_migration_intent','release_migration_result','release_hold_intent','release_hold_result'].includes(row?.type))continue;
   if(![1,2].includes(row?.schema)||!['preflight_started','preflight_passed','preflight_stopped'].includes(row.type)
    ||!sha(row.releaseSha)||typeof row.runId!=='string'||!(/^[a-f0-9-]{36}$/).test(row.runId))reject();
   keys(row,'schema,type,runId,releaseSha'+(row.type==='preflight_started'?'':row.type==='preflight_passed'?',stage,proof':',stage'));

@@ -1,3 +1,4 @@
+import { withReleaseAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -94,6 +95,18 @@ function writeJson(res, status, body, headers = {}) {
 }
 
 async function route(req, res) {
+  let pathname;
+  try { pathname=new URL(req.url,'http://127.0.0.1').pathname; } catch { return routeAdmitted(req,res); }
+  const observation=['GET','HEAD','OPTIONS'].includes(req.method);
+  const controls=['/api/auth/login','/api/auth/session','/api/auth/logout','/api/auth/rotate','/api/auth/revoke-all','/api/stop','/api/stop/reset'].includes(pathname);
+  try { return await (observation||controls ? routeAdmitted(req,res) : withReleaseAdmission(()=>routeAdmitted(req,res))); }
+  catch(error) {
+    if(error?.code!=='RELEASE_ADMISSION_HELD')throw error;
+    setSecurityHeaders(req,res); return json(res,503,{error:'release admission held'});
+  }
+}
+
+async function routeAdmitted(req, res) {
   setSecurityHeaders(req, res);
   if ((req.url || '').startsWith('/api/internal/buyer-writer/v1/')) {
     if (!activeBuyerWriter) return json(res, 404, { error: 'not found' });
@@ -710,7 +723,9 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includ
     worker = workerRuntimeStatus();
     scheduler = schedulerRuntimeStatus();
   }
+  const admission=releaseAdmissionStatus();
   const checks = {
+    ...(admission.required ? { releaseAdmission: admission.open } : {}),
     lifecycle: lifecyclePhase === 'ready',
     database: database === 'compatible',
     productionConfig: startupConfigValidation.ok === true && (process.env.NODE_ENV !== 'production' || Boolean(configuredEvaluationAdminPrincipal())),

@@ -1,3 +1,4 @@
+import { withReleaseAdmission } from '../shared/release-admission.js';
 import crypto from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, run, get, transaction } from './db.js';
@@ -21,7 +22,7 @@ export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
 }
 
-export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'read_only', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
+function createTaskAdmitted({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'read_only', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) throw new Error('invalid task execution intent');
   const existing = idempotencyKey && query(`SELECT * FROM tasks WHERE idempotency_key=${esc(idempotencyKey)};`)[0];
   if (existing) {
@@ -105,7 +106,7 @@ export function conversationRequiresCapabilityPermission(conversationId, permiss
   return Boolean(get("SELECT 1 AS present FROM tasks t JOIN provider_attempts p ON p.task_id=t.id WHERE t.conversation_id=? AND p.provider='blackspire-capability' AND p.mode=? LIMIT 1", [conversationId, mode]));
 }
 
-export function transition(taskId, status, patch = {}, ownership = null) {
+function transitionAdmitted(taskId, status, patch = {}, ownership = null) {
   const timestamp = now();
   const entries = Object.entries(patch);
   const sets = ['status=?', 'updated_at=?', ...entries.map(([key]) => `${key}=?`)];
@@ -164,7 +165,7 @@ export function deliveryRecords(conversationId) {
   return query(`SELECT * FROM channel_deliveries WHERE conversation_id=${esc(conversationId)} ORDER BY created_at;`);
 }
 
-export function claimNext({ workerId, staleAfterSeconds = 300 } = {}) {
+function claimNextAdmitted({ workerId, staleAfterSeconds = 300 } = {}) {
   const claimedAt = now();
   const assignedWorkerId = workerId || id('worker');
   const claimToken = id('claim');
@@ -349,7 +350,7 @@ export function latestApproval(taskId, action) {
   return query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND action=${esc(action)} ORDER BY created_at DESC LIMIT 1;`)[0] || null;
 }
 
-export function decideApproval(taskId, status, reason = '', { decidedBy = 'administrator' } = {}) {
+function decideApprovalAdmitted(taskId, status, reason = '', { decidedBy = 'administrator' } = {}) {
   const approval = query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND status='pending' ORDER BY created_at DESC LIMIT 1;`)[0];
   if (!approval) {
     audit(taskId, 'administrator', `approval.${status}.idempotent`, { reason });
@@ -414,3 +415,11 @@ function legacyAccountingState(row) {
   if (row.provider === 'codex' && row.mode === 'cli' && row.cost_cents === null) return 'subscription_unmetered';
   return row.cost_cents === null ? 'metered_cost_unavailable' : 'metered';
 }
+
+export function createTask(...args) { return withReleaseAdmission(() => createTaskAdmitted(...args)); }
+
+export function claimNext(...args) { return withReleaseAdmission(() => claimNextAdmitted(...args)); }
+
+export function transition(...args) { return args[1] === 'queued' ? withReleaseAdmission(() => transitionAdmitted(...args)) : transitionAdmitted(...args); }
+
+export function decideApproval(...args) { return withReleaseAdmission(() => decideApprovalAdmitted(...args)); }

@@ -1,3 +1,4 @@
+import { withReleaseAdmission } from '../shared/release-admission.js';
 import http from 'node:http';
 import { authenticateWriterRequest, createWriterGateway, createWriterReceiptGateway, createWriterContextGateway } from './gateway.js';
 import { WriterProtocolError } from './protocol.js';
@@ -6,7 +7,7 @@ import { authenticateBuyerIssuer, createBuyerIssuer, createBuyerReconciler } fro
 // Explicit composition only: the caller owns the dedicated database connection,
 // listener binding, TLS ingress and authoritative availability/stop observation.
 // No production configuration or credential file is loaded by this module.
-export function createBuyerWriterRequestHandler({credential,workspace,query,isAvailable,isPrepared,issuer}) {
+export function createBuyerWriterRequestHandler({credential,workspace,query,isAvailable,isPrepared,issuer},{admit=withReleaseAdmission}={}) {
   if(typeof isAvailable!=='function') throw new TypeError('Buyer writer availability check required');
   const operations=createWriterGateway({credential,workspace,query});
   const receipts=createWriterReceiptGateway({credential,workspace,query});
@@ -20,7 +21,7 @@ export function createBuyerWriterRequestHandler({credential,workspace,query,isAv
   let active=0,stopped=false;
   const sockets=new Set();
   const repliedSockets=new WeakSet();
-  const handleRequest=(req,res)=>{
+  const handleRequestAdmitted=(req,res)=>{
     const reply=(status,body)=>{
       if(res.destroyed||res.writableEnded) return;
       const data=JSON.stringify(body);
@@ -54,7 +55,7 @@ export function createBuyerWriterRequestHandler({credential,workspace,query,isAv
     const deadline=setTimeout(()=>{disconnected=true;deny(503);},15000);
     deadline.unref();
     res.once('close',()=>{disconnected=true;});
-    void (async()=>{
+    return (async()=>{
       try {
         if(preparation){
           // Preparation grants no write authority and never calls a database
@@ -91,6 +92,15 @@ export function createBuyerWriterRequestHandler({credential,workspace,query,isAv
       finally {active--;clearTimeout(deadline);}
     })();
   };
+  const handleRequest=(req,res)=>{
+    const unavailable=()=>{if(!res.destroyed&&!res.writableEnded){res.writeHead(503,{'content-type':'application/json','cache-control':'no-store','connection':'close'});res.end(JSON.stringify({ok:false,code:'WRITER_UNAVAILABLE'}));}};
+    try {
+      // Preparation is authenticated observation only; it invokes no writer query.
+      const result=req.method==='GET'&&req.url==='/api/internal/buyer-writer/v1/preparation'
+        ? handleRequestAdmitted(req,res) : admit(()=>handleRequestAdmitted(req,res));
+      return Promise.resolve(result).catch(unavailable);
+    }catch{return unavailable();}
+  };
   const handleClientError=(_error,socket)=>{
     if(repliedSockets.has(socket)) return socket.destroy();
     if(socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
@@ -99,8 +109,8 @@ export function createBuyerWriterRequestHandler({credential,workspace,query,isAv
   return Object.freeze({handleRequest,handleClientError,stopAdmission:()=>{stopped=true;},isDrained:()=>active===0});
 }
 
-export function createBuyerWriterHttpServer(options) {
-  const writer=createBuyerWriterRequestHandler(options);
+export function createBuyerWriterHttpServer(options,dependencies) {
+  const writer=createBuyerWriterRequestHandler(options,dependencies);
   const server=http.createServer({maxHeaderSize:32768,headersTimeout:5000,requestTimeout:15000,connectionsCheckingInterval:1000},writer.handleRequest);
   server.maxRequestsPerSocket=1;
   server.maxConnections=64;

@@ -1,3 +1,4 @@
+import { withReleaseAdmission } from '../../packages/shared/release-admission.js';
 import { claimNext, getFlag, getTask, setFlag } from '../../packages/task-engine/tasks.js';
 import { processTask } from '../../packages/hermes/hermes.js';
 import { drainTelegramOutbox } from '../../packages/unified-input/unified.js';
@@ -11,6 +12,7 @@ export function startWorker({
   scheduledFailureImpl = (error) => console.error(JSON.stringify({ service: 'worker', fatal: true, error: sanitizeWorkerError(error) })),
   heartbeatIntervalMs = Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS || 10_000),
   recordHeartbeatImpl = recordWorkerHeartbeat, getTaskImpl = getTask,
+  admitImpl = withReleaseAdmission,
 } = {}) {
   assertSchemaCompatible();
   let stopping = false;
@@ -31,6 +33,10 @@ export function startWorker({
   if (previous.restartDetected) console.warn(JSON.stringify({ service: 'worker', lifecycle: 'restart_after_stale_heartbeat' }));
   async function executeTick() {
     heartbeat('idle');
+    try { return await admitImpl(executeAdmittedTick); }
+    catch(error) { if(error?.code==='RELEASE_ADMISSION_HELD')return; throw error; }
+  }
+  async function executeAdmittedTick() {
     if (getFlag('emergency_stop') === 'active') return;
     if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true' && getFlag('test_worker_hold') === 'active') { await deliverEventsImpl(); return; }
     const task = claimNextImpl({ workerId });

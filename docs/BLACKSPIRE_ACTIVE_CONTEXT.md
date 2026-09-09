@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-09 — HELD-only admission primitive reviewed
+
+Durable admission now uses stable-inode shared leases across asynchronous settlement and exclusive HELD publication with a persistent interruption marker. API/task/worker/Telegram/outbox/Buyer boundaries reject held admissions; worker heartbeats and emergency controls remain available. Independent review corrected incomplete production profile detection and generation changes during acquisition/validation. No production hold has been installed and no reopening adapter exists.
+
+Next internal work is lifecycle-serialized held activation and verified reopening, complete historical route containment, production recovery acceptance, collector observations and remaining release adapters. The fixed recovery rehearsal remains valid within its recorded synthetic development scope. Do not infer full generation fencing from repeated systemd observations. Current head, validation and source-bound packages are recorded in `/tmp/zola-astra-activation-current.md`.
+
 ## 2026-09-09 — actual integrated fixed recovery, production still held
 
 The exact fixed recovery API and separate worker now complete six durable reads through the exact fixed frontend's real Next HTTP routes in a private network namespace. Run `bash scripts/with-node.sh scripts/zola-recovery-integrated.js`; the public command validates fixed artifact/source pairing, six unique receipts, denial/replay observations and explicit nonproduction limits. This closes the previously separate process/frontend rehearsal gap within the synthetic development scope. It does not complete production rollback acceptance.

@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-09 — continue after HELD-only admission tranche
+
+1. Preserve the reviewed durable admission primitive and exact-head evidence in the checkpoint. Keep canonical production services stopped until all activation prerequisites pass.
+2. Implement lifecycle-serialized held activation and a guarded opening adapter; prove actual production-role/run/generation bindings, no admission across lifecycle changes and safe crash/replay behavior. The HELD-only CLI cannot open intake.
+3. Finish authoritative historical routing containment, production recovery pairing/acceptance, complete collector observations and real release adapters. Then execute real two-principal and provider-dependent proof under the prescribed gates.
+4. Owner/provider: submit the verified ACL request and archive if not already submitted, record the ticket and approved execution evidence. Support submission remains unverified; do not retry ownership escalation.
+
 ## 2026-09-09 — continue beyond integrated recovery
 
 1. Preserve the integrated fixed recovery process/HTTP witness. Remaining rollback work is production build and installed dependency integrity, secure external intake/route containment, real owner policies and production supervisor fencing; do not repeat the green synthetic six-read path without a relevant change.

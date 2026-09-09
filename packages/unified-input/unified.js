@@ -1,3 +1,4 @@
+import { withReleaseAdmission } from '../shared/release-admission.js';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, transaction } from '../task-engine/db.js';
 import { createTask, getTask, getFlag, transition, recordEvidence, recordTaskEvent, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
@@ -8,7 +9,7 @@ import { serializeTaskWithCanonicalResult } from '../task-engine/canonical-resul
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
 const cancellationTokens = new Map();
 
-export function createUnifiedInput({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted', executionIntent = 'workspace_mutation' }) {
+function createUnifiedInputAdmitted({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted', executionIntent = 'workspace_mutation' }) {
   if (!CHANNELS.has(channel)) return { error: 'unsupported channel', status: 422 };
   const request = String(text || '').trim();
   if (!request || request.length > 4000) return { error: 'request is required and must be under 4000 characters', status: 422 };
@@ -139,7 +140,7 @@ export function requestCancellation(taskId, { actor = 'administrator' } = {}) {
   return { task: transition(taskId, 'cancelled', { error: `Cancelled from ${actor}` }), cleanup };
 }
 
-export async function drainTelegramOutbox(send, { limit = 20 } = {}) {
+async function drainTelegramOutboxAdmitted(send, { limit = 20 } = {}) {
   const deliveries = pendingDeliveries(limit);
   const results = [];
   for (const delivery of deliveries) {
@@ -169,3 +170,7 @@ function sanitize(value) {
 function responseFor(conversationId, inputId, taskId, status, duplicate = false, denial = null) {
   return { conversationId, inputId, taskId, status, duplicate, ...(denial ? { error: denial, denied: true } : {}) };
 }
+
+export function createUnifiedInput(...args) { return withReleaseAdmission(() => createUnifiedInputAdmitted(...args)); }
+
+export async function drainTelegramOutbox(...args) { return withReleaseAdmission(() => drainTelegramOutboxAdmitted(...args)); }

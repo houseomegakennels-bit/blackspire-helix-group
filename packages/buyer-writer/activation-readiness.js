@@ -66,6 +66,7 @@ export async function checkBuyerWriterActivationReadiness({host,port,apiPid,rele
         ||!Number.isFinite(worker.heartbeatAgeMs)||worker.heartbeatAgeMs<0||worker.heartbeatAgeMs>30000)throw failure();
     }
     const keys=['lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter'];
+    if(Object.hasOwn(ready.checks??{},'releaseAdmission'))keys.push('releaseAdmission');
     if(!ready.checks||Object.keys(ready.checks).length!==keys.length||Object.keys(ready.checks).some(key=>!keys.includes(key))
       ||keys.some(key=>ready.checks[key]!==(key==='buyerWriter'?requireWriterReady:true)))throw failure();
     if(await inspectListener({host,port,apiPid})!==true||performance.now()-started>3600)throw failure();

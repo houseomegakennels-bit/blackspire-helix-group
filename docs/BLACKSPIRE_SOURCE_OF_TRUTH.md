@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-09 — durable HELD-only release admission
+
+Added a root-owned stable-inode shared/exclusive kernel lease for release admission. Shared leases cover API mutations, direct task/unified/Telegram admission, approval/requeue, worker claim through processing and outbox settlement, and Buyer writer database settlement even after client disconnect. Production signals require protected state and exact release/run/both-generation bindings; missing or changed authority denies before dispatch. Context is observed after acquisition and checked again before invocation. Independent service lifecycle changes still require serialized activation; repeated observations alone are not atomic generation fencing.
+
+The stopped-service CLI `bash scripts/with-node.sh scripts/zola-release-hold.js --hold FULL_SHA` publishes HELD only under the release journal and exclusive lease. A durable pending marker prevents admission through interrupted publication; only exact retained publication can reconcile. Confirmed same-head reruns preserve state. No opening or service-start command is supplied. Independent reviews and isolated kernel-lock, crash, async-disconnect and no-mutation boundary tests pass. This is a preparation primitive, not complete production activation or rollback acceptance. No production hold, service, SQL, routing or workflow mutation occurred in this tranche. Full validation, committed-head CI and preparation evidence are recorded in the checkpoint.
+
 ## 2026-09-09 — integrated immutable recovery process rehearsal
 
 Recovered clean local/remote/PR125 `bce467c`, with main `eb3f5d1` unchanged. Three read-only audit groups confirmed internal release work remains; the verified provider package is not the sole blocker.
