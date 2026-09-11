@@ -74,8 +74,10 @@ newNY = inNY and not inNY[1]
 nyJustEnded = not inNY and inNY[1]
 
 bool isFiveMinute = timeframe.isminutes and timeframe.multiplier == 5
-int expectedAsiaBars = 48
-int expectedLondonBars = 24
+// CME 5m historical bars omit the daily 17:00-18:00 ET maintenance break.
+// For these session windows, the observed complete-session counts are 42/23/36.
+int expectedAsiaBars = 42
+int expectedLondonBars = 23
 int expectedNYBars = 36
 
 var float asiaHi = na
