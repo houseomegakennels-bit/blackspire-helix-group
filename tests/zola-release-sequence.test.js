@@ -7,14 +7,14 @@ const releaseSha='a'.repeat(40),previousMainSha='b'.repeat(40),recoverySha='c'.r
 const input={releaseSha,previousMainSha,recoverySha,inputDigest:createHash('sha256').update(JSON.stringify({releaseSha,previousMainSha,recoverySha})).digest('hex')};
 function journal(events=[]){return{events,stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})};}
 function adapters(calls,{throwStage}={}){
- return Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,{check:async()=>({status:'PASS',evidence:{stage,checked:true}}),
+ return Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,{check:async()=>{calls.push('check:'+stage);return{status:'PASS',evidence:{stage,checked:true}};},
   execute:async()=>{calls.push('execute:'+stage);if(stage===throwStage)throw new Error('unknown');},
-  reconcile:async()=>{calls.push('reconcile:'+stage);return{status:'PASS',evidence:stage==='guarded_open'?{open:true,newMainSha}:{stage,reconciled:true}};},
-  observe:async()=>{calls.push('observe:'+stage);return{status:'PASS',evidence:stage==='main_reconcile'?{newMainSha}:stage==='guarded_open'?{open:true,newMainSha}:{stage,observed:true}};}}]));
+  reconcile:async()=>{calls.push('reconcile:'+stage);return{status:'PASS',evidence:stage==='guarded_held_to_open'?{open:true,newMainSha}:stage==='capture_new_main_sha'?{newMainSha}:{stage,reconciled:true}};},
+  observe:async()=>{calls.push('observe:'+stage);return{status:'PASS',evidence:stage==='capture_new_main_sha'?{newMainSha}:stage==='guarded_held_to_open'?{open:true,newMainSha}:{stage,observed:true}};}}]));
 }
 test('registry is exact, frozen, unique and contains 34 ordered stages',()=>{
  assert.equal(RELEASE_STAGES.length,34);assert.equal(new Set(RELEASE_STAGES).size,34);assert.ok(Object.isFrozen(RELEASE_STAGES));
- assert.equal(MUTATING_STAGES.size,14);assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_open'));
+ assert.equal(MUTATING_STAGES.size,15);assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_held_to_open'));
 });
 test('all 34 stages persist once and a completed resume dispatches nothing',async()=>{
  const j=journal(),calls=[];const result=await runReleaseSequence({input,journal:j,adapters:adapters(calls)});
@@ -25,11 +25,11 @@ test('all 34 stages persist once and a completed resume dispatches nothing',asyn
  assert.equal(inspectReleaseSequence(j.events).nextOrdinal,34);
 });
 test('unknown mutation resumes by observation without resending effect',async()=>{
- const j=journal(),calls=[],stage='n8n_transition';
+ const j=journal(),calls=[],stage='n8n_migration';
  let result=await runReleaseSequence({input,journal:j,adapters:adapters(calls,{throwStage:stage})});
  assert.equal(result.reason,'MUTATION_OUTCOME_UNKNOWN');assert.equal(calls.filter(value=>value==='execute:'+stage).length,1);
  result=await runReleaseSequence({input,journal:j,adapters:adapters(calls)});
- assert.equal(result.status,'COMPLETE');assert.equal(calls.filter(value=>value==='execute:'+stage).length,1);assert.equal(calls.filter(value=>value==='reconcile:'+stage).length,1);
+ assert.equal(result.status,'COMPLETE');assert.equal(calls.filter(value=>value==='execute:'+stage).length,1);assert.equal(calls.filter(value=>value==='check:'+stage).length,1);assert.equal(calls.filter(value=>value==='reconcile:'+stage).length,1);
 });
 test('malformed, reordered, mixed-operation and secret-bearing evidence fail closed',async()=>{
  for(const mutate of [
@@ -41,11 +41,23 @@ test('malformed, reordered, mixed-operation and secret-bearing evidence fail clo
   const j=journal(),calls=[];await runReleaseSequence({input,journal:j,adapters:adapters(calls)});const rows=structuredClone(j.events);mutate(rows);
   assert.throws(()=>inspectReleaseSequence(rows));
  }
- const j=journal(),bad=adapters([]);bad.input_bind.observe=async()=>({status:'PASS',evidence:{apiToken:'never'}});
+ const j=journal(),bad=adapters([]);bad.exact_sha_verification.observe=async()=>({status:'PASS',evidence:{apiToken:'never'}});
  const result=await runReleaseSequence({input,journal:j,adapters:bad});assert.equal(result.status,'STOPPED');assert.ok(!JSON.stringify(j.events).includes('never'));
 });
 test('external block records no mutation intent and remains resumable',async()=>{
- const j=journal(),calls=[],set=adapters(calls);set.provider_acl.check=async()=>({status:'BLOCKED_EXTERNAL'});
+ const j=journal(),calls=[],set=adapters(calls);set.provider_acl_check.check=async()=>({status:'BLOCKED_EXTERNAL'});
  const result=await runReleaseSequence({input,journal:j,adapters:set});assert.equal(result.reason,'EXTERNAL_GATE');assert.equal(result.mutationSent,false);
- assert.equal(inspectReleaseSequence(j.events).nextOrdinal,5);
+ assert.equal(inspectReleaseSequence(j.events).nextOrdinal,3);
+});
+
+test('completed proof and final OPEN binding are recomputed before fast-path success',async()=>{
+ const j=journal(),calls=[];await runReleaseSequence({input,journal:j,adapters:adapters(calls)});
+ for(const mutate of [
+  rows=>rows.at(-1).resultDigest='0'.repeat(64),
+  rows=>rows.at(-1).newMainSha='e'.repeat(40),
+  rows=>rows.find(row=>row.type==='sequence_stage_confirmed'&&row.stage==='guarded_held_to_open').output.open=false,
+ ]){
+  const rows=structuredClone(j.events);mutate(rows);assert.throws(()=>inspectReleaseSequence(rows));
+  assert.equal((await runReleaseSequence({input,journal:journal(rows),adapters:adapters([])})).status,'STOPPED');
+ }
 });

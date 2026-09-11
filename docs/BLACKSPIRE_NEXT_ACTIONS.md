@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-11 — complete fixed final release composition
+
+1. Extend the HELD acceptance permit through a separate exact API/worker admission path restricted to the six bound read tasks; bind collector evidence and guarded OPEN to the terminal consumed permit. Do not relax normal production admission.
+2. Add the fixed production composition root and concrete adapters for all 34 stages, including subordinate-journal binding, exact-preview/provider/receiver observations, migration/n8n reconciliation, VPS snapshot restoration, rollback acceptance and atomic final release record.
+3. Wire the same-command `--release` resume path only after every adapter is concrete and adversarial crash/replay tests pass.
+4. External owners must have Supabase execute the protected ACL package, restore Vercel deployment capacity, and configure both GitHub receiver settings before the guarded command may advance.
+
 ## 2026-09-11 — finish guarded acceptance composition
 
 1. Preserve the journaled VPS cutover and protected runtime epoch binding. Complete its fixed composition only after exact-head review; do not invoke it while provider, preview and receiver gates remain red.

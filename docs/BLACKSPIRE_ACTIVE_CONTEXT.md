@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-11 — final internal gates remain in implementation
+
+The 34-stage registry and generic journal runner are hardened for exact completion validation and observation-only unknown-effect resume. A protected single-use HELD acceptance permit control plane is implemented and focused tests pass, including lost-mint-result recovery without token disclosure. It does not yet authorize the exact API/worker/collector path and therefore must not be treated as live acceptance readiness. The production composition root and executable final command remain absent. Current external gates are 12 Supabase PUBLIC `net` execution edges, an account-blocked Vercel exact-head preview, and absent GitHub receiver URL/token settings. No release execution or production mutation occurred.
+
 ## 2026-09-11 — receiver authority tranche in final verification
 
 The current release worktree contains an authority-aware receiver implementation pending commit. Production capability dispatches now persist and transmit a single-use opaque permit bound to current principal/grant/workspace/capability/task/attempt/release/generation/request state. The Command API consumes it with a durable compare-and-swap before any frontend read scope opens, and frontend responses echo the binding digest including the persisted proof digest. API-only/Vercel configuration and worker secret isolation are wired; metadata-only Vercel inspection remains explicitly unverified. Collector contract version 5 rejects legacy receipts and verifies the persisted permit and echo, but candidate/live orchestration remains incomplete. Source and focused tests pass. Deployed route containment, compatible recovery and executable release orchestration remain unfinished. Supabase ACL and Vercel deployment enablement are external blockers, but they are not the only remaining blockers.

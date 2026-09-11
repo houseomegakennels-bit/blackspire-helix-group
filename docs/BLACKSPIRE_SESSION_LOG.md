@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-11 — last-internal-gates continuation
+
+- Recovered exact local/remote/PR head `e163873ea7125376bd40319a7bf2cc332ebc0095` and preserved the existing 34-stage registry edit.
+- Hardened sequence completion and unknown-effect resume semantics; updated focused tests to the exact requested registry.
+- Added a protected, expiring, single-use HELD acceptance permit control-plane foundation with exact SHA/epoch/workspace/generation/read/operation bindings and lost-mint-result recovery. Normal OPEN admission remains unchanged and runtime integration is explicitly incomplete.
+- Focused release/permit/deployment/VPS/command tests pass. The full contained suite passes 1,826 total / 1,785 passed / 41 expected skips / 0 failed, with 176/176 intended files complete, zero mutation and no remaining descendants; lint, typecheck, build, living-memory, secret and whitespace checks pass. External checks reconfirmed Supabase provider execution, blocked Vercel deployments, and absent GitHub receiver settings. No production mutation, merge, deployment, SQL, workflow transition, activation or OPEN publication occurred.
+
 ## 2026-09-11 — final release-machine continuation
 
 Recovered clean exact PR head `a27379a` and current main advancement without discarding work. Four focused read-only lanes mapped all 34 production adapters, journaled cutover, one-command composition and fresh external state. Implemented a strict journaled VPS sub-FSM, protected post-merge runtime epoch injection for both production units, unique atomic release-pointer preparation and observe-only unknown-outcome reconciliation with stopped rollback. Focused tests, lint, typecheck and build pass. The first exact-head CI run exposed two stale unit-template expectations; they now recognize the credential-free release runtime file for both roles without weakening API-secret isolation. Independent review proved the requested pre-OPEN live reads conflict with the existing global HELD admission guard and identified additional missing production adapters; no unsafe bypass or false completion was added. Supabase ACL remains unapplied, Vercel remains account-blocked, and GitHub receiver inputs remain absent. No production mutation or merge occurred.
