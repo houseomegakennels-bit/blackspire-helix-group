@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-10 — held lifecycle reconciliation and routing metadata
+
+Continued from clean local/remote/PR125 `f63cba6`, preserving the fixed recovery candidate and earlier green work. Added a HELD-only lifecycle journal with exclusive admission lease, durable intent before the disposable start adapter, exact run/SHA/process-generation proof and observation-only reconciliation after an unknown start. Confirmed reruns cannot start again or accept changed generations. A fixed native observer checks both actual service supervisors and children, canonical production environment, role/private-group isolation, deployed artifact and repeated systemd/process identity. Independent review corrected actual supplementary-group checks and unknown-history handling. No production start adapter or OPEN publisher exists; lifecycle serialization across external systemd restarts remains unfinished.
+
+Routing inventory now retains bounded sanitized deployment route/build metadata tied to source metadata. Unreviewed expressions are digested; conditions, headers, destinations and configuration values are not exported. Missing manifests, inaccessible historical targets and metadata-only capture remain explicit gaps. This is not authoritative route closure or denial proof. Release command failures now preserve unknown mutation status when journal inspection cannot establish prior outcomes.
+
+Fresh authenticated n8n GET confirms the unchanged active baseline and management access. The provider archive and all eleven checksums match the canonical request; provider submission and execution remain UNVERIFIED. Canonical API/worker remain stopped. Focused/full-suite results, fresh exact-head CI, protected backup and source-bound preparation are recorded in the continuation checkpoint after integration. No production service activation, workflow publication, SQL, session issuance, routing change or merge was performed. Autonomous work remains incomplete; Supabase is not the sole blocker.
+
 ## 2026-09-09 — durable HELD-only release admission
 
 Exact-head CI at 12bf5c6 exposed older production-mode fixtures without release authority. Their test-only loader now composes the real admission guard and kernel lock with disposable synthetic identity/state; held denial and open admission are asserted explicitly. Production runtime code and mandatory admission policy are unchanged. These fixtures do not prove systemd authority or production protected-path access. New exact-head CI is required after the fixture correction.

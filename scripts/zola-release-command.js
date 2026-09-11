@@ -18,7 +18,10 @@ try{
  process.stdout.write(JSON.stringify(result)+'\n');
  if(result.status==='STOPPED')process.exitCode=1;
 }catch{
- process.stdout.write(JSON.stringify({status:'STOPPED',reason:'COMMAND_FAILED_CLOSED',releaseReady:false,mutationSent:false})+'\n');
+ // Failure to open or validate the journal cannot establish whether a prior
+ // release sent a mutation. Preserve uncertainty; never turn unreadable history
+ // into evidence that production was untouched.
+ process.stdout.write(JSON.stringify({status:'STOPPED',reason:'COMMAND_FAILED_CLOSED',releaseReady:false,mutationSent:null,reconciliationRequired:true})+'\n');
  process.exitCode=1;
 }finally{
  try{journal?.close();}catch{process.exitCode=1;}

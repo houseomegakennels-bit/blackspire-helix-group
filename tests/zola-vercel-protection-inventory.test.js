@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inventoryProtection } from '../scripts/zola-vercel-protection-inventory.mjs';
+import { inventoryProtection, deploymentPathMetadata } from '../scripts/zola-vercel-protection-inventory.mjs';
 
 const PROJECT = 'prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou';
 const TEAM = 'team_CaRyRaulJaFnCLSfTdyRYNIW';
@@ -213,4 +213,96 @@ test('duplicate normalized aliases, missing targets and malformed DNS names cann
     assert.equal(result.observations.find(row => row.name === 'aliasDeploymentClosure').status, 'INCOMPLETE');
     assert.equal(result.denialProven, false);
   }
+});
+
+test('deployment path metadata binds ordered reviewed routes and builder declarations to source SHA without proving authority', async () => {
+  const sha = 'a'.repeat(40);
+  const {fetchImpl} = fixture(url => url.pathname.startsWith('/v13/deployments/') ? response({
+    id: 'dpl_one', projectId: PROJECT, url: 'fixture.vercel.app', readyState: 'READY', meta: {githubCommitSha: sha},
+    routes: [{src: '/api/nexus/trace', methods: ['POST'], headers: {authorization: token}},
+      {src: '/api/internal/capabilities/buyer-profiles', methods: ['GET'], dest: `https://secret.invalid/${token}`}],
+    builds: [{use: '@vercel/next', src: 'package.json', config: {token}}],
+  }) : undefined);
+  const result = await inventoryProtection({token, fetchImpl});
+  const metadata = result.deployments[0].pathMetadata;
+  assert.equal(metadata.sourceSha, sha);
+  assert.equal(metadata.sourceShaEvidence, 'deployment_metadata_only');
+  assert.equal(result.deployments[0].sha, sha);
+  assert.equal(metadata.status, 'METADATA_CAPTURED');
+  assert.deepEqual(metadata.routes.map(row => row.source.recognizedPath), ['/api/nexus/trace', '/api/internal/capabilities/buyer-profiles']);
+  assert.deepEqual(metadata.routes.map(row => row.index), [0, 1]);
+  assert.equal(metadata.builds[0].builder, '@vercel/next');
+  assert.match(metadata.builds[0].source.expressionSha256, /^[a-f0-9]{64}$/);
+  assert.equal(metadata.buildOutputVerified, false);
+  assert.equal(metadata.authorityProven, false);
+  assert.deepEqual(metadata.gaps, ['BUILD_OUTPUT_AUTHORITY_UNVERIFIED']);
+  assert.equal(result.pathAuthority.status, 'INCOMPLETE');
+  assert.deepEqual(result.pathAuthority.unresolvedDeploymentIds, ['dpl_one']);
+  assert.equal(JSON.stringify(result).includes(token), false);
+  assert.equal(JSON.stringify(result).includes('secret.invalid'), false);
+});
+
+test('unknown expressions and delegated routes retain digest-only unresolved records', () => {
+  const result = deploymentPathMetadata({meta: {githubCommitSha: 'b'.repeat(40)}, routes: [
+    {src: `/private/${token}`, methods: ['POST'], has: [{key: token, value: token}], middlewarePath: token},
+    {handle: 'filesystem'}, {src: '/api/nexus/trace', destination: {service: token, path: token}},
+  ], builds: [{use: token, src: token, config: {[token]: token}}]});
+  assert.equal(result.status, 'INCOMPLETE');
+  assert.equal(result.routes[0].source.recognizedPath, null);
+  assert.equal(result.routes[0].source.redacted, true);
+  assert.match(result.routes[0].source.expressionSha256, /^[a-f0-9]{64}$/);
+  assert.equal(result.routes[1].handle, 'filesystem');
+  assert.equal(result.routes[2].delegated, true);
+  assert.equal(result.gaps.includes('UNREVIEWED_ROUTE_EXPRESSION'), true);
+  assert.equal(result.gaps.includes('DELEGATED_ROUTE_REQUIRES_BUILD_OUTPUT'), true);
+  assert.equal(result.gaps.includes('UNREVIEWED_BUILD_DECLARATION'), true);
+  assert.equal(JSON.stringify(result).includes(token), false);
+});
+
+test('missing, empty, malformed and oversized path metadata never proves authority', () => {
+  for (const detail of [
+    null, undefined, [], {}, {routes: null, builds: null}, {routes: [], builds: []},
+    {routes: [{src: '/api/nexus/trace'}], builds: [{use: '@vercel/next'}]},
+    {routes: [{src: token, methods: token}]}, {routes: [{src: token, has: {token}}]},
+    {routes: [{src: token, transforms: Array(129).fill({token})}]},
+    {routes: [null]}, {routes: [{handle: token}]}, {routes: [{src: 'a'.repeat(8193)}]},
+    {routes: Array(2049).fill({src: token})}, {routes: [{src: '/api/nexus/trace'}], builds: Array(257).fill({use: token})},
+    {routes: [{src: '/api/nexus/trace'}], builds: [{use: {token}}]},
+  ]) {
+    const result = deploymentPathMetadata(detail);
+    assert.equal(result.status, 'INCOMPLETE');
+    assert.equal(result.denialProven, false);
+    assert.equal(result.authorityProven, false);
+    assert.equal(result.buildOutputVerified, false);
+    assert.equal(result.gaps.includes('BUILD_OUTPUT_AUTHORITY_UNVERIFIED'), true);
+    assert.equal(JSON.stringify(result).includes(token), false);
+  }
+});
+
+test('conflicting source metadata refuses capture completion and resolved alias targets retain path gaps', async () => {
+  const meta = deploymentPathMetadata({meta: {githubCommitSha: 'a'.repeat(40)}, gitSource: {sha: 'b'.repeat(40)},
+    routes: [{src: '/api/nexus/trace'}], builds: [{use: '@vercel/next', src: 'package.json'}]});
+  assert.equal(meta.status, 'INCOMPLETE');
+  assert.equal(meta.gaps.includes('SOURCE_SHA_METADATA_CONFLICT'), true);
+  assert.equal(meta.authorityProven, false);
+  const {fetchImpl} = fixture(url => url.pathname === '/v4/aliases'
+    ? response({aliases: [{alias: 'old.vercel.app', projectId: PROJECT, deploymentId: 'dpl_old'}]}) : undefined);
+  const result = await inventoryProtection({token, fetchImpl});
+  assert.equal(result.pathAuthority.deploymentCount, 2);
+  assert.deepEqual(result.pathAuthority.unresolvedDeploymentIds, ['dpl_one', 'dpl_old']);
+  assert.deepEqual(result.pathAuthority.unresolvedAliasTargetIds, []);
+});
+
+test('path metadata failure preserves host discovery and missing-target authority gaps', async () => {
+  const {fetchImpl} = fixture(url => {
+    if (url.pathname === '/v4/aliases') return response({aliases: [{alias: 'missing.vercel.app', deploymentId: 'dpl_missing', projectId: PROJECT}]});
+    if (url.pathname === '/v13/deployments/dpl_missing') return response({message: token}, 404);
+  });
+  const result = await inventoryProtection({token, fetchImpl});
+  assert.equal(result.deployments[0].url, 'fixture.vercel.app');
+  assert.equal(result.deployments[0].pathMetadata.status, 'INCOMPLETE');
+  assert.deepEqual(result.pathAuthority.unresolvedDeploymentIds, ['dpl_one']);
+  assert.deepEqual(result.pathAuthority.unresolvedAliasTargetIds, ['dpl_missing']);
+  assert.equal(result.pathAuthority.authorityProven, false);
+  assert.equal(result.pathAuthority.status, 'INCOMPLETE');
 });

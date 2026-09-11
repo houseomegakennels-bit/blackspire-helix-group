@@ -98,6 +98,8 @@ test('artifact/disk primitive rejects SHA mismatch, digest movement, unsafe capa
 test('CLI rejects execute mode before opening journals or loading credentials',()=>{
  const result=spawnSync(process.execPath,['scripts/zola-release-command.js','--execute','/no-such-input'],{encoding:'utf8'});
  assert.equal(result.status,1);assert.equal(JSON.parse(result.stdout).reason,'COMMAND_FAILED_CLOSED');
+ assert.equal(JSON.parse(result.stdout).mutationSent,null);
+ assert.equal(JSON.parse(result.stdout).reconciliationRequired,true);
 });
 
 test('migration-aware preflight retains exact package proof and rechecks before stopping closed',async()=>{

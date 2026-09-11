@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const PROJECT = 'prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou';
@@ -33,6 +34,88 @@ const protection = (row) => ({
   trustedIpsConfigured: row.trustedIps == null ? null : Boolean(row.trustedIps),
   automationBypassConfigured: row.protectionBypass == null ? null : Object.keys(row.protectionBypass).length > 0,
 });
+
+// Only reviewed source paths may appear in plaintext. Arbitrary route expressions,
+// builder sources, conditions, headers and config can contain secrets. Digests
+// identify unresolved expressions without copying those values into evidence.
+const REVIEWED_PATHS = new Set([
+  '/api/search-jobs', '/api/search-jobs/[id]/trigger', '/api/search-jobs/:id/trigger',
+  '/api/deal-engine/launch-buyer-search', '/api/buyer-engine/reverse-search',
+  '/api/buyer-profiles', '/api/buyer-matches', '/api/buyer-reports', '/api/buyer-groups',
+  '/api/nexus/trace', '/api/internal/capabilities/seller-opportunities',
+  '/api/internal/capabilities/buyer-profiles', '/api/internal/capabilities/buyer-matches',
+  '/api/internal/capabilities/deal-records', '/api/internal/capabilities/deal-analysis',
+  '/api/internal/capabilities/nexus-enrichment', '/api/harvester/buyer-trace',
+  '/api/harvester/buyer-match', '/api/harvester/buyer-outreach', '/api/harvester/create-deal',
+  '/api/harvester/create-seller-lead', '/api/harvester/intake', '/api/harvester/approve',
+  '/api/cron/fetch-opportunities', '/api/cron/send-alerts',
+]);
+const digest = value => createHash('sha256').update(value).digest('hex');
+const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+function pathDescriptor(value, vocabulary = REVIEWED_PATHS) {
+  if (typeof value !== 'string' || !value.length || value.length > 8192) fail('INVALID_DEPLOYMENT_PATH');
+  return { recognizedPath: vocabulary.has(value) ? value : null,
+    expressionSha256: digest(value), redacted: !vocabulary.has(value) };
+}
+
+// SDK getdeploymentresponsebody1.ts and getdeploymentgitsourcedeploymentsresponse200type.ts:
+// routes is nullable; builds contains builder declarations, NOT deployed output.
+// Even complete metadata capture cannot certify build provenance or path authority.
+export function deploymentPathMetadata(detail) {
+  const validDetail = plainObject(detail);
+  if (!validDetail) detail = {};
+  const result = { status: 'INCOMPLETE', sourceSha: /^[a-f0-9]{40}$/.test(detail.meta?.githubCommitSha ?? '')
+    ? detail.meta.githubCommitSha : null, sourceShaEvidence: 'deployment_metadata_only', routes: [], builds: [], gaps: [],
+    buildOutputVerified: false, authorityProven: false, denialProven: false };
+  try {
+    if (!validDetail) result.gaps.push('INVALID_DEPLOYMENT_PATH_METADATA');
+    if (!result.sourceSha) result.gaps.push('SOURCE_SHA_MISSING');
+    if (detail.gitSource?.sha != null && detail.gitSource.sha !== result.sourceSha) result.gaps.push('SOURCE_SHA_METADATA_CONFLICT');
+    if (!Array.isArray(detail.routes) || !detail.routes.length) result.gaps.push('ROUTE_METADATA_UNAVAILABLE');
+    else {
+      if (detail.routes.length > 2048) fail('DEPLOYMENT_ROUTE_LIMIT');
+      result.routes = detail.routes.map((row, index) => {
+        if (!plainObject(row)) fail('INVALID_DEPLOYMENT_ROUTE');
+        const source = row.src ?? row.source;
+        const handle = row.handle == null ? null : ['error', 'filesystem', 'hit', 'miss', 'resource', 'rewrite'].includes(row.handle)
+          ? row.handle : fail('INVALID_DEPLOYMENT_HANDLE');
+        if (source == null && handle == null) fail('INVALID_DEPLOYMENT_ROUTE');
+        const descriptor = source == null ? null : pathDescriptor(source);
+        if (descriptor?.redacted) result.gaps.push('UNREVIEWED_ROUTE_EXPRESSION');
+        const methods = row.methods == null ? null : Array.isArray(row.methods) && row.methods.length <= 16 &&
+          row.methods.every(method => ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT', 'TRACE'].includes(method))
+          ? row.methods : fail('INVALID_DEPLOYMENT_METHODS');
+        for (const key of ['has', 'missing', 'transforms']) {
+          if (row[key] != null && (!Array.isArray(row[key]) || row[key].length > 128)) fail('INVALID_DEPLOYMENT_CONDITIONS');
+        }
+        const delegated = row.middlewarePath != null || row.middleware != null || plainObject(row.destination);
+        if (delegated || handle) result.gaps.push('DELEGATED_ROUTE_REQUIRES_BUILD_OUTPUT');
+        return { index, source: descriptor, handle, methods,
+          destinationPresent: row.dest != null || row.destination != null,
+          conditionCount: (row.has?.length ?? 0) + (row.missing?.length ?? 0),
+          transformCount: row.transforms?.length ?? 0, delegated,
+          privateValuesRedacted: true };
+      });
+    }
+    if (!Array.isArray(detail.builds) || !detail.builds.length) result.gaps.push('BUILD_METADATA_UNAVAILABLE');
+    else {
+      if (detail.builds.length > 256) fail('DEPLOYMENT_BUILD_LIMIT');
+      result.builds = detail.builds.map((row, index) => {
+        if (!plainObject(row) || typeof row.use !== 'string' || !row.use.length || row.use.length > 1024) fail('INVALID_DEPLOYMENT_BUILD');
+        const builder = ['@vercel/next', '@vercel/node', '@vercel/static-build', '@vercel/static'].includes(row.use) ? row.use : null;
+        const source = row.src == null ? null : pathDescriptor(row.src, new Set(['package.json', 'frontend/package.json']));
+        if (builder === null || source?.redacted || source === null) result.gaps.push('UNREVIEWED_BUILD_DECLARATION');
+        return { index, builder, builderSha256: digest(row.use), source, configRedacted: true };
+      });
+    }
+    result.status = result.gaps.length ? 'INCOMPLETE' : 'METADATA_CAPTURED';
+  } catch (error) {
+    result.gaps.push(error instanceof InventoryError ? error.message : 'INVALID_DEPLOYMENT_PATH_METADATA');
+  }
+  result.gaps.push('BUILD_OUTPUT_AUTHORITY_UNVERIFIED');
+  result.gaps = [...new Set(result.gaps)];
+  return result;
+}
 
 // GET only, fixed API origin/project/team. No env or decrypted-secret endpoints.
 // Raw responses, rule values, bypass IPs, comments, and API errors never leave memory.
@@ -95,7 +178,8 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
       state: ['READY', 'ERROR', 'CANCELED', 'BUILDING', 'QUEUED', 'INITIALIZING'].includes(detail.readyState) ? detail.readyState : 'UNKNOWN',
       target: ['production', 'preview'].includes(detail.target) ? detail.target : null,
       aliases: Array.isArray(detail.alias) ? detail.alias.map(host) : [], ...protection(detail),
-      routeCount: Array.isArray(detail.routes) ? detail.routes.length : null };
+      routeCount: Array.isArray(detail.routes) ? detail.routes.length : null,
+      pathMetadata: deploymentPathMetadata(detail) };
   }
   await observe('deployments', async () => {
     const rows = await paged('/v6/deployments', 'deployments', { projectId: PROJECT });
@@ -246,6 +330,13 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
     const rows = await paged('/v1/security/firewall/bypass', 'result', { projectId: PROJECT }, true);
     return { count: rows.length, paginationComplete: true, requiresPrivateReview: rows.length > 0 };
   });
+  // No metadata-only response, including empty arrays or complete pagination,
+  // substitutes for deployed build manifests and reviewed runtime path authority.
+  evidence.pathAuthority = { status: 'INCOMPLETE', deploymentCount: evidence.deployments.length,
+    metadataCapturedCount: evidence.deployments.filter(row => row.pathMetadata.status === 'METADATA_CAPTURED').length,
+    unresolvedDeploymentIds: evidence.deployments.filter(row => row.pathMetadata.gaps.length).map(row => row.id),
+    unresolvedAliasTargetIds: evidence.aliasTargetDeployments.filter(row => row.status !== 'COMPLETE').map(row => row.id),
+    buildOutputVerified: false, authorityProven: false, denialProven: false };
   evidence.requests = requests;
   evidence.status = evidence.observations.every((row) => row.status === 'COMPLETE') ? 'INVENTORY_COMPLETE' : 'INCOMPLETE';
   return evidence;

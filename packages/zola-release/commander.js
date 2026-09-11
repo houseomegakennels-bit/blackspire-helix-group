@@ -7,6 +7,7 @@ import {hash} from './commander-journal.js';
 import {readReleaseProtectedBytes,verifyReleaseSource,verifyReleaseCi} from './commander-host.js';
 import {prepareN8nTransition,executeN8nTransition,createN8nTransport} from './commander-n8n.js';
 import {inspectAdmissionHoldHistory} from './admission-hold.js';
+import {inspectHeldLifecycleHistory} from './held-lifecycle.js';
 
 // This is an executable observational prefix, not permission to perform the
 // remaining release. No production mutation adapter exists in this module.
@@ -39,13 +40,14 @@ const MIGRATION_PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','p
 function history(journal){
  const events=journal.stream('release').events();
  inspectReleaseMigrationHistory(events);
+ inspectHeldLifecycleHistory(events);
  const pendingHold=inspectAdmissionHoldHistory(events);
  if(pendingHold)reject();
  // Unknown events may represent a future/crashed mutation. Never reinterpret
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
-  if(['release_migration_intent','release_migration_result','release_hold_intent','release_hold_result'].includes(row?.type))continue;
+  if(['release_migration_intent','release_migration_result','release_hold_intent','release_hold_result','release_lifecycle_intent','release_lifecycle_result'].includes(row?.type))continue;
   if(![1,2].includes(row?.schema)||!['preflight_started','preflight_passed','preflight_stopped'].includes(row.type)
    ||!sha(row.releaseSha)||typeof row.runId!=='string'||!(/^[a-f0-9-]{36}$/).test(row.runId))reject();
   keys(row,'schema,type,runId,releaseSha'+(row.type==='preflight_started'?'':row.type==='preflight_passed'?',stage,proof':',stage'));
@@ -70,7 +72,9 @@ function history(journal){
 export function inspectReleaseCommander(journal){
  const events=history(journal);
  const migration=inspectReleaseMigrationHistory(events);
- return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration?null:false,
+ const lifecycle=inspectHeldLifecycleHistory(events);
+ return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration||lifecycle?null:false,
+  lifecycleReconciliationRequired:Boolean(lifecycle),
   migrationReconciliationRequired:Boolean(migration),
   remainingGates:[...UNWIRED_RELEASE_GATES]};
 }
@@ -91,7 +95,7 @@ export async function runReleasePreflight({input,journal},{
   releaseSha=input.releaseSha;if(!sha(releaseSha))reject();
   for(const field of ['packageConfigurationFile','backupFile','diskConfigurationFile','backupManifestFile'])if(typeof input[field]!=='string'||!input[field].startsWith('/'))reject();
   history(journal);
-  if(inspectReleaseMigrationHistory(journal.stream('release').events()))reject();
+  if(inspectReleaseMigrationHistory(journal.stream('release').events())||inspectHeldLifecycleHistory(journal.stream('release').events()))reject();
   runId=randomUUID();record('preflight_started');
   const passed=proof=>record('preflight_passed',{stage,proof});
   stage='source';verifySource(releaseSha);passed({releaseSha});
@@ -138,6 +142,6 @@ export async function runReleasePreflight({input,journal},{
  }catch{
   if(runId)try{record('preflight_stopped',{stage});}catch{/* Original durable prefix remains authoritative. */}
   return{status:'STOPPED',reason:'PREFLIGHT_REJECTED',stage,preflightCompleted:false,
-   releaseReady:false,mutationSent:false};
+   releaseReady:false,mutationSent:null,reconciliationRequired:true};
  }
 }

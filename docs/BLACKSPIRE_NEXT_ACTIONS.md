@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-10 — continue after held lifecycle preparation
+
+1. Preserve the HELD-only journal and native process observer. Finish production lifecycle serialization including automatic systemd restarts, protected start authority, health/readiness and gated opening; do not treat injected disposable starts as production acceptance.
+2. Complete deployed build-manifest provenance and historical route closure, then independently establish denial before dispatch. Sanitized route metadata and HTTP404 remain insufficient.
+3. Finish production fixed recovery acceptance, actual two-principal owner isolation, collector mutation-attempt/egress witnesses and remaining writer/migration/n8n/merge/deployment adapters. Keep release fail-closed until every gate passes.
+4. Retain exact-head CI and refresh preparation/backup before activation. Owner/provider must submit the verified Supabase ACL request/archive if not already submitted and retain approved execution evidence. Provider action alone does not unblock the full release.
+
 ## 2026-09-09 — continue after HELD-only admission tranche
 
 1. Preserve the reviewed durable admission primitive and exact-head evidence in the checkpoint. Keep canonical production services stopped until all activation prerequisites pass.

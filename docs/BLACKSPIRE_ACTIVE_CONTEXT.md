@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-10 — held lifecycle preparation, release still gated
+
+The HELD lifecycle transaction now retains unknown start outcomes without replay and verifies selected native production process bindings. It deliberately lacks a production start adapter and OPEN publisher; external systemd lifecycle serialization and complete activation acceptance remain outstanding. The routing collector captures sanitized source-bound path/build metadata while explicitly retaining manifest and historical-route gaps. Journal failures report unknown mutation status instead of asserting none occurred.
+
+Fresh n8n management observation succeeds with unchanged active baseline; package/backup freshness and exact-head CI must follow the final reviewed commit. Provider archive integrity reverified; submission/execution unverified. Canonical API/worker stopped; PR125 unmerged. Full release, owner isolation, complete collector observations and rollback production acceptance remain unfinished. See `/tmp/zola-astra-activation-current.md` for final evidence and exact next step.
+
 ## 2026-09-09 — HELD-only admission primitive reviewed
 
 Durable admission now uses stable-inode shared leases across asynchronous settlement and exclusive HELD publication with a persistent interruption marker. API/task/worker/Telegram/outbox/Buyer boundaries reject held admissions; worker heartbeats and emergency controls remain available. Independent review corrected incomplete production profile detection and generation changes during acquisition/validation. No production hold has been installed and no reopening adapter exists.
