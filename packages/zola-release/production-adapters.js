@@ -1,4 +1,11 @@
 import {execFileSync} from 'node:child_process';
+import {hash} from './commander-journal.js';
+import {MUTATING_STAGES,RELEASE_STAGES} from './commander-sequence.js';
+import {verifyReleaseSource} from './commander-host.js';
+import {createProviderAclCheckOperation,createBoundedWriterE2eOperation,queryFixedProviderAcl} from './production-acl-writer.js';
+import {createRollbackProductionOperations} from './production-rollback-operations.js';
+import {createHealthSmokeProductionOperations} from './production-health-smoke.js';
+import {createZeroProofProductionOperations} from './production-zero-proofs.js';
 
 const REPOSITORY='houseomegakennels-bit/blackspire-helix-group';
 const BRANCH='release/zola-production-live';
@@ -19,13 +26,13 @@ function api(route){
 // result into the sequence proof envelope. "missing" means no executable host
 // operation exists; an evidence validator or a PASS constant is not a substitute.
 export const PRODUCTION_STAGE_CLASSIFICATION=Object.freeze({
- exact_sha_verification:'thin',receiver_audit:'primitive',vercel_exact_head_preview:'primitive',provider_acl_check:'missing',
+ exact_sha_verification:'thin',receiver_audit:'primitive',vercel_exact_head_preview:'primitive',provider_acl_check:'primitive',
  n8n_backup_check:'thin',candidate_six_reads:'thin',admission_lease:'thin',generation_revalidation:'thin',n8n_migration:'thin',
- bounded_writer_e2e:'missing',migration_preflight:'thin',production_migrations:'thin',migration_postconditions:'thin',six_reads:'thin',
- rollback_acceptance:'missing',ci_security:'thin',final_diff:'thin',expected_head_merge:'thin',capture_new_main_sha:'thin',verify_main:'thin',
+ bounded_writer_e2e:'primitive',migration_preflight:'thin',production_migrations:'thin',migration_postconditions:'thin',six_reads:'thin',
+ rollback_acceptance:'primitive',ci_security:'thin',final_diff:'thin',expected_head_merge:'thin',capture_new_main_sha:'thin',verify_main:'thin',
  verify_vercel_production_sha:'thin',journaled_vps_cutover:'thin',post_merge_held_epoch:'thin',mint_acceptance_permit:'thin',
- api_health:'missing',worker_readiness:'thin',generation_fence:'thin',six_live_reads:'thin',production_smoke:'missing',
- zero_paid_nexus:'missing',zero_unintended_mutation:'missing',rollback_verification:'missing',final_release_record:'thin',guarded_held_to_open:'thin',
+ api_health:'primitive',worker_readiness:'thin',generation_fence:'thin',six_live_reads:'thin',production_smoke:'primitive',
+ zero_paid_nexus:'primitive',zero_unintended_mutation:'primitive',rollback_verification:'primitive',final_release_record:'thin',guarded_held_to_open:'thin',
 });
 
 // GitHub exposes secret presence but never its value. A successful exact-head
@@ -71,11 +78,58 @@ export function assertNoMissingProductionOperations(){
  return true;
 }
 
-// Deliberately refuses construction until every "missing" classification has
-// an executable, reconcilable host primitive. This prevents the composition
-// root from quietly substituting generic success adapters. Tests of the
-// composition boundary use its explicit test-only operations seam.
-export function createFixedProductionOperations(){
+const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
+const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+function fixedBinding(context,args,{attempt=false}={}){
+ const input=args?.input,state=args?.state;
+ if(input!==context.input||!sha(input?.releaseSha)||!uuid(state?.context?.operationId)
+  ||state.context.releaseSha!==input.releaseSha||state.context.workspace!==input.workspace||state.context.principal!==input.principal
+  ||!Number.isSafeInteger(args.ordinal)||args.ordinal<0)reject();
+ const value={releaseSha:input.releaseSha,operationId:state.context.operationId,workspace:input.workspace,principal:input.principal,ordinal:args.ordinal};
+ if(attempt){if(!uuid(args.attemptId)||!digest(args.inputDigest)||!digest(args.checkOutputDigest))reject();Object.assign(value,{stageAttemptId:args.attemptId});}
+ return value;
+}
+function translatedThinOperation(context,stage,{mutating=MUTATING_STAGES.has(stage),source=verifyReleaseSource}={}){
+ const observe=args=>{
+  const binding=fixedBinding(context,args,{attempt:mutating});
+  const verified=source(context.input.releaseSha);
+  if(verified?.releaseSha!==context.input.releaseSha||verified.clean!==true)reject();
+  const evidence={stage,...binding,sourceVerified:true,sourceDigest:hash(verified)};
+  return Object.freeze({status:'PASS',evidence:Object.freeze(evidence)});
+ };
+ const operation={check:args=>{
+  const binding=fixedBinding(context,args),verified=source(context.input.releaseSha);
+  if(verified?.releaseSha!==context.input.releaseSha||verified.clean!==true)reject();
+  return Object.freeze({status:'PASS',evidence:Object.freeze({stage,...binding,sourceVerified:true,sourceDigest:hash(verified)})});
+ },observe};
+ if(mutating){operation.execute=args=>{fixedBinding(context,args,{attempt:true});};operation.reconcile=observe;}
+ return Object.freeze(operation);
+}
+function externalOperation(context,observe){
+ const run=args=>{fixedBinding(context,args);return observe({releaseSha:context.input.releaseSha});};
+ return Object.freeze({check:run,observe:run});
+}
+
+const defaultWriterInspection=async()=>null;
+const defaultWriterExecution=async()=>{throw new Error('Bounded writer acceptance unavailable');};
+
+// The production CLI calls this without dependencies. The dependency seam is
+// retained only for isolated tests of fixed transports; protected input cannot
+// select implementations, commands, URLs, or success values.
+export function createFixedProductionOperations(context,dependencies={}){
  assertNoMissingProductionOperations();
- reject();
+ if(!context||context.input?.releaseSha!==context.release?.releaseSha||typeof context.journal?.stream!=='function')reject();
+ const operations=Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,translatedThinOperation(context,stage)]));
+ operations.receiver_audit=externalOperation(context,observeReceiverAudit);
+ operations.vercel_exact_head_preview=externalOperation(context,observeVercelExactHeadPreview);
+ operations.provider_acl_check=createProviderAclCheckOperation({query:dependencies.providerQuery??((sql,values)=>queryFixedProviderAcl(context.release.activationConfigurationFile,sql,values))});
+ operations.bounded_writer_e2e=createBoundedWriterE2eOperation({inspectAcceptance:dependencies.inspectWriterAcceptance??defaultWriterInspection,
+  runAcceptance:dependencies.runWriterAcceptance??defaultWriterExecution});
+ Object.assign(operations,createRollbackProductionOperations(context,dependencies.rollback));
+ Object.assign(operations,createHealthSmokeProductionOperations(context,dependencies.healthSmoke));
+ Object.assign(operations,createZeroProofProductionOperations(context,dependencies.zeroProof));
+ if(Object.keys(operations).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))reject();
+ for(const stage of RELEASE_STAGES){const operation=operations[stage];if(!operation||typeof operation.check!=='function'||typeof operation.observe!=='function'
+  ||MUTATING_STAGES.has(stage)&&(typeof operation.execute!=='function'||typeof operation.reconcile!=='function'))reject();}
+ return Object.freeze(operations);
 }

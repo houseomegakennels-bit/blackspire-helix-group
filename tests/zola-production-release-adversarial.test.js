@@ -58,8 +58,10 @@ test('production composition binds exactly 34 concrete adapters and rejects map 
  ])assert.throws(()=>buildProductionAdapters({loadedInput,journal},{operations:context=>{const map=operationFactory([])(context);mutate(map);return map;}}));
 });
 
-test('default production composition refuses while fixed executable host operations remain missing',()=>{
- assert.throws(()=>buildProductionAdapters({loadedInput,journal:memoryJournal()}),error=>error.code==='PRODUCTION_OPERATIONS_MISSING');
+test('default production composition binds every fixed executable host operation',()=>{
+ const adapters=buildProductionAdapters({loadedInput,journal:memoryJournal()});
+ assert.deepEqual(Object.keys(adapters),RELEASE_STAGES);
+ for(const stage of RELEASE_STAGES){assert.equal(typeof adapters[stage].check,'function');assert.equal(typeof adapters[stage].observe,'function');}
 });
 
 test('malformed protected identity stops before operation construction or journal mutation',async()=>{

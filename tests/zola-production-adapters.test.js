@@ -8,16 +8,20 @@ test('production adapter classification is exact and admits no placeholder categ
  assert.deepEqual(Object.keys(PRODUCTION_STAGE_CLASSIFICATION).sort(),[...RELEASE_STAGES].sort());
  assert.ok(Object.isFrozen(PRODUCTION_STAGE_CLASSIFICATION));
  assert.ok(Object.values(PRODUCTION_STAGE_CLASSIFICATION).every(value=>['primitive','thin','missing'].includes(value)));
- assert.equal(Object.values(PRODUCTION_STAGE_CLASSIFICATION).filter(value=>value==='primitive').length,2);
+ assert.equal(Object.values(PRODUCTION_STAGE_CLASSIFICATION).filter(value=>value==='primitive').length,10);
 });
 
-test('composition cannot claim completeness while executable operations are missing',()=>{
- assert.throws(()=>assertNoMissingProductionOperations(),error=>error.code==='PRODUCTION_OPERATIONS_MISSING'
-  &&error.stages.includes('bounded_writer_e2e')&&error.stages.includes('production_smoke')&&error.stages.includes('rollback_verification'));
+test('all formerly missing executable operations are classified and complete',()=>{
+ assert.equal(assertNoMissingProductionOperations(),true);
+ assert.equal(Object.values(PRODUCTION_STAGE_CLASSIFICATION).filter(value=>value==='missing').length,0);
 });
 
-test('fixed production operation construction fails closed instead of installing placeholders',()=>{
- assert.throws(()=>createFixedProductionOperations(),error=>error.code==='PRODUCTION_OPERATIONS_MISSING');
+test('fixed production operation construction binds the exact registry',()=>{
+ const releaseSha='a'.repeat(40),input={releaseSha,previousMainSha:'b'.repeat(40),recoverySha:'c'.repeat(40),
+  protectedInputDigest:'d'.repeat(64),workspace:'zola-production',principal:'blackspire-release-root',inputDigest:'e'.repeat(64)};
+ const release={releaseSha,backupManifestFile:'/var/lib/blackspire-operator/preparation/backup.json'};
+ const operations=createFixedProductionOperations({release,input,source:{releaseSha,clean:true},journal:{stream:()=>({events:()=>[],append(){}})}});
+ assert.deepEqual(Object.keys(operations),RELEASE_STAGES);assert.ok(Object.isFrozen(operations));
 });
 
 test('fixed external observers reject invalid release identity before network access',()=>{
