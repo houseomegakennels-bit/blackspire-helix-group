@@ -37,3 +37,8 @@
 - Preregistered R1-H1 as a confirmation-based replacement premise after the Stage 1C failure.
 - Fixed the event sequence, exclusions, directional outcome, statistical gate, and prospective validation boundary before testing.
 - Kept M6E as the primary instrument and 6E as robustness-only.
+
+## R1-H1 validator implementation
+- Added a dependency-free R1-H1 offline validator with an explicit prospective-validation start boundary.
+- Added unit tests for the fixed gate, session-coverage thresholds, and statistical helpers.
+- Historical M6E/6E runs are recorded as discovery/debug only; no R1 validation pass is claimed.
