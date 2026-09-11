@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hash} from '../packages/zola-release/commander-journal.js';
-import {inspectVpsCutoverHistory,runVpsCutover,rollbackVpsCutover} from '../packages/zola-release/commander-vps.js';
+import {inspectVpsCutoverHistory,prepareVpsCutoverPlan,runVpsCutover,rollbackVpsCutover} from '../packages/zola-release/commander-vps.js';
 
 const snapshot={current:'/opt/blackspire-command/releases/'+'a'.repeat(40),state:{mode:'held'},api:{active:false},worker:{active:false}};
 const plan={operationId:'11111111-1111-4111-8111-111111111111',commanderRunId:'22222222-2222-4222-8222-222222222222',
@@ -14,6 +14,14 @@ function host({throwAt,observable=true}={}){
   async observe(step){calls.push('observe:'+step);return (step==='backup'||done.has(step))&&observable;},
   async rollback(){calls.push('rollback');rollback=true;},async observeRollback(){calls.push('observeRollback');return rollback;}};
 }
+test('prepared live snapshot is the exact snapshot journaled by cutover',async()=>{
+ const j=journal(),h=host(),base=Object.fromEntries(Object.entries(plan).filter(([key])=>key!=='snapshotDigest'));
+ const prepared=await prepareVpsCutoverPlan({plan:base},{host:h});
+ assert.equal(prepared.plan.snapshotDigest,hash(snapshot));
+ await runVpsCutover({plan:prepared.plan,journal:j},{host:h,snapshot:prepared.snapshot});
+ assert.equal(h.calls.filter(value=>value.startsWith('snapshot:')).length,1);
+ assert.deepEqual(j.events[0].snapshot,snapshot);
+});
 test('journaled VPS cutover executes ten exact substeps once and completed replay is inert',async()=>{
  const j=journal(),h=host();const result=await runVpsCutover({plan,journal:j},{host:h});
  assert.equal(result.status,'VPS_CUTOVER_COMPLETE');assert.equal(inspectVpsCutoverHistory(j.events).completed,true);

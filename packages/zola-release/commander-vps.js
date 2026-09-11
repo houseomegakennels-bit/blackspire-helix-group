@@ -132,12 +132,32 @@ function validatePlan(plan){
   ||!['artifactDigest','rollbackArtifactDigest','backupDigest','admissionDigest','snapshotDigest'].every(key=>digest(plan[key]))
   ||typeof plan.backupManifestFile!=='string'||!path.isAbsolute(plan.backupManifestFile))reject();return structuredClone(plan);
 }
+const planWithoutSnapshotKeys=['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','rollbackSha','artifactDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest'];
+function validatePlanWithoutSnapshot(plan){
+ if(!exact(plan,planWithoutSnapshotKeys)||![plan.operationId,plan.commanderRunId,plan.epochRunId,plan.rollbackEpochRunId].every(uuid)
+  ||![plan.newMainSha,plan.rollbackSha].every(sha)||plan.newMainSha===plan.rollbackSha
+  ||!['artifactDigest','rollbackArtifactDigest','backupDigest','admissionDigest'].every(key=>digest(plan[key]))
+  ||typeof plan.backupManifestFile!=='string'||!path.isAbsolute(plan.backupManifestFile))reject();
+ return structuredClone(plan);
+}
+// Snapshot collection is part of the already-journaled outer cutover attempt.
+// Returning the snapshot alongside its digest lets runVpsCutover durably retain
+// exactly what was inspected, rather than attempting to predict live host state.
+export async function prepareVpsCutoverPlan({plan},{host=productionHost()}={}){
+ const base=validatePlanWithoutSnapshot(plan);let lease;
+ try{
+  lease=host.lease?.(base);lease?.assertIdentity?.();
+  const snapshot=await host.snapshot(base),snapshotDigest=hash(snapshot);
+  if(JSON.stringify(snapshot).length>8192||!digest(snapshotDigest))reject();
+  return Object.freeze({plan:Object.freeze({...base,snapshotDigest}),snapshot:structuredClone(snapshot)});
+ }catch{reject();}finally{lease?.close?.();}
+}
 const event=(plan,type,extra={})=>({schema:4,type,...plan,...extra});
-export async function runVpsCutover({plan,journal,reconcile=false},{host=productionHost()}={}){
+export async function runVpsCutover({plan,journal,reconcile=false},{host=productionHost(),snapshot:preparedSnapshot}={}){
  const p=validatePlan(plan),stream=journal.stream('release');let state=inspectVpsCutoverHistory(stream.events()),lease;
  try{
   lease=host.lease?.(p);lease?.assertIdentity?.();
-  if(!state.started){if(reconcile)reject();const snapshot=await host.snapshot(p);if(hash(snapshot)!==p.snapshotDigest)reject();
+  if(!state.started){if(reconcile)reject();const snapshot=preparedSnapshot??await host.snapshot(p);if(hash(snapshot)!==p.snapshotDigest)reject();
    if(await host.observe('backup',p)!==true)reject();stream.append(event(p,'vps_cutover_intent',{snapshot}));state=inspectVpsCutoverHistory(stream.events());}
   else if(!baseKeys.slice(2).every(key=>state.intent[key]===p[key])||state.intent.snapshotDigest!==p.snapshotDigest)reject();
   if(state.rollingBack)return{status:'STOPPED',reason:'VPS_ROLLBACK_REQUIRED',reconciliationRequired:!state.rollbackComplete};
