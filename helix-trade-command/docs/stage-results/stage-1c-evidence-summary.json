@@ -1,0 +1,34 @@
+{
+  "decision_date": "2026-09-11",
+  "gate": {
+    "minimum_observations": 30,
+    "minimum_point_estimate_pct": 55.0,
+    "minimum_wilson_lower_pct": 50.0
+  },
+  "tradingview_m6e": {
+    "period": "approximately 2026-08-16 through 2026-09-11",
+    "scenario_a": {"n": 10, "wins": 8, "pct": 80.0},
+    "scenario_b": {"n": 8, "wins": 1, "pct": 12.5}
+  },
+  "public_m6e": {
+    "period_utc": "2026-01-20T14:45:00+00:00 through 2026-04-15T23:25:00+00:00",
+    "raw_days": 62,
+    "valid_days": 29,
+    "excluded_days": 33,
+    "excluded_short_session": 31,
+    "scenario_a": {"n": 21, "wins": 9, "pct": 42.8571428571, "wilson95": [24.4699689254, 63.4534456307]},
+    "scenario_b": {"n": 8, "wins": 2, "pct": 25.0, "wilson95": [7.1479212752, 59.0724569690]},
+    "sha256": "2063a184f4be50b0344b6ef25362e5b0718476500d5e22c3a01a8a1b7be05682"
+  },
+  "combined_nonoverlapping_direct_m6e": {
+    "scenario_a": {"n": 31, "wins": 17, "pct": 54.8387096774, "wilson95": [37.7721676374, 70.8382640195], "status": "FAIL"},
+    "scenario_b": {"n": 16, "wins": 3, "pct": 18.75, "wilson95": [6.5915990714, 43.0088809620], "status": "PROVISIONAL"}
+  },
+  "proxy_6e_m6e_tick": {
+    "period_utc": "2026-03-08T22:00:00+00:00 through 2026-04-15T23:25:00+00:00",
+    "scenario_a": {"n": 20, "wins": 11, "pct": 55.0, "wilson95": [34.2085342450, 74.1802141744]},
+    "scenario_b": {"n": 7, "wins": 1, "pct": 14.2857142857, "wilson95": [2.5679624345, 51.3127829274]},
+    "sha256": "8ba3c43ad23bd3ba1214c3d3b87f26e1d507550826ee6457c020d3b8fea054c1"
+  },
+  "decision": "STOP_STRATEGY_TRACK_AND_REDESIGN_PREMISE"
+}

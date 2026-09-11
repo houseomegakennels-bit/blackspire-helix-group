@@ -1,7 +1,7 @@
 # Runbook
 
 ## Current state
-Stage D0 bootstrap only. Trading is disabled. No broker integration is authorized.
+Stage 1D propagation decision recorded. The current Scenario A/B premise failed the Stage 1C evidence gate and is frozen. Trading is disabled. No broker integration is authorized. Strategy work has returned to a preregistered research/redesign track.
 
 ## Build order
 1. D0 — development controller/repository setup.
@@ -21,10 +21,9 @@ Stage D0 bootstrap only. Trading is disabled. No broker integration is authorize
 15. 6 — shadow mode, demo automation, long simulation.
 16. 7 — legal, capital, prop-policy, and live eligibility gates.
 
-## Immediate exit criteria for D0
-- Project structure exists.
-- Source-of-truth architecture is recorded.
-- Safety rules are recorded.
-- Zola integration boundary is documented.
-- No secrets or live endpoints have been added.
-- Changes are presented through a pull request for operator review.
+## Current research gate
+- Stage 1B TradingView runtime: verified.
+- Stage 1C expanded evidence: Scenario A FAIL at 17/31 = 54.84%, Wilson lower bound 37.77%.
+- Stage 1D propagation: STOP current strategy track.
+- Stage 2 is blocked for the rejected premise.
+- Replacement hypotheses must be preregistered and independently gated before any Stage 2 restart.

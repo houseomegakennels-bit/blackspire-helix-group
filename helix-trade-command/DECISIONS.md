@@ -19,3 +19,10 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 - Treat sparse zero-volume 5-minute omissions as normal feed behavior; require at least 85% session-bar coverage instead of exact bar-count equality.
 - Preserve the original premise buckets: Scenario A = exactly one London sweep; Scenario B = no qualifying London sweep; double London sweeps are excluded.
 - Do not advance the strategy evidence gate from the TradingView Basic sample: A=10 and B=8 are below the 30-observation minimum.
+
+## 2026-09-11 — Stage 1C/1D evidence stop
+- Added an offline validator and reproducibility record to expand evidence beyond TradingView Basic history.
+- Combined non-overlapping direct M6E evidence is Scenario A = 17/31 (54.84%), Wilson 95% approximately [37.77%, 70.84%], which FAILS the preregistered Stage 1 gate.
+- Scenario B remains provisional at 3/16 (18.75%) and is independently weak.
+- Full-size 6E is retained only as a same-underlying robustness proxy; it does not substitute for direct M6E evidence.
+- Stop the current strategy track. Preserve the Helix platform and safety architecture, but require a new preregistered research premise before Stage 2 can restart.

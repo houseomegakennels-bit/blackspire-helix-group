@@ -425,7 +425,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `84c69fe835c019a2a350e8227aa812b95784ab1c`
+- Last verified implementation commit: `60aa3eb928d78df8bc5fb76a048e40e2b98e90d4`
 
 ## 2026-09-04 — Activation recovery delta
 

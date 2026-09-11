@@ -24,3 +24,11 @@
 - Replaced exact session-bar equality with 85% coverage to tolerate zero-volume gaps.
 - Restored Scenario B to the original no-London-sweep premise and kept double sweeps excluded.
 - Recorded provisional A=10/8 (80%) and B=8/1 (12.5%) results; sample remains below the minimum evidence gate.
+
+## Stage 1C/1D — expanded evidence and stop decision
+- Added a dependency-free offline premise validator mirroring the current Pine research rules.
+- Recorded public M6E/6E dataset provenance and SHA-256 hashes without committing raw market data.
+- Expanded direct M6E evidence across non-overlapping samples to Scenario A = 17/31 (54.84%), Wilson 95% [37.77%, 70.84%].
+- Marked Scenario A FAIL under the fixed n>=30 / point>=55% / Wilson-low>50% gate.
+- Recorded Scenario B = 3/16 (18.75%) as provisional but weak.
+- Completed Stage 1D propagation decision: stop the rejected strategy premise and return to preregistered research/redesign; no broker or execution work authorized.
