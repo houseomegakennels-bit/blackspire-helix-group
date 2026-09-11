@@ -3,6 +3,8 @@ import "server-only";
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { ownedMediaPath } from "./publication";
+
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type {
@@ -22,7 +24,11 @@ import type {
 } from "@/lib/book-studio/types";
 
 const STORE_VERSION = 1 as const;
-const STORE_ROOT = path.join(process.cwd(), "data", "book-studio");
+const isolatedRoot = process.env.BOOK_STUDIO_LOCAL_ROOT;
+if (isolatedRoot && (!path.isAbsolute(isolatedRoot) || ["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "VERCEL"].some((key) => process.env[key]?.trim()))) {
+  throw new Error("An isolated local Book Studio root requires an absolute path and no Supabase/Vercel configuration.");
+}
+const STORE_ROOT = isolatedRoot || path.join(process.cwd(), "data", "book-studio");
 const STORE_FILE = path.join(STORE_ROOT, "store.json");
 const ASSET_ROOT = path.join(STORE_ROOT, "assets");
 const BOOK_STUDIO_BUCKET = "blackspire-book-studio";
@@ -102,6 +108,7 @@ async function ensureBookStudioBucket(supabase: SupabaseClient) {
   }
 
   const existingBucket = (buckets ?? []).find((bucket) => bucket.name === BOOK_STUDIO_BUCKET);
+  if (existingBucket?.public) throw new Error("Book Studio requires a private storage bucket.");
   if (!existingBucket) {
     const { error: createError } = await supabase.storage.createBucket(BOOK_STUDIO_BUCKET, {
       public: false,
@@ -964,6 +971,7 @@ export async function writeAssetBuffer(
   buffer: Buffer,
   metadata?: Record<string, string | number | boolean | null>,
 ) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(bookId) || !/^[a-z_]+$/.test(kind)) throw new Error("Invalid asset scope.");
   const assetId = createId("asset");
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
   const relativePath = path.join(bookId, kind, `${assetId}-${safeName}`);
@@ -983,7 +991,7 @@ export async function writeAssetBuffer(
     mimeType,
     relativePath: relativePath.replace(/\\/g, "/"),
     createdAt: nowIso(),
-    metadata,
+    metadata: { ...metadata, releaseStatus: "private" },
   };
 
   return asset;
@@ -995,6 +1003,14 @@ export async function writeAssetBuffer(
  * every reference to it (chapter.videoAssetId, etc.) should stay unchanged.
  */
 export async function overwriteAssetBuffer(relativePath: string, buffer: Buffer, mimeType: string) {
+  const bookId = relativePath.split("/")[0];
+  if (!ownedMediaPath(bookId, relativePath)) throw new Error("Invalid asset path.");
+  // Replacing released bytes must invalidate their old publication evidence first.
+  await mutateBookRecord(bookId, (book) => {
+    const asset = book.assets.find((item) => item.relativePath === relativePath);
+    if (!asset) throw new Error("Cannot overwrite an unregistered asset.");
+    asset.metadata = { ...asset.metadata, releaseStatus: "private", releaseSha256: null, pilotSourceDigest: null, pilotSha256: null };
+  });
   if (hasSupabaseStoreEnv()) {
     const supabase = await ensureRemoteBookStudioStorage();
     await uploadRemoteBytes(supabase, relativePath.replace(/\\/g, "/"), buffer, mimeType);
@@ -1012,6 +1028,7 @@ export async function overwriteAssetBuffer(relativePath: string, buffer: Buffer,
  * callers can fall back to the in-request formData upload path.
  */
 export async function createSignedUploadTarget(bookId: string, kind: AssetKind | "character_bible_chunk", fileName: string) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(bookId) || !/^[a-z_]+$/.test(kind)) throw new Error("Invalid asset scope.");
   const assetId = createId("asset");
   const safeName = (fileName || "manuscript").replace(/[^a-zA-Z0-9._-]+/g, "-");
   const relativePath = path.join(bookId, kind, `${assetId}-${safeName}`).replace(/\\/g, "/");
@@ -1093,6 +1110,7 @@ export async function deleteUnreferencedBookAsset(bookId: string, assetId: strin
 }
 
 export async function readAssetBuffer(relativePath: string) {
+  if (!ownedMediaPath(relativePath.split("/")[0], relativePath)) throw new Error("Invalid asset path.");
   if (hasSupabaseStoreEnv()) {
     const supabase = await ensureRemoteBookStudioStorage();
     const { data, error } = await supabase.storage.from(BOOK_STUDIO_BUCKET).download(relativePath);

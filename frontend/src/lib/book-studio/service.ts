@@ -52,7 +52,9 @@ import type {
 } from "@/lib/book-studio/types";
 
 function bookStudioTempDir(...segments: string[]) {
-  return path.join(os.tmpdir(), "blackspire-book-studio", ...segments);
+  return process.env.BOOK_STUDIO_LOCAL_ROOT
+    ? path.join(process.env.BOOK_STUDIO_LOCAL_ROOT, "tmp", ...segments)
+    : path.join(os.tmpdir(), "blackspire-book-studio", ...segments);
 }
 
 async function getSharp() {
@@ -2759,6 +2761,30 @@ function canRenderScene(book: BookRecord, scene: SceneRecord) {
   }
 
   return { ok: true, reason: "" };
+}
+
+/** Exact inputs used by the existing renderer; approval includes reference bytes. */
+export async function privateProductionInputs(book: BookRecord, sceneIds: string[]) {
+  const { createHash } = await import("node:crypto");
+  return Promise.all(sceneIds.map(async (id) => {
+    const scene = book.scenes.find((item) => item.id === id);
+    if (!scene) throw new Error("Missing scoped scene.");
+    const { prompt, manifest } = buildScenePrompt(book, scene);
+    for (const referenceId of manifest.visualAnchorReferenceIds) {
+      const refs = book.references.filter((item) => item.id === referenceId);
+      const assets = book.assets.filter((item) => item.id === refs[0]?.assetId);
+      if (refs.length !== 1 || assets.length !== 1 || !refs[0].approved) throw new Error("Canonical reference missing or unapproved.");
+      const { ownedMediaPath } = await import("./publication");
+      if (!ownedMediaPath(book.id, assets[0].relativePath)) throw new Error("Canonical reference path escapes book.");
+    }
+    const references = await loadReferenceInputs(book, manifest.visualAnchorReferenceIds);
+    if (references.some((reference) => !reference.buffer.length)) throw new Error("Empty canonical reference.");
+    const character = scene.characterIds.map((id) => book.characters.find((item) => item.id === id)).find(Boolean);
+    const voice = character?.voiceAssignment?.characterVoice || fallbackVoice();
+    return { id, prompt, voice, imageModel: process.env.OPENAI_BOOK_IMAGE_MODEL?.trim() || "gpt-image-2",
+      ttsModel: process.env.OPENAI_BOOK_TTS_MODEL?.trim() || "gpt-4o-mini-tts",
+      references: references.map((reference) => ({ ...reference, buffer: createHash("sha256").update(reference.buffer).digest("hex") })) };
+  }));
 }
 
 export async function renderSceneImage(sceneId: string) {

@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-07 — Geminara diagnostic production path verified
+
+Draft PR #126 now has actual local rendering, byte-verified private Drive backup, and a local release/browser rehearsal. 90/90 focused tests; full trusted root lane 1,266 passed, zero failed, nine skipped; 15/15 local HTTP/browser checks. The diagnostic remains Draft after rehearsal. No new story, paid work, human Onyx/creative review or production release occurred. See GEMINARA_PRIVATE_PILOT.md for exact evidence. Approved chapter/canon selection and scoped generation authority remain the next operator boundary.
+
 ## 2026-09-01 — PR #120 local P2 candidate complete
 
 Local implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf` closes the three exact-head P2 findings after remote `660dfb63444069c734dcff50415cb84c4fd919b6`: Gate 4 rejects worker membership in the API credential group by numeric GID, current iPhone instructions preserve the shared/API-only environment split, and the PWA reports 503 saturation as credential-neutral temporary unavailability. Behavioral Gate4 and PWA mutations were load-bearing. The Node 22.23.1 trusted lane and secondary source gates are clean; installed production units remain older than the candidate and were not modified. A following canonical-memory commit records this verified checkpoint. Nothing is pushed, merged, deployed, or production-verified at the new local head.

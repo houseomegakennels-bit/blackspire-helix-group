@@ -91,7 +91,12 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
   }
 
   const mediaEvents = {
-    onPlay: () => setIsPlaying(true),
+    onPlay: () => {
+      setIsPlaying(true);
+      // Metadata may already have loaded before React attaches its listeners.
+      const mediaDuration = mediaRef.current?.duration;
+      if (mediaDuration && Number.isFinite(mediaDuration)) setDuration(mediaDuration);
+    },
     onPause: () => setIsPlaying(false),
     onEnded: handleEnded,
     onTimeUpdate: () => setCurrentTime(mediaRef.current?.currentTime ?? 0),

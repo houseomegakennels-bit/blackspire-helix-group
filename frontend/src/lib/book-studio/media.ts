@@ -1,4 +1,5 @@
 import "server-only";
+import { checkPrivateProviderApproval, privateProviderRun } from "./private-provider-guard";
 
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -256,6 +257,7 @@ export async function generateImageBuffer({
         );
       }
 
+      await checkPrivateProviderApproval();
       const response = await fetch("https://api.openai.com/v1/images/edits", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
@@ -274,6 +276,8 @@ export async function generateImageBuffer({
       errors.push(getOpenAIError(payload) || `OpenAI image edit failed with status ${response.status}.`);
     }
 
+    if (references.length && privateProviderRun()) throw new Error("Private pilot refuses fallback after a failed reference-image request; reconcile the provider outcome.");
+    await checkPrivateProviderApproval();
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
@@ -420,6 +424,7 @@ export async function generateSpeechAudio({
 
   try {
     for (let i = 0; i < chunks.length; i += 1) {
+      await checkPrivateProviderApproval();
       const response = await fetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: {

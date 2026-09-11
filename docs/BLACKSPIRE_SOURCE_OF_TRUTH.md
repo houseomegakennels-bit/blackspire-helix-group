@@ -1,6 +1,12 @@
 # Blackspire Canonical Source of Truth
 
-- Last verified implementation commit: `96a8db5616d0753319bf16e6ee6826a5c32e928e`
+- Last verified implementation commit: `3c8a6991d91c8705618c6903bd272fc6ed0e8e18`
+
+## Geminara private diagnostic verified (2026-09-07 UTC)
+
+Draft PR #126 extends `982a8cc57fa16313fbd5bfddecd2f30bfdf1db94` on the existing feature branch. The isolated local Book Studio renderer produced a six-second synthetic diagnostic, with full audio/video decode and scene-duration alignment. All seven final backup files were uploaded to an owner-only Drive folder and downloaded/hashed against exact local bytes. Focused tests passed 90/90; the full trusted root suite passed 1,266 with zero failures and nine skips; local HTTP/browser publication rehearsal passed 15/15 using labeled test approval fixtures and restored Draft afterward. No real new chapter, paid generation, human creative/narration review, production data change or production deployment is claimed. See `GEMINARA_PRIVATE_PILOT.md` for commands, checksums, private evidence locations, source discovery and operator gates. This branch still needs independent review and separate release authority.
+
+The previously stale anchor is reconciled to PR #124's independently reviewed head `3c8a6991d91c8705618c6903bd272fc6ed0e8e18`, merged as `53adf74e05c607c0d296923bae05d7ac023ecb57`; their trees are identical. GitHub records successful CI run `33904194791` and a submitted Codex review at that exact head. That review reported five P2 findings (Nexus empty-result evidence, three request parsing/lookup cases, and stale memory); this anchor records reviewed implementation ancestry, **not a clean approval**. The four runtime findings remain outside this pilot scope and their resolution is UNVERIFIED. The historical Nexus paragraph below is superseded as to branch/merge/CI status.
 
 ## Nexus read-only capability validation (2026-09-04 UTC)
 
