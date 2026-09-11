@@ -33,3 +33,10 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 - Keep the original Stage 1 statistical gate: n>=30, point estimate>=55%, lower Wilson 95% bound>50%.
 - Data examined through 2026-09-11 is discovery/debug only for R1; preferred primary validation begins 2026-09-12.
 - R1 remains research-only until an independent validation sample passes and the operator explicitly approves Stage 2.
+
+## 2026-09-11 — R1 prospective automation
+- Use TradingView Data Window telemetry instead of CSV export so the evidence collector works on the Basic plan without subscription changes.
+- Reserve the single Basic-plan saved chart layout for the R1 prospective collector while evidence is accumulating; restoring two legacy indicators simultaneously would exceed the two-indicator limit.
+- Store runtime observations locally in a SHA-256 chained ledger and expose only read-only status to Zola.
+- Schedule capture after the 10:00 ET research window with a 10:15 primary attempt and a 10:45 retry.
+- Keep 6E robustness strictly separate from the primary M6E gate.

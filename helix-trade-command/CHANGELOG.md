@@ -42,3 +42,11 @@
 - Added a dependency-free R1-H1 offline validator with an explicit prospective-validation start boundary.
 - Added unit tests for the fixed gate, session-coverage thresholds, and statistical helpers.
 - Historical M6E/6E runs are recorded as discovery/debug only; no R1 validation pass is claimed.
+
+## R1 prospective evidence pipeline
+- Added a TradingView Basic-compatible Pine telemetry collector for frozen R1-H1 evidence.
+- Added authenticated browser recovery, Data Window scraping, SHA-256 chained daily evidence ledger, retry/failure logging, and independent gate evaluation.
+- Added weekday 10:05/10:15/10:20/10:45 ET scheduling plus browser recovery on reboot.
+- Added a read-only Zola Helix Trade Command research-status workspace and API route.
+- Added a separate 6E robustness job that never affects the primary M6E gate.
+- Live trading and broker execution remain disabled.

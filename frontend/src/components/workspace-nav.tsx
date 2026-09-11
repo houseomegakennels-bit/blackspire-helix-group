@@ -15,6 +15,7 @@ const LINKS: Array<{ label: string; href: string; match: string; accent?: boolea
   { label: "Nexus", href: "/workspace/nexus", match: "/workspace/nexus" },
   { label: "Deal", href: "/workspace/deal-engine", match: "/workspace/deal-engine" },
   { label: "Buyer", href: "/workspace/buyer-engine", match: "/workspace/buyer-engine" },
+  { label: "Helix Trade", href: "/workspace/helix-trade-command", match: "/workspace/helix-trade-command", accent: true },
 ];
 
 export function WorkspaceNav() {
