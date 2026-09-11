@@ -1,0 +1,21 @@
+{
+  "id": "R1-H1",
+  "created": "2026-09-11",
+  "status": "PREREGISTERED_NOT_TESTED",
+  "instrument": "M6E",
+  "timeframe_minutes": 5,
+  "timezone": "America/New_York",
+  "sessions": {"asia": "20:00-00:00", "london": "03:00-05:00", "new_york": "07:00-10:00"},
+  "minimum_session_coverage": 0.85,
+  "candidate": "exactly one London sweep of an Asia extreme; opposite extreme not swept",
+  "ny_confirmation": [
+    "sweep same Asia extreme and close back inside Asia range",
+    "3-bar swing market-structure shift in reversal direction",
+    "reversal displacement body >= 1.5x median prior-20 body"
+  ],
+  "outcome": "10:00 ET final close is opposite swept side relative to NY open",
+  "gate": {"minimum_events": 30, "minimum_point_estimate_pct": 55.0, "minimum_wilson_lower_pct": 50.0},
+  "prospective_validation_start": "2026-09-12",
+  "historical_through": "2026-09-11",
+  "historical_role": "DISCOVERY_AND_IMPLEMENTATION_DEBUG_ONLY"
+}

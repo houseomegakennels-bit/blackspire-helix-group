@@ -32,3 +32,8 @@
 - Marked Scenario A FAIL under the fixed n>=30 / point>=55% / Wilson-low>50% gate.
 - Recorded Scenario B = 3/16 (18.75%) as provisional but weak.
 - Completed Stage 1D propagation decision: stop the rejected strategy premise and return to preregistered research/redesign; no broker or execution work authorized.
+
+## Research redesign R1
+- Preregistered R1-H1 as a confirmation-based replacement premise after the Stage 1C failure.
+- Fixed the event sequence, exclusions, directional outcome, statistical gate, and prospective validation boundary before testing.
+- Kept M6E as the primary instrument and 6E as robustness-only.

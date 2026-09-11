@@ -26,3 +26,10 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 - Scenario B remains provisional at 3/16 (18.75%) and is independently weak.
 - Full-size 6E is retained only as a same-underlying robustness proxy; it does not substitute for direct M6E evidence.
 - Stop the current strategy track. Preserve the Helix platform and safety architecture, but require a new preregistered research premise before Stage 2 can restart.
+
+## 2026-09-11 — R1 replacement-premise preregistration
+- R1-H1 replaces direct London-to-NY prediction with a confirmation-based event: one London Asia-range sweep, then a same-side NY sweep back into range, 3-bar MSS, and 1.5× displacement in reversal direction.
+- Days without the full NY sequence are no-events rather than forced directional losses.
+- Keep the original Stage 1 statistical gate: n>=30, point estimate>=55%, lower Wilson 95% bound>50%.
+- Data examined through 2026-09-11 is discovery/debug only for R1; preferred primary validation begins 2026-09-12.
+- R1 remains research-only until an independent validation sample passes and the operator explicitly approves Stage 2.
