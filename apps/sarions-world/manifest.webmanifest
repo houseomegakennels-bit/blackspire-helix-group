@@ -1,1 +1,14 @@
-{"name":"Sarion's World","short_name":"Sarion","start_url":"./","display":"standalone","background_color":"#ffffff","theme_color":"#1f8cff"}
+{
+  "name": "Sarion's World",
+  "short_name": "Sarion",
+  "description": "A family-centered iPad learning and communication app.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8fbff",
+  "theme_color": "#2388ff",
+  "icons": [
+    {"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
