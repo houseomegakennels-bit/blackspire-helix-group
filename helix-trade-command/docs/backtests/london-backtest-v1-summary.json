@@ -1,0 +1,68 @@
+{
+  "spec": "london-backtest-v1",
+  "data_first_utc": "2026-01-20T14:45:00+00:00",
+  "data_last_utc": "2026-04-15T23:25:00+00:00",
+  "cycles": 61,
+  "exclusions": {
+    "short": 31,
+    "double_or_none": 9
+  },
+  "assumptions": {
+    "starting_equity": 50000.0,
+    "risk_pct": 0.005,
+    "max_contracts": 6,
+    "commission_round_turn_per_contract": 1.5,
+    "slippage_ticks_each_side": 1,
+    "target_r": 2.0
+  },
+  "variant_A": {
+    "trades": 13,
+    "wins": 7,
+    "losses": 6,
+    "win_rate_pct": 53.84615384615385,
+    "starting_equity": 50000.0,
+    "ending_equity": 50193.50000000002,
+    "net_pnl": 193.50000000001052,
+    "return_pct": 0.3870000000000484,
+    "avg_trade": 14.884615384616193,
+    "avg_r": -0.16193460472746307,
+    "expectancy_r": -0.16193460472746307,
+    "gross_profit": 787.4999999999843,
+    "gross_loss": 593.9999999999739,
+    "profit_factor": 1.3257575757576077,
+    "max_drawdown_dollars": 305.9999999999782,
+    "max_drawdown_pct": 0.6071006973721628,
+    "longest_losing_streak": 2,
+    "avg_contracts": 5.846153846153846,
+    "exit_counts": {
+      "stop": 6,
+      "target": 3,
+      "time": 4
+    }
+  },
+  "variant_R1_H1": {
+    "trades": 4,
+    "wins": 0,
+    "losses": 4,
+    "win_rate_pct": 0.0,
+    "starting_equity": 50000.0,
+    "ending_equity": 49566.500000000015,
+    "net_pnl": -433.4999999999895,
+    "return_pct": -0.8669999999999733,
+    "avg_trade": -108.37499999999737,
+    "avg_r": -0.919463794289628,
+    "expectancy_r": -0.919463794289628,
+    "gross_profit": 0,
+    "gross_loss": 433.4999999999895,
+    "profit_factor": 0.0,
+    "max_drawdown_dollars": 433.49999999998545,
+    "max_drawdown_pct": 0.8669999999999709,
+    "longest_losing_streak": 4,
+    "avg_contracts": 6,
+    "exit_counts": {
+      "stop": 2,
+      "target": 0,
+      "time": 2
+    }
+  }
+}
