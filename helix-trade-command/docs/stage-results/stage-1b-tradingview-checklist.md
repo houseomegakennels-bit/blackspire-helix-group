@@ -28,7 +28,7 @@ Capture:
 - Scroll/load enough history to target at least 120 raw days where the TradingView plan permits.
 - Confirm missing/shortened session days are excluded rather than silently scored.
 - Note that the indicator has no exchange-holiday calendar; holidays are only indirectly excluded when session completeness fails.
-- Check that break/double-sweep/ambiguous London states do not enter Scenario B.
+- Check that Scenario B matches the original premise: no qualifying London sweep. Break days may enter B; double-sweep days remain excluded as ambiguous.
 - Check that Scenario B success requires ordered sweep → MSS → displacement → opposing final close.
 
 ## Evidence to capture
@@ -43,4 +43,4 @@ Save at minimum:
 Stage 1B passes only when TradingView compiles the exact merged script and the indicator runs on M6E1! 5-minute data without correctness-affecting runtime errors. Statistical strength is evaluated in Stage 1C, not here.
 
 ## Current status
-**UNVERIFIED — awaiting actual TradingView compile/runtime evidence.**
+**RUNTIME VERIFIED — statistical sample remains below the Stage 1C minimum.**
