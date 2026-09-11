@@ -5,9 +5,11 @@
 - Reworked Scenario A to use sweep direction rather than London candle direction.
 - Restricted Scenario B to exact London no-touch/non-break days.
 - Added explicit London outcome classifications and conservative ambiguity handling.
-- Added approved NY sweep → 3-bar-swing MSS → 1.5× median-body displacement sequence tracking.
+- Added operator-approved NY sweep → 3-bar-swing MSS → 1.5× median-body displacement sequence tracking.
 - Added raw/valid/excluded-day accounting and session completeness checks.
 - Added Q4/Q5 distribution statistics, Asia-range quartile performance, Wilson 95% intervals, and objective pass/provisional/fail rules.
+- Corrected Scenario A final direction to reference the NY session open.
+- Independent static review completed; remaining validation is TradingView compile/runtime behavior.
 - TradingView compilation/runtime remains unverified pending Stage 1B.
 
 ## Stage D0
