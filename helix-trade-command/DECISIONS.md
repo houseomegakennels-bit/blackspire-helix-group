@@ -53,3 +53,9 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 - Stop one tick beyond the sweep extreme; target the opposite Asia extreme, requiring >=1.5R and capping credit at 3R.
 - Do not optimize V2 after viewing its historical results. Any parameter change requires a separately preregistered V3.
 - Historical V2 results are too small for execution authorization; continue research only.
+
+## 2026-09-11 — Run London V2 prospectively beside R1-H1
+- Keep R1-H1 frozen and active; do not replace it with V2.
+- Start London V2 prospective evidence on 2026-09-12 using the second TradingView Basic indicator slot.
+- Because V2 has variable reward:risk exits, use an execution gate rather than the R1 directional hit-rate gate: >=30 executed M6E trades, post-cost expectancy > +0.10R, normal-approximation 95% lower bound on mean R > 0, and profit factor >=1.25.
+- A PASS does not authorize demo/live execution. It only permits a separately approved next stage.
