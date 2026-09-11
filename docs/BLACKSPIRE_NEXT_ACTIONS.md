@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-11 — finish guarded acceptance composition
+
+1. Preserve the journaled VPS cutover and protected runtime epoch binding. Complete its fixed composition only after exact-head review; do not invoke it while provider, preview and receiver gates remain red.
+2. Implement a narrowly scoped post-merge acceptance permit so exactly six bound read-only tasks and their worker claims can run while global admission remains HELD. It must be single-use, expiring, principal/task/capability/generation bound and replay-safe. Do not temporarily publish OPEN.
+3. Add the remaining fixed production observers and adapters: provider ACL postcondition, exact preview plus receiver audit, n8n transition/continuity, production migration client, convergence and production acceptance. Then expose one protected-input `--release` command using the existing 34-stage journal.
+4. Supabase provider execution, Vercel account restoration and the GitHub receiver URL/token remain external. Keep them frozen while internal acceptance machinery is completed.
+
 ## 2026-09-11 — continue after receiver authority propagation
 
 1. Finish exact-head verification for the receiver-authority tranche. Preserve the single-use durable permit, API-only consumer credential, bounded route input and binding echo; do not restore bearer/workspace-only acceptance.

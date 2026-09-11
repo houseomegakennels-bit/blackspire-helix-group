@@ -30,6 +30,7 @@ WorkingDirectory=/opt/blackspire-command/current
 # in an API-only file that the worker unit never opens. Both remain outside Git and root-managed.
 EnvironmentFile=/etc/blackspire/command.env
 EnvironmentFile=/etc/blackspire/command-api.env
+EnvironmentFile=/etc/blackspire/release-admission/runtime.env
 Environment=BLACKSPIRE_RUNTIME_USER=blackspire-api
 
 # Pinned PATH. systemd's manager PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin

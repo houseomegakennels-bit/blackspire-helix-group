@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-11 — journaled VPS cutover foundation and acceptance-boundary finding
+
+The production host cutover now has a strict schema-three subordinate journal grammar bound to the commander run, post-merge epoch, new-main and rollback SHAs, artifact, backup, admission state and pre-cutover snapshot. Each artifact, runtime-binding, pointer, API start, worker start, readiness and enable operation records a durable intent before dispatch. An interrupted operation is observed rather than resent; an unconfirmed result enters a separately journaled stop/disable/pointer-rollback path. Exact completed and rolled-back invocations are idempotent. Both production unit templates consume one protected release-admission runtime file, and release switching uses a unique temporary symlink before the atomic rename.
+
+This is source-level cutover machinery, not production acceptance or activation. Final composition remains blocked internally because the production collector intentionally reports `livePass:false`, and its task submission plus worker processing require OPEN admission. The required second post-merge epoch remains HELD until after live reads, so those reads cannot execute without weakening the global release guard. A future fix must introduce a narrowly scoped, single-use acceptance authority bound to the exact epoch, generations, principal, six idempotency keys and six read-only capabilities; global OPEN-before-verification is prohibited. Fixed provider-ACL, exact-preview, receiver-audit, n8n multi-step, migration-client and convergence adapters also remain absent. No production service, pointer, workflow, database, route, deployment or merge was changed.
+
 ## 2026-09-11 — receiver authority preserved through the frontend boundary
 
 The canonical capability dispatcher now issues a short-lived, single-use opaque receiver permit only after current principal, workspace and capability authorization. Its persisted claims bind the exact release/run and API/worker generations, principal and grant security versions, task/attempt and worker claim, capability/permission, and canonical HTTP method/path/body digest. The frontend treats the header as candidate material, consumes it through a distinct API-only credential, and opens its bounded read scope only after the Command API revalidates current durable authority and atomically advances the attempt from `dispatching` to `started`. Replays, substitutions, stale generations, changed grants/tasks/attempts, missing authority and malformed authority fail before frontend database dispatch. All five route implementations stream-limit request bodies and echo the consumed binding digest on the bounded response.
@@ -419,7 +425,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `eb3f5d196eacbc7ee3e03da5f6b9e17634dba236`
+- Last verified implementation commit: `84c69fe835c019a2a350e8227aa812b95784ab1c`
 
 ## 2026-09-04 — Activation recovery delta
 

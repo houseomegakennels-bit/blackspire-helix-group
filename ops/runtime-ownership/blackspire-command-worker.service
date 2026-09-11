@@ -14,6 +14,7 @@ User=blackspire-worker
 Group=blackspire
 WorkingDirectory=/opt/blackspire-command/current
 EnvironmentFile=/etc/blackspire/command.env
+EnvironmentFile=/etc/blackspire/release-admission/runtime.env
 # Deliberately load only the shared profile. ExecStartPre refuses to start if an API authentication
 # credential is accidentally added to the worker environment.
 Environment=BLACKSPIRE_RUNTIME_USER=blackspire-worker

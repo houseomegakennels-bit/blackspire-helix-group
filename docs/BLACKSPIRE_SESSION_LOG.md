@@ -1,5 +1,9 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-11 — final release-machine continuation
+
+Recovered clean exact PR head `a27379a` and current main advancement without discarding work. Four focused read-only lanes mapped all 34 production adapters, journaled cutover, one-command composition and fresh external state. Implemented a strict journaled VPS sub-FSM, protected post-merge runtime epoch injection for both production units, unique atomic release-pointer preparation and observe-only unknown-outcome reconciliation with stopped rollback. Focused tests, lint, typecheck and build pass. Independent review proved the requested pre-OPEN live reads conflict with the existing global HELD admission guard and identified additional missing production adapters; no unsafe bypass or false completion was added. Supabase ACL remains unapplied, Vercel remains account-blocked, and GitHub receiver inputs remain absent. No production mutation or merge occurred.
+
 ## 2026-08-31 — PR #118 exact-head review correction (Codex)
 
 - Re-anchored living memory to reviewed PR #118 head `7a20e804b384e90d44f8e8f20d01c7145a972a09`, which includes the executable canonical-memory allowlist and focused regression changes. This following correction changes canonical memory only, so after merge the reviewed anchor is an ancestor of trusted main with only allowlisted memory changes in the descendant diff.
