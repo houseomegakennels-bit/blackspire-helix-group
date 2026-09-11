@@ -76,8 +76,14 @@ async function vpsBase(context,args,held,dependencies){
   admissionDigest:hash({version:1,mode:'held',releaseSha:newMainSha,runId:held.epochRunId,apiGeneration:null,workerGeneration:null})};
 }
 async function ensureHeld(context,args,dependencies){
- const newMainSha=capturedMain(context,args,'journaled_vps_cutover');
- return dependencies.beginHeld({commanderRunId:args.state.context.operationId,candidateSha:context.input.releaseSha,newMainSha,journal:context.journal},
+ const newMainSha=capturedMain(context,args,'journaled_vps_cutover'),commanderRunId=args.state.context.operationId;
+ const history=inspectPostMergeAdmissionHistory(context.journal.stream('release').events());
+ const completed=history.find(row=>row.type==='release_postmerge_hold_result'&&row.commanderRunId===commanderRunId);
+ if(completed){
+  if(completed.candidateSha!==context.input.releaseSha||completed.newMainSha!==newMainSha||!uuid(completed.epochRunId))reject();
+  return{status:'POST_MERGE_HELD',newMainSha,epochRunId:completed.epochRunId,intakeOpen:false,reconciled:true};
+ }
+ return dependencies.beginHeld({commanderRunId,candidateSha:context.input.releaseSha,newMainSha,journal:context.journal},
   {root:ADMISSION,groupId:dependencies.admissionGroup(),stopAndVerify:dependencies.stopAndVerify});
 }
 async function driveVps(context,args,dependencies){
