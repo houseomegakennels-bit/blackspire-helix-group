@@ -50,3 +50,9 @@
 - Added a read-only Zola Helix Trade Command research-status workspace and API route.
 - Added a separate 6E robustness job that never affects the primary M6E gate.
 - Live trading and broker execution remain disabled.
+
+## London Pattern Backtest V1
+- Added a frozen-rule M6E execution backtester for the original London single-sweep setup and R1-H1 confirmation setup.
+- Modeled position sizing, 0.5% risk budget, six-contract cap, one-tick entry/exit slippage, $1.50 round-turn commission, 2R target, conservative same-bar stop/target ordering, and 10:00 ET time exits.
+- Historical public M6E sample: Variant A 13 trades, +$193.50 net, 53.85% wins, 1.326 profit factor; R1-H1 4 trades, -$433.50 net, 0% wins.
+- Results remain research-only and do not authorize demo/live execution.
