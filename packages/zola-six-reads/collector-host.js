@@ -109,8 +109,8 @@ export function createProductionCollectorHost(config) {
   if (execFileSync('/usr/bin/git', ['rev-parse','--verify','HEAD'], gitOptions).trim() !== config.releaseSha ||
       execFileSync('/usr/bin/git', ['status','--porcelain=v1','--untracked-files=all'], gitOptions).trim()) refuse('COLLECTOR_SOURCE_SHA_OR_DIRTY_TREE');
   const credentials = readRootOwnedJson(config.credentialPath, { groupId: 0 });
-  const denialReceipt = config.version === 4 ? readRootOwnedJson(config.denialReceiptPath, { groupId: 0 }) : null;
-  if (config.version === 4) {
+  const denialReceipt = [4,5].includes(config.version) ? readRootOwnedJson(config.denialReceiptPath, { groupId: 0 }) : null;
+  if ([4,5].includes(config.version)) {
     if (Object.keys(credentials).join(',') !== 'bearer') refuse('CREDENTIAL_CONTRACT_REJECTED');
     credentials.deniedCookie = denialReceipt.deniedCookie;
   }
@@ -128,6 +128,8 @@ export function createProductionCollectorHost(config) {
     async generation() {
       assertListener(config);
       const apiEnvironment = processEnvironment(config.apiPid);
+      const workerEnvironment = processEnvironment(config.workerPid);
+      if(config.version===5&&(apiEnvironment.get('BLACKSPIRE_RELEASE_RUN_ID')!==config.releaseRunId||workerEnvironment.get('BLACKSPIRE_RELEASE_RUN_ID')!==config.releaseRunId))refuse('RELEASE_RUN_PAIRING_MISMATCH');
       if ((apiEnvironment.get('BLACKSPIRE_OPERATOR_PRINCIPAL_ID') || apiEnvironment.get('BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID')) !== config.principal ||
           apiEnvironment.get('COMMAND_ADMIN_TOKEN') !== credentials.bearer || apiEnvironment.get('ALLOW_BEARER_AUTH') !== 'true') refuse('API_PRINCIPAL_OR_CREDENTIAL_MISMATCH');
       const runtime = await inspect(); const worker = readBuyerWriterProcess(config.workerPid);
@@ -149,7 +151,7 @@ export function createProductionCollectorHost(config) {
     ...httpBoundary,
     ...(denialReceipt ? { async deniedIdentity() { reader.verifyDenialReceipt(denialReceipt); await httpBoundary.deniedIdentity(); } } : {}),
     ...(config.version === 2 ? { observeDatabase: createProductionDatabaseObserver(config) } : {}),
-    ...([3,4].includes(config.version) ? { observeDatabase: createProductionConnectedDatabaseObserver(config) } : {}),
+    ...([3,4,5].includes(config.version) ? { observeDatabase: createProductionConnectedDatabaseObserver(config) } : {}),
     lookup: key => reader.lookup(key),
     denialSnapshot: () => reader.denialSnapshot(),
     pause: () => new Promise(resolve => setTimeout(resolve, 500)),

@@ -36,6 +36,13 @@ const prepared=prepareBuyerMigrationPackage({releaseSha,providerManifest});
 const args={releaseSha,providerManifest,manifestBytes:prepared.manifestBytes,body:prepared.body,
  expectedManifestSha256:createHash('sha256').update(prepared.manifestBytes).digest('hex'),migrationVersion};
 const plan=prepareBuyerMigrationExecution(args);
+function completedLifecycle(){
+ const runId='12345678-1234-4234-8234-123456789abc',stateDigest='d'.repeat(64),base={schema:1,releaseSha,runId,stateDigest};
+ const proof={releaseSha,runId,artifactDigest:'e'.repeat(64),api:{role:'api',generation:'1'.repeat(32),pid:101,startTime:'1001'},
+  worker:{role:'worker',generation:'2'.repeat(32),pid:102,startTime:'1002'}};
+ return [{...base,type:'release_hold_intent'},{...base,type:'release_hold_result'},
+  {...base,type:'release_lifecycle_intent'},{...base,type:'release_lifecycle_result',proof}];
+}
 test('release adapter independently regenerates both migration transports and refuses changed protected bytes',()=>{
  const input={releaseSha,configurationFile:'/bundle/migration-input.json'};
  const files={'migration-manifest.json':prepared.manifestBytes,'application-body.sql':prepared.body,'application.sql':prepared.sql};
@@ -68,7 +75,7 @@ function session({prior=[],fail='',locked=true,actor='postgres',superuser=false,
  }};
 }
 test('global migration adapter records intent before shared claim and SQL, then only reconciles',async()=>{
- const events=[],order=[],client=session();
+ const events=completedLifecycle(),order=[],client=session();
  const query=client.query.bind(client);client.query=async (...a)=>{order.push('SQL');return query(...a);};
  const journal={stream:name=>{assert.equal(name,'release');return{events:()=>structuredClone(events),append:row=>{order.push(row.type);events.push(structuredClone(row));}};}};
  const options={claim:()=>{order.push('claim');}};
@@ -82,18 +89,13 @@ test('global migration adapter records intent before shared claim and SQL, then 
  assert.equal((await executeReleaseNativeMigration({input:args,client:reconcile,journal,mode:'reconcile'},options)).status,'committed-history-verified');
  assert.equal(reconcile.calls[0].sql,'BEGIN READ ONLY');assert.ok(!reconcile.calls.some(row=>row.sql===prepared.body));
  assert.equal(inspectReleaseMigrationHistory(events).releaseSha,releaseSha);
- assert.deepEqual(inspectReleaseMigrationState(events),{intent:events[0],lastStatus:'committed-history-verified',reconciliationRequired:false});
+ assert.deepEqual(inspectReleaseMigrationState(events),{intent:events.find(row=>row.type==='release_migration_intent'),lastStatus:'committed-history-verified',reconciliationRequired:false});
  const inspected=inspectReleaseCommander(journal);
  assert.equal(inspected.migrationAttempted,true);assert.equal(inspected.migrationStatus,'committed-history-verified');
  assert.equal(inspected.migrationReconciliationRequired,false);
 });
 test('completed hold and lifecycle authority permit migration while pending lifecycle refuses before intent',async()=>{
- const runId='12345678-1234-4234-8234-123456789abc',stateDigest='d'.repeat(64);
- const base={schema:1,releaseSha,runId,stateDigest};
- const proof={releaseSha,runId,artifactDigest:'e'.repeat(64),api:{role:'api',generation:'1'.repeat(32),pid:101,startTime:'1001'},
-  worker:{role:'worker',generation:'2'.repeat(32),pid:102,startTime:'1002'}};
- const completed=[{...base,type:'release_hold_intent'},{...base,type:'release_hold_result'},
-  {...base,type:'release_lifecycle_intent'},{...base,type:'release_lifecycle_result',proof}];
+ const completed=completedLifecycle();
  const make=events=>({stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})});
  const events=structuredClone(completed),client=session();
  const result=await executeReleaseNativeMigration({input:args,client,journal:make(events),mode:'apply'},{claim:()=>{}});
@@ -102,10 +104,23 @@ test('completed hold and lifecycle authority permit migration while pending life
  const blocked=await executeReleaseNativeMigration({input:args,client:blockedClient,journal:make(pending),mode:'apply'},{claim:()=>{}});
  assert.equal(blocked.status,'STOPPED');assert.equal(blockedClient.calls.length,0);
  assert.equal(pending.some(row=>row.type==='release_migration_intent'),false);
+ for(const invalid of [
+  [],
+  completed.slice(0,2),
+  completed.map(row=>row.type.includes('lifecycle')?{...row,releaseSha:'b'.repeat(40)}:row),
+  [...completed,...completed.map(row=>({...row,runId:'87654321-4321-4321-8321-cba987654321'}))],
+  [completed[2],completed[3],completed[0],completed[1]],
+ ]){
+  const rejected=structuredClone(invalid),refusedClient=session();let claims=0;
+  const stopped=await executeReleaseNativeMigration({input:args,client:refusedClient,journal:make(rejected),mode:'apply'},{claim:()=>{claims++;}});
+  assert.equal(stopped.status,'STOPPED');assert.equal(refusedClient.calls.length,0);
+  assert.equal(stopped.mutationSent,null);assert.equal(stopped.reconciliationRequired,true);assert.equal(claims,0);
+  assert.equal(rejected.some(row=>row.type==='release_migration_intent'),false);
+ }
 });
 test('global migration uncertainty, failed claim and failed durable append never authorize retry',async()=>{
  for(const failure of ['claim','intent','result','commit']){
-  const events=[],client=session({commitLost:failure==='commit'});
+  const events=completedLifecycle(),client=session({commitLost:failure==='commit'});
   const journal={stream:()=>({events:()=>structuredClone(events),append:row=>{
    if(failure==='intent'||failure==='result'&&row.type==='release_migration_result')throw new Error('disk full');
    events.push(structuredClone(row));
@@ -132,6 +147,7 @@ test('real protected global and migration journals retain uncertainty across clo
  const options={claim:plan=>claimBuyerMigrationIntent(plan,{root:root+'/migration'})};
  let journal=openReleaseJournal({root:journalRoot});
  try{
+  for(const event of completedLifecycle())journal.stream('release').append(event);
   const result=await executeReleaseNativeMigration({input:args,client:session({commitLost:true}),journal,mode:'apply'},options);
   assert.equal(result.reason,'MIGRATION_OUTCOME_UNKNOWN');assert.equal(fs.readdirSync(root+'/migration').length,1);
  }finally{journal.close();}

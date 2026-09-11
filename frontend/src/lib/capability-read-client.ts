@@ -19,8 +19,8 @@ const columns: Record<string, string[]> = {
 const embeds: Record<string, string[]> = { seller_leads: ["owners", "properties", "properties.data_sources"], deal_leads: ["deal_analysis", "seller_conversations", "buyer_matches"] };
 type Result = { data: unknown; count: number | null; error: null };
 
-export function createCapabilityReadScope({ origin, key, releaseSha = null, fetchImpl = fetch }: {
-  origin: string; key: string; releaseSha?: string | null; fetchImpl?: typeof fetch;
+export function createCapabilityReadScope({ origin, key, releaseSha = null, receiverAuthorityDigest = null, fetchImpl = fetch }: {
+  origin: string; key: string; releaseSha?: string | null; receiverAuthorityDigest?: string | null; fetchImpl?: typeof fetch;
 }) {
   const parsed = new URL(origin);
   if (parsed.origin !== origin || parsed.protocol !== "https:" || !/^[a-z0-9]{20}\.supabase\.co$/.test(parsed.hostname) || !key || key.length > 8192) throw new Error("READ_CONFIGURATION_REJECTED");
@@ -135,12 +135,14 @@ export function createCapabilityReadScope({ origin, key, releaseSha = null, fetc
   }
   function respond(body: unknown) {
     const evidence = observation(); closed = true; abort.abort();
-    return Response.json(body, { headers: { "cache-control": "no-store", "x-zola-read-observation": JSON.stringify(evidence) } });
+    const headers: Record<string,string> = { "cache-control": "no-store", "x-zola-read-observation": JSON.stringify(evidence) };
+    if (/^[a-f0-9]{64}$/.test(receiverAuthorityDigest ?? "")) headers["x-blackspire-authority-binding"] = receiverAuthorityDigest!;
+    return Response.json(body, { headers });
   }
   return Object.freeze({ client, observation, respond });
 }
 
-export function productionCapabilityReadScope() {
+export function productionCapabilityReadScope(receiverAuthorityDigest: string) {
   return createCapabilityReadScope({ origin: process.env.SUPABASE_URL?.trim() ?? "", key: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "",
-    releaseSha: process.env.VERCEL_GIT_COMMIT_SHA?.trim() ?? null });
+    releaseSha: process.env.VERCEL_GIT_COMMIT_SHA?.trim() ?? null, receiverAuthorityDigest });
 }

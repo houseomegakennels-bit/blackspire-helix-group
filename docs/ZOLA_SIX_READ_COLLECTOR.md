@@ -20,11 +20,11 @@ Candidate mode accepts no config or credential path. Its supervised child receiv
 
 The child uses a root-owned ephemeral directory under `/root`, so the existing protected journal checks remain intact; the supervisor removes only its known database and journal files after the child exits. Child runtime and output limits remain enforced. It does not start systemd services or contact a deployed frontend. Its generation is the real local process/network namespace, **not a production supervisor generation**. Result SHA fields describe synthetic route source/current checkout, not an independently observed live deployment; a digest records the integration's source files. Candidate PASS exits 0 while `livePass` remains false, and cannot satisfy production gates. This proves actual API/collector integration and network-contained synthetic dispatch, not production row-owner policies or production database mutation deltas.
 
-Configuration and credentials must be explicitly supplied, root-owned 0600 JSON under root-owned ancestors without group/other writes or named ACLs. No credentials are discovered or loaded in dry-run. Example schema (replace each value with independently verified deployment metadata; this is not an executable production config):
+Configuration and credentials must be explicitly supplied, root-owned 0600 JSON under root-owned ancestors without group/other writes or named ACLs. No credentials are discovered or loaded in dry-run. `--production` accepts only version 5 and refuses unless all six durable receipts carry verified receiver authority and the exact receiver binding echo. Versions 1–4 remain nonacceptance rehearsal/observer schemas. Example production schema (replace each value with independently verified deployment metadata; this is not an executable production config):
 
 ```json
 {
-  "version": 1,
+  "version": 5,
   "releaseSha": "0000000000000000000000000000000000000000",
   "frontendOrigin": "https://verified-deployment.example",
   "workspace": "blackspire-command",
@@ -36,8 +36,11 @@ Configuration and credentials must be explicitly supplied, root-owned 0600 JSON 
   "port": 8789,
   "databasePath": "/opt/blackspire-command/shared/database/command.sqlite",
   "credentialPath": "/var/lib/blackspire-operator/preparation/six-read-credentials.json",
+  "denialReceiptPath": "/var/lib/blackspire-operator/preparation/denial-receipt.json",
+  "observerDatabaseConfigPath": "/var/lib/blackspire-operator/preparation/observer-management.json",
   "journalDirectory": "/var/lib/blackspire-operator/preparation/six-read-journals",
-  "runId": "release-acceptance-before-migration"
+  "runId": "release-acceptance-before-migration",
+  "releaseRunId": "00000000-0000-4000-8000-000000000000"
 }
 ```
 
@@ -74,13 +77,13 @@ These modes emit separately executable snapshot/owner queries for the fixed proj
 `tests/zola-six-read-database-observer.test.js` covers strict metadata, coverage, row/version drift and sanitized rollback. `scripts/test-zola-six-read-database-postgres.mjs`, using the existing pinned `BUYER_WRITER_TEST_IMAGE`, exercises the actual SQL in a disposable PostgreSQL 17.6 container with no network or host mounts. It verifies own/foreign visibility, unchanged snapshots, same-value update detection, permissive-policy rejection, missing witnesses and actual read-only write rejection.
 
 
-## Connected transport and delegated session (versions 3 and 4)
+## Connected transport and delegated session (versions 3–5)
 
 Version 3 uses the fixed HTTPS Supabase Management API `POST /v1/projects/kchtrvfcixnimvxxctkj/database/query` with `read_only: true`, verified TLS and no redirects. Its explicit protected `observerDatabaseConfigPath` contains exactly `projectId` and `accessToken`. It never extracts the connected MCP application's token or accepts imported query results. The [official query contract](https://supabase.com/docs/reference/api/v1-run-a-query) requires a supported Management API token. The separate `/read-only` endpoint uses a different role and cannot satisfy the current observer's postgres/SET ROLE witness contract. Live Management API result batching and role compatibility remain unverified until a gated observation actually succeeds; HTTP errors or incompatible result shapes stop the run.
 
 Every connected query records a fsynced intent before transmission. PostgreSQL echoes a digest binding the release, complete config, runtime generations, run, phase, query kind, unpredictable nonce and preceding journal prefix. Query/result digests and bounded database clock observations are persisted before the baseline can authorize admissions. A request without its durable validated result remains UNKNOWN and is never automatically retried. Once an after query has begun, a collector rerun fails closed before creating new collected events or timestamps: retained historical evidence cannot be relabeled as fresh collection.
 
-Version 4 adds `denialReceiptPath` and consumes the protected receipt from the root-only delegated session tool. Its API `credentialPath` contains **only** `bearer`; no manual copying of session cookies is needed. The receipt is verified against release/run/workspace/principal, canonical DB inode, original session, exact issuance audit, expiry and absence of active grants across all workspaces. The collector then checks the actual authenticated HTTP identity, including before and after task disclosure. A forged, expired, revoked or mismatched receipt fails before admissions.
+Version 4 adds `denialReceiptPath` and consumes the protected receipt from the root-only delegated session tool. Its API `credentialPath` contains **only** `bearer`; no manual copying of session cookies is needed. The receipt is verified against release/run/workspace/principal, canonical DB inode, original session, exact issuance audit, expiry and absence of active grants across all workspaces. The collector then checks the actual authenticated HTTP identity, including before and after task disclosure. A forged, expired, revoked or mismatched receipt fails before admissions. Version 5 adds `releaseRunId` and requires every result to bind the persisted receiver permit and returned binding digest to the exact release, run, API/worker generations, principal, workspace, capability, permission, task, attempt, worker claim and canonical HTTP request. Only version 5 may run with `--production`.
 
 Example version 4 metadata (illustrative values only):
 

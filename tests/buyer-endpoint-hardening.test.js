@@ -223,7 +223,7 @@ test('Buyer report query failures propagate rather than return success', async (
 
 test('Buyer internal endpoint is server-only, authorized, bounded, and read-only', () => {
   assert.match(routeSource, /import "server-only"/);
-  assert.match(routeSource, /authorizeInternalCapability\(request, input\.workspaceId\)/);
+  assert.match(routeSource, /await authorizeInternalCapability\(request, bodyBytes, input\.workspaceId, capabilityId\)/);
   assert.match(routeSource, /limit < 1 \|\| limit > 10/);
   assert.doesNotMatch(routeSource, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
   assert.doesNotMatch(routeSource, /primary_phone|primary_email|mailing_address_snapshot/);
@@ -236,17 +236,14 @@ test('Deal analysis capability uses its dedicated persisted underwriting read pa
   assert.match(dealRouteSource, /getDealEngineAnalysisForCapability\(dealId, scope\.client\)/);
 });
 
-test('Buyer adapter preserves bounded profile and match inputs over HTTP', async () => {
+test('Buyer adapter does not transmit bounded inputs without receiver authority', async () => {
   const bodies = [];
   const fetchImpl = async (_url, options) => {
     bodies.push(JSON.parse(options.body));
     return new Response(JSON.stringify({ profiles: [], matches: [], sourceSnapshotAt: new Date().toISOString() }));
   };
-  const adapter = createDivisionAdapters({ BLACKSPIRE_BUYER_CAPABILITY_URL: 'https://buyer.example', BLACKSPIRE_BUYER_CAPABILITY_TOKEN: 'x' }, fetchImpl).buyerProfiles;
-  await adapter({ workspaceId: 'ws', county: 'Forsyth', limit: 4, signal: null });
-  await adapter({ workspaceId: 'ws', opportunityId: 'DE-2417', matchesOnly: true, limit: 3, signal: null });
-  assert.deepEqual(bodies, [
-    { workspaceId: 'ws', county: 'Forsyth', limit: 4 },
-    { workspaceId: 'ws', opportunityId: 'DE-2417', matchesOnly: true, limit: 3 },
-  ]);
+  const adapter = createDivisionAdapters({ BLACKSPIRE_BUYER_CAPABILITY_URL: 'https://buyer.example', BLACKSPIRE_BUYER_CAPABILITY_TOKEN: 'x'.repeat(32) }, fetchImpl).buyerProfiles;
+  await assert.rejects(adapter({ workspaceId: 'ws', county: 'Forsyth', limit: 4, signal: null }),/receiver authority is unavailable/);
+  await assert.rejects(adapter({ workspaceId: 'ws', opportunityId: 'DE-2417', matchesOnly: true, limit: 3, signal: null }),/receiver authority is unavailable/);
+  assert.deepEqual(bodies, []);
 });

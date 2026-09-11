@@ -150,6 +150,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
   };
   const report = await rebuildReceivers({ vercelToken: process.env.VERCEL_TOKEN, capabilityToken: process.env.ZOLA_CAPABILITY_TOKEN,
+    authorityConsumerUrl: process.env.ZOLA_AUTHORITY_CONSUMER_URL,
     githubToken: process.env.GITHUB_TOKEN, previewSha: process.env.GITHUB_SHA, creator, emit });
-  emit(report); if (report.status !== 'READY') process.exitCode = 1;
+  emit(report); if (report.status !== 'DENIAL READY') process.exitCode = 1;
 }

@@ -74,7 +74,7 @@ try {
     denialSnapshot: () => reader.denialSnapshot(),
     pause: async () => {
       const task = claimNext({ workerId: generation.workerId }); assert.ok(task);
-      assert.equal((await processTask(task, { capabilityOptions: { adapters: fixture.adapters } })).status, 'completed');
+      assert.equal((await processTask(task, { capabilityOptions: { adapters: fixture.syntheticAdapters } })).status, 'completed');
     } };
   const count = () => all('SELECT id FROM tasks').length;
   const beforeDenial = count();

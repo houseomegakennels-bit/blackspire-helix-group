@@ -77,8 +77,10 @@ export async function executeReleaseNativeMigration({input,client,journal,mode},
   // records are prerequisites, not foreign mutations; pending lifecycle state
   // still refuses before a migration intent or SQL can be sent.
   const {inspectReleaseCommander}=await import('./commander.js');
+  const {inspectCompletedHeldLifecycle}=await import('./held-lifecycle.js');
   const commander=inspectReleaseCommander(journal);
   if(commander.lifecycleReconciliationRequired)reject();
+  inspectCompletedHeldLifecycle(events,plan.releaseSha);
   const prior=inspectReleaseMigrationHistory(events);
   let intent=prior;
   if(mode==='apply'){
@@ -105,6 +107,6 @@ export async function executeReleaseNativeMigration({input,client,journal,mode},
  }catch{
   // A lost result append is itself uncertain. Never return a success whose
   // durable result is missing, and never repeat SQL on a subsequent apply.
-  return{status:'STOPPED',reason:'RELEASE_MIGRATION_REJECTED',productionAcceptance:false,reconcileOnly:true};
+  return{status:'STOPPED',reason:'RELEASE_MIGRATION_REJECTED',productionAcceptance:false,mutationSent:null,reconciliationRequired:true,reconcileOnly:true};
  }
 }

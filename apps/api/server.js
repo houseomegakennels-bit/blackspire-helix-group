@@ -30,6 +30,7 @@ import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task
 import { createBuyerWriterRuntime } from '../../packages/buyer-writer/runtime.js';
 import { createBuyerWriterApiLifecycle } from '../../packages/buyer-writer/api-lifecycle.js';
 import { serializeTaskWithCanonicalResult } from '../../packages/task-engine/canonical-result.js';
+import { consumeReceiverAuthority } from '../../packages/capabilities/receiver-authority.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
@@ -94,6 +95,22 @@ function writeJson(res, status, body, headers = {}) {
   return json(res, status, body);
 }
 
+export async function consumeCapabilityAuthority(req, res, { consumer = consumeReceiverAuthority, env = process.env } = {}) {
+  if (String(req.headers['content-type'] || '').toLowerCase() !== 'application/json') return json(res, 404, { error: 'not found' });
+  const expected = env.BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN?.trim() || '';
+  const authorization = String(req.headers.authorization || '');
+  const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const left = Buffer.from(expected), right = Buffer.from(supplied);
+  if (expected.length < 32 || left.length !== right.length || !crypto.timingSafeEqual(left, right)) return json(res, 404, { error: 'not found' });
+  let size = 0, raw = '';
+  try {
+    for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new Error('oversize'); raw += chunk.toString('utf8'); }
+    const body = JSON.parse(raw);
+    if (!body || Array.isArray(body) || Object.keys(body).join(',') !== 'authority') throw new Error('shape');
+    return json(res, 200, consumer(body.authority));
+  } catch { return json(res, 404, { error: 'not found' }); }
+}
+
 async function route(req, res) {
   let pathname;
   try { pathname=new URL(req.url,'http://127.0.0.1').pathname; } catch { return routeAdmitted(req,res); }
@@ -121,6 +138,7 @@ async function routeAdmitted(req, res) {
     return json(res, 400, { error: 'bad request' });
   }
   try {
+    if (u.pathname === '/api/internal/capability-authority/consume' && u.search === '' && req.method === 'POST') return consumeCapabilityAuthority(req, res);
     if (u.pathname === '/api/test-mode' && req.method === 'GET') return json(res, 200, publicTestModeStatus(TEST_MODE));
     if (u.pathname === '/api/test-mode/session' && req.method === 'POST') return testModeLogin(req, res);
     if (TEST_MODE.enabled && (u.pathname === '/api/auth/login' || u.pathname === '/telegram/webhook')) return json(res, 404, { error: 'not found' });

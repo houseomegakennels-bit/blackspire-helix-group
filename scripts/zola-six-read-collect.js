@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { collectSixReads, validateCollectorConfig, readCases, digest } from '../packages/zola-six-reads/collector.js';
+import { collectSixReads, validateCollectorConfig, requireProductionCollectorConfig, requireProductionCollectorReport, readCases, digest } from '../packages/zola-six-reads/collector.js';
 import { readRootOwnedJson } from '../packages/buyer-writer/protected-json.js';
 
 // --dry-run parses metadata only. It does not open credentials, SQLite, journal,
@@ -32,10 +32,11 @@ try {
         livePass: false, remainingGates: ['Authoritative division mutation delta', 'Process-wide egress observation', 'Supabase row-owner denial'] })}\n`);
       process.stderr.write('Six-read plan validated; no network, credentials, database, or journal opened. Live acceptance remains unverified.\n');
     } else {
+      requireProductionCollectorConfig(config);
       const { openCollectorJournal, createProductionCollectorHost } = await import('../packages/zola-six-reads/collector-host.js');
       journal = openCollectorJournal(config.journalDirectory, config.runId);
       host = createProductionCollectorHost(config);
-      const report = await collectSixReads(config, host, journal);
+      const report = requireProductionCollectorReport(await collectSixReads(config, host, journal));
       process.stdout.write(`${JSON.stringify(report)}\n`);
       process.stderr.write(`Collected ${report.results.length}/6 observed reads. Full production acceptance remains unverified; release gate refused.\n`);
       process.exitCode = report.livePass ? 0 : 2;

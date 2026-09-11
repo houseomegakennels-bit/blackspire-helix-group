@@ -5,6 +5,8 @@ import { auditReceiver, provisionMissingReceiver } from '../scripts/zola-receive
 const secret = 'test-only-capability-credential-'.repeat(2);
 const tokenKey = 'BLACKSPIRE_CAPABILITY_TOKEN';
 const workspaceKey = 'BLACKSPIRE_SELLER_ENGINE_WORKSPACE_ID';
+const authorityUrlKey='BLACKSPIRE_AUTHORITY_CONSUMER_URL',authorityTokenKey='BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN';
+const authorityUrl='https://command.example.invalid',authorityToken='test-only-authority-consumer-credential';
 const branch = 'release/zola-production-live';
 function mock(records, values) {
   return async (url, options) => {
@@ -15,12 +17,14 @@ function mock(records, values) {
     return Response.json(url.pathname.endsWith('/env') ? { envs: records } : { value: values[url.pathname.split('/').at(-1)] });
   };
 }
-function run(fetchImpl) { return auditReceiver({ vercelToken: 'test-vercel-credential', capabilityToken: secret, fetchImpl }); }
+function run(fetchImpl) { return auditReceiver({ vercelToken: 'test-vercel-credential', capabilityToken: secret, authorityConsumerUrl:authorityUrl, fetchImpl }); }
 const base = [
   { id: 'token', key: tokenKey, target: ['production', 'preview'] },
   { id: 'workspace', key: workspaceKey, target: ['production', 'preview'] },
+  {id:'authority-url',key:authorityUrlKey,target:['production','preview']},
+  {id:'authority-token',key:authorityTokenKey,target:['production','preview'],type:'sensitive'},
 ];
-const values = { token: secret, workspace: 'blackspire-command' };
+const values = { token: secret, workspace: 'blackspire-command','authority-url':authorityUrl };
 
 test('receiver audit handles authorization denial without printing API body or token', async () => {
   for (const status of [401, 403]) {
@@ -42,7 +46,7 @@ test('release preview overrides generic preview independently without disclosing
   assert.equal(report.scopes[2].keys[0].status, 'MISMATCHED');
   assert.ok(!JSON.stringify(report).includes(secret));
   assert.ok(!JSON.stringify(report).includes('wrong'));
-  assert.equal((await run(mock(base, values))).status, 'READY');
+  assert.equal((await run(mock(base, values))).status, 'PRESENT UNVERIFIED');
 });
 test('unreadable sensitive settings and duplicate scope records cannot pass', async () => {
   const sensitive = await run(mock([{ ...base[0], type: 'sensitive' }, base[1]], values));
@@ -81,20 +85,20 @@ function mutableFixture({ initial = [], failAt = 0, lostResponseAt = 0, malforme
   };
   return { records, writes, fetchImpl };
 }
-const provision = (fetchImpl) => provisionMissingReceiver({ vercelToken: 'test-vercel-credential', capabilityToken: secret, fetchImpl });
+const provision = (fetchImpl) => provisionMissingReceiver({ vercelToken: 'test-vercel-credential', capabilityToken: secret, authorityConsumerUrl:authorityUrl,authorityConsumerToken:authorityToken,fetchImpl });
 
 test('approved provisioning creates only absent production and release-preview settings', async () => {
   const fixture = mutableFixture();
   const result = await provision(fixture.fetchImpl);
-  assert.equal(result.status, 'READY');
-  assert.equal(result.created, 4);
+  assert.equal(result.status, 'PRESENT UNVERIFIED');
+  assert.equal(result.created, 8);
   assert.deepEqual(fixture.writes.map(({ key, target, gitBranch }) => [key, target, gitBranch]), [
-    [tokenKey, ['production'], undefined], [workspaceKey, ['production'], undefined],
-    [tokenKey, ['preview'], branch], [workspaceKey, ['preview'], branch],
+    [tokenKey, ['production'], undefined], [workspaceKey, ['production'], undefined],[authorityUrlKey,['production'],undefined],[authorityTokenKey,['production'],undefined],
+    [tokenKey, ['preview'], branch], [workspaceKey, ['preview'], branch],[authorityUrlKey,['preview'],branch],[authorityTokenKey,['preview'],branch],
   ]);
   assert.ok(!JSON.stringify(result).includes(secret));
   assert.equal((await provision(fixture.fetchImpl)).created, 0);
-  assert.equal(fixture.writes.length, 4);
+  assert.equal(fixture.writes.length, 8);
 });
 
 test('provisioning refuses existing mismatches before any mutation', async () => {
@@ -110,8 +114,8 @@ test('uncertain provisioning stops; fresh reconciliation preserves completed des
   assert.equal(fixture.writes.length, 2);
   assert.ok(!JSON.stringify(failed).includes(secret));
   const recovered = await provision(fixture.fetchImpl);
-  assert.equal(recovered.status, 'READY');
-  assert.equal(fixture.records.length, 4);
+  assert.equal(recovered.status, 'PRESENT UNVERIFIED');
+  assert.equal(fixture.records.length, 8);
   assert.equal(fixture.writes.filter(({ key, target }) => key === tokenKey && target[0] === 'production').length, 1);
 });
 
@@ -119,9 +123,9 @@ test('lost create response is reconciled without duplicating the completed write
   const fixture = mutableFixture({ lostResponseAt: 1 });
   assert.equal((await provision(fixture.fetchImpl)).status, 'REQUEST FAILED');
   assert.equal(fixture.records.length, 1);
-  assert.equal((await provision(fixture.fetchImpl)).status, 'READY');
-  assert.equal(fixture.records.length, 4);
-  assert.equal(fixture.writes.length, 4);
+  assert.equal((await provision(fixture.fetchImpl)).status, 'PRESENT UNVERIFIED');
+  assert.equal(fixture.records.length, 8);
+  assert.equal(fixture.writes.length, 8);
 });
 
 test('malformed create acknowledgement stops further writes and cannot claim readiness', async () => {
@@ -138,15 +142,25 @@ test('generic preview is informational when production and release overrides pai
     ...base.map((row) => ({ ...row, target: ['production'] })),
     ...base.map((row) => ({ ...row, id: `${row.id}_release`, target: ['preview'], gitBranch: branch })),
   ];
-  const scopedValues = { ...values, token_release: secret, workspace_release: 'blackspire-command' };
+  const scopedValues = {
+    ...values,
+    token_release: secret,
+    workspace_release: 'blackspire-command',
+    'authority-url_release': authorityUrl,
+  };
   const missing = await run(mock(scoped, scopedValues));
-  assert.equal(missing.status, 'READY');
+  assert.equal(missing.status, 'PRESENT UNVERIFIED');
   assert.equal(missing.scopes[1].keys[0].status, 'MISSING');
   const mismatch = await run(mock([
     ...scoped,
     ...base.map((row) => ({ ...row, id: `${row.id}_generic`, target: ['preview'] })),
-  ], { ...scopedValues, token_generic: 'wrong', workspace_generic: 'other-workspace' }));
-  assert.equal(mismatch.status, 'READY');
+  ], {
+    ...scopedValues,
+    token_generic: 'wrong',
+    workspace_generic: 'other-workspace',
+    'authority-url_generic': 'https://wrong.example.test/api/internal/capability-authority/consume',
+  }));
+  assert.equal(mismatch.status, 'PRESENT UNVERIFIED');
   assert.equal(mismatch.scopes[1].keys[0].status, 'MISMATCHED');
   assert.equal(mismatch.scopes[2].keys[0].status, 'READY');
 });

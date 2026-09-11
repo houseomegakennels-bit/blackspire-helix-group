@@ -8,9 +8,12 @@ import { supervise } from '../packages/zola-six-reads/supervise.js';
 import { createOfflineFixture, runOffline, cases } from '../packages/zola-six-reads/offline.js';
 
 function request(fixture, entry) {
+  const input={...entry.input,...(entry.id==='buyer.matches.search'?{matchesOnly:true}:{})};
+  const authority=fixture.authorityFor(entry,input);
   return fixture.transport(`https://offline.invalid${entry.route}`, { method: 'POST', headers: {
     'content-type': 'application/json', authorization: `Bearer ${fixture.token}`,
-  }, body: JSON.stringify({ ...entry.input, ...(entry.id === 'buyer.matches.search' ? { matchesOnly: true } : {}), workspaceId: fixture.workspace }) });
+    'x-blackspire-receiver-authority':Buffer.from(JSON.stringify(authority.envelope)).toString('base64url'),
+  }, body: authority.request.bodyBytes });
 }
 
 test('six actual adapter/route contracts have typed bounded synthetic witnesses and honest scope', async () => {

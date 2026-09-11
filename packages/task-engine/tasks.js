@@ -240,7 +240,7 @@ export function finishCodexDispatchWithUsage(taskId, status, { attemptId = `code
   });
 }
 
-function capabilityAttemptId(taskId, capabilityId) {
+export function capabilityAttemptId(taskId, capabilityId) {
   return `cap_dispatch_${taskId}_${String(capabilityId).replace(/[^a-z0-9]+/gi, '_')}`;
 }
 
@@ -288,7 +288,7 @@ export function finalizeCapabilitySuccess({ taskId, capabilityId, workspaceId, p
     if (!task || !workspace || task.workspace_id !== workspaceId || task.status !== 'running' || task.worker_id !== expectedWorkerId ||
       task.claim_token !== expectedClaimToken || flag?.value === 'active' || !authorized || !attempt ||
       attempt.task_id !== taskId || attempt.provider !== 'blackspire-capability' || attempt.mode !== capabilityId ||
-      attempt.status !== 'dispatching' || requestPacket?.workspaceId !== workspaceId || requestPacket?.principalId !== principalId ||
+      !(requestPacket?.receiverAuthority ? attempt.status === 'started' : ['dispatching','started'].includes(attempt.status)) || requestPacket?.workspaceId !== workspaceId || requestPacket?.principalId !== principalId ||
       requestPacket?.workerId !== (ownership?.workerId ?? null) || requestPacket?.claimDigest !== capabilityDispatchAuthority(ownership).claimDigest) {
       const error = new Error('capability authority fence changed before finalization');
       error.code = 'CAPABILITY_FINALIZATION_REFUSED';
@@ -297,7 +297,8 @@ export function finalizeCapabilitySuccess({ taskId, capabilityId, workspaceId, p
 
     const timestamp = now();
     const responsePacket = redact(JSON.stringify({ result }));
-    const attemptUpdate = run("UPDATE provider_attempts SET status='completed',response_packet=?,error='',latency_ms=0 WHERE id=? AND status='dispatching'", [responsePacket, attemptId]);
+    const allowedStatus = requestPacket?.receiverAuthority ? 'started' : attempt.status;
+    const attemptUpdate = run("UPDATE provider_attempts SET status='completed',response_packet=?,error='',latency_ms=0 WHERE id=? AND status=?", [responsePacket, attemptId, allowedStatus]);
     if (Number(attemptUpdate.changes) !== 1) throw new Error('capability attempt finalization race');
     const taskUpdate = run("UPDATE tasks SET status='completed',summary=?,evidence=?,current_stage='summarize',updated_at=? WHERE id=? AND status='running' AND worker_id IS ? AND claim_token IS ?", [JSON.stringify(summary), JSON.stringify(evidence), timestamp, taskId, expectedWorkerId, expectedClaimToken]);
     if (Number(taskUpdate.changes) !== 1) throw new Error('capability task finalization race');

@@ -3,16 +3,40 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { collectSixReads, collectAdmissionDenial, readCases, validateCollectorConfig, verifyCollectedTask, digest } from '../packages/zola-six-reads/collector.js';
+import { collectSixReads, collectAdmissionDenial, readCases, validateCollectorConfig, requireProductionCollectorConfig, requireProductionCollectorReport, verifyCollectedTask, digest } from '../packages/zola-six-reads/collector.js';
 import { openCollectorJournal } from '../packages/zola-six-reads/collector-host.js';
 import { createOfflineFixture, cases } from '../packages/zola-six-reads/offline.js';
 import { blackspireCapabilityRegistry } from '../packages/capabilities/index.js';
 import { validateCapabilityInput } from '../packages/capabilities/contract.js';
 import { observationForResult } from '../packages/capabilities/read-observation.js';
+import { persistedReceiverAuthorityBindingDigest, receiverRequest } from '../packages/capabilities/receiver-authority-contract.js';
 
 const config = { version: 1, releaseSha: 'a'.repeat(40), frontendOrigin: 'https://frontend.invalid', workspace: 'six-read-fixture', principal: 'reader', deniedPrincipal: 'other', dealId: 'DE-0001', apiPid: 100, workerPid: 101, port: 8789, databasePath: '/does/not/exist.sqlite', credentialPath: '/does/not/exist.json', journalDirectory: '/does/not/exist', runId: 'fixture-run' };
 const generation = { apiGeneration: 'b'.repeat(32), workerGeneration: 'c'.repeat(32), workerId: 'canonical-worker', apiPid: 100, workerPid: 101, apiStartTime: '1', workerStartTime: '2' };
 const denialSnapshot=()=>({databaseIdentity:{device:1,inode:1},tables:['tasks','unified_inputs','provider_attempts','provider_usage'].map(name=>({name,rows:0,digest:'0'.repeat(64)}))});
+
+test('production collection requires v5 authority evidence for all six reads', () => {
+  for (const version of [1, 2, 3, 4]) assert.throws(
+    () => requireProductionCollectorConfig({ version }),
+    /PRODUCTION_RECEIVER_AUTHORITY_REQUIRED/,
+  );
+  const v5 = { version: 5 };
+  assert.equal(requireProductionCollectorConfig(v5), v5);
+  const valid = {
+    receiverAuthorityPass: true,
+    results: Array.from({ length: 6 }, () => ({ authorityVersion: 1, receiverAuthorityDigest: 'a'.repeat(64) })),
+  };
+  assert.equal(requireProductionCollectorReport(valid), valid);
+  for (const mutate of [
+    report => { report.receiverAuthorityPass = false; },
+    report => { report.results.pop(); },
+    report => { report.results[0].authorityVersion = 0; },
+    report => { report.results[0].receiverAuthorityDigest = 'not-a-digest'; },
+  ]) {
+    const invalid = structuredClone(valid); mutate(invalid);
+    assert.throws(() => requireProductionCollectorReport(invalid), /PRODUCTION_RECEIVER_AUTHORITY_FAILED/);
+  }
+});
 async function fixture() {
   const offline = createOfflineFixture(), records = new Map(), events = []; let posts = 0;
   const store = { events: () => structuredClone(events), append: e => events.push(structuredClone(e)) };
@@ -25,7 +49,7 @@ async function fixture() {
       const index = readCases(config.dealId).findIndex(e => e.text === body.text), entry = cases[index], capability = blackspireCapabilityRegistry.get(entry.id);
       assert.equal(events.at(-1).type, 'intent', 'journal precedes admission');
       assert.deepEqual(Object.keys(body).sort(), ['channel','executionIntent','idempotencyKey','text','workspaceId']);
-      const result = await capability.execute({ adapters: offline.adapters, workspace: { id: config.workspace }, signal: AbortSignal.timeout(2000) }, validateCapabilityInput(capability, entry.input));
+      const result = await capability.execute({ adapters: offline.syntheticAdapters, workspace: { id: config.workspace }, signal: AbortSignal.timeout(2000) }, validateCapabilityInput(capability, entry.input));
       const task = { id: `task-${index}`, workspace_id: config.workspace, actor_id: config.principal, source_channel: 'jarvis', authority_class: 'authenticated_admin', execution_intent: 'read_only', idempotency_key: `unified:jarvis:${body.idempotencyKey}`, request: body.text, status: 'completed', worker_id: generation.workerId, claim_token: 'fixture-claim',
         evidence: JSON.stringify({ capabilityId: entry.id, readOnly: true, changedFiles: [], resultCount: 1, readObservation: observationForResult(result) }) };
       const attempts = [{ id: `receipt-${index}`, task_id: task.id, provider: 'blackspire-capability', mode: entry.id, status: 'completed', request_packet: JSON.stringify({ workspaceId: config.workspace, principalId: config.principal, workerId: generation.workerId, claimDigest: digest('fixture-claim') }), response_packet: JSON.stringify({ result }) }];
@@ -114,6 +138,33 @@ test('wrong frontend, principal, permission evidence, unbounded results or dupli
     r => { const e = JSON.parse(r.task.evidence); e.readObservation.forbiddenAttempts = 1; r.task.evidence = JSON.stringify(e); },
     r => { const p = JSON.parse(r.attempts[0].request_packet); p.workerId = 'e'.repeat(32); r.attempts[0].request_packet = JSON.stringify(p); },
   ]) { const bad = structuredClone(record); mutate(bad); assert.throws(() => verifyCollectedTask(bad, config, entry, key, generation)); }
+});
+
+test('v5 requires an exact persisted receiver authority and matching receiver echo', async()=>{
+  const f=await fixture();await collectSixReads(config,f.host,f.store);
+  const key=`zola-six:${config.runId}:0`,record=structuredClone(f.records.get(key)),entry=readCases(config.dealId)[0];
+  const v5={...config,version:5,releaseRunId:'11111111-1111-4111-8111-111111111111',observerDatabaseConfigPath:'/protected/observer.json',denialReceiptPath:'/protected/denial.json'};
+  assert.equal(validateCollectorConfig(v5).version,5);
+  const request=JSON.parse(record.attempts[0].request_packet),input=validateCapabilityInput(blackspireCapabilityRegistry.get(entry.capability),cases[0].input);
+  const canonical=receiverRequest(entry.capability,config.workspace,input),issuedAt=Date.now();
+  request.input=input;request.receiverAuthority={version:1,releaseSha:config.releaseSha,releaseRunId:v5.releaseRunId,apiGeneration:generation.apiGeneration,
+    workerGeneration:generation.workerGeneration,workspaceId:config.workspace,principalId:config.principal,principalSecurityVersion:1,
+    grantId:'collector-grant',grantVersion:1,grantSecurityVersion:1,capabilityId:entry.capability,permission:entry.permissions[0],
+    taskId:record.task.id,attemptId:record.attempts[0].id,workerId:generation.workerId,claimDigest:request.claimDigest,
+    method:canonical.method,path:canonical.path,bodySha256:canonical.bodySha256,issuedAt,expiresAt:issuedAt+15000,proofDigest:'e'.repeat(64)};
+  record.attempts[0].request_packet=JSON.stringify(request);
+  const evidence=JSON.parse(record.task.evidence);evidence.readObservation.receiverAuthorityDigest=persistedReceiverAuthorityBindingDigest(request.receiverAuthority);record.task.evidence=JSON.stringify(evidence);
+  const accepted=verifyCollectedTask(record,v5,entry,key,generation);assert.equal(accepted.authorityVersion,1);assert.equal(accepted.receiverAuthorityDigest,evidence.readObservation.receiverAuthorityDigest);
+  for(const mutate of [
+    r=>{const p=JSON.parse(r.attempts[0].request_packet);delete p.receiverAuthority;r.attempts[0].request_packet=JSON.stringify(p);},
+    r=>{const p=JSON.parse(r.attempts[0].request_packet);p.receiverAuthority.releaseRunId='other-run';r.attempts[0].request_packet=JSON.stringify(p);},
+    r=>{const p=JSON.parse(r.attempts[0].request_packet);p.receiverAuthority.apiGeneration='f'.repeat(32);r.attempts[0].request_packet=JSON.stringify(p);},
+    r=>{const p=JSON.parse(r.attempts[0].request_packet);p.receiverAuthority.principalId='other';r.attempts[0].request_packet=JSON.stringify(p);},
+    r=>{const p=JSON.parse(r.attempts[0].request_packet);p.receiverAuthority.taskId='other';r.attempts[0].request_packet=JSON.stringify(p);},
+    r=>{const p=JSON.parse(r.attempts[0].request_packet);p.receiverAuthority.bodySha256='f'.repeat(64);r.attempts[0].request_packet=JSON.stringify(p);},
+    r=>{const p=JSON.parse(r.attempts[0].request_packet);p.receiverAuthority.proofDigest='f'.repeat(64);r.attempts[0].request_packet=JSON.stringify(p);},
+    r=>{const e=JSON.parse(r.task.evidence);e.readObservation.receiverAuthorityDigest='f'.repeat(64);r.task.evidence=JSON.stringify(e);},
+  ]){const bad=structuredClone(record);mutate(bad);assert.throws(()=>verifyCollectedTask(bad,v5,entry,key,generation));}
 });
 test('durable journal rejects concurrent run, preserves intents across reopen, and refuses corruption', () => {
   const directory = fs.mkdtempSync(path.join(process.getuid() === 0 ? '/root' : os.tmpdir(), 'zola-collector-test-')); fs.chmodSync(directory, 0o700);

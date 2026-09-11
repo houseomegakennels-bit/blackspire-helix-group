@@ -5,7 +5,7 @@ const PROJECT = 'prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou';
 const TEAM = 'team_CaRyRaulJaFnCLSfTdyRYNIW';
 const BRANCH = 'release/zola-production-live';
 const WORKSPACE = 'blackspire-command';
-const KEYS = ['BLACKSPIRE_CAPABILITY_TOKEN', 'BLACKSPIRE_SELLER_ENGINE_WORKSPACE_ID'];
+const KEYS = ['BLACKSPIRE_CAPABILITY_TOKEN', 'BLACKSPIRE_SELLER_ENGINE_WORKSPACE_ID', 'BLACKSPIRE_AUTHORITY_CONSUMER_URL', 'BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN'];
 const MAX_BYTES = 1024 * 1024;
 class AuditError extends Error {}
 
@@ -39,8 +39,14 @@ function equal(value, expected) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export async function auditReceiver({ vercelToken, capabilityToken, fetchImpl = fetch }) {
-  if (!vercelToken || !capabilityToken || Buffer.byteLength(capabilityToken.trim()) < 32) {
+export async function auditReceiver({ vercelToken, capabilityToken, authorityConsumerUrl, fetchImpl = fetch }) {
+  let authorityOrigin;
+  try {
+    const parsed = new URL(authorityConsumerUrl ?? '');
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw new Error();
+    authorityOrigin = parsed.origin;
+  } catch {}
+  if (!vercelToken || !capabilityToken || Buffer.byteLength(capabilityToken.trim()) < 32 || !authorityOrigin) {
     return { status: 'CREDENTIAL REQUIRED' };
   }
   try {
@@ -59,9 +65,14 @@ export async function auditReceiver({ vercelToken, capabilityToken, fetchImpl = 
       // Other branches are metadata-only and never decrypted.
       const relevant = row.gitBranch == null || row.gitBranch === BRANCH;
       let matches = null;
-      if (relevant && row.type !== 'sensitive') {
+      // Vercel intentionally does not disclose a sensitive value. Presence is
+      // useful inventory evidence, but equality requires a live single-use
+      // authority consumption and cannot be claimed by this metadata audit.
+      if (relevant && row.type === 'sensitive' && row.key === 'BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN') matches = null;
+      else if (relevant && row.type !== 'sensitive') {
         const detail = await requestJson(`/v1/projects/${PROJECT}/env/${encodeURIComponent(row.id)}`, vercelToken, fetchImpl);
-        matches = equal(detail.value, row.key === KEYS[0] ? capabilityToken : WORKSPACE);
+        const expected = row.key === KEYS[0] ? capabilityToken : row.key === 'BLACKSPIRE_AUTHORITY_CONSUMER_URL' ? authorityConsumerUrl : WORKSPACE;
+        matches = equal(detail.value, expected);
       }
       records.push({ key: row.key, target, gitBranch: row.gitBranch ?? null, present: true, matches });
     }
@@ -71,11 +82,15 @@ export async function auditReceiver({ vercelToken, capabilityToken, fetchImpl = 
         const override = scope === BRANCH ? candidates.filter((row) => row.gitBranch === BRANCH) : [];
         const effective = override.length ? override : candidates.filter((row) => row.gitBranch === null);
         return { key, present: effective.length > 0, matches: effective.length === 1 ? effective[0].matches : null,
-          status: effective.length === 0 ? 'MISSING' : effective.length > 1 ? 'AMBIGUOUS' : effective[0].matches === null ? 'ACCESS REQUIRED' : effective[0].matches ? 'READY' : 'MISMATCHED' };
+          status: effective.length === 0 ? 'MISSING' : effective.length > 1 ? 'AMBIGUOUS' : effective[0].matches === null
+            ? key === 'BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN' && effective[0].present ? 'PRESENT UNVERIFIED' : 'ACCESS REQUIRED'
+            : effective[0].matches ? 'READY' : 'MISMATCHED' };
       });
       return { scope, keys };
     });
-    return { status: scopes.filter((scope) => scope.scope === 'production' || scope.scope === BRANCH).every((scope) => scope.keys.every((key) => key.status === 'READY')) ? 'READY' : 'ACTION REQUIRED', records, scopes };
+    const required=scopes.filter((scope) => scope.scope === 'production' || scope.scope === BRANCH);
+    const configured=required.every((scope)=>scope.keys.every((key)=>['READY','PRESENT UNVERIFIED'].includes(key.status)));
+    return { status: configured ? 'PRESENT UNVERIFIED' : 'ACTION REQUIRED', records, scopes };
   } catch (error) {
     return { status: error instanceof AuditError ? error.message : 'REQUEST FAILED' };
   }
@@ -85,21 +100,22 @@ export async function auditReceiver({ vercelToken, capabilityToken, fetchImpl = 
 // A failed/uncertain POST stops here. A later operator run first re-reads all state,
 // so it can preserve successful desired rows without replaying an uncertain write.
 export async function provisionMissingReceiver(options) {
+  if (!options.authorityConsumerToken || options.authorityConsumerToken !== options.authorityConsumerToken.trim() || Buffer.byteLength(options.authorityConsumerToken) < 32) return { status: 'CREDENTIAL REQUIRED' };
   const before = await auditReceiver(options);
   if (!before.scopes) return before;
   const required = before.scopes.filter(({ scope }) => scope !== 'preview');
-  if (required.some(({ keys }) => keys.some(({ status }) => !['READY', 'MISSING'].includes(status)))) {
+  if (required.some(({ keys }) => keys.some(({ status }) => !['READY', 'PRESENT UNVERIFIED', 'MISSING'].includes(status)))) {
     return { status: 'EXISTING CONFIGURATION CONFLICT' };
   }
   let created = 0;
   try {
     for (const { scope, keys } of required) {
       for (const { key, status } of keys) {
-        if (status === 'READY') continue;
+        if (status === 'READY' || status === 'PRESENT UNVERIFIED') continue;
         const result = await requestJson(`/v10/projects/${PROJECT}/env`, options.vercelToken, options.fetchImpl ?? fetch, {
           method: 'POST',
-          body: { key, value: key === KEYS[0] ? options.capabilityToken.trim() : WORKSPACE,
-            type: key === KEYS[0] ? 'encrypted' : 'plain',
+          body: { key, value: key === KEYS[0] ? options.capabilityToken.trim() : key === 'BLACKSPIRE_AUTHORITY_CONSUMER_URL' ? options.authorityConsumerUrl : key === 'BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN' ? options.authorityConsumerToken : WORKSPACE,
+            type: key === 'BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN' ? 'sensitive' : key === KEYS[0] ? 'encrypted' : 'plain',
             target: [scope === 'production' ? 'production' : 'preview'],
             ...(scope === BRANCH ? { gitBranch: BRANCH } : {}) },
         });
@@ -125,9 +141,12 @@ export async function provisionMissingReceiver(options) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const action = process.env.ZOLA_RECEIVER_ACTION ?? 'audit';
-  const options = { vercelToken: process.env.VERCEL_TOKEN, capabilityToken: process.env.ZOLA_CAPABILITY_TOKEN };
+  const options = { vercelToken: process.env.VERCEL_TOKEN, capabilityToken: process.env.ZOLA_CAPABILITY_TOKEN,
+    authorityConsumerUrl:process.env.ZOLA_AUTHORITY_CONSUMER_URL,authorityConsumerToken:process.env.ZOLA_AUTHORITY_CONSUMER_TOKEN };
   const report = action === 'provision-missing' ? await provisionMissingReceiver(options)
     : action === 'audit' ? await auditReceiver(options) : { status: 'INVALID ACTION' };
   process.stdout.write(`${JSON.stringify(report)}\n`);
-  if (report.status !== 'READY') process.exitCode = 1;
+  // PRESENT UNVERIFIED is a successful metadata inventory. It never satisfies
+  // the separate live single-use consumption gate in the release commander.
+  if (!['READY','PRESENT UNVERIFIED'].includes(report.status)) process.exitCode = 1;
 }

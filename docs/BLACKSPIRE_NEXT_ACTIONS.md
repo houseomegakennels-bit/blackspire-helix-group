@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-11 — continue after receiver authority propagation
+
+1. Finish exact-head verification for the receiver-authority tranche. Preserve the single-use durable permit, API-only consumer credential, bounded route input and binding echo; do not restore bearer/workspace-only acceptance.
+2. Run the authority-required v5 collector against an exact-SHA candidate and then the live deployment. Close the remaining deployed-route, application-owner, mutation-attempt and process-wide egress witnesses before changing `livePass:false`.
+3. The mandated recovery SHA `2c0b600c268faa0571f08322e16d7f81f37789be` is authority-incompatible. Seal an approved authority-aware recovery target or a governed all-route sidecar; do not weaken current receivers for compatibility.
+4. Wire the remaining native lifecycle, rollback, collector, n8n, migration, protected merge, same-SHA deployment and smoke stages into the guarded commander. Keep it fail-closed while any gate is absent.
+5. Owner/provider action remains required for the Supabase ACL and Vercel deployment enablement. Do not represent either as internally cleared or as the sole blocker.
+
 ## 2026-09-10 — continue after held lifecycle preparation
 
 1. Preserve the HELD-only journal and native process observer. Finish production lifecycle serialization including automatic systemd restarts, protected start authority, health/readiness and gated opening; do not treat injected disposable starts as production acceptance.

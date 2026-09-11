@@ -6,7 +6,7 @@ const API_UNIT = 'ops/runtime-ownership/blackspire-command.service';
 const WORKER_UNIT = 'ops/runtime-ownership/blackspire-command-worker.service';
 const API_SECRET_FILE = '/etc/blackspire/command-api.env';
 const SHARED_FILE = '/etc/blackspire/command.env';
-const API_AUTH_KEYS = ['COMMAND_ADMIN_PASSWORD_HASH', 'COMMAND_ADMIN_TOKEN', 'SESSION_SECRET'];
+const API_AUTH_KEYS = ['COMMAND_ADMIN_PASSWORD_HASH', 'COMMAND_ADMIN_TOKEN', 'SESSION_SECRET', 'BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN'];
 
 function unit(path) {
   return fs.readFileSync(path, 'utf8');

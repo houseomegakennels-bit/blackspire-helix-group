@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { type SupabaseClient } from "@supabase/supabase-js";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
+import { readBoundedRequestBody } from "@/lib/bounded-request-body";
 
 export const dynamic = "force-dynamic";
 
@@ -59,9 +60,9 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleRead(request: NextRequest) {
-  let body: unknown;
+  let body: unknown; let bodyBytes: string;
   try {
-    body = await request.json();
+    bodyBytes = await readBoundedRequestBody(request); body = JSON.parse(bodyBytes);
   } catch {
     return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
   }
@@ -69,7 +70,8 @@ async function handleRead(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
   }
   const input = body as { workspaceId?: unknown; ownerName?: unknown; propertyAddress?: unknown; sellerLeadId?: unknown; dealId?: unknown };
-  if (!authorizeInternalCapability(request, input.workspaceId)) {
+  const authority = await authorizeInternalCapability(request, bodyBytes, input.workspaceId, "nexus.enrichment.status");
+  if (!authority) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
   const allowedKeys = ["workspaceId", "ownerName", "propertyAddress", "sellerLeadId", "dealId"];
@@ -86,7 +88,7 @@ async function handleRead(request: NextRequest) {
   }
 
   let scope;
-  try { scope = productionCapabilityReadScope(); }
+  try { scope = productionCapabilityReadScope(authority.bindingDigest); }
   catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
   const supabase = scope.client;
   if (!supabase) return NextResponse.json({ ok: false, error: "Nexus capability unavailable" }, { status: 503 });

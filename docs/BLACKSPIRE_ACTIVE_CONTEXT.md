@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-11 — receiver authority tranche in final verification
+
+The current release worktree contains an authority-aware receiver implementation pending commit. Production capability dispatches now persist and transmit a single-use opaque permit bound to current principal/grant/workspace/capability/task/attempt/release/generation/request state. The Command API consumes it with a durable compare-and-swap before any frontend read scope opens, and frontend responses echo the binding digest including the persisted proof digest. API-only/Vercel configuration and worker secret isolation are wired; metadata-only Vercel inspection remains explicitly unverified. Collector contract version 5 rejects legacy receipts and verifies the persisted permit and echo, but candidate/live orchestration remains incomplete. Source and focused tests pass. Deployed route containment, compatible recovery and executable release orchestration remain unfinished. Supabase ACL and Vercel deployment enablement are external blockers, but they are not the only remaining blockers.
+
 ## 2026-09-10 — held lifecycle preparation, release still gated
 
 The HELD lifecycle transaction now retains unknown start outcomes without replay and verifies selected native production process bindings. It deliberately lacks a production start adapter and OPEN publisher; external systemd lifecycle serialization and complete activation acceptance remain outstanding. The routing collector captures sanitized source-bound path/build metadata while explicitly retaining manifest and historical-route gaps. Journal failures report unknown mutation status instead of asserting none occurred.

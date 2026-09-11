@@ -9,7 +9,7 @@ const BRANCH = 'release/zola-production-live';
 const REPO = 'houseomegakennels-bit/blackspire-helix-group';
 class RebuildError extends Error {}
 
-export async function rebuildReceivers({ vercelToken, capabilityToken, githubToken, previewSha,
+export async function rebuildReceivers({ vercelToken, capabilityToken, authorityConsumerUrl, githubToken, previewSha,
   fetchImpl = fetch, audit = auditReceiver, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = Date.now, emit = () => {}, creator }) {
   const deployments = [];
@@ -52,21 +52,24 @@ export async function rebuildReceivers({ vercelToken, capabilityToken, githubTok
         !/^[a-z0-9-]+\.vercel\.app$/.test(value.url)) fail('DEPLOYMENT IDENTITY MISMATCH');
   }
   async function probe(host) {
-    const cases = [[capabilityToken, 'blackspire-command', 400], [capabilityToken, 'zola-receiver-denied-workspace', 404], ['zola-invalid-token', 'blackspire-command', 404]];
-    for (const [token, workspaceId, expected] of cases) {
+    // A deployment rebuild cannot mint a persisted single-use authority proof. It
+    // therefore verifies only that every legacy bearer/workspace form is denied;
+    // the guarded six-read collector owns the positive authority probe.
+    const cases = [[capabilityToken, 'blackspire-command'], [capabilityToken, 'zola-receiver-denied-workspace'], ['zola-invalid-token', 'blackspire-command']];
+    for (const [token, workspaceId] of cases) {
       const response = await fetchImpl(`https://${host}/api/internal/capabilities/seller-opportunities`, {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspaceId, limit: 0 }),
       });
-      const valid = response.status === expected && (response.headers.get('content-type') ?? '').includes('application/json');
+      const valid = response.status === 404 && (response.headers.get('content-type') ?? '').includes('application/json');
       await response.body?.cancel();
       if (!valid) fail('RECEIVER AUTH PROBE FAILED');
     }
   }
   try {
-    if (!vercelToken || !githubToken || !capabilityToken || !/^[a-f0-9]{40}$/.test(previewSha ?? '')) fail('CREDENTIAL OR SHA REQUIRED');
-    if ((await audit({ vercelToken, capabilityToken, fetchImpl })).status !== 'READY') fail('RECEIVER CONFIG NOT READY');
+    if (!vercelToken || !githubToken || !capabilityToken || !/^https:\/\/[a-z0-9.-]+$/.test(authorityConsumerUrl ?? '') || !/^[a-f0-9]{40}$/.test(previewSha ?? '')) fail('CREDENTIAL OR SHA REQUIRED');
+    if (!['READY','PRESENT UNVERIFIED'].includes((await audit({ vercelToken, capabilityToken, authorityConsumerUrl, fetchImpl })).status)) fail('RECEIVER CONFIG NOT READY');
     for (const target of ['preview', 'production']) {
       await refs();
       const sha = target === 'preview' ? previewSha : MAIN;
@@ -92,10 +95,10 @@ export async function rebuildReceivers({ vercelToken, capabilityToken, githubTok
       }
       if (!ready) fail('DEPLOYMENT TIMEOUT');
       await probe(value.url);
-      summary.status = 'RECEIVER VERIFIED';
+      summary.status = 'LEGACY DENIAL VERIFIED';
       emit({ ...summary });
     }
-    return { status: 'READY', deployments };
+    return { status: 'DENIAL READY', deployments };
   } catch (error) {
     return { status: error instanceof RebuildError ? error.message : 'REQUEST FAILED', deployments,
       nextAction: 'INSPECT RECORDED DEPLOYMENTS BEFORE ANY RETRY' };
@@ -104,7 +107,8 @@ export async function rebuildReceivers({ vercelToken, capabilityToken, githubTok
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const report = await rebuildReceivers({ vercelToken: process.env.VERCEL_TOKEN, capabilityToken: process.env.ZOLA_CAPABILITY_TOKEN,
+    authorityConsumerUrl: process.env.ZOLA_AUTHORITY_CONSUMER_URL,
     githubToken: process.env.GITHUB_TOKEN, previewSha: process.env.GITHUB_SHA, emit: (value) => process.stdout.write(`${JSON.stringify(value)}\n`) });
   process.stdout.write(`${JSON.stringify(report)}\n`);
-  if (report.status !== 'READY') process.exitCode = 1;
+  if (report.status !== 'DENIAL READY') process.exitCode = 1;
 }

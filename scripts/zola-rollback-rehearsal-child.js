@@ -84,7 +84,7 @@ try {
       assert.equal(handle(req).taskId, admission.taskId);
       const task = claimNext({ workerId: workerGeneration });
       assert.equal(task.id, admission.taskId); assert.equal(selectCapabilityForTask(task).id, entry.id);
-      assert.equal((await processTask(task, { workerId: workerGeneration, claimToken: task.claim_token, capabilityOptions: { adapters: fixture.adapters } })).status, 'completed');
+      assert.equal((await processTask(task, { workerId: workerGeneration, claimToken: task.claim_token, capabilityOptions: { adapters: fixture.syntheticAdapters } })).status, 'completed');
       const attempts = taskRecords(task.id).providerAttempts;
       assert.equal(attempts.length, 1); assert.equal(attempts[0].status, 'completed');
       assert.equal(getTask(task.id).actor_id, principalId);
@@ -98,8 +98,8 @@ try {
     const started = new Promise((resolve) => { signalStarted = resolve; });
     const held = new Promise((resolve) => { releaseResult = resolve; });
     let staleCalls = 0;
-    const adapters = { ...fixture.adapters, sellerOpportunities: async (input) => {
-      staleCalls += 1; const result = await fixture.adapters.sellerOpportunities(input);
+    const adapters = { ...fixture.syntheticAdapters, sellerOpportunities: async (input) => {
+      staleCalls += 1; const result = await fixture.syntheticAdapters.sellerOpportunities(input);
       signalStarted(); await held; return result;
     } };
     const processing = processTask(staleTask, { workerId: workerGeneration, claimToken: staleTask.claim_token, capabilityOptions: { adapters } });

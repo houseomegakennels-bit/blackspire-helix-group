@@ -2,8 +2,10 @@
 // persists it only with the same successful authority-fenced finalization.
 const observations = new WeakMap();
 const keys = ['version','releaseSha','transport','requests','responseBytes','forbiddenAttempts','latencyMs','scope'];
-export function decodeObservedResponse(text, response, route) {
+export function decodeObservedResponse(text, response, route, expectedAuthorityBinding = null) {
   const result = JSON.parse(text);
+  const authorityBinding = response.headers.get('x-blackspire-authority-binding');
+  if (expectedAuthorityBinding && authorityBinding !== expectedAuthorityBinding) throw new Error('Capability receiver authority binding rejected');
   const header = response.headers.get('x-zola-read-observation');
   if (header === null) return result; // Older receiver: acceptance cannot infer observation.
   try {
@@ -16,7 +18,7 @@ export function decodeObservedResponse(text, response, route) {
         !Number.isSafeInteger(value.responseBytes) || value.responseBytes < 0 || value.responseBytes > 2*1024*1024 ||
         !Number.isSafeInteger(value.latencyMs) || value.latencyMs < 0 || value.latencyMs > 11000 ||
         !/^\/api\/internal\/capabilities\/(seller-opportunities|buyer-profiles|deal-records|deal-analysis|nexus-enrichment)$/.test(route)) throw new Error();
-    observations.set(result, Object.freeze({ ...value, route }));
+    observations.set(result, Object.freeze({ ...value, route, ...(authorityBinding ? { receiverAuthorityDigest: authorityBinding } : {}) }));
     return result;
   } catch { throw new Error('Capability read observation rejected'); }
 }

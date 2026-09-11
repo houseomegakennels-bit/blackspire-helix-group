@@ -33,6 +33,16 @@ export const cases = Object.freeze([
   ['nexus.enrichment.status', 'nexus-enrichment', { dealId: 'DE-0001' }, null],
 ].map(([id, route, input, collection]) => Object.freeze({ id, route: `/api/internal/capabilities/${route}`, input: Object.freeze(input), collection })));
 
+function syntheticReceiverRequest(capabilityId,workspaceId,input){
+  const entry=cases.find((item)=>item.id===capabilityId),body={workspaceId};
+  if(capabilityId==='seller.opportunities.search'||capabilityId==='deal.records.search')body.limit=input.limit;
+  else if(capabilityId==='deal.analysis.get')body.dealId=input.dealId;
+  else if(capabilityId==='nexus.enrichment.status'){for(const key of ['ownerName','propertyAddress','sellerLeadId','dealId'])if(input[key])body[key]=input[key];}
+  else{Object.assign(body,input);if(capabilityId==='buyer.matches.search')body.matchesOnly=true;}
+  const bodyBytes=JSON.stringify(body);return {method:'POST',path:entry.route,bodyBytes,bodySha256:createHash('sha256').update(bodyBytes).digest('hex')};
+}
+function syntheticBindingDigest(envelope){const {proof,...claims}=envelope,proofDigest=createHash('sha256').update(proof).digest('hex');return createHash('sha256').update(JSON.stringify({...claims,proofDigest})).digest('hex');}
+
 export function createOfflineFixture({ databaseError = false, errorTable = null, configured = true, releaseSha = "a".repeat(40) } = {}) {
   const events = [];
   const token = 'synthetic-capability-fixture-value-00001';
@@ -91,7 +101,8 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
   const dependencies = {
     NextResponse: { json: (body, options) => Response.json(body, options) },
     process: Object.freeze({ env }), Buffer, timingSafeEqual,
-    productionCapabilityReadScope: () => { if (!configured) throw new Error("fixture unavailable"); return makeReadScope({ origin: "https://abcdefghijklmnopqrst.supabase.co", key: "synthetic-read-key", releaseSha, fetchImpl: rest }); },
+    readBoundedRequestBody: async (request) => { const value=await request.text();if(Buffer.byteLength(value)>32768)throw new Error('oversize');return value; },
+    productionCapabilityReadScope: (receiverAuthorityDigest) => { if (!configured) throw new Error("fixture unavailable"); return makeReadScope({ origin: "https://abcdefghijklmnopqrst.supabase.co", key: "synthetic-read-key", releaseSha, receiverAuthorityDigest, fetchImpl: rest }); },
     createClient: () => db, getSupabaseAdmin: () => configured ? db : null,
     getEnvState: () => ({ enabled: configured }),
     fetch: () => reject('external_network_attempt'),
@@ -110,7 +121,15 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
     + dealSource.slice(dealSource.indexOf('function buildUnderwritingSnapshot('), dealSource.indexOf('function buildDealAutomationWorkflow('));
   Object.assign(dependencies, load('({ toLead, buildUnderwritingSnapshot })', pureSource, dependencies));
   dependencies.getDealEngineAnalysisForCapability = helper('deal', 'getDealEngineAnalysisForCapability', '\nexport async function getDealEngineDealDetail', dependencies);
-  dependencies.authorizeInternalCapability = load('authorizeInternalCapability', read('lib/internal-capability-auth.ts'), dependencies);
+  dependencies.authorizeInternalCapability = async (request,bodyBytes,workspaceId,capabilityId) => {
+    try {
+      if(workspaceId!==workspace||request.headers.get('authorization')!==`Bearer ${token}`)return null;
+      const envelope=JSON.parse(Buffer.from(request.headers.get('x-blackspire-receiver-authority')||'','base64url').toString('utf8'));
+      if(envelope.workspaceId!==workspace||envelope.capabilityId!==capabilityId||envelope.path!==new URL(request.url).pathname||
+        envelope.bodySha256!==createHash('sha256').update(bodyBytes).digest('hex'))return null;
+      return {bindingDigest:syntheticBindingDigest(envelope)};
+    } catch { return null; }
+  };
   for (const [file, name, end] of [
     ['seller', 'listSellerLeadsForCapability', '\nexport async function getSellerLeadDetail'],
     ['buyer', 'listBuyerProfilesForCapability', '\nfunction classifyBuyerType'],
@@ -132,7 +151,23 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
     adapterEnv[`BLACKSPIRE_${name}_CAPABILITY_URL`] = 'https://offline.invalid';
     adapterEnv[`BLACKSPIRE_${name}_CAPABILITY_TOKEN`] = token;
   }
-  return { events, db, transport, workspace, token, adapters: createDivisionAdapters(adapterEnv, transport) };
+  const adapters=createDivisionAdapters(adapterEnv,transport);
+  const authorityFor=(entry,input=entry.input)=>{
+    const request=syntheticReceiverRequest(entry.id,workspace,input),issuedAt=Date.now();
+    const permission=blackspireCapabilityRegistry.get(entry.id).requiredPermissions[0];
+    const envelope={version:1,releaseSha,releaseRunId:'11111111-1111-4111-8111-111111111111',apiGeneration:'b'.repeat(32),workerGeneration:'c'.repeat(32),
+      workspaceId:workspace,principalId:'synthetic-principal',principalSecurityVersion:1,grantId:'synthetic-grant',grantVersion:1,grantSecurityVersion:1,
+      capabilityId:entry.id,permission,taskId:'synthetic-task',attemptId:'synthetic-attempt',workerId:'synthetic-worker',claimDigest:'d'.repeat(64),
+      method:request.method,path:request.path,bodySha256:request.bodySha256,issuedAt,expiresAt:issuedAt+15000,proof:'e'.repeat(43)};
+    return {envelope,request};
+  };
+  const syntheticAdapters=Object.freeze(Object.fromEntries(Object.entries(adapters).map(([name,adapter])=>[name,(input)=>{
+    const id=name==='sellerOpportunities'?'seller.opportunities.search':name==='dealRecords'?'deal.records.search':name==='dealAnalysis'?'deal.analysis.get':
+      name==='nexusEnrichment'?'nexus.enrichment.status':input.matchesOnly===true?'buyer.matches.search':'buyer.profiles.search';
+    const entry=cases.find((item)=>item.id===id),requestInput={...input};delete requestInput.workspaceId;delete requestInput.signal;
+    const authority=authorityFor(entry,requestInput);return adapter({...input,receiverAuthority:authority.envelope,receiverRequest:authority.request});
+  }])));
+  return { events, db, transport, workspace, token, adapters, syntheticAdapters, authorityFor };
 }
 
 export async function runOffline() {
@@ -140,7 +175,9 @@ export async function runOffline() {
   for (const entry of cases) {
     const capability = blackspireCapabilityRegistry.get(entry.id);
     const before = fixture.events.length;
-    const result = validateCapabilityOutput(capability, await capability.execute({ adapters: fixture.adapters, workspace: { id: fixture.workspace }, signal: AbortSignal.timeout(2000) }, validateCapabilityInput(capability, entry.input)));
+    const validatedInput=validateCapabilityInput(capability,entry.input),authority=fixture.authorityFor(entry,validatedInput);
+    const boundAdapters=Object.freeze(Object.fromEntries(Object.entries(fixture.adapters).map(([name,adapter])=>[name,(input)=>adapter({...input,receiverAuthority:authority.envelope,receiverRequest:authority.request})])));
+    const result = validateCapabilityOutput(capability, await capability.execute({ adapters: boundAdapters, workspace: { id: fixture.workspace }, signal: AbortSignal.timeout(2000) }, validatedInput));
     const count = entry.collection ? result[entry.collection].length : 1;
     assert.ok(count > 0 && count <= 5, 'missing or excessive synthetic witness');
     if (entry.id === 'deal.analysis.get') { assert.equal(result.found, true); assert.equal(result.maximumAllowableOffer, 150000); }

@@ -55,14 +55,17 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           ZOLA_CAPABILITY_TOKEN: ${{ secrets.ZOLA_CAPABILITY_TOKEN }}
+          ZOLA_AUTHORITY_CONSUMER_URL: ${{ vars.ZOLA_AUTHORITY_CONSUMER_URL }}
+          ZOLA_AUTHORITY_CONSUMER_TOKEN: ${{ secrets.ZOLA_AUTHORITY_CONSUMER_TOKEN }}
           # One explicitly reviewed transition; subsequent pushes only audit.
-          ZOLA_RECEIVER_ACTION: ${{ github.event.before == '42b7012fdd379d09f526924f11acddcff9cf2e70' && 'provision-missing' || 'audit' }}
+          ZOLA_RECEIVER_ACTION: ${{ github.event.before == '87f4b4d137e087e53b6c79bd4d22b32c91fe0401' && 'provision-missing' || 'audit' }}
         run: node scripts/zola-receiver-maintenance.mjs
       - name: Rebuild the approved candidate and unchanged production main
         if: github.event.before == '7072d929adce6766fb1e7e4adf56683002bd9068'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           ZOLA_CAPABILITY_TOKEN: ${{ secrets.ZOLA_CAPABILITY_TOKEN }}
+          ZOLA_AUTHORITY_CONSUMER_URL: ${{ vars.ZOLA_AUTHORITY_CONSUMER_URL }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/zola-receiver-rebuild.mjs
       - name: Install pinned CLI for the reviewed prebuilt transition
@@ -73,6 +76,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           ZOLA_CAPABILITY_TOKEN: ${{ secrets.ZOLA_CAPABILITY_TOKEN }}
+          ZOLA_AUTHORITY_CONSUMER_URL: ${{ vars.ZOLA_AUTHORITY_CONSUMER_URL }}
           GITHUB_TOKEN: ${{ github.token }}
           ZOLA_VERCEL_BIN: ${{ runner.temp }}/zola-vercel-cli/node_modules/.bin/vercel
         run: node scripts/zola-receiver-prebuilt.mjs

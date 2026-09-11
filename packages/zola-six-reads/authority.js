@@ -46,7 +46,7 @@ export async function runAuthority(root) {
       assert.equal(selectCapabilityForTask(created).id, entry.id);
       const before = fixture.events.length;
       // Production dispatcher persists the attempt before invoking any HTTP adapter.
-      const options = { capabilityOptions: { adapters: fixture.adapters, beforeAdapter: () => {
+      const options = { capabilityOptions: { adapters: fixture.syntheticAdapters, beforeAdapter: () => {
         const attempts = taskRecords(created.id).providerAttempts;
         assert.equal(attempts.length, 1); assert.equal(attempts[0].status, 'dispatching');
         assert.equal(JSON.parse(attempts[0].request_packet).principalId, 'read-principal');
@@ -66,7 +66,7 @@ export async function runAuthority(root) {
       assert.ok(completedResult && Object.keys(completedResult).length > 0);
       for (const denied of [task(objectives[index], 'denied-principal'), task(objectives[index], 'read-principal', 'foreign-workspace')]) {
         const beforeDenial = fixture.events.length;
-        assert.equal((await processTask(denied, { capabilityOptions: { adapters: fixture.adapters } })).status, 'failed');
+        assert.equal((await processTask(denied, { capabilityOptions: { adapters: fixture.syntheticAdapters } })).status, 'failed');
         assert.equal(fixture.events.length, beforeDenial);
         assert.equal(taskRecords(denied.id).providerAttempts.length, 0);
       }
@@ -76,8 +76,8 @@ export async function runAuthority(root) {
     // An actual post-handler response failure becomes outcome_unknown, then a
     // second invocation reconciles the durable state without replaying the read.
     const uncertain = task(objectives[0]); let calls = 0;
-    const uncertainOptions = { capabilityOptions: { adapters: { ...fixture.adapters, sellerOpportunities: async (input) => {
-      calls += 1; await fixture.adapters.sellerOpportunities(input); throw new Error('synthetic response loss');
+    const uncertainOptions = { capabilityOptions: { adapters: { ...fixture.syntheticAdapters, sellerOpportunities: async (input) => {
+      calls += 1; await fixture.syntheticAdapters.sellerOpportunities(input); throw new Error('synthetic response loss');
     } } } };
     assert.equal((await processTask(uncertain, uncertainOptions)).status, 'outcome_unknown');
     await processTask({ ...getTask(uncertain.id), status: 'queued' }, uncertainOptions);

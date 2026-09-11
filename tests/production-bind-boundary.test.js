@@ -112,6 +112,7 @@ function productionEnv(overrides = {}) {
     BLACKSPIRE_DB_PATH: disposableDbPath,
     TELEGRAM_TMP_DIR: path.join(root, 'attachments'),
     COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'),
+    BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN: 'receiver-authority-test-value'.repeat(2),
     ...overrides,
   };
 }

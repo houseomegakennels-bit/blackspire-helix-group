@@ -5,6 +5,7 @@ import { blackspireCapabilityRegistry } from '../capabilities/index.js';
 import { validateCapabilityOutput } from '../capabilities/contract.js';
 import { compareDivisionSnapshots, validateDivisionSnapshot, validateOwnerWitness } from './database-observer.js';
 import { decodeObservedResponse, observationForResult } from '../capabilities/read-observation.js';
+import { persistedReceiverAuthorityBindingDigest, receiverRequest } from '../capabilities/receiver-authority-contract.js';
 
 export const digest = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const id = value => typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
@@ -24,18 +25,31 @@ export function readCases(dealId) {
 }
 export function validateCollectorConfig(value) {
   const keys = ['version','releaseSha','frontendOrigin','workspace','principal','deniedPrincipal','dealId','apiPid','workerPid','port','databasePath','credentialPath','journalDirectory','runId'];
-  if ([2,3,4].includes(value?.version)) keys.push('observerDatabaseConfigPath');
-  if (value?.version === 4) keys.push('denialReceiptPath');
-  if (value?.version === 4 && (typeof value.denialReceiptPath !== 'string' || !value.denialReceiptPath.startsWith('/') || value.denialReceiptPath.includes('\0'))) refuse('INVALID_CONFIGURATION');
-  if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length || keys.some(k => !Object.hasOwn(value,k)) || ![1,2,3,4].includes(value.version) || ([2,3,4].includes(value.version) && (typeof value.observerDatabaseConfigPath !== 'string' || !value.observerDatabaseConfigPath.startsWith('/') || value.observerDatabaseConfigPath.includes('\0'))) ||
+  if ([2,3,4,5].includes(value?.version)) keys.push('observerDatabaseConfigPath');
+  if ([4,5].includes(value?.version)) keys.push('denialReceiptPath');
+  if (value?.version === 5) keys.push('releaseRunId');
+  if ([4,5].includes(value?.version) && (typeof value.denialReceiptPath !== 'string' || !value.denialReceiptPath.startsWith('/') || value.denialReceiptPath.includes('\0'))) refuse('INVALID_CONFIGURATION');
+  if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length || keys.some(k => !Object.hasOwn(value,k)) || ![1,2,3,4,5].includes(value.version) || ([2,3,4,5].includes(value.version) && (typeof value.observerDatabaseConfigPath !== 'string' || !value.observerDatabaseConfigPath.startsWith('/') || value.observerDatabaseConfigPath.includes('\0'))) ||
       !sha(value.releaseSha) || ![value.workspace,value.principal,value.deniedPrincipal,value.runId].every(id) || value.principal === value.deniedPrincipal ||
       !Number.isInteger(value.port) || value.port < 1 || value.port > 65535 ||
       ![value.apiPid,value.workerPid].every(n => Number.isInteger(n) && n > 1) || value.apiPid === value.workerPid ||
       ![value.databasePath,value.credentialPath,value.journalDirectory].every(p => typeof p === 'string' && p.startsWith('/') && !p.includes('\0'))) refuse('INVALID_CONFIGURATION');
+  if(value.version===5&&!id(value.releaseRunId))refuse('INVALID_CONFIGURATION');
   let origin; try { origin = new URL(value.frontendOrigin); } catch { refuse('INVALID_FRONTEND_ORIGIN'); }
   if (origin.protocol !== 'https:' || origin.origin !== value.frontendOrigin || origin.username || origin.password) refuse('INVALID_FRONTEND_ORIGIN');
   readCases(value.dealId);
   return Object.freeze({ ...value });
+}
+export function requireProductionCollectorConfig(config) {
+  if (config?.version !== 5) refuse('PRODUCTION_RECEIVER_AUTHORITY_REQUIRED');
+  return config;
+}
+export function requireProductionCollectorReport(report) {
+  if (report?.receiverAuthorityPass !== true || !Array.isArray(report.results) || report.results.length !== 6 ||
+      report.results.some(row => row?.authorityVersion !== 1 || !/^[a-f0-9]{64}$/.test(row?.receiverAuthorityDigest ?? ''))) {
+    refuse('PRODUCTION_RECEIVER_AUTHORITY_FAILED');
+  }
+  return report;
 }
 export function validateTaskBinding(task, config, entry, key) {
   if (!task || !id(task.id) || task.workspace_id !== config.workspace || task.actor_id !== config.principal ||
@@ -58,16 +72,28 @@ export function verifyCollectedTask({ task, attempts }, config, entry, key, gene
   const collection = { 'seller.opportunities.search': 'opportunities', 'buyer.profiles.search': 'profiles', 'buyer.matches.search': 'matches', 'deal.records.search': 'deals' }[entry.capability];
   const actualCount = collection ? result[collection].length : entry.capability === 'deal.analysis.get' ? (result.found === false ? 0 : result.dealId ? 1 : 0) : (result.ownerName || result.propertyAddress ? 1 : 0);
   if (actualCount !== evidence.resultCount || actualCount > 5) refuse('RESULT_COUNT_MISMATCH');
-  const { route, ...header } = evidence.readObservation ?? {};
+  const { route, receiverAuthorityDigest, ...header } = evidence.readObservation ?? {};
   if (route !== entry.route || header.releaseSha !== config.releaseSha) refuse('FRONTEND_PAIRING_MISMATCH');
-  const decoded = decodeObservedResponse(JSON.stringify(result), new Response(null, { headers: { 'x-zola-read-observation': JSON.stringify(header) } }), route);
+  let authorityEvidence;
+  if(config.version===5){
+    const authority=request.receiverAuthority,canonical=receiverRequest(entry.capability,config.workspace,request.input);
+    let bindingDigest;try{bindingDigest=persistedReceiverAuthorityBindingDigest(authority);}catch{refuse('RECEIPT_AUTHORITY_MISMATCH');}
+    if(authority.releaseSha!==config.releaseSha||authority.releaseRunId!==config.releaseRunId||authority.apiGeneration!==generation.apiGeneration
+      ||authority.workerGeneration!==generation.workerGeneration||authority.workspaceId!==config.workspace||authority.principalId!==config.principal
+      ||authority.capabilityId!==entry.capability||authority.permission!==entry.permissions[0]||authority.taskId!==task.id||authority.attemptId!==attempt.id
+      ||authority.workerId!==generation.workerId||authority.claimDigest!==request.claimDigest||authority.method!==canonical.method
+      ||authority.path!==canonical.path||authority.bodySha256!==canonical.bodySha256||receiverAuthorityDigest!==bindingDigest)refuse('RECEIPT_AUTHORITY_MISMATCH');
+    authorityEvidence={authorityVersion:1,releaseRunId:authority.releaseRunId,receiverAuthorityDigest:bindingDigest};
+  }
+  const decoded = decodeObservedResponse(JSON.stringify(result), new Response(null, { headers: { 'x-zola-read-observation': JSON.stringify(header),
+    ...(receiverAuthorityDigest?{'x-blackspire-authority-binding':receiverAuthorityDigest}:{}) } }), route,config.version===5?receiverAuthorityDigest:null);
   const observed = observationForResult(decoded);
   if (!observed) refuse('MISSING_OBSERVATION');
   return { capability: entry.capability, route, frontendSha: observed.releaseSha, runtimeSha: config.releaseSha,
     workspace: config.workspace, principal: config.principal, permissions: entry.permissions, permission: 'PASS: authority-fenced receipt',
     transport: observed.transport, requests: observed.requests, responseBytes: observed.responseBytes, boundedResultCount: evidence.resultCount,
     resultDigest: digest(result), latencyMs: observed.latencyMs, observedForbiddenAttempts: observed.forbiddenAttempts,
-    observedScope: observed.scope, taskId: task.id, receiptId: attempt.id,
+    observedScope: observed.scope, taskId: task.id, receiptId: attempt.id,...(authorityEvidence??{}),
     // Exact row deltas and process-wide egress cannot be inferred from this header.
     mutationDelta: 'UNVERIFIED: observer covers supplied read client only', paidProviderCalls: entry.capability === 'nexus.enrichment.status' ? 0 : 'UNVERIFIED: process-wide egress unavailable',
     paidProviderScope: entry.capability === 'nexus.enrichment.status' ? 'This dispatch only: exact-SHA reviewed Nexus route and findStoredContact have only supplied read-client I/O; not process-wide activity' : undefined,
@@ -130,7 +156,7 @@ export async function collectSixReads(config, host, store) {
   if (existing.length && (existing[0].type !== 'run' || existing[0].binding !== binding)) refuse('JOURNAL_CONFIG_MISMATCH');
   // An after query closes this interval. Replaying it as a freshly collected
   // report would misrepresent old observations; retain the historical journal.
-  if ([3,4].includes(config.version) && existing.some(e => e.type === 'database_query_intent' && e.binding?.phase === 'after')) refuse('CONNECTED_OBSERVER_INTERVAL_CLOSED');
+  if ([3,4,5].includes(config.version) && existing.some(e => e.type === 'database_query_intent' && e.binding?.phase === 'after')) refuse('CONNECTED_OBSERVER_INTERVAL_CLOSED');
   if (!existing.length) store.append({ type: 'run', binding, releaseSha: config.releaseSha });
   const generation = await host.generation();
   const sameGeneration = async () => { if (JSON.stringify(await host.generation()) !== JSON.stringify(generation)) refuse('GENERATION_CHANGED'); };
@@ -142,7 +168,7 @@ export async function collectSixReads(config, host, store) {
     if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'owner,snapshot') refuse('DATABASE_OBSERVATION_ENVELOPE');
   };
   let databaseBefore;
-  if ([2,3,4].includes(config.version)) {
+  if ([2,3,4,5].includes(config.version)) {
     if (typeof host.observeDatabase !== 'function') refuse('DATABASE_OBSERVER_UNAVAILABLE');
     if (!beforeEvents.length) {
       if (store.events().some(e => e.type === 'intent')) refuse('DATABASE_OBSERVATION_MISSING_BEFORE_ADMISSION');
@@ -156,7 +182,7 @@ export async function collectSixReads(config, host, store) {
       const firstIntent = databaseEvents.findIndex(e => e.type === 'intent');
       if (firstIntent >= 0 && databaseEvents.findIndex(e => e.type === 'database_before') > firstIntent) refuse('DATABASE_OBSERVATION_AFTER_ADMISSION');
       databaseBefore = beforeEvents[0].observation;
-      if ([3,4].includes(config.version) && digest(await host.observeDatabase('before', { generation, store })) !== digest(databaseBefore)) refuse('CONNECTED_OBSERVER_BASELINE_MISMATCH');
+      if ([3,4,5].includes(config.version) && digest(await host.observeDatabase('before', { generation, store })) !== digest(databaseBefore)) refuse('CONNECTED_OBSERVER_BASELINE_MISMATCH');
       validateDatabaseEnvelope(databaseBefore);
       validateDivisionSnapshot(databaseBefore.snapshot, config, 'before');
       validateOwnerWitness(databaseBefore.owner, config, 'before');
@@ -203,7 +229,7 @@ export async function collectSixReads(config, host, store) {
   }
   await sameGeneration();
   let databaseEvidence;
-  if ([2,3,4].includes(config.version)) {
+  if ([2,3,4,5].includes(config.version)) {
     const after = await host.observeDatabase('after', { generation, store });
     validateDatabaseEnvelope(after);
     validateOwnerWitness(after.owner, config, 'after');
@@ -221,7 +247,8 @@ export async function collectSixReads(config, host, store) {
   const report = { version: 1, releaseSha: config.releaseSha, collectedAt: new Date().toISOString(),
     status: 'COLLECTED_NOT_RELEASE_ACCEPTED', livePass: false, productionCollector: true, results, admissionDenial:{...admissionDenial,scope:'Authenticated no-grant Command principal; valid CSRF; task admission denied; unchanged persisted tasks, inputs, provider attempts and usage. Audit/session activity and transient/provider-wide effects are not covered.'}, ...(databaseEvidence ? { databaseEvidence } : {}),
     remainingGates: databaseEvidence ? ['Complete mutation-attempt and paid-provider/egress observation', 'Other capability/application owner boundaries (database witness covers SearchJob only)'] : ['Authoritative division mutation delta', 'Process-wide paid-provider/egress observation', 'Supabase row-owner denial (Command task denial is a separate boundary)'],
-    intentionalCommandWrites: 'Six durable read tasks, dispatch receipts, permission/audit records; never claim zero SQLite writes' };
+    intentionalCommandWrites: 'Six durable read tasks, dispatch receipts, permission/audit records; never claim zero SQLite writes',
+    ...(config.version===5?{receiverAuthorityPass:results.every(row=>row.authorityVersion===1)}:{}) };
   store.append({ type: 'report', digest: digest(report), status: report.status });
   return report;
 }

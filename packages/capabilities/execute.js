@@ -2,6 +2,7 @@ import { observationForResult } from './read-observation.js';
 import { blackspireCapabilityRegistry } from './index.js';
 import { validateCapabilityInput, validateCapabilityOutput } from './contract.js';
 import { createDivisionAdapters } from './http-adapters.js';
+import {RECEIVER_AUTHORITY_REQUIRED,issueReceiverAuthority,receiverRequest} from './receiver-authority.js';
 import { sellerOpportunityCapability, summarizeSellerOpportunities } from './seller-opportunities.js';
 import { buyerProfilesCapability, summarizeBuyerProfiles } from './buyer-profiles.js';
 import { buyerMatchesCapability, summarizeBuyerMatches } from './buyer-matches.js';
@@ -9,7 +10,7 @@ import { dealRecordsCapability, summarizeDealRecords } from './deal-records.js';
 import { dealAnalysisCapability, summarizeDealAnalysis } from './deal-analysis.js';
 import { nexusEnrichmentCapability, summarizeNexusEnrichment } from './nexus-enrichment.js';
 import { resolveAdminBearer, requireWorkspacePermission } from '../shared/authorization.js';
-import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition, registerTaskAbortController, unregisterTaskAbortController } from '../task-engine/tasks.js';
+import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityAttemptId, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition, registerTaskAbortController, unregisterTaskAbortController } from '../task-engine/tasks.js';
 
 function summarizeCapabilityResult(capability, result) {
   if (capability.id === 'buyer.profiles.search') return summarizeBuyerProfiles(result);
@@ -69,7 +70,7 @@ function extractPropertyAddress(text) {
 
 export async function executeRegisteredCapability(task, workspace, {
   registry = blackspireCapabilityRegistry, adapters = createDivisionAdapters(), resolvePrincipal = resolveAdminBearer,
-  signal = null, beforeAdapter = null, ownership = null,
+  signal = null, beforeAdapter = null, ownership = null, issueAuthority=issueReceiverAuthority,
 } = {}) {
   const capability = selectCapabilityForTask(task, registry);
   if (!capability) return null;
@@ -116,9 +117,16 @@ export async function executeRegisteredCapability(task, workspace, {
     if (propertyAddress) rawInput.propertyAddress = propertyAddress;
   }
   const validatedInput = validateCapabilityInput(capability, rawInput);
-  const dispatch = prepareCapabilityDispatch(task.id, capability.id, {
-    workspaceId: workspace.id, principalId: task.actor_id, ...capabilityDispatchAuthority(ownership), input: validatedInput,
-  });
+  let receiverAuthority=null,preparedReceiverRequest=null;
+  // The production registry owns the HTTP receiver contract. Test/private
+  // registries may replace a capability's execute function entirely and must
+  // not be mistaken for an HTTP dispatch merely because default adapters exist.
+  if(registry===blackspireCapabilityRegistry&&adapters[RECEIVER_AUTHORITY_REQUIRED]===true){
+    preparedReceiverRequest=receiverRequest(capability.id,workspace.id,validatedInput);
+    receiverAuthority=issueAuthority({task,attemptId:capabilityAttemptId(task.id,capability.id),capability,workspace,principal,ownership,request:preparedReceiverRequest});
+  }
+  const dispatch = prepareCapabilityDispatch(task.id, capability.id, {workspaceId: workspace.id, principalId: task.actor_id,
+    ...capabilityDispatchAuthority(ownership),input:validatedInput,...(receiverAuthority?{receiverAuthority:receiverAuthority.persisted}:{})});
   if (!dispatch.owned) {
     if (['dispatching','started'].includes(dispatch.attempt.status)) {
       finishCapabilityDispatch(task.id, capability.id, 'outcome_unknown', { error: 'Prior capability dispatch outcome is unknown after recovery' });
@@ -155,7 +163,9 @@ export async function executeRegisteredCapability(task, workspace, {
     recordTaskEvent(task.id, 'capability.dispatch_started', { capabilityId: capability.id, attemptId: dispatch.attempt.id });
     const execution = Promise.resolve().then(() => {
       if (controller.signal.aborted) throw abortionError();
-      return capability.execute({ task: getTask(task.id), workspace, principal, adapters, signal: controller.signal, taskRequest: task.request }, validatedInput);
+      const boundAdapters=!receiverAuthority?adapters:Object.freeze(Object.fromEntries(Object.entries(adapters).map(([name,adapter])=>
+        [name,(args)=>adapter({...args,receiverAuthority:receiverAuthority.envelope,receiverRequest:preparedReceiverRequest})])));
+      return capability.execute({ task: getTask(task.id), workspace, principal, adapters:boundAdapters, signal: controller.signal, taskRequest: task.request }, validatedInput);
     });
     const raw = await Promise.race([execution, aborted]);
     if (abortedBySignal) {

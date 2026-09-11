@@ -97,6 +97,24 @@ export function inspectHeldLifecycleHistory(events){
   return pending;
 }
 
+// Migration authority is not implied by a syntactically valid or merely
+// non-pending journal. It requires one exact completed HOLD/lifecycle pair for
+// the release being applied. Multiple lifecycle epochs in the same operation
+// journal are ambiguous and therefore cannot authorize SQL.
+export function inspectCompletedHeldLifecycle(events,releaseSha){
+  try{
+    if(!sha(releaseSha)||inspectHeldLifecycleHistory(events)||inspectAdmissionHoldHistory(events))fail();
+    const lifecycle=events.filter(row=>row?.type==='release_lifecycle_result');
+    const holds=events.filter(row=>row?.type==='release_hold_result');
+    if(lifecycle.length!==1||holds.length!==1)fail();
+    const result=lifecycle[0],held=holds[0];
+    if(result.releaseSha!==releaseSha||held.releaseSha!==releaseSha||result.runId!==held.runId||result.stateDigest!==held.stateDigest)fail();
+    const order=['release_hold_intent','release_hold_result','release_lifecycle_intent','release_lifecycle_result'].map(type=>events.findIndex(row=>row?.type===type));
+    if(order.some(index=>index<0)||order.some((index,position)=>position>0&&index<=order[position-1]))fail();
+    return Object.freeze({releaseSha,result:structuredClone(result),hold:structuredClone(held)});
+  }catch{fail();}
+}
+
 // Unknown/failed start never clears durable intent. Reconciliation can confirm
 // only observed exact running processes; stopped/partial state cannot retry.
 export async function runHeldLifecycle({releaseSha,journal,reconcile=false},{root=RELEASE_ADMISSION_ROOT,groupId,owner=0,

@@ -17,8 +17,8 @@ function harness({ drift = false, productionDrift = false, canceled = false, bad
     if (url.includes('/api/internal/')) {
       const body = JSON.parse(options.body);
       assert.equal(body.limit, 0);
-      const status = body.workspaceId !== 'blackspire-command' || options.headers.Authorization !== `Bearer ${SECRET}` ? 404 : 400;
-      return Response.json({}, { status: (badProbe || (badNegative && status === 404)) ? 200 : status });
+      const legacyValidPair = body.workspaceId === 'blackspire-command' && options.headers.Authorization === `Bearer ${SECRET}`;
+      return Response.json({}, { status: (badProbe || (badNegative && !legacyValidPair)) ? 200 : 404 });
     }
     if (options.method === 'POST') {
       const body = JSON.parse(options.body); writes.push(body);
@@ -29,6 +29,7 @@ function harness({ drift = false, productionDrift = false, canceled = false, bad
     return Response.json({ ...current, readyState: blocked ? 'BLOCKED' : canceled ? 'CANCELED' : 'READY' });
   };
   return { writes, emitted, run: () => rebuildReceivers({ vercelToken: SECRET, capabilityToken: SECRET,
+    authorityConsumerUrl: 'https://command.example.invalid',
     githubToken: SECRET, previewSha: PREVIEW, fetchImpl,
     ...(prebuilt ? { creator: async ({ sha, target, beforeUpload }) => {
       await beforeUpload();
@@ -43,7 +44,7 @@ function harness({ drift = false, productionDrift = false, canceled = false, bad
 }
 test('pinned preview precedes only pinned-main production and targets cannot drift', async () => {
   const h = harness(); const result = await h.run();
-  assert.equal(result.status, 'READY');
+  assert.equal(result.status, 'DENIAL READY');
   assert.equal(h.writes.length, 2);
   assert.equal(Object.hasOwn(h.writes[0], 'target'), false);
   assert.equal(h.writes[0].gitSource.sha, PREVIEW);
@@ -64,7 +65,7 @@ test('canceled candidate cannot start production', async () => {
 });
 test('wrong deployment identity and receiver auth mismatch stop before production', async () => {
   for (const options of [{ badIdentity: true }, { badProbe: true }, { badNegative: true }]) {
-    const h = harness(options); assert.notEqual((await h.run()).status, 'READY'); assert.equal(h.writes.length, 1);
+    const h = harness(options); assert.notEqual((await h.run()).status, 'DENIAL READY'); assert.equal(h.writes.length, 1);
   }
 });
 test('reports and transport exceptions do not expose credentials', async () => {
@@ -75,7 +76,7 @@ test('reports and transport exceptions do not expose credentials', async () => {
 });
 
 test('prebuilt source and digest identity are required before production', async () => {
-  const good = harness({ prebuilt: true }); assert.equal((await good.run()).status, 'READY'); assert.equal(good.writes.length, 2);
+  const good = harness({ prebuilt: true }); assert.equal((await good.run()).status, 'DENIAL READY'); assert.equal(good.writes.length, 2);
   const bad = harness({ prebuilt: true, badProof: true });
   assert.equal((await bad.run()).status, 'DEPLOYMENT IDENTITY MISMATCH'); assert.equal(bad.writes.length, 1);
 });
