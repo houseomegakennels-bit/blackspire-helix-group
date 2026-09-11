@@ -5,10 +5,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {AsyncLocalStorage} from 'node:async_hooks';
+import {createHash,timingSafeEqual} from 'node:crypto';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 
 export const RELEASE_ADMISSION_ROOT='/etc/blackspire/release-admission';
 export const RELEASE_ADMISSION_LOCK='ZOLA_RELEASE_ADMISSION_LOCK_V1\n';
+const heldAcceptanceStorage=new AsyncLocalStorage();
+const HELD_OPERATIONS=Object.freeze(['api_health','worker_readiness','generation_fence','six_live_reads','production_smoke','zero_paid_nexus','zero_unintended_mutation','rollback_verification']);
+const HELD_CAPABILITIES=Object.freeze(['seller.opportunities.search','buyer.profiles.search','buyer.matches.search','deal.records.search','deal.analysis.get','nexus.enrichment.status']);
+const HELD_PERMISSIONS=Object.freeze(['seller.opportunities.read','buyer.profiles.read','buyer.matches.read','deal.records.read','deal.analysis.read','nexus.enrichment.read']);
 export function releaseAdmissionHeld() {const error=new Error('Release admission held');error.code='RELEASE_ADMISSION_HELD';return error;}
 const refuse=()=>{throw releaseAdmissionHeld();};
 const same=(a,b)=>['dev','ino','uid','gid','mode','nlink','size','mtimeMs','ctimeMs'].every(key=>a[key]===b[key]);
@@ -25,7 +31,7 @@ export function requireReleaseAdmissionDirectory(root,{io=fs,owner=0,run=spawnSy
   }
 }
 
-export function acquireReleaseAdmissionLock({root=RELEASE_ADMISSION_ROOT,exclusive=false,owner=0,groupId=process.getgid(),
+export function acquireReleaseAdmissionLock({root=RELEASE_ADMISSION_ROOT,exclusive=false,allowPending=false,owner=0,groupId=process.getgid(),
   io=fs,run=spawnSync,checkDirectory=requireReleaseAdmissionDirectory}={}) {
   let fd;
   try {
@@ -39,7 +45,7 @@ export function acquireReleaseAdmissionLock({root=RELEASE_ADMISSION_ROOT,exclusi
     const locked=run('/usr/bin/flock',[exclusive?'--exclusive':'--shared','--nonblock','3'],{...options,stdio:['ignore','pipe','pipe',fd]});
     if(locked.status!==0||locked.error||locked.stdout!==''||locked.stderr!=='')refuse();
     if(io.readFileSync(fd,'utf8')!==RELEASE_ADMISSION_LOCK||!same(before,io.fstatSync(fd))||!same(before,io.lstatSync(filename)))refuse();
-    if(!exclusive){
+    if(!exclusive&&!allowPending){
       try{io.lstatSync(path.join(root,'pending.json'));refuse();}catch(error){if(error.code!=='ENOENT')throw error;}
     }
     const leaseFd=fd; fd=undefined; let closed=false;
@@ -49,6 +55,56 @@ export function acquireReleaseAdmissionLock({root=RELEASE_ADMISSION_ROOT,exclusi
     });
   } catch {refuse();} finally {if(fd!==undefined)io.closeSync(fd);}
 }
+
+const heldDigest=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
+export function validateHeldAcceptanceClaims(value){
+  const keys='apiGeneration,commanderRunId,epochRunId,expectedDeploymentSha,expiresAt,issuedAt,kind,mergeMainSha,operations,permitId,principal,reads,schema,tokenDigest,workerGeneration,workspace';
+  if(!value||Array.isArray(value)||Object.keys(value).sort().join(',')!==keys.split(',').sort().join(',')||value.schema!==1||value.kind!=='held-epoch-acceptance'
+    ||value.expectedDeploymentSha!==value.mergeMainSha||!(/^[a-f0-9]{40}$/).test(value.mergeMainSha??'')
+    ||![value.commanderRunId,value.epochRunId,value.permitId].every(v=>/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v??''))||!(/^[A-Za-z0-9._:-]{1,128}$/).test(value.principal??'')
+    ||!(/^[a-z0-9][a-z0-9_-]{1,63}$/).test(value.workspace??'')
+    ||![value.apiGeneration,value.workerGeneration].every(v=>/^[a-f0-9]{32}$/.test(v??''))||value.apiGeneration===value.workerGeneration
+    ||!Number.isSafeInteger(value.issuedAt)||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=value.issuedAt||value.expiresAt-value.issuedAt>900000
+    ||JSON.stringify(value.operations)!==JSON.stringify(HELD_OPERATIONS)||!(/^[a-f0-9]{64}$/).test(value.tokenDigest??'')
+    ||!Array.isArray(value.reads)||value.reads.length!==6)return refuse();
+  for(const [index,row] of value.reads.entries())if(!row||Object.keys(row).sort().join(',')!=='capability,idempotencyKey,index,permission,request,requestDigest'
+    ||row.index!==index||row.capability!==HELD_CAPABILITIES[index]||row.permission!==HELD_PERMISSIONS[index]
+    ||row.idempotencyKey!==`zola-six:${value.epochRunId}:${index}`||typeof row.request!=='string'||row.request.length<1||row.request.length>4000
+    ||row.requestDigest!==heldDigest({channel:'jarvis',workspaceId:value.workspace,text:row.request,idempotencyKey:row.idempotencyKey,executionIntent:'read_only'}))refuse();
+  return structuredClone(value);
+}
+
+// Narrow post-merge acceptance admission. It never changes the global HELD
+// state. The API must prove the opaque permit token; the worker can process
+// only the six exact task keys from the protected claims file. A shared lease
+// spans the entire async operation and therefore blocks OPEN publication.
+export function withHeldAcceptanceAdmission({role,token=null},fn,{root=RELEASE_ADMISSION_ROOT,now=Date.now,
+  required=releaseAdmissionRequired,acquire=acquireReleaseAdmissionLock,context=currentReleaseAdmissionContext,read=file=>{
+    const stat=fs.lstatSync(file);return readRootOwnedJson(file,{groupId:stat.gid,maxBytes:16384});
+  }}={}){
+  let lease;
+  try{
+    if(typeof fn!=='function'||!['api','worker'].includes(role)||!required())refuse();
+    const binding=context();if(binding.role!==role)refuse();
+    const stateFile=path.join(root,'state.json'),stateStat=fs.lstatSync(stateFile);
+    lease=acquire({root,exclusive:false,allowPending:true,owner:0,groupId:stateStat.gid});lease.assertIdentity();
+    const state=validateReleaseAdmissionState(read(stateFile)),claims=validateHeldAcceptanceClaims(read(path.join(root,'acceptance.json')));
+    if(state.mode!=='held'||state.releaseSha!==claims.mergeMainSha||state.runId!==claims.epochRunId
+      ||state.apiGeneration!==claims.apiGeneration||state.workerGeneration!==claims.workerGeneration
+      ||binding.releaseSha!==claims.mergeMainSha||binding.runId!==claims.epochRunId
+      ||binding.apiGeneration!==claims.apiGeneration||binding.workerGeneration!==claims.workerGeneration||now()>=claims.expiresAt)refuse();
+    if(role==='api'){
+      const supplied=Buffer.from(heldDigest(String(token??'')),'hex'),expected=Buffer.from(claims.tokenDigest,'hex');
+      if(typeof token!=='string'||token.length!==43||!timingSafeEqual(supplied,expected))refuse();
+    }
+    const scoped=Object.freeze({role,permitId:claims.permitId,workspace:claims.workspace,principal:claims.principal,
+      taskKeys:Object.freeze(claims.reads.map(row=>`unified:jarvis:${row.idempotencyKey}`)),reads:Object.freeze(claims.reads)});
+    const result=heldAcceptanceStorage.run(scoped,fn);
+    if(result&&typeof result.then==='function')return Promise.resolve(result).finally(()=>lease.close());
+    lease.close();return result;
+  }catch{lease?.close();refuse();}
+}
+export const heldAcceptanceContext=()=>heldAcceptanceStorage.getStore()??null;
 
 export function releaseAdmissionRequired(env=process.env) {
   return env.NODE_ENV==='production'||env.BLACKSPIRE_RUNTIME_MODE==='production'||env.BLACKSPIRE_STATE_OWNER==='vps-production'||env.BLACKSPIRE_RELEASE_RUN_ID!==undefined;
@@ -96,6 +152,7 @@ export function createReleaseAdmissionGuard({required=releaseAdmissionRequired,c
   return Object.freeze({
     run(fn){
       if(!required())return fn();
+      if(heldAcceptanceStorage.getStore())return fn();
       const lease=take();
       try {
         const result=fn();

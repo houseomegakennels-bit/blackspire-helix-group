@@ -1,4 +1,5 @@
-import { withReleaseAdmission } from '../shared/release-admission.js';
+import { withReleaseAdmission,heldAcceptanceContext } from '../shared/release-admission.js';
+import {createHash} from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, transaction } from '../task-engine/db.js';
 import { createTask, getTask, getFlag, transition, recordEvidence, recordTaskEvent, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
@@ -171,6 +172,17 @@ function responseFor(conversationId, inputId, taskId, status, duplicate = false,
   return { conversationId, inputId, taskId, status, duplicate, ...(denial ? { error: denial, denied: true } : {}) };
 }
 
-export function createUnifiedInput(...args) { return withReleaseAdmission(() => createUnifiedInputAdmitted(...args)); }
+export function createUnifiedInput(...args) { return withReleaseAdmission(() => {
+  const held=heldAcceptanceContext(),value=args[0];
+  if(held){
+    const read=held.reads.find(row=>row.idempotencyKey===value?.idempotencyKey);
+    const requestDigest=createHash('sha256').update(JSON.stringify({channel:value?.channel,workspaceId:value?.workspaceId,text:value?.text,
+      idempotencyKey:value?.idempotencyKey,executionIntent:value?.executionIntent})).digest('hex');
+    if(held.role!=='api'||!read||value.channel!=='jarvis'||value.workspaceId!==held.workspace||value.actorId!==held.principal||value.text!==read.request||value.executionIntent!=='read_only'||read.requestDigest!==requestDigest){
+      const error=new Error('HELD acceptance input rejected');error.code='RELEASE_ADMISSION_HELD';throw error;
+    }
+  }
+  return createUnifiedInputAdmitted(...args);
+}); }
 
 export async function drainTelegramOutbox(...args) { return withReleaseAdmission(() => drainTelegramOutboxAdmitted(...args)); }

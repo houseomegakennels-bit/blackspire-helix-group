@@ -1,4 +1,4 @@
-import { withReleaseAdmission } from '../../packages/shared/release-admission.js';
+import { withReleaseAdmission,withHeldAcceptanceAdmission } from '../../packages/shared/release-admission.js';
 import { claimNext, getFlag, getTask, setFlag } from '../../packages/task-engine/tasks.js';
 import { processTask } from '../../packages/hermes/hermes.js';
 import { drainTelegramOutbox } from '../../packages/unified-input/unified.js';
@@ -34,13 +34,17 @@ export function startWorker({
   async function executeTick() {
     heartbeat('idle');
     try { return await admitImpl(executeAdmittedTick); }
-    catch(error) { if(error?.code==='RELEASE_ADMISSION_HELD')return; throw error; }
+    catch(error) {
+      if(error?.code!=='RELEASE_ADMISSION_HELD')throw error;
+      try{return await withHeldAcceptanceAdmission({role:'worker'},()=>executeAdmittedTick({acceptance:true}));}
+      catch(heldError){if(heldError?.code==='RELEASE_ADMISSION_HELD')return;throw heldError;}
+    }
   }
-  async function executeAdmittedTick() {
+  async function executeAdmittedTick({acceptance=false}={}) {
     if (getFlag('emergency_stop') === 'active') return;
     if (process.env.UNIFIED_IPHONE_TEST_MODE === 'true' && getFlag('test_worker_hold') === 'active') { await deliverEventsImpl(); return; }
     const task = claimNextImpl({ workerId });
-    if (!task) { await deliverEventsImpl(); return; }
+    if (!task) { if(!acceptance)await deliverEventsImpl(); return; }
     activeTaskId = task.id;
     // Guarded: the task is already claimed here, so a transient SQLITE_BUSY on this write would
     // otherwise skip the finally block (leaving the outbox undrained and activeTaskId pinned, so
@@ -51,7 +55,7 @@ export function startWorker({
       // A cancellation racing the atomic claim must be observed before provider dispatch.
       if (getTaskImpl(task.id)?.status !== 'cancelled') await processTaskImpl(task, { workerId, claimToken: task.claim_token });
     } finally {
-      await deliverEventsImpl();
+      if(!acceptance)await deliverEventsImpl();
       activeTaskId = null;
       // Post-completion observability: the task is already done here, so a failed write must not
       // reject activeTick and turn a clean drain into a fatal exit 1. The pre-dispatch writes

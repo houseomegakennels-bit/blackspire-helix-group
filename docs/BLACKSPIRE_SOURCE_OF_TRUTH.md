@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-11 — HELD runtime authority and VPS rollback hardening
+
+Recovered exact local/remote/PR head `a782f3d15648fb41822d8de4f473eb610758ae30` and preserved its unfinished timeout tranche. The single-use HELD acceptance authority now reaches the production API, worker, exact six read-only tasks and version-five collector without opening global admission. Its terminal digest binds ordered operation evidence; each operation requires affirmative operation-specific evidence; and guarded OPEN requires the exact consumed permit, SHA, epoch and generations. Focused authority, admission, collector and OPEN tests pass.
+
+The VPS cutover now validates the protected new-head backup and exact current rollback artifact before recording any cutover intent, retains the complete pre-cutover snapshot, and reuses its already-held exclusive admission lease during automatic rollback. This closes a production-only non-reentrant-lock failure and makes a missing or mismatched rollback target a pre-effect hard stop. Focused cutover, migration and deployment tests pass.
+
+The fixed production composition and executable release command remain blocked internally by an ordering contradiction in the mandated registry: stage 22 performs monolithic pointer change plus API/worker activation and requires the exact new-main HELD epoch, but stage 23 creates that epoch. A safe implementation must split stage 22 into stopped-service artifact/pointer preparation, establish the new-main HELD epoch at stage 23, and journal service activation/readiness at stages 25–27. No adapter may conceal stage-23 mutation inside stage 22 or activate outside HELD. External state was freshly rechecked: all 12 required Supabase `net` functions retain PUBLIC EXECUTE; both Vercel projects are account-blocked with no exact-head preview; and both GitHub receiver settings are absent. Exact-head CI `34608368243` is green. No production mutation, merge, deployment, SQL, workflow transition, service activation, permit mint or OPEN publication occurred.
+
 ## 2026-09-11 — final-sequence hardening and HELD acceptance control-plane foundation
 
 The release sequence registry now matches the requested fixed 34-stage order. Unknown mutating outcomes resume directly through the retained intent and observation-only reconciliation instead of regenerating a post-effect precondition proof. Stage intents bind the original check digest, completed sequence records recompute their exact result digest and require the captured new-main SHA to match the final guarded OPEN proof, and PASS/FAIL_CLOSED/BLOCKED_EXTERNAL are explicit return states. The focused sequence tests pass, including tampered completion and no-recheck/no-resend recovery cases.

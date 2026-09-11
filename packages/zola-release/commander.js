@@ -53,7 +53,7 @@ function history(journal){
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
-  if(row?.schema===3&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')||String(row.type).startsWith('vps_')))continue;
+  if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')||String(row.type).startsWith('vps_')))continue;
   if(['release_migration_intent','release_migration_result','release_migration_recovery_intent','release_migration_recovery_result','release_hold_intent','release_hold_result','release_lifecycle_intent','release_lifecycle_result'].includes(row?.type))continue;
   if(![1,2].includes(row?.schema)||!['preflight_started','preflight_passed','preflight_stopped'].includes(row.type)
    ||!sha(row.releaseSha)||typeof row.runId!=='string'||!(/^[a-f0-9-]{36}$/).test(row.runId))reject();

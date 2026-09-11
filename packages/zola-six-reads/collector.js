@@ -45,7 +45,7 @@ export function requireProductionCollectorConfig(config) {
   return config;
 }
 export function requireProductionCollectorReport(report) {
-  if (report?.receiverAuthorityPass !== true || !Array.isArray(report.results) || report.results.length !== 6 ||
+  if (report?.livePass !== true || report?.status!=='PASS_LIVE_ACCEPTANCE'||report?.receiverAuthorityPass !== true || !Array.isArray(report.results) || report.results.length !== 6 ||
       report.results.some(row => row?.authorityVersion !== 1 || !/^[a-f0-9]{64}$/.test(row?.receiverAuthorityDigest ?? ''))) {
     refuse('PRODUCTION_RECEIVER_AUTHORITY_FAILED');
   }
@@ -159,6 +159,7 @@ export async function collectSixReads(config, host, store) {
   if ([3,4,5].includes(config.version) && existing.some(e => e.type === 'database_query_intent' && e.binding?.phase === 'after')) refuse('CONNECTED_OBSERVER_INTERVAL_CLOSED');
   if (!existing.length) store.append({ type: 'run', binding, releaseSha: config.releaseSha });
   const generation = await host.generation();
+  const acceptance=config.version===5&&typeof host.acceptance==='function'?await host.acceptance(generation):null;
   const sameGeneration = async () => { if (JSON.stringify(await host.generation()) !== JSON.stringify(generation)) refuse('GENERATION_CHANGED'); };
   await host.deniedIdentity(); // Requires a real authenticated, differently bound principal.
   const databaseEvents = store.events();
@@ -244,9 +245,12 @@ export async function collectSixReads(config, host, store) {
       if (row.capability === 'nexus.enrichment.status') row.enrichmentMutations = '0 net persisted row/tuple-version delta across observation interval; attempted mutations unverified';
     }
   }
+  const livePass=Boolean(config.version===5&&acceptance&&databaseEvidence&&results.length===6&&results.every(row=>row.authorityVersion===1&&row.mutationDelta===0)
+    &&results.find(row=>row.capability==='nexus.enrichment.status')?.paidProviderCalls===0);
   const report = { version: 1, releaseSha: config.releaseSha, collectedAt: new Date().toISOString(),
-    status: 'COLLECTED_NOT_RELEASE_ACCEPTED', livePass: false, productionCollector: true, results, admissionDenial:{...admissionDenial,scope:'Authenticated no-grant Command principal; valid CSRF; task admission denied; unchanged persisted tasks, inputs, provider attempts and usage. Audit/session activity and transient/provider-wide effects are not covered.'}, ...(databaseEvidence ? { databaseEvidence } : {}),
-    remainingGates: databaseEvidence ? ['Complete mutation-attempt and paid-provider/egress observation', 'Other capability/application owner boundaries (database witness covers SearchJob only)'] : ['Authoritative division mutation delta', 'Process-wide paid-provider/egress observation', 'Supabase row-owner denial (Command task denial is a separate boundary)'],
+    status: livePass?'PASS_LIVE_ACCEPTANCE':'COLLECTED_NOT_RELEASE_ACCEPTED', livePass, productionCollector: true, results, admissionDenial:{...admissionDenial,scope:'Authenticated no-grant Command principal; valid CSRF; task admission denied; unchanged persisted tasks, inputs, provider attempts and usage. Audit/session activity and transient/provider-wide effects are not covered.'}, ...(databaseEvidence ? { databaseEvidence } : {}),
+    ...(acceptance?{heldAcceptance:acceptance}:{}),
+    remainingGates: livePass?[]:databaseEvidence ? ['HELD acceptance authority binding', 'Other capability/application owner boundaries (database witness covers SearchJob only)'] : ['Authoritative division mutation delta', 'HELD acceptance authority binding', 'Supabase row-owner denial (Command task denial is a separate boundary)'],
     intentionalCommandWrites: 'Six durable read tasks, dispatch receipts, permission/audit records; never claim zero SQLite writes',
     ...(config.version===5?{receiverAuthorityPass:results.every(row=>row.authorityVersion===1)}:{}) };
   store.append({ type: 'report', digest: digest(report), status: report.status });

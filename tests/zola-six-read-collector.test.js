@@ -23,12 +23,14 @@ test('production collection requires v5 authority evidence for all six reads', (
   const v5 = { version: 5 };
   assert.equal(requireProductionCollectorConfig(v5), v5);
   const valid = {
+    status: 'PASS_LIVE_ACCEPTANCE', livePass: true,
     receiverAuthorityPass: true,
     results: Array.from({ length: 6 }, () => ({ authorityVersion: 1, receiverAuthorityDigest: 'a'.repeat(64) })),
   };
   assert.equal(requireProductionCollectorReport(valid), valid);
   for (const mutate of [
     report => { report.receiverAuthorityPass = false; },
+    report => { report.livePass = false; },
     report => { report.results.pop(); },
     report => { report.results[0].authorityVersion = 0; },
     report => { report.results[0].receiverAuthorityDigest = 'not-a-digest'; },

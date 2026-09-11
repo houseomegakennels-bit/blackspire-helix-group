@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-11 — split cutover safely, then compose the fixed command
+
+1. Refactor the journaled VPS cutover so stage 22 performs only rollback-validated artifact creation and atomic pointer preparation while services remain stopped under the existing hold. Stage 23 must atomically establish the exact new-main HELD epoch; stages 25–27 must journal API activation, worker activation/readiness and the generation fence. Preserve one rollback journal across the split.
+2. Compose all 34 fixed production adapters only after that phase boundary exists. Expose a root-only protected-input `--release` resume command; reject caller-supplied commands, booleans or evidence and retain observation-only reconciliation after unknown effects.
+3. Preserve the completed HELD runtime bridge and exact consumed-permit guarded OPEN. Do not relax global admission or send non-acceptance work through the HELD permit.
+4. External owners must remove all 12 Supabase PUBLIC `net` EXECUTE edges, restore Vercel and produce an exact-head preview, and configure both GitHub receiver settings before release execution can advance.
+
 ## 2026-09-11 — complete fixed final release composition
 
 1. Extend the HELD acceptance permit through a separate exact API/worker admission path restricted to the six bound read tasks; bind collector evidence and guarded OPEN to the terminal consumed permit. Do not relax normal production admission.

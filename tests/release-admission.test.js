@@ -7,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import http from 'node:http';
 import {createBuyerWriterHttpServer} from '../packages/buyer-writer/http.js';
-import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired} from '../packages/shared/release-admission.js';
+import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,heldAcceptanceContext,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
 import {engageReleaseAdmissionHold,reconcileReleaseAdmissionHold,inspectAdmissionHoldHistory} from '../packages/zola-release/admission-hold.js';
 
 const sha='a'.repeat(40),runId='12345678-1234-4234-8234-123456789abc';
@@ -119,4 +119,28 @@ test('generation changes during acquisition or validation deny before dispatch',
     f.acquire({exclusive:true}).close();
   }
   assert.equal(calls,0);
+});
+
+test('HELD acceptance admits only the bound API token or worker role under one shared lease',async t=>{
+  const f=fixture(t),epoch='22345678-1234-4234-8234-123456789abc',token='t'.repeat(43),api='1'.repeat(32),worker='2'.repeat(32);
+  const crypto=await import('node:crypto'),claims={schema:1,kind:'held-epoch-acceptance',permitId:'32345678-1234-4234-8234-123456789abc',
+    commanderRunId:'42345678-1234-4234-8234-123456789abc',mergeMainSha:sha,expectedDeploymentSha:sha,epochRunId:epoch,workspace:'blackspire-command',principal:'operator',
+    apiGeneration:api,workerGeneration:worker,issuedAt:1000,expiresAt:2000,
+    operations:['api_health','worker_readiness','generation_fence','six_live_reads','production_smoke','zero_paid_nexus','zero_unintended_mutation','rollback_verification'],
+    reads:['seller.opportunities.search','buyer.profiles.search','buyer.matches.search','deal.records.search','deal.analysis.get','nexus.enrichment.status'].map((capability,index)=>{const idempotencyKey=`zola-six:${epoch}:${index}`,request=`read-${index}`;return{index,
+      idempotencyKey,capability,permission:['seller.opportunities.read','buyer.profiles.read','buyer.matches.read','deal.records.read','deal.analysis.read','nexus.enrichment.read'][index],request,
+      requestDigest:crypto.createHash('sha256').update(JSON.stringify({channel:'jarvis',workspaceId:'blackspire-command',text:request,idempotencyKey,executionIntent:'read_only'})).digest('hex')};}),
+    tokenDigest:crypto.createHash('sha256').update(token).digest('hex')};
+  const state={version:1,mode:'held',releaseSha:sha,runId:epoch,apiGeneration:api,workerGeneration:worker};
+  fs.writeFileSync(f.filename,JSON.stringify(state));
+  const binding=role=>({role,releaseSha:sha,runId:epoch,generation:role==='api'?api:worker,apiGeneration:api,workerGeneration:worker});
+  const deps=role=>({root:f.root,required:()=>true,now:()=>1500,context:()=>binding(role),
+    acquire:o=>f.acquire({...o,owner:process.getuid(),groupId:process.getgid(),allowPending:true}),
+    read:file=>path.basename(file)==='state.json'?state:claims});
+  assert.equal(await withHeldAcceptanceAdmission({role:'api',token},async()=>{
+    assert.equal(heldAcceptanceContext().role,'api');return withReleaseAdmission(()=>7);
+  },deps('api')),7);
+  assert.equal(withHeldAcceptanceAdmission({role:'worker'},()=>heldAcceptanceContext().taskKeys.length,deps('worker')),6);
+  assert.throws(()=>withHeldAcceptanceAdmission({role:'api',token:'x'.repeat(43)},()=>0,deps('api')),/held/);
+  assert.throws(()=>withHeldAcceptanceAdmission({role:'worker'},()=>0,{...deps('worker'),now:()=>2000}),/held/);
 });

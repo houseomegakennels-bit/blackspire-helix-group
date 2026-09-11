@@ -163,7 +163,7 @@ export async function runHeldLifecycle({releaseSha,journal,reconcile=false},{roo
     const {inspectReleaseCommander}=await import('./commander.js');
     inspectReleaseCommander(journal);
     const stream=journal.stream('release'),events=stream.events();
-    if(events.some(e=>e?.schema===3&&(String(e.type).startsWith('sequence_')||String(e.type).startsWith('release_postmerge_')||String(e.type).startsWith('release_open_')||String(e.type).startsWith('vps_'))?false:!['preflight_started','preflight_passed','preflight_stopped','release_hold_intent','release_hold_result',
+    if(events.some(e=>[3,4].includes(e?.schema)&&(String(e.type).startsWith('sequence_')||String(e.type).startsWith('release_postmerge_')||String(e.type).startsWith('release_open_')||String(e.type).startsWith('vps_'))?false:!['preflight_started','preflight_passed','preflight_stopped','release_hold_intent','release_hold_result',
       'release_migration_intent','release_migration_result','release_migration_recovery_intent','release_migration_recovery_result','release_lifecycle_intent','release_lifecycle_result'].includes(e?.type)))fail();
     if(inspectAdmissionHoldHistory(events)||inspectReleaseMigrationHistory(events))fail();
     const pending=inspectHeldLifecycleHistory(events);

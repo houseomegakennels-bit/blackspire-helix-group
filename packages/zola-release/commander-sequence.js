@@ -10,9 +10,18 @@ export const RELEASE_STAGES=Object.freeze([
  'generation_fence','six_live_reads','production_smoke','zero_paid_nexus','zero_unintended_mutation',
  'rollback_verification','final_release_record','guarded_held_to_open',
 ]);
-export const MUTATING_STAGES=Object.freeze(new Set(['n8n_backup_check','candidate_six_reads','n8n_migration','bounded_writer_e2e',
+const MUTATING_STAGE_NAMES=Object.freeze(['n8n_backup_check','candidate_six_reads','admission_lease','n8n_migration','bounded_writer_e2e',
  'production_migrations','six_reads','rollback_acceptance','expected_head_merge','journaled_vps_cutover',
- 'post_merge_held_epoch','mint_acceptance_permit','six_live_reads','rollback_verification','final_release_record','guarded_held_to_open']));
+ 'post_merge_held_epoch','mint_acceptance_permit','six_live_reads','rollback_verification','final_release_record','guarded_held_to_open']);
+const MUTATING_STAGE_SET=new Set(MUTATING_STAGE_NAMES);
+// Object.freeze(Set) does not freeze its entries. Expose only an immutable
+// read facade so stage classification cannot drift after the registry digest
+// has been computed.
+export const MUTATING_STAGES=Object.freeze({
+ size:MUTATING_STAGE_NAMES.length,
+ has:value=>MUTATING_STAGE_SET.has(value),
+ [Symbol.iterator]:function*(){yield* MUTATING_STAGE_NAMES;},
+});
 export const RELEASE_REGISTRY_DIGEST=hash(RELEASE_STAGES.map((stage,ordinal)=>({ordinal,stage,mutating:MUTATING_STAGES.has(stage)})));
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
@@ -43,6 +52,11 @@ export function inspectReleaseSequence(events){
    }else if(row.attemptId!==null)reject();
    const bytes=JSON.stringify(row.output);if(!safeOutput(row.output)||bytes.length>4096||hash(bytes)!==row.outputDigest)reject();
    outputs[row.stage]=structuredClone(row.output);ordinal++;
+  }else if(row.type==='sequence_stopped'){
+   if(row.schema!==3||!exact(row,['schema','type','operationId','ordinal','stage','releaseState','reason'])
+    ||row.ordinal!==ordinal||row.stage!==RELEASE_STAGES[ordinal]
+    ||!['FAIL_CLOSED','BLOCKED_EXTERNAL'].includes(row.releaseState)
+    ||typeof row.reason!=='string'||!(/^[A-Z][A-Z0-9_]{2,80}$/).test(row.reason))reject();
   }else if(row.type==='sequence_completed'){
    if(row.schema!==3||pending||ordinal!==RELEASE_STAGES.length||completed
     ||!exact(row,['schema','type','operationId','releaseSha','newMainSha','resultDigest'])
@@ -73,7 +87,15 @@ function proof(value){
 // durable before dispatch; after any thrown/unknown result, only reconcile may
 // confirm that same attempt. Completed stages never execute twice on resume.
 export async function runReleaseSequence({input,journal,adapters}){
- const stream=journal.stream('release');let state,wasStarted=false;
+ const stream=journal.stream('release');let state,wasStarted=false,currentStage=null;
+ const stopped=(releaseState,reason,stage=currentStage,mutationSent=state?.mutationState??null)=>{
+  if(state?.started&&stage){
+   stream.append({schema:3,type:'sequence_stopped',operationId:state.context.operationId,
+    ordinal:state.nextOrdinal,stage,releaseState,reason});
+  }
+  return{status:'STOPPED',releaseState,reason,stage,mutationSent,
+   reconciliationRequired:releaseState==='FAIL_CLOSED',resumeReady:true};
+ };
  try{
   if(!exact(input,['releaseSha','previousMainSha','recoverySha','inputDigest'])||![input.releaseSha,input.previousMainSha,input.recoverySha].every(sha)
    ||input.inputDigest!==hash({releaseSha:input.releaseSha,previousMainSha:input.previousMainSha,recoverySha:input.recoverySha})||!adapters||typeof adapters!=='object')reject();
@@ -84,14 +106,14 @@ export async function runReleaseSequence({input,journal,adapters}){
   }else if(!['releaseSha','previousMainSha','recoverySha','inputDigest'].every(key=>state.context[key]===input[key]))reject();
   if(state.completed)return{status:'COMPLETE',releaseState:'PASS',releaseSha:input.releaseSha,newMainSha:state.context.newMainSha,resumed:true};
   for(let ordinal=state.nextOrdinal;ordinal<RELEASE_STAGES.length;ordinal++){
-   const stage=RELEASE_STAGES[ordinal],adapter=adapters[stage];
+   const stage=RELEASE_STAGES[ordinal],adapter=adapters[stage];currentStage=stage;
    if(!adapter||typeof adapter.check!=='function'||typeof adapter.observe!=='function'
     ||MUTATING_STAGES.has(stage)&&(typeof adapter.execute!=='function'||typeof adapter.reconcile!=='function'))reject();
    let attempt=state.pending;
    let checkedProof;
    if(!attempt){
     const checked=await adapter.check({input,state,ordinal});
-    if(checked?.status==='BLOCKED_EXTERNAL')return{status:'STOPPED',releaseState:'BLOCKED_EXTERNAL',reason:'EXTERNAL_GATE',stage,mutationSent:state.mutationState,resumeReady:true};
+    if(checked?.status==='BLOCKED_EXTERNAL')return stopped('BLOCKED_EXTERNAL','EXTERNAL_GATE',stage);
     checkedProof=proof(checked);
    }
    if(MUTATING_STAGES.has(stage)){
@@ -99,11 +121,11 @@ export async function runReleaseSequence({input,journal,adapters}){
      const inputDigest=hash({sequence:input.inputDigest,stage,ordinal,check:checkedProof.outputDigest}),attemptId=randomUUID();
      attempt={schema:3,type:'sequence_stage_intent',operationId:state.context.operationId,ordinal,stage,attemptId,inputDigest,checkOutputDigest:checkedProof.outputDigest};stream.append(attempt);
      try{await adapter.execute({input,state,ordinal,attemptId,inputDigest});}
-     catch{return{status:'STOPPED',releaseState:'FAIL_CLOSED',reason:'MUTATION_OUTCOME_UNKNOWN',stage,mutationSent:null,reconciliationRequired:true,resumeReady:true};}
+     catch{return stopped('FAIL_CLOSED','MUTATION_OUTCOME_UNKNOWN',stage,null);}
     }
    }
    const observed=await (attempt?adapter.reconcile:adapter.observe)({input,state,ordinal,attemptId:attempt?.attemptId??null});
-   if(observed?.status==='BLOCKED_EXTERNAL')return{status:'STOPPED',releaseState:'BLOCKED_EXTERNAL',reason:'EXTERNAL_GATE',stage,mutationSent:attempt?null:false,resumeReady:true};
+   if(observed?.status==='BLOCKED_EXTERNAL')return stopped('BLOCKED_EXTERNAL','EXTERNAL_GATE',stage,attempt?null:false);
    const observedProof=proof(observed),inputDigest=attempt?.inputDigest??hash({sequence:input.inputDigest,stage,ordinal,check:checkedProof.outputDigest});
    stream.append({schema:3,type:'sequence_stage_confirmed',operationId:state.context.operationId,ordinal,stage,
     attemptId:attempt?.attemptId??null,inputDigest,...observedProof});
@@ -114,5 +136,8 @@ export async function runReleaseSequence({input,journal,adapters}){
   const resultDigest=hash({inputDigest:input.inputDigest,newMainSha,stages:RELEASE_STAGES});
   stream.append({schema:3,type:'sequence_completed',operationId:state.context.operationId,releaseSha:input.releaseSha,newMainSha,resultDigest});
   return{status:'COMPLETE',releaseState:'PASS',releaseSha:input.releaseSha,newMainSha,resumed:wasStarted};
- }catch{return{status:'STOPPED',releaseState:'FAIL_CLOSED',reason:'RELEASE_SEQUENCE_REJECTED',mutationSent:null,reconciliationRequired:true,resumeReady:true};}
+ }catch{
+  try{return stopped('FAIL_CLOSED','RELEASE_SEQUENCE_REJECTED');}
+  catch{return{status:'STOPPED',releaseState:'FAIL_CLOSED',reason:'RELEASE_SEQUENCE_REJECTED',mutationSent:null,reconciliationRequired:true,resumeReady:true};}
+ }
 }

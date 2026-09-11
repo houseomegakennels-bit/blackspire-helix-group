@@ -7,7 +7,8 @@ import { createBuyerWriterRuntimeInspector, readBuyerWriterProcess } from '../bu
 import { readRootOwnedJson } from '../buyer-writer/protected-json.js';
 import { createProductionConnectedDatabaseObserver } from './database-connected-host.js';
 import { createProductionDatabaseObserver } from './database-host.js';
-import { digest, refuse } from './collector.js';
+import { digest, readCases, refuse } from './collector.js';
+import {RELEASE_ADMISSION_ROOT,validateHeldAcceptanceClaims} from '../shared/release-admission.js';
 
 // Called in production by root; tests may use a private directory owned by the
 // current test uid. Production CLI fixes owner=0 and rejects writable ancestors.
@@ -111,12 +112,14 @@ export function createProductionCollectorHost(config) {
   const credentials = readRootOwnedJson(config.credentialPath, { groupId: 0 });
   const denialReceipt = [4,5].includes(config.version) ? readRootOwnedJson(config.denialReceiptPath, { groupId: 0 }) : null;
   if ([4,5].includes(config.version)) {
-    if (Object.keys(credentials).join(',') !== 'bearer') refuse('CREDENTIAL_CONTRACT_REJECTED');
+    const expected=config.version===5?'bearer,heldAcceptanceToken':'bearer';
+    if (Object.keys(credentials).sort().join(',') !== expected) refuse('CREDENTIAL_CONTRACT_REJECTED');
     credentials.deniedCookie = denialReceipt.deniedCookie;
   }
-  if (Object.keys(credentials).sort().join(',') !== 'bearer,deniedCookie' ||
+  if (Object.keys(credentials).sort().join(',') !== (config.version===5?'bearer,deniedCookie,heldAcceptanceToken':'bearer,deniedCookie') ||
       typeof credentials.bearer !== 'string' || credentials.bearer.length < 24 || credentials.bearer.length > 4096 || /[\r\n]/.test(credentials.bearer) ||
-      typeof credentials.deniedCookie !== 'string' || credentials.deniedCookie.length < 10 || credentials.deniedCookie.length > 8192 || /[\r\n]/.test(credentials.deniedCookie)) refuse('CREDENTIAL_CONTRACT_REJECTED');
+      typeof credentials.deniedCookie !== 'string' || credentials.deniedCookie.length < 10 || credentials.deniedCookie.length > 8192 || /[\r\n]/.test(credentials.deniedCookie) ||
+      (config.version===5&&(typeof credentials.heldAcceptanceToken!=='string'||credentials.heldAcceptanceToken.length!==43))) refuse('CREDENTIAL_CONTRACT_REJECTED');
   const reader = openCollectorDatabaseReader(config);
   let httpBoundary, inspect;
   try {
@@ -125,6 +128,17 @@ export function createProductionCollectorHost(config) {
     inspect = createBuyerWriterRuntimeInspector({ apiPid: config.apiPid });
   } catch (error) { reader.close(); throw error; }
   return {
+    async acceptance(generation){
+      const claims=validateHeldAcceptanceClaims(readRootOwnedJson(path.join(RELEASE_ADMISSION_ROOT,'acceptance.json'),{groupId:fs.statSync(path.join(RELEASE_ADMISSION_ROOT,'acceptance.json')).gid,maxBytes:16384}));
+      const tokenDigest=digest(credentials.heldAcceptanceToken),cases=readCases(config.dealId);
+      if(claims.tokenDigest!==tokenDigest||claims.mergeMainSha!==config.releaseSha||claims.expectedDeploymentSha!==config.releaseSha
+        ||claims.epochRunId!==config.releaseRunId||claims.workspace!==config.workspace||claims.principal!==config.principal
+        ||claims.apiGeneration!==generation.apiGeneration||claims.workerGeneration!==generation.workerGeneration
+        ||claims.reads.some((row,index)=>row.capability!==cases[index].capability||row.permission!==cases[index].permissions[0]
+          ||row.request!==cases[index].text||row.idempotencyKey!==`zola-six:${claims.epochRunId}:${index}`
+          ||row.requestDigest!==digest({channel:'jarvis',workspaceId:config.workspace,text:cases[index].text,idempotencyKey:row.idempotencyKey,executionIntent:'read_only'})))refuse('HELD_ACCEPTANCE_BINDING_MISMATCH');
+      return{permitId:claims.permitId,claimsDigest:digest(claims)};
+    },
     async generation() {
       assertListener(config);
       const apiEnvironment = processEnvironment(config.apiPid);
@@ -235,13 +249,15 @@ export function createCollectorHttpBoundary(config, credentials) {
       await this.deniedIdentity();
       const session=await deniedSession();
       if(!/^[a-f0-9]{48}$/.test(session.csrfToken??''))refuse('DENIAL_CSRF_UNAVAILABLE');
-      const response=await boundedRequest(config,'/api/unified-input',{method:'POST',headers:{...denied,'x-csrf-token':session.csrfToken},body});
+      const response=await boundedRequest(config,'/api/unified-input',{method:'POST',headers:{...denied,'x-csrf-token':session.csrfToken,
+        ...(credentials.heldAcceptanceToken?{'x-blackspire-held-acceptance':credentials.heldAcceptanceToken}:{})},body});
       if(response.status!==404||JSON.stringify(response.data)!=='{"error":"not found"}')refuse('AUTHENTICATED_ADMISSION_DENIAL_FAILED');
       await this.deniedIdentity();
       return{authorityDenied:true,status:404};
     },
     async admit(body) {
-      const { status, data } = await boundedRequest(config, '/api/unified-input', { method: 'POST', headers: bearer, body });
+      const heldToken=credentials.heldAcceptanceToken;
+      const { status, data } = await boundedRequest(config, '/api/unified-input', { method: 'POST', headers: {...bearer,...(heldToken?{'x-blackspire-held-acceptance':heldToken}:{})}, body });
       if (status !== 202 || data.denied || data.error) refuse('ADMISSION_NOT_ACCEPTED');
       return data;
     },

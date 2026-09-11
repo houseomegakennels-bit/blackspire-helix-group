@@ -14,7 +14,8 @@ function adapters(calls,{throwStage}={}){
 }
 test('registry is exact, frozen, unique and contains 34 ordered stages',()=>{
  assert.equal(RELEASE_STAGES.length,34);assert.equal(new Set(RELEASE_STAGES).size,34);assert.ok(Object.isFrozen(RELEASE_STAGES));
- assert.equal(MUTATING_STAGES.size,15);assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_held_to_open'));
+ assert.equal(MUTATING_STAGES.size,16);assert.ok(MUTATING_STAGES.has('admission_lease'));assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_held_to_open'));
+ assert.equal(MUTATING_STAGES.add,undefined);assert.throws(()=>{MUTATING_STAGES.size=0;});
 });
 test('all 34 stages persist once and a completed resume dispatches nothing',async()=>{
  const j=journal(),calls=[];const result=await runReleaseSequence({input,journal:j,adapters:adapters(calls)});
@@ -27,7 +28,7 @@ test('all 34 stages persist once and a completed resume dispatches nothing',asyn
 test('unknown mutation resumes by observation without resending effect',async()=>{
  const j=journal(),calls=[],stage='n8n_migration';
  let result=await runReleaseSequence({input,journal:j,adapters:adapters(calls,{throwStage:stage})});
- assert.equal(result.reason,'MUTATION_OUTCOME_UNKNOWN');assert.equal(calls.filter(value=>value==='execute:'+stage).length,1);
+ assert.equal(result.reason,'MUTATION_OUTCOME_UNKNOWN');assert.equal(result.mutationSent,null);assert.equal(calls.filter(value=>value==='execute:'+stage).length,1);
  result=await runReleaseSequence({input,journal:j,adapters:adapters(calls)});
  assert.equal(result.status,'COMPLETE');assert.equal(calls.filter(value=>value==='execute:'+stage).length,1);assert.equal(calls.filter(value=>value==='check:'+stage).length,1);assert.equal(calls.filter(value=>value==='reconcile:'+stage).length,1);
 });
@@ -48,6 +49,16 @@ test('external block records no mutation intent and remains resumable',async()=>
  const j=journal(),calls=[],set=adapters(calls);set.provider_acl_check.check=async()=>({status:'BLOCKED_EXTERNAL'});
  const result=await runReleaseSequence({input,journal:j,adapters:set});assert.equal(result.reason,'EXTERNAL_GATE');assert.equal(result.mutationSent,false);
  assert.equal(inspectReleaseSequence(j.events).nextOrdinal,3);
+ assert.equal(j.events.at(-1).type,'sequence_stopped');assert.equal(j.events.at(-1).releaseState,'BLOCKED_EXTERNAL');
+});
+
+test('external block while reconciling a durable mutation intent preserves unknown outcome',async()=>{
+ const j=journal(),calls=[],stage='n8n_migration';
+ await runReleaseSequence({input,journal:j,adapters:adapters(calls,{throwStage:stage})});
+ const set=adapters(calls);set[stage].reconcile=async()=>({status:'BLOCKED_EXTERNAL'});
+ const result=await runReleaseSequence({input,journal:j,adapters:set});
+ assert.equal(result.releaseState,'BLOCKED_EXTERNAL');assert.equal(result.mutationSent,null);
+ assert.equal(inspectReleaseSequence(j.events).pending.stage,stage);
 });
 
 test('completed proof and final OPEN binding are recomputed before fast-path success',async()=>{

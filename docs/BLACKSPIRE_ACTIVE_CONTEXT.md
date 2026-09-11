@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-11 — HELD runtime path complete; composition order blocked
+
+The recovered timeout tranche now carries the expiring single-use HELD permit through the API, worker, exact six read-only tasks, live collector evidence and consumed-permit guarded OPEN while global admission remains HELD. VPS cutover additionally rejects an unavailable or mismatched rollback artifact before effects and reuses its exclusive admission lock during automatic rollback. Focused tests and static/security checks pass.
+
+The generic 34-stage FSM is ready, but a fixed production composition and `--release` entrypoint are still absent. The mandated order is internally inconsistent with the existing monolithic cutover: stage 22 activates services only after observing the new-main HELD epoch, while stage 23 creates that epoch. Preserve the order by splitting stopped-host preparation from activation; never hide the HELD transition in the preceding adapter. Supabase ACL, Vercel account/exact-head preview and both GitHub receiver settings also remain external gates. No production mutation occurred.
+
 ## 2026-09-11 — final internal gates remain in implementation
 
 The 34-stage registry and generic journal runner are hardened for exact completion validation and observation-only unknown-effect resume. A protected single-use HELD acceptance permit control plane is implemented and focused tests pass, including lost-mint-result recovery without token disclosure. It does not yet authorize the exact API/worker/collector path and therefore must not be treated as live acceptance readiness. The production composition root and executable final command remain absent. Current external gates are 12 Supabase PUBLIC `net` execution edges, an account-blocked Vercel exact-head preview, and absent GitHub receiver URL/token settings. No release execution or production mutation occurred.

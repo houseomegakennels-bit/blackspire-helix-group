@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {RELEASE_ADMISSION_ROOT,acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {hash} from './commander-journal.js';
+import {inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 
 const plans=new WeakMap(),sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value),uuid=value=>typeof value==='string'&&/^[a-f0-9-]{36}$/.test(value);
 const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value),generation=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
@@ -68,11 +69,11 @@ export async function beginPostMergeHeldEpoch({commanderRunId,candidateSha,newMa
 }
 
 function validateEvidence(value,{commanderRunId,newMainSha,epochRunId}){
- const keys=['commanderRunId','epochRunId','newMainSha','mainSha','vercelSha','vpsSha','artifactDigest','apiGeneration','workerGeneration','n8nDigest','migrationDigest','sixReadsDigest','rollbackDigest','securitySmokeDigest','productionSmokeDigest','readCount','crossOwnerDenials','paidProviderCalls','mutationDelta'];
+ const keys=['commanderRunId','epochRunId','newMainSha','mainSha','vercelSha','vpsSha','artifactDigest','apiGeneration','workerGeneration','n8nDigest','migrationDigest','sixReadsDigest','rollbackDigest','securitySmokeDigest','productionSmokeDigest','permitId','acceptanceDigest','readCount','crossOwnerDenials','paidProviderCalls','mutationDelta'];
  if(!value||Object.keys(value).sort().join(',')!==keys.sort().join(',')||value.commanderRunId!==commanderRunId||value.epochRunId!==epochRunId
   ||![value.newMainSha,value.mainSha,value.vercelSha,value.vpsSha].every(item=>item===newMainSha)||!digest(value.artifactDigest)
   ||!generation(value.apiGeneration)||!generation(value.workerGeneration)||value.apiGeneration===value.workerGeneration
-  ||!['n8nDigest','migrationDigest','sixReadsDigest','rollbackDigest','securitySmokeDigest','productionSmokeDigest'].every(key=>digest(value[key]))
+  ||!['n8nDigest','migrationDigest','sixReadsDigest','rollbackDigest','securitySmokeDigest','productionSmokeDigest','acceptanceDigest'].every(key=>digest(value[key]))||!uuid(value.permitId)
   ||value.readCount!==6||value.crossOwnerDenials!==6||value.paidProviderCalls!==0||value.mutationDelta!==0)reject();
  return structuredClone(value);
 }
@@ -80,13 +81,19 @@ export async function prepareGuardedOpen({commanderRunId,newMainSha,epochRunId,v
  try{
   if(!uuid(commanderRunId)||!uuid(epochRunId)||!sha(newMainSha)||typeof verify!=='function')reject();const binding={commanderRunId,newMainSha,epochRunId};
   const first=validateEvidence(await verify(binding),binding),second=validateEvidence(await verify(binding),binding);if(!same(first,second))reject();
-  const plan=Object.freeze({schema:3,kind:'guarded-open',...binding,evidenceDigest:hash(first),apiGeneration:first.apiGeneration,workerGeneration:first.workerGeneration});
+  const plan=Object.freeze({schema:3,kind:'guarded-open',...binding,evidenceDigest:hash(first),apiGeneration:first.apiGeneration,workerGeneration:first.workerGeneration,
+   permitId:first.permitId,acceptanceDigest:first.acceptanceDigest});
   plans.set(plan,{verify,evidence:first});return plan;
  }catch{reject();}
 }
 export async function publishGuardedOpen({plan,journal},{root=RELEASE_ADMISSION_ROOT,groupId,io=fs,acquire=acquireReleaseAdmissionLock}={}){
  let lease;try{
   const privatePlan=plans.get(plan);if(!privatePlan||process.getuid()!==0||!Number.isInteger(groupId))reject();const stream=journal.stream('release'),history=inspectPostMergeAdmissionHistory(stream.events());
+  const acceptance=inspectHeldAcceptanceHistory(stream.events());
+  if(acceptance.status!=='CONSUMED'||acceptance.claims.permitId!==plan.permitId||acceptance.acceptanceDigest!==plan.acceptanceDigest
+   ||acceptance.claims.commanderRunId!==plan.commanderRunId||acceptance.claims.mergeMainSha!==plan.newMainSha
+   ||acceptance.claims.expectedDeploymentSha!==plan.newMainSha||acceptance.claims.epochRunId!==plan.epochRunId
+   ||acceptance.claims.apiGeneration!==plan.apiGeneration||acceptance.claims.workerGeneration!==plan.workerGeneration)reject();
   lease=acquire({root,exclusive:true,owner:0,groupId});lease.assertIdentity();
   const stateFile=path.join(root,'state.json'),pendingFile=path.join(root,'pending.json');
   let markerPresent=true;try{io.lstatSync(pendingFile);}catch(error){if(error.code==='ENOENT')markerPresent=false;else throw error;}

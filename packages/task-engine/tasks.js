@@ -1,4 +1,4 @@
-import { withReleaseAdmission } from '../shared/release-admission.js';
+import { withReleaseAdmission,heldAcceptanceContext } from '../shared/release-admission.js';
 import crypto from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, run, get, transaction } from './db.js';
@@ -165,7 +165,7 @@ export function deliveryRecords(conversationId) {
   return query(`SELECT * FROM channel_deliveries WHERE conversation_id=${esc(conversationId)} ORDER BY created_at;`);
 }
 
-function claimNextAdmitted({ workerId, staleAfterSeconds = 300 } = {}) {
+function claimNextAdmitted({ workerId, staleAfterSeconds = 300, acceptance = null } = {}) {
   const claimedAt = now();
   const assignedWorkerId = workerId || id('worker');
   const claimToken = id('claim');
@@ -173,7 +173,8 @@ function claimNextAdmitted({ workerId, staleAfterSeconds = 300 } = {}) {
 UPDATE tasks SET status='planning', worker_id=${esc(assignedWorkerId)}, claim_token=${esc(claimToken)}, claimed_at=${esc(claimedAt)}, heartbeat_at=${esc(claimedAt)}, updated_at=${esc(claimedAt)}, current_stage='claimed'
 WHERE id=(
   SELECT id FROM tasks
-  WHERE status='queued' OR (status IN ('planning','running','validating') AND (heartbeat_at IS NULL OR datetime(heartbeat_at) < datetime('now','-${Number(staleAfterSeconds)} seconds')))
+  WHERE (status='queued' OR (status IN ('planning','running','validating') AND (heartbeat_at IS NULL OR datetime(heartbeat_at) < datetime('now','-${Number(staleAfterSeconds)} seconds'))))
+  ${acceptance?`AND (${acceptance.reads.map(row=>`(idempotency_key=${esc(`unified:jarvis:${row.idempotencyKey}`)} AND workspace_id=${esc(acceptance.workspace)} AND actor_id=${esc(acceptance.principal)} AND source_channel='jarvis' AND execution_intent='read_only' AND request=${esc(row.request)})`).join(' OR ')})`:''}
   ORDER BY created_at LIMIT 1
 );
 COMMIT;`);
@@ -417,9 +418,18 @@ function legacyAccountingState(row) {
   return row.cost_cents === null ? 'metered_cost_unavailable' : 'metered';
 }
 
-export function createTask(...args) { return withReleaseAdmission(() => createTaskAdmitted(...args)); }
+export function createTask(...args) { return withReleaseAdmission(() => {
+  const held=heldAcceptanceContext();
+  if(held&&(!held.taskKeys.includes(args[0]?.idempotencyKey)||args[0]?.workspaceId!==held.workspace||args[0]?.actorId!==held.principal||args[0]?.sourceChannel!=='jarvis'||args[0]?.executionIntent!=='read_only'))throw releaseAcceptanceRejected();
+  return createTaskAdmitted(...args);
+}); }
 
-export function claimNext(...args) { return withReleaseAdmission(() => claimNextAdmitted(...args)); }
+export function claimNext(...args) { return withReleaseAdmission(() => {
+  const held=heldAcceptanceContext();
+  return claimNextAdmitted({...args[0],...(held?{acceptance:held}:{})});
+}); }
+
+function releaseAcceptanceRejected(){const error=new Error('HELD acceptance task rejected');error.code='RELEASE_ADMISSION_HELD';return error;}
 
 export function transition(...args) { return args[1] === 'queued' ? withReleaseAdmission(() => transitionAdmitted(...args)) : transitionAdmitted(...args); }
 

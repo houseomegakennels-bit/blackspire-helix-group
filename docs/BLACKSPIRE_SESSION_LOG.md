@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-11 — timeout recovery, HELD runtime integration and cutover rollback correction
+
+- Recovered exact local/remote/PR head `a782f3d` and identified its sole landed delta from `e163873`; preserved the 19-file timeout tranche without reset, clean or stash.
+- Completed the narrow HELD API/worker admission path, exact six-task filter, live collector binding, evidence-bound permanent permit consumption and consumed-permit guarded OPEN. Global admission remains HELD until the sole guarded publisher succeeds.
+- Corrected VPS automatic rollback to reuse the active exclusive lease and added exact rollback pointer/artifact validation before any cutover intent. Focused release/authority/cutover tests plus lint, typecheck, build, secret scan, living-memory and whitespace checks pass.
+- Fresh read-only checks found exact-head CI `34608368243` successful, all 12 Supabase PUBLIC `net` EXECUTE edges unchanged, both Vercel projects account-blocked with no exact-head preview, and both GitHub receiver settings absent. No secret values were read or printed.
+- A fixed executable composition remains unsafe under the mandated stage order because monolithic stage-22 activation requires the new-main HELD epoch created at stage 23. The required next internal change is a journal-preserving stopped-preparation/HELD/activation split. No production mutation, merge, deployment, SQL, n8n transition, service activation, permit mint or OPEN publication occurred.
+
 ## 2026-09-11 — last-internal-gates continuation
 
 - Recovered exact local/remote/PR head `e163873ea7125376bd40319a7bf2cc332ebc0095` and preserved the existing 34-stage registry edit.

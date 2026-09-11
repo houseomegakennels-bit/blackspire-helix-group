@@ -1,4 +1,4 @@
-import { withReleaseAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
+import { withReleaseAdmission,withHeldAcceptanceAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -116,7 +116,11 @@ async function route(req, res) {
   try { pathname=new URL(req.url,'http://127.0.0.1').pathname; } catch { return routeAdmitted(req,res); }
   const observation=['GET','HEAD','OPTIONS'].includes(req.method);
   const controls=['/api/auth/login','/api/auth/session','/api/auth/logout','/api/auth/rotate','/api/auth/revoke-all','/api/stop','/api/stop/reset'].includes(pathname);
-  try { return await (observation||controls ? routeAdmitted(req,res) : withReleaseAdmission(()=>routeAdmitted(req,res))); }
+  try {
+    const heldToken=String(req.headers['x-blackspire-held-acceptance']||'');
+    if(heldToken&&pathname==='/api/unified-input'&&req.method==='POST')return await withHeldAcceptanceAdmission({role:'api',token:heldToken},()=>routeAdmitted(req,res));
+    return await (observation||controls ? routeAdmitted(req,res) : withReleaseAdmission(()=>routeAdmitted(req,res)));
+  }
   catch(error) {
     if(error?.code!=='RELEASE_ADMISSION_HELD')throw error;
     setSecurityHeaders(req,res); return json(res,503,{error:'release admission held'});
