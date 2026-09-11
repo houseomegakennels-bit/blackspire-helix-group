@@ -6,6 +6,7 @@ import {createProviderAclCheckOperation,createBoundedWriterE2eOperation,queryFix
 import {createRollbackProductionOperations} from './production-rollback-operations.js';
 import {createHealthSmokeProductionOperations} from './production-health-smoke.js';
 import {createZeroProofProductionOperations} from './production-zero-proofs.js';
+import {createN8nMigrationProductionOperations} from './production-n8n-migration.js';
 
 const REPOSITORY='houseomegakennels-bit/blackspire-helix-group';
 const BRANCH='release/zola-production-live';
@@ -128,6 +129,7 @@ export function createFixedProductionOperations(context,dependencies={}){
  Object.assign(operations,createRollbackProductionOperations(context,dependencies.rollback));
  Object.assign(operations,createHealthSmokeProductionOperations(context,dependencies.healthSmoke));
  Object.assign(operations,createZeroProofProductionOperations(context,dependencies.zeroProof));
+ Object.assign(operations,createN8nMigrationProductionOperations(context,dependencies.n8nMigration));
  if(Object.keys(operations).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))reject();
  for(const stage of RELEASE_STAGES){const operation=operations[stage];if(!operation||typeof operation.check!=='function'||typeof operation.observe!=='function'
   ||MUTATING_STAGES.has(stage)&&(typeof operation.execute!=='function'||typeof operation.reconcile!=='function'))reject();}
