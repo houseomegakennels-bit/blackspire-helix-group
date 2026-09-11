@@ -4,7 +4,7 @@
 Historical validator imported at commit `bf5029a`. It remains the immutable comparison point for Stage 1A.
 
 ## Approved research definitions
-The operator approved the following deterministic research rules for the validator:
+The operator explicitly approved the following deterministic research rules for the validator:
 - **Opposing MSS:** after the NY liquidity sweep, price must close through the most recent confirmed 3-bar swing point in the reversal direction.
 - **Displacement:** after MSS, a reversal-direction candle must have real body >= 1.5× the median real body of the prior 20 completed 5-minute bars.
 - Required order: NY sweep bar < MSS bar <= displacement bar < final NY evaluation.
