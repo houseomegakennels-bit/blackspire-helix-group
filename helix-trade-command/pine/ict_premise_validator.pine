@@ -1,0 +1,169 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+// ICT PREMISE VALIDATOR
+//
+// THIS IS NOT A STRATEGY. It places no trades and has no edge.
+// It is a MEASUREMENT TOOL that answers Stage 1 of the Master Build Plan:
+//
+//   Q1  How often does London sweep the Asia range?
+//   Q2  When it does, does New York CONTINUE in London's direction?   (Scenario A)
+//   Q3  When it doesn't, does New York Judas-then-REVERSE?            (Scenario B)
+//   Q4  What is the typical sweep penetration, in ticks?
+//   Q5  What is the typical Asia range width, in ticks?
+//
+// Q4 and Q5 feed directly into the real strategy later:
+//   Q4 -> the sweep detection threshold
+//   Q5 -> the "Asia range too wide, skip the day" filter
+//
+// HOW TO USE
+//   1. Open M6E1! (continuous Micro Euro FX futures). NOT spot EUR/USD.
+//   2. Set the chart to 5 minutes.
+//   3. Add this indicator. Scroll left to load as much history as your plan allows.
+//   4. Read the table in the top right.
+//
+// HOW TO READ IT
+//   A coin flip is 50%. If Q2 and Q3 are not meaningfully above 50% on a
+//   decent sample, the premise does not hold on this instrument and you should
+//   STOP. Do not proceed to build the strategy.
+// ═══════════════════════════════════════════════════════════════════════════
+
+indicator("ICT Premise Validator", overlay = true, max_boxes_count = 500)
+
+tz         = input.string("America/New_York", "Timezone", group = "Sessions")
+asiaStartH = input.int(20, "Asia start hour", minval = 0, maxval = 23, group = "Sessions")
+asiaEndH   = input.int(0,  "Asia end hour", minval = 0, maxval = 23, group = "Sessions")
+lonStartH  = input.int(3,  "London start hour", minval = 0, maxval = 23, group = "Sessions")
+lonEndH    = input.int(5,  "London end hour", minval = 0, maxval = 23, group = "Sessions")
+nyStartH   = input.int(7,  "NY start hour", minval = 0, maxval = 23, group = "Sessions")
+nyEndH     = input.int(10, "NY end hour", minval = 0, maxval = 23, group = "Sessions")
+minSweepTicks = input.int(1, "Min sweep penetration (ticks)", minval = 0, group = "Detection")
+drawBoxes     = input.bool(true, "Draw Asia range", group = "Display")
+
+h = hour(time, tz)
+inAsia   = asiaEndH > asiaStartH ? (h >= asiaStartH and h < asiaEndH) : (h >= asiaStartH or h < asiaEndH)
+inLondon = h >= lonStartH and h < lonEndH
+inNY     = h >= nyStartH and h < nyEndH
+
+var float asiaHi = na
+var float asiaLo = na
+var bool asiaDone = false
+var bool lonSweptHi = false
+var bool lonSweptLo = false
+var float maxSweepTicks = 0.0
+var float lonOpen = na
+var float lonClose = na
+var bool lonDone = false
+var float nyOpen = na
+var float nyClose = na
+var bool nySweptHi = false
+var bool nySweptLo = false
+var bool dayScored = false
+var int nDays = 0
+var int nA = 0
+var int nAHeld = 0
+var int nB = 0
+var int nBHeld = 0
+var float sumSweepTicks = 0.0
+var int nSweeps = 0
+var float sumAsiaRange = 0.0
+var int nRanges = 0
+
+newAsia = inAsia and not inAsia[1]
+if newAsia
+    asiaHi := high
+    asiaLo := low
+    asiaDone := false
+    lonSweptHi := false
+    lonSweptLo := false
+    maxSweepTicks := 0.0
+    lonOpen := na
+    lonClose := na
+    lonDone := false
+    nyOpen := na
+    nyClose := na
+    nySweptHi := false
+    nySweptLo := false
+    dayScored := false
+
+if inAsia
+    asiaHi := math.max(nz(asiaHi, high), high)
+    asiaLo := math.min(nz(asiaLo, low), low)
+
+asiaJustEnded = not inAsia and inAsia[1]
+if asiaJustEnded and not na(asiaHi) and not na(asiaLo)
+    asiaDone := true
+    sumAsiaRange := sumAsiaRange + (asiaHi - asiaLo) / syminfo.mintick
+    nRanges := nRanges + 1
+
+newLondon = inLondon and not inLondon[1]
+if newLondon and asiaDone
+    lonOpen := open
+
+if inLondon and asiaDone
+    if high > asiaHi + minSweepTicks * syminfo.mintick and close <= asiaHi
+        lonSweptHi := true
+        maxSweepTicks := math.max(maxSweepTicks, (high - asiaHi) / syminfo.mintick)
+    if low < asiaLo - minSweepTicks * syminfo.mintick and close >= asiaLo
+        lonSweptLo := true
+        maxSweepTicks := math.max(maxSweepTicks, (asiaLo - low) / syminfo.mintick)
+    lonClose := close
+
+lonJustEnded = not inLondon and inLondon[1]
+if lonJustEnded and asiaDone
+    lonDone := true
+    if lonSweptHi or lonSweptLo
+        sumSweepTicks := sumSweepTicks + maxSweepTicks
+        nSweeps := nSweeps + 1
+
+newNY = inNY and not inNY[1]
+if newNY and lonDone
+    nyOpen := open
+
+if inNY and lonDone
+    if high > asiaHi and close <= asiaHi
+        nySweptHi := true
+    if low < asiaLo and close >= asiaLo
+        nySweptLo := true
+    nyClose := close
+
+nyJustEnded = not inNY and inNY[1]
+if nyJustEnded and lonDone and not dayScored and not na(nyOpen) and not na(lonOpen) and not na(lonClose) and not na(nyClose)
+    dayScored := true
+    nDays := nDays + 1
+    lonDir = lonClose > lonOpen ? 1 : -1
+    nyDir = nyClose > nyOpen ? 1 : -1
+    lonSwept = lonSweptHi or lonSweptLo
+    if lonSwept
+        nA := nA + 1
+        if nyDir == lonDir
+            nAHeld := nAHeld + 1
+    else
+        nB := nB + 1
+        bHeld = (nySweptHi and nyDir == -1) or (nySweptLo and nyDir == 1)
+        if bHeld
+            nBHeld := nBHeld + 1
+
+if drawBoxes and asiaJustEnded and not na(asiaHi) and not na(asiaLo)
+    box.new(bar_index, asiaHi, bar_index + 120, asiaLo, border_color = color.new(color.blue, 40), bgcolor = color.new(color.blue, 92))
+
+pct(a, b) => b == 0 ? 0.0 : 100.0 * a / b
+var table t = table.new(position.top_right, 2, 9, border_width = 1)
+if barstate.islast
+    table.cell(t, 0, 0, "ICT PREMISE VALIDATOR", bgcolor = color.navy, text_color = color.white)
+    table.cell(t, 1, 0, syminfo.ticker, bgcolor = color.navy, text_color = color.white)
+    table.cell(t, 0, 1, "Days sampled")
+    table.cell(t, 1, 1, str.tostring(nDays))
+    table.cell(t, 0, 2, "Q1  London swept Asia")
+    table.cell(t, 1, 2, str.tostring(nA) + "  (" + str.tostring(pct(nA, nDays), "#.#") + "%)")
+    table.cell(t, 0, 3, "Q2  NY continued  [A held]")
+    table.cell(t, 1, 3, str.tostring(nAHeld) + "/" + str.tostring(nA) + "  (" + str.tostring(pct(nAHeld, nA), "#.#") + "%)", text_color = pct(nAHeld, nA) > 55 ? color.green : color.red)
+    table.cell(t, 0, 4, "     London did NOT sweep")
+    table.cell(t, 1, 4, str.tostring(nB) + "  (" + str.tostring(pct(nB, nDays), "#.#") + "%)")
+    table.cell(t, 0, 5, "Q3  NY Judas+rev  [B held]")
+    table.cell(t, 1, 5, str.tostring(nBHeld) + "/" + str.tostring(nB) + "  (" + str.tostring(pct(nBHeld, nB), "#.#") + "%)", text_color = pct(nBHeld, nB) > 55 ? color.green : color.red)
+    table.cell(t, 0, 6, "Q4  Avg sweep (ticks)")
+    table.cell(t, 1, 6, str.tostring(nSweeps == 0 ? 0.0 : sumSweepTicks / nSweeps, "#.#"))
+    table.cell(t, 0, 7, "Q5  Avg Asia range (ticks)")
+    table.cell(t, 1, 7, str.tostring(nRanges == 0 ? 0.0 : sumAsiaRange / nRanges, "#.#"))
+    table.cell(t, 0, 8, "COIN FLIP = 50%", text_color = color.red)
+    table.cell(t, 1, 8, "Beat it, or stop.", text_color = color.red)
