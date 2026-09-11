@@ -2,10 +2,12 @@ import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
 import {MUTATING_STAGES,RELEASE_STAGES} from './commander-sequence.js';
 import {verifyReleaseSource} from './commander-host.js';
-import {createProviderAclCheckOperation,createBoundedWriterE2eOperation,queryFixedProviderAcl} from './production-acl-writer.js';
+import {createProviderAclCheckOperation,createBoundedWriterE2eOperation,queryFixedProviderAcl,inspectFixedWriterAcceptance,runFixedWriterAcceptance}
+ from './production-acl-writer.js';
 import {createRollbackProductionOperations} from './production-rollback-operations.js';
 import {createHealthSmokeProductionOperations} from './production-health-smoke.js';
 import {createZeroProofProductionOperations} from './production-zero-proofs.js';
+import {createDeploymentProductionOperations} from './production-deployment-operations.js';
 import {createN8nMigrationProductionOperations} from './production-n8n-migration.js';
 
 const REPOSITORY='houseomegakennels-bit/blackspire-helix-group';
@@ -111,9 +113,6 @@ function externalOperation(context,observe){
  return Object.freeze({check:run,observe:run});
 }
 
-const defaultWriterInspection=async()=>null;
-const defaultWriterExecution=async()=>{throw new Error('Bounded writer acceptance unavailable');};
-
 // The production CLI calls this without dependencies. The dependency seam is
 // retained only for isolated tests of fixed transports; protected input cannot
 // select implementations, commands, URLs, or success values.
@@ -124,11 +123,13 @@ export function createFixedProductionOperations(context,dependencies={}){
  operations.receiver_audit=externalOperation(context,observeReceiverAudit);
  operations.vercel_exact_head_preview=externalOperation(context,observeVercelExactHeadPreview);
  operations.provider_acl_check=createProviderAclCheckOperation({query:dependencies.providerQuery??((sql,values)=>queryFixedProviderAcl(context.release.activationConfigurationFile,sql,values))});
- operations.bounded_writer_e2e=createBoundedWriterE2eOperation({inspectAcceptance:dependencies.inspectWriterAcceptance??defaultWriterInspection,
-  runAcceptance:dependencies.runWriterAcceptance??defaultWriterExecution});
+ const writerHost={...(dependencies.writerHost??{}),configurationFile:context.release.activationConfigurationFile};
+ operations.bounded_writer_e2e=createBoundedWriterE2eOperation({inspectAcceptance:binding=>inspectFixedWriterAcceptance(binding,writerHost),
+  runAcceptance:request=>runFixedWriterAcceptance(request,writerHost)});
  Object.assign(operations,createRollbackProductionOperations(context,dependencies.rollback));
  Object.assign(operations,createHealthSmokeProductionOperations(context,dependencies.healthSmoke));
  Object.assign(operations,createZeroProofProductionOperations(context,dependencies.zeroProof));
+ Object.assign(operations,createDeploymentProductionOperations(context,dependencies.deployment));
  Object.assign(operations,createN8nMigrationProductionOperations(context,dependencies.n8nMigration));
  if(Object.keys(operations).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))reject();
  for(const stage of RELEASE_STAGES){const operation=operations[stage];if(!operation||typeof operation.check!=='function'||typeof operation.observe!=='function'
