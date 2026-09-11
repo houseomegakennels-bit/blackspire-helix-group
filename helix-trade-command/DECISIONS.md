@@ -40,3 +40,9 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 - Store runtime observations locally in a SHA-256 chained ledger and expose only read-only status to Zola.
 - Schedule capture after the 10:00 ET research window with a 10:15 primary attempt and a 10:45 retry.
 - Keep 6E robustness strictly separate from the primary M6E gate.
+
+## 2026-09-11 — London execution backtest V1
+- Freeze execution assumptions before running historical results; do not tune V1 after seeing outcomes.
+- Keep directional-premise validation separate from executable trade profitability.
+- Do not promote either V1 execution variant: original London sweep has too few executable trades and negative normalized R expectancy; R1-H1 has four losing executable trades in the historical debug sample.
+- Prospective R1 evidence beginning 2026-09-12 remains the authoritative validation track.
