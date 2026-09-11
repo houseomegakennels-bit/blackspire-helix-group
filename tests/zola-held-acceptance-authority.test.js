@@ -8,6 +8,16 @@ import {acquireReleaseAdmissionLock,RELEASE_ADMISSION_LOCK} from '../packages/sh
 import {HELD_ACCEPTANCE_CAPABILITIES,HELD_ACCEPTANCE_OPERATIONS,authorizeHeldAcceptanceOperation,completeHeldAcceptanceOperation,consumeHeldAcceptancePermit,finishHeldAcceptancePermit,inspectHeldAcceptanceHistory,mintHeldAcceptancePermit} from '../packages/zola-release/held-acceptance-authority.js';
 
 const releaseSha='a'.repeat(40),apiGeneration='1'.repeat(32),workerGeneration='2'.repeat(32);
+const d=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
+function operationEvidence(authorization,binding){
+ const common={schema:1,operation:authorization.operation,permitId:authorization.permitId,attemptId:authorization.attemptId,mergeMainSha:binding.mergeMainSha,
+  epochRunId:binding.epochRunId,apiGeneration:binding.apiGeneration,workerGeneration:binding.workerGeneration,
+  bindingDigest:d({permitId:authorization.permitId,attemptId:authorization.attemptId,operation:authorization.operation,mergeMainSha:binding.mergeMainSha,epochRunId:binding.epochRunId,apiGeneration:binding.apiGeneration,workerGeneration:binding.workerGeneration})};
+ if(authorization.operation==='six_live_reads')return{...common,status:'PASS_LIVE_ACCEPTANCE',livePass:true,readCount:6,crossOwnerDenials:6,paidProviderCalls:0,mutationDelta:0,collectorDigest:d('collector')};
+ if(authorization.operation==='zero_paid_nexus')return{...common,paidProviderCalls:0,usageDigest:d('usage')};
+ if(authorization.operation==='zero_unintended_mutation')return{...common,mutationDelta:0,mutationDigest:d('mutation')};
+ return{...common,status:'PASS',observationDigest:d(authorization.operation)};
+}
 function fixture(){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'held-acceptance-'));fs.writeFileSync(path.join(root,'admission.lock'),RELEASE_ADMISSION_LOCK,{mode:0o640});
  const epochRunId=randomUUID(),state={version:1,mode:'held',releaseSha,runId:epochRunId,apiGeneration:null,workerGeneration:null};fs.writeFileSync(path.join(root,'state.json'),JSON.stringify(state)+'\n',{mode:0o640});
@@ -26,12 +36,14 @@ test('single-use HELD permit binds exact epoch/deployment/generations and is per
  const f=fixture();try{
   const minted=mintHeldAcceptancePermit(f.input,f.deps);assert.equal(inspectHeldAcceptanceHistory(f.events).status,'MINTED');
   const session=consumeHeldAcceptancePermit({token:minted.token,journal:f.journal},f.deps);
+  assert.throws(()=>consumeHeldAcceptancePermit({token:minted.token,journal:f.journal},f.deps));
   const binding={mergeMainSha:releaseSha,expectedDeploymentSha:releaseSha,epochRunId:f.input.epochRunId,workspace:f.input.workspace,apiGeneration,workerGeneration};
   for(const operation of HELD_ACCEPTANCE_OPERATIONS){
    const authorization=authorizeHeldAcceptanceOperation(session,operation,binding);
-   const evidence=operation==='six_live_reads'?{readCount:6,paidProviderCalls:0,mutationDelta:0,collectorDigest:'9'.repeat(64)}:
-    operation==='zero_paid_nexus'?{paidProviderCalls:0}:operation==='zero_unintended_mutation'?{mutationDelta:0}:{status:'PASS'};
+   if(operation==='six_live_reads')assert.equal(JSON.parse(fs.readFileSync(path.join(f.root,'acceptance-active.json'))).attemptId,authorization.attemptId);
+   const evidence=operationEvidence(authorization,binding);
    completeHeldAcceptanceOperation(session,authorization,binding,evidence);
+   if(operation==='six_live_reads')assert.equal(fs.existsSync(path.join(f.root,'acceptance-active.json')),false);
   }
   const result=finishHeldAcceptancePermit(session);assert.equal(result.status,'CONSUMED');assert.equal(inspectHeldAcceptanceHistory(f.events).status,'CONSUMED');assert.equal(fs.existsSync(path.join(f.root,'acceptance.json')),false);
   assert.throws(()=>consumeHeldAcceptancePermit({token:minted.token,journal:f.journal},f.deps));
@@ -60,7 +72,7 @@ test('operation results require affirmative operation-specific evidence',()=>{
   const minted=mintHeldAcceptancePermit(f.input,f.deps),session=consumeHeldAcceptancePermit({token:minted.token,journal:f.journal},f.deps);
   const binding={mergeMainSha:releaseSha,expectedDeploymentSha:releaseSha,epochRunId:f.input.epochRunId,workspace:f.input.workspace,apiGeneration,workerGeneration};
   const authorization=authorizeHeldAcceptanceOperation(session,'api_health',binding);
-  assert.throws(()=>completeHeldAcceptanceOperation(session,authorization,binding,{status:'FAIL'}));
+  assert.throws(()=>completeHeldAcceptanceOperation(session,authorization,binding,{...operationEvidence(authorization,binding),status:'FAIL'}));
   assert.equal(inspectHeldAcceptanceHistory(f.events).pending.operation,'api_health');
   assert.throws(()=>finishHeldAcceptancePermit(session));
  }finally{f.cleanup();}

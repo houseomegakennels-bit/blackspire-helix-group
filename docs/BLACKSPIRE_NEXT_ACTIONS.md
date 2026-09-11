@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-11 — finish the cutover phase split and fixed composition
+
+1. Preserve the newly operation-fenced HELD path. Keep `acceptance-active.json` exclusive to the journaled `six_live_reads` attempt and require exact capability selection; never broaden the HELD context into general admission.
+2. Split the VPS subordinate journal without changing the 34-stage registry: stage 22 validates backup/artifacts, captures state and leaves services stopped; stage 23 establishes the exact new-main HELD epoch; stages 25–27 journal pointer/runtime binding, API health, worker readiness and stable generations. Strengthen final rollback acceptance with functional health/readiness/six-read proof and exact restoration semantics.
+3. Wire every concrete production adapter and the strict root-owned protected-input `--release` resume command only after the split. Do not accept caller-supplied commands, booleans, secrets or evidence claims.
+4. Owners must execute the Supabase ACL package, restore Vercel and produce exact-head previews, and provision both GitHub receiver settings plus an exact-head receiver-maintenance success before the command may advance.
+
 ## 2026-09-11 — split cutover safely, then compose the fixed command
 
 1. Refactor the journaled VPS cutover so stage 22 performs only rollback-validated artifact creation and atomic pointer preparation while services remain stopped under the existing hold. Stage 23 must atomically establish the exact new-main HELD epoch; stages 25–27 must journal API activation, worker activation/readiness and the generation fence. Preserve one rollback journal across the split.

@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-11 — HELD execution is operation-fenced; production composition remains
+
+The recovered `e3aa44f` HELD acceptance path is now active only while the journal's exact `six_live_reads` attempt has a protected permit/attempt-bound runtime marker. API and worker deny before that operation and after its result; the worker cannot fall through to a null or different capability. The v5 collector uses the release epoch for the six immutable keys. Acceptance results bind the exact permit, attempt, SHA, epoch and both generations. Sequence reconciliation now receives identical durable bindings before and after restart, and all 34 exact adapter names are required.
+
+The fixed production composition and `--release` command remain absent. Stage 22 must first be split into stopped-host preparation, with stage 23 establishing the new-main HELD epoch and stages 25–27 owning journaled activation/health/readiness/generation fencing. Supabase ACL execution, Vercel restoration/exact-head preview and the GitHub receiver settings remain external. No production mutation occurred.
+
 ## 2026-09-11 — HELD runtime path complete; composition order blocked
 
 The recovered timeout tranche now carries the expiring single-use HELD permit through the API, worker, exact six read-only tasks, live collector evidence and consumed-permit guarded OPEN while global admission remains HELD. VPS cutover additionally rejects an unavailable or mismatched rollback artifact before effects and reuses its exclusive admission lock during automatic rollback. Focused tests and static/security checks pass.

@@ -11,6 +11,7 @@ import { dealAnalysisCapability, summarizeDealAnalysis } from './deal-analysis.j
 import { nexusEnrichmentCapability, summarizeNexusEnrichment } from './nexus-enrichment.js';
 import { resolveAdminBearer, requireWorkspacePermission } from '../shared/authorization.js';
 import { audit, getFlag, getTask, prepareCapabilityDispatch, finishCapabilityDispatch, finalizeCapabilitySuccess, capabilityAttemptId, capabilityDispatchAuthority, recordEvidence, recordTaskEvent, transition, registerTaskAbortController, unregisterTaskAbortController } from '../task-engine/tasks.js';
+import {heldAcceptanceContext,releaseAdmissionHeld} from '../shared/release-admission.js';
 
 function summarizeCapabilityResult(capability, result) {
   if (capability.id === 'buyer.profiles.search') return summarizeBuyerProfiles(result);
@@ -73,6 +74,11 @@ export async function executeRegisteredCapability(task, workspace, {
   signal = null, beforeAdapter = null, ownership = null, issueAuthority=issueReceiverAuthority,
 } = {}) {
   const capability = selectCapabilityForTask(task, registry);
+  const held=heldAcceptanceContext();
+  if(held){
+    const read=held.reads.find(row=>`unified:jarvis:${row.idempotencyKey}`===task?.idempotency_key);
+    if(!read||!capability||capability.id!==read.capability||capability.requiredPermissions.length!==1||capability.requiredPermissions[0]!==read.permission)throw releaseAdmissionHeld();
+  }
   if (!capability) return null;
   const fail = (reason, status = 'failed') => {
     recordEvidence(task.id, 'capability_prevented', { capabilityId: capability.id, reason });

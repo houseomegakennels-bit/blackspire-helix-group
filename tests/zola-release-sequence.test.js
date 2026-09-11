@@ -17,6 +17,12 @@ test('registry is exact, frozen, unique and contains 34 ordered stages',()=>{
  assert.equal(MUTATING_STAGES.size,16);assert.ok(MUTATING_STAGES.has('admission_lease'));assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_held_to_open'));
  assert.equal(MUTATING_STAGES.add,undefined);assert.throws(()=>{MUTATING_STAGES.size=0;});
 });
+test('runner rejects missing or extra adapters before any stage dispatch',async()=>{
+ for(const mutate of [set=>delete set.exact_sha_verification,set=>set.placeholder={check(){},observe(){}}]){
+  const j=journal(),calls=[],set=adapters(calls);mutate(set);const result=await runReleaseSequence({input,journal:j,adapters:set});
+  assert.equal(result.releaseState,'FAIL_CLOSED');assert.deepEqual(calls,[]);assert.deepEqual(j.events,[]);
+ }
+});
 test('all 34 stages persist once and a completed resume dispatches nothing',async()=>{
  const j=journal(),calls=[];const result=await runReleaseSequence({input,journal:j,adapters:adapters(calls)});
  assert.equal(result.status,'COMPLETE');assert.equal(result.newMainSha,newMainSha);
@@ -32,12 +38,23 @@ test('unknown mutation resumes by observation without resending effect',async()=
  result=await runReleaseSequence({input,journal:j,adapters:adapters(calls)});
  assert.equal(result.status,'COMPLETE');assert.equal(calls.filter(value=>value==='execute:'+stage).length,1);assert.equal(calls.filter(value=>value==='check:'+stage).length,1);assert.equal(calls.filter(value=>value==='reconcile:'+stage).length,1);
 });
+test('immediate and restarted reconciliation receive identical durable attempt bindings',async()=>{
+ const j=journal(),seen=[];
+ const set=adapters([]);set.n8n_migration.execute=async value=>seen.push(['execute',value]);set.n8n_migration.reconcile=async value=>{seen.push(['reconcile',value]);return{status:'PASS',evidence:{stage:'n8n_migration'}};};
+ await runReleaseSequence({input,journal:j,adapters:set});
+ const immediate=seen.find(([kind])=>kind==='reconcile')[1],intent=j.events.find(row=>row.type==='sequence_stage_intent'&&row.stage==='n8n_migration');
+ assert.equal(immediate.state.pending.attemptId,intent.attemptId);assert.equal(immediate.inputDigest,intent.inputDigest);assert.equal(immediate.checkOutputDigest,intent.checkOutputDigest);
+ const pending=journal(j.events.slice(0,j.events.indexOf(intent)+1)),restarted=[];const resumed=adapters([]);resumed.n8n_migration.reconcile=async value=>{restarted.push(value);return{status:'PASS',evidence:{stage:'n8n_migration'}};};
+ await runReleaseSequence({input,journal:pending,adapters:resumed});
+ assert.equal(restarted[0].inputDigest,immediate.inputDigest);assert.equal(restarted[0].checkOutputDigest,immediate.checkOutputDigest);assert.equal(restarted[0].state.pending.attemptId,intent.attemptId);
+});
 test('malformed, reordered, mixed-operation and secret-bearing evidence fail closed',async()=>{
  for(const mutate of [
   rows=>rows[0].schema=4,
   rows=>rows[1].ordinal=2,
   rows=>rows[1].operationId='12345678-1234-4234-8234-123456789abc',
   rows=>rows[2].outputDigest='0'.repeat(64),
+  rows=>rows.find(row=>row.type==='sequence_stage_confirmed'&&!MUTATING_STAGES.has(row.stage)).checkOutputDigest='0'.repeat(64),
  ]){
   const j=journal(),calls=[];await runReleaseSequence({input,journal:j,adapters:adapters(calls)});const rows=structuredClone(j.events);mutate(rows);
   assert.throws(()=>inspectReleaseSequence(rows));

@@ -11,6 +11,7 @@ import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 
 export const RELEASE_ADMISSION_ROOT='/etc/blackspire/release-admission';
 export const RELEASE_ADMISSION_LOCK='ZOLA_RELEASE_ADMISSION_LOCK_V1\n';
+export const HELD_ACCEPTANCE_ACTIVE_FILE='acceptance-active.json';
 const heldAcceptanceStorage=new AsyncLocalStorage();
 const HELD_OPERATIONS=Object.freeze(['api_health','worker_readiness','generation_fence','six_live_reads','production_smoke','zero_paid_nexus','zero_unintended_mutation','rollback_verification']);
 const HELD_CAPABILITIES=Object.freeze(['seller.opportunities.search','buyer.profiles.search','buyer.matches.search','deal.records.search','deal.analysis.get','nexus.enrichment.status']);
@@ -74,6 +75,15 @@ export function validateHeldAcceptanceClaims(value){
   return structuredClone(value);
 }
 
+export function validateHeldAcceptanceActive(value,claims){
+  const keys='attemptId,claimsDigest,expiresAt,kind,operation,permitId,schema';
+  if(!value||Array.isArray(value)||Object.keys(value).sort().join(',')!==keys.split(',').sort().join(',')
+    ||value.schema!==1||value.kind!=='held-acceptance-active'||value.operation!=='six_live_reads'
+    ||value.permitId!==claims.permitId||value.claimsDigest!==heldDigest(claims)||value.expiresAt!==claims.expiresAt
+    ||!(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/).test(value.attemptId??''))refuse();
+  return structuredClone(value);
+}
+
 // Narrow post-merge acceptance admission. It never changes the global HELD
 // state. The API must prove the opaque permit token; the worker can process
 // only the six exact task keys from the protected claims file. A shared lease
@@ -89,15 +99,16 @@ export function withHeldAcceptanceAdmission({role,token=null},fn,{root=RELEASE_A
     const stateFile=path.join(root,'state.json'),stateStat=fs.lstatSync(stateFile);
     lease=acquire({root,exclusive:false,allowPending:true,owner:0,groupId:stateStat.gid});lease.assertIdentity();
     const state=validateReleaseAdmissionState(read(stateFile)),claims=validateHeldAcceptanceClaims(read(path.join(root,'acceptance.json')));
+    const active=validateHeldAcceptanceActive(read(path.join(root,HELD_ACCEPTANCE_ACTIVE_FILE)),claims);
     if(state.mode!=='held'||state.releaseSha!==claims.mergeMainSha||state.runId!==claims.epochRunId
       ||state.apiGeneration!==claims.apiGeneration||state.workerGeneration!==claims.workerGeneration
       ||binding.releaseSha!==claims.mergeMainSha||binding.runId!==claims.epochRunId
-      ||binding.apiGeneration!==claims.apiGeneration||binding.workerGeneration!==claims.workerGeneration||now()>=claims.expiresAt)refuse();
+      ||binding.apiGeneration!==claims.apiGeneration||binding.workerGeneration!==claims.workerGeneration||now()>=claims.expiresAt||now()>=active.expiresAt)refuse();
     if(role==='api'){
       const supplied=Buffer.from(heldDigest(String(token??'')),'hex'),expected=Buffer.from(claims.tokenDigest,'hex');
       if(typeof token!=='string'||token.length!==43||!timingSafeEqual(supplied,expected))refuse();
     }
-    const scoped=Object.freeze({role,permitId:claims.permitId,workspace:claims.workspace,principal:claims.principal,
+    const scoped=Object.freeze({role,permitId:claims.permitId,attemptId:active.attemptId,operation:active.operation,workspace:claims.workspace,principal:claims.principal,
       taskKeys:Object.freeze(claims.reads.map(row=>`unified:jarvis:${row.idempotencyKey}`)),reads:Object.freeze(claims.reads)});
     const result=heldAcceptanceStorage.run(scoped,fn);
     if(result&&typeof result.then==='function')return Promise.resolve(result).finally(()=>lease.close());

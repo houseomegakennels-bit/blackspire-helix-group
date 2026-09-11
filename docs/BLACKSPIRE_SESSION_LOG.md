@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-11 — exact timeout recovery and HELD operation-fence correction
+
+- Recovered clean exact local/remote/PR head `e3aa44f`; the only commit since `a782f3d` is its HELD/VPS hardening delta. Four focused lanes confirmed the generic 34-stage registry and prior VPS/authority tests were green but found no fixed composition or executable release command.
+- Corrected a missed runtime authority gap: HELD API/worker admission now requires a protected marker for the exact journaled `six_live_reads` attempt, and capability execution rejects null/substituted capability selection. Added concurrent-consumer refusal, exact epoch collector keys and strict operation evidence bindings.
+- Corrected sequence reconciliation so immediate and restarted mutation observation receive the same durable intent/check/input digests; all confirmations recompute their check binding and the runner rejects missing or extra adapters. Focused affected tests pass.
+- Fresh read-only truth: exact-head CI was green before this source correction; n8n exact-head repin is valid and GET-only; all 12 Supabase `net` functions retain PUBLIC EXECUTE; Vercel is account-blocked with no exact-head preview; both GitHub receiver settings and an exact-head receiver audit are absent. No production mutation, merge, deployment, SQL, n8n transition, service activation, permit mint or OPEN publication occurred.
+- The stage-22/23 cutover ordering conflict, fixed production adapters and root-only `--release` command remain internal work. Autonomous completion is not claimed.
+
 ## 2026-09-11 — timeout recovery, HELD runtime integration and cutover rollback correction
 
 - Recovered exact local/remote/PR head `a782f3d` and identified its sole landed delta from `e163873`; preserved the 19-file timeout tranche without reset, clean or stash.

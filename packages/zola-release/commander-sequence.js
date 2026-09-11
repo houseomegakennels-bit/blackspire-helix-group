@@ -45,10 +45,11 @@ export function inspectReleaseSequence(events){
     ||row.inputDigest!==hash({sequence:start.inputDigest,stage:row.stage,ordinal:row.ordinal,check:row.checkOutputDigest}))reject();
    pending=row;
   }else if(row.type==='sequence_stage_confirmed'){
-   if(row.schema!==3||ordinal>=RELEASE_STAGES.length||!exact(row,['schema','type','operationId','ordinal','stage','attemptId','inputDigest','outputDigest','output'])
-    ||row.ordinal!==ordinal||row.stage!==RELEASE_STAGES[ordinal]||!digest(row.inputDigest)||!digest(row.outputDigest))reject();
+   if(row.schema!==3||ordinal>=RELEASE_STAGES.length||!exact(row,['schema','type','operationId','ordinal','stage','attemptId','inputDigest','checkOutputDigest','outputDigest','output'])
+    ||row.ordinal!==ordinal||row.stage!==RELEASE_STAGES[ordinal]||!digest(row.inputDigest)||!digest(row.checkOutputDigest)||!digest(row.outputDigest)
+    ||row.inputDigest!==hash({sequence:start.inputDigest,stage:row.stage,ordinal:row.ordinal,check:row.checkOutputDigest}))reject();
    if(MUTATING_STAGES.has(row.stage)){
-    if(!pending||row.attemptId!==pending.attemptId||row.inputDigest!==pending.inputDigest)reject();pending=null;
+    if(!pending||row.attemptId!==pending.attemptId||row.inputDigest!==pending.inputDigest||row.checkOutputDigest!==pending.checkOutputDigest)reject();pending=null;
    }else if(row.attemptId!==null)reject();
    const bytes=JSON.stringify(row.output);if(!safeOutput(row.output)||bytes.length>4096||hash(bytes)!==row.outputDigest)reject();
    outputs[row.stage]=structuredClone(row.output);ordinal++;
@@ -98,7 +99,8 @@ export async function runReleaseSequence({input,journal,adapters}){
  };
  try{
   if(!exact(input,['releaseSha','previousMainSha','recoverySha','inputDigest'])||![input.releaseSha,input.previousMainSha,input.recoverySha].every(sha)
-   ||input.inputDigest!==hash({releaseSha:input.releaseSha,previousMainSha:input.previousMainSha,recoverySha:input.recoverySha})||!adapters||typeof adapters!=='object')reject();
+   ||input.inputDigest!==hash({releaseSha:input.releaseSha,previousMainSha:input.previousMainSha,recoverySha:input.recoverySha})||!adapters||typeof adapters!=='object'
+   ||Object.keys(adapters).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))reject();
   state=inspectReleaseSequence(stream.events());
   wasStarted=state.started;
   if(!state.started){
@@ -120,15 +122,18 @@ export async function runReleaseSequence({input,journal,adapters}){
     if(!attempt){
      const inputDigest=hash({sequence:input.inputDigest,stage,ordinal,check:checkedProof.outputDigest}),attemptId=randomUUID();
      attempt={schema:3,type:'sequence_stage_intent',operationId:state.context.operationId,ordinal,stage,attemptId,inputDigest,checkOutputDigest:checkedProof.outputDigest};stream.append(attempt);
-     try{await adapter.execute({input,state,ordinal,attemptId,inputDigest});}
+     state=inspectReleaseSequence(stream.events());
+     try{await adapter.execute({input,state,ordinal,attemptId,inputDigest,checkOutputDigest:attempt.checkOutputDigest});}
      catch{return stopped('FAIL_CLOSED','MUTATION_OUTCOME_UNKNOWN',stage,null);}
     }
    }
-   const observed=await (attempt?adapter.reconcile:adapter.observe)({input,state,ordinal,attemptId:attempt?.attemptId??null});
+   const inputDigest=attempt?.inputDigest??hash({sequence:input.inputDigest,stage,ordinal,check:checkedProof.outputDigest});
+   const checkOutputDigest=attempt?.checkOutputDigest??checkedProof.outputDigest;
+   const observed=await (attempt?adapter.reconcile:adapter.observe)({input,state,ordinal,attemptId:attempt?.attemptId??null,inputDigest,checkOutputDigest});
    if(observed?.status==='BLOCKED_EXTERNAL')return stopped('BLOCKED_EXTERNAL','EXTERNAL_GATE',stage,attempt?null:false);
-   const observedProof=proof(observed),inputDigest=attempt?.inputDigest??hash({sequence:input.inputDigest,stage,ordinal,check:checkedProof.outputDigest});
+   const observedProof=proof(observed);
    stream.append({schema:3,type:'sequence_stage_confirmed',operationId:state.context.operationId,ordinal,stage,
-    attemptId:attempt?.attemptId??null,inputDigest,...observedProof});
+    attemptId:attempt?.attemptId??null,inputDigest,checkOutputDigest,...observedProof});
    state=inspectReleaseSequence(stream.events());
   }
   const newMainSha=state.outputs.capture_new_main_sha?.newMainSha;

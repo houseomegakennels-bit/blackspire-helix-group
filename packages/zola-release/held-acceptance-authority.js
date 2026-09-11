@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash,randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
-import {RELEASE_ADMISSION_ROOT,acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shared/release-admission.js';
+import {HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_ROOT,acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {hash} from './commander-journal.js';
 
@@ -14,6 +14,7 @@ export const HELD_ACCEPTANCE_CAPABILITIES=Object.freeze([
  'deal.records.search','deal.analysis.get','nexus.enrichment.status',
 ]);
 const sessions=new WeakMap();
+const activePermitSessions=new Map();
 const PERMISSIONS=Object.freeze({
  'seller.opportunities.search':'seller.opportunities.read','buyer.profiles.search':'buyer.profiles.read',
  'buyer.matches.search':'buyer.matches.read','deal.records.search':'deal.records.read',
@@ -33,6 +34,15 @@ function atomic(io,filename,value,{mode=0o600,uid=0,gid=0}={}){
   io.fchownSync(fd,uid,gid);io.fchmodSync(fd,mode);io.writeFileSync(fd,JSON.stringify(value)+'\n');io.fsyncSync(fd);io.closeSync(fd);fd=undefined;
   io.renameSync(temporary,filename);sync(io,directory);
  }finally{if(fd!==undefined)io.closeSync(fd);try{io.unlinkSync(temporary);}catch(error){if(error.code!=='ENOENT')throw error;}}
+}
+function readActive(io,filename,{owner,gid}){
+ let fd;
+ try{
+  fd=io.openSync(filename,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);const before=io.fstatSync(fd);
+  if(!before.isFile()||before.uid!==owner||before.gid!==gid||before.nlink!==1||(before.mode&0o7777)!==0o640||before.size<2||before.size>2048)reject();
+  const value=JSON.parse(io.readFileSync(fd,'utf8')),after=io.fstatSync(fd);
+  if(!['dev','ino','uid','gid','mode','nlink','size','mtimeMs','ctimeMs'].every(key=>before[key]===after[key]))reject();return value;
+ }finally{if(fd!==undefined)io.closeSync(fd);}
 }
 function validateReads(reads,epochRunId,workspace){
  if(!Array.isArray(reads)||reads.length!==6)return false;
@@ -103,7 +113,7 @@ export function mintHeldAcceptancePermit({commanderRunId,mergeMainSha,expectedDe
     ||JSON.stringify(claims.reads)!==JSON.stringify(reads)||state.apiGeneration!==apiGeneration||state.workerGeneration!==workerGeneration)reject();
    stream.append({schema:1,type:'held_acceptance_minted',permitId:claims.permitId,claimsDigest:hash(claims)});return Object.freeze({token:secret.token,claims:Object.freeze(claims)});
   }
-  for(const name of ['acceptance.json','acceptance-secret.json'])try{io.lstatSync(path.join(root,name));reject();}catch(error){if(error.code!=='ENOENT')throw error;}
+  for(const name of ['acceptance.json','acceptance-secret.json',HELD_ACCEPTANCE_ACTIVE_FILE])try{io.lstatSync(path.join(root,name));reject();}catch(error){if(error.code!=='ENOENT')throw error;}
   const issuedAt=now(),token=randomBytes(32).toString('base64url');
   const claims=validateClaims({schema:1,kind:'held-epoch-acceptance',permitId:randomUUID(),commanderRunId,mergeMainSha,expectedDeploymentSha,epochRunId,workspace,principal,
    apiGeneration,workerGeneration,issuedAt,expiresAt:issuedAt+15*60*1000,operations:[...HELD_ACCEPTANCE_OPERATIONS],reads:structuredClone(reads),tokenDigest:tokenDigest(token)});
@@ -127,8 +137,9 @@ export function consumeHeldAcceptancePermit({token,journal,now=Date.now},{root=R
    ||!timingSafeEqual(supplied,expected)||hash(claims)!==hash(history.claims)||now()>=claims.expiresAt||state.mode!=='held'||state.releaseSha!==claims.mergeMainSha
    ||state.runId!==claims.epochRunId||state.apiGeneration!==claims.apiGeneration||state.workerGeneration!==claims.workerGeneration)reject();
   if(JSON.stringify(verifyGenerations())!==JSON.stringify({apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration}))reject();
+  if(activePermitSessions.has(claims.permitId))reject();
   if(history.status==='MINTED')stream.append({schema:1,type:'held_acceptance_consume_intent',permitId:claims.permitId,claimsDigest:hash(claims)});
-  const session=Object.freeze({permitId:claims.permitId});sessions.set(session,{claims,root,owner,groupId,secretGroupId,io,acquire,readState,readAuthority,verifyGenerations,journal,now});return session;
+  const session=Object.freeze({permitId:claims.permitId});sessions.set(session,{claims,root,owner,groupId,secretGroupId,io,acquire,readState,readAuthority,verifyGenerations,journal,now,resumed:history.status==='CONSUMING'});activePermitSessions.set(claims.permitId,session);return session;
  }catch{reject();}finally{lease?.close();}
 }
 function assertSession(state,bindings){
@@ -143,9 +154,17 @@ export function authorizeHeldAcceptanceOperation(session,operation,bindings){
  const state=sessions.get(session);let lease;try{
   assertSession(state,bindings);lease=state.acquire({root:state.root,exclusive:true,owner:state.owner,groupId:state.groupId});lease.assertIdentity();
   const history=inspectHeldAcceptanceHistory(state.journal.stream('release').events()),expected=HELD_ACCEPTANCE_OPERATIONS[history.completed.length];
-  if(history.status!=='CONSUMING'||history.pending||operation!==expected)reject();
-  const authorization=Object.freeze({permitId:state.claims.permitId,operation,attemptId:randomUUID(),claimsDigest:hash(state.claims)});
-  state.journal.stream('release').append({schema:1,type:'held_acceptance_operation_intent',...authorization});return authorization;
+  if(history.status!=='CONSUMING'||operation!==expected||history.pending&&!state.resumed)reject();
+  const authorization=Object.freeze(history.pending?{permitId:history.pending.permitId,operation:history.pending.operation,attemptId:history.pending.attemptId,claimsDigest:history.pending.claimsDigest}
+   :{permitId:state.claims.permitId,operation,attemptId:randomUUID(),claimsDigest:hash(state.claims)});
+  if(!history.pending)state.journal.stream('release').append({schema:1,type:'held_acceptance_operation_intent',...authorization});
+  if(operation==='six_live_reads'){
+   const filename=path.join(state.root,HELD_ACCEPTANCE_ACTIVE_FILE),active={schema:1,kind:'held-acceptance-active',permitId:authorization.permitId,
+    claimsDigest:authorization.claimsDigest,operation,attemptId:authorization.attemptId,expiresAt:state.claims.expiresAt};
+   try{const retained=readActive(state.io,filename,{owner:state.owner,gid:state.groupId});if(JSON.stringify(retained)!==JSON.stringify(active))reject();}
+   catch(error){if(error.code!=='ENOENT')throw error;atomic(state.io,filename,active,{mode:0o640,uid:state.owner,gid:state.groupId});}
+  }
+  return authorization;
  }catch{reject();}finally{lease?.close();}
 }
 export function completeHeldAcceptanceOperation(session,authorization,bindings,evidence){
@@ -153,11 +172,28 @@ export function completeHeldAcceptanceOperation(session,authorization,bindings,e
   assertSession(state,bindings);lease=state.acquire({root:state.root,exclusive:true,owner:state.owner,groupId:state.groupId});lease.assertIdentity();
   const history=inspectHeldAcceptanceHistory(state.journal.stream('release').events());
   if(history.status!=='CONSUMING'||!history.pending||!authorization||!['permitId','operation','attemptId','claimsDigest'].every(key=>authorization[key]===history.pending[key]))reject();
-  if(!evidence||typeof evidence!=='object'||Array.isArray(evidence)||JSON.stringify(evidence).length>4096)reject();
-  if(authorization.operation==='six_live_reads'&&(evidence.readCount!==6||evidence.paidProviderCalls!==0||evidence.mutationDelta!==0||!digest(evidence.collectorDigest)))reject();
-  if(['api_health','worker_readiness','generation_fence','production_smoke','rollback_verification'].includes(authorization.operation)&&evidence.status!=='PASS')reject();
-  if(authorization.operation==='zero_paid_nexus'&&evidence.paidProviderCalls!==0)reject();
-  if(authorization.operation==='zero_unintended_mutation'&&evidence.mutationDelta!==0)reject();
+  const common=['schema','operation','permitId','attemptId','mergeMainSha','epochRunId','apiGeneration','workerGeneration','bindingDigest'];
+  const operationKeys=authorization.operation==='six_live_reads'?['status','livePass','readCount','crossOwnerDenials','paidProviderCalls','mutationDelta','collectorDigest']
+   :authorization.operation==='zero_paid_nexus'?['paidProviderCalls','usageDigest']
+   :authorization.operation==='zero_unintended_mutation'?['mutationDelta','mutationDigest']:['status','observationDigest'];
+  if(!exact(evidence,[...common,...operationKeys])||evidence.schema!==1||evidence.operation!==authorization.operation||evidence.permitId!==authorization.permitId
+   ||evidence.attemptId!==authorization.attemptId||evidence.mergeMainSha!==state.claims.mergeMainSha||evidence.epochRunId!==state.claims.epochRunId
+   ||evidence.apiGeneration!==state.claims.apiGeneration||evidence.workerGeneration!==state.claims.workerGeneration
+   ||evidence.bindingDigest!==hash({permitId:authorization.permitId,attemptId:authorization.attemptId,operation:authorization.operation,mergeMainSha:state.claims.mergeMainSha,
+    epochRunId:state.claims.epochRunId,apiGeneration:state.claims.apiGeneration,workerGeneration:state.claims.workerGeneration})||JSON.stringify(evidence).length>4096)reject();
+  if(authorization.operation==='six_live_reads'&&(evidence.status!=='PASS_LIVE_ACCEPTANCE'||evidence.livePass!==true||evidence.readCount!==6||evidence.crossOwnerDenials!==6
+   ||evidence.paidProviderCalls!==0||evidence.mutationDelta!==0||!digest(evidence.collectorDigest)))reject();
+  if(['api_health','worker_readiness','generation_fence','production_smoke','rollback_verification'].includes(authorization.operation)&&(evidence.status!=='PASS'||!digest(evidence.observationDigest)))reject();
+  if(authorization.operation==='zero_paid_nexus'&&(evidence.paidProviderCalls!==0||!digest(evidence.usageDigest)))reject();
+  if(authorization.operation==='zero_unintended_mutation'&&(evidence.mutationDelta!==0||!digest(evidence.mutationDigest)))reject();
+  if(authorization.operation==='six_live_reads'){
+   const filename=path.join(state.root,HELD_ACCEPTANCE_ACTIVE_FILE);
+   try{
+    const retained=readActive(state.io,filename,{owner:state.owner,gid:state.groupId});
+    if(retained.permitId!==authorization.permitId||retained.attemptId!==authorization.attemptId||retained.operation!==authorization.operation||retained.claimsDigest!==authorization.claimsDigest)reject();
+    state.io.unlinkSync(filename);sync(state.io,state.root);
+   }catch(error){if(error.code!=='ENOENT')throw error;}
+  }
   state.journal.stream('release').append({schema:1,type:'held_acceptance_operation_result',...authorization,evidenceDigest:hash(evidence),evidence:structuredClone(evidence)});
   return Object.freeze({permitId:authorization.permitId,operation:authorization.operation,evidenceDigest:hash(evidence)});
  }catch{reject();}finally{lease?.close();}
@@ -172,12 +208,13 @@ export function finishHeldAcceptancePermit(session){
    ||admission.apiGeneration!==state.claims.apiGeneration||admission.workerGeneration!==state.claims.workerGeneration
    ||JSON.stringify(state.verifyGenerations())!==JSON.stringify({apiGeneration:state.claims.apiGeneration,workerGeneration:state.claims.workerGeneration}))reject();
   const filename=path.join(state.root,'acceptance.json'),retained=validateClaims(state.readAuthority());if(hash(retained)!==hash(state.claims))reject();
+  try{state.io.lstatSync(path.join(state.root,HELD_ACCEPTANCE_ACTIVE_FILE));reject();}catch(error){if(error.code!=='ENOENT')throw error;}
   for(const [name,mode,gid] of [['acceptance.json',0o640,state.groupId],['acceptance-secret.json',0o600,state.secretGroupId]]){
    const target=path.join(state.root,name),fd=state.io.openSync(target,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
    try{const stat=state.io.fstatSync(fd);if(!stat.isFile()||stat.uid!==state.owner||stat.gid!==gid||stat.nlink!==1||(stat.mode&0o7777)!==mode)reject();state.io.unlinkSync(target);sync(state.io,state.root);}finally{state.io.closeSync(fd);}
   }
   const acceptanceDigest=hash({claimsDigest:hash(state.claims),operations:history.completed,evidenceDigests:history.evidenceDigests});
   state.journal.stream('release').append({schema:1,type:'held_acceptance_consumed',permitId:state.claims.permitId,claimsDigest:hash(state.claims),operationsDigest:hash(HELD_ACCEPTANCE_OPERATIONS),acceptanceDigest});
-  sessions.delete(session);return{status:'CONSUMED',permitId:state.claims.permitId,acceptanceDigest};
+  sessions.delete(session);activePermitSessions.delete(state.claims.permitId);return{status:'CONSUMED',permitId:state.claims.permitId,acceptanceDigest};
  }catch{reject();}finally{lease?.close();}
 }

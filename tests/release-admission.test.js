@@ -7,8 +7,9 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import http from 'node:http';
 import {createBuyerWriterHttpServer} from '../packages/buyer-writer/http.js';
-import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,heldAcceptanceContext,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
+import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,heldAcceptanceContext,HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
 import {engageReleaseAdmissionHold,reconcileReleaseAdmissionHold,inspectAdmissionHoldHistory} from '../packages/zola-release/admission-hold.js';
+import {executeRegisteredCapability} from '../packages/capabilities/execute.js';
 
 const sha='a'.repeat(40),runId='12345678-1234-4234-8234-123456789abc';
 function fixture(t){
@@ -132,15 +133,19 @@ test('HELD acceptance admits only the bound API token or worker role under one s
       requestDigest:crypto.createHash('sha256').update(JSON.stringify({channel:'jarvis',workspaceId:'blackspire-command',text:request,idempotencyKey,executionIntent:'read_only'})).digest('hex')};}),
     tokenDigest:crypto.createHash('sha256').update(token).digest('hex')};
   const state={version:1,mode:'held',releaseSha:sha,runId:epoch,apiGeneration:api,workerGeneration:worker};
+  const active={schema:1,kind:'held-acceptance-active',permitId:claims.permitId,claimsDigest:crypto.createHash('sha256').update(JSON.stringify(claims)).digest('hex'),operation:'six_live_reads',attemptId:'52345678-1234-4234-8234-123456789abc',expiresAt:claims.expiresAt};
   fs.writeFileSync(f.filename,JSON.stringify(state));
   const binding=role=>({role,releaseSha:sha,runId:epoch,generation:role==='api'?api:worker,apiGeneration:api,workerGeneration:worker});
   const deps=role=>({root:f.root,required:()=>true,now:()=>1500,context:()=>binding(role),
     acquire:o=>f.acquire({...o,owner:process.getuid(),groupId:process.getgid(),allowPending:true}),
-    read:file=>path.basename(file)==='state.json'?state:claims});
+    read:file=>path.basename(file)==='state.json'?state:path.basename(file)===HELD_ACCEPTANCE_ACTIVE_FILE?active:claims});
+  assert.throws(()=>withHeldAcceptanceAdmission({role:'api',token},()=>0,{...deps('api'),read:file=>path.basename(file)==='state.json'?state:claims}),/held/);
   assert.equal(await withHeldAcceptanceAdmission({role:'api',token},async()=>{
     assert.equal(heldAcceptanceContext().role,'api');return withReleaseAdmission(()=>7);
   },deps('api')),7);
   assert.equal(withHeldAcceptanceAdmission({role:'worker'},()=>heldAcceptanceContext().taskKeys.length,deps('worker')),6);
+  await assert.rejects(withHeldAcceptanceAdmission({role:'worker'},()=>executeRegisteredCapability({idempotency_key:`unified:jarvis:zola-six:${epoch}:0`,request:'unclassified acceptance request'},{}),deps('worker')),/held/);
   assert.throws(()=>withHeldAcceptanceAdmission({role:'api',token:'x'.repeat(43)},()=>0,deps('api')),/held/);
   assert.throws(()=>withHeldAcceptanceAdmission({role:'worker'},()=>0,{...deps('worker'),now:()=>2000}),/held/);
+  assert.throws(()=>withHeldAcceptanceAdmission({role:'worker'},()=>0,{...deps('worker'),read:file=>path.basename(file)==='state.json'?state:path.basename(file)===HELD_ACCEPTANCE_ACTIVE_FILE?{...active,attemptId:'bad'}:claims}),/held/);
 });

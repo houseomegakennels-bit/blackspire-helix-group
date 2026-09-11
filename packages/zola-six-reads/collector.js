@@ -194,7 +194,7 @@ export async function collectSixReads(config, host, store) {
   const results = [];
   for (const [index, entry] of readCases(config.dealId).entries()) {
     await sameGeneration();
-    const key = `zola-six:${config.runId}:${index}`;
+    const key = `zola-six:${config.version===5?config.releaseRunId:config.runId}:${index}`;
     const intents = store.events().filter(e => e.type === 'intent' && e.index === index);
     if (intents.length > 1 || (intents.length && intents[0].requestDigest !== digest({ key, text: entry.text, binding }))) refuse('JOURNAL_INTENT_MISMATCH');
     let record = host.lookup(key);

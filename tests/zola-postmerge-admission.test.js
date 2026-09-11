@@ -20,6 +20,15 @@ function evidence(commanderRunId,epochRunId,acceptance){return{commanderRunId,ep
  sixReadsDigest:d('reads'),rollbackDigest:d('rollback'),securitySmokeDigest:d('security'),productionSmokeDigest:d('smoke'),
  permitId:acceptance.permitId,acceptanceDigest:acceptance.acceptanceDigest,
  readCount:6,crossOwnerDenials:6,paidProviderCalls:0,mutationDelta:0};}
+function operationEvidence(authorization,binding){
+ const common={schema:1,operation:authorization.operation,permitId:authorization.permitId,attemptId:authorization.attemptId,mergeMainSha:binding.mergeMainSha,
+  epochRunId:binding.epochRunId,apiGeneration:binding.apiGeneration,workerGeneration:binding.workerGeneration,
+  bindingDigest:d(JSON.stringify({permitId:authorization.permitId,attemptId:authorization.attemptId,operation:authorization.operation,mergeMainSha:binding.mergeMainSha,epochRunId:binding.epochRunId,apiGeneration:binding.apiGeneration,workerGeneration:binding.workerGeneration}))};
+ if(authorization.operation==='six_live_reads')return{...common,status:'PASS_LIVE_ACCEPTANCE',livePass:true,readCount:6,crossOwnerDenials:6,paidProviderCalls:0,mutationDelta:0,collectorDigest:d('collector')};
+ if(authorization.operation==='zero_paid_nexus')return{...common,paidProviderCalls:0,usageDigest:d('usage')};
+ if(authorization.operation==='zero_unintended_mutation')return{...common,mutationDelta:0,mutationDigest:d('mutation')};
+ return{...common,status:'PASS',observationDigest:d(authorization.operation)};
+}
 function consumeAcceptance(f,held){
  const apiGeneration='1'.repeat(32),workerGeneration='2'.repeat(32),reads=HELD_ACCEPTANCE_CAPABILITIES.map((capability,index)=>{const idempotencyKey=`zola-six:${held.epochRunId}:${index}`,request=`read-${index}`;
   return{index,idempotencyKey,capability,permission:capability.replace(/\.(search|get|status)$/,'.read'),request,
@@ -33,8 +42,7 @@ function consumeAcceptance(f,held){
  const session=consumeHeldAcceptancePermit({token:minted.token,journal:f.journal},deps),binding={mergeMainSha:newMainSha,expectedDeploymentSha:newMainSha,
   epochRunId:held.epochRunId,workspace:'blackspire-command',apiGeneration,workerGeneration};
  for(const operation of HELD_ACCEPTANCE_OPERATIONS){const authorization=authorizeHeldAcceptanceOperation(session,operation,binding);
-  const evidence=operation==='six_live_reads'?{readCount:6,paidProviderCalls:0,mutationDelta:0,collectorDigest:d('collector')}:
-   operation==='zero_paid_nexus'?{paidProviderCalls:0}:operation==='zero_unintended_mutation'?{mutationDelta:0}:{status:'PASS'};
+  const evidence=operationEvidence(authorization,binding);
   completeHeldAcceptanceOperation(session,authorization,binding,evidence);}
  return finishHeldAcceptancePermit(session);
 }
