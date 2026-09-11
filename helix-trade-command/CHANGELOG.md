@@ -56,3 +56,9 @@
 - Modeled position sizing, 0.5% risk budget, six-contract cap, one-tick entry/exit slippage, $1.50 round-turn commission, 2R target, conservative same-bar stop/target ordering, and 10:00 ET time exits.
 - Historical public M6E sample: Variant A 13 trades, +$193.50 net, 53.85% wins, 1.326 profit factor; R1-H1 4 trades, -$433.50 net, 0% wins.
 - Results remain research-only and do not authorize demo/live execution.
+
+## London execution research V2
+- Added a deep-dive research memo covering intraday FX session evidence and sweep/reclaim/MSS/displacement/FVG execution patterns.
+- Preregistered London Backtest V2 before evaluating outcomes.
+- Added a conservative V2 backtester, M6E primary results, 6E robustness results, and trade ledgers.
+- V2 remains research-only because the primary sample contains only 4 executable M6E trades.
