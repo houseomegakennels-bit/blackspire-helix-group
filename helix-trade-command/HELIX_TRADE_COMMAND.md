@@ -1,9 +1,9 @@
 # HELIX TRADE COMMAND — Source of Truth
 
-**Division:** Blackspire Helix Group  
-**Development controller:** ChatGPT/Codex through GitHub branches and pull requests  
-**Operational control:** Telegram → n8n → Supabase / broker  
-**Current stage:** D0 bootstrap  
+**Division:** Blackspire Helix Group
+**Development controller:** ChatGPT/Codex through GitHub branches and pull requests
+**Operational control:** Telegram → n8n → Supabase / broker
+**Current stage:** D0 bootstrap
 **Live trading:** Disabled
 
 ## Core architectural rule
