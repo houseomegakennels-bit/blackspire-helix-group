@@ -74,9 +74,12 @@ newNY = inNY and not inNY[1]
 nyJustEnded = not inNY and inNY[1]
 
 bool isFiveMinute = timeframe.isminutes and timeframe.multiplier == 5
+// Theoretical 5m bars in each research window. TradingView may omit zero-volume bars,
+// so completeness is evaluated by coverage ratio rather than exact equality.
 int expectedAsiaBars = 48
 int expectedLondonBars = 24
 int expectedNYBars = 36
+float minSessionCoverage = 0.85
 
 var float asiaHi = na
 var float asiaLo = na
@@ -187,7 +190,7 @@ if lonJustEnded
     bool anyBreak = lonBreakHi or lonBreakLo
     bool bothSweep = lonSweepHi and lonSweepLo
     londonClass := bothSweep ? LONDON_DOUBLE_SWEEP : lonBreakHi and not lonBreakLo ? LONDON_BREAK_HIGH : lonBreakLo and not lonBreakHi ? LONDON_BREAK_LOW : lonSweepHi and not lonSweepLo and not anyBreak ? A_HIGH_SWEEP : lonSweepLo and not lonSweepHi and not anyBreak ? A_LOW_SWEEP : not lonTouchedHi and not lonTouchedLo and not anyBreak ? LONDON_NO_TOUCH : AMBIGUOUS
-    if (londonClass == A_HIGH_SWEEP or londonClass == A_LOW_SWEEP) and maxSweepTicks > 0
+    if (lonSweepHi or lonSweepLo) and maxSweepTicks > 0
         array.push(sweepSamples, maxSweepTicks)
 
 bool swingHiConfirmed = high[1] > high[2] and high[1] > high
@@ -238,10 +241,13 @@ if nyJustEnded and not dayFinalized
     dayFinalized := true
     rawDays += 1
     bool missingSession = asiaBars == 0 or londonBars == 0 or nyBars == 0
-    bool shortSession = not missingSession and (asiaBars != expectedAsiaBars or londonBars != expectedLondonBars or nyBars != expectedNYBars)
-    bool ambiguousLondon = londonClass == AMBIGUOUS or londonClass == LONDON_DOUBLE_SWEEP or londonClass == LONDON_BREAK_HIGH or londonClass == LONDON_BREAK_LOW
+    bool shortSession = not missingSession and (asiaBars < math.ceil(expectedAsiaBars * minSessionCoverage) or londonBars < math.ceil(expectedLondonBars * minSessionCoverage) or nyBars < math.ceil(expectedNYBars * minSessionCoverage))
+    bool doubleLondonSweep = lonSweepHi and lonSweepLo
+    bool aCandidate = lonSweepHi != lonSweepLo
+    bool bCandidate = not lonSweepHi and not lonSweepLo
+    bool ambiguousLondon = doubleLondonSweep
     bool ambiguousNy = nySweepDir == 9
-    bool scenarioCandidate = londonClass == A_HIGH_SWEEP or londonClass == A_LOW_SWEEP or londonClass == LONDON_NO_TOUCH
+    bool scenarioCandidate = aCandidate or bCandidate
 
     if not isFiveMinute
         excludedDays += 1
@@ -261,9 +267,9 @@ if nyJustEnded and not dayFinalized
     else if scenarioCandidate
         validDays += 1
         array.push(asiaRangeSamples, asiaRangeTicks)
-        if londonClass == A_HIGH_SWEEP or londonClass == A_LOW_SWEEP
+        if aCandidate
             nA += 1
-            bool expectedBearish = londonClass == A_HIGH_SWEEP
+            bool expectedBearish = lonSweepHi
             bool heldA = expectedBearish ? nyClose < nyOpen : nyClose > nyOpen
             if heldA
                 nAHeld += 1
@@ -344,7 +350,7 @@ if barstate.islast
     table.cell(t, 1, 12, f_quartile_summary(1))
     table.cell(t, 0, 13, "B performance by Asia quartile")
     table.cell(t, 1, 13, f_quartile_summary(2))
-    table.cell(t, 0, 14, "Current London class")
+    table.cell(t, 0, 14, "Current London detail")
     table.cell(t, 1, 14, londonClass)
     table.cell(t, 0, 15, "NY sequence bars")
     table.cell(t, 1, 15, str.tostring(nySweepBar) + " > " + str.tostring(nyMssBar) + " > " + str.tostring(nyDisplacementBar))
