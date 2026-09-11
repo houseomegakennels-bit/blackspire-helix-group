@@ -82,7 +82,7 @@ const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f
 const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 function fixedBinding(context,args,{attempt=false}={}){
  const input=args?.input,state=args?.state;
- if(input!==context.input||!sha(input?.releaseSha)||!uuid(state?.context?.operationId)
+ if(JSON.stringify(input)!==JSON.stringify(context.input)||!sha(input?.releaseSha)||!uuid(state?.context?.operationId)
   ||state.context.releaseSha!==input.releaseSha||state.context.workspace!==input.workspace||state.context.principal!==input.principal
   ||!Number.isSafeInteger(args.ordinal)||args.ordinal<0)reject();
  const value={releaseSha:input.releaseSha,operationId:state.context.operationId,workspace:input.workspace,principal:input.principal,ordinal:args.ordinal};

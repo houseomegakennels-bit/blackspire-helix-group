@@ -33,12 +33,20 @@ const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&
 export function inspectReleaseSequence(events){
  const rows=events.filter(row=>String(row?.type??'').startsWith('sequence_'));
  if(!rows.length)return Object.freeze({started:false,completed:false,nextOrdinal:0,pending:null,mutationState:false,context:null,outputs:Object.freeze({})});
- const start=rows[0];
- if(!exact(start,['schema','type','operationId','releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest','registryDigest'])||start.schema!==4||start.type!=='sequence_started'
-  ||!uuid(start.operationId)||![start.releaseSha,start.previousMainSha,start.recoverySha].every(sha)||!digest(start.protectedInputDigest)||!digest(start.inputDigest)
-  ||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.workspace)||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.principal)||start.registryDigest!==RELEASE_REGISTRY_DIGEST)reject();
- let ordinal=0,pending=null,completed=false,newMainSha=null;const outputs={};
+ const validateStart=start=>{
+  if(!exact(start,['schema','type','operationId','releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest','registryDigest'])||start.schema!==4||start.type!=='sequence_started'
+   ||!uuid(start.operationId)||![start.releaseSha,start.previousMainSha,start.recoverySha].every(sha)||!digest(start.protectedInputDigest)||!digest(start.inputDigest)
+   ||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.workspace)||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.principal)||start.registryDigest!==RELEASE_REGISTRY_DIGEST)reject();
+ };
+ let start=rows[0];validateStart(start);
+ let ordinal=0,pending=null,completed=false,newMainSha=null,outputs={},lastType='sequence_started';
  for(const row of rows.slice(1)){
+  if(row.type==='sequence_started'){
+   // A source-bugged release may be superseded only before any stage proof or
+   // mutation intent. The retained failed segment remains auditable.
+   if(ordinal!==0||pending||completed||lastType!=='sequence_stopped')reject();
+   validateStart(row);start=row;outputs={};newMainSha=null;lastType=row.type;continue;
+  }
   if(row.operationId!==start.operationId)reject();
   if(row.type==='sequence_stage_intent'){
    if(row.schema!==4||pending||ordinal>=RELEASE_STAGES.length||!MUTATING_STAGES.has(RELEASE_STAGES[ordinal])
@@ -69,6 +77,7 @@ export function inspectReleaseSequence(events){
     ||row.resultDigest!==hash({inputDigest:start.inputDigest,newMainSha:row.newMainSha,stages:RELEASE_STAGES}))reject();
    completed=true;newMainSha=row.newMainSha;
   }else reject();
+  lastType=row.type;
  }
  if(completed&&rows.at(-1).type!=='sequence_completed')reject();
  return Object.freeze({started:true,completed,nextOrdinal:ordinal,pending:pending?structuredClone(pending):null,mutationState:pending?null:rows.some(row=>row.type==='sequence_stage_intent'),
@@ -108,7 +117,12 @@ export async function runReleaseSequence({input,journal,adapters}){
   wasStarted=state.started;
   if(!state.started){
    const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequence(stream.events());
-  }else if(!['releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest'].every(key=>state.context[key]===input[key]))reject();
+  }else if(!['releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest'].every(key=>state.context[key]===input[key])){
+   const sequenceRows=stream.events().filter(row=>String(row?.type??'').startsWith('sequence_')),last=sequenceRows.at(-1);
+   if(state.nextOrdinal!==0||state.pending||state.mutationState!==false||last?.type!=='sequence_stopped'
+    ||last.operationId!==state.context.operationId||last.stage!=='exact_sha_verification'||last.reason!=='RELEASE_SEQUENCE_REJECTED')reject();
+   const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequence(stream.events());
+  }
   if(state.completed)return{status:'COMPLETE',releaseState:'PASS',releaseSha:input.releaseSha,newMainSha:state.context.newMainSha,resumed:true};
   for(let ordinal=state.nextOrdinal;ordinal<RELEASE_STAGES.length;ordinal++){
    const stage=RELEASE_STAGES[ordinal],adapter=adapters[stage];currentStage=stage;

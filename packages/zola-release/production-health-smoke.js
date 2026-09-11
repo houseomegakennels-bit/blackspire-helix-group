@@ -100,7 +100,7 @@ export async function observeFixedProductionSmoke({context,call,requestHealth=re
 
 function operation(context,name,observe){
  const check=({input,state,ordinal})=>{
-  if(input!==context.input||!Number.isSafeInteger(ordinal)||ordinal<0)reject();
+  if(JSON.stringify(input)!==JSON.stringify(context.input)||!Number.isSafeInteger(ordinal)||ordinal<0)reject();
   const {claims}=claimsFor(context,state,name),evidence={releaseSha:claims.mergeMainSha,operationId:state.context.operationId,
    epochRunId:claims.epochRunId,workspace:claims.workspace,principal:claims.principal,apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration};
   return{status:'PASS',evidence:{...evidence,bindingDigest:hash(evidence)}};

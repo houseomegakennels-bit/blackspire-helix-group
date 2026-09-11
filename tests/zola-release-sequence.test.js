@@ -71,6 +71,19 @@ test('external block records no mutation intent and remains resumable',async()=>
  assert.equal(j.events.at(-1).type,'sequence_stopped');assert.equal(j.events.at(-1).releaseState,'BLOCKED_EXTERNAL');
 });
 
+test('a pre-effect exact-SHA software failure can be superseded without discarding its audit trail',async()=>{
+ const j=journal(),failed=adapters([]);failed.exact_sha_verification.check=async()=>{throw new Error('adapter bug');};
+ const first=await runReleaseSequence({input,journal:j,adapters:failed});
+ assert.equal(first.stage,'exact_sha_verification');assert.equal(first.mutationSent,false);
+ const nextIdentity={...input,releaseSha:'f'.repeat(40),protectedInputDigest:'1'.repeat(64)};
+ nextIdentity.inputDigest=createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(nextIdentity).filter(([key])=>key!=='inputDigest')))).digest('hex');
+ const second=await runReleaseSequence({input:nextIdentity,journal:j,adapters:adapters([])});
+ assert.equal(second.status,'COMPLETE');assert.equal(inspectReleaseSequence(j.events).context.releaseSha,nextIdentity.releaseSha);
+ assert.equal(j.events.filter(row=>row.type==='sequence_started').length,2);
+ const progressed=journal(),calls=[];await runReleaseSequence({input,journal:progressed,adapters:adapters(calls)});
+ assert.equal((await runReleaseSequence({input:nextIdentity,journal:progressed,adapters:adapters([])})).releaseState,'FAIL_CLOSED');
+});
+
 test('external block while reconciling a durable mutation intent preserves unknown outcome',async()=>{
  const j=journal(),calls=[],stage='n8n_migration';
  await runReleaseSequence({input,journal:j,adapters:adapters(calls,{throwStage:stage})});

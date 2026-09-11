@@ -18,7 +18,7 @@ const blocked=()=>Object.freeze({status:'BLOCKED_EXTERNAL'});
 
 function invocation(context,call,operation,{attempt=true}={}){
  const input=context?.input,state=call?.state,operationId=state?.context?.operationId;
- if(call?.input!==input||!sha(input?.releaseSha)||!id(input?.workspace)||!id(input?.principal)||!uuid(operationId)
+ if(JSON.stringify(call?.input)!==JSON.stringify(input)||!sha(input?.releaseSha)||!id(input?.workspace)||!id(input?.principal)||!uuid(operationId)
   ||state.context.releaseSha!==input.releaseSha||state.context.workspace!==input.workspace||state.context.principal!==input.principal)reject();
  if(attempt&&(!uuid(call.attemptId)||!digest(call.inputDigest)||!digest(call.checkOutputDigest)
   ||state.pending?.stage!==operation||state.pending.attemptId!==call.attemptId))reject();
