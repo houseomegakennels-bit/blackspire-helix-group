@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {RELEASE_STAGES} from '../packages/zola-release/commander-sequence.js';
-import {PRODUCTION_STAGE_CLASSIFICATION,assertNoMissingProductionOperations,createFixedProductionOperations,observeReceiverAudit,observeVercelExactHeadPreview}
+import {PRODUCTION_STAGE_CLASSIFICATION,VALID_OBSERVATION_ONLY_STAGES,assertNoInvalidProductionFallbacks,assertNoMissingProductionOperations,createFixedProductionOperations,observeReceiverAudit,observeVercelExactHeadPreview}
  from '../packages/zola-release/production-adapters.js';
 
 test('production adapter classification is exact and admits no placeholder category',()=>{
  assert.deepEqual(Object.keys(PRODUCTION_STAGE_CLASSIFICATION).sort(),[...RELEASE_STAGES].sort());
  assert.ok(Object.isFrozen(PRODUCTION_STAGE_CLASSIFICATION));
- assert.ok(Object.values(PRODUCTION_STAGE_CLASSIFICATION).every(value=>['primitive','thin','missing'].includes(value)));
- assert.equal(Object.values(PRODUCTION_STAGE_CLASSIFICATION).filter(value=>value==='primitive').length,10);
+ assert.ok(Object.values(PRODUCTION_STAGE_CLASSIFICATION).every(value=>['REAL_FIXED_HOST_BINDING','VALID_OBSERVATION_ONLY'].includes(value)));
+ assert.equal(Object.values(PRODUCTION_STAGE_CLASSIFICATION).filter(value=>value==='REAL_FIXED_HOST_BINDING').length,32);
+ assert.deepEqual(VALID_OBSERVATION_ONLY_STAGES,['exact_sha_verification','final_diff']);
 });
 
 test('all formerly missing executable operations are classified and complete',()=>{
@@ -22,6 +23,7 @@ test('fixed production operation construction binds the exact registry',()=>{
  const release={releaseSha,backupManifestFile:'/var/lib/blackspire-operator/preparation/backup.json'};
  const operations=createFixedProductionOperations({release,input,source:{releaseSha,clean:true},journal:{stream:()=>({events:()=>[],append(){}})}});
  assert.deepEqual(Object.keys(operations),RELEASE_STAGES);assert.ok(Object.isFrozen(operations));
+ assert.equal(assertNoInvalidProductionFallbacks(operations),true);
 });
 
 test('fixed external observers reject invalid release identity before network access',()=>{

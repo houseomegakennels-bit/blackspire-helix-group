@@ -71,6 +71,18 @@ test('external block records no mutation intent and remains resumable',async()=>
  assert.equal(j.events.at(-1).type,'sequence_stopped');assert.equal(j.events.at(-1).releaseState,'BLOCKED_EXTERNAL');
 });
 
+test('a new exact head may supersede a stopped observation-only prefix but never a mutation intent',async()=>{
+ const j=journal(),firstSet=adapters([]);firstSet.receiver_audit.check=async()=>({status:'BLOCKED_EXTERNAL'});
+ const first=await runReleaseSequence({input,journal:j,adapters:firstSet});
+ assert.equal(first.stage,'receiver_audit');assert.equal(inspectReleaseSequence(j.events).nextOrdinal,1);
+ const nextIdentity={...input,releaseSha:'f'.repeat(40),protectedInputDigest:'1'.repeat(64)};
+ nextIdentity.inputDigest=createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(nextIdentity).filter(([key])=>key!=='inputDigest')))).digest('hex');
+ const secondSet=adapters([]);secondSet.receiver_audit.check=async()=>({status:'BLOCKED_EXTERNAL'});
+ const second=await runReleaseSequence({input:nextIdentity,journal:j,adapters:secondSet});
+ assert.equal(second.stage,'receiver_audit');assert.equal(inspectReleaseSequence(j.events).context.releaseSha,nextIdentity.releaseSha);
+ assert.equal(j.events.filter(row=>row.type==='sequence_started').length,2);
+});
+
 test('a pre-effect exact-SHA software failure can be superseded without discarding its audit trail',async()=>{
  const j=journal(),failed=adapters([]);failed.exact_sha_verification.check=async()=>{throw new Error('adapter bug');};
  const first=await runReleaseSequence({input,journal:j,adapters:failed});

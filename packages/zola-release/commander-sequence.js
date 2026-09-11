@@ -39,13 +39,13 @@ export function inspectReleaseSequence(events){
    ||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.workspace)||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.principal)||start.registryDigest!==RELEASE_REGISTRY_DIGEST)reject();
  };
  let start=rows[0];validateStart(start);
- let ordinal=0,pending=null,completed=false,newMainSha=null,outputs={},lastType='sequence_started';
+ let ordinal=0,pending=null,completed=false,newMainSha=null,outputs={},lastType='sequence_started',mutationSeen=false;
  for(const row of rows.slice(1)){
   if(row.type==='sequence_started'){
-   // A source-bugged release may be superseded only before any stage proof or
-   // mutation intent. The retained failed segment remains auditable.
-   if(ordinal!==0||pending||completed||lastType!=='sequence_stopped')reject();
-   validateStart(row);start=row;outputs={};newMainSha=null;lastType=row.type;continue;
+   // A stopped release may be superseded after any observation-only prefix,
+   // but never after a mutation intent. The retained segment remains auditable.
+   if(pending||completed||mutationSeen||lastType!=='sequence_stopped')reject();
+   validateStart(row);start=row;ordinal=0;outputs={};newMainSha=null;mutationSeen=false;lastType=row.type;continue;
   }
   if(row.operationId!==start.operationId)reject();
   if(row.type==='sequence_stage_intent'){
@@ -53,7 +53,7 @@ export function inspectReleaseSequence(events){
     ||!exact(row,['schema','type','operationId','ordinal','stage','attemptId','inputDigest','checkOutputDigest'])||row.ordinal!==ordinal
     ||row.stage!==RELEASE_STAGES[ordinal]||!uuid(row.attemptId)||!digest(row.inputDigest)||!digest(row.checkOutputDigest)
     ||row.inputDigest!==hash({sequence:start.inputDigest,stage:row.stage,ordinal:row.ordinal,check:row.checkOutputDigest}))reject();
-   pending=row;
+   pending=row;mutationSeen=true;
   }else if(row.type==='sequence_stage_confirmed'){
    if(row.schema!==4||ordinal>=RELEASE_STAGES.length||!exact(row,['schema','type','operationId','ordinal','stage','attemptId','inputDigest','checkOutputDigest','outputDigest','output'])
     ||row.ordinal!==ordinal||row.stage!==RELEASE_STAGES[ordinal]||!digest(row.inputDigest)||!digest(row.checkOutputDigest)||!digest(row.outputDigest)
@@ -80,7 +80,7 @@ export function inspectReleaseSequence(events){
   lastType=row.type;
  }
  if(completed&&rows.at(-1).type!=='sequence_completed')reject();
- return Object.freeze({started:true,completed,nextOrdinal:ordinal,pending:pending?structuredClone(pending):null,mutationState:pending?null:rows.some(row=>row.type==='sequence_stage_intent'),
+ return Object.freeze({started:true,completed,nextOrdinal:ordinal,pending:pending?structuredClone(pending):null,mutationState:pending?null:mutationSeen,
   context:Object.freeze({...structuredClone(start),newMainSha}),outputs:Object.freeze(outputs)});
 }
 
@@ -119,8 +119,8 @@ export async function runReleaseSequence({input,journal,adapters}){
    const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequence(stream.events());
   }else if(!['releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest'].every(key=>state.context[key]===input[key])){
    const sequenceRows=stream.events().filter(row=>String(row?.type??'').startsWith('sequence_')),last=sequenceRows.at(-1);
-   if(state.nextOrdinal!==0||state.pending||state.mutationState!==false||last?.type!=='sequence_stopped'
-    ||last.operationId!==state.context.operationId||last.stage!=='exact_sha_verification'||last.reason!=='RELEASE_SEQUENCE_REJECTED')reject();
+   if(state.pending||state.mutationState!==false||last?.type!=='sequence_stopped'
+    ||last.operationId!==state.context.operationId)reject();
    const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequence(stream.events());
   }
   if(state.completed)return{status:'COMPLETE',releaseState:'PASS',releaseSha:input.releaseSha,newMainSha:state.context.newMainSha,resumed:true};

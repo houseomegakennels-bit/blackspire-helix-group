@@ -9,6 +9,8 @@ import {createHealthSmokeProductionOperations} from './production-health-smoke.j
 import {createZeroProofProductionOperations} from './production-zero-proofs.js';
 import {createDeploymentProductionOperations} from './production-deployment-operations.js';
 import {createN8nMigrationProductionOperations} from './production-n8n-migration.js';
+import {createHeldProductionOperations,wrapHeldAcceptanceOperations} from './production-held-operations.js';
+import {createCiSecurityProductionOperation} from './production-ci-security.js';
 
 const REPOSITORY='houseomegakennels-bit/blackspire-helix-group';
 const BRANCH='release/zola-production-live';
@@ -24,18 +26,19 @@ function api(route){
  catch{return null;}
 }
 
-// These are the only stage classifications. "thin" means that a fixed
-// production primitive exists and the composition root only translates its
-// result into the sequence proof envelope. "missing" means no executable host
-// operation exists; an evidence validator or a PASS constant is not a substitute.
+export const VALID_OBSERVATION_ONLY_STAGES=Object.freeze(['exact_sha_verification','final_diff']);
+
+// A stage is either bound to a concrete fixed host primitive, or its complete
+// contract is one deterministic source/repository observation. Invalid
+// categories remain explicit so a future registry edit cannot hide a stub.
 export const PRODUCTION_STAGE_CLASSIFICATION=Object.freeze({
- exact_sha_verification:'thin',receiver_audit:'primitive',vercel_exact_head_preview:'primitive',provider_acl_check:'primitive',
- n8n_backup_check:'thin',candidate_six_reads:'thin',admission_lease:'thin',generation_revalidation:'thin',n8n_migration:'thin',
- bounded_writer_e2e:'primitive',migration_preflight:'thin',production_migrations:'thin',migration_postconditions:'thin',six_reads:'thin',
- rollback_acceptance:'primitive',ci_security:'thin',final_diff:'thin',expected_head_merge:'thin',capture_new_main_sha:'thin',verify_main:'thin',
- verify_vercel_production_sha:'thin',journaled_vps_cutover:'thin',post_merge_held_epoch:'thin',mint_acceptance_permit:'thin',
- api_health:'primitive',worker_readiness:'thin',generation_fence:'thin',six_live_reads:'thin',production_smoke:'primitive',
- zero_paid_nexus:'primitive',zero_unintended_mutation:'primitive',rollback_verification:'primitive',final_release_record:'thin',guarded_held_to_open:'thin',
+ exact_sha_verification:'VALID_OBSERVATION_ONLY',receiver_audit:'REAL_FIXED_HOST_BINDING',vercel_exact_head_preview:'REAL_FIXED_HOST_BINDING',provider_acl_check:'REAL_FIXED_HOST_BINDING',
+ n8n_backup_check:'REAL_FIXED_HOST_BINDING',candidate_six_reads:'REAL_FIXED_HOST_BINDING',admission_lease:'REAL_FIXED_HOST_BINDING',generation_revalidation:'REAL_FIXED_HOST_BINDING',n8n_migration:'REAL_FIXED_HOST_BINDING',
+ bounded_writer_e2e:'REAL_FIXED_HOST_BINDING',migration_preflight:'REAL_FIXED_HOST_BINDING',production_migrations:'REAL_FIXED_HOST_BINDING',migration_postconditions:'REAL_FIXED_HOST_BINDING',six_reads:'REAL_FIXED_HOST_BINDING',
+ rollback_acceptance:'REAL_FIXED_HOST_BINDING',ci_security:'REAL_FIXED_HOST_BINDING',final_diff:'VALID_OBSERVATION_ONLY',expected_head_merge:'REAL_FIXED_HOST_BINDING',capture_new_main_sha:'REAL_FIXED_HOST_BINDING',verify_main:'REAL_FIXED_HOST_BINDING',
+ verify_vercel_production_sha:'REAL_FIXED_HOST_BINDING',journaled_vps_cutover:'REAL_FIXED_HOST_BINDING',post_merge_held_epoch:'REAL_FIXED_HOST_BINDING',mint_acceptance_permit:'REAL_FIXED_HOST_BINDING',
+ api_health:'REAL_FIXED_HOST_BINDING',worker_readiness:'REAL_FIXED_HOST_BINDING',generation_fence:'REAL_FIXED_HOST_BINDING',six_live_reads:'REAL_FIXED_HOST_BINDING',production_smoke:'REAL_FIXED_HOST_BINDING',
+ zero_paid_nexus:'REAL_FIXED_HOST_BINDING',zero_unintended_mutation:'REAL_FIXED_HOST_BINDING',rollback_verification:'REAL_FIXED_HOST_BINDING',final_release_record:'REAL_FIXED_HOST_BINDING',guarded_held_to_open:'REAL_FIXED_HOST_BINDING',
 });
 
 // GitHub exposes secret presence but never its value. A successful exact-head
@@ -76,7 +79,9 @@ export function observeVercelExactHeadPreview({releaseSha}){
 }
 
 export function assertNoMissingProductionOperations(){
- const missing=Object.entries(PRODUCTION_STAGE_CLASSIFICATION).filter(([,kind])=>kind==='missing').map(([stage])=>stage);
+ const valid=new Set(['REAL_FIXED_HOST_BINDING','VALID_OBSERVATION_ONLY']);
+ const missing=Object.entries(PRODUCTION_STAGE_CLASSIFICATION).filter(([,kind])=>!valid.has(kind)).map(([stage])=>stage);
+ if(Object.keys(PRODUCTION_STAGE_CLASSIFICATION).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))missing.push('REGISTRY_MISMATCH');
  if(missing.length)throw Object.assign(new Error('Executable production operations remain missing'),{code:'PRODUCTION_OPERATIONS_MISSING',stages:Object.freeze(missing)});
  return true;
 }
@@ -92,6 +97,7 @@ function fixedBinding(context,args,{attempt=false}={}){
  if(attempt){if(!uuid(args.attemptId)||!digest(args.inputDigest)||!digest(args.checkOutputDigest))reject();Object.assign(value,{stageAttemptId:args.attemptId});}
  return value;
 }
+const genericOperations=new WeakSet();
 function translatedThinOperation(context,stage,{mutating=MUTATING_STAGES.has(stage),source=verifyReleaseSource}={}){
  const observe=args=>{
   const binding=fixedBinding(context,args,{attempt:mutating});
@@ -106,11 +112,17 @@ function translatedThinOperation(context,stage,{mutating=MUTATING_STAGES.has(sta
   return Object.freeze({status:'PASS',evidence:Object.freeze({stage,...binding,sourceVerified:true,sourceDigest:hash(verified)})});
  },observe};
  if(mutating){operation.execute=args=>{fixedBinding(context,args,{attempt:true});};operation.reconcile=observe;}
- return Object.freeze(operation);
+ const fixed=Object.freeze(operation);genericOperations.add(fixed);return fixed;
 }
 function externalOperation(context,observe){
  const run=args=>{fixedBinding(context,args);return observe({releaseSha:context.input.releaseSha});};
  return Object.freeze({check:run,observe:run});
+}
+
+export function assertNoInvalidProductionFallbacks(operations){
+ for(const stage of RELEASE_STAGES)if(genericOperations.has(operations?.[stage])&&!VALID_OBSERVATION_ONLY_STAGES.includes(stage))
+  throw Object.assign(new Error('Operational production stage resolved to generic fallback'),{code:'PRODUCTION_GENERIC_FALLBACK',stage});
+ return true;
 }
 
 // The production CLI calls this without dependencies. The dependency seam is
@@ -119,7 +131,7 @@ function externalOperation(context,observe){
 export function createFixedProductionOperations(context,dependencies={}){
  assertNoMissingProductionOperations();
  if(!context||context.input?.releaseSha!==context.release?.releaseSha||typeof context.journal?.stream!=='function')reject();
- const operations=Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,translatedThinOperation(context,stage)]));
+ const operations=Object.fromEntries(VALID_OBSERVATION_ONLY_STAGES.map(stage=>[stage,translatedThinOperation(context,stage)]));
  operations.receiver_audit=externalOperation(context,observeReceiverAudit);
  operations.vercel_exact_head_preview=externalOperation(context,observeVercelExactHeadPreview);
  operations.provider_acl_check=createProviderAclCheckOperation({query:dependencies.providerQuery??((sql,values)=>queryFixedProviderAcl(context.release.activationConfigurationFile,sql,values))});
@@ -131,8 +143,13 @@ export function createFixedProductionOperations(context,dependencies={}){
  Object.assign(operations,createZeroProofProductionOperations(context,dependencies.zeroProof));
  Object.assign(operations,createDeploymentProductionOperations(context,dependencies.deployment));
  Object.assign(operations,createN8nMigrationProductionOperations(context,dependencies.n8nMigration));
+ Object.assign(operations,createHeldProductionOperations(context,dependencies.held));
+ Object.assign(operations,wrapHeldAcceptanceOperations(context,operations,dependencies.heldAuthority));
+ operations.ci_security=createCiSecurityProductionOperation(context,dependencies.ciSecurity);
  if(Object.keys(operations).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))reject();
- for(const stage of RELEASE_STAGES){const operation=operations[stage];if(!operation||typeof operation.check!=='function'||typeof operation.observe!=='function'
+ assertNoInvalidProductionFallbacks(operations);
+ for(const stage of RELEASE_STAGES){const operation=operations[stage];
+  if(!operation||typeof operation.check!=='function'||typeof operation.observe!=='function'
   ||MUTATING_STAGES.has(stage)&&(typeof operation.execute!=='function'||typeof operation.reconcile!=='function'))reject();}
- return Object.freeze(operations);
+ return Object.freeze(Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,operations[stage]])));
 }
