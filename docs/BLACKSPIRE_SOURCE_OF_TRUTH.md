@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-11 — migration history follows completed held lifecycle
+
+The native migration adapter now consumes the complete validated release journal, accepts a completed HELD lifecycle as prior authority, and refuses a pending lifecycle before recording migration intent or issuing SQL. Migration inspection distinguishes an attempted migration from one that still requires reconciliation; a committed or read-only history-verified result no longer appears unresolved, while apply replay remains prohibited. Focused hold, lifecycle, migration and commander tests pass. This does not add the still-missing production start, guarded OPEN, receiver authority, complete collector witness or route containment adapters.
+
+Fresh read-only evidence shows Supabase healthy but the required provider ACL unchanged, n8n management reachable with its active baseline unchanged, and all observed Vercel canonical/candidate/historical sample URLs disabled with HTTP 402. The HTTP response is availability evidence, not denial-before-dispatch proof. Provider support submission remains UNVERIFIED. No production SQL, workflow publication, service activation, route mutation or merge occurred.
+
 ## 2026-09-10 — held lifecycle reconciliation and routing metadata
 
 Continued from clean local/remote/PR125 `f63cba6`, preserving the fixed recovery candidate and earlier green work. Added a HELD-only lifecycle journal with exclusive admission lease, durable intent before the disposable start adapter, exact run/SHA/process-generation proof and observation-only reconciliation after an unknown start. Confirmed reruns cannot start again or accept changed generations. A fixed native observer checks both actual service supervisors and children, canonical production environment, role/private-group isolation, deployed artifact and repeated systemd/process identity. Independent review corrected actual supplementary-group checks and unknown-history handling. No production start adapter or OPEN publisher exists; lifecycle serialization across external systemd restarts remains unfinished.

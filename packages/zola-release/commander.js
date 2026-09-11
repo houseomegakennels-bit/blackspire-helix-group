@@ -1,6 +1,6 @@
 import {verifyProtectedReleaseBackup} from './commander-backup.js';
 import {verifyReleaseArtifactDisk} from './commander-preconditions.js';
-import {verifyReleaseMigrationPackage,inspectReleaseMigrationHistory} from './commander-migration.js';
+import {verifyReleaseMigrationPackage,inspectReleaseMigrationHistory,inspectReleaseMigrationState} from './commander-migration.js';
 import {randomUUID} from 'node:crypto';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {hash} from './commander-journal.js';
@@ -71,11 +71,12 @@ function history(journal){
 }
 export function inspectReleaseCommander(journal){
  const events=history(journal);
- const migration=inspectReleaseMigrationHistory(events);
+ const migration=inspectReleaseMigrationState(events);
  const lifecycle=inspectHeldLifecycleHistory(events);
- return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration||lifecycle?null:false,
+ return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration.intent||lifecycle?null:false,
   lifecycleReconciliationRequired:Boolean(lifecycle),
-  migrationReconciliationRequired:Boolean(migration),
+  migrationAttempted:Boolean(migration.intent),migrationStatus:migration.lastStatus,
+  migrationReconciliationRequired:migration.reconciliationRequired,
   remainingGates:[...UNWIRED_RELEASE_GATES]};
 }
 

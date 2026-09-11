@@ -7,7 +7,8 @@ import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 import {prepareBuyerMigrationExecution,executeBuyerMigration} from '../packages/buyer-writer/migration-executor.js';
 import {prepareConnectedBuyerMigration,reconcileConnectedBuyerMigration} from '../packages/buyer-writer/migration-connected.js';
-import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,inspectReleaseMigrationHistory} from '../packages/zola-release/commander-migration.js';
+import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,inspectReleaseMigrationHistory,inspectReleaseMigrationState} from '../packages/zola-release/commander-migration.js';
+import {inspectReleaseCommander} from '../packages/zola-release/commander.js';
 import {openReleaseJournal} from '../packages/zola-release/commander-journal.js';
 import {claimBuyerMigrationIntent} from '../packages/buyer-writer/migration-journal.js';
 const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
@@ -81,6 +82,26 @@ test('global migration adapter records intent before shared claim and SQL, then 
  assert.equal((await executeReleaseNativeMigration({input:args,client:reconcile,journal,mode:'reconcile'},options)).status,'committed-history-verified');
  assert.equal(reconcile.calls[0].sql,'BEGIN READ ONLY');assert.ok(!reconcile.calls.some(row=>row.sql===prepared.body));
  assert.equal(inspectReleaseMigrationHistory(events).releaseSha,releaseSha);
+ assert.deepEqual(inspectReleaseMigrationState(events),{intent:events[0],lastStatus:'committed-history-verified',reconciliationRequired:false});
+ const inspected=inspectReleaseCommander(journal);
+ assert.equal(inspected.migrationAttempted,true);assert.equal(inspected.migrationStatus,'committed-history-verified');
+ assert.equal(inspected.migrationReconciliationRequired,false);
+});
+test('completed hold and lifecycle authority permit migration while pending lifecycle refuses before intent',async()=>{
+ const runId='12345678-1234-4234-8234-123456789abc',stateDigest='d'.repeat(64);
+ const base={schema:1,releaseSha,runId,stateDigest};
+ const proof={releaseSha,runId,artifactDigest:'e'.repeat(64),api:{role:'api',generation:'1'.repeat(32),pid:101,startTime:'1001'},
+  worker:{role:'worker',generation:'2'.repeat(32),pid:102,startTime:'1002'}};
+ const completed=[{...base,type:'release_hold_intent'},{...base,type:'release_hold_result'},
+  {...base,type:'release_lifecycle_intent'},{...base,type:'release_lifecycle_result',proof}];
+ const make=events=>({stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})});
+ const events=structuredClone(completed),client=session();
+ const result=await executeReleaseNativeMigration({input:args,client,journal:make(events),mode:'apply'},{claim:()=>{}});
+ assert.equal(result.status,'committed');assert.equal(events.at(-1).type,'release_migration_result');
+ const pending=completed.slice(0,-1),blockedClient=session();
+ const blocked=await executeReleaseNativeMigration({input:args,client:blockedClient,journal:make(pending),mode:'apply'},{claim:()=>{}});
+ assert.equal(blocked.status,'STOPPED');assert.equal(blockedClient.calls.length,0);
+ assert.equal(pending.some(row=>row.type==='release_migration_intent'),false);
 });
 test('global migration uncertainty, failed claim and failed durable append never authorize retry',async()=>{
  for(const failure of ['claim','intent','result','commit']){

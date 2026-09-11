@@ -41,8 +41,8 @@ export function verifyReleaseMigrationPackage({releaseSha,configurationFile},{
 
 const migrationTypes=new Set(['release_migration_intent','release_migration_result']);
 const statuses=new Set(['committed','committed-history-verified','not-recorded-retry-not-authorized','outcome-unknown','execution-failed','claim-unavailable']);
-export function inspectReleaseMigrationHistory(events){
- let intent;
+export function inspectReleaseMigrationState(events){
+ let intent,lastStatus=null;
  for(const event of events){
   if(!migrationTypes.has(event?.type))continue;
   const fields='schema,type,operationId,releaseSha,migrationVersion,bodySha256,manifestSha256'+(event.type==='release_migration_result'?',status':'');
@@ -53,10 +53,14 @@ export function inspectReleaseMigrationHistory(events){
    if(intent)reject();intent=event;
   }else{
    if(!intent||!statuses.has(event.status)||!['operationId','releaseSha','migrationVersion','bodySha256','manifestSha256'].every(k=>event[k]===intent[k]))reject();
+   lastStatus=event.status;
   }
  }
- return intent?structuredClone(intent):null;
+ return intent?{intent:structuredClone(intent),lastStatus,
+  reconciliationRequired:lastStatus===null||!['committed','committed-history-verified'].includes(lastStatus)}:
+  {intent:null,lastStatus:null,reconciliationRequired:false};
 }
+export function inspectReleaseMigrationHistory(events){return inspectReleaseMigrationState(events).intent;}
 
 // Internal execution adapter, deliberately unreachable from the observational
 // CLI. The enclosing commander must hold its global journal lock and satisfy
@@ -69,7 +73,12 @@ export async function executeReleaseNativeMigration({input,client,journal,mode},
   if(!['apply','reconcile'].includes(mode))reject();
   const plan=prepareBuyerMigrationExecution(input),stream=journal.stream('release');
   const events=stream.events();
-  if(events.some(event=>!migrationTypes.has(event?.type)&&!['preflight_started','preflight_passed','preflight_stopped'].includes(event?.type)))reject();
+  // Reuse the complete release-history grammar. Valid completed HELD/lifecycle
+  // records are prerequisites, not foreign mutations; pending lifecycle state
+  // still refuses before a migration intent or SQL can be sent.
+  const {inspectReleaseCommander}=await import('./commander.js');
+  const commander=inspectReleaseCommander(journal);
+  if(commander.lifecycleReconciliationRequired)reject();
   const prior=inspectReleaseMigrationHistory(events);
   let intent=prior;
   if(mode==='apply'){
