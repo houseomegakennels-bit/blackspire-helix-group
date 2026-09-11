@@ -4,7 +4,8 @@ import {createHash} from 'node:crypto';
 import {RELEASE_STAGES,MUTATING_STAGES,inspectReleaseSequence,runReleaseSequence} from '../packages/zola-release/commander-sequence.js';
 
 const releaseSha='a'.repeat(40),previousMainSha='b'.repeat(40),recoverySha='c'.repeat(40),newMainSha='d'.repeat(40);
-const input={releaseSha,previousMainSha,recoverySha,inputDigest:createHash('sha256').update(JSON.stringify({releaseSha,previousMainSha,recoverySha})).digest('hex')};
+const protectedInputDigest='e'.repeat(64),workspace='zola-production',principal='blackspire-release-root';
+const input={releaseSha,previousMainSha,recoverySha,protectedInputDigest,workspace,principal,inputDigest:createHash('sha256').update(JSON.stringify({releaseSha,previousMainSha,recoverySha,protectedInputDigest,workspace,principal})).digest('hex')};
 function journal(events=[]){return{events,stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})};}
 function adapters(calls,{throwStage}={}){
  return Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,{check:async()=>{calls.push('check:'+stage);return{status:'PASS',evidence:{stage,checked:true}};},
@@ -14,7 +15,8 @@ function adapters(calls,{throwStage}={}){
 }
 test('registry is exact, frozen, unique and contains 34 ordered stages',()=>{
  assert.equal(RELEASE_STAGES.length,34);assert.equal(new Set(RELEASE_STAGES).size,34);assert.ok(Object.isFrozen(RELEASE_STAGES));
- assert.equal(MUTATING_STAGES.size,16);assert.ok(MUTATING_STAGES.has('admission_lease'));assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_held_to_open'));
+ assert.equal(MUTATING_STAGES.size,22);assert.ok(MUTATING_STAGES.has('admission_lease'));assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_held_to_open'));
+ for(const stage of ['api_health','worker_readiness','generation_fence','six_live_reads','production_smoke','zero_paid_nexus','zero_unintended_mutation','rollback_verification'])assert.ok(MUTATING_STAGES.has(stage));
  assert.equal(MUTATING_STAGES.add,undefined);assert.throws(()=>{MUTATING_STAGES.size=0;});
 });
 test('runner rejects missing or extra adapters before any stage dispatch',async()=>{
@@ -50,7 +52,7 @@ test('immediate and restarted reconciliation receive identical durable attempt b
 });
 test('malformed, reordered, mixed-operation and secret-bearing evidence fail closed',async()=>{
  for(const mutate of [
-  rows=>rows[0].schema=4,
+  rows=>rows[0].schema=3,
   rows=>rows[1].ordinal=2,
   rows=>rows[1].operationId='12345678-1234-4234-8234-123456789abc',
   rows=>rows[2].outputDigest='0'.repeat(64),
