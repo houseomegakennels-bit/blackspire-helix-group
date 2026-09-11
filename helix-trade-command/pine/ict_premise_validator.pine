@@ -1,169 +1,357 @@
 //@version=6
-// ═══════════════════════════════════════════════════════════════════════════
-// ICT PREMISE VALIDATOR
-//
-// THIS IS NOT A STRATEGY. It places no trades and has no edge.
-// It is a MEASUREMENT TOOL that answers Stage 1 of the Master Build Plan:
-//
-//   Q1  How often does London sweep the Asia range?
-//   Q2  When it does, does New York CONTINUE in London's direction?   (Scenario A)
-//   Q3  When it doesn't, does New York Judas-then-REVERSE?            (Scenario B)
-//   Q4  What is the typical sweep penetration, in ticks?
-//   Q5  What is the typical Asia range width, in ticks?
-//
-// Q4 and Q5 feed directly into the real strategy later:
-//   Q4 -> the sweep detection threshold
-//   Q5 -> the "Asia range too wide, skip the day" filter
-//
-// HOW TO USE
-//   1. Open M6E1! (continuous Micro Euro FX futures). NOT spot EUR/USD.
-//   2. Set the chart to 5 minutes.
-//   3. Add this indicator. Scroll left to load as much history as your plan allows.
-//   4. Read the table in the top right.
-//
-// HOW TO READ IT
-//   A coin flip is 50%. If Q2 and Q3 are not meaningfully above 50% on a
-//   decent sample, the premise does not hold on this instrument and you should
-//   STOP. Do not proceed to build the strategy.
-// ═══════════════════════════════════════════════════════════════════════════
+indicator("ICT Premise Validator — Revised Stage 1A", overlay = true, max_boxes_count = 500)
 
-indicator("ICT Premise Validator", overlay = true, max_boxes_count = 500)
+// Research-only measurement tool. No orders are placed.
+// Stage 1B TradingView compilation/runtime remains a separate gate.
 
-tz         = input.string("America/New_York", "Timezone", group = "Sessions")
+tz = input.string("America/New_York", "Timezone", group = "Sessions")
 asiaStartH = input.int(20, "Asia start hour", minval = 0, maxval = 23, group = "Sessions")
-asiaEndH   = input.int(0,  "Asia end hour", minval = 0, maxval = 23, group = "Sessions")
-lonStartH  = input.int(3,  "London start hour", minval = 0, maxval = 23, group = "Sessions")
-lonEndH    = input.int(5,  "London end hour", minval = 0, maxval = 23, group = "Sessions")
-nyStartH   = input.int(7,  "NY start hour", minval = 0, maxval = 23, group = "Sessions")
-nyEndH     = input.int(10, "NY end hour", minval = 0, maxval = 23, group = "Sessions")
+asiaEndH = input.int(0, "Asia end hour", minval = 0, maxval = 23, group = "Sessions")
+lonStartH = input.int(3, "London start hour", minval = 0, maxval = 23, group = "Sessions")
+lonEndH = input.int(5, "London end hour", minval = 0, maxval = 23, group = "Sessions")
+nyStartH = input.int(7, "NY start hour", minval = 0, maxval = 23, group = "Sessions")
+nyEndH = input.int(10, "NY end hour", minval = 0, maxval = 23, group = "Sessions")
 minSweepTicks = input.int(1, "Min sweep penetration (ticks)", minval = 0, group = "Detection")
-drawBoxes     = input.bool(true, "Draw Asia range", group = "Display")
+displacementMult = input.float(1.5, "Displacement body × prior-20 median", minval = 0.1, step = 0.1, group = "Detection")
+drawBoxes = input.bool(true, "Draw Asia range", group = "Display")
+
+string A_HIGH_SWEEP = "A_HIGH_SWEEP"
+string A_LOW_SWEEP = "A_LOW_SWEEP"
+string LONDON_BREAK_HIGH = "LONDON_BREAK_HIGH"
+string LONDON_BREAK_LOW = "LONDON_BREAK_LOW"
+string LONDON_DOUBLE_SWEEP = "LONDON_DOUBLE_SWEEP"
+string LONDON_NO_TOUCH = "LONDON_NO_TOUCH"
+string AMBIGUOUS = "AMBIGUOUS"
+
+f_pct(int wins, int n) => n == 0 ? na : 100.0 * wins / n
+
+f_wilson(int wins, int n) =>
+    float lo = na
+    float hi = na
+    if n > 0
+        float z = 1.959963984540054
+        float p = wins / n
+        float z2 = z * z
+        float den = 1.0 + z2 / n
+        float center = (p + z2 / (2.0 * n)) / den
+        float margin = z * math.sqrt((p * (1.0 - p) + z2 / (4.0 * n)) / n) / den
+        lo := 100.0 * (center - margin)
+        hi := 100.0 * (center + margin)
+    [lo, hi]
+
+f_status(int wins, int n) =>
+    [lo, _] = f_wilson(wins, n)
+    float p = f_pct(wins, n)
+    n < 30 ? "PROVISIONAL" : (not na(p) and p >= 55.0 and lo > 50.0 ? "PASS" : "FAIL")
+
+f_percentile(float[] src, float pct) =>
+    float out = na
+    int n = array.size(src)
+    if n > 0
+        float[] tmp = array.copy(src)
+        array.sort(tmp, order.ascending)
+        int idx = int(math.ceil((pct / 100.0) * n)) - 1
+        idx := math.max(0, math.min(n - 1, idx))
+        out := array.get(tmp, idx)
+    out
+
+f_mean(float[] src) =>
+    float s = 0.0
+    int n = array.size(src)
+    if n > 0
+        for i = 0 to n - 1
+            s += array.get(src, i)
+    n == 0 ? na : s / n
 
 h = hour(time, tz)
-inAsia   = asiaEndH > asiaStartH ? (h >= asiaStartH and h < asiaEndH) : (h >= asiaStartH or h < asiaEndH)
+inAsia = asiaEndH > asiaStartH ? (h >= asiaStartH and h < asiaEndH) : (h >= asiaStartH or h < asiaEndH)
 inLondon = h >= lonStartH and h < lonEndH
-inNY     = h >= nyStartH and h < nyEndH
+inNY = h >= nyStartH and h < nyEndH
+newAsia = inAsia and not inAsia[1]
+asiaJustEnded = not inAsia and inAsia[1]
+newLondon = inLondon and not inLondon[1]
+lonJustEnded = not inLondon and inLondon[1]
+newNY = inNY and not inNY[1]
+nyJustEnded = not inNY and inNY[1]
+
+bool isFiveMinute = timeframe.isminutes and timeframe.multiplier == 5
+int expectedAsiaBars = 48
+int expectedLondonBars = 24
+int expectedNYBars = 36
 
 var float asiaHi = na
 var float asiaLo = na
+var float asiaRangeTicks = na
 var bool asiaDone = false
-var bool lonSweptHi = false
-var bool lonSweptLo = false
+var int asiaBars = 0
+var int londonBars = 0
+var int nyBars = 0
+
+var bool lonSweepHi = false
+var bool lonSweepLo = false
+var bool lonBreakHi = false
+var bool lonBreakLo = false
+var bool lonTouchedHi = false
+var bool lonTouchedLo = false
 var float maxSweepTicks = 0.0
-var float lonOpen = na
-var float lonClose = na
 var bool lonDone = false
-var float nyOpen = na
+var string londonClass = AMBIGUOUS
+
+var int nySweepBar = na
+var int nySweepDir = 0
+var int nyMssBar = na
+var int nyDisplacementBar = na
+var float mssLevel = na
+var float lastSwingHi = na
+var float lastSwingLo = na
 var float nyClose = na
-var bool nySweptHi = false
-var bool nySweptLo = false
-var bool dayScored = false
-var int nDays = 0
+var bool dayFinalized = false
+
+var int rawDays = 0
+var int validDays = 0
+var int excludedDays = 0
+var int excludedWrongTf = 0
+var int excludedMissingSession = 0
+var int excludedShortSession = 0
+var int excludedAmbiguousLondon = 0
+var int excludedAmbiguousNySweep = 0
+var int excludedNoSequence = 0
+
 var int nA = 0
 var int nAHeld = 0
 var int nB = 0
 var int nBHeld = 0
-var float sumSweepTicks = 0.0
-var int nSweeps = 0
-var float sumAsiaRange = 0.0
-var int nRanges = 0
+var float[] sweepSamples = array.new_float()
+var float[] asiaRangeSamples = array.new_float()
+var float[] scenarioRanges = array.new_float()
+var int[] scenarioKinds = array.new_int() // 1=A, 2=B
+var int[] scenarioWins = array.new_int()  // 1=success, 0=failure
 
-newAsia = inAsia and not inAsia[1]
 if newAsia
     asiaHi := high
     asiaLo := low
+    asiaRangeTicks := na
     asiaDone := false
-    lonSweptHi := false
-    lonSweptLo := false
+    asiaBars := 0
+    londonBars := 0
+    nyBars := 0
+    lonSweepHi := false
+    lonSweepLo := false
+    lonBreakHi := false
+    lonBreakLo := false
+    lonTouchedHi := false
+    lonTouchedLo := false
     maxSweepTicks := 0.0
-    lonOpen := na
-    lonClose := na
     lonDone := false
-    nyOpen := na
+    londonClass := AMBIGUOUS
+    nySweepBar := na
+    nySweepDir := 0
+    nyMssBar := na
+    nyDisplacementBar := na
+    mssLevel := na
+    lastSwingHi := na
+    lastSwingLo := na
     nyClose := na
-    nySweptHi := false
-    nySweptLo := false
-    dayScored := false
+    dayFinalized := false
 
 if inAsia
+    asiaBars += 1
     asiaHi := math.max(nz(asiaHi, high), high)
     asiaLo := math.min(nz(asiaLo, low), low)
 
-asiaJustEnded = not inAsia and inAsia[1]
 if asiaJustEnded and not na(asiaHi) and not na(asiaLo)
     asiaDone := true
-    sumAsiaRange := sumAsiaRange + (asiaHi - asiaLo) / syminfo.mintick
-    nRanges := nRanges + 1
+    asiaRangeTicks := (asiaHi - asiaLo) / syminfo.mintick
 
-newLondon = inLondon and not inLondon[1]
-if newLondon and asiaDone
-    lonOpen := open
+if inLondon
+    londonBars += 1
 
 if inLondon and asiaDone
-    if high > asiaHi + minSweepTicks * syminfo.mintick and close <= asiaHi
-        lonSweptHi := true
-        maxSweepTicks := math.max(maxSweepTicks, (high - asiaHi) / syminfo.mintick)
-    if low < asiaLo - minSweepTicks * syminfo.mintick and close >= asiaLo
-        lonSweptLo := true
-        maxSweepTicks := math.max(maxSweepTicks, (asiaLo - low) / syminfo.mintick)
-    lonClose := close
+    bool above = high > asiaHi
+    bool below = low < asiaLo
+    lonTouchedHi := lonTouchedHi or above
+    lonTouchedLo := lonTouchedLo or below
+    if above
+        if close > asiaHi
+            lonBreakHi := true
+        else if high >= asiaHi + minSweepTicks * syminfo.mintick
+            lonSweepHi := true
+            maxSweepTicks := math.max(maxSweepTicks, (high - asiaHi) / syminfo.mintick)
+    if below
+        if close < asiaLo
+            lonBreakLo := true
+        else if low <= asiaLo - minSweepTicks * syminfo.mintick
+            lonSweepLo := true
+            maxSweepTicks := math.max(maxSweepTicks, (asiaLo - low) / syminfo.mintick)
 
-lonJustEnded = not inLondon and inLondon[1]
-if lonJustEnded and asiaDone
+if lonJustEnded
     lonDone := true
-    if lonSweptHi or lonSweptLo
-        sumSweepTicks := sumSweepTicks + maxSweepTicks
-        nSweeps := nSweeps + 1
+    bool anyBreak = lonBreakHi or lonBreakLo
+    bool bothSweep = lonSweepHi and lonSweepLo
+    bool touchWithoutQualifiedEvent = (lonTouchedHi and not lonSweepHi and not lonBreakHi) or (lonTouchedLo and not lonSweepLo and not lonBreakLo)
+    londonClass := bothSweep ? LONDON_DOUBLE_SWEEP : lonBreakHi and not lonBreakLo ? LONDON_BREAK_HIGH : lonBreakLo and not lonBreakHi ? LONDON_BREAK_LOW : lonSweepHi and not lonSweepLo and not anyBreak ? A_HIGH_SWEEP : lonSweepLo and not lonSweepHi and not anyBreak ? A_LOW_SWEEP : not lonTouchedHi and not lonTouchedLo and not anyBreak ? LONDON_NO_TOUCH : AMBIGUOUS
+    if (londonClass == A_HIGH_SWEEP or londonClass == A_LOW_SWEEP) and maxSweepTicks > 0
+        array.push(sweepSamples, maxSweepTicks)
 
-newNY = inNY and not inNY[1]
-if newNY and lonDone
-    nyOpen := open
+// Confirmed 3-bar swing points: the middle bar is the pivot after the right bar closes.
+bool swingHiConfirmed = high[1] > high[2] and high[1] > high
+bool swingLoConfirmed = low[1] < low[2] and low[1] < low
+if swingHiConfirmed
+    lastSwingHi := high[1]
+if swingLoConfirmed
+    lastSwingLo := low[1]
 
-if inNY and lonDone
-    if high > asiaHi and close <= asiaHi
-        nySweptHi := true
-    if low < asiaLo and close >= asiaLo
-        nySweptLo := true
+if newNY
+    nyClose := open
+
+if inNY
+    nyBars += 1
     nyClose := close
+    bool sweepHiNow = high > asiaHi and close <= asiaHi
+    bool sweepLoNow = low < asiaLo and close >= asiaLo
 
-nyJustEnded = not inNY and inNY[1]
-if nyJustEnded and lonDone and not dayScored and not na(nyOpen) and not na(lonOpen) and not na(lonClose) and not na(nyClose)
-    dayScored := true
-    nDays := nDays + 1
-    lonDir = lonClose > lonOpen ? 1 : -1
-    nyDir = nyClose > nyOpen ? 1 : -1
-    lonSwept = lonSweptHi or lonSweptLo
-    if lonSwept
-        nA := nA + 1
-        if nyDir == lonDir
-            nAHeld := nAHeld + 1
-    else
-        nB := nB + 1
-        bHeld = (nySweptHi and nyDir == -1) or (nySweptLo and nyDir == 1)
-        if bHeld
-            nBHeld := nBHeld + 1
+    if na(nySweepBar)
+        if sweepHiNow and not sweepLoNow
+            nySweepBar := bar_index
+            nySweepDir := -1
+            mssLevel := lastSwingLo
+        else if sweepLoNow and not sweepHiNow
+            nySweepBar := bar_index
+            nySweepDir := 1
+            mssLevel := lastSwingHi
+        else if sweepHiNow and sweepLoNow
+            nySweepBar := bar_index
+            nySweepDir := 9 // explicitly ambiguous double sweep
+
+    if not na(nySweepBar) and nySweepDir == -1 and na(nyMssBar) and not na(mssLevel) and bar_index > nySweepBar and close < mssLevel
+        nyMssBar := bar_index
+    if not na(nySweepBar) and nySweepDir == 1 and na(nyMssBar) and not na(mssLevel) and bar_index > nySweepBar and close > mssLevel
+        nyMssBar := bar_index
+
+    float medianBody20 = ta.median(math.abs(close - open)[1], 20)
+    float body = math.abs(close - open)
+    bool bearishDisplacement = close < open and not na(medianBody20) and body >= displacementMult * medianBody20
+    bool bullishDisplacement = close > open and not na(medianBody20) and body >= displacementMult * medianBody20
+    if not na(nyMssBar) and na(nyDisplacementBar) and bar_index >= nyMssBar
+        if nySweepDir == -1 and bearishDisplacement
+            nyDisplacementBar := bar_index
+        if nySweepDir == 1 and bullishDisplacement
+            nyDisplacementBar := bar_index
+
+if nyJustEnded and not dayFinalized
+    dayFinalized := true
+    rawDays += 1
+
+    bool missingSession = asiaBars == 0 or londonBars == 0 or nyBars == 0
+    bool shortSession = not missingSession and (asiaBars != expectedAsiaBars or londonBars != expectedLondonBars or nyBars != expectedNYBars)
+    bool ambiguousLondon = londonClass == AMBIGUOUS or londonClass == LONDON_DOUBLE_SWEEP or londonClass == LONDON_BREAK_HIGH or londonClass == LONDON_BREAK_LOW
+    bool ambiguousNy = nySweepDir == 9
+    bool scenarioCandidate = londonClass == A_HIGH_SWEEP or londonClass == A_LOW_SWEEP or londonClass == LONDON_NO_TOUCH
+
+    if not isFiveMinute
+        excludedDays += 1
+        excludedWrongTf += 1
+    else if missingSession
+        excludedDays += 1
+        excludedMissingSession += 1
+    else if shortSession
+        excludedDays += 1
+        excludedShortSession += 1
+    else if ambiguousLondon
+        excludedDays += 1
+        excludedAmbiguousLondon += 1
+    else if ambiguousNy
+        excludedDays += 1
+        excludedAmbiguousNySweep += 1
+    else if scenarioCandidate
+        validDays += 1
+        array.push(asiaRangeSamples, asiaRangeTicks)
+        if londonClass == A_HIGH_SWEEP or londonClass == A_LOW_SWEEP
+            nA += 1
+            bool expectedBearish = londonClass == A_HIGH_SWEEP
+            bool heldA = expectedBearish ? nyClose < open : nyClose > open
+            if heldA
+                nAHeld += 1
+            array.push(scenarioRanges, asiaRangeTicks)
+            array.push(scenarioKinds, 1)
+            array.push(scenarioWins, heldA ? 1 : 0)
+        else
+            nB += 1
+            bool seqComplete = not na(nySweepBar) and (nySweepDir == -1 or nySweepDir == 1) and not na(nyMssBar) and not na(nyDisplacementBar) and nySweepBar < nyMssBar and nyMssBar <= nyDisplacementBar
+            bool finalOpposingClose = nySweepDir == -1 ? nyClose < mssLevel : nySweepDir == 1 ? nyClose > mssLevel : false
+            bool heldB = seqComplete and finalOpposingClose
+            if heldB
+                nBHeld += 1
+            else if not seqComplete
+                excludedNoSequence += 1
+            array.push(scenarioRanges, asiaRangeTicks)
+            array.push(scenarioKinds, 2)
+            array.push(scenarioWins, heldB ? 1 : 0)
 
 if drawBoxes and asiaJustEnded and not na(asiaHi) and not na(asiaLo)
     box.new(bar_index, asiaHi, bar_index + 120, asiaLo, border_color = color.new(color.blue, 40), bgcolor = color.new(color.blue, 92))
 
-pct(a, b) => b == 0 ? 0.0 : 100.0 * a / b
-var table t = table.new(position.top_right, 2, 9, border_width = 1)
+f_quartile_summary(int kind) =>
+    string out = "insufficient"
+    int total = 0
+    int sz = array.size(scenarioKinds)
+    if sz > 0
+        for i = 0 to sz - 1
+            if array.get(scenarioKinds, i) == kind
+                total += 1
+    if total >= 4
+        float q25 = f_percentile(asiaRangeSamples, 25)
+        float q50 = f_percentile(asiaRangeSamples, 50)
+        float q75 = f_percentile(asiaRangeSamples, 75)
+        int[] qn = array.new_int(4, 0)
+        int[] qw = array.new_int(4, 0)
+        for i = 0 to sz - 1
+            if array.get(scenarioKinds, i) == kind
+                float r = array.get(scenarioRanges, i)
+                int q = r <= q25 ? 0 : r <= q50 ? 1 : r <= q75 ? 2 : 3
+                array.set(qn, q, array.get(qn, q) + 1)
+                array.set(qw, q, array.get(qw, q) + array.get(scenarioWins, i))
+        out := "Q1 " + str.tostring(f_pct(array.get(qw,0), array.get(qn,0)), "#.#") + "% | Q2 " + str.tostring(f_pct(array.get(qw,1), array.get(qn,1)), "#.#") + "% | Q3 " + str.tostring(f_pct(array.get(qw,2), array.get(qn,2)), "#.#") + "% | Q4 " + str.tostring(f_pct(array.get(qw,3), array.get(qn,3)), "#.#") + "%"
+    out
+
+[alo, ahi] = f_wilson(nAHeld, nA)
+[blo, bhi] = f_wilson(nBHeld, nB)
+float aPct = f_pct(nAHeld, nA)
+float bPct = f_pct(nBHeld, nB)
+
+var table t = table.new(position.top_right, 2, 17, border_width = 1)
 if barstate.islast
-    table.cell(t, 0, 0, "ICT PREMISE VALIDATOR", bgcolor = color.navy, text_color = color.white)
-    table.cell(t, 1, 0, syminfo.ticker, bgcolor = color.navy, text_color = color.white)
-    table.cell(t, 0, 1, "Days sampled")
-    table.cell(t, 1, 1, str.tostring(nDays))
-    table.cell(t, 0, 2, "Q1  London swept Asia")
-    table.cell(t, 1, 2, str.tostring(nA) + "  (" + str.tostring(pct(nA, nDays), "#.#") + "%)")
-    table.cell(t, 0, 3, "Q2  NY continued  [A held]")
-    table.cell(t, 1, 3, str.tostring(nAHeld) + "/" + str.tostring(nA) + "  (" + str.tostring(pct(nAHeld, nA), "#.#") + "%)", text_color = pct(nAHeld, nA) > 55 ? color.green : color.red)
-    table.cell(t, 0, 4, "     London did NOT sweep")
-    table.cell(t, 1, 4, str.tostring(nB) + "  (" + str.tostring(pct(nB, nDays), "#.#") + "%)")
-    table.cell(t, 0, 5, "Q3  NY Judas+rev  [B held]")
-    table.cell(t, 1, 5, str.tostring(nBHeld) + "/" + str.tostring(nB) + "  (" + str.tostring(pct(nBHeld, nB), "#.#") + "%)", text_color = pct(nBHeld, nB) > 55 ? color.green : color.red)
-    table.cell(t, 0, 6, "Q4  Avg sweep (ticks)")
-    table.cell(t, 1, 6, str.tostring(nSweeps == 0 ? 0.0 : sumSweepTicks / nSweeps, "#.#"))
-    table.cell(t, 0, 7, "Q5  Avg Asia range (ticks)")
-    table.cell(t, 1, 7, str.tostring(nRanges == 0 ? 0.0 : sumAsiaRange / nRanges, "#.#"))
-    table.cell(t, 0, 8, "COIN FLIP = 50%", text_color = color.red)
-    table.cell(t, 1, 8, "Beat it, or stop.", text_color = color.red)
+    table.cell(t, 0, 0, "ICT PREMISE VALIDATOR — REVISED", bgcolor = color.navy, text_color = color.white)
+    table.cell(t, 1, 0, syminfo.ticker + (isFiveMinute ? " / 5m" : " / WRONG TF"), bgcolor = color.navy, text_color = color.white)
+    table.cell(t, 0, 1, "Raw / valid / excluded days")
+    table.cell(t, 1, 1, str.tostring(rawDays) + " / " + str.tostring(validDays) + " / " + str.tostring(excludedDays))
+    table.cell(t, 0, 2, "Exclusions TF / missing / short")
+    table.cell(t, 1, 2, str.tostring(excludedWrongTf) + " / " + str.tostring(excludedMissingSession) + " / " + str.tostring(excludedShortSession))
+    table.cell(t, 0, 3, "Exclusions London / NY / no-seq")
+    table.cell(t, 1, 3, str.tostring(excludedAmbiguousLondon) + " / " + str.tostring(excludedAmbiguousNySweep) + " / " + str.tostring(excludedNoSequence))
+    table.cell(t, 0, 4, "Scenario A n / wins / %")
+    table.cell(t, 1, 4, str.tostring(nA) + " / " + str.tostring(nAHeld) + " / " + str.tostring(aPct, "#.#") + "%")
+    table.cell(t, 0, 5, "A Wilson 95% / status")
+    table.cell(t, 1, 5, "[" + str.tostring(alo, "#.#") + ", " + str.tostring(ahi, "#.#") + "] " + f_status(nAHeld, nA))
+    table.cell(t, 0, 6, "Scenario B n / wins / %")
+    table.cell(t, 1, 6, str.tostring(nB) + " / " + str.tostring(nBHeld) + " / " + str.tostring(bPct, "#.#") + "%")
+    table.cell(t, 0, 7, "B Wilson 95% / status")
+    table.cell(t, 1, 7, "[" + str.tostring(blo, "#.#") + ", " + str.tostring(bhi, "#.#") + "] " + f_status(nBHeld, nB))
+    table.cell(t, 0, 8, "Q4 sweep mean / median")
+    table.cell(t, 1, 8, str.tostring(f_mean(sweepSamples), "#.#") + " / " + str.tostring(f_percentile(sweepSamples, 50), "#.#"))
+    table.cell(t, 0, 9, "Q4 p25 / p75 / p90")
+    table.cell(t, 1, 9, str.tostring(f_percentile(sweepSamples,25), "#.#") + " / " + str.tostring(f_percentile(sweepSamples,75), "#.#") + " / " + str.tostring(f_percentile(sweepSamples,90), "#.#"))
+    table.cell(t, 0, 10, "Q5 Asia mean / median")
+    table.cell(t, 1, 10, str.tostring(f_mean(asiaRangeSamples), "#.#") + " / " + str.tostring(f_percentile(asiaRangeSamples,50), "#.#"))
+    table.cell(t, 0, 11, "Q5 Asia p75 / p90")
+    table.cell(t, 1, 11, str.tostring(f_percentile(asiaRangeSamples,75), "#.#") + " / " + str.tostring(f_percentile(asiaRangeSamples,90), "#.#"))
+    table.cell(t, 0, 12, "A performance by Asia quartile")
+    table.cell(t, 1, 12, f_quartile_summary(1))
+    table.cell(t, 0, 13, "B performance by Asia quartile")
+    table.cell(t, 1, 13, f_quartile_summary(2))
+    table.cell(t, 0, 14, "Current London class")
+    table.cell(t, 1, 14, londonClass)
+    table.cell(t, 0, 15, "NY sequence bars")
+    table.cell(t, 1, 15, str.tostring(nySweepBar) + " > " + str.tostring(nyMssBar) + " > " + str.tostring(nyDisplacementBar))
+    table.cell(t, 0, 16, "Holiday note")
+    table.cell(t, 1, 16, "No holiday calendar; incomplete bars excluded")
