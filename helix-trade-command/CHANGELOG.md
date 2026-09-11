@@ -62,3 +62,10 @@
 - Preregistered London Backtest V2 before evaluating outcomes.
 - Added a conservative V2 backtester, M6E primary results, 6E robustness results, and trade ledgers.
 - V2 remains research-only because the primary sample contains only 4 executable M6E trades.
+
+## London V2 prospective parallel track
+- Added a second TradingView Basic-compatible telemetry collector for the frozen London V2 execution model.
+- Added a separate SHA-256 chained V2 evidence ledger with an execution-specific advancement gate: >=30 trades, expectancy > +0.10R, 95% lower mean-R bound > 0, and profit factor >=1.25.
+- Added independent V2 daily capture/retry scheduling without changing the existing R1-H1 track.
+- Updated the Zola Helix Trade Command workspace to show R1-H1 and London V2 side by side.
+- Both tracks remain research-only; broker and live-trading authorization stay disabled.
