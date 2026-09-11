@@ -23,10 +23,13 @@ The validator does not claim an exchange-holiday calendar. Holidays/closures are
 - Script remains an `indicator`, not a `strategy`.
 - No order-placement functions, broker calls, n8n flows, Supabase mutations, live URLs, credentials, or production secrets were introduced.
 - Required London classifications, Wilson calculation, percentile calculation, and NY sequence state are present in source.
+- Scenario A's final directional result is measured from the NY session open, not the final bar open.
+- Scenario B sequence failure is counted as a hypothesis failure, not mislabeled as a data-quality exclusion.
+- Independent read-only review found the remaining risk concentrated in Pine runtime/state-machine behavior rather than integration or secret exposure.
 - No Stage 1 statistical result is claimed because the script has not yet been compiled/run in TradingView.
 
 ## Known Stage 1B verification items
-TradingView must confirm Pine syntax/runtime behavior, especially array typing/copy/sort behavior, `ta.median` usage, table rendering, session counting on M6E1! 5-minute data, and historical sample depth.
+TradingView must confirm Pine syntax/runtime behavior, especially array typing/copy/sort behavior, `ta.median` usage, table rendering, session counting on M6E1! 5-minute data, and historical sample depth. Runtime inspection must also confirm session transitions and the approved NY sweep → MSS → displacement sequence on representative days.
 
 ## Gate decision
-**READY FOR STAGE 1B COMPILE/RUNTIME VERIFICATION, subject to code review of this PR.** Stage 1C/1D remain blocked until actual TradingView output is captured and evaluated against the sample-quality gates.
+**READY FOR STAGE 1B COMPILE/RUNTIME VERIFICATION after human approval/merge of this PR.** Stage 1C/1D remain blocked until actual TradingView output is captured and evaluated against the sample-quality gates.
