@@ -1,0 +1,46 @@
+{
+  "instrument": "M6E",
+  "data_first_utc": "2026-01-20T14:45:00+00:00",
+  "data_last_utc": "2026-04-15T23:25:00+00:00",
+  "cycles": 61,
+  "skips": {
+    "short_session": 30,
+    "no_displacement_fvg": 6,
+    "no_single_sweep": 6,
+    "no_mss": 9,
+    "double_sweep": 3,
+    "invalid_stop": 1,
+    "no_fvg_retrace": 2
+  },
+  "assumptions": {
+    "starting_equity": 50000.0,
+    "risk_pct": 0.005,
+    "max_contracts": 6,
+    "tick_size": 5e-05,
+    "tick_value": 0.625,
+    "commission_round_turn": 1.5,
+    "slippage_ticks_each_side": 1
+  },
+  "summary": {
+    "trades": 4,
+    "wins": 2,
+    "losses": 2,
+    "win_rate_pct": 50.0,
+    "starting_equity": 50000.0,
+    "ending_equity": 50023.99999999994,
+    "net_pnl": 23.999999999943427,
+    "return_pct": 0.04799999999989257,
+    "avg_trade": 5.999999999985857,
+    "expectancy_r": 0.38420707070678783,
+    "profit_factor": 1.1235521235518076,
+    "max_drawdown_dollars": 110.25000000001455,
+    "max_drawdown_pct": 0.22050000000002912,
+    "longest_losing_streak": 1,
+    "avg_contracts": 6,
+    "exit_counts": {
+      "stop": 2,
+      "target": 2,
+      "time": 0
+    }
+  }
+}

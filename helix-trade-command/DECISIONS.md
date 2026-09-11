@@ -46,3 +46,10 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 - Keep directional-premise validation separate from executable trade profitability.
 - Do not promote either V1 execution variant: original London sweep has too few executable trades and negative normalized R expectancy; R1-H1 has four losing executable trades in the historical debug sample.
 - Prospective R1 evidence beginning 2026-09-12 remains the authoritative validation track.
+
+## 2026-09-11 — London V2 execution research
+- Treat an Asia-range sweep as context, not an entry trigger.
+- Test London-session reclaim + 3-bar MSS + 1.5x displacement + first FVG retrace before 05:00 ET.
+- Stop one tick beyond the sweep extreme; target the opposite Asia extreme, requiring >=1.5R and capping credit at 3R.
+- Do not optimize V2 after viewing its historical results. Any parameter change requires a separately preregistered V3.
+- Historical V2 results are too small for execution authorization; continue research only.
