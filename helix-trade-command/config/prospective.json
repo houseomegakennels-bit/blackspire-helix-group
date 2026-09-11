@@ -1,0 +1,11 @@
+{
+  "hypothesis": "R1-H1",
+  "instrument": "M6E1!",
+  "timeframe_minutes": 5,
+  "timezone": "America/New_York",
+  "validation_start": "2026-09-12",
+  "daily_capture_time_et": "10:15",
+  "gate": {"minimum_events": 30, "minimum_success_pct": 55.0, "minimum_wilson_lower_pct": 50.0},
+  "live_trading": false,
+  "broker_execution_authorized": false
+}

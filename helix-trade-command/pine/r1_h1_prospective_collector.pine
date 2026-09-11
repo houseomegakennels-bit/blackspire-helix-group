@@ -1,0 +1,181 @@
+//@version=6
+indicator("Helix R1-H1 Prospective Collector", overlay = false)
+
+// Research telemetry only. No orders, alerts, or broker actions.
+string tz = "America/New_York"
+int validationStart = timestamp(tz, 2026, 9, 12, 0, 0)
+float minCoverage = 0.85
+float displacementMult = 1.5
+int minSweepTicks = 1
+
+f_wilson_lo(int wins, int n) =>
+    float lo = na
+    if n > 0
+        float z = 1.959963984540054
+        float p = 1.0 * wins / n
+        float z2 = z * z
+        float den = 1.0 + z2 / n
+        float center = (p + z2 / (2.0 * n)) / den
+        float margin = z * math.sqrt((p * (1.0 - p) + z2 / (4.0 * n)) / n) / den
+        lo := 100.0 * (center - margin)
+    lo
+
+int h = hour(time, tz)
+bool inAsia = h >= 20 or h < 0
+bool inLondon = h >= 3 and h < 5
+bool inNY = h >= 7 and h < 10
+bool newAsia = inAsia and not inAsia[1]
+bool asiaJustEnded = not inAsia and inAsia[1]
+bool lonJustEnded = not inLondon and inLondon[1]
+bool newNY = inNY and not inNY[1]
+bool nyJustEnded = not inNY and inNY[1]
+bool fiveMinute = timeframe.isminutes and timeframe.multiplier == 5
+
+var int cycleStart = na
+var float asiaHi = na
+var float asiaLo = na
+var bool asiaDone = false
+var int asiaBars = 0
+var int londonBars = 0
+var int nyBars = 0
+var bool lonSweepHi = false
+var bool lonSweepLo = false
+var float lastSwingHi = na
+var float lastSwingLo = na
+var float nyOpen = na
+var float nyClose = na
+var int sweptSide = 0
+var int nySweepBar = na
+var int nyMssBar = na
+var int nyDispBar = na
+var float mssLevel = na
+var bool nyAmbiguous = false
+var bool finalized = false
+
+var int events = 0
+var int wins = 0
+var int daysRecorded = 0
+var int lastDayKey = 0
+var int lastReason = 0
+var int lastCandidate = 0
+var int lastEvent = 0
+var int lastSuccess = -1
+
+if newAsia
+    cycleStart := time
+    asiaHi := high
+    asiaLo := low
+    asiaDone := false
+    asiaBars := 0
+    londonBars := 0
+    nyBars := 0
+    lonSweepHi := false
+    lonSweepLo := false
+    lastSwingHi := na
+    lastSwingLo := na
+    nyOpen := na
+    nyClose := na
+    sweptSide := 0
+    nySweepBar := na
+    nyMssBar := na
+    nyDispBar := na
+    mssLevel := na
+    nyAmbiguous := false
+    finalized := false
+
+if inAsia
+    asiaBars += 1
+    asiaHi := math.max(nz(asiaHi, high), high)
+    asiaLo := math.min(nz(asiaLo, low), low)
+
+if asiaJustEnded and not na(asiaHi) and not na(asiaLo)
+    asiaDone := true
+
+if inLondon
+    londonBars += 1
+    if asiaDone
+        bool sweepHi = high > asiaHi and close <= asiaHi and high >= asiaHi + minSweepTicks * syminfo.mintick
+        bool sweepLo = low < asiaLo and close >= asiaLo and low <= asiaLo - minSweepTicks * syminfo.mintick
+        lonSweepHi := lonSweepHi or sweepHi
+        lonSweepLo := lonSweepLo or sweepLo
+
+if lonJustEnded
+    sweptSide := lonSweepHi != lonSweepLo ? (lonSweepHi ? -1 : 1) : 0
+
+bool swingHiConfirmed = high[1] > high[2] and high[1] > high
+bool swingLoConfirmed = low[1] < low[2] and low[1] < low
+if swingHiConfirmed
+    lastSwingHi := high[1]
+if swingLoConfirmed
+    lastSwingLo := low[1]
+
+if newNY
+    nyOpen := open
+    nyClose := open
+
+if inNY
+    nyBars += 1
+    nyClose := close
+    bool sweepHi = high > asiaHi and close <= asiaHi
+    bool sweepLo = low < asiaLo and close >= asiaLo
+    if sweptSide != 0 and na(nySweepBar) and not nyAmbiguous
+        if sweepHi and sweepLo
+            nyAmbiguous := true
+        else if sweptSide == -1 and sweepHi
+            nySweepBar := bar_index
+            mssLevel := lastSwingLo
+        else if sweptSide == 1 and sweepLo
+            nySweepBar := bar_index
+            mssLevel := lastSwingHi
+    if not na(nySweepBar) and na(nyMssBar) and not na(mssLevel) and bar_index > nySweepBar
+        if sweptSide == -1 and close < mssLevel
+            nyMssBar := bar_index
+        else if sweptSide == 1 and close > mssLevel
+            nyMssBar := bar_index
+    float median20 = ta.median(math.abs(close - open)[1], 20)
+    float body = math.abs(close - open)
+    bool bearDisp = close < open and not na(median20) and body >= displacementMult * median20
+    bool bullDisp = close > open and not na(median20) and body >= displacementMult * median20
+    if not na(nyMssBar) and na(nyDispBar) and bar_index >= nyMssBar
+        if sweptSide == -1 and bearDisp
+            nyDispBar := bar_index
+        else if sweptSide == 1 and bullDisp
+            nyDispBar := bar_index
+
+if nyJustEnded and not finalized
+    finalized := true
+    bool inValidation = not na(cycleStart) and cycleStart >= validationStart
+    bool missing = asiaBars == 0 or londonBars == 0 or nyBars == 0
+    bool short = not missing and (asiaBars < math.ceil(48 * minCoverage) or londonBars < math.ceil(24 * minCoverage) or nyBars < math.ceil(36 * minCoverage))
+    bool doubleLondon = lonSweepHi and lonSweepLo
+    bool candidate = lonSweepHi != lonSweepLo
+    bool seq = candidate and not nyAmbiguous and not na(nySweepBar) and not na(nyMssBar) and not na(nyDispBar) and nySweepBar < nyMssBar and nyMssBar <= nyDispBar
+    bool success = seq and (sweptSide == -1 ? nyClose < nyOpen : nyClose > nyOpen)
+    if inValidation
+        daysRecorded += 1
+        lastDayKey := year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+        lastCandidate := candidate ? 1 : 0
+        lastEvent := 0
+        lastSuccess := -1
+        lastReason := not fiveMinute ? 8 : missing ? 2 : short ? 3 : doubleLondon ? 4 : not candidate ? 1 : nyAmbiguous ? 5 : not seq ? 6 : 7
+        if fiveMinute and not missing and not short and not doubleLondon and candidate and not nyAmbiguous and seq
+            events += 1
+            wins += success ? 1 : 0
+            lastEvent := 1
+            lastSuccess := success ? 1 : 0
+
+float successPct = events == 0 ? na : 100.0 * wins / events
+float wilsonLo = f_wilson_lo(wins, events)
+int gateCode = events < 30 ? 0 : (successPct >= 55.0 and wilsonLo > 50.0 ? 1 : -1)
+
+plot(lastDayKey, "HELIX_DAY_KEY", display = display.data_window)
+plot(lastReason, "HELIX_REASON_CODE", display = display.data_window)
+plot(lastCandidate, "HELIX_CANDIDATE", display = display.data_window)
+plot(lastEvent, "HELIX_COUNTED_EVENT", display = display.data_window)
+plot(lastSuccess, "HELIX_SUCCESS", display = display.data_window)
+plot(events, "HELIX_EVENTS", display = display.data_window)
+plot(wins, "HELIX_WINS", display = display.data_window)
+plot(successPct, "HELIX_SUCCESS_PCT", display = display.data_window)
+plot(wilsonLo, "HELIX_WILSON_LO", display = display.data_window)
+plot(gateCode, "HELIX_GATE_CODE", display = display.data_window)
+plot(daysRecorded, "HELIX_DAYS_RECORDED", display = display.data_window)
