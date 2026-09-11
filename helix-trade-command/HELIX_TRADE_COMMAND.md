@@ -3,7 +3,7 @@
 **Division:** Blackspire Helix Group  
 **Development controller:** ChatGPT/Codex through GitHub branches and pull requests  
 **Operational control:** Telegram → n8n → Supabase / broker  
-**Current stage:** D0 bootstrap  
+**Current stage:** Stage 1D propagation decision — current strategy premise stopped after Stage 1C evidence failure
 **Live trading:** Disabled
 
 ## Core architectural rule
