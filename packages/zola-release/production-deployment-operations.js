@@ -1,15 +1,19 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {spawnSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {hash} from './commander-journal.js';
-import {inspectReleaseCommander} from './commander.js';
 import {observeExpectedHeadMerge,observeReleaseMergeability,observeVercelProduction,requestExpectedHeadMerge} from './commander-deployment.js';
 import {verifyMergedRelease} from './commander-merged.js';
 import {prepareVpsCutoverPlan,inspectVpsCutoverHistory,runVpsCutover} from './commander-vps.js';
 import {beginPostMergeHeldEpoch,inspectPostMergeAdmissionHistory} from './postmerge-admission.js';
 import {readReleaseProtectedBytes} from './commander-host.js';
+import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 
 const ADMISSION='/etc/blackspire/release-admission',VERCEL_TOKEN='/var/lib/blackspire-operator/vercel-token';
+const RELEASE_ROOT='/opt/blackspire-command',REPOSITORY='https://github.com/houseomegakennels-bit/blackspire-helix-group.git';
+const SOURCE_ROOT=fileURLToPath(new URL('../../',import.meta.url));
 const API='blackspire-command.service',WORKER='blackspire-command-worker.service',TARGET='blackspire-command.target';
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
@@ -24,18 +28,16 @@ function invocation(context,args,stage,{attempt=false}={}){
  if(attempt&&(!uuid(args.attemptId)||!digest(args.inputDigest)||!digest(args.checkOutputDigest)))reject();
  return{operationId:state.context.operationId,attemptId:args.attemptId??null,releaseSha:input.releaseSha,previousMainSha:input.previousMainSha,stage};
 }
-function ciProof(context){
- inspectReleaseCommander(context.journal);
- const rows=context.journal.stream('release').events().filter(row=>row?.type==='preflight_passed'&&row.releaseSha===context.input.releaseSha
-  &&row.stage==='identity_recheck');
- const proof=rows.at(-1)?.proof;
- if(!proof||proof.status!=='success'||proof.releaseSha!==context.input.releaseSha||proof.mainSha!==context.input.previousMainSha
-  ||![proof.ciMergeSha,proof.ciTreeSha].every(sha))reject();
+function ciProof(context,args){
+ const proof=output(args,'ci_security');
+ if(proof.releaseSha!==context.input.releaseSha||proof.mainSha!==context.input.previousMainSha
+  ||![proof.ciMergeSha,proof.ciTreeSha].every(sha)||!Number.isSafeInteger(proof.runId)||proof.runId<1
+  ||!Number.isSafeInteger(proof.runAttempt)||proof.runAttempt<1)reject();
  return{ciMergeSha:proof.ciMergeSha,ciTreeSha:proof.ciTreeSha};
 }
 const pass=evidence=>({status:'PASS',evidence});
 function mergeEvidence(context,args,dependencies){
- const binding=invocation(context,args,'expected_head_merge',{attempt:Boolean(args.attemptId)}),ci=dependencies.readCiProof(context);
+ const binding=invocation(context,args,'expected_head_merge',{attempt:Boolean(args.attemptId)}),ci=dependencies.readCiProof(context,args);
  const observed=dependencies.observeMerge({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha,...ci});
  if(observed.status==='OPEN_EXACT_HEAD')return{status:'BLOCKED_EXTERNAL'};
  if(observed.status!=='MERGED_EXACT_HEAD'||!sha(observed.newMainSha))reject();
@@ -53,15 +55,23 @@ function fixedStopAndVerify(){
  for(const unit of [API,WORKER]){const fields=Object.fromEntries(run('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,MainPID','--',unit]).split('\n').map(line=>line.split('=')));
   if(fields.ActiveState!=='inactive'||fields.MainPID!=='0')reject();}
 }
-function preflightArtifact(context){
- const row=context.journal.stream('release').events().filter(value=>value?.type==='preflight_passed'&&value.releaseSha===context.input.releaseSha&&value.stage==='artifact_disk').at(-1);
- const value=row?.proof?.artifact?.artifactDigest;if(!digest(value))reject();return value;
+export async function materializeFixedNewMainArtifact(newMainSha,{run=execFileSync,inspect=inspectBuyerWriterArtifact}={}){
+ if(!sha(newMainSha)||typeof run!=='function'||typeof inspect!=='function')reject();
+ const command=(file,args,extra={})=>run(file,args,{encoding:'utf8',timeout:120000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],
+  env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',...extra}});
+ try{command('/usr/bin/git',['--no-replace-objects','-C',SOURCE_ROOT,'cat-file','-e',`${newMainSha}^{commit}`]);}
+ catch{command('/usr/bin/git',['--no-replace-objects','-C',SOURCE_ROOT,'fetch','--no-tags','--no-write-fetch-head',REPOSITORY,newMainSha]);}
+ command('/usr/bin/git',['--no-replace-objects','-C',SOURCE_ROOT,'cat-file','-e',`${newMainSha}^{commit}`]);
+ command('/bin/bash',[path.join(SOURCE_ROOT,'scripts/release-create.sh'),newMainSha],{BLACKSPIRE_RELEASE_ROOT:RELEASE_ROOT,BLACKSPIRE_SOURCE_ROOT:SOURCE_ROOT});
+ const artifact=await inspect({artifactRoot:path.join(RELEASE_ROOT,'releases',newMainSha),releaseSha:newMainSha,environment:'production'});
+ if(artifact.releaseSha!==newMainSha||artifact.environment!=='production'||!digest(artifact.artifactDigest))reject();
+ return artifact.artifactDigest;
 }
-function vpsBase(context,args,held,dependencies){
+async function vpsBase(context,args,held,dependencies){
  const binding=invocation(context,args,'journaled_vps_cutover',{attempt:true}),rollback=output(args,'rollback_acceptance'),newMainSha=capturedMain(context,args,'journaled_vps_cutover');
  if(held?.status!=='POST_MERGE_HELD'||held.newMainSha!==newMainSha||!uuid(held.epochRunId)||!digest(rollback.artifactDigest)||!digest(rollback.backupProofDigest))reject();
  return{operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
-  rollbackSha:context.input.recoverySha,artifactDigest:dependencies.readArtifactDigest(context),rollbackArtifactDigest:rollback.artifactDigest,
+  rollbackSha:context.input.recoverySha,artifactDigest:await dependencies.materializeArtifact(newMainSha),rollbackArtifactDigest:rollback.artifactDigest,
   backupDigest:rollback.backupProofDigest,backupManifestFile:context.release.backupManifestFile,
   admissionDigest:hash({version:1,mode:'held',releaseSha:newMainSha,runId:held.epochRunId,apiGeneration:null,workerGeneration:null})};
 }
@@ -73,7 +83,7 @@ async function ensureHeld(context,args,dependencies){
 async function driveVps(context,args,dependencies){
  const held=await ensureHeld(context,args,dependencies),history=inspectVpsCutoverHistory(context.journal.stream('release').events());let plan,options,reconcile;
  if(history.started){plan=Object.fromEntries(['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','rollbackSha','artifactDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'].map(key=>[key,history.intent[key]]));reconcile=true;}
- else{const prepared=await dependencies.prepareVps({plan:vpsBase(context,args,held,dependencies)});plan=prepared.plan;options={snapshot:prepared.snapshot};reconcile=false;}
+ else{const prepared=await dependencies.prepareVps({plan:await vpsBase(context,args,held,dependencies)});plan=prepared.plan;options={snapshot:prepared.snapshot};reconcile=false;}
  const result=await dependencies.runVps({plan,journal:context.journal,reconcile},options);
  if(result.status!=='VPS_CUTOVER_COMPLETE'||result.newMainSha!==plan.newMainSha)reject();
  return pass({stage:'journaled_vps_cutover',operationId:plan.commanderRunId,attemptId:plan.operationId,newMainSha:plan.newMainSha,
@@ -84,17 +94,17 @@ export function createDeploymentProductionOperations(context,overrides={}){
  const dependencies={observeMerge:observeExpectedHeadMerge,observeMergeability:observeReleaseMergeability,requestMerge:requestExpectedHeadMerge,
   verifyMerged:verifyMergedRelease,observeVercel:observeVercelProduction,readVercelToken:()=>readReleaseProtectedBytes(VERCEL_TOKEN,16384).trim(),
   beginHeld:beginPostMergeHeldEpoch,admissionGroup:()=>fs.statSync(ADMISSION).gid,stopAndVerify:fixedStopAndVerify,
-  prepareVps:prepareVpsCutoverPlan,runVps:runVpsCutover,readCiProof:ciProof,readArtifactDigest:preflightArtifact,...overrides};
+  prepareVps:prepareVpsCutoverPlan,runVps:runVpsCutover,readCiProof:ciProof,materializeArtifact:materializeFixedNewMainArtifact,...overrides};
  const merge={
-  check(args){const binding=invocation(context,args,'expected_head_merge'),ci=dependencies.readCiProof(context),proof=dependencies.observeMergeability({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha});if(proof.status!=='PR_MERGEABLE')reject();return pass({...binding,...ci,expectedHead:true,mergeable:true});},
-  execute(args){const binding=invocation(context,args,'expected_head_merge',{attempt:true});dependencies.readCiProof(context);dependencies.requestMerge({releaseSha:binding.releaseSha});},
+  check(args){const binding=invocation(context,args,'expected_head_merge'),ci=dependencies.readCiProof(context,args),proof=dependencies.observeMergeability({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha});if(proof.status!=='PR_MERGEABLE')reject();return pass({...binding,...ci,expectedHead:true,mergeable:true});},
+  execute(args){const binding=invocation(context,args,'expected_head_merge',{attempt:true});dependencies.readCiProof(context,args);dependencies.requestMerge({releaseSha:binding.releaseSha});},
   reconcile:args=>mergeEvidence(context,args,dependencies),observe:args=>mergeEvidence(context,args,dependencies),
  };
  const capture={check(args){invocation(context,args,'capture_new_main_sha');return pass({stage:'capture_new_main_sha',mergeConfirmed:true});},
   observe(args){const newMainSha=capturedMain(context,args,'capture_new_main_sha');return pass({stage:'capture_new_main_sha',newMainSha,captured:true});}};
- const verify={check(args){const newMainSha=capturedMain(context,args,'verify_main'),ci=dependencies.readCiProof(context),binding=invocation(context,args,'verify_main');
+ const verify={check(args){const newMainSha=capturedMain(context,args,'verify_main'),ci=dependencies.readCiProof(context,args),binding=invocation(context,args,'verify_main');
    const proof=dependencies.verifyMerged({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha,...ci,newMainSha});if(proof.status!=='MERGED_IDENTITY_VERIFIED')reject();return pass({stage:'verify_main',newMainSha,mainVerified:true});},
-  observe(args){const newMainSha=capturedMain(context,args,'verify_main'),ci=dependencies.readCiProof(context),binding=invocation(context,args,'verify_main');dependencies.verifyMerged({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha,...ci,newMainSha});return pass({stage:'verify_main',newMainSha,mainVerified:true});}};
+  observe(args){const newMainSha=capturedMain(context,args,'verify_main'),ci=dependencies.readCiProof(context,args),binding=invocation(context,args,'verify_main');dependencies.verifyMerged({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha,...ci,newMainSha});return pass({stage:'verify_main',newMainSha,mainVerified:true});}};
  const vercelRun=async args=>{const newMainSha=capturedMain(context,args,'verify_vercel_production_sha');invocation(context,args,'verify_vercel_production_sha');let token;
   try{token=dependencies.readVercelToken();const proof=await dependencies.observeVercel({newMainSha,token});if(proof.status!=='VERCEL_PRODUCTION_EXACT')reject();return pass({stage:'verify_vercel_production_sha',newMainSha,deploymentId:proof.deploymentId,vercelProductionExact:true});}
   catch{return{status:'BLOCKED_EXTERNAL'};}};
