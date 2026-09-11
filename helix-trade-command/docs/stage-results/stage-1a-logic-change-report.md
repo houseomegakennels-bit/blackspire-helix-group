@@ -29,5 +29,5 @@ The operator explicitly approved the following deterministic research rules for 
 - Session completeness is inferred from observed 5-minute bars; the validator does not contain an exchange holiday calendar.
 - Stage 1B must validate the script in TradingView before any resulting statistics are trusted.
 
-## Runtime status
-TradingView compilation and runtime are **UNVERIFIED**. No Stage 1B, Stage 1C, or Stage 1D result is claimed.
+## Gate status
+Stage 1A implementation is complete for review. TradingView compilation and runtime are **UNVERIFIED**. No Stage 1B, Stage 1C, or Stage 1D result is claimed.
