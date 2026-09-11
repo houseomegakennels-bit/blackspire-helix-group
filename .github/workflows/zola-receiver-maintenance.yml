@@ -6,7 +6,7 @@ on:
       action:
         description: Reviewed exclusive routing canary; default makes no routing mutation
         type: choice
-        options: [audit, run-exclusive-reviewed-canary, cleanup-exclusive-reviewed-canary]
+        options: [audit, provision-missing, run-exclusive-reviewed-canary, cleanup-exclusive-reviewed-canary]
         default: audit
         required: true
       expected_head:
@@ -51,6 +51,12 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.23.1'
+      - name: Bind receiver provisioning to the exact reviewed head
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'provision-missing'
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          ACTUAL_HEAD: ${{ github.sha }}
+        run: test "$EXPECTED_HEAD" = "$ACTUAL_HEAD" && test "${#EXPECTED_HEAD}" -eq 40
       - name: Reconcile approved missing settings and audit without disclosing values
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -58,7 +64,7 @@ jobs:
           ZOLA_AUTHORITY_CONSUMER_URL: ${{ vars.ZOLA_AUTHORITY_CONSUMER_URL }}
           ZOLA_AUTHORITY_CONSUMER_TOKEN: ${{ secrets.ZOLA_AUTHORITY_CONSUMER_TOKEN }}
           # One explicitly reviewed transition; subsequent pushes only audit.
-          ZOLA_RECEIVER_ACTION: ${{ github.event.before == '87f4b4d137e087e53b6c79bd4d22b32c91fe0401' && 'provision-missing' || 'audit' }}
+          ZOLA_RECEIVER_ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'provision-missing' && 'provision-missing' || github.event.before == '87f4b4d137e087e53b6c79bd4d22b32c91fe0401' && 'provision-missing' || 'audit' }}
         run: node scripts/zola-receiver-maintenance.mjs
       - name: Rebuild the approved candidate and unchanged production main
         if: github.event.before == '7072d929adce6766fb1e7e4adf56683002bd9068'

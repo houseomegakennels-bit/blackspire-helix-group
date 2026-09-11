@@ -164,7 +164,7 @@ export async function runHeldLifecycle({releaseSha,journal,reconcile=false},{roo
     inspectReleaseCommander(journal);
     const stream=journal.stream('release'),events=stream.events();
     if(events.some(e=>!['preflight_started','preflight_passed','preflight_stopped','release_hold_intent','release_hold_result',
-      'release_migration_intent','release_migration_result','release_lifecycle_intent','release_lifecycle_result'].includes(e?.type)))fail();
+      'release_migration_intent','release_migration_result','release_migration_recovery_intent','release_migration_recovery_result','release_lifecycle_intent','release_lifecycle_result'].includes(e?.type)))fail();
     if(inspectAdmissionHoldHistory(events)||inspectReleaseMigrationHistory(events))fail();
     const pending=inspectHeldLifecycleHistory(events);
     if(pending&&!reconcile||!pending&&reconcile)fail();

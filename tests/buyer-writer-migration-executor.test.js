@@ -7,10 +7,10 @@ import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
 import {prepareBuyerMigrationExecution,executeBuyerMigration} from '../packages/buyer-writer/migration-executor.js';
 import {prepareConnectedBuyerMigration,reconcileConnectedBuyerMigration} from '../packages/buyer-writer/migration-connected.js';
-import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,inspectReleaseMigrationHistory,inspectReleaseMigrationState} from '../packages/zola-release/commander-migration.js';
+import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,recoverReleaseNativeMigration,inspectReleaseMigrationHistory,inspectReleaseMigrationState,inspectReleaseMigrationRecovery} from '../packages/zola-release/commander-migration.js';
 import {inspectReleaseCommander} from '../packages/zola-release/commander.js';
 import {openReleaseJournal} from '../packages/zola-release/commander-journal.js';
-import {claimBuyerMigrationIntent} from '../packages/buyer-writer/migration-journal.js';
+import {claimBuyerMigrationIntent,verifyOrCreateBuyerMigrationClaim} from '../packages/buyer-writer/migration-journal.js';
 const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
 function fixture(){
  const roles=['postgres','supabase_admin','consumer'].map((name,i)=>({name,oid:String(i+10),superuser:false,inherit:true,login:false,createRole:false,createDb:false,replication:false,bypassRls:false}));
@@ -158,12 +158,49 @@ test('release migration refuses success on post-commit authority drift or lease 
  for(const failure of ['post-commit','close']){
   const events=completedLifecycle(),journal={stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})};
   let assertions=0,closes=0;
-  const acquireAuthority=async()=>({assertCurrent:async()=>{if(failure==='post-commit'&&++assertions===5)throw new Error('drift');},
+  const acquireAuthority=async()=>({assertCurrent:async()=>{if(failure==='post-commit'&&++assertions===6)throw new Error('drift');},
    close(){closes++;if(failure==='close')throw new Error('lease close failed');}});
   const result=await executeReleaseNativeMigration({input:args,client:session(),journal,mode:'apply'},{claim:()=>{},acquireAuthority});
   assert.equal(result.status,'STOPPED');assert.equal(result.productionAcceptance,false);assert.equal(closes,1);
   assert.equal(events.at(-1).status,failure==='post-commit'?'committed-lifecycle-invalid':'committed');
  }
+});
+test('explicit recovery applies once after retained failure and exact replay sends no SQL',async()=>{
+ const events=completedLifecycle(),make=()=>({stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})});
+ const failed=session({fail:prepared.body});
+ assert.equal((await executeReleaseNativeMigration({input:args,client:failed,journal:make(),mode:'apply'},{...authorityDeps,claim:()=>{}})).status,'STOPPED');
+ let claims=0;const recovered=session();
+ const result=await recoverReleaseNativeMigration({input:args,client:recovered,journal:make()},{...authorityDeps,verifyClaim:()=>{claims++;}});
+ assert.equal(result.status,'committed-recovered');assert.equal(claims,1);assert.equal(recovered.calls.filter(row=>row.sql===prepared.body).length,1);
+ assert.equal(inspectReleaseMigrationRecovery(events).status,'committed-recovered');
+ const count=recovered.calls.length;
+ assert.equal((await recoverReleaseNativeMigration({input:args,client:recovered,journal:make()},{...authorityDeps,verifyClaim:()=>{claims++;}})).status,'committed-recovered');
+ assert.equal(recovered.calls.length,count);assert.equal(claims,1);
+});
+test('recovery resolves exact committed history without body and journals abort uncertainty distinctly',async()=>{
+ for(const kind of ['existing','abort','rollback-lost']){
+  const events=completedLifecycle(),make=()=>({stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})});
+  await executeReleaseNativeMigration({input:args,client:session({commitLost:true}),journal:make(),mode:'apply'},{...authorityDeps,claim:()=>{}});
+  const baseline=session();await executeBuyerMigration({client:baseline,plan,mode:'apply'});
+  const client=kind==='existing'?session({prior:[baseline.history]}):session({fail:prepared.body});
+  if(kind==='rollback-lost'){
+   const query=client.query.bind(client);client.query=async(sql,...rest)=>{if(sql==='ROLLBACK')throw new Error('lost');return query(sql,...rest);};
+  }
+  const result=await recoverReleaseNativeMigration({input:args,client,journal:make()},{...authorityDeps,verifyClaim:()=>{}});
+  if(kind==='existing'){assert.equal(result.status,'committed-history-verified');assert.ok(!client.calls.some(row=>row.sql===prepared.body));}
+  else assert.equal(events.at(-1).status,kind==='abort'?'recovery-aborted':'rollback-outcome-unknown');
+ }
+});
+test('recovery reconciles a lost rollback response without repeating an unverified transaction',async()=>{
+ const events=completedLifecycle(),make=()=>({stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})});
+ await executeReleaseNativeMigration({input:args,client:session({fail:prepared.body}),journal:make(),mode:'apply'},{...authorityDeps,claim:()=>{}});
+ const uncertain=session({fail:prepared.body}),query=uncertain.query.bind(uncertain);
+ uncertain.query=async(sql,...rest)=>{if(sql==='ROLLBACK')throw Object.assign(new Error('lost'),{code:'CONNECTION_LOST'});return query(sql,...rest);};
+ assert.equal((await recoverReleaseNativeMigration({input:args,client:uncertain,journal:make()},{...authorityDeps,verifyClaim:()=>{}})).reason,'rollback-outcome-unknown');
+ const resolved=session();
+ assert.equal((await recoverReleaseNativeMigration({input:args,client:resolved,journal:make()},{...authorityDeps,verifyClaim:()=>{}})).status,'committed-recovered');
+ assert.equal(inspectReleaseMigrationRecovery(events).status,'committed-recovered');
+ assert.equal(resolved.calls.filter(row=>row.sql===prepared.body).length,1);
 });
 test('real protected global and migration journals retain uncertainty across close and reopen',{skip:process.getuid?.()!==0},async t=>{
  const root=fs.mkdtempSync('/root/.zola-migration-release-test-');fs.chmodSync(root,0o700);
@@ -185,6 +222,13 @@ test('real protected global and migration journals retain uncertainty across clo
   assert.equal(result.status,'not-recorded-retry-not-authorized');
   assert.equal(client.calls[0].sql,'BEGIN READ ONLY');assert.equal(fs.readdirSync(root+'/migration').length,1);
  }finally{journal.close();}
+});
+test('recovery claim is created once and exact protected bytes are required',{skip:process.getuid?.()!==0},t=>{
+ const base=fs.mkdtempSync('/root/.zola-recovery-claim-');fs.chmodSync(base,0o700);t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+ const root=base+'/claims',claim={...plan,transport:'native'};
+ const first=verifyOrCreateBuyerMigrationClaim(claim,{root});assert.equal(first.created,true);
+ assert.equal(verifyOrCreateBuyerMigrationClaim(claim,{root}).created,false);
+ fs.appendFileSync(first.filename,' ');assert.throws(()=>verifyOrCreateBuyerMigrationClaim(claim,{root}),/rejected/);
 });
 test('only exact independently regenerated package becomes an execution plan',()=>{
  for(const change of [{body:args.body+'SELECT 1;'}, {manifestBytes:args.manifestBytes+' '}, {releaseSha:'b'.repeat(40)},
@@ -223,18 +267,18 @@ test('body failure rolls back and commit response loss remains unknown without r
  const lost=session({commitLost:true});await assert.rejects(executeBuyerMigration({client:lost,plan,mode:'apply'}),e=>e.code==='OUTCOME_UNKNOWN'&&!e.message.includes('SECRET'));
  assert.equal(lost.calls.at(-1).sql,'COMMIT');assert.equal(lost.calls.filter(x=>x.sql===prepared.body).length,1);
 });
-test('live admission fence is checked under advisory lock and immediately before commit',async()=>{
- for(const rejectAt of [1,2]){
+test('live admission fence is checked under advisory lock, immediately before body, and immediately before commit',async()=>{
+ for(const rejectAt of [1,2,3]){
   const client=session();let checks=0;
   await assert.rejects(executeBuyerMigration({client,plan,mode:'apply',fence:async()=>{if(++checks===rejectAt)throw new Error('moved');}}),
    error=>error.code==='MIGRATION_FAILED'&&!error.message.includes('moved'));
   assert.equal(client.calls.at(-1).sql,'ROLLBACK');
-  if(rejectAt===1){assert.ok(!client.calls.some(row=>row.sql===prepared.body));assert.equal(client.history,undefined);}
+  if(rejectAt<=2){assert.ok(!client.calls.some(row=>row.sql===prepared.body));assert.equal(client.history,undefined);}
   else {assert.equal(client.calls.filter(row=>row.sql===prepared.body).length,1);assert.ok(client.history);}
  }
  const client=session();let checks=0;
  assert.equal((await executeBuyerMigration({client,plan,mode:'apply',fence:async()=>{checks++;}})).status,'committed');
- assert.equal(checks,2);
+ assert.equal(checks,3);
 });
 
 

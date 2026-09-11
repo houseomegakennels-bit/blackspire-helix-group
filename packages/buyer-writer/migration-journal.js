@@ -32,6 +32,32 @@ export function claimBuyerMigrationIntent(plan,{root=MIGRATION_OPERATION_ROOT}={
  }catch{throw new Error('Buyer migration durable intent unavailable or already exists; reconcile only');}
 }
 
+// Recovery may proceed only with the exact retained claim. If the original
+// release journal intent survived but claim creation did not, creating the
+// claim now is safe: the executor is unreachable before a successful claim.
+export function verifyOrCreateBuyerMigrationClaim(plan,{root=MIGRATION_OPERATION_ROOT}={}){
+ const filename=path.join(root,`${plan?.releaseSha}-${plan?.bodySha256}.json`);
+ const read=()=>{
+  let fd;try{
+   trustedDirectory(root);fd=fs.openSync(filename,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+   const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.uid!==0||stat.nlink!==1||(stat.mode&0o7777)!==0o600||stat.size<1||stat.size>4096)throw new Error();
+   const bytes=fs.readFileSync(fd,'utf8'),after=fs.fstatSync(fd);if(['dev','ino','uid','gid','mode','nlink','size','mtimeMs','ctimeMs'].some(k=>stat[k]!==after[k]))throw new Error();
+   const value=JSON.parse(bytes);if(bytes!==JSON.stringify(value)+'\n')throw new Error();
+   const expected={version:1,...plan,status:'apply-intent-reconcile-before-any-retry'};
+   const {timestamp,...actual}=value;
+   if(JSON.stringify(actual)!==JSON.stringify(expected)||typeof timestamp!=='string'||Number.isNaN(Date.parse(timestamp)))throw new Error();
+   return filename;
+  }finally{if(fd!==undefined)fs.closeSync(fd);}
+ };
+ try{fs.lstatSync(root);}catch(error){if(error.code==='ENOENT')return{filename:claimBuyerMigrationIntent(plan,{root}),created:true};throw new Error('Buyer migration durable claim rejected');}
+ try{return{filename:read(),created:false};}
+ catch(error){
+  if(error?.code&&error.code!=='ENOENT')throw new Error('Buyer migration durable claim rejected');
+  try{return{filename:claimBuyerMigrationIntent(plan,{root}),created:true};}
+  catch{try{return{filename:read(),created:false};}catch{throw new Error('Buyer migration durable claim rejected');}}
+ }
+}
+
 export function openBuyerMigrationEvidence(filename){
  let fd;
  try{

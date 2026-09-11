@@ -28,7 +28,7 @@ export function prepareBuyerMigrationExecution({releaseSha,providerManifest,mani
 // is not permission to retry because the original backend may still be alive.
 export async function executeBuyerMigration({client,plan,mode,fence}) {
   const data=plans.get(plan);
-  if(!data||!['apply','reconcile'].includes(mode)||!client||typeof client.query!=='function'
+  if(!data||!['apply','reconcile','recover'].includes(mode)||!client||typeof client.query!=='function'
     ||typeof client.processID!=='number'||!Number.isSafeInteger(client.processID)||client.processID<1
     ||fence!==undefined&&typeof fence!=='function') {
     throw new Error('Buyer migration execution rejected');
@@ -37,7 +37,7 @@ export async function executeBuyerMigration({client,plan,mode,fence}) {
   const result=status=>Object.freeze({status,releaseSha:plan.releaseSha,migrationVersion:plan.migrationVersion,
     bodySha256:plan.bodySha256,manifestSha256:plan.manifestSha256,productionAcceptance:false});
   try {
-    await client.query(mode==='apply'?'BEGIN':'BEGIN READ ONLY');began=true;
+    await client.query(mode==='reconcile'?'BEGIN READ ONLY':'BEGIN');began=true;
     await client.query("SET LOCAL search_path=pg_catalog; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s'; SET LOCAL transaction_timeout='120s'; SET LOCAL idle_in_transaction_session_timeout='10s';");
     const identity=await client.query("SELECT current_user AS actor, current_database() AS database, pg_backend_pid() AS pid, current_setting('server_version_num')::int AS version, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser");
     const actor=identity.rows?.[0];
@@ -66,6 +66,7 @@ export async function executeBuyerMigration({client,plan,mode,fence}) {
     }
     // The body contains provider postconditions before and after, exact row
     // preservation, browser denial and private writer authority preservation.
+    if(fence)await fence();
     await client.query(data.body);
     const inserted=await client.query('INSERT INTO supabase_migrations.schema_migrations(version,name,statements,idempotency_key) VALUES($1,$2,$3,$4)',[plan.migrationVersion,data.name,[data.body],data.key]);
     if(inserted.rowCount!==1)throw new Error();
@@ -74,9 +75,10 @@ export async function executeBuyerMigration({client,plan,mode,fence}) {
     await client.query('COMMIT');began=false;
     return result('committed');
   }catch{
-    if(began&&!commitSent){try{await client.query('ROLLBACK');}catch{/* discard session; do not log driver errors */}}
+    let rollbackConfirmed=false;
+    if(began&&!commitSent){try{await client.query('ROLLBACK');rollbackConfirmed=true;}catch{/* discard session; do not log driver errors */}}
     const error=new Error(commitSent?'Buyer migration commit outcome unknown; reconcile only':'Buyer migration execution failed; session must be discarded');
-    error.code=commitSent?'OUTCOME_UNKNOWN':'MIGRATION_FAILED';
+    error.code=commitSent?'OUTCOME_UNKNOWN':mode==='recover'?(rollbackConfirmed?'MIGRATION_ABORTED':'ROLLBACK_OUTCOME_UNKNOWN'):'MIGRATION_FAILED';
     throw error;
   }
 }

@@ -8,6 +8,8 @@ import {readReleaseProtectedBytes,verifyReleaseSource,verifyReleaseCi} from './c
 import {prepareN8nTransition,executeN8nTransition,createN8nTransport} from './commander-n8n.js';
 import {inspectAdmissionHoldHistory} from './admission-hold.js';
 import {inspectHeldLifecycleHistory} from './held-lifecycle.js';
+import {inspectReleaseSequence} from './commander-sequence.js';
+import {inspectPostMergeAdmissionHistory} from './postmerge-admission.js';
 
 // This is an executable observational prefix, not permission to perform the
 // remaining release. No production mutation adapter exists in this module.
@@ -39,6 +41,8 @@ const PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','protected_b
 const MIGRATION_PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','protected_backup','migration_package','n8n_package','n8n_live','identity_recheck']);
 function history(journal){
  const events=journal.stream('release').events();
+ inspectReleaseSequence(events);
+ inspectPostMergeAdmissionHistory(events);
  inspectReleaseMigrationHistory(events);
  inspectHeldLifecycleHistory(events);
  const pendingHold=inspectAdmissionHoldHistory(events);
@@ -47,7 +51,8 @@ function history(journal){
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
-  if(['release_migration_intent','release_migration_result','release_hold_intent','release_hold_result','release_lifecycle_intent','release_lifecycle_result'].includes(row?.type))continue;
+  if(row?.schema===3&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')))continue;
+  if(['release_migration_intent','release_migration_result','release_migration_recovery_intent','release_migration_recovery_result','release_hold_intent','release_hold_result','release_lifecycle_intent','release_lifecycle_result'].includes(row?.type))continue;
   if(![1,2].includes(row?.schema)||!['preflight_started','preflight_passed','preflight_stopped'].includes(row.type)
    ||!sha(row.releaseSha)||typeof row.runId!=='string'||!(/^[a-f0-9-]{36}$/).test(row.runId))reject();
   keys(row,'schema,type,runId,releaseSha'+(row.type==='preflight_started'?'':row.type==='preflight_passed'?',stage,proof':',stage'));

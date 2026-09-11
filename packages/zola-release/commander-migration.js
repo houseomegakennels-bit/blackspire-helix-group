@@ -5,7 +5,7 @@ import {readReleaseProtectedBytes} from './commander-host.js';
 import {prepareBuyerMigrationPackage} from '../buyer-writer/migration-package.js';
 import {prepareConnectedBuyerMigration} from '../buyer-writer/migration-connected.js';
 import {prepareBuyerMigrationExecution,executeBuyerMigration} from '../buyer-writer/migration-executor.js';
-import {claimBuyerMigrationIntent} from '../buyer-writer/migration-journal.js';
+import {claimBuyerMigrationIntent,verifyOrCreateBuyerMigrationClaim} from '../buyer-writer/migration-journal.js';
 
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const reject=()=>{throw new Error('Release migration preparation rejected');};
@@ -76,6 +76,28 @@ export function inspectReleaseMigrationState(events){
 }
 export function inspectReleaseMigrationHistory(events){return inspectReleaseMigrationState(events).intent;}
 
+const recoveryStatuses=new Set(['committed-recovered','committed-history-verified','recovery-aborted','rollback-outcome-unknown','commit-outcome-unknown']);
+export function inspectReleaseMigrationRecovery(events,original=inspectReleaseMigrationState(events)){
+ const rows=events.filter(row=>['release_migration_recovery_intent','release_migration_recovery_result'].includes(row?.type));
+ if(!rows.length)return null;
+ const intent=original.intent;if(!intent||intent.schema!==2||['committed','committed-history-verified'].includes(original.lastStatus)||rows.length>3)reject();
+ const fields=['schema','type','recoveryId','parentOperationId','releaseSha','migrationVersion','bodySha256','manifestSha256','runId','stateDigest','artifactDigest','apiGeneration','workerGeneration'];
+ let pending;
+ for(const [index,row] of rows.entries()){
+  const expected=[...fields,...(row.type==='release_migration_recovery_result'?['status']:[])];
+  if(!exactKeys(row,expected)||row.schema!==2||!(/^[a-f0-9-]{36}$/).test(row.recoveryId??'')||row.parentOperationId!==intent.operationId
+   ||!['releaseSha','migrationVersion','bodySha256','manifestSha256','runId','stateDigest','artifactDigest','apiGeneration','workerGeneration'].every(key=>row[key]===intent[key]))reject();
+  if(index===0){if(row.type!=='release_migration_recovery_intent')reject();pending=row;}
+  else if(row.type!=='release_migration_recovery_result'||row.recoveryId!==pending.recoveryId||!recoveryStatuses.has(row.status))reject();
+ }
+ if(rows.length===3&&(!['rollback-outcome-unknown','commit-outcome-unknown'].includes(rows[1].status)
+  ||!['committed-recovered','committed-history-verified','recovery-aborted'].includes(rows[2].status)))reject();
+ const status=rows.at(-1)?.status??null;
+ return Object.freeze({intent:structuredClone(rows[0]),status,
+  reconciliationRequired:status===null||['rollback-outcome-unknown','commit-outcome-unknown'].includes(status)});
+}
+function exactKeys(value,expected){return value&&Object.keys(value).sort().join(',')===expected.sort().join(',');}
+
 // Internal execution adapter, deliberately unreachable from the observational
 // CLI. The enclosing commander must hold its global journal lock and satisfy
 // intake/backup/identity/acceptance gates before invoking apply. This adapter
@@ -141,4 +163,42 @@ export async function executeReleaseNativeMigration({input,client,journal,mode},
   // durable result is missing, and never repeat SQL on a subsequent apply.
   return{status:'STOPPED',reason:'RELEASE_MIGRATION_REJECTED',productionAcceptance:false,mutationSent:null,reconciliationRequired:true,reconcileOnly:true};
  }finally{if(authority&&!closeAttempted){try{authority.close();}catch{/* already refusing */}}}
+}
+
+// Explicit recovery is the only path allowed to apply after a retained first
+// attempt. It verifies/creates the exact protected claim, retains the current
+// HELD lease, and proves the old database transaction is gone by acquiring the
+// same transaction-scoped advisory lock before treating absence as retryable.
+export async function recoverReleaseNativeMigration({input,client,journal},{verifyClaim=verifyOrCreateBuyerMigrationClaim,acquireAuthority}={}){
+ let authority,closeAttempted=false;const close=()=>{closeAttempted=true;authority.close();};
+ try{
+  const plan=prepareBuyerMigrationExecution(input),stream=journal.stream('release'),events=stream.events();
+  const {inspectReleaseCommander}=await import('./commander.js');
+  const {inspectCompletedHeldLifecycle,acquireHeldMigrationAuthority}=await import('./held-lifecycle.js');
+  inspectReleaseCommander(journal);const completed=inspectCompletedHeldLifecycle(events,plan.releaseSha);
+  const original=inspectReleaseMigrationState(events),prior=original.intent;
+  if(!prior||!['releaseSha','migrationVersion','bodySha256','manifestSha256'].every(key=>prior[key]===plan[key])
+   ||['committed','committed-history-verified'].includes(original.lastStatus))reject();
+  const recovered=inspectReleaseMigrationRecovery(events,original);
+  if(recovered?.status&& !recovered.reconciliationRequired)return{status:recovered.status,releaseSha:plan.releaseSha,replayed:true,productionAcceptance:false};
+  authority=await (acquireAuthority??acquireHeldMigrationAuthority)({releaseSha:plan.releaseSha,journal});
+  if(!authority||typeof authority.assertCurrent!=='function'||typeof authority.close!=='function')reject();
+  await authority.assertCurrent();let intent=recovered?.intent;
+  if(!intent){
+   intent={schema:2,type:'release_migration_recovery_intent',recoveryId:randomUUID(),parentOperationId:prior.operationId,
+    ...Object.fromEntries(['releaseSha','migrationVersion','bodySha256','manifestSha256','runId','stateDigest','artifactDigest','apiGeneration','workerGeneration'].map(key=>[key,prior[key]]))};
+   stream.append(intent);verifyClaim({...plan,transport:'native'});
+  }
+  let result;
+  try{result=await executeBuyerMigration({client,plan,mode:'recover',fence:authority.assertCurrent});await authority.assertCurrent();}
+  catch(error){
+   const status={MIGRATION_ABORTED:'recovery-aborted',ROLLBACK_OUTCOME_UNKNOWN:'rollback-outcome-unknown',OUTCOME_UNKNOWN:'commit-outcome-unknown'}[error.code]??'rollback-outcome-unknown';
+   stream.append({...intent,type:'release_migration_recovery_result',status});close();
+   return{status:'STOPPED',reason:status,mutationSent:null,reconciliationRequired:status!=='recovery-aborted',productionAcceptance:false};
+  }
+  const status=result.status==='committed'?'committed-recovered':result.status;
+  if(!recoveryStatuses.has(status))reject();stream.append({...intent,type:'release_migration_recovery_result',status});close();
+  return{...result,status,recovered:true,productionAcceptance:false};
+ }catch{return{status:'STOPPED',reason:'RELEASE_MIGRATION_RECOVERY_REJECTED',mutationSent:null,reconciliationRequired:true,productionAcceptance:false};}
+ finally{if(authority&&!closeAttempted)try{authority.close();}catch{/* already refusing */}}
 }
