@@ -11,7 +11,7 @@ const owner=process.getuid();
 const accepted=()=>({schema:1,kind:'zola_release_accepted_held',releaseSha:a,previousMainSha:'c'.repeat(40),newMainSha:b,
  operationId:'11111111-1111-4111-8111-111111111111',attemptId:'66666666-6666-4666-8666-666666666666',stageInputDigest:d('stage-input'),checkOutputDigest:d('check'),sequenceInputDigest:d('input'),registryDigest:d('registry'),acceptedStagesDigest:d('stages'),
  epochRunId:'22222222-2222-4222-8222-222222222222',permitId:'33333333-3333-4333-8333-333333333333',permitDigest:d('permit'),
- apiGeneration:'44444444-4444-4444-8444-444444444444',workerGeneration:'55555555-5555-4555-8555-555555555555',
+ apiGeneration:'4'.repeat(32),workerGeneration:'5'.repeat(32),
  rollbackAcceptanceDigest:d('rollback'),acceptedAt:'2026-09-11T16:00:00.000Z'});
 function root(){const value=fs.mkdtempSync(path.join(os.tmpdir(),'zola-record-'));fs.chmodSync(value,0o700);return value;}
 
@@ -36,4 +36,7 @@ test('resume repairs a crash between atomic link publication and temporary unlin
 test('tamper and permissive directory are rejected',()=>{const directory=root(),held=accepted(),result=writeAcceptedHeldReleaseRecord({record:held,root:directory,owner});
  fs.appendFileSync(result.file,' ');assert.throws(()=>inspectFinalReleaseRecord({releaseSha:a,root:directory,owner}));
  const unsafe=root();fs.chmodSync(unsafe,0o755);assert.throws(()=>writeAcceptedHeldReleaseRecord({record:held,root:unsafe,owner}));
+});
+test('records require production-shaped systemd generation identities',()=>{const directory=root(),held=accepted();
+ assert.throws(()=>writeAcceptedHeldReleaseRecord({record:{...held,apiGeneration:'44444444-4444-4444-8444-444444444444'},root:directory,owner}));
 });

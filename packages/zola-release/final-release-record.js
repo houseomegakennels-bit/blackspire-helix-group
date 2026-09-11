@@ -6,6 +6,7 @@ import {hash} from './commander-journal.js';
 export const FINAL_RELEASE_RECORD_ROOT='/var/lib/blackspire-operator/release-records';
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
+const generation=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 const reject=()=>{throw new Error('Final release record rejected; preserve HELD and reconcile');};
@@ -48,7 +49,7 @@ function validateAccepted(value){
  if(!exact(value,keys)||value.schema!==1||value.kind!=='zola_release_accepted_held'||![value.releaseSha,value.previousMainSha,value.newMainSha].every(sha)
   ||value.newMainSha===value.previousMainSha||![value.operationId,value.attemptId,value.epochRunId,value.permitId].every(uuid)
   ||!['stageInputDigest','checkOutputDigest','sequenceInputDigest','registryDigest','acceptedStagesDigest','permitDigest','rollbackAcceptanceDigest'].every(key=>digest(value[key]))
-  ||!uuid(value.apiGeneration)||!uuid(value.workerGeneration)||value.apiGeneration===value.workerGeneration
+  ||!generation(value.apiGeneration)||!generation(value.workerGeneration)||value.apiGeneration===value.workerGeneration
   ||typeof value.acceptedAt!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value.acceptedAt))reject();
  return structuredClone(value);
 }

@@ -8,6 +8,26 @@ const reject=()=>{throw new Error('Release deployment identity rejected');};
 const options={encoding:'utf8',timeout:15000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],
  env:{PATH:'/usr/bin:/bin',HOME:'/root',GH_CONFIG_DIR:'/root/.config/gh',GH_PROMPT_DISABLED:'1',LC_ALL:'C'}};
 
+// GitHub can temporarily report mergeable=null while its merge commit is being
+// regenerated. A release must never interpret that uncertainty (or rebaseable)
+// as mergeability. Observe the exact PR/base identity twice and require the
+// server's computed merge result to be positively mergeable.
+export function observeReleaseMergeability({releaseSha,previousMainSha},{run=execFileSync}={}){
+ try{
+  if(![releaseSha,previousMainSha].every(sha))reject();
+  const read=()=>{
+   const pr=JSON.parse(run('/usr/bin/gh',['api',`repos/${REPOSITORY}/pulls/125`],options));
+   const main=JSON.parse(run('/usr/bin/gh',['api',`repos/${REPOSITORY}/git/ref/heads/main`],options));
+   if(pr.number!==125||pr.state!=='open'||pr.merged!==false||pr.draft!==false
+    ||pr.head?.sha!==releaseSha||pr.head?.ref!=='release/zola-production-live'||pr.head?.repo?.full_name!==REPOSITORY
+    ||pr.base?.ref!=='main'||pr.base?.repo?.full_name!==REPOSITORY||main.object?.type!=='commit'||main.object?.sha!==previousMainSha
+    ||pr.mergeable!==true||!['clean','unstable','blocked','has_hooks'].includes(pr.mergeable_state))reject();
+   return{status:'PR_MERGEABLE',releaseSha,previousMainSha,mergeable:true,mergeState:pr.mergeable_state};
+  };
+  const first=read(),second=read();if(JSON.stringify(first)!==JSON.stringify(second))reject();return Object.freeze(first);
+ }catch{reject();}
+}
+
 export function observeExpectedHeadMerge({releaseSha,previousMainSha,ciMergeSha,ciTreeSha},{run=execFileSync}={}){
  try{
   if(![releaseSha,previousMainSha,ciMergeSha,ciTreeSha].every(sha))reject();
