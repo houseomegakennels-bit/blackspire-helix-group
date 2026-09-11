@@ -12,7 +12,7 @@ AUTHENTICATED RUNTIME VERIFIED; STATISTICS REMAIN PROVISIONAL.
 
 ## Compile/runtime evidence
 - The revised Pine v6 validator compiled and loaded on the chart without a correctness-affecting runtime error.
-- TradingView Basic limited the loaded 5-minute sample to about 19 completed research days in this session.
+- TradingView Basic limited the loaded 5-minute sample to about 19 completed research days in this session. The earliest reachable loaded bar after a direct Go-To test was around Aug. 16, 2026; jumping earlier did not expand the Pine dataset.
 - Existing GoldenArrow and RSI indicators were temporarily removed because the Basic plan allows two indicators on the chart.
 
 ## Data-quality diagnosis
@@ -43,7 +43,8 @@ After the above premise-preserving diagnostic logic:
 - Scenario A by Asia-range quartile: Q1 50%, Q2 100%, Q3 100%, Q4 insufficient/NaN in this small sample.
 - Scenario B by Asia-range quartile: Q1 0%, Q2 0%, Q3 0%, Q4 33.3%.
 
-Q4 sweep-distribution values must be re-read after the Stage 1B premise fix because Stage 1A only accumulated Q4 samples from its over-restricted London class.
+- Q4 sweep mean / median: 1.7 / 2 ticks.
+- Q4 sweep p25 / p75 / p90: 1 / 2 / 3 ticks.
 
 ## Gate decision
 Stage 1B compile/runtime is operational, but the strategy evidence is not sufficient for Stage 1C advancement. The master plan requires at least 30 observations before a scenario can pass; the current Basic-plan sample provides only A=10 and B=8. No live, demo-broker, or execution work is authorized from these provisional statistics.
