@@ -45,6 +45,21 @@ function fixedN8n(context,dependencies={}){
  const proof=(stage,bound,plan,state,extra={})=>Object.freeze({status:'PASS',evidence:Object.freeze({stage,...bound,
   workflowNamespace:plan.namespace,backupSha256:plan.backupSha256,workflowState:state.kind,workflowActive:state.active,
   workflowVersion:state.versionId,...extra})});
+ const mutationEventTypes=new Set(['intent','response','unknown','confirmed']);
+ const attemptJournal=bound=>{
+  const stream=context.journal.stream('n8n');
+  return Object.freeze({
+   events:()=>{
+    const events=stream.events();
+    for(const event of events){
+     if(mutationEventTypes.has(event.type)&&(event.operationId!==bound.operationId||event.stageAttemptId!==bound.stageAttemptId))reject();
+    }
+    return events;
+   },
+   append:event=>stream.append(mutationEventTypes.has(event.type)
+    ?{...event,operationId:bound.operationId,stageAttemptId:bound.stageAttemptId}:event),
+  });
+ };
  const backupObserve=async(args,{attempt=false}={})=>{
   const {bound,plan,result}=await inspect(args,{attempt});
   if(result.state.kind!=='BASELINE'||result.state.active!==true)reject();
@@ -55,7 +70,7 @@ function fixedN8n(context,dependencies={}){
   observe:args=>backupObserve(args,{attempt:true}),reconcile:args=>backupObserve(args,{attempt:true}),
  });
  const advance=async(args,reconcileFirst)=>{
-  const bound=binding(context,args,{attempt:true}),plan=getPlan(),request=getRequest(),journal=context.journal.stream('n8n');
+  const bound=binding(context,args,{attempt:true}),plan=getPlan(),request=getRequest(),journal=attemptJournal(bound);
   const invoke=mode=>executeN8nTransition({plan,mode,request,journal,verifyWriter:writer,
    exclusiveWindowUntil:new Date(Date.now()+10*60*1000).toISOString()});
   let result=await invoke(reconcileFirst?'reconcile':'inspect');

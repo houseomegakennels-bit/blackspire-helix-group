@@ -5,6 +5,7 @@ import {readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
 import {validateBuyerWriterConfiguration} from '../buyer-writer/configuration.js';
 import {createBuyerWriterPostgres} from '../buyer-writer/postgres.js';
 import {createWriterGateway,createWriterReceiptGateway} from '../buyer-writer/gateway.js';
+import {captureBuyerJobVersion} from '../buyer-writer/criteria.js';
 
 export const PROVIDER_ACL_FUNCTIONS=Object.freeze([
  '_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string',
@@ -121,6 +122,7 @@ export function createProviderAclCheckOperation({query}){
 const WRITER_CAPABILITY='buyer.writer.acceptance';
 const WRITER_WORKSPACE='blackspire-command';
 const WRITER_HOST='db.kchtrvfcixnimvxxctkj.supabase.co';
+export const WRITER_ACCEPTANCE_TARGET_FILE='/var/lib/blackspire-operator/writer-acceptance.json';
 const ISSUE_SQL='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
 const RECONCILE_SQL='select buyer_writer.reconcile($1,$2,$3,$4,$5::timestamptz) as result';
 const inspectionKeys=['schema','kind','releaseSha','operationId','attemptId','workspace','principal','capability','mutationId',
@@ -138,9 +140,8 @@ function derivedUuid(label,value){
  const bytes=createHash('sha256').update(label).update('\0').update(JSON.stringify(value)).digest('hex');
  return `${bytes.slice(0,8)}-${bytes.slice(8,12)}-4${bytes.slice(13,16)}-8${bytes.slice(17,20)}-${bytes.slice(20,32)}`;
 }
-function acceptanceIdentity(bound){
- const ownerId=derivedUuid('zola-buyer-writer-owner',{workspace:bound.workspace,principal:bound.principal});
- const jobId=derivedUuid('zola-buyer-writer-job',{workspace:bound.workspace,principal:bound.principal});
+function acceptanceIdentity(bound,target){
+ const {ownerId,jobId}=target;
  const dispatchId=mutationUuid(bound);
  return Object.freeze({ownerId,jobId,dispatchId});
 }
@@ -153,8 +154,6 @@ function acceptanceSource(bound){
   digest:createHash('sha256').update(empty).digest('hex'),rowCount:0,byteCount:empty.length,
  })});
 }
-const ACCEPTANCE_CRITERIA=Object.freeze({state:'GA',county:'Fulton',property_type:'all',date_range_start:'2000-01-01',date_range_end:'2000-01-01',
- min_purchases:1,cash_buyers_only:false,llc_buyers_only:false});
 function acceptanceInspection(bound,state,receiptDigest=null){
  return Object.freeze({schema:1,kind:'zola_bounded_writer_acceptance',...bound,capability:WRITER_CAPABILITY,mutationId:mutationUuid(bound),state,
   businessRowsChanged:0,paidProviderCalls:0,receiptDigest,compensationComplete:state==='COMPENSATED',outcomeUnknown:false});
@@ -166,16 +165,29 @@ function fixedConfiguration(configurationFile,groupId,readSnapshot=readRootOwned
   ||config.runtime.database!=='postgres'||config.issuer.database!=='postgres')reject();
  return {snapshot,config};
 }
-async function withFixedWriter(configurationFile,work,{groupId,readSnapshot=readRootOwnedJsonSnapshot,openDatabase=createBuyerWriterPostgres}={}){
+function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJsonSnapshot){
+ const snapshot=readSnapshot(file,{groupId,maxBytes:32768}),value=snapshot.value;
+ if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability','jobId','ownerId','criteria','updatedAt'])
+  ||value.schema!==1||value.kind!=='zola_bounded_writer_acceptance_target'||value.releaseSha!==bound.releaseSha
+  ||value.workspace!==bound.workspace||value.principal!==bound.principal||value.capability!==WRITER_CAPABILITY
+  ||!uuid(value.jobId)||!uuid(value.ownerId))reject();
+ let captured;
+ try{captured=captureBuyerJobVersion({...value.criteria,updated_at:value.updatedAt});}catch{reject();}
+ return{snapshot,target:Object.freeze({jobId:value.jobId,ownerId:value.ownerId,criteria:captured.criteria,updatedAt:captured.updatedAt})};
+}
+async function withFixedWriter(configurationFile,bound,work,{groupId,readSnapshot=readRootOwnedJsonSnapshot,
+ readAcceptanceSnapshot=readRootOwnedJsonSnapshot,acceptanceFile=WRITER_ACCEPTANCE_TARGET_FILE,openDatabase=createBuyerWriterPostgres}={}){
  let database;
  try{
-  if(typeof configurationFile!=='string'||typeof work!=='function')reject();
+  if(typeof configurationFile!=='string'||typeof acceptanceFile!=='string'||acceptanceFile!==WRITER_ACCEPTANCE_TARGET_FILE||typeof work!=='function')reject();
   const gid=groupId??apiGroupId(),before=fixedConfiguration(configurationFile,gid,readSnapshot);
+  const acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
   database=await openDatabase({runtime:before.config.runtime,issuer:before.config.issuer});
   if(database?.isHealthy?.()!==true||typeof database.runtimeQuery!=='function'||typeof database.issuerQuery!=='function'||typeof database.close!=='function')reject();
-  const result=await work(before.config,database);
-  const after=fixedConfiguration(configurationFile,gid,readSnapshot);
-  if(JSON.stringify(before.snapshot)!==JSON.stringify(after.snapshot)||database.isHealthy()!==true)reject();
+  const result=await work(before.config,database,acceptance.target);
+  const after=fixedConfiguration(configurationFile,gid,readSnapshot),acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
+  if(JSON.stringify(before.snapshot)!==JSON.stringify(after.snapshot)||JSON.stringify(acceptance.snapshot)!==JSON.stringify(acceptanceAfter.snapshot)
+   ||database.isHealthy()!==true)reject();
   return result;
  }finally{try{await database?.close();}catch{}}
 }
@@ -193,8 +205,9 @@ function validateFixedRequest(request){
   ||request.failureCode!=='INVALID_SOURCE_DATA'||request.maximumBusinessRows!==0||request.paidProviderAllowed!==false)reject();
  return Object.freeze({...request});
 }
-async function compensate(config,database,bound){
- const ids=acceptanceIdentity(bound),result=await database.issuerQuery(RECONCILE_SQL,[ids.jobId,ids.ownerId,WRITER_WORKSPACE,ids.dispatchId,null]);
+async function compensate(config,database,bound,target){
+ const ids=acceptanceIdentity(bound,target),result=await database.issuerQuery(RECONCILE_SQL,
+  [ids.jobId,ids.ownerId,WRITER_WORKSPACE,ids.dispatchId,target.updatedAt]);
  const value=result?.rows?.length===1?result.rows[0]?.result:null;
  if(!exact(value,['dispatchId','generation','state'])||value.dispatchId!==ids.dispatchId||!['absent','cancelled','failed'].includes(value.state)
   ||(value.state==='absent'?value.generation!==null:!Number.isSafeInteger(value.generation)||value.generation<1))reject();
@@ -219,20 +232,20 @@ export async function inspectFixedWriterAcceptance(binding,{configurationFile,..
  const bound=Object.freeze({...binding});
  if(bound.attemptId===null){
   bindingShape(bound,false);
-  return withFixedWriter(configurationFile,async()=>acceptanceInspection(bound,'PREPARED'),host);
+  return withFixedWriter(configurationFile,bound,async()=>acceptanceInspection(bound,'PREPARED'),host);
  }
  bindingShape(bound,true);
- return withFixedWriter(configurationFile,(config,database)=>compensate(config,database,bound),host);
+ return withFixedWriter(configurationFile,bound,(config,database,target)=>compensate(config,database,bound,target),host);
 }
 
 export async function runFixedWriterAcceptance(value,{configurationFile,...host}={}){
  const request=validateFixedRequest(value),bound=Object.freeze(Object.fromEntries(
   ['releaseSha','operationId','workspace','principal','attemptId','inputDigest','checkOutputDigest'].map(key=>[key,request[key]])));
- return withFixedWriter(configurationFile,async(config,database)=>{
-  const ids=acceptanceIdentity(bound),permit=fixedPermit(config,bound),source=acceptanceSource(bound);
+ return withFixedWriter(configurationFile,bound,async(config,database,target)=>{
+  const ids=acceptanceIdentity(bound,target),permit=fixedPermit(config,bound),source=acceptanceSource(bound);
   try{
    const issued=await database.issuerQuery(ISSUE_SQL,[ids.jobId,ids.ownerId,WRITER_WORKSPACE,createHash('sha256').update(permit).digest('hex'),
-    JSON.stringify(source),JSON.stringify(ACCEPTANCE_CRITERIA),null,ids.dispatchId]);
+    JSON.stringify(source),JSON.stringify(target.criteria),target.updatedAt,ids.dispatchId]);
    const result=issued?.rows?.length===1?issued.rows[0]?.result:null;
    if(!exact(result,['dispatchId','generation'])||result.dispatchId!==ids.dispatchId||!Number.isSafeInteger(result.generation)||result.generation<1)reject();
    const writer=createWriterGateway({credential:config.writerCredential,workspace:WRITER_WORKSPACE,query:database.runtimeQuery});
@@ -241,7 +254,7 @@ export async function runFixedWriterAcceptance(value,{configurationFile,...host}
      payload:{code:'INVALID_SOURCE_DATA'}}))});
    if(response?.status!==200||response.body?.ok!==true||response.body.operation!=='fail'||response.body.chunkIndex!==0)throw new Error('unknown');
   }catch{
-   const compensated=await compensate(config,database,bound);
+   const compensated=await compensate(config,database,bound,target);
    if(compensated===null)throw new Error('Bounded writer acceptance outcome unknown');
   }
  },host);

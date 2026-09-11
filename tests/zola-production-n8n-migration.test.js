@@ -49,6 +49,8 @@ test('fixed n8n operations verify the backup then journal and confirm the comple
  const events=f.journal.stream('n8n').events();
  assert.deepEqual(events.filter(row=>row.type==='intent').map(row=>row.operation),['deactivate','update','publish']);
  assert.equal(events.filter(row=>row.type==='confirmed').length,3);
+ assert.ok(events.filter(row=>['intent','response','unknown','confirmed'].includes(row.type))
+  .every(row=>row.operationId===f.state.context.operationId&&row.stageAttemptId===f.args.attemptId));
 });
 
 test('fixed n8n reconciliation retains the same stage attempt and never retries an unknown dispatch',async()=>{
@@ -59,6 +61,9 @@ test('fixed n8n reconciliation retains the same stage attempt and never retries 
  n.restore();const proof=await operations.n8n_migration.reconcile(f.args);
  assert.equal(proof.evidence.stageAttemptId,f.args.attemptId);assert.equal(n.mutations(),3);
  assert.equal(f.journal.stream('n8n').events().filter(row=>row.type==='intent'&&row.operation==='deactivate').length,1);
+ const different={...f.args,attemptId:randomUUID()};
+ await assert.rejects(operations.n8n_migration.reconcile(different),/production operation rejected/);
+ assert.equal(n.mutations(),3);
 });
 
 test('fixed native migration apply and unknown-outcome reconciliation use durable release history',async()=>{

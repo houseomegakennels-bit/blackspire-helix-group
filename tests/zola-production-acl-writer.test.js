@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {PROVIDER_ACL_CHECK_SQL,PROVIDER_ACL_FUNCTIONS,createProviderAclCheckOperation,createBoundedWriterE2eOperation}
+import {PROVIDER_ACL_CHECK_SQL,PROVIDER_ACL_FUNCTIONS,WRITER_ACCEPTANCE_TARGET_FILE,createProviderAclCheckOperation,createBoundedWriterE2eOperation}
  from '../packages/zola-release/production-acl-writer.js';
 import {createFixedProductionOperations} from '../packages/zola-release/production-adapters.js';
 
@@ -69,11 +69,20 @@ test('fixed production composition uses the real buyer-writer host protocol and 
   runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secrets[2]},
   issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secrets[3]}};
  const snapshot=Object.freeze({value:config,identity:Object.freeze({uid:0,gid:0,mode:33152,nlink:1,size:1,dev:1,ino:1,mtimeMs:1,ctimeMs:1})});
+ const target={schema:1,kind:'zola_bounded_writer_acceptance_target',releaseSha:a,workspace:base.input.workspace,principal:base.input.principal,
+  capability:'buyer.writer.acceptance',jobId:'33333333-3333-4333-8333-333333333333',ownerId:'44444444-4444-4444-8444-444444444444',
+  criteria:{state:'GA',county:'Fulton',property_type:'all',date_range_start:'2000-01-01',date_range_end:'2000-01-01',min_purchases:1,
+   cash_buyers_only:false,llc_buyers_only:false},updatedAt:'2026-09-11T12:34:56.123456Z'};
+ const targetSnapshot=Object.freeze({value:target,identity:Object.freeze({uid:0,gid:0,mode:33152,nlink:1,size:1,dev:2,ino:2,mtimeMs:2,ctimeMs:2})});
  let dispatchId,generation=7,state='absent',applyCalls=0,reconcileCalls=0,closed=0;
  const openDatabase=async()=>({isHealthy:()=>true,close:async()=>{closed++;},
   issuerQuery:async(sql,values)=>{
-   if(sql.includes('.issue(')){dispatchId=values[7];state='pending';return{rows:[{result:{dispatchId,generation}}]};}
+   if(sql.includes('.issue(')){
+    assert.equal(values[0],target.jobId);assert.equal(values[1],target.ownerId);assert.equal(values[6],target.updatedAt);
+    assert.deepEqual(JSON.parse(values[5]),target.criteria);dispatchId=values[7];state='pending';return{rows:[{result:{dispatchId,generation}}]};
+   }
    assert.ok(sql.includes('.reconcile('));reconcileCalls++;
+   assert.equal(values[0],target.jobId);assert.equal(values[1],target.ownerId);assert.equal(values[4],target.updatedAt);
    if(state==='pending')state='cancelled';
    return{rows:[{result:{dispatchId:values[3],generation:state==='absent'?null:generation,state}}]};
   },
@@ -85,7 +94,10 @@ test('fixed production composition uses the real buyer-writer host protocol and 
  const input={...base.input,previousMainSha:'b'.repeat(40),recoverySha:'c'.repeat(40),protectedInputDigest:d('protected'),inputDigest:d('sequence')};
  const stateFor=(pending=false)=>({context:{operationId,releaseSha:a,workspace:input.workspace,principal:input.principal},...(pending?{pending:{attemptId,inputDigest:d('input'),checkOutputDigest:d('check')}}:{})});
  const context={input,release:{releaseSha:a,activationConfigurationFile:'/fixed/activation.json'},journal:{stream:()=>({events:()=>[],append(){}})}};
- const operation=createFixedProductionOperations(context,{writerHost:{groupId:0,readSnapshot:()=>snapshot,openDatabase}}).bounded_writer_e2e;
+ const writerHost={groupId:0,readSnapshot:()=>snapshot,readAcceptanceSnapshot:file=>{
+  assert.equal(file,WRITER_ACCEPTANCE_TARGET_FILE);return targetSnapshot;
+ },openDatabase};
+ const operation=createFixedProductionOperations(context,{writerHost}).bounded_writer_e2e;
  const checked=await operation.check({input,state:stateFor(),ordinal:9});
  assert.equal(checked.status,'PASS');assert.equal(checked.evidence.writerPrepared,true);
  const call={input,state:stateFor(true),ordinal:9,attemptId,inputDigest:d('input'),checkOutputDigest:d('check')};
@@ -100,7 +112,7 @@ test('fixed production composition uses the real buyer-writer host protocol and 
   if(sql.includes('.apply(')){applyCalls++;throw new Error('response lost');}
   throw new Error('receipt must not be queried for cancellation');
  }});
- const lossy=createFixedProductionOperations(context,{writerHost:{groupId:0,readSnapshot:()=>snapshot,openDatabase:lossyDatabase}}).bounded_writer_e2e;
+ const lossy=createFixedProductionOperations(context,{writerHost:{...writerHost,openDatabase:lossyDatabase}}).bounded_writer_e2e;
  await lossy.execute(call);
  const compensated=await lossy.reconcile(call);
  assert.equal(compensated.status,'PASS');assert.equal(compensated.evidence.compensationComplete,true);
@@ -115,7 +127,7 @@ test('fixed production composition uses the real buyer-writer host protocol and 
    return{rows:[{result:{dispatchId:values[3],generation:null,state:'absent'}}]};
   }};
  };
- const missing=createFixedProductionOperations(context,{writerHost:{groupId:0,readSnapshot:()=>snapshot,openDatabase:missingDatabase}}).bounded_writer_e2e;
+ const missing=createFixedProductionOperations(context,{writerHost:{...writerHost,openDatabase:missingDatabase}}).bounded_writer_e2e;
  await assert.rejects(()=>missing.execute(call),/outcome unknown/);
  assert.deepEqual(await missing.reconcile(call),{status:'BLOCKED_EXTERNAL'});
  assert.equal(applyCalls,0);assert.equal(reconcileCalls,2);
