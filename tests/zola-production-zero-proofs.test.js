@@ -41,7 +41,8 @@ function sequenceEvents(stage){
   const name=RELEASE_STAGES[ordinal],checkOutputDigest=hash(`check-${name}`),stageInputDigest=hash({sequence:input.inputDigest,stage:name,ordinal,check:checkOutputDigest});
   const attemptId=MUTATING_STAGES.has(name)?`${String((ordinal%8)+1).repeat(8)}-${String((ordinal%8)+1).repeat(4)}-4aaa-8aaa-${String((ordinal%8)+1).repeat(12)}`:null;
   if(attemptId)rows.push({schema:4,type:'sequence_stage_intent',operationId,ordinal,stage:name,attemptId,inputDigest:stageInputDigest,checkOutputDigest});
-  const output=name==='bounded_writer_e2e'?{boundedWriterAcceptance:true,businessRowsChanged:0,compensationComplete:true,receiptDigest:'7'.repeat(64)}:{complete:true,stage:name};
+  const output=name==='bounded_writer_e2e'?{boundedWriterAcceptance:true,businessRowsChanged:0,compensationComplete:true,receiptDigest:'7'.repeat(64)}
+   :name==='capture_new_main_sha'?{newMainSha:releaseSha}:{complete:true,stage:name};
   rows.push({schema:4,type:'sequence_stage_confirmed',operationId,ordinal,stage:name,attemptId,inputDigest:stageInputDigest,checkOutputDigest,
    outputDigest:hash(JSON.stringify(output)),output});
  }

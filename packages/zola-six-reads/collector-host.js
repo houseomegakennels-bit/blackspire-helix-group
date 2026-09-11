@@ -104,17 +104,25 @@ function assertWorkerFrontend(config) {
   if (!/^[A-Za-z0-9._:-]{1,128}$/.test(workerId)) refuse('WORKER_ID_REJECTED');
   return workerId;
 }
-export function createProductionCollectorHost(config) {
+export function createProductionCollectorHost(config,{readAcceptanceSecret=()=>{
+  const filename=path.join(RELEASE_ADMISSION_ROOT,'acceptance-secret.json'),stat=fs.lstatSync(filename);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.nlink!==1||(stat.mode&0o7777)!==0o600)refuse('CREDENTIAL_CONTRACT_REJECTED');
+  return readRootOwnedJson(filename,{groupId:stat.gid,maxBytes:1024});
+} }={}) {
   if (process.getuid() !== 0) refuse('ROOT_REQUIRED');
   const gitOptions = { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8', timeout: 2000, maxBuffer: 65536, env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', GIT_NO_REPLACE_OBJECTS: '1' }, stdio: ['ignore','pipe','pipe'] };
   if (execFileSync('/usr/bin/git', ['rev-parse','--verify','HEAD'], gitOptions).trim() !== config.releaseSha ||
       execFileSync('/usr/bin/git', ['status','--porcelain=v1','--untracked-files=all'], gitOptions).trim()) refuse('COLLECTOR_SOURCE_SHA_OR_DIRTY_TREE');
-  const credentials = readRootOwnedJson(config.credentialPath, { groupId: 0 });
+  let credentials = readRootOwnedJson(config.credentialPath, { groupId: 0 }),acceptanceSecret=null;
   const denialReceipt = [4,5].includes(config.version) ? readRootOwnedJson(config.denialReceiptPath, { groupId: 0 }) : null;
   if ([4,5].includes(config.version)) {
-    const expected=config.version===5?'bearer,heldAcceptanceToken':'bearer';
-    if (Object.keys(credentials).sort().join(',') !== expected) refuse('CREDENTIAL_CONTRACT_REJECTED');
-    credentials.deniedCookie = denialReceipt.deniedCookie;
+    if (Object.keys(credentials).sort().join(',') !== 'bearer') refuse('CREDENTIAL_CONTRACT_REJECTED');
+    credentials={...credentials,deniedCookie:denialReceipt.deniedCookie};
+    if(config.version===5){acceptanceSecret=readAcceptanceSecret();
+      if(!acceptanceSecret||Object.keys(acceptanceSecret).sort().join(',')!=='permitId,schema,token'||acceptanceSecret.schema!==1
+        ||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(acceptanceSecret.permitId??'')||typeof acceptanceSecret.token!=='string'||acceptanceSecret.token.length!==43)refuse('CREDENTIAL_CONTRACT_REJECTED');
+      credentials.heldAcceptanceToken=acceptanceSecret.token;
+    }
   }
   if (Object.keys(credentials).sort().join(',') !== (config.version===5?'bearer,deniedCookie,heldAcceptanceToken':'bearer,deniedCookie') ||
       typeof credentials.bearer !== 'string' || credentials.bearer.length < 24 || credentials.bearer.length > 4096 || /[\r\n]/.test(credentials.bearer) ||
@@ -131,7 +139,7 @@ export function createProductionCollectorHost(config) {
     async acceptance(generation){
       const claims=validateHeldAcceptanceClaims(readRootOwnedJson(path.join(RELEASE_ADMISSION_ROOT,'acceptance.json'),{groupId:fs.statSync(path.join(RELEASE_ADMISSION_ROOT,'acceptance.json')).gid,maxBytes:16384}));
       const tokenDigest=digest(credentials.heldAcceptanceToken),cases=readCases(config.dealId);
-      if(claims.tokenDigest!==tokenDigest||claims.mergeMainSha!==config.releaseSha||claims.expectedDeploymentSha!==config.releaseSha
+      if(acceptanceSecret?.permitId!==claims.permitId||claims.tokenDigest!==tokenDigest||claims.mergeMainSha!==config.releaseSha||claims.expectedDeploymentSha!==config.releaseSha
         ||claims.epochRunId!==config.releaseRunId||claims.workspace!==config.workspace||claims.principal!==config.principal
         ||claims.apiGeneration!==generation.apiGeneration||claims.workerGeneration!==generation.workerGeneration
         ||claims.reads.some((row,index)=>row.capability!==cases[index].capability||row.permission!==cases[index].permissions[0]

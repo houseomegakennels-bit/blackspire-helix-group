@@ -39,7 +39,7 @@ function events(pending){
 }
 function fixture(stage){
  const rows=events(stage),context={input:{releaseSha,workspace:'workspace-one',principal:'principal-one'},journal:{stream:()=>({events:()=>rows})}};
- const state={context:{operationId:commanderRunId}};
+ const state={context:{operationId:commanderRunId},outputs:{capture_new_main_sha:{newMainSha:releaseSha}}};
  const call={input:null,state,ordinal:24,attemptId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',inputDigest:'1'.repeat(64),checkOutputDigest:'2'.repeat(64)};
  call.input=context.input;return{context,call};
 }

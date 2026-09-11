@@ -23,10 +23,11 @@ function invocation(context,call,operation,{attempt=true}={}){
  if(attempt&&(!uuid(call.attemptId)||!digest(call.inputDigest)||!digest(call.checkOutputDigest)
   ||state.pending?.stage!==operation||state.pending.attemptId!==call.attemptId))reject();
  const events=context.journal.stream('release').events(),held=inspectHeldAcceptanceHistory(events),claims=held.claims;
- if(held.status!=='CONSUMING'||held.pending?.operation!==operation||!claims||claims.commanderRunId!==operationId
-  ||claims.mergeMainSha!==input.releaseSha||claims.expectedDeploymentSha!==input.releaseSha
+ const merged=state?.outputs?.capture_new_main_sha?.newMainSha;
+ if(!sha(merged)||held.status!=='CONSUMING'||held.pending?.operation!==operation||!claims||claims.commanderRunId!==operationId
+  ||claims.mergeMainSha!==merged||claims.expectedDeploymentSha!==merged
   ||claims.workspace!==input.workspace||claims.principal!==input.principal||!uuid(claims.epochRunId))reject();
- return{releaseSha:input.releaseSha,operationId,stageAttemptId:attempt?call.attemptId:null,workspace:input.workspace,
+ return{releaseSha:merged,operationId,stageAttemptId:attempt?call.attemptId:null,workspace:input.workspace,
   principal:input.principal,epochRunId:claims.epochRunId,apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration,held,events};
 }
 

@@ -38,8 +38,9 @@ function claimsFor(context,state,operation){
  if(!context?.journal?.stream||!sha(context.input?.releaseSha)||!id(context.input.workspace)||!id(context.input.principal)
   ||!uuid(state?.context?.operationId))reject();
  const history=inspectHeldAcceptanceHistory(context.journal.stream('release').events()),claims=history.claims;
- if(history.status!=='CONSUMING'||history.pending?.operation!==operation||!claims
-  ||claims.mergeMainSha!==context.input.releaseSha||claims.expectedDeploymentSha!==context.input.releaseSha
+ const merged=state?.outputs?.capture_new_main_sha?.newMainSha;
+ if(!sha(merged)||history.status!=='CONSUMING'||history.pending?.operation!==operation||!claims
+  ||claims.mergeMainSha!==merged||claims.expectedDeploymentSha!==merged
   ||claims.commanderRunId!==state.context.operationId||claims.workspace!==context.input.workspace||claims.principal!==context.input.principal
   ||!uuid(claims.epochRunId)||!generation(claims.apiGeneration)||!generation(claims.workerGeneration))reject();
  return{history,claims};
