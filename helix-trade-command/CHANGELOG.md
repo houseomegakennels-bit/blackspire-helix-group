@@ -69,3 +69,5 @@
 - Added independent V2 daily capture/retry scheduling without changing the existing R1-H1 track.
 - Updated the Zola Helix Trade Command workspace to show R1-H1 and London V2 side by side.
 - Both tracks remain research-only; broker and live-trading authorization stay disabled.
+
+- Extended frozen London V2 robustness testing across HistData EUR/USD 1-minute history from 2009-2024 (resampled to 5m with fixed-EST timezone normalization). Long-run proxy result: 459 trades, 27.23% wins, -$6,440.63, PF 0.682, expectancy -0.775R. This materially weakens the historical case for V2; prospective direct-M6E collection remains research-only.

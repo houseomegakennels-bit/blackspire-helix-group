@@ -1,0 +1,201 @@
+{
+  "label": "London V2 extended robustness",
+  "primary_instrument": "M6E",
+  "robustness_instrument": "EURUSD spot bid proxy",
+  "histdata_period": "2009-01-01 to 2024-12-31",
+  "histdata_summary": {
+    "trades": 459,
+    "wins": 125,
+    "losses": 334,
+    "win_rate_pct": 27.233115468409586,
+    "starting_equity": 50000.0,
+    "ending_equity": 43559.37499999251,
+    "net_pnl": -6440.625000007537,
+    "return_pct": -12.881250000014976,
+    "avg_trade": -14.03186274511446,
+    "expectancy_r": -0.7750776927652147,
+    "profit_factor": 0.6816201686900802,
+    "max_drawdown_dollars": 6778.875000007101,
+    "max_drawdown_pct": 13.473674272553561,
+    "longest_losing_streak": 14,
+    "avg_contracts": 6,
+    "exit_counts": {
+      "stop": 333,
+      "target": 123,
+      "time": 3
+    }
+  },
+  "yearly": [
+    {
+      "year": 2009,
+      "trades": 22,
+      "wins": 8,
+      "win_rate_pct": 36.36363636363637,
+      "net_pnl": 311.9999999996275,
+      "expectancy_r": -0.018203619132325096,
+      "profit_factor": 1.2501503307272381
+    },
+    {
+      "year": 2010,
+      "trades": 31,
+      "wins": 7,
+      "win_rate_pct": 22.580645161290324,
+      "net_pnl": -927.7500000005531,
+      "expectancy_r": -0.5245705665652579,
+      "profit_factor": 0.5908038372476251
+    },
+    {
+      "year": 2011,
+      "trades": 19,
+      "wins": 5,
+      "win_rate_pct": 26.31578947368421,
+      "net_pnl": 241.1249999996524,
+      "expectancy_r": -0.23995221718395765,
+      "profit_factor": 1.1817924795020973
+    },
+    {
+      "year": 2012,
+      "trades": 23,
+      "wins": 3,
+      "win_rate_pct": 13.043478260869565,
+      "net_pnl": -914.6250000005224,
+      "expectancy_r": -0.8784519168609555,
+      "profit_factor": 0.2701974865348656
+    },
+    {
+      "year": 2013,
+      "trades": 37,
+      "wins": 11,
+      "win_rate_pct": 29.72972972972973,
+      "net_pnl": -261.3750000005633,
+      "expectancy_r": -0.6070826204518591,
+      "profit_factor": 0.8210526315786403
+    },
+    {
+      "year": 2014,
+      "trades": 34,
+      "wins": 7,
+      "win_rate_pct": 20.58823529411765,
+      "net_pnl": -411.37500000057383,
+      "expectancy_r": -1.5816511462755023,
+      "profit_factor": 0.6339673006336277
+    },
+    {
+      "year": 2015,
+      "trades": 33,
+      "wins": 10,
+      "win_rate_pct": 30.303030303030305,
+      "net_pnl": -474.75000000049835,
+      "expectancy_r": -0.28752595209298965,
+      "profit_factor": 0.7084292952554322
+    },
+    {
+      "year": 2016,
+      "trades": 31,
+      "wins": 9,
+      "win_rate_pct": 29.032258064516128,
+      "net_pnl": -690.0000000006108,
+      "expectancy_r": -0.4945272866969678,
+      "profit_factor": 0.5361734308039017
+    },
+    {
+      "year": 2017,
+      "trades": 28,
+      "wins": 10,
+      "win_rate_pct": 35.714285714285715,
+      "net_pnl": -158.25000000026844,
+      "expectancy_r": -0.3096454791382438,
+      "profit_factor": 0.8287337662335522
+    },
+    {
+      "year": 2018,
+      "trades": 40,
+      "wins": 8,
+      "win_rate_pct": 20.0,
+      "net_pnl": -901.5000000006997,
+      "expectancy_r": -2.0391015698758665,
+      "profit_factor": 0.42419161676628714
+    },
+    {
+      "year": 2019,
+      "trades": 22,
+      "wins": 6,
+      "win_rate_pct": 27.272727272727273,
+      "net_pnl": -154.8750000003503,
+      "expectancy_r": -1.3879974990504675,
+      "profit_factor": 0.734746307000209
+    },
+    {
+      "year": 2020,
+      "trades": 25,
+      "wins": 6,
+      "win_rate_pct": 24.0,
+      "net_pnl": -724.1250000004388,
+      "expectancy_r": -1.1954503502291884,
+      "profit_factor": 0.3982549080709031
+    },
+    {
+      "year": 2021,
+      "trades": 21,
+      "wins": 8,
+      "win_rate_pct": 38.095238095238095,
+      "net_pnl": -25.875000000263622,
+      "expectancy_r": -0.4021521022359028,
+      "profit_factor": 0.9569557080469886
+    },
+    {
+      "year": 2022,
+      "trades": 39,
+      "wins": 10,
+      "win_rate_pct": 25.641025641025642,
+      "net_pnl": -648.7500000004852,
+      "expectancy_r": -0.48739659175337713,
+      "profit_factor": 0.6551724137929522
+    },
+    {
+      "year": 2023,
+      "trades": 23,
+      "wins": 8,
+      "win_rate_pct": 34.78260869565217,
+      "net_pnl": -255.37500000046683,
+      "expectancy_r": -0.2935744578772607,
+      "profit_factor": 0.6660127513482694
+    },
+    {
+      "year": 2024,
+      "trades": 31,
+      "wins": 9,
+      "win_rate_pct": 29.032258064516128,
+      "net_pnl": -445.12500000052216,
+      "expectancy_r": -0.9166417948865656,
+      "profit_factor": 0.5113215314941497
+    }
+  ],
+  "public_2026_proxy_summary": {
+    "trades": 11,
+    "wins": 6,
+    "losses": 5,
+    "win_rate_pct": 54.54545454545455,
+    "starting_equity": 50000.0,
+    "ending_equity": 50138.749999999774,
+    "net_pnl": 138.74999999977564,
+    "return_pct": 0.2774999999995531,
+    "avg_trade": 12.613636363615967,
+    "expectancy_r": 0.308953949333402,
+    "profit_factor": 1.6357388316136967,
+    "max_drawdown_dollars": 184.12500000016735,
+    "max_drawdown_pct": 0.3665893502437306,
+    "longest_losing_streak": 3,
+    "avg_contracts": 6,
+    "exit_counts": {
+      "stop": 5,
+      "target": 6,
+      "time": 0
+    }
+  },
+  "notes": [
+    "HistData timestamps are fixed EST without daylight-saving adjustment and were converted to UTC before America/New_York session logic.",
+    "Spot EURUSD is robustness-only and does not replace direct M6E futures evidence.",
+    "M6E economics were applied hypothetically to proxy price paths solely for comparability."
+  ]
+}
