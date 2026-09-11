@@ -18,3 +18,9 @@
 - Added Zola integration plan and hard boundary: Zola is an orchestration/visibility layer, not direct broker execution authority.
 - Live trading remains disabled.
 - No broker integrations, production n8n workflows, Supabase migrations, Pine strategy implementation, live endpoints, or secrets added.
+
+## Stage 1B — TradingView runtime verification
+- Verified Pine execution on authenticated M6E1! 5-minute TradingView data.
+- Replaced exact session-bar equality with 85% coverage to tolerate zero-volume gaps.
+- Restored Scenario B to the original no-London-sweep premise and kept double sweeps excluded.
+- Recorded provisional A=10/8 (80%) and B=8/1 (12.5%) results; sample remains below the minimum evidence gate.
