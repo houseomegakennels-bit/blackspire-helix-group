@@ -26,10 +26,11 @@ export function prepareBuyerMigrationExecution({releaseSha,providerManifest,mani
 // must discard this session after any failure, and durably journal intent
 // before mode=apply. An uncertain commit allows mode=reconcile only; absence
 // is not permission to retry because the original backend may still be alive.
-export async function executeBuyerMigration({client,plan,mode}) {
+export async function executeBuyerMigration({client,plan,mode,fence}) {
   const data=plans.get(plan);
   if(!data||!['apply','reconcile'].includes(mode)||!client||typeof client.query!=='function'
-    ||typeof client.processID!=='number'||!Number.isSafeInteger(client.processID)||client.processID<1) {
+    ||typeof client.processID!=='number'||!Number.isSafeInteger(client.processID)||client.processID<1
+    ||fence!==undefined&&typeof fence!=='function') {
     throw new Error('Buyer migration execution rejected');
   }
   let began=false,commitSent=false;
@@ -46,6 +47,10 @@ export async function executeBuyerMigration({client,plan,mode}) {
     // try-lock means an old backend could still commit: never infer absence.
     const lock=await client.query('SELECT pg_try_advisory_xact_lock(206994,125) AS acquired');
     if(lock.rows?.[0]?.acquired!==true)throw new Error();
+    // Re-establish host admission authority only after this transaction owns
+    // the database-wide migration lock. A moved lifecycle or generation must
+    // abort before either the body or migration history can persist.
+    if(fence)await fence();
     const prior=await client.query('SELECT version,name,statements,idempotency_key FROM supabase_migrations.schema_migrations WHERE version=$1 OR idempotency_key=$2 OR name=$3 OR name=$4',[plan.migrationVersion,data.key,data.name,`zola_guarded_connected_${plan.releaseSha}`]);
     if(!Array.isArray(prior.rows)||prior.rows.length>1)throw new Error();
     if(prior.rows.length===1){
@@ -64,6 +69,7 @@ export async function executeBuyerMigration({client,plan,mode}) {
     await client.query(data.body);
     const inserted=await client.query('INSERT INTO supabase_migrations.schema_migrations(version,name,statements,idempotency_key) VALUES($1,$2,$3,$4)',[plan.migrationVersion,data.name,[data.body],data.key]);
     if(inserted.rowCount!==1)throw new Error();
+    if(fence)await fence();
     commitSent=true;
     await client.query('COMMIT');began=false;
     return result('committed');

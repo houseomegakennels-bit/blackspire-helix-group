@@ -40,19 +40,33 @@ export function verifyReleaseMigrationPackage({releaseSha,configurationFile},{
 }
 
 const migrationTypes=new Set(['release_migration_intent','release_migration_result']);
-const statuses=new Set(['committed','committed-history-verified','not-recorded-retry-not-authorized','outcome-unknown','execution-failed','claim-unavailable']);
+const statuses=new Set(['committed','committed-history-verified','not-recorded-retry-not-authorized','outcome-unknown','execution-failed','claim-unavailable','committed-lifecycle-invalid']);
 export function inspectReleaseMigrationState(events){
- let intent,lastStatus=null;
+ let intent,lastStatus=null,resultCount=0;
  for(const event of events){
   if(!migrationTypes.has(event?.type))continue;
-  const fields='schema,type,operationId,releaseSha,migrationVersion,bodySha256,manifestSha256'+(event.type==='release_migration_result'?',status':'');
-  if(Object.keys(event).sort().join(',')!==fields.split(',').sort().join(',')||event.schema!==1
+  const binding=event?.schema===2?',runId,stateDigest,artifactDigest,apiGeneration,workerGeneration':'';
+  const fields='schema,type,operationId,releaseSha,migrationVersion,bodySha256,manifestSha256'+binding+(event.type==='release_migration_result'?',status':'');
+  if(Object.keys(event).sort().join(',')!==fields.split(',').sort().join(',')||![1,2].includes(event.schema)
    ||!/^[a-f0-9-]{36}$/.test(event.operationId??'')||!/^[a-f0-9]{40}$/.test(event.releaseSha??'')
    ||!/^\d{14}$/.test(event.migrationVersion??'')||!['bodySha256','manifestSha256'].every(k=>/^[a-f0-9]{64}$/.test(event[k]??'')))reject();
+  if(event.schema===2&&(!/^[a-f0-9-]{36}$/.test(event.runId??'')
+   ||!['stateDigest','artifactDigest'].every(k=>/^[a-f0-9]{64}$/.test(event[k]??''))
+   ||!['apiGeneration','workerGeneration'].every(k=>/^[a-f0-9]{32}$/.test(event[k]??''))
+   ||event.apiGeneration===event.workerGeneration))reject();
   if(event.type==='release_migration_intent'){
    if(intent)reject();intent=event;
   }else{
-   if(!intent||!statuses.has(event.status)||!['operationId','releaseSha','migrationVersion','bodySha256','manifestSha256'].every(k=>event[k]===intent[k]))reject();
+   if(!intent||event.schema!==intent.schema||!statuses.has(event.status)
+    ||!['operationId','releaseSha','migrationVersion','bodySha256','manifestSha256',...(intent.schema===2?['runId','stateDigest','artifactDigest','apiGeneration','workerGeneration']:[])].every(k=>event[k]===intent[k]))reject();
+   resultCount++;
+   if(resultCount>2)reject();
+   if(resultCount===2){
+    const permitted=(lastStatus==='committed'&&event.status==='committed-history-verified')
+     ||(['outcome-unknown','execution-failed','claim-unavailable','committed-lifecycle-invalid'].includes(lastStatus)
+       &&['committed-history-verified','not-recorded-retry-not-authorized'].includes(event.status));
+    if(!permitted)reject();
+   }
    lastStatus=event.status;
   }
  }
@@ -68,7 +82,9 @@ export function inspectReleaseMigrationHistory(events){return inspectReleaseMigr
 // owns durable no-retry semantics and invokes the real guarded transaction
 // executor (including in-transaction provider ACL postconditions), never SQL
 // supplied by a callback. The dedicated TLS client is supplied by that owner.
-export async function executeReleaseNativeMigration({input,client,journal,mode},{claim=claimBuyerMigrationIntent}={}){
+export async function executeReleaseNativeMigration({input,client,journal,mode},{claim=claimBuyerMigrationIntent,acquireAuthority}={}){
+ let authority,closeAttempted=false;
+ const finish=value=>{closeAttempted=true;authority.close();return value;};
  try{
   if(!['apply','reconcile'].includes(mode))reject();
   const plan=prepareBuyerMigrationExecution(input),stream=journal.stream('release');
@@ -77,36 +93,52 @@ export async function executeReleaseNativeMigration({input,client,journal,mode},
   // records are prerequisites, not foreign mutations; pending lifecycle state
   // still refuses before a migration intent or SQL can be sent.
   const {inspectReleaseCommander}=await import('./commander.js');
-  const {inspectCompletedHeldLifecycle}=await import('./held-lifecycle.js');
+  const {inspectCompletedHeldLifecycle,acquireHeldMigrationAuthority}=await import('./held-lifecycle.js');
   const commander=inspectReleaseCommander(journal);
   if(commander.lifecycleReconciliationRequired)reject();
-  inspectCompletedHeldLifecycle(events,plan.releaseSha);
+  const completed=inspectCompletedHeldLifecycle(events,plan.releaseSha);
+  authority=await (acquireAuthority??acquireHeldMigrationAuthority)({releaseSha:plan.releaseSha,journal});
+  if(!authority||typeof authority.assertCurrent!=='function'||typeof authority.close!=='function')reject();
+  await authority.assertCurrent();
   const prior=inspectReleaseMigrationHistory(events);
   let intent=prior;
   if(mode==='apply'){
    // Any prior release migration, even a different SHA or failed claim,
    // requires reconciliation. Changing the candidate never clears uncertainty.
    if(prior)reject();
-   intent={schema:1,type:'release_migration_intent',operationId:randomUUID(),...plan};
+   intent={schema:2,type:'release_migration_intent',operationId:randomUUID(),...plan,
+    runId:completed.result.runId,stateDigest:completed.result.stateDigest,artifactDigest:completed.result.proof.artifactDigest,
+    apiGeneration:completed.result.proof.api.generation,workerGeneration:completed.result.proof.worker.generation};
    stream.append(intent);
    try{claim({...plan,transport:'native'});}catch{
     stream.append({...intent,type:'release_migration_result',status:'claim-unavailable'});
-    return{status:'STOPPED',reason:'MIGRATION_CLAIM_UNAVAILABLE',productionAcceptance:false,mutationSent:false};
+    return finish({status:'STOPPED',reason:'MIGRATION_CLAIM_UNAVAILABLE',productionAcceptance:false,mutationSent:false});
    }
   }else if(!prior||!['releaseSha','migrationVersion','bodySha256','manifestSha256'].every(k=>prior[k]===plan[k]))reject();
   let result;
-  try{result=await executeBuyerMigration({client,plan,mode});}
+  try{
+   await authority.assertCurrent();
+   result=await executeBuyerMigration({client,plan,mode,fence:authority.assertCurrent});
+   try{await authority.assertCurrent();}catch(error){
+    if(result.status==='committed'){
+     stream.append({...intent,type:'release_migration_result',status:'committed-lifecycle-invalid'});
+     return finish({status:'STOPPED',reason:'MIGRATION_COMMITTED_LIFECYCLE_INVALID',productionAcceptance:false,
+      mutationSent:true,reconciliationRequired:true,reconcileOnly:true});
+    }
+    throw error;
+   }
+  }
   catch(error){
    const status=error.code==='OUTCOME_UNKNOWN'?'outcome-unknown':'execution-failed';
    stream.append({...intent,type:'release_migration_result',status});
-   return{status:'STOPPED',reason:status==='outcome-unknown'?'MIGRATION_OUTCOME_UNKNOWN':'MIGRATION_EXECUTION_FAILED',
-    productionAcceptance:false,mutationSent:mode==='apply',reconcileOnly:true};
+   return finish({status:'STOPPED',reason:status==='outcome-unknown'?'MIGRATION_OUTCOME_UNKNOWN':'MIGRATION_EXECUTION_FAILED',
+    productionAcceptance:false,mutationSent:mode==='apply',reconcileOnly:true});
   }
   stream.append({...intent,type:'release_migration_result',status:result.status});
-  return{...result,mutationSent:mode==='apply',reconcileOnly:true};
+  return finish({...result,mutationSent:mode==='apply',reconcileOnly:true});
  }catch{
   // A lost result append is itself uncertain. Never return a success whose
   // durable result is missing, and never repeat SQL on a subsequent apply.
   return{status:'STOPPED',reason:'RELEASE_MIGRATION_REJECTED',productionAcceptance:false,mutationSent:null,reconciliationRequired:true,reconcileOnly:true};
- }
+ }finally{if(authority&&!closeAttempted){try{authority.close();}catch{/* already refusing */}}}
 }

@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import {runHeldLifecycle,inspectHeldLifecycleHistory,observeHeldLifecycle} from '../packages/zola-release/held-lifecycle.js';
+import {runHeldLifecycle,inspectHeldLifecycleHistory,observeHeldLifecycle,acquireHeldMigrationAuthority} from '../packages/zola-release/held-lifecycle.js';
 import {engageReleaseAdmissionHold} from '../packages/zola-release/admission-hold.js';
 import {acquireReleaseAdmissionLock,RELEASE_ADMISSION_LOCK} from '../packages/shared/release-admission.js';
 import {inspectReleaseCommander,runReleasePreflight} from '../packages/zola-release/commander.js';
 
 const releaseSha='a'.repeat(40);
-function fixture(t){
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'held-lifecycle-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+function fixture(t,base=os.tmpdir()){
+  const root=fs.mkdtempSync(path.join(base,'held-lifecycle-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   fs.writeFileSync(path.join(root,'admission.lock'),RELEASE_ADMISSION_LOCK,{mode:0o640});fs.chmodSync(path.join(root,'admission.lock'),0o640);
   const events=[],stream={events:()=>structuredClone(events),append:e=>events.push(structuredClone(e))},journal={stream:()=>stream};
   const readState=file=>JSON.parse(fs.readFileSync(file,'utf8'));
@@ -29,6 +29,20 @@ test('HELD start serializes through kernel lease and preserves marker and closed
   assert.equal(f.calls(),1);assert.equal(inspectHeldLifecycleHistory(f.events),null);
   assert.deepEqual(fs.readFileSync(path.join(f.root,'state.json')),before);assert.ok(fs.existsSync(path.join(f.root,'pending.json')));
   await runHeldLifecycle(f.input,f.options);assert.equal(f.calls(),1);
+});
+test('migration authority retains exclusive admission lease and detects held-state or generation drift',{skip:process.getuid()!==0},async t=>{
+  const f=fixture(t,'/root');await runHeldLifecycle(f.input,f.options);
+  const deps={root:f.root,owner:process.getuid(),io:fs,acquire:f.options.acquire,observe:f.options.observe};
+  const authority=await acquireHeldMigrationAuthority(f.input,deps);
+  assert.throws(()=>f.options.acquire({...f.options,exclusive:true}));
+  await authority.assertCurrent();
+  f.proof.worker.generation='f'.repeat(32);
+  await assert.rejects(authority.assertCurrent(),/reconcile/);
+  authority.close();authority.close();
+  const replacement=f.options.acquire({...f.options,exclusive:true});replacement.close();
+  const stateFile=path.join(f.root,'state.json'),state=JSON.parse(fs.readFileSync(stateFile));state.releaseSha='e'.repeat(40);
+  fs.writeFileSync(stateFile,JSON.stringify(state));
+  await assert.rejects(acquireHeldMigrationAuthority(f.input,deps),/reconcile/);
 });
 test('default native start refuses before lifecycle intent',async t=>{
   const f=fixture(t);delete f.options.start;

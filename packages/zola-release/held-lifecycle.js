@@ -115,6 +115,41 @@ export function inspectCompletedHeldLifecycle(events,releaseSha){
   }catch{fail();}
 }
 
+// Hold the same stable admission inode exclusively across the complete
+// migration transaction. Retained journal bytes are evidence, but current
+// authority is re-established from the HELD marker and two live process/
+// artifact observations before SQL, and can be rechecked after COMMIT.
+export async function acquireHeldMigrationAuthority({releaseSha,journal},{
+  root=RELEASE_ADMISSION_ROOT,owner=0,io=fs,acquire=acquireReleaseAdmissionLock,
+  observe=observeHeldLifecycle,
+}={}){
+  let lease;
+  try{
+    if(process.getuid()!==owner||!sha(releaseSha)||!journal?.stream)fail();
+    const events=journal.stream('release').events(),completed=inspectCompletedHeldLifecycle(events,releaseSha);
+    const stateFile=path.join(root,'state.json'),stateStat=io.lstatSync(stateFile);
+    if(!stateStat.isFile()||stateStat.isSymbolicLink()||stateStat.uid!==owner||stateStat.nlink!==1)fail();
+    const groupId=stateStat.gid;
+    const read=file=>readRootOwnedJson(file,{groupId,maxBytes:2048});
+    lease=acquire({root,exclusive:true,owner,groupId});
+    const assertCurrent=async()=>{
+      lease.assertIdentity();
+      const state=validateReleaseAdmissionState(read(stateFile));
+      const {type:_holdType,...holdMarker}=completed.hold;
+      if(state.mode!=='held'||state.releaseSha!==releaseSha||state.runId!==completed.result.runId||state.apiGeneration!==null||state.workerGeneration!==null
+        ||hash(state)!==completed.result.stateDigest||!same(read(path.join(root,'pending.json')),holdMarker))fail();
+      const proof=validateHeldLifecycleProof(await observe({releaseSha,runId:state.runId}),completed.result);
+      if(!same(proof,completed.result.proof))fail();
+      lease.assertIdentity();
+      if(!same(state,validateReleaseAdmissionState(read(stateFile))))fail();
+      return structuredClone(proof);
+    };
+    await assertCurrent();
+    let closed=false;
+    return Object.freeze({assertCurrent,close(){if(!closed){closed=true;lease.close();}}});
+  }catch{lease?.close();fail();}
+}
+
 // Unknown/failed start never clears durable intent. Reconciliation can confirm
 // only observed exact running processes; stopped/partial state cannot retry.
 export async function runHeldLifecycle({releaseSha,journal,reconcile=false},{root=RELEASE_ADMISSION_ROOT,groupId,owner=0,

@@ -36,6 +36,7 @@ const prepared=prepareBuyerMigrationPackage({releaseSha,providerManifest});
 const args={releaseSha,providerManifest,manifestBytes:prepared.manifestBytes,body:prepared.body,
  expectedManifestSha256:createHash('sha256').update(prepared.manifestBytes).digest('hex'),migrationVersion};
 const plan=prepareBuyerMigrationExecution(args);
+const authorityDeps={acquireAuthority:async()=>({assertCurrent:async()=>{},close(){}})};
 function completedLifecycle(){
  const runId='12345678-1234-4234-8234-123456789abc',stateDigest='d'.repeat(64),base={schema:1,releaseSha,runId,stateDigest};
  const proof={releaseSha,runId,artifactDigest:'e'.repeat(64),api:{role:'api',generation:'1'.repeat(32),pid:101,startTime:'1001'},
@@ -78,7 +79,7 @@ test('global migration adapter records intent before shared claim and SQL, then 
  const events=completedLifecycle(),order=[],client=session();
  const query=client.query.bind(client);client.query=async (...a)=>{order.push('SQL');return query(...a);};
  const journal={stream:name=>{assert.equal(name,'release');return{events:()=>structuredClone(events),append:row=>{order.push(row.type);events.push(structuredClone(row));}};}};
- const options={claim:()=>{order.push('claim');}};
+ const options={...authorityDeps,claim:()=>{order.push('claim');}};
  const result=await executeReleaseNativeMigration({input:args,client,journal,mode:'apply'},options);
  assert.equal(result.status,'committed');assert.equal(result.productionAcceptance,false);
  assert.deepEqual(order.slice(0,3),['release_migration_intent','claim','SQL']);
@@ -98,10 +99,10 @@ test('completed hold and lifecycle authority permit migration while pending life
  const completed=completedLifecycle();
  const make=events=>({stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})});
  const events=structuredClone(completed),client=session();
- const result=await executeReleaseNativeMigration({input:args,client,journal:make(events),mode:'apply'},{claim:()=>{}});
+ const result=await executeReleaseNativeMigration({input:args,client,journal:make(events),mode:'apply'},{...authorityDeps,claim:()=>{}});
  assert.equal(result.status,'committed');assert.equal(events.at(-1).type,'release_migration_result');
  const pending=completed.slice(0,-1),blockedClient=session();
- const blocked=await executeReleaseNativeMigration({input:args,client:blockedClient,journal:make(pending),mode:'apply'},{claim:()=>{}});
+ const blocked=await executeReleaseNativeMigration({input:args,client:blockedClient,journal:make(pending),mode:'apply'},{...authorityDeps,claim:()=>{}});
  assert.equal(blocked.status,'STOPPED');assert.equal(blockedClient.calls.length,0);
  assert.equal(pending.some(row=>row.type==='release_migration_intent'),false);
  for(const invalid of [
@@ -112,7 +113,7 @@ test('completed hold and lifecycle authority permit migration while pending life
   [completed[2],completed[3],completed[0],completed[1]],
  ]){
   const rejected=structuredClone(invalid),refusedClient=session();let claims=0;
-  const stopped=await executeReleaseNativeMigration({input:args,client:refusedClient,journal:make(rejected),mode:'apply'},{claim:()=>{claims++;}});
+  const stopped=await executeReleaseNativeMigration({input:args,client:refusedClient,journal:make(rejected),mode:'apply'},{...authorityDeps,claim:()=>{claims++;}});
   assert.equal(stopped.status,'STOPPED');assert.equal(refusedClient.calls.length,0);
   assert.equal(stopped.mutationSent,null);assert.equal(stopped.reconciliationRequired,true);assert.equal(claims,0);
   assert.equal(rejected.some(row=>row.type==='release_migration_intent'),false);
@@ -125,7 +126,7 @@ test('global migration uncertainty, failed claim and failed durable append never
    if(failure==='intent'||failure==='result'&&row.type==='release_migration_result')throw new Error('disk full');
    events.push(structuredClone(row));
   }})};
-  let claims=0;const options={claim:()=>{claims++;if(failure==='claim')throw new Error('PRIVATE_DETAIL');}};
+  let claims=0;const options={...authorityDeps,claim:()=>{claims++;if(failure==='claim')throw new Error('PRIVATE_DETAIL');}};
   const result=await executeReleaseNativeMigration({input:args,client,journal,mode:'apply'},options);
   assert.equal(result.status,'STOPPED');assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
   if(['claim','intent'].includes(failure))assert.equal(client.calls.length,0);
@@ -140,11 +141,35 @@ test('global migration uncertainty, failed claim and failed durable append never
   }
  }
 });
+test('migration journal FSM rejects duplicate, reordered, and contradictory terminal results',()=>{
+ const intent={schema:1,type:'release_migration_intent',operationId:'12345678-1234-4234-8234-123456789abc',
+  releaseSha,migrationVersion,bodySha256:plan.bodySha256,manifestSha256:plan.manifestSha256};
+ const result=status=>({...intent,type:'release_migration_result',status});
+ for(const events of [
+  [result('committed')],
+  [intent,result('committed'),result('committed')],
+  [intent,result('committed'),result('execution-failed')],
+  [intent,result('not-recorded-retry-not-authorized'),result('outcome-unknown')],
+  [intent,result('outcome-unknown'),result('not-recorded-retry-not-authorized'),result('committed-history-verified')],
+ ])assert.throws(()=>inspectReleaseMigrationState(events),/rejected/);
+ assert.equal(inspectReleaseMigrationState([intent,result('outcome-unknown'),result('committed-history-verified')]).reconciliationRequired,false);
+});
+test('release migration refuses success on post-commit authority drift or lease close failure',async()=>{
+ for(const failure of ['post-commit','close']){
+  const events=completedLifecycle(),journal={stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})};
+  let assertions=0,closes=0;
+  const acquireAuthority=async()=>({assertCurrent:async()=>{if(failure==='post-commit'&&++assertions===5)throw new Error('drift');},
+   close(){closes++;if(failure==='close')throw new Error('lease close failed');}});
+  const result=await executeReleaseNativeMigration({input:args,client:session(),journal,mode:'apply'},{claim:()=>{},acquireAuthority});
+  assert.equal(result.status,'STOPPED');assert.equal(result.productionAcceptance,false);assert.equal(closes,1);
+  assert.equal(events.at(-1).status,failure==='post-commit'?'committed-lifecycle-invalid':'committed');
+ }
+});
 test('real protected global and migration journals retain uncertainty across close and reopen',{skip:process.getuid?.()!==0},async t=>{
  const root=fs.mkdtempSync('/root/.zola-migration-release-test-');fs.chmodSync(root,0o700);
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  const journalRoot=root+'/release';fs.mkdirSync(journalRoot,{mode:0o700});
- const options={claim:plan=>claimBuyerMigrationIntent(plan,{root:root+'/migration'})};
+ const options={...authorityDeps,claim:plan=>claimBuyerMigrationIntent(plan,{root:root+'/migration'})};
  let journal=openReleaseJournal({root:journalRoot});
  try{
   for(const event of completedLifecycle())journal.stream('release').append(event);
@@ -197,6 +222,19 @@ test('body failure rolls back and commit response loss remains unknown without r
  assert.equal(failed.calls.at(-1).sql,'ROLLBACK');assert.equal(failed.history,undefined);
  const lost=session({commitLost:true});await assert.rejects(executeBuyerMigration({client:lost,plan,mode:'apply'}),e=>e.code==='OUTCOME_UNKNOWN'&&!e.message.includes('SECRET'));
  assert.equal(lost.calls.at(-1).sql,'COMMIT');assert.equal(lost.calls.filter(x=>x.sql===prepared.body).length,1);
+});
+test('live admission fence is checked under advisory lock and immediately before commit',async()=>{
+ for(const rejectAt of [1,2]){
+  const client=session();let checks=0;
+  await assert.rejects(executeBuyerMigration({client,plan,mode:'apply',fence:async()=>{if(++checks===rejectAt)throw new Error('moved');}}),
+   error=>error.code==='MIGRATION_FAILED'&&!error.message.includes('moved'));
+  assert.equal(client.calls.at(-1).sql,'ROLLBACK');
+  if(rejectAt===1){assert.ok(!client.calls.some(row=>row.sql===prepared.body));assert.equal(client.history,undefined);}
+  else {assert.equal(client.calls.filter(row=>row.sql===prepared.body).length,1);assert.ok(client.history);}
+ }
+ const client=session();let checks=0;
+ assert.equal((await executeBuyerMigration({client,plan,mode:'apply',fence:async()=>{checks++;}})).status,'committed');
+ assert.equal(checks,2);
 });
 
 

@@ -17,6 +17,10 @@ try {
   if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||process.argv.length!==5)throw new Error();
   const [mode,inputPath,evidencePath]=process.argv.slice(2);
   if(!['--dry-run','--apply','--reconcile'].includes(mode))throw new Error();
+  // Production mutation and reconciliation require the release commander's
+  // retained admission lease and live generation fencing. This legacy direct
+  // entrypoint deliberately remains validation-only so it cannot bypass them.
+  if(mode!=='--dry-run')throw new Error();
   const input=readRootOwnedMetadataSnapshot(inputPath,{groupId:0}).value;
   if(Object.keys(input).sort().join(',')!=='body,databaseConfigPath,expectedManifestSha256,manifestBytes,migrationVersion,providerManifest,releaseSha')throw new Error();
   const plan=prepareBuyerMigrationExecution(input);
