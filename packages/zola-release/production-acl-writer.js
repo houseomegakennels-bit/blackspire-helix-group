@@ -198,6 +198,7 @@ async function compensate(config,database,bound){
  const value=result?.rows?.length===1?result.rows[0]?.result:null;
  if(!exact(value,['dispatchId','generation','state'])||value.dispatchId!==ids.dispatchId||!['absent','cancelled','failed'].includes(value.state)
   ||(value.state==='absent'?value.generation!==null:!Number.isSafeInteger(value.generation)||value.generation<1))reject();
+ if(value.state==='absent')return null;
  let proof={dispatchId:ids.dispatchId,generation:value.generation,state:value.state};
  if(value.state==='failed'){
   const permit=fixedPermit(config,bound),receipt=createWriterReceiptGateway({credential:config.writerCredential,workspace:WRITER_WORKSPACE,query:database.runtimeQuery});
@@ -239,9 +240,9 @@ export async function runFixedWriterAcceptance(value,{configurationFile,...host}
     body:Buffer.from(JSON.stringify({version:1,dispatchId:ids.dispatchId,generation:result.generation,operation:'fail',chunkIndex:0,chunkCount:1,
      payload:{code:'INVALID_SOURCE_DATA'}}))});
    if(response?.status!==200||response.body?.ok!==true||response.body.operation!=='fail'||response.body.chunkIndex!==0)throw new Error('unknown');
-  }catch(error){
-   if(error?.message==='Fixed production ACL/writer operation rejected')throw error;
-   await compensate(config,database,bound);
+  }catch{
+   const compensated=await compensate(config,database,bound);
+   if(compensated===null)throw new Error('Bounded writer acceptance outcome unknown');
   }
  },host);
 }

@@ -105,6 +105,20 @@ test('fixed production composition uses the real buyer-writer host protocol and 
  const compensated=await lossy.reconcile(call);
  assert.equal(compensated.status,'PASS');assert.equal(compensated.evidence.compensationComplete,true);
  assert.equal(applyCalls,1);assert.equal(reconcileCalls,2);
+
+ state='absent';dispatchId=undefined;applyCalls=0;reconcileCalls=0;
+ const missingDatabase=async()=>{
+  const database=await openDatabase();
+  return{...database,issuerQuery:async(sql,values)=>{
+   if(sql.includes('.issue('))throw new Error('acceptance job missing');
+   assert.ok(sql.includes('.reconcile('));reconcileCalls++;
+   return{rows:[{result:{dispatchId:values[3],generation:null,state:'absent'}}]};
+  }};
+ };
+ const missing=createFixedProductionOperations(context,{writerHost:{groupId:0,readSnapshot:()=>snapshot,openDatabase:missingDatabase}}).bounded_writer_e2e;
+ await assert.rejects(()=>missing.execute(call),/outcome unknown/);
+ assert.deepEqual(await missing.reconcile(call),{status:'BLOCKED_EXTERNAL'});
+ assert.equal(applyCalls,0);assert.equal(reconcileCalls,2);
 });
 
 function expectedMutation(bound){
