@@ -1,0 +1,151 @@
+import sys, math, statistics
+sys.path.insert(0,'/root/blackspire-helix-group/helix-trade-command/backtests')
+import london_v4_dual_state as h
+from collections import defaultdict
+T=h.TICK
+
+def in_ny(b):
+    hh=b['dt_et'].hour; mm=b['dt_et'].minute
+    return (hh>7 or (hh==7 and mm>=0)) and hh<10
+
+def fvg(c,i,d): return h.fvg(c,i,d)
+
+def sim(c,ei,d,entry,stop,target):
+    # 1 contract normalized R after M6E costs, same slippage assumptions
+    ef=entry+d*T; xr=None; xtype='time'; xb=c[-1]
+    for j,b in enumerate(c[ei:],ei):
+        if b['dt_et'].hour>=10: break
+        sh=b['low']<=stop if d==1 else b['high']>=stop
+        th=b['high']>=target if d==1 else b['low']<=target
+        if sh: xr=stop; xtype='stop'; xb=b; break
+        if th and j>ei: xr=target; xtype='target'; xb=b; break
+        xr=b['close']; xb=b
+    xf=xr-d*T
+    gross=((xf-ef)/T*d)*h.TICK_VALUE
+    net=gross-h.COMM_RT
+    risk=abs(entry-stop)/T*h.TICK_VALUE
+    return net/risk if risk else None, xtype
+
+def cycle_features(c):
+    miss,short,_,_=h.quality(c)
+    if miss or short:return []
+    asia=[x for x in c if h.in_asia(x)]; london=[x for x in c if h.in_london(x)]; ny=[(i,x) for i,x in enumerate(c) if in_ny(x)]
+    if not asia or not london or not ny:return []
+    ah=max(x['high'] for x in asia); al=min(x['low'] for x in asia); ar=ah-al
+    lh=max(x['high'] for x in london); ll=min(x['low'] for x in london); lr=lh-ll
+    lc=london[-1]['close']; lo=london[0]['open']
+    london_dir=1 if lc>lo else -1
+    london_sweep_hi=lh>=ah+T; london_sweep_lo=ll<=al-T
+    london_state=('DOUBLE' if london_sweep_hi and london_sweep_lo else 'HIGH' if london_sweep_hi else 'LOW' if london_sweep_lo else 'NONE')
+    bodies=[abs(x['close']-x['open']) for x in c]
+    # rolling swings available before each bar
+    swing_hi=swing_lo=None
+    rows=[]
+    # NY candidates: sweep/reject of London extreme, or continuation retest after outside close
+    for i,b in ny:
+        # update swings from prior sequence globally up to i
+        if i>=2:
+            pass
+    swings=[]; shi=slo=None
+    for i,b in enumerate(c):
+        if i>=2:
+            p=c[i-1]; p2=c[i-2]
+            if p['high']>p2['high'] and p['high']>b['high']: shi=p['high']
+            if p['low']<p2['low'] and p['low']<b['low']: slo=p['low']
+        swings.append((shi,slo))
+    day=c[ny[0][0]]['dt_et'].date().isoformat(); dow=c[ny[0][0]]['dt_et'].weekday()
+    # generic event generator per direction after NY sweep/reclaim of London high/low
+    for side,name,level in ((1,'HIGH',lh),(-1,'LOW',ll)):
+        # side=1 means sweep high -> bearish trade d=-1; side=-1 sweep low -> bullish d=1
+        sweep_i=None; ext=None; mss_level=None
+        for i,b in ny:
+            if sweep_i is None:
+                swept=(b['high']>=level+T and b['close']<=level) if side==1 else (b['low']<=level-T and b['close']>=level)
+                if not swept: continue
+                sweep_i=i; ext=b['high'] if side==1 else b['low']; shi,slo=swings[i]; mss_level=slo if side==1 else shi
+                continue
+            if side==1: ext=max(ext,b['high'])
+            else: ext=min(ext,b['low'])
+            d=-side
+            # MSS then displacement/FVG
+            mss_i=None
+            for k in range(sweep_i+1,len(c)):
+                x=c[k]
+                if not in_ny(x): continue
+                if mss_level is not None and ((d==-1 and x['close']<mss_level) or (d==1 and x['close']>mss_level)):
+                    mss_i=k; break
+            if mss_i is None: break
+            gap=None; di=None; mult=None
+            for k in range(mss_i,len(c)):
+                x=c[k]
+                if not in_ny(x): continue
+                med=statistics.median(bodies[max(0,k-20):k]) if k>=20 else None
+                strong=med and med>0 and bodies[k]>=1.5*med and ((d==1 and x['close']>x['open']) or (d==-1 and x['close']<x['open']))
+                g=fvg(c,k,d) if strong else None
+                if g:
+                    gap=g; di=k; mult=bodies[k]/med; break
+            if gap is None: break
+            for k in range(di+1,len(c)):
+                x=c[k]
+                if not in_ny(x): continue
+                if x['low']<=gap['mid']<=x['high']:
+                    entry=gap['mid']; stop=ext+T if d==-1 else ext-T
+                    if (d==1 and stop>=entry) or (d==-1 and stop<=entry): break
+                    st=abs(entry-stop)/T
+                    # outcomes at multiple fixed targets; select later only on dev
+                    outs={}
+                    for rr in (0.5,0.75,1.0,1.25,1.5,2.0):
+                        r,xt=sim(c,k,d,entry,stop,entry+d*rr*abs(entry-stop)); outs[str(rr)]=(r,xt)
+                    rows.append({'day':day,'year':int(day[:4]),'dow':dow,'family':'NY_LONDON_SWEEP_REJECT','side':name,'d':d,
+                        'london_state':london_state,'london_dir':london_dir,'asia_ticks':ar/T,'london_ticks':lr/T,'london_over_asia':lr/ar if ar else None,
+                        'london_close_pos':(lc-al)/ar if ar else None,'sweep_depth_ticks':abs(ext-level)/T,'stop_ticks':st,
+                        'entry_min':c[k]['dt_et'].hour*60+c[k]['dt_et'].minute-420,'disp_mult':mult,
+                        'same_as_london_dir':d==london_dir,'same_as_london_sweep':(london_state=='LOW' and d==1) or (london_state=='HIGH' and d==-1),
+                        'outs':outs})
+                    break
+            break
+    # Continuation: London closes outside Asia, NY retests London/Asia breakout boundary and resumes with displacement FVG
+    for d,bound in ((1,ah),(-1,al)):
+        accepted=(lc>=ah+T if d==1 else lc<=al-T)
+        if not accepted: continue
+        # require NY touch/retest of boundary and close back outside, then displacement/FVG same direction
+        ret=None
+        for i,b in ny:
+            touch=b['low']<=bound<=b['high']
+            outside=b['close']>=bound+T if d==1 else b['close']<=bound-T
+            if touch and outside: ret=i; break
+        if ret is None: continue
+        gap=None; di=None; mult=None
+        for k in range(ret,len(c)):
+            x=c[k]
+            if not in_ny(x): continue
+            med=statistics.median(bodies[k-20:k]) if k>=20 else None
+            strong=med and med>0 and bodies[k]>=1.5*med and ((d==1 and x['close']>x['open']) or (d==-1 and x['close']<x['open']))
+            g=fvg(c,k,d) if strong else None
+            if g: gap=g; di=k; mult=bodies[k]/med; break
+        if gap is None: continue
+        for k in range(di+1,len(c)):
+            x=c[k]
+            if not in_ny(x): continue
+            if x['low']<=gap['mid']<=x['high']:
+                entry=gap['mid']; stop=bound-T if d==1 else bound+T
+                if (d==1 and stop>=entry) or (d==-1 and stop<=entry): break
+                st=abs(entry-stop)/T; outs={}
+                for rr in (0.5,0.75,1.0,1.25,1.5,2.0): outs[str(rr)]=sim(c,k,d,entry,stop,entry+d*rr*abs(entry-stop))
+                rows.append({'day':day,'year':int(day[:4]),'dow':dow,'family':'NY_ACCEPT_CONT','side':'HIGH' if d==1 else 'LOW','d':d,
+                    'london_state':london_state,'london_dir':london_dir,'asia_ticks':ar/T,'london_ticks':lr/T,'london_over_asia':lr/ar if ar else None,
+                    'london_close_pos':(lc-al)/ar if ar else None,'sweep_depth_ticks':0,'stop_ticks':st,
+                    'entry_min':c[k]['dt_et'].hour*60+c[k]['dt_et'].minute-420,'disp_mult':mult,
+                    'same_as_london_dir':True,'same_as_london_sweep':False,'outs':outs})
+                break
+    return rows
+
+if __name__=='__main__':
+    rows=h.load_csv('/tmp/helix-extended/EURUSD_HISTDATA_2009_2024_5m_utc.csv')
+    all=[]
+    for c in h.split_cycles(rows): all.extend(cycle_features(c))
+    import json
+    open('/tmp/v5_candidates.json','w').write(json.dumps(all))
+    print('candidates',len(all),'years',min(x['year'] for x in all),max(x['year'] for x in all))
+    from collections import Counter
+    print(Counter(x['family'] for x in all))

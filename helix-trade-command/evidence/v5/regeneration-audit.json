@@ -1,0 +1,50 @@
+{
+  "alignment_failures": 0,
+  "bars_read": 1184162,
+  "claim_75pct_allowed": false,
+  "development": "NOT_RUN",
+  "final_holdout": "NOT_RUN_NO_VERIFIED_UNSEEN_DIRECT_INSTRUMENT_DATA",
+  "first_utc": "2009-01-01T23:55:00+00:00",
+  "generated_candidates_sha256": null,
+  "input_integrity": "FAIL",
+  "internal_validation": "NOT_RUN",
+  "last_utc": "2024-12-31T21:55:00+00:00",
+  "matches_preserved": false,
+  "preserved-candidates.json_sha256": "62dcd485326e427dd5d557c6ee07ef78936daa69453ff8737f2d50edc7bc867b",
+  "preserved-generator.py.txt_sha256": "a8372273217b6a72604d4e1220bd183f83cd8389657c0fa82b203dca843cbba1",
+  "regeneration": "BLOCKED_INPUT_INTEGRITY",
+  "source_csv_sha256": "6c33f99a43c007e08d4ce66fe0e3fc17d0374e97406d35749a79165ba3bfde1d",
+  "timestamp_anomalies": [
+    {
+      "csv_line": 806835,
+      "current_utc": "2019-10-28T00:00:00+00:00",
+      "kind": "backwards",
+      "previous_utc": "2019-10-28T00:55:00+00:00"
+    },
+    {
+      "csv_line": 881239,
+      "current_utc": "2020-10-26T00:00:00+00:00",
+      "kind": "backwards",
+      "previous_utc": "2020-10-26T00:55:00+00:00"
+    },
+    {
+      "csv_line": 956613,
+      "current_utc": "2021-11-01T00:00:00+00:00",
+      "kind": "backwards",
+      "previous_utc": "2021-11-01T00:55:00+00:00"
+    },
+    {
+      "csv_line": 1031487,
+      "current_utc": "2022-10-31T00:00:00+00:00",
+      "kind": "backwards",
+      "previous_utc": "2022-10-31T00:55:00+00:00"
+    },
+    {
+      "csv_line": 1096543,
+      "current_utc": "2023-10-30T00:00:00+00:00",
+      "kind": "backwards",
+      "previous_utc": "2023-10-30T00:55:00+00:00"
+    }
+  ],
+  "trading_authorized": false
+}

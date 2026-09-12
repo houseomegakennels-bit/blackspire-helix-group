@@ -214,3 +214,7 @@ head `f00d1721b66d29052d6e0d9350328d19950fb231`, has not been pushed, and has no
 
 Follow-up correction adds numeric API-GID alias rejection and requires positive API `inactive` state
 before the offline session fence. Targeted lanes and mutations pass; this new candidate is unpushed.
+
+## London V5 integrity recovery — 2026-09-12 UTC
+
+London V5 recovery is blocked by verified source-CSV chronology defects, not server connectivity. Original files and strategy conclusions remain unchanged. Research harness and timestamp-only audit evidence are prepared in helix-trade-command/london-v5-integrity-research; no strategy outcomes or 75% result are claimed. Root memory verification fails on unchanged main as well; do not bypass it or promote this research.
