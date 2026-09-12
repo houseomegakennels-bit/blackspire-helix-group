@@ -71,3 +71,5 @@
 - Both tracks remain research-only; broker and live-trading authorization stay disabled.
 
 - Extended frozen London V2 robustness testing across HistData EUR/USD 1-minute history from 2009-2024 (resampled to 5m with fixed-EST timezone normalization). Long-run proxy result: 459 trades, 27.23% wins, -$6,440.63, PF 0.682, expectancy -0.775R. This materially weakens the historical case for V2; prospective direct-M6E collection remains research-only.
+
+- Added preregistered Blackspire London Dual-State V4 (rejection vs acceptance), full 2009-2024 robustness backtest, direct 2026 M6E check, branch-level results, and regression tests. V4 failed advancement criteria and remains research-only.

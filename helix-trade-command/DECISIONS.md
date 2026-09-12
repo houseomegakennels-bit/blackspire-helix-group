@@ -62,3 +62,6 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 
 ## London V2 extended-history decision
 A 2009-2024 EUR/USD spot robustness backtest using the frozen V2 rules produced 459 trades with 27.23% win rate, -$6,440.63 modeled net P&L, 0.682 profit factor, and -0.775R expectancy. This fails the V2 execution gate decisively. Recent positive 2026 samples are therefore treated as regime-specific signals only. Continue frozen prospective M6E evidence collection; do not authorize demo/live execution. Any redesign requires a separately preregistered V3.
+
+## 2026-09-12 — London Dual-State V4 rejected
+Preregistered rejection/acceptance branches were tested on the 2009-2024 EUR/USD proxy and direct 2026 M6E robustness data. Combined long-history result: 443 trades, -0.239R expectancy, PF 0.700, -$9,732.31 modeled P&L, positive net in only 4/16 years. Direct M6E also failed. V4 does not advance to demo/live execution.
