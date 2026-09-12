@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "policy": "Only reviewed ASL media may set verified=true. Emoji and UI icons are labels only and must never be treated as sign demonstrations.",
+  "camera_scoring": false,
+  "entries": [
+    {"word":"Help","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"More","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"All done","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Eat","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Drink","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Bathroom","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Mom","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Dad","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Brother","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Yes","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"No","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Please","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Thank you","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Stop","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Go","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Play","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Sleep","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Hurt","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Happy","verified":false,"media":null,"source":null,"reviewed_by":null},
+    {"word":"Sad","verified":false,"media":null,"source":null,"reviewed_by":null}
+  ]
+}
