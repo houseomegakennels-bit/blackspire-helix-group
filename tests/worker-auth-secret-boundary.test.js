@@ -6,7 +6,8 @@ const API_UNIT = 'ops/runtime-ownership/blackspire-command.service';
 const WORKER_UNIT = 'ops/runtime-ownership/blackspire-command-worker.service';
 const API_SECRET_FILE = '/etc/blackspire/command-api.env';
 const SHARED_FILE = '/etc/blackspire/command.env';
-const API_AUTH_KEYS = ['COMMAND_ADMIN_PASSWORD_HASH', 'COMMAND_ADMIN_TOKEN', 'SESSION_SECRET'];
+const RELEASE_RUNTIME_FILE = '/etc/blackspire/release-admission/runtime.env';
+const API_AUTH_KEYS = ['COMMAND_ADMIN_PASSWORD_HASH', 'COMMAND_ADMIN_TOKEN', 'SESSION_SECRET', 'BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN'];
 
 function unit(path) {
   return fs.readFileSync(path, 'utf8');
@@ -27,8 +28,8 @@ test('systemd gives API and worker distinct Unix identities and only API loads t
   assert.notEqual(api.match(/^User=(.+)$/m)?.[1], worker.match(/^User=(.+)$/m)?.[1],
     'same-UID services do not isolate /proc or API credential-file access');
 
-  assert.deepEqual(environmentFiles(api), [SHARED_FILE, API_SECRET_FILE]);
-  assert.deepEqual(environmentFiles(worker), [SHARED_FILE]);
+  assert.deepEqual(environmentFiles(api), [SHARED_FILE, API_SECRET_FILE, RELEASE_RUNTIME_FILE]);
+  assert.deepEqual(environmentFiles(worker), [SHARED_FILE, RELEASE_RUNTIME_FILE]);
   assert.doesNotMatch(worker, /command-api\.env/, 'worker unit must never name the API credential source');
 });
 
@@ -61,7 +62,7 @@ test('Gate 4 contracts preserve the API-only credential source and never give it
     'Gate 4 must continue validating the worker service template');
 
   const worker = unit(WORKER_UNIT);
-  assert.deepEqual(environmentFiles(worker), [SHARED_FILE],
+  assert.deepEqual(environmentFiles(worker), [SHARED_FILE, RELEASE_RUNTIME_FILE],
     'rollback-compatible reviewed worker configuration must remain credential-free');
 });
 

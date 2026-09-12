@@ -13,6 +13,27 @@ const options=(overrides={})=>({repository,root:root(),environment:'disposable-s
 
 test('successful backup, restore, cutover, rollback, audit, and cleanup rehearsal',()=>{const input=options();const report=runDisposableRestoreCutover(input);assert.equal(report.goNoGo,'GO_FOR_DISPOSABLE_REHEARSAL');assert.equal(report.backupManifest.version,1);assert.equal(report.restoreVerificationReport.verified,true);assert.equal(report.restoreVerificationReport.integrity,'ok');assert.equal(report.restoreVerificationReport.rowCountsMatch,true);assert.equal(report.restoreVerificationReport.applicationReadVerified,true);assert.equal(report.cutoverRehearsalReport.sourceTargetDistinct,true);assert.equal(report.cutoverRehearsalReport.productionAuthorized,false);assert.equal(report.cutoverRehearsalReport.automaticActionTaken,false);assert.equal(report.rollbackReadinessReport.verified,true);assert.equal(fs.existsSync(input.root),false);});
 
+test('fractional backup timestamps preserve partial-restore diagnosis and still reject future backups',()=>{
+  const realStat=fs.statSync;const realNow=Date.now;
+  for(const [fraction,expected] of [[0.75,'NO_GO_RESTORE_INVALID'],[1.75,'NO_GO_BACKUP_INVALID']]) {
+    const input=options({fault:'partial_restore'});let captured=false;
+    fs.statSync=(file,...args)=>{
+      const stat=realStat(file,...args);
+      if(String(file).startsWith(path.join(input.root,'backups')+path.sep)&&String(file).endsWith('.sqlite')) {
+        const now=Math.floor(stat.mtimeMs);Date.now=()=>now;
+        stat.mtimeMs=now+fraction;captured=true;
+      }
+      return stat;
+    };
+    try {
+      const report=runDisposableRestoreCutover(input);
+      assert.equal(captured,true);assert.equal(report.goNoGo,expected);
+      assert.equal(report.backupManifest.ageMs,fraction<1?0:-1);
+      assert.equal(fs.existsSync(input.root),false);
+    } finally {fs.statSync=realStat;Date.now=realNow;}
+  }
+});
+
 const cases=[
   ['corrupted_backup','NO_GO_BACKUP_INVALID'],['truncated_backup','NO_GO_BACKUP_INVALID'],['checksum_mismatch','NO_GO_BACKUP_INVALID'],['stale_backup','NO_GO_BACKUP_INVALID'],
   ['source_equals_target','NO_GO_RESTORE_INVALID'],['schema_drift','NO_GO_SCHEMA_MISMATCH'],['migration_failure','NO_GO_SCHEMA_MISMATCH'],

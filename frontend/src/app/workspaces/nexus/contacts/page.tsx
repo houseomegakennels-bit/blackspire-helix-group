@@ -73,12 +73,6 @@ export default async function NexusContactsPage({
                 <div>Confidence score: <span className="font-semibold text-white">{contactProfile?.contact_confidence_score ?? 0}</span></div>
                 <div>DNC flag: <span className="font-semibold text-white">{String(contactProfile?.dnc_flag ?? "unknown")}</span></div>
               </div>
-              <details className="mt-5 rounded-[16px] border border-[var(--line)] px-4 py-4">
-                <summary className="cursor-pointer text-sm font-semibold text-white">Raw response</summary>
-                <pre className="mt-3 whitespace-pre-wrap text-xs leading-6 text-[var(--copy-soft)]">
-                  {JSON.stringify(contactProfile?.raw_skiptrace_response ?? { note: "Placeholder until live provider response is stored." }, null, 2)}
-                </pre>
-              </details>
             </div>
           </div>
         ) : null}

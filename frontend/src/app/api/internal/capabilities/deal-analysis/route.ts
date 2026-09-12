@@ -1,30 +1,42 @@
+import { productionCapabilityReadScope } from "@/lib/capability-read-client";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
-import { getDealEngineDealDetail } from "@/lib/deal-engine-server";
+import { readBoundedRequestBody } from "@/lib/bounded-request-body";
+import { getDealEngineAnalysisForCapability } from "@/lib/deal-engine-server";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  let body: unknown;
-  try { body = await request.json(); }
+  try { return await handleRead(request); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
+}
+
+async function handleRead(request: NextRequest) {
+  let body: unknown; let bodyBytes: string;
+  try { bodyBytes = await readBoundedRequestBody(request); body = JSON.parse(bodyBytes); }
   catch { return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 }); }
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
   const input = body as { workspaceId?: unknown; dealId?: unknown };
-  if (!authorizeInternalCapability(request, input.workspaceId)) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  const authority = await authorizeInternalCapability(request, bodyBytes, input.workspaceId, "deal.analysis.get");
+  if (!authority) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   if (Object.keys(input).some((key) => !["workspaceId", "dealId"].includes(key))) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
   const dealId = typeof input.dealId === "string" ? input.dealId.trim() : "";
   if (!/^DE-\d{4}$/.test(dealId)) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
 
+  let scope;
+  try { scope = productionCapabilityReadScope(authority.bindingDigest); }
+  catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
   let detail;
-  try { detail = await getDealEngineDealDetail(dealId); }
+  try { detail = await getDealEngineAnalysisForCapability(dealId, scope.client); }
   catch { return NextResponse.json({ ok: false, error: "Deal capability unavailable" }, { status: 503 }); }
 
-  if (!detail) return NextResponse.json({ ok: false, error: "Deal not found" }, { status: 404 });
+  if (!detail) return scope.respond({ found: false, dealId, sourceSnapshotAt: new Date().toISOString() });
 
   const { lead, underwriting } = detail;
 
-  return NextResponse.json({
+  return scope.respond({
+    found: true,
     dealId: lead.id,
     propertyAddress: lead.propertyAddress,
     county: lead.county || null,

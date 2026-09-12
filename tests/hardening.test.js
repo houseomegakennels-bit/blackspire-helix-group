@@ -11,6 +11,8 @@ process.env.SESSION_SECRET = 'x'.repeat(40);
 process.env.PORT = '8893';
 process.env.TELEGRAM_ALLOWED_USERS = '1001';
 process.env.TELEGRAM_WEBHOOK_SECRET = 'telegram-secret';
+process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+process.env.TELEGRAM_MODE = 'webhook';
 process.env.LOGIN_RATE_LIMIT = '20';
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
@@ -89,6 +91,13 @@ test('Telegram webhook secret validation, duplicate protection, unauthorized use
   const dispatch = await handleTelegramUpdate({ update_id: 3, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8893');
   assert.ok(dispatch.text[0]);
   assert.equal((await handleTelegramUpdate({ update_id: 3, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8893')).ignored, true);
+});
+
+test('disabled Telegram webhook cannot acknowledge or enqueue updates', async () => {
+  process.env.TELEGRAM_MODE = 'dry-run';
+  const response = await fetch('http://localhost:8893/telegram/webhook', { method: 'POST', headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': 'telegram-secret' }, body: JSON.stringify({ update_id: 991, message: { from: { id: 1001 }, chat: { id: 1 }, text: 'read: status' } }) });
+  assert.equal(response.status, 404);
+  process.env.TELEGRAM_MODE = 'webhook';
 });
 
 // Pre-download rejection boundaries only (no network involved). The full download/mime/size/text-extraction/

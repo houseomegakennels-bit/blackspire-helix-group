@@ -22,17 +22,19 @@ function input(raw) {
   const value = raw ?? {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid nexus enrichment input');
   const keys = Object.keys(value);
-  if (keys.some((k) => !['ownerName', 'propertyAddress', 'sellerLeadId'].includes(k))) throw new Error('invalid nexus enrichment input');
+  if (keys.some((k) => !['ownerName', 'propertyAddress', 'sellerLeadId', 'dealId'].includes(k))) throw new Error('invalid nexus enrichment input');
   const hasOwnerName = typeof value.ownerName === 'string' && value.ownerName.trim().length > 0;
   const hasPropertyAddress = typeof value.propertyAddress === 'string' && value.propertyAddress.trim().length > 0;
   const hasSellerLeadId = typeof value.sellerLeadId === 'string' && value.sellerLeadId.trim().length > 0;
-  if (!hasOwnerName && !hasPropertyAddress && !hasSellerLeadId) {
-    throw new Error('nexus enrichment input must contain ownerName, propertyAddress, or sellerLeadId');
+  const hasDealId = typeof value.dealId === 'string' && /^DE-\d{4}$/i.test(value.dealId.trim());
+  if (!hasOwnerName && !hasPropertyAddress && !hasSellerLeadId && !hasDealId) {
+    throw new Error('nexus enrichment input must contain ownerName, propertyAddress, sellerLeadId, or dealId');
   }
   return Object.freeze({
     ownerName: hasOwnerName ? boundedText(value.ownerName, 'ownerName') : null,
     propertyAddress: hasPropertyAddress ? boundedText(value.propertyAddress, 'propertyAddress') : null,
     sellerLeadId: hasSellerLeadId ? boundedText(value.sellerLeadId, 'sellerLeadId') : null,
+    dealId: hasDealId ? value.dealId.trim().toUpperCase() : null,
   });
 }
 

@@ -11,6 +11,11 @@ release_validate_completed_release "$root" "$commit"
 # Record what is being deployed BEFORE it becomes current, so a release can never be live
 # without the deployment record its own startup identity check requires.
 "$(dirname "$0")/with-node.sh" "$(dirname "$0")/write-deployment-record.js" "$target" >/dev/null
-ln -sfn "$target" "$root/current.next"
-mv -Tf "$root/current.next" "$root/current"
+temporary="$root/.current.next.${BASHPID}.${RANDOM}"
+cleanup() { test ! -L "$temporary" || rm -- "$temporary"; }
+trap cleanup EXIT
+test ! -e "$temporary" && test ! -L "$temporary"
+ln -s "$target" "$temporary"
+mv -Tf "$temporary" "$root/current"
+trap - EXIT
 printf '%s\n' "$target"

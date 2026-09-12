@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getDealEmdStatus, updateDealEmdTracker } from "@/lib/deal-engine-server";
@@ -5,6 +6,8 @@ import { getDealEmdStatus, updateDealEmdTracker } from "@/lib/deal-engine-server
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const dealId = request.nextUrl.searchParams.get("dealId")?.trim() || "";
     if (!dealId) return NextResponse.json({ ok: false, error: "dealId is required." }, { status: 400 });
@@ -16,6 +19,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const body = await request.json();
     const dealId = String(body.dealId ?? "").trim();

@@ -1,0 +1,681 @@
+{
+  "version": 1,
+  "observedAt": "2026-09-07T02:11:00Z",
+  "sources": [
+    {
+      "sourceId": "58855a49-c9ef-4339-91f5-125f04736c75",
+      "state": "NC",
+      "county": "Alamance",
+      "registeredSourceType": "arcgis_alamance",
+      "createdAt": "2026-05-21 06:54:47.661883+00",
+      "sourceUrlSha256": "65fb01c2932b95628126d5800b73a9872019c7c71a93d7698e7d2e06d95d826d",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "632591a1-f248-4fa8-9feb-e9ab7dbc7ec8",
+      "state": "NC",
+      "county": "Ashe",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 06:41:25.801059+00",
+      "sourceUrlSha256": "d6aa555721e0e86c3462453a45b606d73d7f56181dfd7fedd8abc4dfff45a720",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "f3445079-608d-4e8e-96c6-e9315c3e5748",
+      "state": "NC",
+      "county": "Avery",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 06:41:26.082164+00",
+      "sourceUrlSha256": "6b61072d8355510834fcefb7c0d1cd8a2d57e382b81b03596929b9a37afbe44d",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "f5b25d35-f41a-4a6c-b24f-e6b4c324c258",
+      "state": "NC",
+      "county": "Beaufort",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 06:12:23.857228+00",
+      "sourceUrlSha256": "46a38df93a0a2980654495125143b98cc3f84d88d16fa43ea4afb4cf3e01d982",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "9d9dfa6a-0137-45ef-9cd2-f65b97f19e4d",
+      "state": "NC",
+      "county": "Bladen",
+      "registeredSourceType": "arcgis_bladen",
+      "createdAt": "2026-05-19 09:03:13.37334+00",
+      "sourceUrlSha256": "102637afd2b8080e902a88c87580b89033212da889da5ec50d30f757c8096b0e",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "28b9af60-ac9b-4c70-86ce-396e2b00f95d",
+      "state": "NC",
+      "county": "Brunswick",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 01:37:44.17931+00",
+      "sourceUrlSha256": "797c540891c2d14b6c7199859b062cbd3058c53490264399ee6b96d20c633e78",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "38390dd6-aae3-4f47-b07f-13e6081c0b56",
+      "state": "NC",
+      "county": "Buncombe",
+      "registeredSourceType": "arcgis_buncombe",
+      "createdAt": "2026-05-21 03:44:53.913055+00",
+      "sourceUrlSha256": "2bf2231237c68fa7189b43733419d09069bdce0b34c6c1c5a7d0e4b2f7a7bb01",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "8839cfe5-0f0f-4c42-9dfd-9488d6b981e1",
+      "state": "NC",
+      "county": "Burke",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 06:53:02.386268+00",
+      "sourceUrlSha256": "86629a6e52070a071d958344e5c96d5e484cf067d186c19d88a017fc5b57f2ac",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "5c75b99a-ee2c-49c0-9aef-1dd9f099855f",
+      "state": "NC",
+      "county": "Cabarrus",
+      "registeredSourceType": "arcgis_cabarrus",
+      "createdAt": "2026-05-21 03:49:55.917021+00",
+      "sourceUrlSha256": "34447f19cd68e578b62be880fe08fd825bf26d1354d62136a53dc558e30b4ee7",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "1ab38d9b-399e-4357-90e1-648f0a34b3e3",
+      "state": "NC",
+      "county": "Caldwell",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 11:07:04.962705+00",
+      "sourceUrlSha256": "f448b52269c72d81ed510e029ec9492e7412403c0057058d970217d70d452b7a",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "94349830-4597-4f74-bd61-eb88c470b1a6",
+      "state": "NC",
+      "county": "Carteret",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-25 17:38:38.883973+00",
+      "sourceUrlSha256": "c527a982ce22f6418aa056f11a6cbff774110a3a60f0ad6cd766549e848049e5",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "34e61c11-a66a-47e4-8a90-311ca015285b",
+      "state": "NC",
+      "county": "Catawba",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 03:28:11.411829+00",
+      "sourceUrlSha256": "d0e246d64a6d8f581b7a1f1acf0162f7673605abda54a0ad0da7a6dfc4b78845",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "dd8f7b96-502f-4ca7-8f1a-1a9c3e08ebe0",
+      "state": "NC",
+      "county": "Chatham",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 11:07:04.962705+00",
+      "sourceUrlSha256": "2d76edbf40929742ccb71628cc3b3ee75582392f2348ad0118406c5266cc5438",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "57ed4e18-476b-4490-a804-77d8465dd2ec",
+      "state": "NC",
+      "county": "Cherokee",
+      "registeredSourceType": "arcgis_cherokee",
+      "createdAt": "2026-05-21 22:56:16.817257+00",
+      "sourceUrlSha256": "f845795d385924171b7ff064b70f8383cf512193e71a8ec07f194b4fd12e3200",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "fdcc18bb-7606-4ccd-87c5-7c476db7dcac",
+      "state": "NC",
+      "county": "Chowan",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 01:24:12.727988+00",
+      "sourceUrlSha256": "944d38f1df5fef923f007189aec2dc981d103eea9690b9e264a4958da25dabc0",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "1340d21a-ef38-408f-a2ff-c9ea22dd4c8a",
+      "state": "NC",
+      "county": "Cleveland",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "e9685a815dbf2f291b4b3764ee119d15918c763a4104109582618bdc4931902a",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "82ebb2e0-2034-45b8-9f20-668505d763af",
+      "state": "NC",
+      "county": "Columbus",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 21:16:41.11849+00",
+      "sourceUrlSha256": "73c47221c887c865353068a7ec7f279c773f6fd09781fdecb21a32341cb44605",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "7b8ff91e-42c0-4523-8f47-68a0cd4f0dec",
+      "state": "NC",
+      "county": "Craven",
+      "registeredSourceType": "arcgis_craven",
+      "createdAt": "2026-05-21 15:11:24.79564+00",
+      "sourceUrlSha256": "13cb4722fe32a4a9f557fc3bed48006dc7d336bf7441cbe689ac99e6d70a3714",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "e4b18401-ea4e-4fef-bcf7-f2fe6a550e42",
+      "state": "NC",
+      "county": "Cumberland",
+      "registeredSourceType": "arcgis_cumberland",
+      "createdAt": "2026-05-18 17:40:49.099417+00",
+      "sourceUrlSha256": "d97ebced113cce582dd4af0be9514b452a0b914c4e8566a04295b6df17884c77",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "42d7eaa2-24a7-435d-a12a-84b3f294dd01",
+      "state": "NC",
+      "county": "Currituck",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-25 18:36:10.129263+00",
+      "sourceUrlSha256": "b3b8459c8b33fa4787bb1612113fac9cd305b4dab802ee96476aea940f30dbe0",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "9920cbe7-cdd1-403a-900d-42648a8ea185",
+      "state": "NC",
+      "county": "Dare",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 21:16:41.11849+00",
+      "sourceUrlSha256": "5b9d718f4d98daa80c5206891b7f6aade1b85fd6756cb01c1622704184d954ee",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "1c171abc-de45-4f8b-99fe-f8db2f733592",
+      "state": "NC",
+      "county": "Davidson",
+      "registeredSourceType": "arcgis_davidson",
+      "createdAt": "2026-05-21 06:37:06.094658+00",
+      "sourceUrlSha256": "c39affca6a572359f7660d48a70549d4648f586b2757596134a40f31e2669731",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "c1c06af4-c995-4bfb-a384-caae1d230dc2",
+      "state": "NC",
+      "county": "Davie",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 03:23:27.237367+00",
+      "sourceUrlSha256": "339043712553ed45a5d4a6282d69183457a20452801422bcbf0ba57651884a41",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "db36f2b0-6f6c-4445-b5ed-165788a8dedb",
+      "state": "NC",
+      "county": "Duplin",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 04:23:15.947785+00",
+      "sourceUrlSha256": "3699ffb32c79f71df0815306fa588492e6683d520760fd1d0352efc04485123b",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "df1f3df0-6e39-408f-885e-9dee479a9e74",
+      "state": "NC",
+      "county": "Durham",
+      "registeredSourceType": "arcgis_durham",
+      "createdAt": "2026-05-19 09:16:03.876212+00",
+      "sourceUrlSha256": "57b5d0f88b8361186d9746bfdc82d2b28bcd887cc02e09c04af42cc937857255",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "943b099b-786f-4a81-b5a7-66e0c0213853",
+      "state": "NC",
+      "county": "Edgecombe",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 04:16:11.517443+00",
+      "sourceUrlSha256": "72a577684a49c4a5145467a9062f62c044ad59b12c3c3cf6a0d4951690c4668d",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "11ffd9ad-3b8f-4ea9-8cc9-d885a160876d",
+      "state": "NC",
+      "county": "Forsyth",
+      "registeredSourceType": "arcgis_forsyth",
+      "createdAt": "2026-05-19 09:16:03.876212+00",
+      "sourceUrlSha256": "465676152469002eeca45df3cabb1834b587c676aa455420384360e81a4fe78a",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "8dcb73f4-95ca-432f-afef-8b88745edaa3",
+      "state": "NC",
+      "county": "Franklin",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "b7d476b61bc0f9ea1452e4a9c70201304c5355461b05acd59c40481640609ae7",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "34b39bc1-3afd-4180-980b-cb63820dc373",
+      "state": "NC",
+      "county": "Gaston",
+      "registeredSourceType": "arcgis_gaston",
+      "createdAt": "2026-05-21 03:49:55.917021+00",
+      "sourceUrlSha256": "75ea4b8199216d8a1ae501d7cb42e94d76838d7b9e3228bc65dfd34ee7a4d996",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "0a5c831e-cd28-4ce0-8d9f-f20457c36f90",
+      "state": "NC",
+      "county": "Granville",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 04:29:57.837524+00",
+      "sourceUrlSha256": "fefbd895d060fcb17a0c02caa4282b4e33757603af68b2bc6b9b3d01b10519d6",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "e965c872-3676-4ae4-bef4-b23c5a19692b",
+      "state": "NC",
+      "county": "Guilford",
+      "registeredSourceType": "arcgis_guilford",
+      "createdAt": "2026-05-19 09:16:03.876212+00",
+      "sourceUrlSha256": "c25c704493f89136f76d730103ffc04b16106e1b739dd7b84199ccd67c16d294",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "32c8e917-ac19-4369-8b98-954ad7c0a3b6",
+      "state": "NC",
+      "county": "Halifax",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 11:07:04.962705+00",
+      "sourceUrlSha256": "b09478e52cf06367cd27af5eb5afdacf468f8f1c45e919f100471e41e7b98139",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "357814ff-e26c-4abd-bd17-80d558291534",
+      "state": "NC",
+      "county": "Harnett",
+      "registeredSourceType": "arcgis_harnett",
+      "createdAt": "2026-05-21 06:37:06.094658+00",
+      "sourceUrlSha256": "236b498c88b7338a7b17e3cd34a8ac25c4badb03b48556d477335327c483bd9e",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "0a9b0a1f-f01d-4291-959f-677d9a098fe4",
+      "state": "NC",
+      "county": "Haywood",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 07:25:43.050454+00",
+      "sourceUrlSha256": "da6b8358825b7338a1118e44511f1f0e2cf93efaaae39eb8858aa529682173c5",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "70547536-d3a0-458c-95e0-5b2aa645f966",
+      "state": "NC",
+      "county": "Henderson",
+      "registeredSourceType": "arcgis_henderson",
+      "createdAt": "2026-05-21 06:54:47.661883+00",
+      "sourceUrlSha256": "0746cce4681536e61c8735447deef828de5db3f3bfbef728a3d9c6ff88ff991a",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "9e133cbf-58f0-4ecc-847e-1d6bf9b6926a",
+      "state": "NC",
+      "county": "Hoke",
+      "registeredSourceType": "arcgis_hoke",
+      "createdAt": "2026-05-18 17:40:49.099417+00",
+      "sourceUrlSha256": "2d51ee0a5b9181176f2ce72fc54a9c389d34c39af73f945d330bc4dc4a1d82ec",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "6dd705e0-c7ae-4b3f-990e-cc76330146e3",
+      "state": "NC",
+      "county": "Iredell",
+      "registeredSourceType": "arcgis_iredell",
+      "createdAt": "2026-05-21 03:49:55.917021+00",
+      "sourceUrlSha256": "326472f070d1270f673eb1fdd5f0dc28366897ed9a779ac7c0b1b7a9061eb21a",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "8756b6bb-8c59-4e79-ae45-38841cb36666",
+      "state": "NC",
+      "county": "Jackson",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-25 18:36:10.129263+00",
+      "sourceUrlSha256": "0bebbb926ea5ec007c684f6f17f733fce277a1d045dfd2534804cddcfc845338",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "208ef44c-12b9-46a6-aedd-4ba1eaec9c03",
+      "state": "NC",
+      "county": "Johnston",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 21:16:41.11849+00",
+      "sourceUrlSha256": "12de8549949aa845bfc9b671561f00e95c98b38d315464584ba2451b6c3376b1",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "569e7018-6386-43bf-accb-1eb4bae296f4",
+      "state": "NC",
+      "county": "Lee",
+      "registeredSourceType": "arcgis_lee",
+      "createdAt": "2026-05-21 06:37:06.094658+00",
+      "sourceUrlSha256": "ae4eee6415bc62d7fe8b2c023def4f7329e17fcc51ff9ca05584b8238f98ca56",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "854077ea-46ff-4007-9a6c-12320de61b17",
+      "state": "NC",
+      "county": "Lenoir",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "b4858d469545d57dc55325f073ca49f5fa7885e17f6d11e5b0c40c32dc9b62fa",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "4a7d3f39-9998-4edd-9dc9-d70b3a6c7249",
+      "state": "NC",
+      "county": "Lincoln",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-25 17:38:38.883973+00",
+      "sourceUrlSha256": "275aebe6527f93ab84034b89413d3a11ce39b6a5050db830cb22787576edb08d",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "67b474aa-eaac-4c2f-8b95-0100c44c9d3c",
+      "state": "NC",
+      "county": "Macon",
+      "registeredSourceType": "arcgis_macon",
+      "createdAt": "2026-05-21 22:42:53.952768+00",
+      "sourceUrlSha256": "34f1edb1a1fca512bbbcb2506affe0760aabe532dd28ef8c169cc4017ff93577",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "663a328d-a59a-4ad9-96d9-e48925c8f586",
+      "state": "NC",
+      "county": "McDowell",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "f66535016c551ce247d61821bec5c7c61673faaf87be226f2f0dbc84db448b43",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "d1fef650-a9ca-4937-a565-75a00ca57306",
+      "state": "NC",
+      "county": "Montgomery",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "e8daf5723a2bf51005dfb810ca65b2075cb0cafeee4b791132692c574a850b09",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "4050a803-b484-4984-86ef-574a875f9fed",
+      "state": "NC",
+      "county": "Moore",
+      "registeredSourceType": "arcgis_moore",
+      "createdAt": "2026-05-21 06:37:06.094658+00",
+      "sourceUrlSha256": "aa865c33ada3565222b409eaa415ffcbceeed86b0c8a87f2c06b92d4b6871dfc",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "a96aca72-8403-48e8-bd16-68b210b6bc9d",
+      "state": "NC",
+      "county": "Nash",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 04:23:15.699218+00",
+      "sourceUrlSha256": "de9bc5b020b8669445c0bf0e3a2471ca6999a98e0b73d264d721688d18565a2f",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "e8594c7d-0c24-469a-b1b7-4913771c0b1f",
+      "state": "NC",
+      "county": "New Hanover",
+      "registeredSourceType": "arcgis_newhanover",
+      "createdAt": "2026-05-21 03:44:53.913055+00",
+      "sourceUrlSha256": "0ca6261b331c842d675331da2d2ff0d27b8fa96f50860ad6ae78d359c884b64c",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "0b873a9a-17c3-4118-908e-0a2b395f49df",
+      "state": "NC",
+      "county": "Onslow",
+      "registeredSourceType": "arcgis_onslow",
+      "createdAt": "2026-05-21 03:44:53.913055+00",
+      "sourceUrlSha256": "040a31aea7f938aad1dbbb0b496cdc3c8cc9ed7d68b040242130843a4c52be8f",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "9314f935-e2a1-438a-9b31-8086419bec33",
+      "state": "NC",
+      "county": "Orange",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 02:13:44.263554+00",
+      "sourceUrlSha256": "f85534615174fba52354e47c989ef3236343ec9382e2a570d4ab71110d60cd98",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "7651d24e-5c7f-416d-a946-b46b172d5ff8",
+      "state": "NC",
+      "county": "Pamlico",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 01:24:13.02073+00",
+      "sourceUrlSha256": "944d38f1df5fef923f007189aec2dc981d103eea9690b9e264a4958da25dabc0",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "26d50af2-596f-48f8-932c-0a01725e6a0a",
+      "state": "NC",
+      "county": "Pasquotank",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "ad62094ac7620e36c8fa2b214eb118d3f90648d54491c195978adc8959184b88",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "e770210f-bab9-4d94-92b8-e8ca74e4450e",
+      "state": "NC",
+      "county": "Pender",
+      "registeredSourceType": "arcgis_pender",
+      "createdAt": "2026-05-21 03:44:53.913055+00",
+      "sourceUrlSha256": "361705e515eeb36401623db54c65617e844e985c2bf0b6c5183c59708f0bdb78",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "8fe74118-5d63-47a0-ad5f-c33330f65f15",
+      "state": "NC",
+      "county": "Person",
+      "registeredSourceType": "arcgis_person",
+      "createdAt": "2026-05-21 20:00:32.329072+00",
+      "sourceUrlSha256": "b2a9a7acf9f59fbfcbc3aa0a47d65f811f7a08d72ad305cfeb01603e2d098d82",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "14c9e7ef-bcb2-4f49-9663-c2dfad5923df",
+      "state": "NC",
+      "county": "Pitt",
+      "registeredSourceType": "arcgis_pitt",
+      "createdAt": "2026-05-21 06:37:06.094658+00",
+      "sourceUrlSha256": "5ae72379c761a8872f9457c97c1a0fe21479b5a76e203716604fec1c3033a5ca",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "6110267e-5383-47e5-81f8-221033861073",
+      "state": "NC",
+      "county": "Polk",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "828b418e751c1b9e530e2ab4309cf18325c0387bfeb296a3040bef3567b959ce",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "a5d80071-0b83-498a-881f-4c7be7f95426",
+      "state": "NC",
+      "county": "Randolph",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-25 18:24:09.437732+00",
+      "sourceUrlSha256": "71bb8fb7c028ab478263cbb12ba9aa7ead1075fc60b5e1e7bc079200c59077fa",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "d2a23d98-dcb3-480b-9f2f-38b723d12156",
+      "state": "NC",
+      "county": "Robeson",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-18 03:01:22.601603+00",
+      "sourceUrlSha256": "ddc206f9d29f6b9d92e27486d9ada574ffc227e44678d0a8d710ab0ec8b60c5b",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "92af20cf-3452-4230-86a5-7d417acf8271",
+      "state": "NC",
+      "county": "Rockingham",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-25 18:36:10.129263+00",
+      "sourceUrlSha256": "b81675b365f2c76a07fc40b5b81dde777ecec8dad1efb17908502e4449912445",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "cca258d1-4f9c-4f8d-9d95-a94255e0acd5",
+      "state": "NC",
+      "county": "Rowan",
+      "registeredSourceType": "arcgis_rowan",
+      "createdAt": "2026-05-21 03:44:53.913055+00",
+      "sourceUrlSha256": "26c6184d31b84ceac76807a31a0f568923d78e4b6212f2df9255095a0a21a931",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "5f47ed47-760d-40e2-b2b0-95e2fb1edede",
+      "state": "NC",
+      "county": "Rutherford",
+      "registeredSourceType": "arcgis_rutherford",
+      "createdAt": "2026-05-21 15:00:46.28658+00",
+      "sourceUrlSha256": "29a0836a898c72ab3245592155277df6763758144ec4ca7d28eee1ab762d08ee",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "abd24b4f-a272-4c33-a6b6-a4d350c4790d",
+      "state": "NC",
+      "county": "Sampson",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 02:54:52.707949+00",
+      "sourceUrlSha256": "c4a331c517defdb9650f210d44bf8cb246bb91b25b055e21b214f4d0d0634732",
+      "cashDisabled": true
+    },
+    {
+      "sourceId": "61984c19-fa01-41eb-9261-d8bebaecb217",
+      "state": "NC",
+      "county": "Stanly",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 21:16:41.11849+00",
+      "sourceUrlSha256": "ec9ec2548b27c29f90882d9e92346785d83736bfabffb7075dfb4d73e65f6d93",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "6ff5ee8b-af89-43d0-8ff3-680cda53fe8c",
+      "state": "NC",
+      "county": "Stokes",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-01 15:33:08.603816+00",
+      "sourceUrlSha256": "db926b23dd6e6fbe8db6ebff899687239904afd12b9b9b3d769e6da8e9fa90cb",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "8ffa16e3-ca97-4da5-a229-cdadc13b30c3",
+      "state": "NC",
+      "county": "Surry",
+      "registeredSourceType": "arcgis_surry",
+      "createdAt": "2026-05-21 15:11:52.814919+00",
+      "sourceUrlSha256": "dc8877e922115b640afebeed9d3bf27fa46385369593cb1b9c10ad75dfaaa1f9",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "1b6bd958-9fb5-4637-904e-64cb573957b4",
+      "state": "NC",
+      "county": "Transylvania",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "914aa1109221249aaeab766a4500c21d7ad210a629c480ef1ebf87f7ab0ac86c",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "33d43045-9b98-4639-80c2-208c8b4e0f69",
+      "state": "NC",
+      "county": "Union",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 11:07:04.962705+00",
+      "sourceUrlSha256": "285ceed2c39b56f18ee1676a18c945939ba862a3874ce4605e563742eccefcb2",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "05bd2ae5-00ca-4dac-be6b-02ef869a5cca",
+      "state": "NC",
+      "county": "Vance",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 11:07:04.962705+00",
+      "sourceUrlSha256": "473cd8cc64a47102c8d23173b95a7eda4e35af3589929331ee75df6ce3dff4a3",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "b7611608-d5e1-4fb5-9639-43363f052586",
+      "state": "NC",
+      "county": "Warren",
+      "registeredSourceType": "arcgis_warren",
+      "createdAt": "2026-05-21 15:19:21.249496+00",
+      "sourceUrlSha256": "251fd8c6cab81f8dce5e86a64cfd15a145c15b0be26d984fe83aa69aa1b987dd",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "fa2f18b7-f742-4e11-babd-7935f363497a",
+      "state": "NC",
+      "county": "Watauga",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 11:07:04.962705+00",
+      "sourceUrlSha256": "2fec76a3fe3986ac61abc08be31a368b0214a80dbca990323f403430670ff397",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "75ee33bf-7f61-4416-b0ac-fdbbae32f485",
+      "state": "NC",
+      "county": "Wayne",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 11:07:04.962705+00",
+      "sourceUrlSha256": "9a75981ca1d0fbf3bceeb9ef416cc29dba203f09e0bec185e7d916baa7822166",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "3d86e146-d832-45c7-a29f-5160d8f646ce",
+      "state": "NC",
+      "county": "Wilkes",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-05-26 06:53:02.614337+00",
+      "sourceUrlSha256": "e0fb00c2892043f0d7b89b1871e2c9e1d24cb9593926eb1cf78218f433ba7943",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "77f80f86-c221-4d9d-ab0a-ac51c545495d",
+      "state": "NC",
+      "county": "Wilson",
+      "registeredSourceType": "arcgis_wilson",
+      "createdAt": "2026-05-21 06:54:47.661883+00",
+      "sourceUrlSha256": "af427ec605a955eba4f22bba8218125cc54643237ce65f677e31f585908ae4d9",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "b6a25522-ee58-42ae-bd92-65ac3c8a1642",
+      "state": "NC",
+      "county": "Yadkin",
+      "registeredSourceType": "arcgis_yadkin",
+      "createdAt": "2026-05-21 06:54:47.661883+00",
+      "sourceUrlSha256": "26b57b068e852c62a2b040ae45abc5237d7b7e30a523fe941c66d2cc54ed7370",
+      "cashDisabled": false
+    },
+    {
+      "sourceId": "00facbbd-8fa6-4c0a-be98-367596f64376",
+      "state": "NC",
+      "county": "Yancey",
+      "registeredSourceType": "arcgis",
+      "createdAt": "2026-06-05 15:00:28.770346+00",
+      "sourceUrlSha256": "6bb7fe21126000ef3ea4c005e85c926396597b9d5999d7f8a1ac2c25ca15864d",
+      "cashDisabled": false
+    }
+  ]
+}

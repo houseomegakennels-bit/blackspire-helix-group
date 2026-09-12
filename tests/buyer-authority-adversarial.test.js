@@ -21,6 +21,7 @@ const { defineCapability, validateCapabilityInput, validateCapabilityOutput } = 
 const { buyerProfilesCapability } = await import('../packages/capabilities/buyer-profiles.js');
 const { selectCapabilityForTask } = await import('../packages/capabilities/execute.js');
 const { createDivisionAdapters } = await import('../packages/capabilities/http-adapters.js');
+const { transportAuthority } = await import('./helpers/receiver-authority-fixture.js');
 
 const now = Date.now();
 const permissions = ['buyer.profiles.read','buyer.matches.read','task.create','task.execute','task.read','workspace.read'];
@@ -201,9 +202,24 @@ test('Buyer reverse-search deterministic tie-break is stable', async () => {
   assert.equal(sorted[1].id, 'b');
 });
 
-test('Buyer transport rejects malformed JSON, non-2xx, and oversized stream', async () => {
-  const bad = createDivisionAdapters({ BLACKSPIRE_BUYER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_BUYER_CAPABILITY_TOKEN:'x'.repeat(32) }, async()=>new Response('not-json', { status:200 }));
-  await assert.rejects(bad.buyerProfiles({ workspaceId:'buyer-ws', limit:5, signal:null }), /Buyer Engine capability returned malformed JSON/);
+test('Buyer transport rejects a call with no durable receiver authority before HTTP dispatch', async () => {
+  let calls=0;
+  const bad = createDivisionAdapters({ BLACKSPIRE_BUYER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_BUYER_CAPABILITY_TOKEN:'x'.repeat(32) }, async()=>{calls++;return new Response('not-json',{status:200});});
+  await assert.rejects(bad.buyerProfiles({ workspaceId:'buyer-ws', limit:5, signal:null }), /receiver authority is unavailable/);
+  assert.equal(calls,0);
+});
+
+test('Buyer transport preserves sanitized malformed, non-2xx, and bounded-response failures with valid authority', async () => {
+  const input = validateCapabilityInput(buyerProfilesCapability, { limit:5 });
+  const authority = transportAuthority('buyer.profiles.search', 'buyer-ws', input);
+  const env = { BLACKSPIRE_BUYER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_BUYER_CAPABILITY_TOKEN:'x'.repeat(32) };
+  const invoke = (fetchImpl) => createDivisionAdapters(env, fetchImpl).buyerProfiles({ workspaceId:'buyer-ws', ...input, signal:null, ...authority });
+  await assert.rejects(invoke(async()=>new Response('not-json',{status:200})), /malformed JSON/);
+  await assert.rejects(invoke(async()=>Response.json({}, {status:503})), /HTTP 503/);
+  let cancelled=false;
+  const stream=new ReadableStream({pull(controller){controller.enqueue(new Uint8Array(20*1024));},cancel(){cancelled=true;}});
+  await assert.rejects(invoke(async()=>new Response(stream,{status:200})), /response too large/);
+  assert.equal(cancelled,true);
 });
 
 test('Buyer input/output negative boundaries reject bad values', () => {

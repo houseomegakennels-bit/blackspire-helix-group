@@ -124,3 +124,50 @@ test('authenticated Jarvis API reuses a Telegram conversation and exposes canoni
 });
 
 test('close unified API', () => server.close());
+
+
+test('unified replay cannot substitute same-workspace actor or authority and makes no writes', async () => {
+  const { all } = await import('../packages/task-engine/db.js');
+  const input = { channel: 'jarvis', actorId: 'replay-owner', channelKey: 'replay-owner', text: 'show seller opportunities',
+    idempotencyKey: 'principal-bound-replay', authority: 'authenticated_admin', executionIntent: 'read_only' };
+  const original = createUnifiedInput(input);
+  const snapshot = () => ['unified_inputs', 'tasks', 'conversations', 'audit_events', 'task_evidence', 'provider_attempts']
+    .map((table) => all(`SELECT * FROM ${table} ORDER BY rowid`));
+  const before = snapshot();
+  for (const change of [{ actorId: 'other-owner' }, { authority: 'untrusted' }]) {
+    const denied = createUnifiedInput({ ...input, ...change });
+    assert.deepEqual(denied, { error: 'input not found', status: 404 });
+  }
+  assert.deepEqual(snapshot(), before);
+  assert.equal(createUnifiedInput(input).taskId, original.taskId);
+});
+
+test('task replay binds workspace actor channel and authority before intent or disclosure', async () => {
+  const { createTask } = await import('../packages/task-engine/tasks.js');
+  const { all } = await import('../packages/task-engine/db.js');
+  const input = { workspaceId: 'blackspire-command', request: 'show seller opportunities', idempotencyKey: 'direct-principal-replay',
+    actorId: 'task-owner', sourceChannel: 'api', authorityClass: 'authenticated_admin', executionIntent: 'read_only' };
+  const original = createTask(input);
+  const before = all('SELECT * FROM tasks ORDER BY rowid');
+  for (const change of [{ workspaceId: 'other' }, { actorId: 'other' }, { actorId: null }, { sourceChannel: 'jarvis' }, { authorityClass: 'untrusted' }]) {
+    assert.throws(() => createTask({ ...input, ...change, executionIntent: 'workspace_mutation' }), { code: 'TASK_IDEMPOTENCY_BINDING', message: 'task not found' });
+  }
+  assert.deepEqual(all('SELECT * FROM tasks ORDER BY rowid'), before);
+  assert.equal(createTask(input).id, original.id);
+});
+
+
+test('legacy null-default exact task retry stays idempotent', async () => {
+  const { createTask } = await import('../packages/task-engine/tasks.js');
+  const input = { workspaceId: 'blackspire-command', request: 'inspect', idempotencyKey: 'legacy-null-retry' };
+  assert.equal(createTask(input).id, createTask(input).id);
+});
+
+test('reserved unified task keys from another principal are hidden', async () => {
+  const { createTask } = await import('../packages/task-engine/tasks.js');
+  createTask({ workspaceId: 'blackspire-command', request: 'inspect', idempotencyKey: 'unified:jarvis:reserved-owner-key',
+    sourceChannel: 'jarvis', actorId: 'owner', authorityClass: 'authenticated_admin' });
+  assert.deepEqual(createUnifiedInput({ channel: 'jarvis', actorId: 'other', channelKey: 'other',
+    workspaceId: 'blackspire-command', text: 'inspect', idempotencyKey: 'reserved-owner-key', authority: 'authenticated_admin' }),
+  { error: 'input not found', status: 404 });
+});

@@ -318,7 +318,7 @@ if (unit === null) {
 
 {
   const switchScript = read('scripts/release-switch.sh') || '';
-  const atomic = /ln -sfn/.test(switchScript) && /mv -Tf?/.test(switchScript);
+  const atomic = /ln -s/.test(switchScript) && /mv -Tf?/.test(switchScript) && /\.current\.next\.\$\{BASHPID\}/.test(switchScript);
   record('cutover-atomic', atomic, 'source',
     atomic ? 'release-switch.sh swaps the current symlink atomically'
       : 'release-switch.sh must create the current symlink atomically (ln -sfn then mv -T)');

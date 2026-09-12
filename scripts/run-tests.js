@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { runContainedProcess } from './test-process-supervisor.js';
+import { installRuntimeDependencies } from './install-runtime-dependencies.js';
 
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const namespaceArguments = ['--pid', '--fork', '--kill-child=SIGKILL', '--mount-proc'];
@@ -44,12 +45,17 @@ try {
     }
     const source = path.join(rootDirectory, relative);
     const destination = path.join(snapshotDirectory, relative);
+    // `git ls-files --cached` includes tracked paths intentionally deleted or
+    // renamed in the working tree. The immutable snapshot must reflect the
+    // working tree under test, not resurrect those index entries.
+    if (!fs.existsSync(source)) continue;
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     const sourceType = fs.lstatSync(source);
     if (sourceType.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(source), destination);
     else if (sourceType.isFile()) fs.copyFileSync(source, destination);
     else throw new Error(`snapshot inventory contains an unsupported entry: ${relative}`);
   }
+  installRuntimeDependencies(snapshotDirectory);
   const gitSteps = [
     ['init', '--quiet'],
     ['add', '--all'],

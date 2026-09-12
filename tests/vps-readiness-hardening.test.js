@@ -340,6 +340,7 @@ function preflightEnv(overrides = {}, role = 'api') {
     BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
     BLACKSPIRE_REQUIRE_WORKER_HEARTBEAT: 'true',
     BLACKSPIRE_RUNTIME_USER: `blackspire-${role}`,
+    ...(role === 'api' ? { BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN: 'z'.repeat(40) } : {}),
     BLACKSPIRE_WORKSPACE_ROOT: workspaceRootFixture,
     ...overrides,
   };
@@ -395,6 +396,7 @@ test('worker preflight validates the bind contract without claiming the API port
     COMMAND_ADMIN_PASSWORD_HASH: undefined,
     COMMAND_ADMIN_TOKEN: undefined,
     SESSION_SECRET: undefined,
+    BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN: undefined,
   };
   const worker = run('scripts/verify-environment.sh', ['vps-production', 'worker'], workerEnv);
   assert.doesNotMatch(worker.stderr, /already in use/, 'worker restart must not be blocked by the healthy API listener');

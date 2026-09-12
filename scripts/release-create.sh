@@ -58,6 +58,7 @@ fi
 trap cleanup_incomplete EXIT
 mkdir -- "$temp"
 git -C "$repo" archive "$commit" -- "${release_archive_paths[@]}" | tar -x -C "$temp"
+bash "$repo/scripts/with-node.sh" "$repo/scripts/install-runtime-dependencies.js" "$temp" >/dev/null
 printf '%s\n' "$commit" > "$temp/COMMIT_SHA"
 build_timestamp="$(git -C "$repo" show -s --format=%cI "$commit")" || fail 'commit timestamp cannot be resolved'
 BLACKSPIRE_EXPECTED_ENVIRONMENT="${BLACKSPIRE_EXPECTED_ENVIRONMENT:-$(release_expected_environment)}" \

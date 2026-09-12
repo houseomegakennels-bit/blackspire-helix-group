@@ -102,6 +102,7 @@ function baseEnv(overrides = {}) {
     COMMAND_ADMIN_TOKEN: 'x'.repeat(32),
     COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'),
     SESSION_SECRET: 'y'.repeat(40),
+    BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN: 'receiver-authority-test-value'.repeat(2),
     ...overrides,
   };
   for (const [key, value] of Object.entries(env)) if (value === undefined) delete env[key];

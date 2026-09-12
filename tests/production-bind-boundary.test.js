@@ -112,6 +112,7 @@ function productionEnv(overrides = {}) {
     BLACKSPIRE_DB_PATH: disposableDbPath,
     TELEGRAM_TMP_DIR: path.join(root, 'attachments'),
     COMMAND_ADMIN_PASSWORD_HASH: hashAdminPassword('production-pass'),
+    BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN: 'receiver-authority-test-value'.repeat(2),
     ...overrides,
   };
 }
@@ -1095,9 +1096,14 @@ test('the resolver refuses any interpreter substitution under vps-production', (
     // The production rule binds where the reviewed interpreter is installed. Off that host -- CI
     // runners and development images -- resolution proceeds, but the floor is still enforced, so a
     // Node that cannot run the product is rejected regardless of the declared owner.
-    const offHost = { BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: '/nonexistent/node' };
+    // Supply both PATH candidates ourselves: the distribution interpreter and
+    // inherited PATH differ between the contained runner, VPS and hosted CI.
+    stubInterpreter(directory, 'node', 'echo v22.23.1');
+    const oldNode = stubInterpreter(directory, 'old-node', 'echo v18.20.4');
+    const offHost = { BLACKSPIRE_STATE_OWNER: 'vps-production', BLACKSPIRE_REVIEWED_NODE_BIN: '/nonexistent/node',
+      BLACKSPIRE_NODE_BIN: '', PATH: `${directory}:/usr/bin:/bin` };
     assert.equal(resolveNode(offHost).status, 0, 'a host without the reviewed interpreter must still resolve');
-    assert.equal(resolveNode({ ...offHost, BLACKSPIRE_NODE_BIN: '/usr/bin/node' }).status, 1,
+    assert.equal(resolveNode({ ...offHost, BLACKSPIRE_NODE_BIN: oldNode }).status, 1,
       'the node:sqlite floor must still reject Node 18 off the reviewed host');
     assert.equal(resolveNode({ ...offHost, BLACKSPIRE_NODE_BIN: '/bin/true' }).status, 1,
       'a non-interpreter must still be rejected off the reviewed host');

@@ -1,8 +1,8 @@
 # HELIX TRADE COMMAND — Source of Truth
 
-**Division:** Blackspire Helix Group  
-**Development controller:** ChatGPT/Codex through GitHub branches and pull requests  
-**Operational control:** Telegram → n8n → Supabase / broker  
+**Division:** Blackspire Helix Group
+**Development controller:** ChatGPT/Codex through GitHub branches and pull requests
+**Operational control:** Telegram → n8n → Supabase / broker
 **Current stage:** Stage 1D propagation decision — current strategy premise stopped after Stage 1C evidence failure
 **Live trading:** Disabled
 

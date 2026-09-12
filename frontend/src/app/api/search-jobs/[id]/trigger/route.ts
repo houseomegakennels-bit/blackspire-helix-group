@@ -1,3 +1,6 @@
+import { captureBuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
+import { isBuyerDispatchUncertainError, scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
+import { guardAdminApiContext } from "@/lib/operator-access";
 import { after, NextResponse } from "next/server";
 
 import {
@@ -6,13 +9,19 @@ import {
   triggerBuyerEngineWorkflow,
 } from "@/lib/buyer-engine-server";
 
+export const maxDuration = 300;
+
 export async function POST(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const requestStartedAt = performance.now();
+  const gate = await guardAdminApiContext();
+  if ("response" in gate) return gate.response;
   try {
+    const authority = scopedBuyerWriterEnabled() ? await captureBuyerDispatchAuthority(gate, requestStartedAt) : null;
     const { id } = await context.params;
-    const job = await getSearchJobById(id);
+    const job = await getSearchJobById(id, authority);
 
     if (!job) {
       return NextResponse.json(
@@ -32,9 +41,15 @@ export async function POST(
 
     after(async () => {
       try {
-        await triggerBuyerEngineWorkflow(job);
+        await triggerBuyerEngineWorkflow(job, authority);
       } catch (error) {
-        console.error("Buyer Engine retrigger failed:", error);
+        if (isBuyerDispatchUncertainError(error)) {
+          console.error("Buyer dispatch reconciliation required", {
+            jobId: error.jobId, requestId: error.requestId, updatedAt: error.updatedAt,
+          });
+        } else {
+          console.error("Buyer Engine retrigger failed:", error);
+        }
       }
     });
 

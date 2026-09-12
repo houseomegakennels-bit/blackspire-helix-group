@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardSignedInApi } from "@/lib/operator-access";
 
 type SummaryRequest = {
   buyerName?: string;
@@ -120,6 +121,8 @@ function buildLocalSummary(
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as SummaryRequest;
 

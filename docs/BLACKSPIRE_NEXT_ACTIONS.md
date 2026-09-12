@@ -1,5 +1,260 @@
 # Blackspire Next Actions
 
+## 2026-09-12 — exact order after receiver compatibility correction
+
+1. Complete full trusted validation, memory/security checks, commit and push the narrow Vercel inventory correction. The resulting commit becomes the only valid release SHA.
+2. Require exact-new-head CI, normal Git-integrated frontend READY, valid root ignored-build success and successful aggregate Vercel context.
+3. Dispatch exact-new-head receiver maintenance and require complete success. Preserve explicit non-authority records for deleted historical targets and unavailable build output.
+4. Keep the release held until Supabase provider authority reduces PUBLIC EXECUTE from 12/12 to 0/12 on the exact pg_net signatures.
+5. Only after every provider gate is green, repin n8n read-only, create fresh final-SHA backup/artifact/disk evidence, bind then-current main in a new exclusive protected descriptor, and start a new guarded operation. Never reuse the old descriptor or operation `6cc8d935-ab34-432b-acf9-13c34e68a056`.
+
+## 2026-09-11 — finish the cutover phase split and fixed composition
+
+1. Preserve the newly operation-fenced HELD path. Keep `acceptance-active.json` exclusive to the journaled `six_live_reads` attempt and require exact capability selection; never broaden the HELD context into general admission.
+2. Split the VPS subordinate journal without changing the 34-stage registry: stage 22 validates backup/artifacts, captures state and leaves services stopped; stage 23 establishes the exact new-main HELD epoch; stages 25–27 journal pointer/runtime binding, API health, worker readiness and stable generations. Strengthen final rollback acceptance with functional health/readiness/six-read proof and exact restoration semantics.
+3. Wire every concrete production adapter and the strict root-owned protected-input `--release` resume command only after the split. Do not accept caller-supplied commands, booleans, secrets or evidence claims.
+4. Owners must execute the Supabase ACL package, restore Vercel and produce exact-head previews, and provision both GitHub receiver settings plus an exact-head receiver-maintenance success before the command may advance.
+
+## 2026-09-11 — split cutover safely, then compose the fixed command
+
+1. Refactor the journaled VPS cutover so stage 22 performs only rollback-validated artifact creation and atomic pointer preparation while services remain stopped under the existing hold. Stage 23 must atomically establish the exact new-main HELD epoch; stages 25–27 must journal API activation, worker activation/readiness and the generation fence. Preserve one rollback journal across the split.
+2. Compose all 34 fixed production adapters only after that phase boundary exists. Expose a root-only protected-input `--release` resume command; reject caller-supplied commands, booleans or evidence and retain observation-only reconciliation after unknown effects.
+3. Preserve the completed HELD runtime bridge and exact consumed-permit guarded OPEN. Do not relax global admission or send non-acceptance work through the HELD permit.
+4. External owners must remove all 12 Supabase PUBLIC `net` EXECUTE edges, restore Vercel and produce an exact-head preview, and configure both GitHub receiver settings before release execution can advance.
+
+## 2026-09-11 — complete fixed final release composition
+
+1. Extend the HELD acceptance permit through a separate exact API/worker admission path restricted to the six bound read tasks; bind collector evidence and guarded OPEN to the terminal consumed permit. Do not relax normal production admission.
+2. Add the fixed production composition root and concrete adapters for all 34 stages, including subordinate-journal binding, exact-preview/provider/receiver observations, migration/n8n reconciliation, VPS snapshot restoration, rollback acceptance and atomic final release record.
+3. Wire the same-command `--release` resume path only after every adapter is concrete and adversarial crash/replay tests pass.
+4. External owners must have Supabase execute the protected ACL package, restore Vercel deployment capacity, and configure both GitHub receiver settings before the guarded command may advance.
+
+## 2026-09-11 — finish guarded acceptance composition
+
+1. Preserve the journaled VPS cutover and protected runtime epoch binding. Complete its fixed composition only after exact-head review; do not invoke it while provider, preview and receiver gates remain red.
+2. Implement a narrowly scoped post-merge acceptance permit so exactly six bound read-only tasks and their worker claims can run while global admission remains HELD. It must be single-use, expiring, principal/task/capability/generation bound and replay-safe. Do not temporarily publish OPEN.
+3. Add the remaining fixed production observers and adapters: provider ACL postcondition, exact preview plus receiver audit, n8n transition/continuity, production migration client, convergence and production acceptance. Then expose one protected-input `--release` command using the existing 34-stage journal.
+4. Supabase provider execution, Vercel account restoration and the GitHub receiver URL/token remain external. Keep them frozen while internal acceptance machinery is completed.
+
+## 2026-09-11 — continue after receiver authority propagation
+
+1. Finish exact-head verification for the receiver-authority tranche. Preserve the single-use durable permit, API-only consumer credential, bounded route input and binding echo; do not restore bearer/workspace-only acceptance.
+2. Run the authority-required v5 collector against an exact-SHA candidate and then the live deployment. Close the remaining deployed-route, application-owner, mutation-attempt and process-wide egress witnesses before changing `livePass:false`.
+3. The mandated recovery SHA `2c0b600c268faa0571f08322e16d7f81f37789be` is authority-incompatible. Seal an approved authority-aware recovery target or a governed all-route sidecar; do not weaken current receivers for compatibility.
+4. Wire the remaining native lifecycle, rollback, collector, n8n, migration, protected merge, same-SHA deployment and smoke stages into the guarded commander. Keep it fail-closed while any gate is absent.
+5. Owner/provider action remains required for the Supabase ACL and Vercel deployment enablement. Do not represent either as internally cleared or as the sole blocker.
+
+## 2026-09-10 — continue after held lifecycle preparation
+
+1. Preserve the HELD-only journal and native process observer. Finish production lifecycle serialization including automatic systemd restarts, protected start authority, health/readiness and gated opening; do not treat injected disposable starts as production acceptance.
+2. Complete deployed build-manifest provenance and historical route closure, then independently establish denial before dispatch. Sanitized route metadata and HTTP404 remain insufficient.
+3. Finish production fixed recovery acceptance, actual two-principal owner isolation, collector mutation-attempt/egress witnesses and remaining writer/migration/n8n/merge/deployment adapters. Keep release fail-closed until every gate passes.
+4. Retain exact-head CI and refresh preparation/backup before activation. Owner/provider must submit the verified Supabase ACL request/archive if not already submitted and retain approved execution evidence. Provider action alone does not unblock the full release.
+
+## 2026-09-09 — continue after HELD-only admission tranche
+
+1. Preserve the reviewed durable admission primitive and exact-head evidence in the checkpoint. Keep canonical production services stopped until all activation prerequisites pass.
+2. Implement lifecycle-serialized held activation and a guarded opening adapter; prove actual production-role/run/generation bindings, no admission across lifecycle changes and safe crash/replay behavior. The HELD-only CLI cannot open intake.
+3. Finish authoritative historical routing containment, production recovery pairing/acceptance, complete collector observations and real release adapters. Then execute real two-principal and provider-dependent proof under the prescribed gates.
+4. Owner/provider: submit the verified ACL request and archive if not already submitted, record the ticket and approved execution evidence. Support submission remains unverified; do not retry ownership escalation.
+
+## 2026-09-09 — continue beyond integrated recovery
+
+1. Preserve the integrated fixed recovery process/HTTP witness. Remaining rollback work is production build and installed dependency integrity, secure external intake/route containment, real owner policies and production supervisor fencing; do not repeat the green synthetic six-read path without a relevant change.
+2. Implement the durable release hold across public API intake, direct library admission, atomic worker claims and outbox delivery. Serialize hold publication with admissions/claims or require stopped/drained transitions; bind opening to the observed run, SHA and both generations. Emergency stop is not a substitute.
+3. Wire held activation and remaining real writer, migration, n8n, merge and deployment adapters into the existing protected release journal. Complete real-principal and all-owner/attempt/egress collection before production acceptance.
+4. Finish repeated historical/immutable routing authority evidence. Retained null protection metadata, inaccessible alias targets, 404/410 and path canaries do not establish all-path denial.
+5. Preserve the verified provider package. Owner submission/execution remains external; internal engineering remains actionable. Re-pin packages and reverify exact-head CI after each reviewed source tranche; never merge PR125 on CI alone.
+
+## 2026-09-08 — integrate the remaining release controls
+
+1. Finish independent review, commit this tooling tranche, push only release/zola-production-live and verify exact-head CI. Preserve additive main eb3f5d1 changes. Re-pin source-bound preparation packages after the final commit.
+2. Run the reviewed exact-path routing canary through the protected maintenance workflow and reconcile any unknown mutation before further routing changes. Canary coverage alone is never direct-URL authority denial.
+3. Complete production read acceptance with authoritative division mutation/owner-policy evidence and complete reviewed egress scope. The new collector CLI refuses unsupported full live PASS; its dry-run opens no credentials/database/network.
+4. Integrate the guarded migration executor, actual-kernel activation-profile builder and measured disk gate into a durable release commander; finish protected configuration installation and n8n mutation reconciliation. Keep production inactive while prerequisites are red.
+5. Preserve the reviewed provider package and unchanged n8n credentials/workflow. Provider action remains required, but independent engineering remains and autonomous work is not complete. Never merge PR125 on CI alone.
+
+## 2026-09-07 — protected package correction and routing discovery
+
+Re-run the protected migration CLI at the next clean committed head with the separate bounded metadata reader, then re-pin n8n using the existing unused credentials. Canonical CI is green at 5ff763f; reverify the next exact head. Inspect the new project-routing inventory observation; deployment/alias/domain enumeration is complete at 5ff763f, but firewall404 and bypass402 do not establish denial or absence of all alternative controls. Secure legacy authority containment, production six-read collection and final orchestration remain unfinished. No live activation, database migration or PR merge is permitted while release gates are red.
+
+## 2026-09-07 — current-head engineering continuation
+
+1. Preserve the completed scoped writer proof; its implementation remains unchanged. New frontend read-helper changes require their own frontend/full regression and exact-head CI evidence.
+2. Use the resolved protected n8n package and TLS-verified configuration under `n8n-current-74ae0e00-192c-4f82-ada6-ed2099bcb151`; re-pin its release SHA after commit. Never recreate its unused credentials or publish before ACL, writer gateway readiness and caller continuity.
+3. Use `scripts/prepare-buyer-migration-package.js` to create a new protected exact-HEAD package after commit. Never apply provider-owned SQL through this command. Production role provisioning, writer E2E, read acceptance and application migrations remain gated.
+4. Run and review the new read-only Vercel protection inventory at the pushed head. Finish separately retained authenticated rollback intake and prove all immutable/alias/domain direct POST denials; inventory or WAF presence alone is not acceptance.
+5. The executable offline six-read command is `bash scripts/with-node.sh scripts/zola-six-read-offline.js`. Its fresh SQLite dispatcher and actual six route contracts pass, but the production collector, real process-generation ownership and authoritative live attempt observer remain unfinished. Do not promote offline evidence into live PASS.
+6. Reconcile zero existing Nexus contacts and limited authenticated owner witnesses with the final live acceptance contract. The protected IDs-only witness manifest contains actual data; do not generate production fixture rows merely to obtain nonempty output.
+7. Recheck disk after cleanup: 7,300,689,920 bytes was free; another 1,289,244,672 usable bytes reaches 8 GiB. No other large disposable candidate is proven. Preserve all retained evidence and recovery artifacts.
+8. Provider support request remains ready/unsent. Finish guarded post-provider orchestration after actual rollback/read controls are established. All live gates remain red; PR125 stays open/unmerged.
+
+## 2026-09-07 — after actual scoped activation
+
+1. Preserve exact `8645ab2` scoped activation, official Node ownership and cleanup proofs. Actual API/worker startup, three committed activations, five-table writer/reconciliation, API/worker stale-binding rejection and seeded-state preservation now pass; do not repeat absent a relevant runtime change. Stale task-result rejection and real six reads remain separate acceptance witnesses.
+2. Finish secure retained Buyer admission for immutable rollback `2c0b600` and prove denial of all legacy direct deployment POST entrypoints. Its unauthenticated webhook and unfenced admin failure updates are not repaired by provider ACL. Rollback pre-ACL acceptance is not yet PASS.
+3. Finish the contained six-read lifecycle owner and authoritative observers, persist submission identity before sending once, and resolve real authorization/owner witnesses. Do not execute the rejected temporary harnesses.
+4. Resolve actual authenticated gateway and distinct n8n credential references, generate the exact candidate and validate isolated Cloud execution. Live n8n is unchanged; the existing actual package has requirements only.
+5. Keep the reviewed provider request ready for owner submission. Prepare the exact guarded combined migration transaction and post-provider release command; use connected Supabase access rather than inventing a direct database credential path. Provider approval alone does not close remaining engineering gates.
+6. Recheck approximately 5.75 GiB free and preserve installed uv tools and protected state. Finish review/checks/commit/push and exact-head CI for this evidence update. Merge only with every original gate green.
+
+## 2026-09-07 — after combined migration and baseline lifecycle proofs
+
+1. Preserve the new 30-group combined migration evidence and actual current/recovery baseline lifecycle results; do not repeat them or label them full scoped activation.
+2. Complete actual scoped-writer activation with disposable TLS PostgreSQL, secure immutable rollback intake and the contained six-read collector/observer. These are still autonomous engineering work; provider ACL is not their sole remaining dependency.
+3. Use `scripts/prepare-buyer-workflow-package.js` with an explicit protected configuration. Resolve actual gateway and distinct credential references before generating a candidate; validate Cloud execution separately. Keep the live workflow unchanged while prerequisites are red.
+4. Obtain provider execution through the existing exact unsent request, and a READY exact-SHA frontend pairing. Preserve all original release gates. Root partition has no unused trailing extent; online partition/ext4 growth is possible only after provider disk expansion. No resize or further deletion was performed.
+
+## 2026-09-07 — provider boundary verified; minimum disk headroom recovered
+
+1. Use the reviewed `ZOLA_PROVIDER_ACL_REQUEST.md` for the precise owner/provider submission. Fresh catalog equals the approved baseline, but current postgres cannot execute owner-granted net ACL changes. Do not retry or escalate this established boundary.
+2. Preserve the safe cleanup evidence. Latest measured 2.404 GiB exceeds the minimum release budget; recheck actual free space and account for concurrent growth before any startup/deployment. Keep installed tools and all protected/session/repository state.
+3. Continue the actual isolated supervised API/worker proof, secure immutable rollback intake, isolated n8n Cloud validation and safe six-read harness. Follow `ZOLA_POST_ACL_ACCEPTANCE_SEQUENCE.md`; do not claim these are complete or blocked solely by ACL.
+4. Obtain a READY frontend deployment for the exact accepted candidate. The db9b825 deployment is CANCELED despite GitHub's green status; do not treat it as paired acceptance evidence or redo prior receiver verification.
+5. Keep canonical activation, reviewed production migrations, live continuity, merge and same-SHA cutover subject to every original gate. Complete independent review/commit/push and exact-head CI for this documentation/evidence increment.
+
+
+## 2026-09-07 — after isolated provider ACL rehearsal
+
+1. Finish independent review and required checks for the local ACL generator/rehearsal and environment-validator increment. Commit and push only after review, then verify CI for the resulting head.
+2. Use the concrete unsent provider request and protected transaction package for authorized Supabase review/execution. Do not bypass provider ownership; reject any catalog drift. Production remains unchanged.
+3. Finish the isolated supervised API/worker launcher and actual activation proof, then secure n8n integration, immutable rollback intake continuity and six real reads as their prerequisites permit.
+4. Obtain safe deployment disk headroom. Preserve protected and unrelated state; the current approximately 2 GiB remains below the release budget.
+5. Retain all original production activation, migration, continuity, merge and same-SHA cutover gates.
+
+
+## 2026-09-07 — finish root activation and remaining release prerequisites
+
+1. Preserve the local activation implementation. The independently reviewed synthetic commit-marker termination proof passes. Complete the isolated launcher, including real path validation and both roles' environment checks before either supervisor starts. The protected root CLI is implemented, but complete actual activation is unverified. Keep the reviewed production supervisor unchanged. Then prove actual publication with the real supervised API/worker in an isolated production-profile fixture.
+2. Full regression passes 1,530 tests with zero failures and nine skips across 132 completed files; build/lint/typecheck/security/memory checks pass. Finish independent staged diff review, commit/push and exact-head CI for this activation increment. Committed API head `4f188c6` has all five checks green; that does not validate these later changes.
+3. Prepare and rehearse the concrete provider-authorized PUBLIC ACL replacement transaction. Preserve existing consumers and do not bypass provider ownership. Complete actual secure n8n replacement and immutable `2c0b600` Buyer intake continuity.
+4. Finish the safe paired six-read supervisor and actual acceptance. Disk remains below the release budget despite the audited cache cleanup to approximately 1.99 GiB free. Preserve all protected and unrelated state.
+5. Keep canonical activation, production migrations, merge and cutover held until every original release gate passes.
+
+## 2026-09-07 — complete activation approval and production prerequisites
+
+1. The API integration full root regression passes 1,478 tests with zero failures, nine skips and all 119 files contained. Build/lint/typecheck/security/audit/memory checks pass; finish independent final diff review, commit/push and exact-head CI. The previous runtime head `0005168` is CI green; it does not validate this local API delta.
+2. Implement the root activation-binding publisher with exact supervisor/child executable identity, generation, cgroup and current base readiness checks. Publish only a protected new inode, refuse existing bindings, and recheck after publication with exact-inode cleanup on failure. The API mount now initializes explicitly and stays unavailable without valid approval; no production configuration is enabled.
+3. Prepare and rehearse the provider-authorized ACL transaction that preserves existing consumers while removing PUBLIC extension authority from the writer identities. Current postgres authority cannot revoke provider-owned grants; do not bypass that boundary.
+4. Validate actual secure n8n execution and coordinated caller replacement. Complete secure Buyer intake on immutable rollback `2c0b600`, then finish the safe paired six-read supervisor and real acceptance. Keep every activation, migration and merge gate.
+5. Recheck disk and prove safe deployment/backup headroom. Approximately 1.6 GiB remains free; preserve unrelated and protected state. No additional cleanup occurred.
+
+## 2026-09-07 — runtime integration remaining
+
+1. Frontend cc2702e is committed and exact-head CI green. Dedicated PostgreSQL pools, real TLS/lock-timeout acceptance and fresh release packaging now pass isolated validation. The full root suite passes 1,436 tests with zero failures, nine skips and all 109 files contained. Finish final memory/security/diff review, commit/push and exact-head CI.
+2. Mount the writer with authoritative health/readiness/emergency-stop checks and an expected worker generation supplied by controlled activation evidence. Preserve separate protected credentials and close initialized pools on startup/shutdown failure. No production configuration is enabled.
+3. Prepare and rehearse a provider-authorized ACL transaction preserving existing consumers while removing PUBLIC extension authority from the dedicated writer identities. Current postgres authority cannot revoke the provider-owned grants; do not bypass that boundary.
+4. Validate actual secure n8n Cloud execution before replacing the legacy workflow. Complete immutable rollback intake continuity and safe paired six-read acceptance; retain every original activation/migration/merge gate.
+5. Disk remains roughly 1.6 GiB free. Preserve unrelated/protected state; no additional deletion has occurred and deployment headroom is not green.
+
+## 2026-09-07 00:22 UTC — next writer integration steps
+
+1. Source-acquisition31c14e3 is exact-head CI green. Legacy sources, static approval manifest and explicit virtual Mecklenburg policy pass independent review and 24 focused groups; their full suite passes 1,394 tests with zero failures and all checks pass. Finish reviewed commit/push/new-head CI, then bind captured acquisition criteria and lifecycle fencing in transactional issuance, mount authenticated frontend/runtime composition and validate actual secure n8n execution.
+2. Implement authenticated issuer/intake and canonical source policy while preserving sweep beta and admin route entitlements. Connect secure n8n HTTP nodes only after coordinated caller/rollback continuity is proven. Do not expose per-job permits through saved executions or browser responses.
+3. Finish secure Buyer intake compatibility for immutable `2c0b600`, repair acceptance supervision and obtain actual owner/cross-owner evidence. No legacy unauthenticated intake may gain privileged write authority.
+4. Recheck disk and budget release/backup space. Current approximately 3.24 GiB is below preferred deployment headroom; preserve tools and protected state.
+5. Keep original activation, migration, six-read, CI and merge gates. Isolated writer proof does not authorize claiming production continuity or functional rollback.
+
+## 2026-09-06 23:17 UTC — continue writer implementation from reviewed protocol
+
+1. Preserve `packages/buyer-writer/protocol.js` and its seven isolated regression groups; this unmounted increment grants no production authority. Implement private PostgreSQL dispatch/receipt ledger and least-privilege routines, with transactional owner, expiry, generation, provenance and idempotency checks. Capture the real authenticated frontend operator before `after()` and before county fetches; default-user fallback is not permit authority.
+2. Implement secure n8n ingress and HTTP credential references consistently across nine write sites. Verify original backup immediately before live mutation; validate isolated five-table success and browser/cross-owner/error denial before publication. New writer SQL is separate from the two hash-pinned reviewed security migrations.
+3. Preserve only rollback `2c0b600`; six-read task dispatch needs no source compatibility patch. Resolve authenticated Buyer intake continuity separately without weakening public ingress or changing Command permission history.
+4. Obtain existing cross-owner witness access if available; primary Command password already exists. Complete authoritative observers using supported SQL/runtime logs where sufficient. Repair the outer supervisor lock/startup/cleanup boundary, private-file validation, generation-aware shutdown, bounded logs and descendant containment before any six-read run.
+5. Disk cleanup is complete for the proven 3.03 GiB npm content cache; free 5.16 GiB. Measure release/backup space needs. No broad cache, temp, worktree or artifact deletion to chase 8–10 GiB.
+6. Keep canonical activation, production migrations and PR125 merge held until every original release gate passes. Existing 9d2512e CI is green; reviewed local protocol changes need new-head CI after push. Continue from `/tmp/zola-astra-activation-current.md`; autonomous work is not complete.
+
+## 2026-09-06 22:40 UTC — restored-access activation sequence
+
+The n8n access and Supabase dated-backup/Restore-control blockers are resolved. Do not repeat quota, provider or Vercel recovery. The current protected snapshot and exact writer map are in `docs/ZOLA_N8N_ACCESS_RESTORED.md`.
+
+1. Resolve secure Buyer dispatch compatibility with ONLY rollback `2c0b600`: paused new Buyer intake on rollback requires an explicit operational decision. Do not accept legacy unauthenticated calls into privileged writer operations.
+2. Implement and independently test the owner-authorized job-scoped writer gateway, secure n8n ingress/HTTP credentials, fixed-operation routines, atomic receipts and generation fencing. Existing web owner authorization can issue workload permits without adding command permission history. No n8n mutation until snapshot, proven rollback method, reviewed implementation and isolated tests satisfy the user's gates.
+3. Preserve amended Buyer migration digest `61baa67314a77d4fa0f0b587821de9216dfa0220d1bb9e22b2808bc2002ae01e`; independent synthetic rehearsal passes, but exact-version/schema and actual dedicated-writer tests remain required. Both production migrations stay unapplied.
+4. Obtain protected real owner/cross-owner sessions and authoritative receiver/database/Storage/provider observations. Current SQL settings log DDL only, statement-duration logging is disabled and pgAudit logging is none; counters and unchanged snapshots alone cannot prove zero mutation attempts. Run the six actual reads only through the exact candidate pairing and reviewed supervision.
+5. Resolve read-only disk audit recommendation: approve only the regenerable npm content cache cleanup after active-install check, then verify at least 5 GiB free and a measured deployment/backup budget. No bulk /tmp, worktree, artifact, backup or runtime cleanup.
+6. Only after recovery, writer, full migration rehearsal, functional rollback, provider/authority, fresh backup and disk gates pass: canonical API health, worker generation readiness, six reads; reviewed migrations and immediate checks; exact-head CI/review/merge of PR125; frontend and VPS deployment of the same NEW_MAIN_SHA; live smoke.
+
+## 2026-09-06 16:09 UTC — Supabase quota cleared; recovery and writer gates remain held
+
+Fresh exact-path probes at 16:09:35 UTC confirm authenticated canonical `/auth/v1/settings` HTTP 200 and public production `https://blackspirehelix.com/api/auth/status` HTTP 200 with `{"ok":true,"authConfigured":true,"bootstrapRequired":false,"operator":null}`. Direct Auth settings without an API key returns expected HTTP 401: `{"message":"No API key found in request","hint":"No `apikey` request header or url param was found."}`. None contains `exceed_storage_size_quota`. Authentication used the existing active anon API key obtained through authenticated management; this is API-key Auth-settings health, not an end-user login test. Earlier quota/Free-plan blockers below are superseded.
+
+Live management confirms canonical project `kchtrvfcixnimvxxctkj`, `blackspire insight`, ACTIVE_HEALTHY, organization `cfqfpnhjhpqjvtzgezrx` / Blackspire Helix Group, now PRO. Official backup documentation establishes PRO daily-backup capability and seven-day retention, but an actual dated project recovery point and successful isolated restoration remain UNVERIFIED. Available connectors expose no backup inventory/export operation; no canonical database profile, Management API token or recovery artifact was found in the scoped operator/configuration locations. Existing SQLite backups are not Supabase backups. Recovery procedure and safe rollback remain documented in `docs/ZOLA_REMAINING_GATE_PREPARATION.md`.
+
+Fresh READ ONLY migration-history query returns no versions `20260904201014` or `20260904223151`; both reviewed Buyer/Nexus files retain their recorded SHA256 digests and remain unapplied. Historical n8n management returns HTTP 404, “No workspace here”; actual workflow/writer, protected version, executions and authorized server identity remain UNVERIFIED. Secure recovery access/artifact and actual n8n management access are still required. No migration, service activation, provider login, receiver rework, webhook or six-read task was performed. Remaining live activation is blocked on recovery, writer reconciliation and authoritative acceptance witnesses. Sanitized probe evidence: `/tmp/zola-quota-recheck-20260906.json`.
+
+## 2026-09-06 — Final gate continuation; exact acceptance pairing prepared
+
+Recovered clean expected release/PR head `464f05fde73f7a213d6d833b581ef89071a098b2`; remote main remains `53adf74e05c607c0d296923bae05d7ac023ecb57`. Parent and independent review confirm PR #125 OPEN with all five checks successful and exact-head CI `34002197446` successful. No application source changes, new PR, merge or canonical activation occurred.
+
+The isolated production recovery profile now explicitly pairs all four division transports to the existing frontend deployment at exact `2c0b600c268faa0571f08322e16d7f81f37789be`. The prior profile is privately preserved; parent verified only the four URL keys changed and canonical protected fingerprints remain unchanged. Inherited boot/generation proof remains PASS; this newly paired profile has not executed the six reads. Functional rollback remains NO. Canonical API/worker remain inactive/disabled/PID0 with the forbidden retained pointer unchanged.
+
+Fresh authenticated Supabase at 08:10:07 UTC still returns 402 `exceed_storage_size_quota`; public Auth returns 500/upstream 402, independently confirmed by parent. Current n8n management remains unavailable, with historical endpoint 404 and no successor/access found. Current writer, execution history, protected version and replacement identity remain UNVERIFIED. Owner quota/recovery and actual n8n management access remain required. Six reads remain NOT RUN; security migrations and merge stay held. Detailed continuation and local evidence paths are recorded in `/tmp/zola-astra-activation-current.md`.
+
+Continuation preparation now records exact recovery ownership, migration/rollback procedures, service-lifetime containment and additional Storage mutation observations in `docs/ZOLA_REMAINING_GATE_PREPARATION.md`. Fresh 08:31:58 UTC dependency checks remain blocked; no live reads or activation occurred.
+
+## 2026-09-06 — Post-login provider recovered; production acceptance held
+
+The protected provider login is now verified HEALTHY under both API and worker identities. Each passes the exact contained authenticated provider probe and full production environment preflight, including credential, provider and WebSocket checks. The previous expired-login blocker is superseded; no further login or failover is required from this evidence.
+
+Recovered clean release/remote/PR head `8d1582073e0c7ccc33e690db9fbde4e96b3ad88f`; main remains `53adf74e05c607c0d296923bae05d7ac023ecb57`. PR #125 is open with exact-head green validation and remains unmerged. Prepared identities, API-only password separation, eight caller settings, six grants, current authority integrity and fresh protected backup pass. Canonical callers still target public main, so complete six-read acceptance requires explicit pairing to the current candidate frontend.
+
+The nine-file rollback remains REJECTED. The recommended replacement candidate is exact reviewed `2c0b600c268faa0571f08322e16d7f81f37789be`, with ZERO source delta, packaged by the existing immutable release flow. The artifact is created and verified; all 190 packaged files match source and actual authorization modules accept current history and twelve permissions. Independent security tests pass 57/57, root/frontend audits report zero vulnerabilities, and separate disposable composition tests pass 99/99. This is same-source recovery for artifact/configuration failures, not an independent escape from shared application defects. It remains FUNCTIONALLY VERIFIED: NO, and six real reads remain NOT RUN.
+
+Fresh authenticated Supabase still returns HTTP 402 `exceed_storage_size_quota`; public auth returns 500/upstream402. Recovery evidence remains unavailable. Historical n8n management still returns404; current workflow, writer, executions and protected rollback version remain unverified. Owner actions are quota/recovery access and actual n8n management access, not provider login. No webhook, security migration, paid Nexus operation, enrichment or merge occurred.
+
+Detailed exact-source evidence and six-read acceptance requirements are in `docs/ZOLA_POST_LOGIN_ACTIVATION.md`. A separate persistent production-mode rehearsal now PASSES actual API -> health -> worker -> current-generation readiness -> stopped-worker rejection. The protected copy fenced 42 queued subtasks, preserved outcome_unknown without replay, revoked copied sessions and remapped workspace paths; emergency stop stayed active. Both hardened rehearsal services stopped cleanly, cgroups/listener are absent, and canonical files plus copied authority/queues/sessions remained unchanged. This proves isolated boot and generation gating, not six reads or functional rollback. Canonical units remain inactive/disabled/PID0 with forbidden retained608 pointer unchanged.
+
+## 2026-09-06 — Nine-file rollback composition rejected
+
+Recovered clean local/remote/PR #125 head `f11b31ef9f4a3926d45d754892454983972b42e8`, with main unchanged `53adf74e05c607c0d296923bae05d7ac023ecb57`. Established Vercel receiver parity and release application validation were preserved, without redoing deployments or capability implementation.
+
+The exact nine-file recovery proposal (266 additions/47 removals; SHA256 `d5954c65b757db5381551a121e24aaa21ab2512b76762d10abca3df73029ab66`) is REJECTED as a production rollback composition. Every-file necessity and behavioral scope are recorded in `docs/ZOLA_NINE_FILE_ROLLBACK_AUDIT.md`. A fresh isolated main archive plus only that patch passes root lint/typecheck/build and frontend deterministic install/lint/TypeScript/production build, but parent independently reproduces three cancellation failures, three Buyer report ownership failures and three route-authorization source-contract failures. Frontend audit reports eight high, two moderate and one low vulnerability. The earlier118 selected passing tests were insufficient to establish full composition safety. Omitted Telegram fail-closed protections are an additional source finding. No accepted rollback SHA or immutable artifact was created, and no approval to adopt this unsafe proposal is requested.
+
+A fresh read-only canonical authority backup, `command-20260906T000335Z.sqlite` under `/var/backups/blackspire-command/zola-nine-composition-20260906`, passes checksum, integrity and candidate schema verification. Actual candidate authorization modules accept current versions1/2, the valid grant chain and all12 permissions on the copied snapshot. This proves compatibility without a migration, not successful boot. The backup SHA256 is `674fab68506ccfd8627917314e3ee38a52150103f9086e8446ab1b105238d46c`.
+
+Fresh dependency evidence remains unchanged: authenticated Supabase returns402 `exceed_storage_size_quota` on the canonical Free organization; public auth returns500/upstream402; current n8n management/writer/recovery access is unavailable; provider credentials remain expired and unchanged sinceAug24. Exact owner login command remains `sudo /var/lib/blackspire-operator/login-codex`; no refresh loop or login process was started. Both canonical roles remain inactive/dead/PID0 with prepared identities and API credential separation preserved. No migration, webhook, grant mutation, paid Nexus call, enrichment write, outreach, public runtime activation or merge occurred.
+
+Real API/worker boots, generation-fenced readiness and six real reads remain unproven and cannot be replaced by synthetic tests. Before any future copied-state worker rehearsal, fence all executable copied work and remap workspace paths, while preserving authority history. A fully reviewed release-derived recovery composition is a possible next engineering direction after dependency recovery; it is not selected or approved here. Current recovery state is maintained in `/tmp/zola-astra-activation-current.md`.
+
+
+## 2026-09-05 — Timeout recovery and receiver deployment parity verified
+
+Recovered canonical PR #125 without discarding inherited work or creating another branch/PR. The completed supported prebuilt operation `33999369616` passed on `2c0b600c268faa0571f08322e16d7f81f37789be`; exact-head CI `33999371203` also passed. Candidate `dpl_7z57bqJfHf9QJeRGjg9wmpX4SbBF` is READY at that release SHA. Production `dpl_6o7u5qxfvJNR1AS9SKXuo3N9kgzM` is READY at unchanged main `53adf74e05c607c0d296923bae05d7ac023ecb57`. Parent independently resolved the canonical production alias and verified both candidate and public production: paired token/workspace reaches input validation with HTTP 400 for limit zero; wrong token and wrong workspace return HTTP 404 JSON. These probes make no database queries. All four scoped receiver settings remain paired. Receiver configuration and deployed auth parity are complete; six real data reads are not claimed.
+
+The operational helper uses pinned CLI 59.11.7, ordinary isolated exact-SHA clones with verified genuine GitHub origin, credential-free dependency installation, a local-only reinstall suppression, private drained logs, contained artifact symlinks and digests, fresh Git/production identity fences, candidate-first acceptance, nonsecret upload recovery identifiers, and bounded terminal-state polling. Global project settings, ignore rules, author identity and generic preview configuration are unchanged. Twenty-four focused operational tests pass, with independent reviews and memory/secret/whitespace checks. Prior application validation remains 1,317 total, 1,308 passed, zero failed, nine expected skips, 89 completed files and clean containment; no additional local full trusted run was needed for this operational continuation. Initial preparation failures and the CLI worktree-provenance defect are resolved; the earlier Vercel account block is not a remaining external action.
+
+Fresh authenticated Supabase evidence still reports HTTP 402 `exceed_storage_size_quota` on the canonical Free organization; public production auth still fails with upstream 402 after rebuild. Provider credentials remain unchanged and expired; user action is `sudo /var/lib/blackspire-operator/login-codex`, then both role provider paths require verification. Historical n8n management returns 404, so actual writer, executions, replacement authority and protected rollback version remain unverified. Supabase quota/recovery access and actual n8n management remain external. Reviewed Buyer/Nexus migrations remain unapplied. Prepared API/worker identities, API-only password profile, eight caller settings, six grants and protected snapshots are preserved. Both canonical services remain inactive/disabled with PID zero; the incompatible retained VPS pointer must not be started.
+
+Rollback A (unchanged main) accepts post-v2 authority history and all twelve permissions but fails functional six-read requirements. Rollback B (the exact three-file Buyer-only patch, 152 additions/9 removals) passes nine selected Buyer tests and preserves other main source, but leaves Deal read mutations and Nexus argument loss. Parent reproduced the actual Deal helper's two synthetic mutation calls and the dropped Nexus ID. Neither A nor B is a safe six-read target. A separate wider proposal, `/tmp/zola-proposed-recovery-wider-delta.patch` and `.md`, contains nine files with 266 additions/47 removals covering the necessary Buyer/Deal/Nexus contracts, receiver/helper and dispatch dependencies. It passes 118 isolated tests; parent reran 91 and all six adapter payload probes. Its full security composition, build and real runtime/provider rehearsal remain unproven. It is a reviewable scope proposal, not an approved or functionally verified rollback target. Preserve immutable main and obtain the deliberate broader-scope decision before selecting a replacement. Retained `608b10…` and `b71c9c…` remain forbidden.
+
+No canonical VPS activation, Supabase migration, n8n invocation, paid Nexus call, enrichment mutation, outreach, merge or release cutover occurred. The production frontend rebuild retains main's source SHA; VPS remains inactive. Current heads, exact deployment evidence, external actions and recovery instructions are in `/tmp/zola-astra-activation-current.md`.
+
+
+## ZOLA continuation critical path (2026-09-05 UTC)
+
+1. Local trusted validation and independent review pass for the narrow Deal exact-ID/failure and Buyer deterministic-limit corrections; push only the existing release branch/PR #125, then verify exact-head CI and the new audit-only receiver workflow. The existing runner Vercel credential is verified, and missing-only synchronization created and verified all four production/release records. Parent can now run the reviewed pinned rebuild operation without requiring new user access. Audit equality alone is not deployed receiver acceptance.
+2. Owner clears the Supabase organization quota and securely makes recovery evidence or DB access available. Owner completes `sudo /var/lib/blackspire-operator/login-codex` on the canonical VPS. Owner supplies management access to the actual current n8n Buyer workflow or authoritative successor. Recheck Auth and both provider-role paths, establish recovery and protected writer identity before the two reviewed security migrations.
+3. Preserve split API/worker preparation and six grants. Unchanged current-main cannot pass all six rollback reads (missing Buyer receiver and dropped match arguments); prepare a minimal recovery patch and obtain an explicit target/scope decision before claiming functional rollback. After dependency recovery and that decision, rehearse recovery and refresh backups, activate API then worker with generation-fenced health/readiness, and prove all six bounded reads. Merge #125 only with every gate closed and expected-head protection; deploy the resulting same SHA to frontend/VPS and complete production smoke without outreach or paid Nexus activity.
+
+## ZOLA activation external gates (2026-09-05 UTC)
+
+1. Supabase organization owner clears storage quota and makes a verifiable recovery point or secure database backup access available. Then re-test authenticated upstream Auth and public auth status; account plan state alone is not health or recovery proof.
+2. Complete interactive Codex login with the protected VPS helper `/var/lib/blackspire-operator/login-codex`. The normal refresh was rejected with `invalid_refresh_token`. Recheck both service roles and required provider transports; do not change the provider contract or introduce failover.
+3. Provide Vercel frontend environment-management access or synchronize its internal capability token with the protected VPS token and bind the exact canonical workspace in production and candidate preview. Rebuild the candidate preview before six-capability acceptance. Caller configuration and minimum canonical grants are already provisioned.
+4. Provide management access to the canonical external n8n Buyer workflow so its active writer identity, current executions, protected rollback version, and authorized server-credential replacement can be verified. Then establish Supabase recovery and apply only the two reviewed security migrations with row-preservation and role probes.
+5. After external dependencies recover, Astra functionally verifies the prepared, authorization-compatible main recovery candidate (retained older runtimes reject the new grant history), refreshes backups, and completes controlled API/worker preparation and generation-fenced capability acceptance. Only after every gate passes may PR #125 merge with expected-head protection, followed by same-main-SHA frontend/VPS deployment and live smoke. Services remain inactive/disabled; no merge or activation is claimed.
+
+Completed preparation: role split, API-only generated password/session profile, reviewed units/log policy, protected provider access, eight caller transport settings, canonical six-permission successor grant, verified fresh pre/post authority backups, and candidate immutable artifact. No application changes require another full trusted suite. Current report: `/tmp/zola-astra-activation-current.md`.
+
+## ZOLA production-live critical path (2026-09-04 UTC)
+
+1. DONE — release implementation `df8c87c68868da1e980b8206ef65ee14a5c69047` is pushed to existing PR #125 with exact-head CI/Vercel success. Preserve the recorded trusted suite; no code changes require rerunning it. Hold merge because main automatically deploys production and recovery/configuration gates remain unmet.
+2. NEXT — the Supabase organization owner resolves the confirmed Free-plan storage-quota restriction through subscription/billing controls. Recheck authenticated upstream Auth health and frontend `/api/auth/status` after that action; no application patch is justified for the HTTP 402 account restriction.
+3. Supabase metadata access is available. Verify backup/recovery and the live n8n writer identity, then apply only the reviewed Nexus and Buyer browser-security migrations. An archived writer uses anonymous credentials and must use an authorized server identity before revocation. Verify denied browser access, retained own-job reads, and service-role capability reads after applying; do not blindly replay unrelated migration history.
+4. Before VPS activation, obtain the operator-created `COMMAND_ADMIN_PASSWORD_HASH` in the protected API-only profile and healthy private Codex service login; install reviewed split API/worker identities and configuration, configure all four division adapter transports, and provision six minimum read grants through the append-only authority chain. A fresh writer-absent SQLite backup passed checksum, integrity, and schema verification at 23:46 UTC (`command-20260904T234621Z.sqlite`); refresh it before cutover if state changes. The retained `608b10fd233a5a2a94fd0ce4cc03d73894c5694d` currently fails and cannot be used as an unverified healthy rollback.
+5. Once production target, configuration, migration/recovery, code/CI, and rollback gates pass, merge only with expected-head-SHA protection and record new main. Verify the exact Vercel production deployment, deploy that SHA to the VPS through immutable releases/Gate 4, and require generation-fenced health/readiness plus authenticated ZOLA/Hermes and six-capability smoke tests. Roll back immediately on a newly introduced P0. Telegram remains dry-run; no paid Nexus call or outreach is permitted.
+
 ## ZOLA critical path (2026-08-31 UTC)
 
 1. NEXT — branch `fix/pr120-p2s-660dfb` contains the locally validated PR #120 candidate through implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf`, followed only by the canonical-memory checkpoint. All 16 review topics are fixed or superseded in the local tree; remote PR head `660dfb63444069c734dcff50415cb84c4fd919b6` lacks the three latest P2 corrections. Nothing is pushed. The single next action is operator authorization to push the final local candidate SHA, followed by fresh exact-head CI and independent remote review.

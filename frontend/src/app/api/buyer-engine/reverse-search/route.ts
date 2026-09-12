@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { runBuyerReverseSearch, type BuyerReverseSearchCriteria } from "@/lib/buyer-engine-server";
@@ -5,6 +6,8 @@ import { runBuyerReverseSearch, type BuyerReverseSearchCriteria } from "@/lib/bu
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as BuyerReverseSearchCriteria;
     const result = await runBuyerReverseSearch(body);

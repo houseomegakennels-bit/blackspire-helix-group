@@ -1,0 +1,282 @@
+# Scoped Buyer writer
+
+This component is implemented and tested in isolation, with an opt-in canonical
+API mount. It is not enabled or installed in production, and the live n8n workflow
+still uses its previous writer.
+
+`sql/install.sql` creates a private PostgreSQL permit, sale-evidence and receipt
+ledger. The dedicated runtime can execute only the fixed write, receipt and scoped context
+routines; it cannot read Buyer tables, issue permits or assume the routine owner.
+The separate issuer is a trusted backend authority. It must receive an operator
+identity captured by the existing authenticated Buyer route, including its beta
+or admin entitlement, before asynchronous work begins. A caller-supplied owner
+UUID or a persisted job ID is not proof of authorization.
+
+`criteria.js` captures exact criteria and the untruncated database revision before
+source acquisition. Issuance compares both after locking the job and advances a
+monotonic timestamp. The trusted caller creates a fresh request UUID before the
+HTTP request; SQL uses it as the dispatch primary key and rejects duplicates.
+`issuer.js` provides separately authenticated issuance and absorbing reconciliation.
+Reconciliation never reveals a permit or replays a write: it cancels only that
+attempt and preserves terminal outcomes and successor generations. For an absent
+attempt it advances only the original matching revision; that is not a permanent
+UUID tombstone. Never refresh the revision and reuse the same attempt UUID. A
+missing attempt has no database workspace association, so its workspace authority
+comes from the configured gateway and authenticated frontend guard. `absent` does
+not set SearchJob status to failed. Caller response handling must report failure.
+Frontend guard capture and opt-in scoped dispatch compose acquisition, issuance,
+n8n transport and reconciliation. The API mount uses dedicated verified pools;
+actual live n8n integration and production validation remain required.
+
+Each five-minute permit binds a job, owner, workspace, immutable criteria and
+generation. Job locks serialize issuance, cancellation and writes. Operations
+recheck ownership, criteria, generation and expiry after acquiring the lock.
+Raw/clean provenance and lifecycle checks precede writes. Profile facts and
+report snapshots are derived inside one transaction. Duplicate operations fail;
+an uncertain network outcome must use scoped receipt lookup, never blind replay.
+Database write failures roll back effects and persist a sanitized failure receipt
+and failed job status where the database can still record them.
+
+The issuer now requires an immutable source context instead of a caller-supplied
+cash-scoring flag. It records ordered source IDs, reviewed endpoint policy IDs
+and configuration digests, source request/row/byte budgets, and an optional raw
+payload digest/count/byte count. PostgreSQL computes the context digest from its
+JSONB serialization and derives `no_cash_data` from the source flags. The installer
+removes the old boolean issuer signature; historical ledger rows are preserved,
+but context-free permits cannot write. Cumulative raw rows respect the lower
+context and frontend-payload row limits.
+
+A scoped `context` endpoint returns only canonical criteria and source policy
+references after successful start, while the same permit remains current and
+unexpired. It rechecks ownership, criteria and state after acquiring the job lock.
+`source-context.js` verifies exact UTF-8 raw JSON-array bytes before parsing or
+normalization. That raw digest is distinct from the database's context digest and
+normalized-sale provenance. Structural validation does not approve an endpoint:
+the authenticated issuer and fetch executor still need the reviewed policy
+resolver and source request/byte-budget enforcement. SQL does not prove that
+normalized rows came from the bound raw bytes; the trusted execution path must
+call the verifier before normalization.
+
+`gateway.js` authenticates separate workload and permit credentials, rejects
+duplicate credential headers, and invokes fixed parameterized statements through
+an explicitly supplied dedicated runtime connection. The caller must use bounded
+server-side statement/lock timeouts and a single autocommit statement. Do not
+provide an admin pool or wrap calls in an uncommitted outer transaction. No
+credential file, environment file, listener or database driver is loaded here.
+
+`http.js` composes these adapters into an explicitly created, initially unbound
+HTTP server. It authenticates before reading the body or checking availability,
+matches only the fixed operation/receipt/context and optional issuer routes, bounds bodies and sockets,
+and checks availability again after body collection. Disconnected database
+operations retain their admission slot until settlement. Its availability hook
+is not atomic fencing against a separate authority database. Deployment must
+still provide the dedicated database pool, authoritative stop observation,
+private listener/TLS ingress and bounded database connection/query timeouts.
+
+`normalize.js` preserves the existing county field conversions and removes
+ownership fields from the returned sales. ISO timestamps now retain their source
+calendar date, matching PostgreSQL date input; epoch-based county conversions
+already produce UTC dates. Date-only filtering is independent of host timezone.
+Invalid dates and non-finite prices cannot be laundered into accepted writes.
+`plan.js` validates the entire ordered write sequence before sending it, including
+the exact eligible clean set, row/chunk/byte limits and detached payloads. Exact
+duplicate rows reject the entire plan; this intentionally prevents legacy
+duplicate counting rather than silently merging overlapping source records.
+The SQL layer independently repeats authorization, provenance and lifecycle
+checks. These helpers do not establish source-context authorization themselves.
+
+`n8n-workflow.js` builds an offline replacement definition without reading the
+old export or credential values. It references separate secure ingress/writer
+credentials, authenticates the webhook, verifies bound bytes, bundles the pure
+helpers for Cloud Code nodes, and sends fixed HTTP operations through a sequential
+receipt loop. Known pre-write verification failures produce a scoped failure
+operation; only a complete matching receipt sequence permits success. Redirects,
+automatic retries, execution saving and pinned data are disabled. This is not a
+published workflow or proof of actual Cloud execution/item linking.
+
+The candidate accepts only frontend-prefetched payloads, capped at 6 MiB decoded
+and transported as canonical base64, and requests a 90-second execution timeout.
+The trusted issuer must apply the same limits before issuance. County fetching
+must be moved into the bounded authenticated server path first. Workload timing,
+Cloud execution and timeout reconciliation remain required: transport/context
+errors can leave a processing job with an unknown outcome and require scoped
+receipt lookup rather than blind replay. Saving controls do not establish absence
+from all transient Cloud storage. The returned definition includes empty pinData;
+publishing must use the current management API's accepted projection and verify
+actual pinning/settings rather than assuming export shape equals update shape.
+
+`source-http.js` supplies an unmounted bounded county transport. Trusted endpoint
+policies fix URL, method and configuration digest; callers supply only an endpoint
+ID and adapter parameters. It pins vetted public IPv4 answers while retaining TLS
+hostname verification, uses an owned agent without environment proxies, and
+rejects redirects, HTTP/provider errors, compression, malformed JSON and truncated
+bodies. Request counts include failed attempts; response bytes and monotonic
+elapsed deadlines cover acquisition. Outgoing query/body and response headers
+have separate per-request limits. Form requests retain the existing fixed user
+agent; Forsyth's fixed tenant header is supported. There are no automatic retries.
+
+Six isolated mocked-transport groups verify these controls. They do not prove a
+real TLS exchange or deployed SSRF protection. The pure factory in `frontend/src/lib/buyer-source-adapters.ts` now supports
+injected source/transport callbacks while the current trigger preserves its legacy
+composition. The scoped composition still needs exact reviewed endpoint policies,
+response-shape/row limits,
+and final 6 MiB payload enforcement. Strict HTTP failure intentionally replaces
+legacy partial acquisition after failed Forsyth detail calls.
+
+The installer is separate from the already-reviewed Buyer/Nexus migrations. It
+does not provision login passwords or revoke the legacy browser grants itself.
+Its managed installer needs CREATEROLE, ownership of the five Buyer tables and
+schema creation authority. The NOLOGIN routine owner has only the required
+public column grants. PostgreSQL 17 creator ADMIN membership is accepted only
+for the trusted installer; runtime and issuer cannot inherit or assume other
+roles. Unexpected namespaces, role privileges and reachable external privileged
+functions are rejected. Future privilege drift still requires operational audit.
+Ordinary PUBLIC database facilities are not claimed to be completely revoked.
+
+Run the isolated database acceptance with Node 22.23.1 and Docker:
+
+```bash
+env -i PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin \
+  BUYER_WRITER_TEST_IMAGE=postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94 \
+  node scripts/test-buyer-writer-postgres.mjs
+node --test tests/buyer-writer-protocol.test.js tests/buyer-writer-gateway.test.js tests/buyer-writer-http.test.js
+node --test tests/buyer-writer-plan.test.js tests/buyer-writer-source-context.test.js
+```
+
+The image must already be pulled. The harness uses PostgreSQL 17.6, synthetic
+records, the exact reviewed Buyer restriction migration, and a non-superuser
+CREATEROLE installer. It has no network, host mounts or production credentials.
+Its private container data is tmpfs; cleanup removes only its verified container.
+One group sends actual loopback HTTP through the gateway into the dedicated
+database login, using test-only prepared psql calls, and verifies all five tables.
+The fixture matches the exercised Buyer column and unique-key semantics, but is
+not a full production database restore or the complete Nexus rehearsal.
+
+Before deployment, finish the real supervised activation rehearsal, secure n8n HTTP
+credentials and actual execution validation, provider-authorized extension ACL
+changes, and the immutable rollback intake bridge.
+Keep the old protected workflow snapshot available. Do not switch the live
+workflow until its callers and the new writer have a reviewed coordinated path.
+All release gates, including actual six-read acceptance, remain required.
+
+`source-policy.js` checks a complete active county registry snapshot against an
+independently reviewed release manifest, including exact URL hash, cash/type
+policy and microsecond creation order. It does not generate approvals from live
+rows. `acquisition.js` composes the extracted frontend adapter factory with the
+bounded source client, preserves first-source precedence and all-source cash
+policy, and binds exact finite JSON bytes capped at 6 MiB. It rejects malformed
+features, mismatched source markers, extra query keys, and late payloads. Forsyth
+parcel requests share budgets and their full fixed policy is in the context
+digest. Empty arrays remain valid and bypass fallback acquisition. The remaining legacy
+source branches share the same bounded client and abort on partial failures.
+
+The static `approved-source-registry.json` manifest pins the 75 observed active
+NC sources without storing URL values. `source-approvals.js` selects reviewed
+frontend/legacy query policy, including Lincoln land/non-land behavior. The
+explicit virtual Mecklenburg policy requires a successful empty registry query
+and manifest absence; it creates no CountyDataSource row. Stanly's existing
+override is a separate fixed endpoint included in its digest. Generic queries
+preserve exact approved parameters and override only the legacy response caps.
+Malformed responses now reject instead of silently becoming empty results.
+
+Authenticated frontend issuance and acquisition/revision fencing are implemented.
+API lifecycle mounting is implemented. Secure live n8n integration and production
+validation remain unfinished. Injected transports are not production source witnesses.
+
+
+`postgres.js` composes separate fixed issuer/runtime `pg` 8.23.0 pools from explicit
+configuration. It never loads ambient PostgreSQL variables or credential files.
+TLS verification, actual role/catalog checks on every checkout, bounded admission,
+server lock/statement deadlines, connection destruction on failure and bounded
+shutdown fail closed. PUBLIC extension privileges count as effective authority;
+provider-owned ACLs must be corrected through authorized administration before
+production identities can pass these checks.
+
+`scripts/install-runtime-dependencies.js` installs only fresh unsealed copies with
+locked registry integrity, disabled lifecycle scripts and private empty npm
+configuration/cache. Release creation and CI hash the installed dependency bytes;
+completed recovery artifacts are never modified. Test snapshot preparation now
+requires npm registry access. The post-install size check is not a peak disk bound;
+operator validation uses an additional private temporary-filesystem limit.
+
+`scripts/test-buyer-writer-native.mjs` separately verifies real driver/TLS behavior
+against a pinned disposable PostgreSQL container. It uses an owned internal Docker
+network and a bounded loopback byte proxy preserving end-to-end TLS, synthetic
+credentials, no host mounts and no provider calls. It covers all five tables,
+receipt reconciliation after explicit response-loss injection, privilege drift,
+and real lock timeout/connection replacement. Run only with Node 22.23.1, the
+explicit pinned image and outer process/memory/temp/output limits. This does not
+replace production acceptance or prove atomic fencing across the authority and
+PostgreSQL databases.
+
+
+## Canonical API integration
+
+The API entrypoint initializes the writer only with explicit `BUYER_WRITER_MODE`
+scoped mode, production startup checks and verified release/environment identity.
+`BUYER_WRITER_CONFIG_FILE` names a protected JSON file;
+`BUYER_WRITER_WORKSPACE_ID` supplies its required workspace scope. The API uses the
+actual inherited systemd invocation identifier. Development/test entrypoints do
+not discover or load the production configuration.
+
+Configuration requires `version`, `workspace`, `bindingFile`, `writerCredential`,
+`issuerCredential`, `runtime` and `issuer`. Each database configuration has `host`,
+`port`, `database`, `password` and optional `ca`; roles are fixed by the driver.
+Optional `units` overrides require verified staging identity or a separately protected, exactly matching isolated production rehearsal descriptor. Production defaults remain the canonical API and worker units.
+All four credentials must be distinct canonical 32-byte base64url values. Never
+commit a populated configuration or put it in workflow code or saved executions.
+The protected reader requires safe root-owned ancestors, one regular inode, mode
+0600 or private-API-group 0640, and no extended POSIX ACL. The API's shared primary
+group is not acceptable credential separation.
+
+The writer remains unavailable until its protected activation binding matches the
+release, workspace and API/worker invocations, and a separate protected commit marker matches the binding inode and digest. API observation verifies its own
+process and supervisor, their parent relationship, cgroup, IDs, groups and zero
+capabilities. Worker process restrictions come from a root-protected supervisor
+and child attestation matched against live systemd metadata. `ProtectProc` remains
+invisible; this is not a claim that the API can inspect the worker's live process.
+The root publisher is implemented; the complete supervised activation proof remains unfinished.
+
+Public readiness requires a fresh availability verdict and a final emergency-stop
+check. Base snapshots exclude the writer's own verdict to avoid circular startup.
+A missing binding permits API boot but denies writer operations. Bindings have an
+invocation lifetime, not an implicit periodic renewal; restart or removal requires
+new controlled approval. Observations do not provide an atomic fence across the
+authority database, systemd and PostgreSQL.
+
+Shutdown stops admission and drains the listener. The writer also gives admitted
+queries whose HTTP clients disconnected up to two seconds to settle before the
+bounded pool closure. Forced closure leaves an uncertain transaction outcome;
+use the receipt/reconciliation protocol rather than retrying the write. Termination
+during asynchronous initialization prevents a late listener and closes initialized
+pools before the authority database.
+
+
+## Protected activation commitment
+
+`activation-entry.js` accepts only a protected root profile path. It verifies its
+own bounded root systemd container before reading configuration, derives actual
+API identity, and checks the fixed service pair and protected snapshots. Artifact
+verification runs in a fixed bounded subprocess. No arbitrary approval callback
+is exposed by the CLI. The isolated rehearsal launcher must still validate actual
+paths and both roles' environments before either supervisor starts.
+
+A published binding is provisional. The issuer-authenticated, bodyless GET
+`/api/internal/buyer-writer/v1/preparation` checks the same base readiness and
+identity prerequisites without requiring a commit marker or calling SQL. It
+cannot admit writes or make public readiness pass. The issuer credential remains
+inside a private closure and is sent only to this loopback preparation endpoint.
+
+After preparation passes, a final synchronous protected-configuration check
+precedes commit publication. A matching `.commit.json` marker with exactly one
+link is the commit point. Before the pending link is removed, the two-link marker
+is rejected. Any uncertainty after linking, or failure after commitment, preserves
+the actual state and reports an unknown outcome for explicit reconciliation.
+Never delete `.buyer-commit-*.pending` files as cache or temporary cleanup: removing
+a pending link could activate its marker. Revoke the marker first during an
+explicit controlled reconciliation. Existing bindings and markers are never
+overwritten by publication. Restart requires fresh invocation-bound approval.
+
+Focused tests and a bounded root filesystem SIGKILL fixture cover the commit
+boundary; these do not establish full API/worker activation, live n8n continuity
+or atomic fencing across systemd, authority storage and PostgreSQL.

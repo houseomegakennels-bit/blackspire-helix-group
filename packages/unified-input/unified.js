@@ -1,3 +1,5 @@
+import { withReleaseAdmission,heldAcceptanceContext } from '../shared/release-admission.js';
+import {createHash} from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, transaction } from '../task-engine/db.js';
 import { createTask, getTask, getFlag, transition, recordEvidence, recordTaskEvent, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
@@ -8,7 +10,7 @@ import { serializeTaskWithCanonicalResult } from '../task-engine/canonical-resul
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
 const cancellationTokens = new Map();
 
-export function createUnifiedInput({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted', executionIntent = 'workspace_mutation' }) {
+function createUnifiedInputAdmitted({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted', executionIntent = 'workspace_mutation' }) {
   if (!CHANNELS.has(channel)) return { error: 'unsupported channel', status: 422 };
   const request = String(text || '').trim();
   if (!request || request.length > 4000) return { error: 'request is required and must be under 4000 characters', status: 422 };
@@ -20,15 +22,18 @@ export function createUnifiedInput({ channel, actorId, channelKey, conversationI
   const key = String(idempotencyKey || id('idem'));
   const taskKey = `unified:${channel}:${key}`;
   return transaction(() => {
-    const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,t.workspace_id task_workspace_id,t.execution_intent task_execution_intent,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
+    const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,t.workspace_id task_workspace_id,t.execution_intent task_execution_intent,t.actor_id task_actor_id,t.authority_class task_authority_class,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
     if (duplicate) {
+      if (duplicate.actor_id !== String(actorId || '') || (duplicate.task_id &&
+          (duplicate.task_actor_id !== String(actorId || '') || duplicate.task_authority_class !== authority))) return { error: 'input not found', status: 404 };
       if (duplicate.workspace_id !== workspaceId || (duplicate.task_id && duplicate.task_workspace_id !== workspaceId)) return { error: 'input not found', status: 404 };
       if (duplicate.task_id && duplicate.task_execution_intent !== executionIntent) return { error: 'idempotency key conflicts with executionIntent', status: 409 };
       return responseFor(duplicate.conversation_id, duplicate.id, duplicate.task_id, duplicate.task_status, true, duplicate.policy_status === 'denied' ? denialReason(channel) : null);
     }
 
-    const existingTask = query(`SELECT id,workspace_id FROM tasks WHERE idempotency_key=${esc(taskKey)};`)[0];
-    if (existingTask) return existingTask.workspace_id === workspaceId
+    const existingTask = query(`SELECT id,workspace_id,actor_id,source_channel,authority_class FROM tasks WHERE idempotency_key=${esc(taskKey)};`)[0];
+    if (existingTask) return existingTask.workspace_id === workspaceId && existingTask.actor_id === String(actorId || '') &&
+        existingTask.source_channel === channel && existingTask.authority_class === authority
       ? { error: 'idempotency key conflict', status: 409 }
       : { error: 'input not found', status: 404 };
 
@@ -136,7 +141,7 @@ export function requestCancellation(taskId, { actor = 'administrator' } = {}) {
   return { task: transition(taskId, 'cancelled', { error: `Cancelled from ${actor}` }), cleanup };
 }
 
-export async function drainTelegramOutbox(send, { limit = 20 } = {}) {
+async function drainTelegramOutboxAdmitted(send, { limit = 20 } = {}) {
   const deliveries = pendingDeliveries(limit);
   const results = [];
   for (const delivery of deliveries) {
@@ -166,3 +171,18 @@ function sanitize(value) {
 function responseFor(conversationId, inputId, taskId, status, duplicate = false, denial = null) {
   return { conversationId, inputId, taskId, status, duplicate, ...(denial ? { error: denial, denied: true } : {}) };
 }
+
+export function createUnifiedInput(...args) { return withReleaseAdmission(() => {
+  const held=heldAcceptanceContext(),value=args[0];
+  if(held){
+    const read=held.reads.find(row=>row.idempotencyKey===value?.idempotencyKey);
+    const requestDigest=createHash('sha256').update(JSON.stringify({channel:value?.channel,workspaceId:value?.workspaceId,text:value?.text,
+      idempotencyKey:value?.idempotencyKey,executionIntent:value?.executionIntent})).digest('hex');
+    if(held.role!=='api'||!read||value.channel!=='jarvis'||value.workspaceId!==held.workspace||value.actorId!==held.principal||value.text!==read.request||value.executionIntent!=='read_only'||read.requestDigest!==requestDigest){
+      const error=new Error('HELD acceptance input rejected');error.code='RELEASE_ADMISSION_HELD';throw error;
+    }
+  }
+  return createUnifiedInputAdmitted(...args);
+}); }
+
+export async function drainTelegramOutbox(...args) { return withReleaseAdmission(() => drainTelegramOutboxAdmitted(...args)); }

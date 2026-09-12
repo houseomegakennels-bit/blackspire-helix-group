@@ -122,11 +122,13 @@ case "$mode" in
     [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
     if [[ "$runtime_role" == "api" ]]; then
       [[ -n "${COMMAND_ADMIN_PASSWORD_HASH:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production API password authentication is not configured"
+      authority_consumer_token="${BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN:-}"
+      [[ ${#authority_consumer_token} -ge 32 ]] || fail "production API receiver authority consumer token is not configured"
       if [[ "${ALLOW_BEARER_AUTH:-false}" == "true" ]]; then
         [[ -n "${COMMAND_ADMIN_TOKEN:-}" ]] || fail "production bearer authentication is enabled without COMMAND_ADMIN_TOKEN"
       fi
     else
-      for key in COMMAND_ADMIN_PASSWORD_HASH COMMAND_ADMIN_TOKEN SESSION_SECRET; do
+      for key in COMMAND_ADMIN_PASSWORD_HASH COMMAND_ADMIN_TOKEN SESSION_SECRET BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN; do
         ! has_value "$key" || fail "production worker environment must not contain $key"
       done
     fi

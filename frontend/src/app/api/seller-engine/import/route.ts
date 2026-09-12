@@ -1,8 +1,11 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { importSellerCsv } from "@/lib/seller-engine-server";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const form = await request.formData();
     const file = form.get("file");

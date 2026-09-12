@@ -1,3 +1,4 @@
+import { withReleaseAdmission,heldAcceptanceContext } from '../shared/release-admission.js';
 import crypto from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
 import { query, execSql, esc, run, get, transaction } from './db.js';
@@ -21,10 +22,16 @@ export function audit(taskId, actor, action, details = {}) {
   execSql(`INSERT INTO audit_events VALUES (${esc(id('aud'))},${esc(taskId)},${esc(actor)},${esc(action)},${esc(JSON.stringify(details))},${esc(now())});`);
 }
 
-export function createTask({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'read_only', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
+function createTaskAdmitted({ workspaceId, request, idempotencyKey, budgetCents = 500, conversationId = null, inputId = null, sourceChannel = null, actorId = null, actionClass = null, authorityClass = null, policyDecision = 'allowed', executionIntent = 'read_only', initialStatus = 'queued', initialError = null, initialSummary = null, initialEventType = null, initialEventPayload = {} }) {
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) throw new Error('invalid task execution intent');
   const existing = idempotencyKey && query(`SELECT * FROM tasks WHERE idempotency_key=${esc(idempotencyKey)};`)[0];
   if (existing) {
+    if (existing.workspace_id !== workspaceId || String(existing.actor_id ?? '') !== String(actorId ?? '') ||
+        String(existing.source_channel ?? '') !== String(sourceChannel ?? '') || String(existing.authority_class ?? '') !== String(authorityClass ?? '')) {
+      const error = new Error('task not found');
+      error.code = 'TASK_IDEMPOTENCY_BINDING';
+      throw error;
+    }
     if (existing.workspace_id === workspaceId && existing.execution_intent !== executionIntent) {
       const error = new Error('task idempotency key conflicts with execution intent');
       error.code = 'TASK_IDEMPOTENCY_CONFLICT';
@@ -99,7 +106,7 @@ export function conversationRequiresCapabilityPermission(conversationId, permiss
   return Boolean(get("SELECT 1 AS present FROM tasks t JOIN provider_attempts p ON p.task_id=t.id WHERE t.conversation_id=? AND p.provider='blackspire-capability' AND p.mode=? LIMIT 1", [conversationId, mode]));
 }
 
-export function transition(taskId, status, patch = {}, ownership = null) {
+function transitionAdmitted(taskId, status, patch = {}, ownership = null) {
   const timestamp = now();
   const entries = Object.entries(patch);
   const sets = ['status=?', 'updated_at=?', ...entries.map(([key]) => `${key}=?`)];
@@ -158,7 +165,7 @@ export function deliveryRecords(conversationId) {
   return query(`SELECT * FROM channel_deliveries WHERE conversation_id=${esc(conversationId)} ORDER BY created_at;`);
 }
 
-export function claimNext({ workerId, staleAfterSeconds = 300 } = {}) {
+function claimNextAdmitted({ workerId, staleAfterSeconds = 300, acceptance = null } = {}) {
   const claimedAt = now();
   const assignedWorkerId = workerId || id('worker');
   const claimToken = id('claim');
@@ -166,7 +173,8 @@ export function claimNext({ workerId, staleAfterSeconds = 300 } = {}) {
 UPDATE tasks SET status='planning', worker_id=${esc(assignedWorkerId)}, claim_token=${esc(claimToken)}, claimed_at=${esc(claimedAt)}, heartbeat_at=${esc(claimedAt)}, updated_at=${esc(claimedAt)}, current_stage='claimed'
 WHERE id=(
   SELECT id FROM tasks
-  WHERE status='queued' OR (status IN ('planning','running','validating') AND (heartbeat_at IS NULL OR datetime(heartbeat_at) < datetime('now','-${Number(staleAfterSeconds)} seconds')))
+  WHERE (status='queued' OR (status IN ('planning','running','validating') AND (heartbeat_at IS NULL OR datetime(heartbeat_at) < datetime('now','-${Number(staleAfterSeconds)} seconds'))))
+  ${acceptance?`AND (${acceptance.reads.map(row=>`(idempotency_key=${esc(`unified:jarvis:${row.idempotencyKey}`)} AND workspace_id=${esc(acceptance.workspace)} AND actor_id=${esc(acceptance.principal)} AND source_channel='jarvis' AND execution_intent='read_only' AND request=${esc(row.request)})`).join(' OR ')})`:''}
   ORDER BY created_at LIMIT 1
 );
 COMMIT;`);
@@ -233,7 +241,7 @@ export function finishCodexDispatchWithUsage(taskId, status, { attemptId = `code
   });
 }
 
-function capabilityAttemptId(taskId, capabilityId) {
+export function capabilityAttemptId(taskId, capabilityId) {
   return `cap_dispatch_${taskId}_${String(capabilityId).replace(/[^a-z0-9]+/gi, '_')}`;
 }
 
@@ -281,7 +289,7 @@ export function finalizeCapabilitySuccess({ taskId, capabilityId, workspaceId, p
     if (!task || !workspace || task.workspace_id !== workspaceId || task.status !== 'running' || task.worker_id !== expectedWorkerId ||
       task.claim_token !== expectedClaimToken || flag?.value === 'active' || !authorized || !attempt ||
       attempt.task_id !== taskId || attempt.provider !== 'blackspire-capability' || attempt.mode !== capabilityId ||
-      attempt.status !== 'dispatching' || requestPacket?.workspaceId !== workspaceId || requestPacket?.principalId !== principalId ||
+      !(requestPacket?.receiverAuthority ? attempt.status === 'started' : ['dispatching','started'].includes(attempt.status)) || requestPacket?.workspaceId !== workspaceId || requestPacket?.principalId !== principalId ||
       requestPacket?.workerId !== (ownership?.workerId ?? null) || requestPacket?.claimDigest !== capabilityDispatchAuthority(ownership).claimDigest) {
       const error = new Error('capability authority fence changed before finalization');
       error.code = 'CAPABILITY_FINALIZATION_REFUSED';
@@ -290,7 +298,8 @@ export function finalizeCapabilitySuccess({ taskId, capabilityId, workspaceId, p
 
     const timestamp = now();
     const responsePacket = redact(JSON.stringify({ result }));
-    const attemptUpdate = run("UPDATE provider_attempts SET status='completed',response_packet=?,error='',latency_ms=0 WHERE id=? AND status='dispatching'", [responsePacket, attemptId]);
+    const allowedStatus = requestPacket?.receiverAuthority ? 'started' : attempt.status;
+    const attemptUpdate = run("UPDATE provider_attempts SET status='completed',response_packet=?,error='',latency_ms=0 WHERE id=? AND status=?", [responsePacket, attemptId, allowedStatus]);
     if (Number(attemptUpdate.changes) !== 1) throw new Error('capability attempt finalization race');
     const taskUpdate = run("UPDATE tasks SET status='completed',summary=?,evidence=?,current_stage='summarize',updated_at=? WHERE id=? AND status='running' AND worker_id IS ? AND claim_token IS ?", [JSON.stringify(summary), JSON.stringify(evidence), timestamp, taskId, expectedWorkerId, expectedClaimToken]);
     if (Number(taskUpdate.changes) !== 1) throw new Error('capability task finalization race');
@@ -343,7 +352,7 @@ export function latestApproval(taskId, action) {
   return query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND action=${esc(action)} ORDER BY created_at DESC LIMIT 1;`)[0] || null;
 }
 
-export function decideApproval(taskId, status, reason = '', { decidedBy = 'administrator' } = {}) {
+function decideApprovalAdmitted(taskId, status, reason = '', { decidedBy = 'administrator' } = {}) {
   const approval = query(`SELECT * FROM approvals WHERE task_id=${esc(taskId)} AND status='pending' ORDER BY created_at DESC LIMIT 1;`)[0];
   if (!approval) {
     audit(taskId, 'administrator', `approval.${status}.idempotent`, { reason });
@@ -408,3 +417,20 @@ function legacyAccountingState(row) {
   if (row.provider === 'codex' && row.mode === 'cli' && row.cost_cents === null) return 'subscription_unmetered';
   return row.cost_cents === null ? 'metered_cost_unavailable' : 'metered';
 }
+
+export function createTask(...args) { return withReleaseAdmission(() => {
+  const held=heldAcceptanceContext();
+  if(held&&(!held.taskKeys.includes(args[0]?.idempotencyKey)||args[0]?.workspaceId!==held.workspace||args[0]?.actorId!==held.principal||args[0]?.sourceChannel!=='jarvis'||args[0]?.executionIntent!=='read_only'))throw releaseAcceptanceRejected();
+  return createTaskAdmitted(...args);
+}); }
+
+export function claimNext(...args) { return withReleaseAdmission(() => {
+  const held=heldAcceptanceContext();
+  return claimNextAdmitted({...args[0],...(held?{acceptance:held}:{})});
+}); }
+
+function releaseAcceptanceRejected(){const error=new Error('HELD acceptance task rejected');error.code='RELEASE_ADMISSION_HELD';return error;}
+
+export function transition(...args) { return args[1] === 'queued' ? withReleaseAdmission(() => transitionAdmitted(...args)) : transitionAdmitted(...args); }
+
+export function decideApproval(...args) { return withReleaseAdmission(() => decideApprovalAdmitted(...args)); }

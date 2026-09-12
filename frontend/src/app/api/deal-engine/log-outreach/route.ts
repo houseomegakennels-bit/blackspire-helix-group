@@ -1,8 +1,11 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { saveDealOutreachExecution } from "@/lib/deal-engine-server";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   const body = (await request.json()) as {
     dealId?: string;
     audience?: string;

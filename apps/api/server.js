@@ -1,8 +1,9 @@
+import { withReleaseAdmission,withHeldAcceptanceAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
+import { ADMIN_TOKEN, ADMIN_PASSWORD_HASH, ALLOW_BEARER_AUTH, TELEGRAM_ALLOWED_USERS, DB_PATH, DATA_DIR } from '../../packages/shared/config.js';
 import { verifyAdminPasswordAsyncResult } from '../../packages/shared/password-auth.js';
 import { buildRuntimeStatus as buildHermesRuntimeStatus } from '../../packages/hermes-orchestrator/status.js';
 import { resolveBindTarget } from '../../packages/shared/bind.js';
@@ -26,10 +27,33 @@ import { readVerifiedScorecard } from '../../packages/hermes-orchestrator/scorec
 import { readMemoryCandidateReview, readMemoryCandidateRereview, listMemoryCandidateReviewQueue } from '../../packages/hermes-orchestrator/memory-review.js';
 import { createDeploymentIdentityProvider, serializeDeploymentIdentity, validateDeploymentIdentityForStartup } from '../../packages/shared/deployment-identity.js';
 import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task-engine/runtime-status.js';
+import { createBuyerWriterRuntime } from '../../packages/buyer-writer/runtime.js';
+import { createBuyerWriterApiLifecycle } from '../../packages/buyer-writer/api-lifecycle.js';
 import { serializeTaskWithCanonicalResult } from '../../packages/task-engine/canonical-result.js';
+import { consumeReceiverAuthority } from '../../packages/capabilities/receiver-authority.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
+let activeBuyerWriter = null;
+const writerClosures = new WeakMap();
+const serverWriters = new WeakMap();
+const serverShutdowns = new WeakMap();
+function closeBuyerWriter(writer) {
+  if (!writer) return Promise.resolve();
+  if (writerClosures.has(writer)) return writerClosures.get(writer);
+  let stopFailed = false;
+  try { writer.stopAdmission(); } catch { stopFailed = true; }
+  const closing = Promise.resolve().then(() => writer.close()).then(() => {
+    if (stopFailed) throw new Error('Buyer writer shutdown incomplete');
+  });
+  writerClosures.set(writer, closing);
+  return closing;
+}
+function buyerWriterHealth() {
+  if (!activeBuyerWriter) return null;
+  try { return { enabled: true, ok: activeBuyerWriter.isHealthy() === true }; }
+  catch { return { enabled: true, ok: false }; }
+}
 let startupConfigValidation = { ok: false };
 const deploymentIdentityProvider = createDeploymentIdentityProvider();
 const TEST_MODE = requireSafeTestMode();
@@ -71,8 +95,44 @@ function writeJson(res, status, body, headers = {}) {
   return json(res, status, body);
 }
 
+export async function consumeCapabilityAuthority(req, res, { consumer = consumeReceiverAuthority, env = process.env } = {}) {
+  if (String(req.headers['content-type'] || '').toLowerCase() !== 'application/json') return json(res, 404, { error: 'not found' });
+  const expected = env.BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN?.trim() || '';
+  const authorization = String(req.headers.authorization || '');
+  const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const left = Buffer.from(expected), right = Buffer.from(supplied);
+  if (expected.length < 32 || left.length !== right.length || !crypto.timingSafeEqual(left, right)) return json(res, 404, { error: 'not found' });
+  let size = 0, raw = '';
+  try {
+    for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new Error('oversize'); raw += chunk.toString('utf8'); }
+    const body = JSON.parse(raw);
+    if (!body || Array.isArray(body) || Object.keys(body).join(',') !== 'authority') throw new Error('shape');
+    return json(res, 200, consumer(body.authority));
+  } catch { return json(res, 404, { error: 'not found' }); }
+}
+
 async function route(req, res) {
+  let pathname;
+  try { pathname=new URL(req.url,'http://127.0.0.1').pathname; } catch { return routeAdmitted(req,res); }
+  const observation=['GET','HEAD','OPTIONS'].includes(req.method);
+  const controls=['/api/auth/login','/api/auth/session','/api/auth/logout','/api/auth/rotate','/api/auth/revoke-all','/api/stop','/api/stop/reset'].includes(pathname);
+  try {
+    const heldToken=String(req.headers['x-blackspire-held-acceptance']||'');
+    if(heldToken&&pathname==='/api/unified-input'&&req.method==='POST')return await withHeldAcceptanceAdmission({role:'api',token:heldToken},()=>routeAdmitted(req,res));
+    return await (observation||controls ? routeAdmitted(req,res) : withReleaseAdmission(()=>routeAdmitted(req,res)));
+  }
+  catch(error) {
+    if(error?.code!=='RELEASE_ADMISSION_HELD')throw error;
+    setSecurityHeaders(req,res); return json(res,503,{error:'release admission held'});
+  }
+}
+
+async function routeAdmitted(req, res) {
   setSecurityHeaders(req, res);
+  if ((req.url || '').startsWith('/api/internal/buyer-writer/v1/')) {
+    if (!activeBuyerWriter) return json(res, 404, { error: 'not found' });
+    return activeBuyerWriter.handleRequest(req, res);
+  }
   // A malformed request line must not reach routing: reject it before any lookup rather
   // than throwing past the handler below.
   let u;
@@ -82,11 +142,17 @@ async function route(req, res) {
     return json(res, 400, { error: 'bad request' });
   }
   try {
+    if (u.pathname === '/api/internal/capability-authority/consume' && u.search === '' && req.method === 'POST') return consumeCapabilityAuthority(req, res);
     if (u.pathname === '/api/test-mode' && req.method === 'GET') return json(res, 200, publicTestModeStatus(TEST_MODE));
     if (u.pathname === '/api/test-mode/session' && req.method === 'POST') return testModeLogin(req, res);
     if (TEST_MODE.enabled && (u.pathname === '/api/auth/login' || u.pathname === '/telegram/webhook')) return json(res, 404, { error: 'not found' });
     if (u.pathname === '/api/auth/login' && req.method === 'POST') return login(req, res);
-    if (u.pathname === '/telegram/webhook' && req.method === 'POST') return telegramWebhook(req, res);
+    if (u.pathname === '/telegram/webhook' && req.method === 'POST') {
+      if (process.env.TELEGRAM_MODE !== 'webhook' || !process.env.TELEGRAM_WEBHOOK_SECRET || !process.env.TELEGRAM_BOT_TOKEN || TELEGRAM_ALLOWED_USERS.length === 0) {
+        return json(res, 404, { error: 'not found' });
+      }
+      return telegramWebhook(req, res);
+    }
 
     const auth = authContext(req);
     if (!isPublicAsset(req.url, u.pathname) && !auth.ok) return json(res, 401, { error: 'unauthorized' });
@@ -110,10 +176,20 @@ async function route(req, res) {
       audit(null, 'auth', 'session.rotated', { ip: clientIp(req) });
       return writeJson(res, 200, { ok: true, csrfToken: rotated.csrfToken, expiresAt: rotated.expiresAt }, { 'set-cookie': sessionCookie(rotated) });
     }
-    if (u.pathname === '/api/auth/revoke-all' && req.method === 'POST') { revokeAllSessions(); audit(null, 'administrator', 'sessions.revoked'); return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() }); }
+    if (u.pathname === '/api/auth/revoke-all' && req.method === 'POST') {
+      // Session possession permits self logout/rotation, not global revocation.
+      // Resolve current persisted operator authority before changing any session.
+      if (!requestPrincipal(auth)) return json(res, 404, { error: 'not found' });
+      revokeAllSessions(); audit(null, 'administrator', 'sessions.revoked');
+      return writeJson(res, 200, { ok: true }, { 'set-cookie': clearSessionCookies() });
+    }
     if (u.pathname === '/health') return json(res, 200, healthSnapshot());
     if (u.pathname === '/ready') {
-      const readiness = readinessSnapshot();
+      const writer = activeBuyerWriter;
+      let buyerWriterAvailable = false;
+      try { buyerWriterAvailable = writer ? await writer.checkAvailability() === true : false; } catch {}
+      // A replaced or stopped component cannot lend its observation to another runtime.
+      const readiness = readinessSnapshot({ buyerWriterAvailable: writer === activeBuyerWriter && buyerWriterAvailable });
       return json(res, readiness.ok ? 200 : 503, readiness);
     }
     if (u.pathname === '/api/test-mode/telegram-input' && req.method === 'POST') return testTelegramInput(req, res);
@@ -360,6 +436,7 @@ async function testModeLogin(req, res) {
 function testModeActive() { return Number.isFinite(Date.parse(TEST_MODE.expiresAt)) && Date.now() < Date.parse(TEST_MODE.expiresAt); }
 
 async function testTelegramInput(req, res) {
+  if (!TEST_MODE.enabled || !TEST_MODE.ok || !testModeActive()) return json(res, 404, { error: 'not found' });
   const body = await readJson(req);
   const updateId = String(body.updateId || '').trim();
   if (!updateId || updateId.length > 120) return json(res, 422, { error: 'updateId is required' });
@@ -368,6 +445,7 @@ async function testTelegramInput(req, res) {
 }
 
 async function testQueuedTask(req, res) {
+  if (!TEST_MODE.enabled || !TEST_MODE.ok || !testModeActive()) return json(res, 404, { error: 'not found' });
   const body = await readJson(req);
   setFlag('test_worker_hold', 'active');
   const result = createUnifiedInput({ channel: 'jarvis', actorId: TEST_MODE.testActor, channelKey: `test-session:${TEST_MODE.testActor}`, conversationId: body.conversationId || null, workspaceId: TEST_MODE.workspaceId, text: 'Report queued task status without changing files.', idempotencyKey: body.idempotencyKey || id('test-held'), authority: 'test_operator', executionIntent: 'read_only' });
@@ -376,6 +454,7 @@ async function testQueuedTask(req, res) {
 }
 
 async function testDeliveryFailure(req, res) {
+  if (!TEST_MODE.enabled || !TEST_MODE.ok || !testModeActive()) return json(res, 404, { error: 'not found' });
   const body = await readJson(req);
   const requested = Number(body.attempts || 1);
   if (!Number.isInteger(requested)) return json(res, 422, { error: 'attempts must be an integer from 1 to 3' });
@@ -401,6 +480,7 @@ async function createTaskRoute(req, res, auth) {
   try {
     task = createTask({ workspaceId, request, idempotencyKey: body.idempotencyKey || id('idem'), sourceChannel: 'api', actorId: principal.principalId, actionClass: decision.actionClass, authorityClass: 'authenticated_admin', policyDecision: decision.allowed ? (decision.requiresApproval ? 'approval_required' : 'allowed') : 'denied', executionIntent, initialStatus: decision.allowed ? 'queued' : 'failed', initialError: decision.allowed ? null : decision.reason, initialSummary: decision.allowed ? null : 'Denied by Blackspire policy', initialEventType: decision.allowed ? 'task.queued' : 'policy.denied', initialEventPayload: decision.allowed ? {} : { reason: decision.reason } });
   } catch (error) {
+    if (error?.code === 'TASK_IDEMPOTENCY_BINDING') return json(res, 404, { error: 'not found' });
     if (error?.code === 'TASK_IDEMPOTENCY_CONFLICT') return json(res, 409, { error: 'idempotency key conflicts with executionIntent' });
     throw error;
   }
@@ -518,7 +598,7 @@ function exportTask(res, auth, taskId, format) {
 }
 
 async function telegramWebhook(req, res) {
-  if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { error: 'invalid telegram secret' });
+  if (req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { error: 'invalid telegram secret' });
   const body = await readJson(req);
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
@@ -545,7 +625,24 @@ function serve(res, file, type, cacheControl) {
 
 const IS_ENTRY_POINT = import.meta.url === `file://${process.argv[1]}`;
 
-export function start(port, host) {
+export function start(port, host, { buyerWriter = null } = {}) {
+  try { return startWithBuyerWriter(port, host, buyerWriter); }
+  catch (error) {
+    if (buyerWriter) void closeBuyerWriter(buyerWriter).catch(() => { process.exitCode = 1; });
+    throw error;
+  }
+}
+
+function startWithBuyerWriter(port, host, buyerWriter) {
+  if ((process.env.BUYER_WRITER_MODE && process.env.BUYER_WRITER_MODE !== 'scoped') ||(process.env.BUYER_WRITER_MODE === 'scoped') !== Boolean(buyerWriter)
+    || (buyerWriter && ['handleRequest','handleClientError','stopAdmission','isDrained','isHealthy','checkAvailability','close'].some(key => typeof buyerWriter[key] !== 'function'))) {
+    throw new Error('Buyer writer runtime unavailable');
+  }
+  if (buyerWriter) {
+    let healthy = false;
+    try { healthy = buyerWriter.isHealthy() === true; } catch {}
+    if (!healthy) throw new Error('Buyer writer runtime unavailable');
+  }
   lifecyclePhase = 'starting';
   try {
     assertSchemaCompatible();
@@ -578,10 +675,19 @@ export function start(port, host) {
     throw new Error('production listener arguments must match the canonical BIND_HOST/PORT contract');
   }
   if (TEST_MODE.enabled) upsertWorkspace({ id: TEST_MODE.workspaceId, name: 'Unified Jarvis iPhone Test', description: 'Disposable read-only test workspace', githubRepository: 'local/iphone-test', defaultBranch: 'test', allowedPaths: [], buildCommands: [], providerPolicy: { preferred: ['mock'] }, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['status'], lastHealthStatus: 'test', rootPath: TEST_MODE.workspaceRoot });
+  activeBuyerWriter = buyerWriter;
   const server = http.createServer(route);
+  if (buyerWriter) {
+    // Shared ingress bounds unauthenticated/pre-header sockets too. Keep Node's
+    // existing API header/request limits; authenticated writer bodies get 15s.
+    serverWriters.set(server, buyerWriter);
+    server.maxConnections = 256;
+    server.on('clientError', buyerWriter.handleClientError);
+  }
   // Fail closed on an occupied port. There is no retry and no fallback port: the existing
   // listener keeps the port and is never contacted, signalled, or replaced.
   server.on('error', (error) => {
+    if (buyerWriter) void closeBuyerWriter(buyerWriter).catch(() => { process.exitCode = 1; });
     const occupied = error.code === 'EADDRINUSE';
     console.error(JSON.stringify({
       service: 'api',
@@ -596,11 +702,14 @@ export function start(port, host) {
   });
   const cleanupTimer = setInterval(() => { cleanupExpiredSessions(); cleanupRateLimits(); }, Number(process.env.CLEANUP_INTERVAL_MS || 15 * 60 * 1000));
   cleanupTimer.unref();
-  server.on('close', () => { lifecyclePhase = 'stopped'; clearInterval(cleanupTimer); });
+  server.on('close', () => {
+    lifecyclePhase = 'stopped'; clearInterval(cleanupTimer);
+    if (buyerWriter) void closeBuyerWriter(buyerWriter).catch(() => { process.exitCode = 1; });
+  });
   return server;
 }
 
-export function healthSnapshot() {
+export function healthSnapshot({ includeBuyerWriter = true } = {}) {
   let database = 'available';
   let persistentEmergencyStop = false;
   try { persistentEmergencyStop = getFlag('emergency_stop') === 'active'; }
@@ -616,18 +725,18 @@ export function healthSnapshot() {
     // required worker still published {"ok":true} and any uptime check keying on it was blind. The
     // dependency flags already carry `required`, so a dependency that is optional in this
     // deployment still reports ok:true and cannot fail the health verdict.
-    ok: database === 'available' && worker.ok && scheduler.ok,
+    ok: database === 'available' && worker.ok && scheduler.ok && (!includeBuyerWriter || buyerWriterHealth()?.ok !== false),
     service: 'blackspire-command-api',
     lifecycle: lifecyclePhase,
     database,
     emergencyStop: persistentEmergencyStop || emergencyStopMemory,
     telegramMode: process.env.TELEGRAM_MODE || (process.env.TELEGRAM_BOT_TOKEN ? 'polling' : 'dry-run'),
-    dependencies: { worker, scheduler },
+    dependencies: { worker, scheduler, ...(includeBuyerWriter && activeBuyerWriter ? { buyerWriter: buyerWriterHealth() } : {}) },
     deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
 }
 
-export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {}) {
+export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includeBuyerWriter = true, buyerWriterAvailable = false } = {}) {
   let database = 'compatible';
   try { schemaCheck(); } catch { database = 'unavailable_or_incompatible'; }
   let worker = { required: false, ok: false, state: 'unknown', heartbeatAgeMs: null, activeTask: false, restartDetected: false };
@@ -636,13 +745,16 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
     worker = workerRuntimeStatus();
     scheduler = schedulerRuntimeStatus();
   }
+  const admission=releaseAdmissionStatus();
   const checks = {
+    ...(admission.required ? { releaseAdmission: admission.open } : {}),
     lifecycle: lifecyclePhase === 'ready',
     database: database === 'compatible',
     productionConfig: startupConfigValidation.ok === true && (process.env.NODE_ENV !== 'production' || Boolean(configuredEvaluationAdminPrincipal())),
     worker: worker.ok,
     scheduler: scheduler.ok,
     deploymentIdentity: validateDeploymentIdentityForStartup(deploymentIdentityProvider.get()).ok,
+    ...(includeBuyerWriter && activeBuyerWriter ? { buyerWriter: buyerWriterHealth()?.ok === true && buyerWriterAvailable === true && healthSnapshot({ includeBuyerWriter: false }).emergencyStop === false } : {}),
   };
   return {
     ok: Object.values(checks).every(Boolean),
@@ -652,22 +764,30 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible } = {})
     database,
     providers: activeModes(),
     productionConfig: startupConfigValidation,
-    dependencies: { worker, scheduler },
+    dependencies: { worker, scheduler, ...(includeBuyerWriter && activeBuyerWriter ? { buyerWriter: buyerWriterHealth() } : {}) },
     deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
 }
 
 export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
-  if (lifecyclePhase === 'draining' || lifecyclePhase === 'stopped') return Promise.resolve();
+  if (serverShutdowns.has(server)) return serverShutdowns.get(server);
   lifecyclePhase = 'draining';
-  return new Promise((resolve) => {
+  const writer = serverWriters.get(server);
+  writer?.stopAdmission();
+  const shutdown = new Promise((resolve, reject) => {
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
       clearTimeout(deadline);
-      closeDb();
-      resolve();
+      closeBuyerWriter(writer).then(() => {
+        lifecyclePhase = 'stopped';
+        closeDb();
+        resolve();
+      }, () => {
+        closeDb();
+        reject(new Error('Buyer writer shutdown incomplete'));
+      });
     };
     const deadline = setTimeout(() => {
       server.closeAllConnections?.();
@@ -676,33 +796,70 @@ export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
     deadline.unref();
     server.close(finish);
   });
+  serverShutdowns.set(server, shutdown);
+  return shutdown;
 }
 
 if (IS_ENTRY_POINT) {
-  let server;
-  let shutdownPromise = null;
-  const shutdown = (signal) => {
-    if (shutdownPromise) return shutdownPromise;
-    shutdownPromise = (async () => {
-      if (signal) console.log(JSON.stringify({ service: 'api', lifecycle: 'draining', signal }));
-      try { if (server) await beginGracefulShutdown(server); }
-      finally { closeDb(); }
-    })();
-    return shutdownPromise;
+  let shutdownRequested = false;
+  const lifecycle = createBuyerWriterApiLifecycle({
+    initialize: async () => {
+      if (!process.env.BUYER_WRITER_MODE) return null;
+      // Explicit production opt-in only; development/test launchers cannot load
+      // the protected writer configuration through ambient file discovery.
+      if (process.env.BUYER_WRITER_MODE !== 'scoped' || process.env.NODE_ENV !== 'production' || TEST_MODE.enabled) {
+        throw new Error('Buyer writer runtime unavailable');
+      }
+      const identity = deploymentIdentityProvider.get();
+      if (identity.state !== 'VERIFIED' || !validateDeploymentIdentityForStartup(identity).ok
+        || !requireProductionSafeConfig().ok || !configuredEvaluationAdminPrincipal() || !resolveBindTarget().ok) {
+        throw new Error('Buyer writer runtime unavailable');
+      }
+      assertSchemaCompatible();
+      return createBuyerWriterRuntime({
+        configurationFile: process.env.BUYER_WRITER_CONFIG_FILE,
+        workspace: process.env.BUYER_WRITER_WORKSPACE_ID,
+        releaseSha: identity.build.value,
+        apiGeneration: process.env.INVOCATION_ID,
+        environment: identity.environment.value,
+        startup: {
+          stateOwner: process.env.BLACKSPIRE_STATE_OWNER,
+          releaseRoot: process.env.BLACKSPIRE_RELEASE_ROOT,
+          artifactRoot: process.cwd(),
+          databasePath: DB_PATH,
+          dataDirectory: DATA_DIR,
+          host: resolveBindTarget().host,
+          port: resolveBindTarget().port,
+        },
+        getHealth: () => healthSnapshot({ includeBuyerWriter: false }),
+        getReadiness: () => readinessSnapshot({ includeBuyerWriter: false }),
+      });
+    },
+    listen: (buyerWriter) => {
+      const server = start(undefined, undefined, { buyerWriter });
+      server.once('error', () => { process.exitCode = 1; void shutdown(); });
+      return server;
+    },
+    closeWriter: closeBuyerWriter,
+    drainServer: beginGracefulShutdown,
+    closeAuthority: closeDb,
+  });
+  const shutdown = async (signal) => {
+    if (signal && !shutdownRequested) console.log(JSON.stringify({ service: 'api', lifecycle: 'draining', signal }));
+    shutdownRequested = true;
+    try { await lifecycle.stop(); }
+    catch { process.exitCode = 1; }
   };
   for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
-    if (shutdownPromise) {
-      server?.closeAllConnections?.();
+    if (shutdownRequested) {
+      lifecycle.getServer()?.closeAllConnections?.();
       process.exitCode = 1;
       return;
     }
     void shutdown(signal);
   });
-  try {
-    server = start();
-    server.once('error', () => { process.exitCode = 1; void shutdown(); });
-  } catch {
+  void lifecycle.start().catch(async () => {
     process.exitCode = 1;
-    void shutdown();
-  }
+    await shutdown();
+  });
 }
