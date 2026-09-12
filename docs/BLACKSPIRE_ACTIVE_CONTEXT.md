@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-12 — receiver compatibility correction awaiting exact-head gates
+
+The Vercel account is active, but release SHA `90610ddf4420e21bd02870f323314972bd2f2942` has no deployment object and its old blocked contexts cannot be natively redeployed. A same-SHA Git ref update preserved source but emitted no Vercel event. The receiver inventory now narrowly classifies deleted historical targets only after authenticated 404/410 plus fresh HTTP 410 from every bound alias, and uses Vercel's supported firewall configuration-list endpoint after the obsolete versioned endpoint returns 404. It never promotes absence into denial or path authority. Focused tests pass; commit, full validation, push, new-head CI/Vercel and receiver success remain required.
+
+Supabase remains provider-blocked at PUBLIC EXECUTE 12/12 on the twelve `supabase_admin`-owned pg_net functions. Do not repin n8n or seal a release yet. The old descriptor and operation `6cc8d935-ab34-432b-acf9-13c34e68a056` are not reusable: they bind stale main, n8n/migration, backup and disk/artifact SHAs. After all external gates pass, use the final clean pushed head and then-current main to create entirely new protected artifacts and a new operation.
+
 ## 2026-09-11 — HELD execution is operation-fenced; production composition remains
 
 The recovered `e3aa44f` HELD acceptance path is now active only while the journal's exact `six_live_reads` attempt has a protected permit/attempt-bound runtime marker. API and worker deny before that operation and after its result; the worker cannot fall through to a null or different capability. The v5 collector uses the release epoch for the six immutable keys. Acceptance results bind the exact permit, attempt, SHA, epoch and both generations. Sequence reconciliation now receives identical durable bindings before and after restart, and all 34 exact adapter names are required.

@@ -12,6 +12,12 @@ function fixture(override = () => undefined) {
     calls.push({ url, options });
     assert.equal(options.method, 'GET');
     assert.equal(options.redirect, 'error');
+    if (url.origin !== 'https://api.vercel.com') {
+      assert.equal(options.credentials, 'omit');
+      assert.equal(options.headers.Authorization, undefined);
+      const custom = override(url, options);
+      return custom === undefined ? response({}, 410) : custom;
+    }
     assert.equal(url.origin, 'https://api.vercel.com');
     assert.equal(url.searchParams.get('teamId'), TEAM);
     assert.equal(options.headers.Authorization, `Bearer ${token}`);
@@ -182,20 +188,68 @@ test('alias targets omitted from deployment pagination are independently discove
   assert.equal(result.denialProven, false);
 });
 
-test('inaccessible or foreign-project historical targets never become containment proof', async () => {
-  for (const mode of ['404', '410', 'foreign']) {
+test('provider-confirmed absent historical targets require a fresh 410 host check without becoming containment proof', async () => {
+  for (const mode of ['404', '410', 'host200', 'host302', 'host404', 'host500', 'hostNetwork', '500', 'foreign']) {
     const {fetchImpl} = fixture(url => {
-      if (url.pathname === '/v4/aliases') return response({aliases: ['missing.vercel.app', 'other.vercel.app'].map((alias, i) => ({alias, projectId: PROJECT, deploymentId: `dpl_old_${i}`}))});
+      if (url.pathname === '/v4/aliases') return response({aliases: [
+        {alias: 'missing.vercel.app', projectId: PROJECT, deploymentId: 'dpl_old_0'},
+        {alias: 'other.vercel.app', projectId: PROJECT, deploymentId: 'dpl_old_1'},
+        {alias: 'frontend-c06ce2-routes-houseomegakennels-4825s-projects.vercel.app', projectId: PROJECT, deploymentId: 'dpl_one'},
+        {alias: 'frontend-tau-woad-73.vercel.app', projectId: PROJECT, deploymentId: 'dpl_one'},
+      ]});
+      if (url.origin !== 'https://api.vercel.com') {
+        if (mode === 'hostNetwork') throw new Error(token);
+        const hostStatus = {host200: 200, host302: 302, host404: 404, host500: 500}[mode] ?? 410;
+        return response({}, hostStatus);
+      }
       if (url.pathname.startsWith('/v13/deployments/dpl_old_')) return mode === 'foreign'
         ? response({id: url.pathname.split('/').at(-1), projectId: 'other', url: 'other.vercel.app'})
-        : response({message: token}, Number(mode));
+        : response({message: token}, Number(mode.startsWith('host') ? '404' : mode));
+    });
+    const result = await inventoryProtection({token, fetchImpl});
+    const unresolved = mode.startsWith('host') || ['500', 'foreign'].includes(mode);
+    assert.equal(result.status, unresolved ? 'INCOMPLETE' : 'INVENTORY_COMPLETE');
+    assert.equal(result.aliasTargetDeployments.length, 2);
+    assert.ok(result.aliasTargetDeployments.every(row => row.status === (unresolved ? 'INCOMPLETE' : 'ABSENT') && row.denialProven === false));
+    const closure = result.observations.find(row => row.name === 'aliasDeploymentClosure');
+    assert.equal(closure.status, unresolved ? 'INCOMPLETE' : 'COMPLETE');
+    if (unresolved) assert.equal(closure.code, 'ALIAS_TARGETS_UNRESOLVED');
+    else {
+      assert.equal(closure.value.absentDeployments, 2);
+      assert.equal(closure.value.referentialClosure, false);
+      assert.equal(closure.value.absentAliasHostsVerifiedGone, 2);
+      assert.ok(result.aliasTargetDeployments.every(row => row.aliasesChecked === 1 && row.aliasStatus === 410));
+    }
+    assert.equal(result.deployments.length, 1);
+    assert.deepEqual(result.pathAuthority.unresolvedAliasTargetIds, ['dpl_old_0', 'dpl_old_1']);
+    assert.equal(result.pathAuthority.authorityProven, false);
+    assert.equal(JSON.stringify(result).includes(token), false);
+  }
+});
+
+test('active firewall 404 falls back to the supported configuration list and records explicit absence', async () => {
+  const {fetchImpl, calls} = fixture(url => {
+    if (url.pathname.endsWith('/config/active')) return response({error: {message: token}}, 404);
+    if (url.pathname.endsWith('/firewall/config')) return response({active: null, draft: null, versions: []});
+  });
+  const result = await inventoryProtection({token, fetchImpl});
+  assert.equal(result.status, 'INVENTORY_COMPLETE');
+  assert.deepEqual(result.observations.find(row => row.name === 'firewall').value,
+    {source: 'configuration_list', configured: false, enabled: null, version: null, rules: [], denialProven: false});
+  assert.ok(calls.some(({url}) => url.pathname === '/v1/security/firewall/config'));
+  assert.equal(JSON.stringify(result).includes(token), false);
+});
+
+test('firewall list fallback rejects ambiguous absence and unauthorized reads', async () => {
+  for (const mode of ['schema', 'unauthorized']) {
+    const {fetchImpl} = fixture(url => {
+      if (url.pathname.endsWith('/config/active')) return response({error: {message: token}}, mode === 'unauthorized' ? 403 : 404);
+      if (url.pathname.endsWith('/firewall/config')) return response({active: null, versions: [], [token]: token});
     });
     const result = await inventoryProtection({token, fetchImpl});
     assert.equal(result.status, 'INCOMPLETE');
-    assert.equal(result.aliasTargetDeployments.length, 2);
-    assert.ok(result.aliasTargetDeployments.every(row => row.status === 'INCOMPLETE' && row.denialProven === false));
-    assert.equal(result.observations.find(row => row.name === 'aliasDeploymentClosure').code, 'ALIAS_TARGETS_UNRESOLVED');
-    assert.equal(result.deployments.length, 1);
+    assert.equal(result.observations.find(row => row.name === 'firewall').code,
+      mode === 'unauthorized' ? 'HTTP_403' : 'INVALID_FIREWALL_CONFIG_LIST');
     assert.equal(JSON.stringify(result).includes(token), false);
   }
 });

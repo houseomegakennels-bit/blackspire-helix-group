@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-12 — exact order after receiver compatibility correction
+
+1. Complete full trusted validation, memory/security checks, commit and push the narrow Vercel inventory correction. The resulting commit becomes the only valid release SHA.
+2. Require exact-new-head CI, normal Git-integrated frontend READY, valid root ignored-build success and successful aggregate Vercel context.
+3. Dispatch exact-new-head receiver maintenance and require complete success. Preserve explicit non-authority records for deleted historical targets and unavailable build output.
+4. Keep the release held until Supabase provider authority reduces PUBLIC EXECUTE from 12/12 to 0/12 on the exact pg_net signatures.
+5. Only after every provider gate is green, repin n8n read-only, create fresh final-SHA backup/artifact/disk evidence, bind then-current main in a new exclusive protected descriptor, and start a new guarded operation. Never reuse the old descriptor or operation `6cc8d935-ab34-432b-acf9-13c34e68a056`.
+
 ## 2026-09-11 — finish the cutover phase split and fixed composition
 
 1. Preserve the newly operation-fenced HELD path. Keep `acceptance-active.json` exclusive to the journaled `six_live_reads` attempt and require exact capability selection; never broaden the HELD context into general admission.

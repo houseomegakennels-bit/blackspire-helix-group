@@ -1,5 +1,14 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-12 — provider recovery and receiver inventory compatibility correction
+
+- Recovered clean exact release head `90610ddf4420e21bd02870f323314972bd2f2942` with main `726b54a89b0e871531a12d1421f58c3e47d256be`. Vercel is active for newer main, but no deployment object exists for the release SHA; a same-SHA ref update preserved history and emitted no deployment.
+- Corrected receiver inventory compatibility narrowly: authenticated 404/410 historical targets require fresh HTTP 410 from every still-bound alias, while all other metadata/host outcomes remain fail-closed. Deleted targets remain explicitly non-authoritative. Firewall observation now uses the supported configuration-list endpoint after the obsolete versioned endpoint returns 404 and strictly validates explicit absence.
+- Build-output/path authority remains unavailable and unverified. Focused inventory/canary tests pass, including adversarial 200/redirect/404/5xx/network alias responses; full trusted validation and exact-head CI remain required.
+- Reviewed the net mainline delta through `726b54a89b0e871531a12d1421f58c3e47d256be` strictly for ZOLA compatibility/non-overlap. It is isolated to Helix research and its read-only frontend surface plus navigation, with exact-main CI and Vercel green; no comprehensive peer/security or research-methodology endorsement is claimed. The verified implementation anchor advances to that commit.
+- Supabase remains provider-blocked at PUBLIC EXECUTE 12/12 under `supabase_admin`; no SQL was replayed. n8n and release sealing remained read-only. The old descriptor binds four stale SHA classes and operation `6cc8d935-ab34-432b-acf9-13c34e68a056` is not reusable for merge/cutover.
+- No merge, production promotion, n8n mutation, database mutation, protected reseal, service activation or OPEN transition occurred.
+
 ## 2026-09-11 — exact timeout recovery and HELD operation-fence correction
 
 - Recovered clean exact local/remote/PR head `e3aa44f`; the only commit since `a782f3d` is its HELD/VPS hardening delta. Four focused lanes confirmed the generic 34-stage registry and prior VPS/authority tests were green but found no fixed composition or executable release command.

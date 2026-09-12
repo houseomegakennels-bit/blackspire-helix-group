@@ -34,6 +34,18 @@ const protection = (row) => ({
   trustedIpsConfigured: row.trustedIps == null ? null : Boolean(row.trustedIps),
   automationBypassConfigured: row.protectionBypass == null ? null : Object.keys(row.protectionBypass).length > 0,
 });
+const firewallMetadata = (config, source) => {
+  if (!plainObject(config) || !Array.isArray(config.rules)) fail('INVALID_FIREWALL_CONFIG');
+  return { source, configured: true,
+    enabled: typeof config.firewallEnabled === 'boolean' ? config.firewallEnabled : null,
+    version: Number.isSafeInteger(config.version) ? config.version : null,
+    rules: config.rules.map((rule, index) => ({ index,
+      active: typeof rule.active === 'boolean' ? rule.active : null,
+      action: ['deny', 'bypass', 'challenge', 'log', 'redirect', 'rate_limit'].includes(rule.action?.mitigate?.action ?? rule.action) ? (rule.action?.mitigate?.action ?? rule.action) : 'UNKNOWN',
+      // Predicate values may contain credentials. They are intentionally excluded.
+      conditionGroupCount: Array.isArray(rule.conditionGroup) ? rule.conditionGroup.length : null,
+      conditionsRequirePrivateReview: true })), denialProven: false };
+};
 
 // Only reviewed source paths may appear in plaintext. Arbitrary route expressions,
 // builder sources, conditions, headers and config can contain secrets. Digests
@@ -143,6 +155,15 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
     catch { fail('INVALID_JSON'); }
   }
+  async function verifyAbsentAlias(alias, deploymentId) {
+    if (now() - started >= deadlineMs || ++requests > 2000) fail('INVENTORY_LIMIT');
+    const url = new URL(`https://${alias}/zola-absent-alias-${digest(deploymentId).slice(0, 32)}`);
+    const response = await fetchImpl(url, { method: 'GET', redirect: 'error', credentials: 'omit',
+      signal: AbortSignal.timeout(Math.max(1, Math.min(15000, deadlineMs - (now() - started)))),
+      headers: { Accept: 'text/plain' } });
+    await response.body?.cancel();
+    if (response.status !== 410) fail(`ALIAS_HTTP_${response.status}`);
+  }
   async function paged(path, key, parameters = {}, bypass = false) {
     const result = [];
     let cursor;
@@ -210,8 +231,11 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
     return { count: rows.length, paginationComplete: true };
   });
   // Project deployment pagination may omit older/deleted alias targets. Follow
-  // every distinct missing target through the fixed authenticated metadata API;
-  // 404/410 does not prove the alias or its request authority is contained.
+  // every distinct missing target through the fixed authenticated metadata API.
+  // A provider 404/410 is retained as an explicit absent-resource outcome. It
+  // completes inventory classification, but never proves alias denial, path
+  // authority, or rollback suitability; release-specific gates must reject an
+  // absent protected rollback target.
   await observe('aliasDeploymentClosure', async () => {
     if (['deployments', 'aliases'].some(name =>
       evidence.observations.find(row => row.name === name)?.status !== 'COMPLETE')) fail('ALIAS_CLOSURE_INPUT_INCOMPLETE');
@@ -223,14 +247,32 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
         evidence.deployments.push(detail);
         evidence.aliasTargetDeployments.push({ id, status: 'COMPLETE', denialProven: false });
       } catch (error) {
-        evidence.aliasTargetDeployments.push({ id, status: 'INCOMPLETE',
-          code: error instanceof InventoryError ? error.message : 'REQUEST_FAILED', denialProven: false });
+        const code = error instanceof InventoryError ? error.message : 'REQUEST_FAILED';
+        evidence.aliasTargetDeployments.push({ id,
+          status: ['HTTP_404', 'HTTP_410'].includes(code) ? 'ABSENT' : 'INCOMPLETE',
+          code, denialProven: false });
+      }
+    }
+    for (const target of evidence.aliasTargetDeployments.filter(row => row.status === 'ABSENT')) {
+      const aliases = evidence.aliases.filter(row => row.deploymentId === target.id).map(row => row.alias);
+      try {
+        for (const alias of aliases) await verifyAbsentAlias(alias, target.id);
+        target.aliasesChecked = aliases.length;
+        target.aliasStatus = 410;
+      } catch (error) {
+        target.status = 'INCOMPLETE';
+        target.code = error instanceof InventoryError ? error.message : 'ALIAS_PROBE_FAILED';
       }
     }
     if (evidence.aliases.some(row => row.deploymentId === null) ||
-        evidence.aliasTargetDeployments.some(row => row.status !== 'COMPLETE')) fail('ALIAS_TARGETS_UNRESOLVED');
+        evidence.aliasTargetDeployments.some(row => row.status === 'INCOMPLETE')) fail('ALIAS_TARGETS_UNRESOLVED');
     return { referencedTargets: new Set(evidence.aliases.map(row => row.deploymentId)).size,
-      additionalDeployments: missing.length, denialProven: false };
+      additionalDeployments: evidence.aliasTargetDeployments.filter(row => row.status === 'COMPLETE').length,
+      absentDeployments: evidence.aliasTargetDeployments.filter(row => row.status === 'ABSENT').length,
+      referentialClosure: evidence.aliasTargetDeployments.every(row => row.status === 'COMPLETE'),
+      absentAliasHostsVerifiedGone: evidence.aliasTargetDeployments.filter(row => row.status === 'ABSENT')
+        .reduce((count, row) => count + row.aliasesChecked, 0),
+      denialProven: false };
   });
   // Bound read-only comparison of the one observed application-level coverage
   // gap with its covered sibling alias. Never emit arbitrary route/header values.
@@ -315,16 +357,20 @@ export async function inventoryProtection({ token, fetchImpl = fetch, now = () =
     return { versions, count: versions.length, denialProven: false };
   });
   await observe('firewall', async () => {
-    const config = await get('/v1/security/firewall/config/active', { projectId: PROJECT });
-    if (!Array.isArray(config.rules)) fail('INVALID_FIREWALL_CONFIG');
-    return { enabled: typeof config.firewallEnabled === 'boolean' ? config.firewallEnabled : null,
-      version: Number.isSafeInteger(config.version) ? config.version : null,
-      rules: config.rules.map((rule, index) => ({ index,
-        active: typeof rule.active === 'boolean' ? rule.active : null,
-        action: ['deny', 'bypass', 'challenge', 'log', 'redirect', 'rate_limit'].includes(rule.action?.mitigate?.action ?? rule.action) ? (rule.action?.mitigate?.action ?? rule.action) : 'UNKNOWN',
-        // Predicate values may contain credentials. They are intentionally excluded.
-        conditionGroupCount: Array.isArray(rule.conditionGroup) ? rule.conditionGroup.length : null,
-        conditionsRequirePrivateReview: true })), denialProven: false };
+    try {
+      return firewallMetadata(await get('/v1/security/firewall/config/active', { projectId: PROJECT }), 'active_version');
+    } catch (error) {
+      if (!(error instanceof InventoryError) || error.message !== 'HTTP_404') throw error;
+      // The supported list endpoint distinguishes an account with no active WAF
+      // configuration from an unavailable/unauthorized read. Do not infer that
+      // an absent custom config proves request denial or any default behavior.
+      const listed = await get('/v1/security/firewall/config', { projectId: PROJECT });
+      if (!plainObject(listed) || !Object.hasOwn(listed, 'active') || !Object.hasOwn(listed, 'draft') ||
+          !Array.isArray(listed.versions) || !(listed.draft === null || plainObject(listed.draft))) fail('INVALID_FIREWALL_CONFIG_LIST');
+      if (listed.active === null) return { source: 'configuration_list', configured: false,
+        enabled: null, version: null, rules: [], denialProven: false };
+      return firewallMetadata(listed.active, 'configuration_list');
+    }
   });
   await observe('systemBypass', async () => {
     const rows = await paged('/v1/security/firewall/bypass', 'result', { projectId: PROJECT }, true);
