@@ -1,0 +1,32 @@
+{
+  "all_helix_tests_passed": 62,
+  "base_commit": "726b54a89b0e871531a12d1421f58c3e47d256be",
+  "claim_75pct_allowed": false,
+  "development_configurations_evaluated": 0,
+  "diff_check": "PASS",
+  "final_holdout": "NOT_RUN",
+  "independent_review": "TIMEOUT_240_SECONDS_NO_APPROVAL",
+  "input_audit_exit_code": 2,
+  "input_audit_reproduction": "BYTE_IDENTICAL",
+  "internal_validation": "NOT_RUN",
+  "living_memory": "FAIL_UNREVIEWED_NON_DOCUMENTATION_CHANGE",
+  "merged": false,
+  "preparation": "FAILED_BEFORE_OUTCOME_READ_NO_SPLITS_CREATED",
+  "production_changed": false,
+  "protocol_commit": "c02aff36a110493e72069f3157d715c7ab76ecc5",
+  "recorded_at_utc": "2026-09-12T15:15:36.071619+00:00",
+  "security_scan": "PASS_NODE_22.23.1",
+  "source_hashes": {
+    "backtests/audit_london_v5_input.py": "70c88f843fafb0b5d89f6a3c354d88ac0c8e804087bbc11233b288d5ecdfe944",
+    "backtests/london_v5_candidates.py": "d5081f829ecfa03e80bfedbdc526bda4b14b6c6900a2d852df95f8efddce2869",
+    "backtests/london_v5_research.py": "6ef46f698b4a7290ee2cf8f548b6635d3956ae9d9c91bd203cb76adb47dde6d6",
+    "docs/backtests/london-v5/protocol.md": "3df1c26d0cc7e35bb6ffc91c18f54ca25b74f198c14135fbe1a05f5de28d0b22",
+    "evidence/v5/regeneration-audit.json": "eca70e1f9c29ec86caf3092556f4848c66f78f82e2692beaf8e948a41e86e9ae",
+    "tests/test_london_v5_input_integrity.py": "43c489dd49326904139974e2f6d21d8b81f35467365ee9c562e4f027271b71ba",
+    "tests/test_london_v5_research.py": "2a525de3175acbd5b520a209988a7a4ac3121ece55006fda472f4673238b20f6"
+  },
+  "strict_regeneration": "FAILED_TIMESTAMP_ORDER",
+  "trading_authorized": false,
+  "unchanged_main_living_memory": "SAME_FAILURE",
+  "v5_tests_passed": 33
+}

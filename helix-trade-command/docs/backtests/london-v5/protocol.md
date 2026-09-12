@@ -46,3 +46,6 @@ Status: registered before this resumed session evaluates V5 outcomes. Research o
 - Verify preserved candidate generation against the pinned source CSV with a streaming adapter that preserves the original cycle semantics; do not load the full history into memory on the busy server.
 - Rerunning an unchanged frozen experiment is a reproducibility check, not permission to adapt it. Changed data, code, protocol or parameters invalidate the freeze.
 - Merge only reviewed, reproducible research code/evidence/documentation. Do not edit the production workspace, broker paths, live risk settings, prior V2–V4 artifacts, or the original `/tmp` files.
+
+## Pre-outcome data-quality clarification
+Before the first resumed development evaluation, use the timestamp-only regeneration audit to exclude candidates from NY sessions lacking all 36 distinct five-minute bars from 07:00 through 09:55 on one research day. Preserve the complete original candidate artifact unchanged and record the excluded-candidate count and the audit hash in the split manifest. This is a research data-completeness exclusion, not a live-available price signal; never choose exclusions using wins, losses or returns. The adapter must first reproduce the original unfiltered candidate SHA exactly.

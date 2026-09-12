@@ -105,3 +105,7 @@ Push/merge authorization, budgets/spend, credentials, GitHub authorization, devi
 - Production Command launch: readiness incomplete and live state `UNVERIFIED`.
 - PR #26: repository-side readiness tooling is merged into `main`, but host-side production approval remains blocked by six items, each separately authorized: (1) reverse proxy/TLS install and verification, (2) least-privileged non-root runtime ownership provisioning, (3) installed monitoring/log rotation with alert-delivery testing, (4) approved production backup/migration rehearsal or execution, (5) recorded exact known-good live release/database rollback target, and (6) readiness tooling in the deployment artifact.
 - Multi-instance/serverless Command persistence: requires architecture work beyond SQLite.
+
+## London V5 integrity recovery — 2026-09-12 UTC
+
+Investigate and register a deterministic, outcome-independent repair for the five source-CSV timestamp reversals before strict candidate regeneration or development evaluation. Retain original hashes and exposure labels. Separately obtain a genuine review of the existing main/implementation-anchor discrepancy; do not fabricate an anchor update. Final holdout requires verified unseen direct-instrument evidence and remains unopened/unavailable.
