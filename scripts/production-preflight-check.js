@@ -219,6 +219,7 @@ if (unit === null) {
     'SupplementaryGroups=blackspire-writer',
     'WorkingDirectory=/opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@',
     'RuntimeDirectory=blackspire', 'RuntimeDirectoryMode=0750', 'UMask=0007',
+    'Environment=BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG=@BLACKSPIRE_GATEWAY_CONFIG_PATH@',
     'ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-entry.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@',
     'ExecStartPost=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-readiness.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@',
     'Before=blackspire-command.service blackspire-command-worker.service',
@@ -243,7 +244,7 @@ if (unit === null) {
   const immutable = gatewayUnit !== null
     && !/\/current(?:\/|$)|\/HEAD(?:\/|$)|\/opt\/blackspire\/\.worktrees/.test(executableGateway)
     && (executableGateway.match(/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/g) ?? []).length===3
-    && (executableGateway.match(/@BLACKSPIRE_GATEWAY_CONFIG_PATH@/g) ?? []).length===2;
+    && (executableGateway.match(/@BLACKSPIRE_GATEWAY_CONFIG_PATH@/g) ?? []).length===3;
   const privateIdentity = gatewaySysusers !== null
     && gatewaySysusers.split('\n').map(line=>line.trim()).filter(line=>line&&!line.startsWith('#')).join('\n')
       === 'u blackspire-writer - "Blackspire Buyer Writer gateway" /nonexistent /usr/sbin/nologin'
@@ -421,10 +422,10 @@ if (unit === null) {
 const installedGatewayMatchesTemplate=(installed,reviewed)=>{
   if(typeof installed!=='string'||typeof reviewed!=='string'||/@BLACKSPIRE_GATEWAY_/.test(installed)
     ||/\/current(?:\/|$)|\/HEAD(?:\/|$)|\/opt\/blackspire\/\.worktrees/.test(installed))return false;
-  const releases=[...installed.matchAll(/\/opt\/blackspire-command\/releases\/([a-f0-9]{40})(?=\/|$)/g)].map(match=>match[1]);
-  if(releases.length!==4||new Set(releases).size!==1)return false;
+  const releases=[...installed.matchAll(/\/opt\/blackspire-command\/releases\/([a-f0-9]{40})(?=\/|\r?$)/gm)].map(match=>match[1]);
+  if(releases.length!==3||new Set(releases).size!==1)return false;
   const config='/etc/blackspire-buyer-writer-gateway/gateway.json';
-  if(installed.split(config).length-1!==3)return false;
+  if(installed.split(config).length-1!==4)return false;
   const normalized=installed
     .replaceAll(`/opt/blackspire-command/releases/${releases[0]}`,'/opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@')
     .replaceAll(config,'@BLACKSPIRE_GATEWAY_CONFIG_PATH@');

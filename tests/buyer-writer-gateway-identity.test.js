@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {renderGatewayUnit} from '../packages/buyer-writer/gateway-installation.js';
+import {BUYER_WRITER_GATEWAY_CONFIG} from '../packages/zola-release/pg-net-host-observer.js';
 
 const rootOnly={skip:process.getuid?.()!==0};
 const NODE='/opt/nodejs/node-v22.23.1-linux-x64/bin/node';
@@ -22,6 +24,10 @@ test('gateway service is immutable, hardened, and excludes the broad application
   assert.match(unit,/^SupplementaryGroups=blackspire-writer$/m);
   assert.doesNotMatch(unit,/^(?:Group|SupplementaryGroups)=.*(?:^|\s)blackspire(?:\s|$)/m);
   assert.match(unit,/^WorkingDirectory=\/opt\/blackspire-command\/releases\/@BLACKSPIRE_GATEWAY_RELEASE_SHA@$/m);
+  const rendered=renderGatewayUnit(unit,{sha:'a'.repeat(40)});
+  const configuredPath=/^Environment=BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG=(.*)$/m.exec(rendered);
+  assert.equal(configuredPath?.[1],BUYER_WRITER_GATEWAY_CONFIG);
+  assert.equal([...rendered.matchAll(/\/opt\/blackspire-command\/releases\/([a-f0-9]{40})(?=\/|\r?$)/gm)].length,3);
   assert.match(unit,/^ExecStart=.*\/releases\/@BLACKSPIRE_GATEWAY_RELEASE_SHA@\/packages\/buyer-writer\/gateway-entry\.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@$/m);
   assert.match(unit,/^ExecStartPost=.*\/releases\/@BLACKSPIRE_GATEWAY_RELEASE_SHA@\/packages\/buyer-writer\/gateway-readiness\.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@$/m);
   assert.doesNotMatch(unit,/\/current(?:\/|$)|\/HEAD(?:\/|$)|\/opt\/blackspire\/\.worktrees/);

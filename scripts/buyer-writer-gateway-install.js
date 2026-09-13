@@ -5,8 +5,9 @@ import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {
-  GATEWAY_CONFIG_PATH,GATEWAY_SERVICE,assertGatewayOnlyEffects,decodeGatewayInstallState,
-  encodeGatewayInstallState,gatewayInstallEffects,inspectGatewayArtifact,renderGatewayUnit,validateGatewayReleaseSha,
+  GATEWAY_CONFIG_PATH,GATEWAY_NODE,GATEWAY_SERVICE,assertGatewayOnlyEffects,decodeGatewayInstallState,
+  encodeGatewayInstallState,gatewayActivationActions,gatewayInstallEffects,gatewayRollbackActions,inspectGatewayArtifact,
+  renderGatewayUnit,validateGatewayReleaseSha,validateGatewayRestoredServiceState,validateGatewayRuntimeObservation,
 } from '../packages/buyer-writer/gateway-installation.js';
 import {inspectSealedBuyerWriterArtifact} from '../packages/buyer-writer/artifact-inspection.js';
 import {validateBuyerWriterGatewayServiceConfiguration} from '../packages/buyer-writer/gateway-entry.js';
@@ -27,6 +28,7 @@ const unitDestination=path.join('/etc/systemd/system',GATEWAY_SERVICE);
 const stateDirectory='/var/lib/blackspire-operator/gateway-installation';
 const stateFile=path.join(stateDirectory,'state.json');
 const backupDirectory=path.join(stateDirectory,'backups');
+const lockFile='/run/blackspire-buyer-writer-gateway-install.lock';
 const repositoryRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
 const commandEnvironment=Object.freeze({PATH:'/usr/bin:/bin',LC_ALL:'C',LANG:'C'});
@@ -34,6 +36,35 @@ function run(command,commandArgs,{stdout='pipe',env=commandEnvironment,timeout=1
   const result=spawnSync(command,commandArgs,{encoding:'utf8',stdio:['ignore',stdout,'pipe'],env,timeout,maxBuffer,killSignal:'SIGKILL'});
   if(result.status!==0||result.error)fail(`gateway installer command failed: ${path.basename(command)}`);
   return result.stdout??'';
+}
+function serviceState(){
+  const output=run('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,SubState,MainPID,User,Group','--',GATEWAY_SERVICE]);
+  const rows=output.trim().split('\n').map(line=>{const at=line.indexOf('=');return at<1?[]:[line.slice(0,at),line.slice(at+1)];});
+  if(rows.length!==5||rows.some(row=>row.length!==2)||new Set(rows.map(row=>row[0])).size!==5)fail('gateway service state rejected');
+  return Object.fromEntries(rows);
+}
+function enabledState({allowMissing=false}={}){
+  const result=spawnSync('/usr/bin/systemctl',['is-enabled',GATEWAY_SERVICE],{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:commandEnvironment,
+    timeout:15_000,maxBuffer:4096,killSignal:'SIGKILL'});
+  if(result.error||result.signal!==null||result.stderr!=='')fail('gateway service enablement state rejected');
+  const value=result.stdout.trim();
+  if(result.status===0&&value==='enabled')return true;
+  if(result.status===1&&value==='disabled')return false;
+  if(allowMissing&&result.status===4&&value==='not-found')return false;
+  fail('gateway service enablement state rejected');
+}
+function acquireInstallLock(){
+  const parent=fs.lstatSync(path.dirname(lockFile));
+  if(!parent.isDirectory()||parent.isSymbolicLink()||parent.uid!==0||(parent.mode&0o022)!==0)fail('gateway installer lock parent rejected');
+  const fd=fs.openSync(lockFile,fs.constants.O_RDWR|fs.constants.O_CREAT|fs.constants.O_NOFOLLOW,0o600);
+  try{
+    const stat=fs.fstatSync(fd);
+    if(!stat.isFile()||stat.uid!==0||stat.gid!==0||stat.nlink!==1||(stat.mode&0o777)!==0o600)fail('gateway installer lock rejected');
+    const result=spawnSync('/usr/bin/flock',['--exclusive','--nonblock','3'],{encoding:'utf8',stdio:['ignore','ignore','pipe',fd],env:commandEnvironment,
+      timeout:2000,maxBuffer:4096,killSignal:'SIGKILL'});
+    if(result.status!==0||result.error||result.signal!==null||result.stderr!=='')fail('gateway installer is already running');
+    return fd;
+  }catch(error){fs.closeSync(fd);throw error;}
 }
 async function validateArtifact(){
   const proof=await inspectSealedBuyerWriterArtifact({artifactRoot:artifact,releaseSha:sha,environment:'production'});
@@ -64,7 +95,7 @@ function ensurePrivateDirectory(directory){
   const parent=path.dirname(directory),parentStat=fs.lstatSync(parent);
   if(!parentStat.isDirectory()||parentStat.isSymbolicLink()||parentStat.uid!==0||(parentStat.mode&0o022)!==0)fail('gateway installation parent directory rejected');
   fs.mkdirSync(directory,{mode:0o700});fs.chownSync(directory,0,0);fs.chmodSync(directory,0o700);
-  safeDirectory(directory,{uid:0,gid:0,mode:0o700});
+  safeDirectory(directory,{uid:0,gid:0,mode:0o700});syncDirectory(directory);syncDirectory(parent);
 }
 function writerIdentity(){
   const passwd=run('/usr/bin/getent',['passwd','blackspire-writer']).trim().split(':');
@@ -97,9 +128,21 @@ function validateSecretAuthority(){
   }catch(error){if(error?.message?.startsWith('gateway secret'))throw error;fail('gateway secret configuration authority rejected');}
   finally{if(fd!==undefined)fs.closeSync(fd);}
 }
+function syncDirectory(directory){
+  const fd=fs.openSync(directory,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);
+  try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+}
 function atomicRootFile(filename,bytes,mode){
   safeDestination(filename);const temp=`${filename}.new-${process.pid}`;
-  fs.writeFileSync(temp,bytes,{mode,flag:'wx'});fs.chownSync(temp,0,0);fs.chmodSync(temp,mode);fs.renameSync(temp,filename);
+  let fd,identity,renamed=false;
+  try{
+    fd=fs.openSync(temp,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,mode);
+    identity=fs.fstatSync(fd);fs.fchownSync(fd,0,0);fs.fchmodSync(fd,mode);fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);fs.closeSync(fd);fd=undefined;
+    fs.renameSync(temp,filename);renamed=true;syncDirectory(path.dirname(filename));
+  }finally{
+    if(fd!==undefined)fs.closeSync(fd);
+    if(!renamed)try{const stat=fs.lstatSync(temp);if(identity&&stat.dev===identity.dev&&stat.ino===identity.ino)fs.unlinkSync(temp);}catch(error){if(error?.code!=='ENOENT')throw error;}
+  }
 }
 async function inspect(){
   const verified=await validateArtifact();
@@ -108,6 +151,14 @@ async function inspect(){
   const installed=fs.readFileSync(unitDestination,'utf8');
   if(installed!==rendered)fail('installed gateway unit does not match the exact release');
   validateSecretMetadata();validateSecretAuthority();
+  const state=serviceState(),pid=state.MainPID;
+  let cmdline;
+  try{
+    const bytes=fs.readFileSync(`/proc/${pid}/cmdline`);
+    if(bytes.length<1||bytes.length>65_536||bytes.at(-1)!==0)fail('gateway runtime exact authority rejected');
+    cmdline=bytes.subarray(0,-1).toString('utf8').split('\0');
+    validateGatewayRuntimeObservation({state,exe:fs.readlinkSync(`/proc/${pid}/exe`),cwd:fs.readlinkSync(`/proc/${pid}/cwd`),cmdline},{sha});
+  }catch(error){if(error?.message==='gateway runtime exact authority rejected')throw error;fail('gateway runtime exact authority rejected');}
   process.stdout.write(`${JSON.stringify({state:'VERIFIED',sha:verified.sha,artifact:verified.artifact,service:GATEWAY_SERVICE})}\n`);
 }
 async function install(){
@@ -129,19 +180,25 @@ async function install(){
   ensurePrivateDirectory(stateDirectory);ensurePrivateDirectory(backupDirectory);
   requireAbsent(stateFile);
   safeDestination(unitDestination);
-  let backup=null,previous=null;
+  let backup=null,previous=null,previousEnabled=false,previousActive=false;
   if(fs.existsSync(unitDestination)){
+    const prior=serviceState();
+    if(prior.ActiveState==='active'){
+      if(prior.SubState!=='running'||!/^[1-9][0-9]*$/.test(prior.MainPID))fail('gateway prior service state rejected');
+      previousActive=true;
+    }else if(!(['inactive','failed'].includes(prior.ActiveState))||prior.MainPID!=='0')fail('gateway prior service state rejected');
+    previousEnabled=enabledState();
     previous=fs.readFileSync(unitDestination);
     backup=path.join(backupDirectory,`${sha}-${Date.now()}.service`);
-    fs.writeFileSync(backup,previous,{flag:'wx',mode:0o600});fs.chownSync(backup,0,0);fs.chmodSync(backup,0o600);
+    atomicRootFile(backup,previous,0o600);
   }
   const rendered=renderGatewayUnit(fs.readFileSync(unitSource,'utf8'),{sha});
   // Persist rollback intent before changing the unit. A crash at any later point
   // therefore leaves an explicit, SHA-bound recovery path rather than orphaning
   // a partially installed service definition.
-  atomicRootFile(stateFile,encodeGatewayInstallState({sha,unitBackup:backup,previousUnit:previous,installedUnit:rendered}),0o600);
+  atomicRootFile(stateFile,encodeGatewayInstallState({sha,unitBackup:backup,previousUnit:previous,installedUnit:rendered,previousEnabled,previousActive}),0o600);
   atomicRootFile(unitDestination,rendered,0o644);
-  run('/usr/bin/systemctl',['daemon-reload']);run('/usr/bin/systemctl',['enable','--now',GATEWAY_SERVICE]);await inspect();
+  run('/usr/bin/systemctl',['daemon-reload']);for(const action of gatewayActivationActions())run('/usr/bin/systemctl',action);await inspect();
 }
 function rollback(){
   assertRoot();safeDestination(stateFile);const stateStat=fs.lstatSync(stateFile);
@@ -152,7 +209,7 @@ function rollback(){
   try{installed=fs.readFileSync(unitDestination);}catch(error){if(error?.code!=='ENOENT')throw error;}
   const installedDigest=installed===null?null:createHash('sha256').update(installed).digest('hex');
   if(installedDigest!==state.installedUnitSha256&&installedDigest!==state.previousUnitSha256)fail('installed gateway unit changed after installation');
-  run('/usr/bin/systemctl',['disable','--now',GATEWAY_SERVICE]);safeDestination(unitDestination);
+  const actions=gatewayRollbackActions(state);run('/usr/bin/systemctl',actions[0]);safeDestination(unitDestination);
   if(state.unitBackup===null){if(installed!==null)fs.unlinkSync(unitDestination);}
   else{
     const backup=fs.lstatSync(state.unitBackup);
@@ -161,8 +218,16 @@ function rollback(){
     if(createHash('sha256').update(backupBytes).digest('hex')!==state.previousUnitSha256)fail('gateway unit backup changed after installation');
     atomicRootFile(unitDestination,backupBytes,0o644);
   }
-  run('/usr/bin/systemctl',['daemon-reload']);fs.unlinkSync(stateFile);
+  for(const action of actions.slice(1))run('/usr/bin/systemctl',action);
+  const restoredExists=fs.existsSync(unitDestination);
+  validateGatewayRestoredServiceState({unitExists:restoredExists,enabled:enabledState({allowMissing:!restoredExists}),
+    active:restoredExists&&serviceState().ActiveState==='active'},state);
+  fs.unlinkSync(stateFile);
   process.stdout.write(`${JSON.stringify({state:'ROLLED_BACK',sha,service:GATEWAY_SERVICE})}\n`);
 }
 
-if(mode==='--inspect')await inspect();else if(mode==='--install')await install();else rollback();
+let lock;
+try{
+  if(mode==='--inspect')await inspect();
+  else{assertRoot();lock=acquireInstallLock();if(mode==='--install')await install();else rollback();}
+}finally{if(lock!==undefined)fs.closeSync(lock);}
