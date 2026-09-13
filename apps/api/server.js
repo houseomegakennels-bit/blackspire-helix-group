@@ -817,7 +817,8 @@ if (IS_ENTRY_POINT) {
       }
       assertSchemaCompatible();
       return createBuyerWriterRuntime({
-        configurationFile: process.env.BUYER_WRITER_CONFIG_FILE,
+        clientConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG,
+        ingressConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG,
         workspace: process.env.BUYER_WRITER_WORKSPACE_ID,
         releaseSha: identity.build.value,
         apiGeneration: process.env.INVOCATION_ID,

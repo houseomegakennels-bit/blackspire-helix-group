@@ -1,0 +1,46 @@
+# Blackspire Buyer Writer local gateway (REVIEW TEMPLATE, NOT INSTALLED)
+[Unit]
+Description=Blackspire Buyer Writer local Unix-socket gateway
+After=network-online.target
+Wants=network-online.target
+Before=blackspire-command.service blackspire-command-worker.service
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=blackspire-writer
+Group=blackspire-api
+WorkingDirectory=/opt/blackspire-command/current
+RuntimeDirectory=blackspire
+RuntimeDirectoryMode=0750
+UMask=0007
+Environment=PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node packages/buyer-writer/gateway-entry.js --configuration ${BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG}
+ExecStartPost=/opt/nodejs/node-v22.23.1-linux-x64/bin/node packages/buyer-writer/gateway-readiness.js
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=20
+TimeoutStopSec=20
+KillMode=mixed
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectProc=invisible
+ReadWritePaths=/run/blackspire
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

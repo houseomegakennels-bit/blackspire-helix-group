@@ -2,10 +2,11 @@ import {createHash,createHmac} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
 import {readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
-import {validateBuyerWriterConfiguration} from '../buyer-writer/configuration.js';
+import {validateBuyerWriterConfiguration,validateBuyerWriterGatewayProvisioningConfiguration} from '../buyer-writer/configuration.js';
 import {createBuyerWriterPostgres} from '../buyer-writer/postgres.js';
 import {createWriterGateway,createWriterReceiptGateway} from '../buyer-writer/gateway.js';
 import {captureBuyerJobVersion} from '../buyer-writer/criteria.js';
+import {APPLICATION_FUNCTION_PG_NET_SQL} from './pg-net-isolation.js';
 
 export const PROVIDER_ACL_FUNCTIONS=Object.freeze([
  '_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string',
@@ -46,9 +47,9 @@ function apiGroupId(){
 export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool}={}){
  let pool,client;
  try{
-  if(sql!==PROVIDER_ACL_CHECK_SQL||!Array.isArray(values)||values.length!==0)reject();
+  if(![PROVIDER_ACL_CHECK_SQL,APPLICATION_FUNCTION_PG_NET_SQL].includes(sql)||!Array.isArray(values)||values.length!==0)reject();
   const groupId=apiGroupId(),snapshot=readRootOwnedJsonSnapshot(configurationFile,{groupId,maxBytes:65536});
-  const config=validateBuyerWriterConfiguration(snapshot.value,{workspace:'blackspire-command',environment:'production'}),runtime=config.runtime;
+  const config=validateBuyerWriterGatewayProvisioningConfiguration(snapshot.value,{workspace:'blackspire-command'}),runtime=config.runtime;
   if(runtime.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||runtime.port!==5432||runtime.database!=='postgres')reject();
   const DriverPool=Pool??(await import('pg')).Pool;
   pool=new DriverPool({host:runtime.host,port:runtime.port,database:runtime.database,user:'buyer_writer_runtime',password:runtime.password,
@@ -95,22 +96,32 @@ function aclEvidence(value,bound){
    ||!expected.delete(row.functionName)||typeof row.arguments!=='string'||row.arguments.length>1024
    ||typeof row.owner!=='string'||row.owner.length>63
    ||![row.publicExecute,row.ownerExecute,row.postgresExecute,row.serviceRoleExecute,row.writerExecute].every(item=>typeof item==='boolean'))reject();
-  if(row.publicExecute)return blocked();
-  if(!row.ownerExecute||!row.postgresExecute||!row.serviceRoleExecute||row.writerExecute)reject();
+  if(!row.ownerExecute||!row.postgresExecute||!row.serviceRoleExecute)reject();
   identities.push({name:row.functionName,arguments:row.arguments,owner:row.owner});
  }
  if(expected.size)return null;
- return Object.freeze({status:'PASS',evidence:Object.freeze({providerAcl:true,...bound,functionCount:rows.length,
-  catalogDigest:hash(identities.sort((a,b)=>a.name.localeCompare(b.name)||a.arguments.localeCompare(b.arguments)))})});
+ const publicExecuteCount=rows.filter(row=>row.publicExecute).length;
+ return Object.freeze({providerAclObserved:true,...bound,functionCount:rows.length,publicExecuteCount,
+  ownerExecuteCount:rows.filter(row=>row.ownerExecute).length,postgresExecuteCount:rows.filter(row=>row.postgresExecute).length,
+  serviceRoleExecuteCount:rows.filter(row=>row.serviceRoleExecute).length,writerExecuteCount:rows.filter(row=>row.writerExecute).length,
+  providerRisk:publicExecuteCount>0?'PUBLIC_EXECUTE_EXTERNALLY_OPEN':'PUBLIC_EXECUTE_NOT_OBSERVED',
+  catalogDigest:hash(identities.sort((a,b)=>a.name.localeCompare(b.name)||a.arguments.localeCompare(b.arguments)))});
 }
 
-export function createProviderAclCheckOperation({query}){
+const isolationKeys=['pgNetIsolationVerified','applicationDbCredentialsAbsent','gatewayTransportVerified','arbitrarySqlDenied',
+ 'arbitraryFunctionDenied','arbitraryUrlDenied','applicationPgNetCallSitesZero','applicationDbPgNetReferencesZero'];
+
+export function createProviderAclCheckOperation({query,isolationProof}){
  if(typeof query!=='function')reject();
  const observe=async args=>{
   const bound=binding(args);
   try{
-   const result=aclEvidence(await query(PROVIDER_ACL_CHECK_SQL,[]),bound);
-   return result??blocked();
+   const provider=aclEvidence(await query(PROVIDER_ACL_CHECK_SQL,[]),bound);
+   if(provider===null||typeof isolationProof!=='function')return blocked();
+   const isolation=await isolationProof();
+   if(isolation?.status!=='PASS'||!isolation.evidence||isolationKeys.some(key=>isolation.evidence[key]!==true))return blocked();
+   return Object.freeze({status:'PASS',evidence:Object.freeze({...provider,...isolation.evidence,
+    providerAcl:provider.publicExecuteCount===0,providerRiskRecorded:provider.publicExecuteCount>0})});
   }catch(error){
    if(error?.message==='Fixed production ACL/writer operation rejected')throw error;
    return blocked();

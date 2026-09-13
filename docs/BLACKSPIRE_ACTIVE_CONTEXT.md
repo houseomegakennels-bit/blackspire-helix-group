@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-13 — pg_net-independent Buyer Writer implementation in checkpoint validation
+
+The release worktree now contains the local Unix-socket Buyer Writer gateway, minimal application client configuration, production direct-database guards, gateway-only credential configuration/service integration, fixed host isolation observer, repository and application-function pg_net scans, and updated provider gate semantics. The existing direct writer identity check remains unchanged. Focused integration is green at 38/38 and the current source scan finds zero unauthorized application call sites; full trusted/native verification and a committed/pushed exact head remain pending.
+
+PUBLIC EXECUTE is still externally open at the last verified 12/12 observation and must be reported as provider risk. The new gate can pass that provider state only with every live isolation proof true; the current host has not installed or started the new gateway, so live isolation is not yet claimed. Keep `SU-471370` open. Do not reuse the stale protected descriptor, release package, n8n pin or operation `6cc8d935-ab34-432b-acf9-13c34e68a056`. No production mutation or release execution occurred.
+
 ## 2026-09-12 — receiver compatibility correction awaiting exact-head gates
 
 The Vercel account is active, but release SHA `90610ddf4420e21bd02870f323314972bd2f2942` has no deployment object and its old blocked contexts cannot be natively redeployed. A same-SHA Git ref update preserved source but emitted no Vercel event. The receiver inventory now narrowly classifies deleted historical targets only after authenticated 404/410 plus fresh HTTP 410 from every bound alias, and uses Vercel's supported firewall configuration-list endpoint after the obsolete versioned endpoint returns 404. It never promotes absence into denial or path authority. Focused tests pass; commit, full validation, push, new-head CI/Vercel and receiver success remain required.

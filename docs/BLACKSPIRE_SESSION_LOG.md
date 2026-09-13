@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-13 — pg_net-independent Buyer Writer gateway checkpoint
+
+- Recovered clean exact local/remote/PR head `475998653e700eec9cd223dd2ced56d2ba36a036` and preserved current main `726b54a89b0e871531a12d1421f58c3e47d256be` without resetting unrelated work.
+- Implemented a dedicated `blackspire-writer` Unix-socket service, strict six-operation HMAC protocol, fixed-statement gateway-only PostgreSQL adapter, bounded request/deadline/replay controls, graceful shutdown and sanitized request logging. The existing `createBuyerWriterPostgres()` identity check remains unchanged.
+- Split credential-bearing gateway configuration from the minimal application socket/capability/workspace configuration and separate API ingress authentication. Production API/worker environments reject direct database credential keys, and ordinary production composition cannot inject a direct PostgreSQL adapter.
+- Reworked `provider_acl_check` to retain exact provider ACL/risk evidence while requiring live socket/service/config/process isolation, zero application credentials, fixed-protocol denial, zero unauthorized repository call sites and zero application-owned database function references. Missing observations fail closed; PUBLIC 12/12 can pass only with every isolation proof.
+- Focused gateway/configuration/runtime/installer/isolation/provider/adapter tests pass 38/38 and the current deterministic repository scan reports zero unauthorized application call sites. Full trusted/native validation, checkpoint/final commits, push and exact-head external checks remain pending. No production service restart, database mutation, n8n mutation, merge, release execution or OPEN transition occurred. Ticket `SU-471370` remains open.
+
 ## 2026-09-12 — provider recovery and receiver inventory compatibility correction
 
 - Recovered clean exact release head `90610ddf4420e21bd02870f323314972bd2f2942` with main `726b54a89b0e871531a12d1421f58c3e47d256be`. Vercel is active for newer main, but no deployment object exists for the release SHA; a same-SHA ref update preserved history and emitted no deployment.

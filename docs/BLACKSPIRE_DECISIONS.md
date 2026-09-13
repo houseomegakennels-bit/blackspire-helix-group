@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-09-13 — Buyer writes cross a dedicated local Unix-socket trust boundary
+
+Ordinary ZOLA API and worker processes may not possess PostgreSQL credentials or instantiate the production database writer. Buyer mutations cross a fixed `/run/blackspire/buyer-writer.sock` protocol into a dedicated `blackspire-writer` service; filesystem ownership and the `blackspire-api` group provide local admission, with a separate capability providing application-level authentication. The gateway accepts only six fixed operations and fixed SQL statements. Provider pg_net ACL observation remains mandatory and risky PUBLIC access remains explicit, but release acceptance is based on complete application isolation proof while provider ticket `SU-471370` stays open for defense in depth. The original direct-login identity check is not relaxed.
+
 ## 2026-08-31 — ZOLA is the future-facing Blackspire AI/operator identity (PR #118)
 
 Z.O.L.A. (Zero-Trust Operations, Logic & Automation) is adopted as the future-facing user-facing AI identity and command surface for the Blackspire platform, succeeding the legacy "Jarvis" product/operator naming in all current roadmap, future pipeline, user-facing AI identity, future command surface, and future product/operator terminology. Blackspire Command remains the canonical control plane, and Hermes remains the orchestration/runtime layer; no second orchestrator is created. Legacy `jarvis-*` runtime identifiers — filenames, routes, service names, auth surfaces, database keys, historical records, and quoted evidence — are preserved as literal technical identifiers and must not be mass-renamed. Recon remains the government-contract, grant, vendor-program, and bid-opportunity discovery system and is NOT repurposed as a real-estate property discovery engine.

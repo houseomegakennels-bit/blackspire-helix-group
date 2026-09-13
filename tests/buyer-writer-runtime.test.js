@@ -30,6 +30,24 @@ test('identity denial occurs before protected configuration or PostgreSQL access
   await assert.rejects(createBuyerWriterRuntime(f.options),error=>error.message==='Buyer writer runtime initialization failed'&&!error.cause);
   assert.deepEqual(f.counts(),{closes:0,reads:0,poolCreates:0});
 });
+test('ordinary production composition cannot construct an injected direct PostgreSQL adapter',async()=>{
+  const f=fixture();f.options.environment='production';
+  await assert.rejects(createBuyerWriterRuntime(f.options),/Buyer writer runtime initialization failed/);
+  assert.equal(f.counts().poolCreates,0);
+});
+test('production composition loads only the local client transport and separate ingress authentication',async()=>{
+  const f=fixture(),client={version:2,workspace:'isolated',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:randomBytes(32).toString('base64url')};
+  const ingress={version:1,workspace:'isolated',bindingFile:f.config.bindingFile,writerCredential:f.config.writerCredential,issuerCredential:f.config.issuerCredential};
+  delete f.options.configurationFile;delete f.options.createPostgres;f.options.environment='production';
+  f.options.clientConfigurationFile='/etc/blackspire/client.json';f.options.ingressConfigurationFile='/etc/blackspire/ingress.json';
+  let input;
+  f.options.readConfiguration=name=>name===f.options.clientConfigurationFile?client:ingress;
+  f.options.createClient=value=>{input=value;return{runtimeQuery:async()=>({rows:[]}),issuerQuery:async()=>({rows:[]}),isHealthy:()=>true,close:async()=>{}};};
+  const runtime=await createBuyerWriterRuntime(f.options);
+  try{assert.deepEqual(input,{socketPath:client.socketPath,capability:client.gatewayCapability,workspace:'isolated',releaseSha:f.options.releaseSha});
+    assert.equal(JSON.stringify(input).includes('password'),false);assert.equal(JSON.stringify(input).includes('database'),false);}
+  finally{await runtime.close();}
+});
 test('invalid configuration and context cannot create pools',async()=>{
   for(const mutate of [f=>{f.config.runtime.user='postgres';},f=>{f.options.environment='development';},f=>{f.config.bindingFile=f.options.configurationFile;},f=>{f.options.apiGeneration='invalid';}]){
     const f=fixture();mutate(f);await assert.rejects(createBuyerWriterRuntime(f.options),/Buyer writer runtime initialization failed/);assert.equal(f.counts().poolCreates,0);

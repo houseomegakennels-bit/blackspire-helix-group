@@ -4,6 +4,8 @@ import {MUTATING_STAGES,RELEASE_STAGES} from './commander-sequence.js';
 import {verifyReleaseSource} from './commander-host.js';
 import {createProviderAclCheckOperation,createBoundedWriterE2eOperation,queryFixedProviderAcl,inspectFixedWriterAcceptance,runFixedWriterAcceptance}
  from './production-acl-writer.js';
+import {createPgNetIsolationProof} from './pg-net-isolation.js';
+import {observeBuyerWriterRuntimeIsolation} from './pg-net-host-observer.js';
 import {createRollbackProductionOperations} from './production-rollback-operations.js';
 import {createHealthSmokeProductionOperations} from './production-health-smoke.js';
 import {createZeroProofProductionOperations} from './production-zero-proofs.js';
@@ -134,7 +136,11 @@ export function createFixedProductionOperations(context,dependencies={}){
  const operations=Object.fromEntries(VALID_OBSERVATION_ONLY_STAGES.map(stage=>[stage,translatedThinOperation(context,stage)]));
  operations.receiver_audit=externalOperation(context,observeReceiverAudit);
  operations.vercel_exact_head_preview=externalOperation(context,observeVercelExactHeadPreview);
- operations.provider_acl_check=createProviderAclCheckOperation({query:dependencies.providerQuery??((sql,values)=>queryFixedProviderAcl(context.release.activationConfigurationFile,sql,values))});
+ const providerQuery=dependencies.providerQuery??((sql,values)=>queryFixedProviderAcl(context.release.activationConfigurationFile,sql,values));
+ const verifyRuntimeIsolation=dependencies.verifyRuntimeIsolation??(()=>observeBuyerWriterRuntimeIsolation({releaseSha:context.input.releaseSha,
+  provisioningConfigurationFile:context.release.activationConfigurationFile}));
+ const isolationProof=dependencies.isolationProof??createPgNetIsolationProof({query:providerQuery,verifyRuntimeIsolation});
+ operations.provider_acl_check=createProviderAclCheckOperation({query:providerQuery,isolationProof});
  const writerHost={...(dependencies.writerHost??{}),configurationFile:context.release.activationConfigurationFile};
  operations.bounded_writer_e2e=createBoundedWriterE2eOperation({inspectAcceptance:binding=>inspectFixedWriterAcceptance(binding,writerHost),
   runAcceptance:request=>runFixedWriterAcceptance(request,writerHost)});

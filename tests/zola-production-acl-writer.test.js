@@ -11,25 +11,28 @@ const base={input:{releaseSha:a,workspace:'blackspire',principal:'zola-release',
 const attempt={...base,attemptId,inputDigest:d('input'),checkOutputDigest:d('check')};
 const aclRows=()=>PROVIDER_ACL_FUNCTIONS.map(functionName=>({functionName,arguments:'',owner:'supabase_admin',publicExecute:false,
  ownerExecute:true,postgresExecute:true,serviceRoleExecute:true,writerExecute:false}));
+const isolationProof=async()=>({status:'PASS',evidence:{pgNetIsolationVerified:true,applicationDbCredentialsAbsent:true,
+ gatewayTransportVerified:true,arbitrarySqlDenied:true,arbitraryFunctionDenied:true,arbitraryUrlDenied:true,
+ applicationPgNetCallSitesZero:true,applicationDbPgNetReferencesZero:true}});
 
 test('provider ACL operation performs one fixed read-only exact-twelve catalog check',async()=>{
  let calls=0;const operation=createProviderAclCheckOperation({query:async(sql,values)=>{
   calls++;assert.equal(sql,PROVIDER_ACL_CHECK_SQL);assert.deepEqual(values,[]);
   assert.doesNotMatch(sql,/\b(?:grant|revoke|alter|update|insert|delete|call)\b/i);return{rows:aclRows()};
- }});
+ },isolationProof});
  const result=await operation.check(base);
  assert.equal(result.status,'PASS');assert.equal(result.evidence.functionCount,12);assert.equal(result.evidence.operationId,operationId);
  assert.match(result.evidence.catalogDigest,/^[a-f0-9]{64}$/);assert.equal(calls,1);
 });
 
-test('provider ACL operation blocks on unavailable or unapplied provider state and rejects privilege loss',async()=>{
- assert.deepEqual(await createProviderAclCheckOperation({query:async()=>{throw new Error('offline');}}).observe(base),{status:'BLOCKED_EXTERNAL'});
+test('provider ACL operation blocks on unavailable provider state or missing isolation and rejects privilege loss',async()=>{
+ assert.deepEqual(await createProviderAclCheckOperation({query:async()=>{throw new Error('offline');},isolationProof}).observe(base),{status:'BLOCKED_EXTERNAL'});
  const publicRows=aclRows();publicRows[0].publicExecute=true;
  assert.deepEqual(await createProviderAclCheckOperation({query:async()=>({rows:publicRows})}).check(base),{status:'BLOCKED_EXTERNAL'});
  const lost=aclRows();lost[0].serviceRoleExecute=false;
- await assert.rejects(()=>createProviderAclCheckOperation({query:async()=>({rows:lost})}).check(base),/operation rejected/);
+ await assert.rejects(()=>createProviderAclCheckOperation({query:async()=>({rows:lost}),isolationProof}).check(base),/operation rejected/);
  const duplicate=aclRows();duplicate[1].functionName=duplicate[0].functionName;
- await assert.rejects(()=>createProviderAclCheckOperation({query:async()=>({rows:duplicate})}).check(base),/operation rejected/);
+ await assert.rejects(()=>createProviderAclCheckOperation({query:async()=>({rows:duplicate}),isolationProof}).check(base),/operation rejected/);
 });
 
 test('bounded writer operation binds release, operation, attempt, workspace, principal and fixed capability',async()=>{
