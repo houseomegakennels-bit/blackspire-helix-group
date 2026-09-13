@@ -39,6 +39,7 @@ export async function createBuyerWriterRuntime({configurationFile,clientConfigur
       ingress=config;
     }else{
       config=validateBuyerWriterClientConfiguration(input,{workspace,environment});
+      if(config.authority.releaseSha!==releaseSha)throw new Error();
       const value=readConfiguration(ingressConfigurationFile,{groupId:identity.credentialGroupId,maxBytes:4096});
       const keys=['version','workspace','bindingFile','writerCredential','issuerCredential'];
       const opaque=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v)&&Buffer.from(v,'base64url').length===32;
@@ -46,7 +47,7 @@ export async function createBuyerWriterRuntime({configurationFile,clientConfigur
         ||value.version!==1||value.workspace!==workspace||typeof value.bindingFile!=='string'||!value.bindingFile.startsWith('/')
         ||!opaque(value.writerCredential)||!opaque(value.issuerCredential)||value.writerCredential===value.issuerCredential)throw new Error();
       ingress=Object.freeze({...value});
-      database=createClient({socketPath:config.socketPath,capability:config.gatewayCapability,workspace,releaseSha});
+      database=createClient({socketPath:config.socketPath,capability:config.gatewayCapability,authority:config.authority});
     }
     const units=legacyTestTransport&&config.units?{apiUnit:config.units.api,workerUnit:config.units.worker}:{};
     const bindingOptions={filename:ingress.bindingFile,credentialGroupId:identity.credentialGroupId,workspace,releaseSha,apiGeneration,

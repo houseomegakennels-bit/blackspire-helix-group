@@ -2,17 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {prepareZolaConfigurationInstall,installZolaConfiguration} from '../packages/zola-release/configuration-install.js';
 
 function fixture(){
-  const root=fs.mkdtempSync('/root/zola-config-test-'),paths={configDirectory:path.join(root,'etc'),unitDirectory:path.join(root,'systemd'),releaseRoot:path.join(root,'releases')};
+  const root=fs.mkdtempSync('/root/zola-config-test-'),paths={configDirectory:path.join(root,'etc'),gatewayConfigDirectory:path.join(root,'gateway-etc'),
+    unitDirectory:path.join(root,'systemd'),releaseRoot:path.join(root,'releases')};
   for(const p of Object.values(paths))fs.mkdirSync(p,{mode:0o755});
-  const secret=()=>randomBytes(32).toString('base64url'),ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
-  const config={version:2,workspace:'blackspire-command',bindingFile:path.join(paths.configDirectory,'buyer-writer-binding.json'),writerCredential:secret(),issuerCredential:secret(),gatewayCapability:secret(),
+  fs.chownSync(paths.gatewayConfigDirectory,0,982);fs.chmodSync(paths.gatewayConfigDirectory,0o750);
+  const secret=()=>randomBytes(32).toString('base64url'),releaseSha='a'.repeat(40),ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
+  const config={version:3,workspace:'blackspire-command',bindingFile:path.join(paths.configDirectory,'buyer-writer-binding.json'),writerCredential:secret(),issuerCredential:secret(),gatewayCapability:secret(),
+    authority:{releaseSha,operationId:randomUUID(),attemptId:randomUUID(),workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'},
     runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secret(),ca},issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secret(),ca}};
-  const input={releaseSha:'a'.repeat(40),configurationFile:path.join(root,'input.json')};fs.writeFileSync(input.configurationFile,JSON.stringify(config),{mode:0o600});
+  const input={releaseSha,configurationFile:path.join(root,'input.json')};fs.writeFileSync(input.configurationFile,JSON.stringify(config),{mode:0o600});
   const calls=[],events=[];let running=false,closed=0;
   const options={paths,uid:0,identity:async()=>({uid:994,credentialGroupId:984,workerUid:993,gatewayUid:992,gatewayGid:982}),
     run:async(file,args)=>{calls.push([file,args]);const unit=args.at(-1),user=unit==='blackspire-command.service'?'blackspire-api':unit==='blackspire-command-worker.service'?'blackspire-worker':'blackspire-writer';return {stdout:`ActiveState=${running?'active':'inactive'}\nSubState=${running?'running':'dead'}\nMainPID=${running?'99':'0'}\nUser=${user}\nGroup=${unit==='blackspire-buyer-writer-gateway.service'?'blackspire-api':'blackspire'}\n`,stderr:''};},
@@ -25,8 +28,9 @@ test('actual protected files publish API-only after scoped checks; rerun preserv
   const f=fixture();try{
     const p=await prepareZolaConfigurationInstall(f.input,f.options);assert.equal(fs.readdirSync(f.paths.configDirectory).length,0);
     const result=await installZolaConfiguration(p,f.execution);assert.equal(result.status,'INSTALLED_RELOAD_REQUIRED');assert.equal(f.closed(),1);
-    assert.equal(fs.statSync(p.configPath).mode&0o777,0o640);assert.equal(fs.statSync(p.configPath).gid,984);assert.equal(fs.statSync(p.gatewayConfigPath).mode&0o777,0o600);assert.equal(fs.statSync(p.gatewayConfigPath).uid,992);assert.equal(fs.statSync(p.dropinPath).mode&0o777,0o644);
-    const client=JSON.parse(fs.readFileSync(p.configPath));assert.deepEqual(Object.keys(client).sort(),['gatewayCapability','socketPath','version','workspace']);assert.equal(JSON.stringify(client).includes(f.config.runtime.password),false);assert.match(fs.readFileSync(p.dropinPath,'utf8'),/^\[Service\]\nEnvironment=BUYER_WRITER_MODE=scoped/);
+    assert.equal(fs.statSync(p.configPath).mode&0o777,0o640);assert.equal(fs.statSync(p.configPath).gid,984);assert.equal(fs.statSync(p.gatewayConfigPath).mode&0o777,0o640);assert.equal(fs.statSync(p.gatewayConfigPath).uid,0);assert.equal(fs.statSync(p.gatewayConfigPath).gid,982);assert.equal(fs.statSync(p.dropinPath).mode&0o777,0o644);
+    assert.equal(p.gatewayConfigPath,path.join(f.paths.gatewayConfigDirectory,'gateway.json'));
+    const client=JSON.parse(fs.readFileSync(p.configPath));assert.deepEqual(Object.keys(client).sort(),['authority','gatewayCapability','socketPath','version','workspace']);assert.equal(JSON.stringify(client).includes(f.config.runtime.password),false);assert.match(fs.readFileSync(p.dropinPath,'utf8'),/^\[Service\]\nEnvironment=BUYER_WRITER_MODE=scoped/);
     const ino=fs.statSync(p.configPath).ino,dropino=fs.statSync(p.dropinPath).ino;await installZolaConfiguration(await prepareZolaConfigurationInstall(f.input,f.options),f.execution);
     assert.equal(fs.statSync(p.configPath).ino,ino);assert.equal(fs.statSync(p.dropinPath).ino,dropino);
     for(const v of [f.config.writerCredential,f.config.issuerCredential,f.config.gatewayCapability,f.config.runtime.password,f.config.issuer.password])assert.ok(!JSON.stringify([result,f.events]).includes(v));

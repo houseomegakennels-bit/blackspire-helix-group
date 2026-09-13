@@ -2,11 +2,13 @@ import {createHash,createHmac} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
 import {readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
-import {validateBuyerWriterConfiguration,validateBuyerWriterGatewayProvisioningConfiguration} from '../buyer-writer/configuration.js';
+import {validateBuyerWriterConfiguration} from '../buyer-writer/configuration.js';
+import {validateBuyerWriterGatewayServiceConfiguration} from '../buyer-writer/gateway-entry.js';
 import {createBuyerWriterPostgres} from '../buyer-writer/postgres.js';
 import {createWriterGateway,createWriterReceiptGateway} from '../buyer-writer/gateway.js';
 import {captureBuyerJobVersion} from '../buyer-writer/criteria.js';
 import {APPLICATION_FUNCTION_PG_NET_SQL} from './pg-net-isolation.js';
+import {BUYER_WRITER_GATEWAY_CONFIG} from './pg-net-host-observer.js';
 
 export const PROVIDER_ACL_FUNCTIONS=Object.freeze([
  '_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string',
@@ -33,6 +35,12 @@ from required r left join pg_namespace n on n.nspname='net'
 left join pg_proc p on p.pronamespace=n.oid and p.proname=r.name
 order by r.name,arguments`;
 
+function writerGroupId(run=execFileSync){
+ const raw=run('/usr/bin/getent',['group','blackspire-writer'],{encoding:'utf8',timeout:1000,maxBuffer:4096,
+  stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}}).trim(),fields=raw.split(':');
+ if(fields.length!==4||fields[0]!=='blackspire-writer'||!/^[1-9][0-9]{0,9}$/.test(fields[2]))reject();
+ return Number(fields[2]);
+}
 function apiGroupId(){
  const raw=execFileSync('/usr/bin/getent',['group','blackspire-api'],{encoding:'utf8',timeout:1000,maxBuffer:4096,
   stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}}).trim(),fields=raw.split(':');
@@ -40,24 +48,28 @@ function apiGroupId(){
  return Number(fields[2]);
 }
 
-// Connect with the already-scoped writer runtime identity. This role can read
-// PostgreSQL catalog privilege metadata but cannot alter ACLs or invoke the
-// protected writer outside its fixed routines. The transaction is explicitly
-// read-only and the protected configuration is re-read before accepting proof.
-export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool}={}){
+// Operator-only catalog observer. The canonical root:writer 0640 gateway file
+// is deliberately unreadable by API/worker identities. Only these two exact
+// catalog statements are reachable, and both run inside a read-only transaction.
+export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,lookup=execFileSync,readSnapshot=readRootOwnedJsonSnapshot}={}){
  let pool,client;
  try{
-  if(![PROVIDER_ACL_CHECK_SQL,APPLICATION_FUNCTION_PG_NET_SQL].includes(sql)||!Array.isArray(values)||values.length!==0)reject();
-  const groupId=apiGroupId(),snapshot=readRootOwnedJsonSnapshot(configurationFile,{groupId,maxBytes:65536});
-  const config=validateBuyerWriterGatewayProvisioningConfiguration(snapshot.value,{workspace:'blackspire-command'}),runtime=config.runtime;
+  if(configurationFile!==BUYER_WRITER_GATEWAY_CONFIG||![PROVIDER_ACL_CHECK_SQL,APPLICATION_FUNCTION_PG_NET_SQL].includes(sql)
+   ||!Array.isArray(values)||values.length!==0)reject();
+  const groupId=writerGroupId(lookup),snapshot=readSnapshot(configurationFile,{groupId,maxBytes:65536});
+  const config=validateBuyerWriterGatewayServiceConfiguration(snapshot.value),runtime=config.runtime;
+  if(snapshot.identity.uid!==0||snapshot.identity.gid!==groupId||(snapshot.identity.mode&0o7777)!==0o640
+   ||config.workspace!=='blackspire-command'||config.authority.gatewayIdentity!=='blackspire-writer')reject();
   if(runtime.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||runtime.port!==5432||runtime.database!=='postgres')reject();
+  if(!runtime||typeof runtime.password!=='string'||runtime.password.length<1||runtime.password.length>1024
+   ||Object.keys(runtime).some(key=>!['host','port','database','password','ca'].includes(key)))reject();
   const DriverPool=Pool??(await import('pg')).Pool;
   pool=new DriverPool({host:runtime.host,port:runtime.port,database:runtime.database,user:'buyer_writer_runtime',password:runtime.password,
    ssl:{rejectUnauthorized:true,...(runtime.ca?{ca:runtime.ca}:{})},application_name:'zola-provider-acl-observer',max:1,
    connectionTimeoutMillis:2000,query_timeout:8000,idleTimeoutMillis:1000,
    options:'-c default_transaction_read_only=on -c statement_timeout=7000 -c lock_timeout=1000 -c search_path=pg_catalog'});
   client=await pool.connect();await client.query('begin read only');const result=await client.query(sql,values);await client.query('rollback');
-  const second=readRootOwnedJsonSnapshot(configurationFile,{groupId,maxBytes:65536});
+  const second=readSnapshot(configurationFile,{groupId,maxBytes:65536});
   if(JSON.stringify(snapshot)!==JSON.stringify(second))reject();return result;
  }catch(error){
   try{await client?.query('rollback');}catch{}

@@ -3,18 +3,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import {validateBuyerWriterClientConfiguration} from '../packages/buyer-writer/configuration.js';
 import {DIRECT_DATABASE_ENV_KEYS,validateApplicationDatabaseIsolation} from '../packages/shared/security.js';
 
 const secret=()=>randomBytes(32).toString('base64url');
 function clientConfig(){
-  return {version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:secret()};
+  return {version:3,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:secret(),
+    authority:{releaseSha:'a'.repeat(40),operationId:randomUUID(),attemptId:randomUUID(),workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'}};
 }
 
 test('application Buyer Writer configuration contains only local transport and ingress capabilities',()=>{
   const value=validateBuyerWriterClientConfiguration(clientConfig(),{workspace:'blackspire-command'});
-  assert.deepEqual(Object.keys(value).sort(),['gatewayCapability','socketPath','version','workspace']);
+  assert.deepEqual(Object.keys(value).sort(),['authority','gatewayCapability','socketPath','version','workspace']);
   assert.equal(value.socketPath,'/run/blackspire/buyer-writer.sock');
   assert.equal(JSON.stringify(value).match(/(?:database|postgres|password|host|port|\buri\b)/gi),null);
 });
@@ -23,7 +24,8 @@ test('client configuration rejects database fields, extra keys, alternate socket
   for(const mutate of [
     v=>{v.password='secret';},v=>{v.database='postgres';},v=>{v.host='db.example';},v=>{v.port=5432;},
     v=>{v.url='postgresql://example';},v=>{v.runtime={password:'secret'};},v=>{v.socketPath='/tmp/writer.sock';},
-    v=>{v.writerCredential=secret();},v=>{v.issuerCredential=secret();},v=>{v.bindingFile='/etc/blackspire/binding.json';},v=>{v.version=1;},
+    v=>{v.writerCredential=secret();},v=>{v.issuerCredential=secret();},v=>{v.bindingFile='/etc/blackspire/binding.json';},v=>{v.version=2;},
+    v=>{v.authority.operationId=randomUUID();v.authority.extra=true;},v=>{v.authority.gatewayIdentity='blackspire-api';},
   ]){const value=clientConfig();mutate(value);assert.throws(()=>validateBuyerWriterClientConfiguration(value,{workspace:'blackspire-command'}),/client configuration rejected/);}
 });
 

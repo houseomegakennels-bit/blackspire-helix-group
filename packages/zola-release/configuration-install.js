@@ -13,7 +13,8 @@ const execute=promisify(execFile),plans=new WeakMap();
 const reject=()=>{throw new Error('Zola configuration installation rejected');};
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-const defaults={configDirectory:'/etc/blackspire',unitDirectory:'/etc/systemd/system',releaseRoot:'/opt/blackspire-command/releases'};
+const defaults={configDirectory:'/etc/blackspire',gatewayConfigDirectory:'/etc/blackspire-buyer-writer-gateway',
+  unitDirectory:'/etc/systemd/system',releaseRoot:'/opt/blackspire-command/releases'};
 const options={encoding:'utf8',timeout:2000,maxBuffer:8192,killSignal:'SIGKILL',env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}};
 
 function directory(io,name){
@@ -25,9 +26,17 @@ function directory(io,name){
     if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||(s.mode&0o022)!==0)reject();
   }
 }
+function privateGatewayDirectory(io,name,gid){
+  directory(io,name);const stat=io.lstatSync(name);
+  if(stat.uid!==0||stat.gid!==gid||(stat.mode&0o7777)!==0o750)reject();
+}
 function syncDirectory(io,name){const fd=io.openSync(name,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{io.fsyncSync(fd);}finally{io.closeSync(fd);}}
 function checkAcl(acl,fd){
   const result=acl('/usr/bin/getfacl',['--numeric','--omit-header','--skip-base','--logical','--','/proc/self/fd/3'],{...options,stdio:['ignore','pipe','pipe',fd]});
+  if(result.status!==0||result.error||result.stdout!==''||result.stderr!=='')reject();
+}
+function checkDirectoryDefaultAcl(acl,name){
+  const result=acl('/usr/bin/getfacl',['--numeric','--omit-header','--skip-base','--default','--logical','--',name],options);
   if(result.status!==0||result.error||result.stdout!==''||result.stderr!=='')reject();
 }
 function readExact(io,acl,name,bytes,gid,mode,uid=0){
@@ -98,41 +107,39 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     if(uid!==0||!(/^[a-f0-9]{40}$/).test(releaseSha??''))reject();
     directory(io,paths.configDirectory);directory(io,paths.unitDirectory);
     const state=await hostState(run),ids=await identity(run);
+    privateGatewayDirectory(io,paths.gatewayConfigDirectory,ids.gatewayGid);
     const snapshot=readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536});
     const config=validateBuyerWriterGatewayProvisioningConfiguration(snapshot.value,{workspace:'blackspire-command'});
+    if(config.authority.releaseSha!==releaseSha)reject();
     if(config.bindingFile!==path.join(paths.configDirectory,'buyer-writer-binding.json')||config.units||config.rehearsalFile)reject();
     for(const c of [config.runtime,config.issuer])if(c.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||c.port!==5432||c.database!=='postgres'
       ||hash(c.ca??'')!=='700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7')reject();
     const artifact=await inspectArtifact({artifactRoot:path.join(paths.releaseRoot,releaseSha),releaseSha,environment:'production'});
     if(artifact.releaseSha!==releaseSha||artifact.environment!=='production'||!(/^[a-f0-9]{64}$/).test(artifact.artifactDigest??''))reject();
     const socketPath='/run/blackspire/buyer-writer.sock';
-    const gatewayConfig=Object.freeze({version:1,workspace:config.workspace,releaseSha,socketPath,gatewayCapability:config.gatewayCapability,
+    const gatewayConfig=Object.freeze({version:2,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,authority:config.authority,
       runtime:config.runtime,issuer:config.issuer});
-    const clientConfig=validateBuyerWriterClientConfiguration({version:2,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability},
+    const clientConfig=validateBuyerWriterClientConfiguration({version:3,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,authority:config.authority},
       {workspace:'blackspire-command',environment:'production'});
     const ingressConfig=Object.freeze({version:1,workspace:config.workspace,bindingFile:config.bindingFile,
       writerCredential:config.writerCredential,issuerCredential:config.issuerCredential});
     const gatewayBytes=Buffer.from(JSON.stringify(gatewayConfig)+'\n'),clientBytes=Buffer.from(JSON.stringify(clientConfig)+'\n'),
       ingressBytes=Buffer.from(JSON.stringify(ingressConfig)+'\n');
-    const gatewayConfigPath=path.join(paths.configDirectory,'buyer-writer-gateway-'+hash(gatewayBytes)+'.json');
+    const gatewayConfigPath=path.join(paths.gatewayConfigDirectory,'gateway.json');
     const clientConfigPath=path.join(paths.configDirectory,'buyer-writer-client-'+hash(clientBytes)+'.json');
     const ingressConfigPath=path.join(paths.configDirectory,'buyer-writer-ingress-'+hash(ingressBytes)+'.json');
     const dropinDirectory=path.join(paths.unitDirectory,'blackspire-command.service.d'),dropinPath=path.join(dropinDirectory,'40-zola-writer.conf');
-    const gatewayDropinDirectory=path.join(paths.unitDirectory,'blackspire-buyer-writer-gateway.service.d');
-    const gatewayDropinPath=path.join(gatewayDropinDirectory,'40-zola-writer.conf');
     const dropin=Buffer.from('[Service]\nEnvironment=BUYER_WRITER_MODE=scoped\nEnvironment=BUYER_WRITER_WORKSPACE_ID=blackspire-command\nEnvironment=BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG='+clientConfigPath+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG='+ingressConfigPath+'\n');
-    const gatewayDropin=Buffer.from('[Service]\nEnvironment=BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG='+gatewayConfigPath+'\n');
-    readExact(io,acl,gatewayConfigPath,gatewayBytes,ids.gatewayGid,0o600,ids.gatewayUid);
+    readExact(io,acl,gatewayConfigPath,gatewayBytes,ids.gatewayGid,0o640);
     readExact(io,acl,clientConfigPath,clientBytes,ids.credentialGroupId,0o640);
     readExact(io,acl,ingressConfigPath,ingressBytes,ids.credentialGroupId,0o640);
     try{directory(io,dropinDirectory);readExact(io,acl,dropinPath,dropin,0,0o644);}catch(e){if(e.code!=='ENOENT')throw e;}
-    try{directory(io,gatewayDropinDirectory);readExact(io,acl,gatewayDropinPath,gatewayDropin,0,0o644);}catch(e){if(e.code!=='ENOENT')throw e;}
     if(!same(snapshot,readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536}))||!same(state,await hostState(run)))reject();
     const result=Object.freeze({version:2,kind:'zola-configuration-install',releaseSha,artifactDigest:artifact.artifactDigest,
-      configPath:clientConfigPath,clientConfigPath,ingressConfigPath,gatewayConfigPath,dropinPath,gatewayDropinPath,
+      configPath:clientConfigPath,clientConfigPath,ingressConfigPath,gatewayConfigPath,dropinPath,
       status:'PREPARED',servicesStarted:false,authorityActivated:false});
     plans.set(result,{io,acl,run,readSnapshot,identity,inspectArtifact,paths,input:{releaseSha,configurationFile},snapshot,ids,
-      gatewayBytes,clientBytes,ingressBytes,dropin,gatewayDropin,dropinDirectory,gatewayDropinDirectory});return result;
+      gatewayBytes,clientBytes,ingressBytes,dropin,dropinDirectory});return result;
   }catch{reject();}
 }
 
@@ -142,6 +149,11 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     const p=plans.get(plan);if(!p||typeof record!=='function')reject();
     const fresh=await prepareZolaConfigurationInstall(p.input,{...p,uid:process.getuid()});
     const f=plans.get(fresh);if(!same(plan,fresh)||!same(p.snapshot,f.snapshot)||!same(p.ids,f.ids))reject();
+    // Reject inherited named ACLs for both trust zones before writing any
+    // credential-bearing inode. Per-file checks remain mandatory as a second
+    // fence against a directory ACL change during publication.
+    checkDirectoryDefaultAcl(p.acl,p.paths.configDirectory);
+    checkDirectoryDefaultAcl(p.acl,p.paths.gatewayConfigDirectory);
     // Only the existing fixed scoped-role allow/deny SQL is run. No role creation,
     // SQL writes, issuer permit, writer apply or provider call is reachable here.
     database=await connect({runtime:p.snapshot.value.runtime,issuer:p.snapshot.value.issuer});
@@ -151,15 +163,13 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     const artifact=await p.inspectArtifact({artifactRoot:path.join(p.paths.releaseRoot,plan.releaseSha),releaseSha:plan.releaseSha,environment:'production'});
     if(artifact.artifactDigest!==plan.artifactDigest||artifact.releaseSha!==plan.releaseSha||artifact.environment!=='production')reject();
     record({event:'configuration_install_intent',releaseSha:plan.releaseSha,artifactDigest:plan.artifactDigest});
-    publish(p.io,p.acl,plan.gatewayConfigPath,p.gatewayBytes,p.ids.gatewayGid,0o600,p.ids.gatewayUid);
+    privateGatewayDirectory(p.io,p.paths.gatewayConfigDirectory,p.ids.gatewayGid);
+    publish(p.io,p.acl,plan.gatewayConfigPath,p.gatewayBytes,p.ids.gatewayGid,0o640);
     publish(p.io,p.acl,plan.clientConfigPath,p.clientBytes,p.ids.credentialGroupId,0o640);
     publish(p.io,p.acl,plan.ingressConfigPath,p.ingressBytes,p.ids.credentialGroupId,0o640);
     try{p.io.mkdirSync(p.dropinDirectory,{mode:0o755});syncDirectory(p.io,path.dirname(p.dropinDirectory));}catch(e){if(e.code!=='EEXIST')throw e;}
     directory(p.io,p.dropinDirectory);await hostState(p.run);
     publish(p.io,p.acl,plan.dropinPath,p.dropin,0,0o644);
-    try{p.io.mkdirSync(p.gatewayDropinDirectory,{mode:0o755});syncDirectory(p.io,path.dirname(p.gatewayDropinDirectory));}catch(e){if(e.code!=='EEXIST')throw e;}
-    directory(p.io,p.gatewayDropinDirectory);await hostState(p.run);
-    publish(p.io,p.acl,plan.gatewayDropinPath,p.gatewayDropin,0,0o644);
     record({event:'configuration_install_verified',releaseSha:plan.releaseSha});
     return {...plan,status:'INSTALLED_RELOAD_REQUIRED'};
   }catch{reject();}finally{if(database)await database.close().catch(()=>{});}

@@ -1,5 +1,9 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-13 — live gateway acceptance blocker correction
+
+Recovered the clean pushed `51a52d5` release and read the protected blocked live checkpoint without bypassing it. Five parallel implementation/review lanes produced a gateway-only exact-SHA installer with private writer identity and secret filesystem, authenticated zero-query readiness, server-owned authority binding, configured-versus-running isolation observers, a fixed read-only PostgreSQL catalog observer, and a sanitized exact-project Vercel environment-key inventory. Parent review added trusted sealed-artifact verification, readiness-file coverage, bounded subprocesses, durable pre-effect rollback intent, non-`Environment=` systemd credential-key detection, and integration fixes. Focused validation passes 326/326. Full validation, commit/push, exact-head external checks and any live installation remain pending. Business mutations, n8n mutations, merge, release opening and service installation were zero.
+
 ## 2026-09-13 — gateway runtime hardening and regression recovery
 
 - Recovered local head `22989f85218516c2b6a54658a2129c76e33a693d`, one commit ahead of remote `475998653e700eec9cd223dd2ced56d2ba36a036`, and preserved all eight inherited follow-up files without reset, clean, stash or amend.

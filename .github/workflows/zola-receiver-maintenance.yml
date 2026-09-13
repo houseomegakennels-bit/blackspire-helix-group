@@ -26,6 +26,8 @@ on:
       - scripts/zola-receiver-prebuilt.mjs
       - scripts/zola-vercel-protection-inventory.mjs
       - tests/zola-vercel-protection-inventory.test.js
+      - scripts/zola-vercel-environment-inventory.mjs
+      - tests/zola-vercel-environment-inventory.test.js
       - scripts/zola-routing-canary.mjs
       - tests/zola-routing-canary.test.js
       - scripts/zola-routing-canary-reconcile.mjs
@@ -98,6 +100,21 @@ jobs:
         with:
           name: zola-vercel-protection-inventory-${{ github.sha }}
           path: zola-vercel-protection-inventory.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Inventory frontend environment key names and scopes (read only)
+        id: environment_inventory
+        if: always()
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/zola-vercel-environment-inventory.mjs
+      - name: Retain sanitized frontend environment inventory
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zola-vercel-environment-inventory-${{ github.sha }}
+          path: zola-vercel-environment-inventory.json
           if-no-files-found: error
           retention-days: 7
 

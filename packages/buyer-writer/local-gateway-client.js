@@ -3,6 +3,7 @@ import net from 'node:net';
 import {BUYER_WRITER_DEFAULT_SOCKET,BUYER_WRITER_LOCAL_MAX_BYTES,BUYER_WRITER_LOCAL_TIMEOUT_MS,
   canonicalLocalGatewayJson,decodeLocalGatewayJson,signLocalGatewayRequest} from './local-gateway-protocol.js';
 import {BUYER_WRITER_LOCAL_STATEMENTS} from './local-gateway-server.js';
+import {validateBuyerWriterGatewayAuthority} from './configuration.js';
 
 const hash=value=>createHash('sha256').update(canonicalLocalGatewayJson(value)).digest('hex');
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(k=>Object.hasOwn(value,k));
@@ -24,15 +25,20 @@ function queryRequest(kind,text,values) {
   throw unavailable();
 }
 
-export function createBuyerWriterLocalClient({socketPath=BUYER_WRITER_DEFAULT_SOCKET,capability,workspace,releaseSha,
+export function createBuyerWriterLocalClient({socketPath=BUYER_WRITER_DEFAULT_SOCKET,capability,authority,
   timeoutMs=BUYER_WRITER_LOCAL_TIMEOUT_MS,connect=net.createConnection,now=Date.now}={}) {
-  if(typeof socketPath!=='string'||!socketPath.startsWith('/')||typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)
-    ||!/^[a-f0-9]{40}$/.test(releaseSha??'')||typeof capability!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(capability)
+  if(typeof socketPath!=='string'||!socketPath.startsWith('/')||!exact(authority,['releaseSha','operationId','attemptId','workspace','gatewayIdentity'])
+    ||!/^[A-Za-z0-9._:-]{1,128}$/.test(authority.workspace??'')||!/^[a-f0-9]{40}$/.test(authority.releaseSha??'')
+    ||!/^([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(authority.operationId??'')
+    ||!/^([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(authority.attemptId??'')
+    ||authority.gatewayIdentity!=='blackspire-writer'||typeof capability!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(capability)
     ||!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30_000)throw unavailable();
+  try{authority=validateBuyerWriterGatewayAuthority(authority);}catch{throw unavailable();}
+  const {workspace,releaseSha}=authority;
   let closed=false,healthy=true;
   const request=(operation,payload,provided={})=>new Promise((resolve,reject)=>{
     if(closed)return reject(unavailable());
-    const requestId=randomUUID(),operationId=provided.operationId??randomUUID(),attemptId=provided.attemptId??randomUUID();
+    const requestId=randomUUID(),operationId=provided.operationId??authority.operationId,attemptId=provided.attemptId??authority.attemptId;
     const dispatchId=provided.dispatchId??payload.dispatchId??payload.requestId??payload.request?.dispatchId??null;
     const generation=provided.generation??payload.generation??payload.request?.generation??null;
     const inputDigest=provided.inputDigest??hash(payload),checkOutputDigest=provided.checkOutputDigest??hash({operation,workspace,releaseSha});
@@ -62,17 +68,15 @@ export function createBuyerWriterLocalClient({socketPath=BUYER_WRITER_DEFAULT_SO
     const result=await request(q.operation,q.payload,{principal:q.principal,dispatchId:q.dispatchId,generation:q.generation});
     return {rows:[{result}]};
   };
-  // Readiness is a local transport observation only. The gateway creates its
-  // socket after both fixed database pools pass their identity probes, while
-  // application processes never receive enough authority to probe PostgreSQL.
-  const checkAvailability=()=>new Promise(resolve=>{
-    if(closed)return resolve(false);
-    let socket,timer,settled=false;
-    const finish=ok=>{if(settled)return;settled=true;clearTimeout(timer);socket?.destroy();healthy=ok;resolve(ok);};
-    try{socket=connect({path:socketPath});}catch{return finish(false);}
-    timer=setTimeout(()=>finish(false),Math.min(timeoutMs,2000));timer.unref();
-    socket.once('connect',()=>finish(true));socket.once('error',()=>finish(false));
-  });
-  return Object.freeze({request,runtimeQuery:query('runtime'),issuerQuery:query('issuer'),checkAvailability,
+  // This is an authenticated protocol round-trip. The server's `ready`
+  // dispatcher is deliberately implemented without either database adapter.
+  const readiness=async()=>{
+    const value=await request('ready',{}, {principal:'buyer-writer-runtime',dispatchId:null,generation:null});
+    const keys=['status','protocolVersion','releaseShaMatch','workspaceMatch','authorityBindingLoaded','databaseConfigurationPresent','gatewayIdentityMatch'];
+    if(!exact(value,keys)||value.status!=='ready'||value.protocolVersion!==1||!keys.slice(2).every(key=>value[key]===true))throw unavailable();
+    return Object.freeze({...value});
+  };
+  const checkAvailability=async()=>{try{await readiness();return true;}catch{return false;}};
+  return Object.freeze({request,readiness,runtimeQuery:query('runtime'),issuerQuery:query('issuer'),checkAvailability,
     isHealthy:()=>!closed&&healthy,close:async()=>{closed=true;healthy=false;}});
 }

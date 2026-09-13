@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import http from 'node:http';
 import {createBuyerWriterRuntime} from '../packages/buyer-writer/runtime.js';
 function fixture(){
@@ -36,7 +36,8 @@ test('ordinary production composition cannot construct an injected direct Postgr
   assert.equal(f.counts().poolCreates,0);
 });
 test('production composition loads only the local client transport and separate ingress authentication',async()=>{
-  const f=fixture(),client={version:2,workspace:'isolated',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:randomBytes(32).toString('base64url')};
+  const f=fixture(),authority={releaseSha:f.options.releaseSha,operationId:randomUUID(),attemptId:randomUUID(),workspace:'isolated',gatewayIdentity:'blackspire-writer'},
+    client={version:3,workspace:'isolated',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:randomBytes(32).toString('base64url'),authority};
   const ingress={version:1,workspace:'isolated',bindingFile:f.config.bindingFile,writerCredential:f.config.writerCredential,issuerCredential:f.config.issuerCredential};
   delete f.options.configurationFile;delete f.options.createPostgres;f.options.environment='production';
   f.options.clientConfigurationFile='/etc/blackspire/client.json';f.options.ingressConfigurationFile='/etc/blackspire/ingress.json';
@@ -44,7 +45,7 @@ test('production composition loads only the local client transport and separate 
   f.options.readConfiguration=name=>name===f.options.clientConfigurationFile?client:ingress;
   f.options.createClient=value=>{input=value;return{runtimeQuery:async()=>({rows:[]}),issuerQuery:async()=>({rows:[]}),isHealthy:()=>true,close:async()=>{}};};
   const runtime=await createBuyerWriterRuntime(f.options);
-  try{assert.deepEqual(input,{socketPath:client.socketPath,capability:client.gatewayCapability,workspace:'isolated',releaseSha:f.options.releaseSha});
+  try{assert.deepEqual(input,{socketPath:client.socketPath,capability:client.gatewayCapability,authority});
     assert.equal(JSON.stringify(input).includes('password'),false);assert.equal(JSON.stringify(input).includes('database'),false);}
   finally{await runtime.close();}
 });

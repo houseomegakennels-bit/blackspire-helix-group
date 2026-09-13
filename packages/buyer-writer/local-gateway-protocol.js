@@ -3,7 +3,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 export const BUYER_WRITER_DEFAULT_SOCKET='/run/blackspire/buyer-writer.sock';
 export const BUYER_WRITER_LOCAL_MAX_BYTES=384*1024;
 export const BUYER_WRITER_LOCAL_TIMEOUT_MS=15_000;
-export const BUYER_WRITER_LOCAL_OPERATIONS=Object.freeze(['issue','cancel','reconcile','context','apply','receipt']);
+export const BUYER_WRITER_LOCAL_OPERATIONS=Object.freeze(['ready','issue','cancel','reconcile','context','apply','receipt']);
 
 const forbidden=new Set(['sql','query','schema','function','procedure','rpc','url','endpoint','method','host','port','database','username','password']);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
@@ -80,6 +80,7 @@ export function decodeLocalGatewayJson(bytes) {
 function validateBinding(value,operation,expected) {
   const keys=['releaseSha','operationId','attemptId','inputDigest','checkOutputDigest','workspace','principal','dispatchId','generation','mutation'];
   if(!exact(value,keys)||value.releaseSha!==expected.releaseSha||value.workspace!==expected.workspace
+    ||value.operationId!==expected.operationId||value.attemptId!==expected.attemptId
     ||!uuid(value.operationId)||!uuid(value.attemptId)||!digest(value.inputDigest)||!digest(value.checkOutputDigest)
     ||typeof value.principal!=='string'||!/^[A-Za-z0-9._:@-]{1,128}$/.test(value.principal)
     ||(value.dispatchId!==null&&!uuid(value.dispatchId))||(value.generation!==null&&!integer(value.generation,1,Number.MAX_SAFE_INTEGER))
@@ -88,7 +89,7 @@ function validateBinding(value,operation,expected) {
   return value;
 }
 
-const payloadKeys={issue:['jobId','ownerId','requestId','criteria','updatedAt','sourceContext','permitDigest'],cancel:['jobId','ownerId'],
+const payloadKeys={ready:[],issue:['jobId','ownerId','requestId','criteria','updatedAt','sourceContext','permitDigest'],cancel:['jobId','ownerId'],
   reconcile:['jobId','ownerId','requestId','updatedAt'],context:['permitDigest','jobId','dispatchId','generation'],
   apply:['permitDigest','jobId','request'],receipt:['permitDigest','jobId','request']};
 
@@ -118,14 +119,17 @@ export function signLocalGatewayRequest(request,capability) {
   return createHmac('sha256',Buffer.from(capability,'base64url')).update(canonicalLocalGatewayJson(signingValue(request))).digest('hex');
 }
 
-export function validateLocalGatewayRequest(value,{capability,workspace,releaseSha,now=Date.now,consumeNonce=()=>true}={}) {
-  if(!opaque(capability)||typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)||!/^[a-f0-9]{40}$/.test(releaseSha??''))reject('GATEWAY_UNAVAILABLE');
+export function validateLocalGatewayRequest(value,{capability,authority,now=Date.now,consumeNonce=()=>true}={}) {
+  if(!opaque(capability)||!exact(authority,['releaseSha','operationId','attemptId','workspace','gatewayIdentity'])
+    ||!/^[a-f0-9]{40}$/.test(authority.releaseSha??'')||!uuid(authority.operationId)||!uuid(authority.attemptId)
+    ||typeof authority.workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(authority.workspace)
+    ||authority.gatewayIdentity!=='blackspire-writer')reject('GATEWAY_UNAVAILABLE');
   if(!exact(value,['version','requestId','operation','binding','payload','auth'])||value.version!==1||!uuid(value.requestId)
     ||!BUYER_WRITER_LOCAL_OPERATIONS.includes(value.operation)||!exact(value.auth,['timestamp','nonce','mac'])
     ||!integer(value.auth.timestamp,0,Number.MAX_SAFE_INTEGER)||Math.abs(now()-value.auth.timestamp)>30_000
     ||typeof value.auth.nonce!=='string'||!/^[a-f0-9]{32}$/.test(value.auth.nonce)||!digest(value.auth.mac))reject('AUTH_REJECTED');
   const expected=signLocalGatewayRequest(value,capability);
   if(!timingSafeEqual(Buffer.from(expected,'hex'),Buffer.from(value.auth.mac,'hex'))||consumeNonce(value.auth.nonce,value.auth.timestamp)!==true)reject('AUTH_REJECTED');
-  const binding=validateBinding(value.binding,value.operation,{workspace,releaseSha});
+  const binding=validateBinding(value.binding,value.operation,authority);
   validatePayload(value.operation,value.payload,binding);return value;
 }

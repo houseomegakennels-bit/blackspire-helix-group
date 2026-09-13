@@ -30,6 +30,8 @@ const strict = process.argv.includes('--strict');
 const UNIT_PATH = 'ops/runtime-ownership/blackspire-command.service';
 const WORKER_UNIT_PATH = 'ops/runtime-ownership/blackspire-command-worker.service';
 const GATEWAY_UNIT_PATH = 'ops/runtime-ownership/blackspire-buyer-writer-gateway.service';
+const GATEWAY_SYSUSERS_PATH = 'ops/runtime-ownership/blackspire-buyer-writer-gateway.sysusers.conf';
+const GATEWAY_TMPFILES_PATH = 'ops/runtime-ownership/blackspire-buyer-writer-gateway.tmpfiles.conf';
 const TARGET_PATH = 'ops/runtime-ownership/blackspire-command.target';
 const INSTALLED_UNIT_PATH = '/etc/systemd/system/blackspire-command.service';
 const INSTALLED_WORKER_UNIT_PATH = '/etc/systemd/system/blackspire-command-worker.service';
@@ -80,6 +82,8 @@ const REQUIRED_TOOLING = [
   'ops/runtime-ownership/OWNERSHIP_MAP.md',
   WORKER_UNIT_PATH,
   GATEWAY_UNIT_PATH,
+  GATEWAY_SYSUSERS_PATH,
+  GATEWAY_TMPFILES_PATH,
   TARGET_PATH,
 ];
 
@@ -144,6 +148,8 @@ const pinnedNodeVersion = (read('.node-version') || '').trim();
 const unit = read(UNIT_PATH);
 const workerUnit = read(WORKER_UNIT_PATH);
 const gatewayUnit = read(GATEWAY_UNIT_PATH);
+const gatewaySysusers = read(GATEWAY_SYSUSERS_PATH);
+const gatewayTmpfiles = read(GATEWAY_TMPFILES_PATH);
 const runtimeTarget = read(TARGET_PATH);
 if (unit === null) {
   record('unit-present', false, 'source', `${UNIT_PATH} is missing`);
@@ -210,17 +216,20 @@ if (unit === null) {
 {
   const required = [
     'User=blackspire-writer', 'Group=blackspire-api',
-    'WorkingDirectory=/opt/blackspire-command/current',
+    'SupplementaryGroups=blackspire-writer',
+    'WorkingDirectory=/opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@',
     'RuntimeDirectory=blackspire', 'RuntimeDirectoryMode=0750', 'UMask=0007',
-    'ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node packages/buyer-writer/gateway-entry.js --configuration ${BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG}',
-    'ExecStartPost=/opt/nodejs/node-v22.23.1-linux-x64/bin/node packages/buyer-writer/gateway-readiness.js',
+    'ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-entry.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@',
+    'ExecStartPost=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-readiness.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@',
     'Before=blackspire-command.service blackspire-command-worker.service',
     'After=network-online.target', 'Wants=network-online.target',
     'PartOf=blackspire-command.target', 'WantedBy=blackspire-command.target',
     'StartLimitIntervalSec=600', 'StartLimitBurst=5', 'Restart=on-failure', 'RestartSec=5',
     'TimeoutStartSec=20', 'TimeoutStopSec=20', 'KillMode=mixed',
     'NoNewPrivileges=yes', 'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes',
-    'ProtectProc=invisible', 'ReadWritePaths=/run/blackspire', 'RestrictSUIDSGID=yes',
+    'PrivateDevices=yes', 'ProtectProc=invisible', 'ReadWritePaths=/run/blackspire', 'RestrictSUIDSGID=yes',
+    'ProtectKernelTunables=yes', 'ProtectKernelModules=yes', 'ProtectKernelLogs=yes', 'ProtectControlGroups=yes',
+    'ProtectClock=yes', 'ProtectHostname=yes', 'SystemCallArchitectures=native',
     'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6', 'RestrictNamespaces=yes',
     'CapabilityBoundingSet=', 'AmbientCapabilities=',
   ];
@@ -230,9 +239,22 @@ if (unit === null) {
   const secretIsolated = gatewayUnit !== null
     && !/^EnvironmentFile=/m.test(gatewayUnit)
     && !/DATABASE_URL|SUPABASE_DB_|PGPASSWORD|POSTGRES_PASSWORD/.test(gatewayUnit);
+  const executableGateway=(gatewayUnit??'').split('\n').filter(line=>!line.trim().startsWith('#')).join('\n');
+  const immutable = gatewayUnit !== null
+    && !/\/current(?:\/|$)|\/HEAD(?:\/|$)|\/opt\/blackspire\/\.worktrees/.test(executableGateway)
+    && (executableGateway.match(/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/g) ?? []).length===3
+    && (executableGateway.match(/@BLACKSPIRE_GATEWAY_CONFIG_PATH@/g) ?? []).length===2;
+  const privateIdentity = gatewaySysusers !== null
+    && gatewaySysusers.split('\n').map(line=>line.trim()).filter(line=>line&&!line.startsWith('#')).join('\n')
+      === 'u blackspire-writer - "Blackspire Buyer Writer gateway" /nonexistent /usr/sbin/nologin'
+    && !/^m\s|\bblackspire-writer\s+blackspire\b/m.test(gatewaySysusers);
+  const secretHierarchy = gatewayTmpfiles !== null
+    && /^d \/etc\/blackspire-buyer-writer-gateway 0750 root blackspire-writer -$/m.test(gatewayTmpfiles)
+    && /^d \/run\/blackspire 0750 blackspire-writer blackspire-api -$/m.test(gatewayTmpfiles)
+    && !/^d \/etc\/blackspire\/buyer-writer-gateway/m.test(gatewayTmpfiles);
   const acyclic = gatewayUnit !== null
     && !/^After=.*blackspire-command(?:\.target|\.service|-worker\.service)/m.test(gatewayUnit);
-  const complete = gatewayUnit !== null && missing.length === 0 && secretIsolated && acyclic;
+  const complete = gatewayUnit !== null && missing.length === 0 && secretIsolated && immutable && privateIdentity && secretHierarchy && acyclic;
   record('buyer-writer-gateway-unit', complete, 'source', complete
     ? 'dedicated gateway identity, private configuration, safe socket directory, bounded lifecycle, and acyclic target ordering are enforced'
     : gatewayUnit === null
@@ -240,6 +262,9 @@ if (unit === null) {
       : `gateway unit contract incomplete: ${[
         ...missing,
         ...(secretIsolated ? [] : ['gateway must not load shared environment files or embed database credential keys']),
+        ...(immutable ? [] : ['gateway executable authority must use rendered immutable-release and dedicated-config tokens']),
+        ...(privateIdentity ? [] : ['gateway sysusers contract must create only a private nologin identity']),
+        ...(secretHierarchy ? [] : ['gateway tmpfiles contract must isolate secrets outside the application configuration hierarchy']),
         ...(acyclic ? [] : ['gateway must not order itself after the command target or clients']),
       ].join(', ')}`);
 }
@@ -389,6 +414,23 @@ if (unit === null) {
 
 // --- Deployment-class: installed unit drift (read-only) --------------------------------------
 
+// The committed gateway unit is deliberately a render-only template. Normalize only the two
+// exact installer substitutions: one consistent immutable 40-hex release directory and the
+// dedicated gateway configuration path. Any mutable path, token residue, inconsistent SHA, or
+// other byte drift remains a deployment failure.
+const installedGatewayMatchesTemplate=(installed,reviewed)=>{
+  if(typeof installed!=='string'||typeof reviewed!=='string'||/@BLACKSPIRE_GATEWAY_/.test(installed)
+    ||/\/current(?:\/|$)|\/HEAD(?:\/|$)|\/opt\/blackspire\/\.worktrees/.test(installed))return false;
+  const releases=[...installed.matchAll(/\/opt\/blackspire-command\/releases\/([a-f0-9]{40})(?=\/|$)/g)].map(match=>match[1]);
+  if(releases.length!==4||new Set(releases).size!==1)return false;
+  const config='/etc/blackspire-buyer-writer-gateway/gateway.json';
+  if(installed.split(config).length-1!==3)return false;
+  const normalized=installed
+    .replaceAll(`/opt/blackspire-command/releases/${releases[0]}`,'/opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@')
+    .replaceAll(config,'@BLACKSPIRE_GATEWAY_CONFIG_PATH@');
+  return normalized===reviewed;
+};
+
 // The interpreter the unit pins must actually exist on the host, be a regular file, and be
 // executable. Without this the preflight can report success on a host where the single failure
 // mode this contract exists to prevent is still present.
@@ -421,7 +463,8 @@ for (const [id, installedPath, reviewed] of [
   } catch { installed = null; }
   if (installed === null) {
     record(id, false, 'deployment', `${installedPath} is absent or is not a root-owned, non-group/world-writable regular file and must be safely installed before activation`);
-  } else if (reviewed !== null && installed === reviewed) {
+  } else if (reviewed !== null && (installed === reviewed
+    ||id==='installed-gateway-unit'&&installedGatewayMatchesTemplate(installed,reviewed))) {
     record(id, true, 'deployment', `${installedPath} matches the reviewed template`);
   } else {
     record(id, false, 'deployment', `${installedPath} differs from the reviewed template`);
