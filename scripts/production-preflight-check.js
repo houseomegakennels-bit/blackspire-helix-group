@@ -29,9 +29,11 @@ const strict = process.argv.includes('--strict');
 
 const UNIT_PATH = 'ops/runtime-ownership/blackspire-command.service';
 const WORKER_UNIT_PATH = 'ops/runtime-ownership/blackspire-command-worker.service';
+const GATEWAY_UNIT_PATH = 'ops/runtime-ownership/blackspire-buyer-writer-gateway.service';
 const TARGET_PATH = 'ops/runtime-ownership/blackspire-command.target';
 const INSTALLED_UNIT_PATH = '/etc/systemd/system/blackspire-command.service';
 const INSTALLED_WORKER_UNIT_PATH = '/etc/systemd/system/blackspire-command-worker.service';
+const INSTALLED_GATEWAY_UNIT_PATH = '/etc/systemd/system/blackspire-buyer-writer-gateway.service';
 const INSTALLED_TARGET_PATH = '/etc/systemd/system/blackspire-command.target';
 const NODE_BIN_LIB = 'scripts/lib/node-bin.sh';
 
@@ -77,6 +79,7 @@ const REQUIRED_TOOLING = [
   'ops/reverse-proxy/blackspire-command.nginx.conf',
   'ops/runtime-ownership/OWNERSHIP_MAP.md',
   WORKER_UNIT_PATH,
+  GATEWAY_UNIT_PATH,
   TARGET_PATH,
 ];
 
@@ -140,6 +143,7 @@ const pinnedNodeVersion = (read('.node-version') || '').trim();
 
 const unit = read(UNIT_PATH);
 const workerUnit = read(WORKER_UNIT_PATH);
+const gatewayUnit = read(GATEWAY_UNIT_PATH);
 const runtimeTarget = read(TARGET_PATH);
 if (unit === null) {
   record('unit-present', false, 'source', `${UNIT_PATH} is missing`);
@@ -204,11 +208,49 @@ if (unit === null) {
 }
 
 {
+  const required = [
+    'User=blackspire-writer', 'Group=blackspire-api',
+    'WorkingDirectory=/opt/blackspire-command/current',
+    'RuntimeDirectory=blackspire', 'RuntimeDirectoryMode=0750', 'UMask=0007',
+    'ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node packages/buyer-writer/gateway-entry.js --configuration ${BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG}',
+    'ExecStartPost=/opt/nodejs/node-v22.23.1-linux-x64/bin/node packages/buyer-writer/gateway-readiness.js',
+    'Before=blackspire-command.service blackspire-command-worker.service',
+    'After=network-online.target', 'Wants=network-online.target',
+    'PartOf=blackspire-command.target', 'WantedBy=blackspire-command.target',
+    'StartLimitIntervalSec=600', 'StartLimitBurst=5', 'Restart=on-failure', 'RestartSec=5',
+    'TimeoutStartSec=20', 'TimeoutStopSec=20', 'KillMode=mixed',
+    'NoNewPrivileges=yes', 'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes',
+    'ProtectProc=invisible', 'ReadWritePaths=/run/blackspire', 'RestrictSUIDSGID=yes',
+    'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6', 'RestrictNamespaces=yes',
+    'CapabilityBoundingSet=', 'AmbientCapabilities=',
+  ];
+  const directives = new Set((gatewayUnit ?? '').split('\n').map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#')));
+  const missing = required.filter((directive) => !directives.has(directive));
+  const secretIsolated = gatewayUnit !== null
+    && !/^EnvironmentFile=/m.test(gatewayUnit)
+    && !/DATABASE_URL|SUPABASE_DB_|PGPASSWORD|POSTGRES_PASSWORD/.test(gatewayUnit);
+  const acyclic = gatewayUnit !== null
+    && !/^After=.*blackspire-command(?:\.target|\.service|-worker\.service)/m.test(gatewayUnit);
+  const complete = gatewayUnit !== null && missing.length === 0 && secretIsolated && acyclic;
+  record('buyer-writer-gateway-unit', complete, 'source', complete
+    ? 'dedicated gateway identity, private configuration, safe socket directory, bounded lifecycle, and acyclic target ordering are enforced'
+    : gatewayUnit === null
+      ? `${GATEWAY_UNIT_PATH} is missing`
+      : `gateway unit contract incomplete: ${[
+        ...missing,
+        ...(secretIsolated ? [] : ['gateway must not load shared environment files or embed database credential keys']),
+        ...(acyclic ? [] : ['gateway must not order itself after the command target or clients']),
+      ].join(', ')}`);
+}
+
+{
   const apiIsolated = unit !== null && /^ExecStart=.*production-supervisor\.js --api-only$/m.test(unit);
   const workerIsolated = workerUnit !== null && /^ExecStart=.*production-supervisor\.js --worker-only$/m.test(workerUnit);
   const apiLoadsAuth = unit !== null && /^EnvironmentFile=\/etc\/blackspire\/command-api\.env$/m.test(unit);
   const workerExcludesAuth = workerUnit !== null && !/command-api\.env|COMMAND_ADMIN_PASSWORD_HASH|COMMAND_ADMIN_TOKEN|SESSION_SECRET/.test(workerUnit);
-  const targetStartsBoth = runtimeTarget !== null && /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m.test(runtimeTarget);
+  const targetStartsBoth = runtimeTarget !== null && /^Wants=blackspire-buyer-writer-gateway\.service blackspire-command\.service blackspire-command-worker\.service$/m.test(runtimeTarget)
+    && /^After=network-online\.target blackspire-buyer-writer-gateway\.service$/m.test(runtimeTarget);
   const lifecycleIndependent = unit !== null && workerUnit !== null &&
     !/Requires=blackspire-command-worker\.service/.test(unit) && !/Requires=blackspire-command\.service/.test(workerUnit);
   const workerHardening = workerUnit !== null && ['User=blackspire-worker', 'Group=blackspire', 'NoNewPrivileges=yes',
@@ -367,6 +409,7 @@ if (unit === null) {
 for (const [id, installedPath, reviewed] of [
   ['installed-unit', INSTALLED_UNIT_PATH, unit],
   ['installed-worker-unit', INSTALLED_WORKER_UNIT_PATH, workerUnit],
+  ['installed-gateway-unit', INSTALLED_GATEWAY_UNIT_PATH, gatewayUnit],
   ['installed-runtime-target', INSTALLED_TARGET_PATH, runtimeTarget],
 ]) {
   let installed = null;

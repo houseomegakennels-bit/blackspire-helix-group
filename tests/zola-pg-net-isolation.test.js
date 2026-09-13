@@ -24,6 +24,11 @@ test('deterministic source proof rejects a new production pg_net call site',()=>
  assert.match(result.sourceScanDigest,/^[a-f0-9]{64}$/);
 });
 
+test('deterministic source proof catches whitespace and unknown net.http operations',()=>{
+ const result=scanApplicationPgNetSource({files:{'apps/api/fixture.js':'await net\n  . http_patch(target)'}});
+ assert.equal(result.available,true);assert.equal(result.applicationPgNetCallSitesZero,false);assert.equal(result.callSiteCount,1);
+});
+
 test('source proof uses an exact file allowlist rather than a test or directory exemption',()=>{
  assert.equal(scanApplicationPgNetSource({files:{'scripts/test-buyer-writer-acl.mjs':'pg_net'}}).applicationPgNetCallSitesZero,true);
  assert.equal(scanApplicationPgNetSource({files:{'scripts/new-test.mjs':'pg_net'}}).applicationPgNetCallSitesZero,false);
@@ -38,6 +43,11 @@ test('repository source discovery includes untracked production files',()=>{
   const result=scanApplicationPgNetSource({root});
   assert.equal(result.available,true);assert.equal(result.applicationPgNetCallSitesZero,false);assert.equal(result.callSiteCount,1);
  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('the checked-out repository has zero unauthorized pg_net source call sites',()=>{
+ const result=scanApplicationPgNetSource();
+ assert.equal(result.available,true);assert.equal(result.applicationPgNetCallSitesZero,true);assert.equal(result.callSiteCount,0);
 });
 
 test('isolation proof runs the fixed read-only application function-body observation',async()=>{
@@ -68,6 +78,9 @@ test('PUBLIC EXECUTE 12/12 passes only with every isolation proof and records pr
  assert.equal(passed.status,'PASS');assert.equal(passed.evidence.publicExecuteCount,12);
  assert.equal(passed.evidence.providerAcl,false);assert.equal(passed.evidence.providerAclObserved,true);
  assert.equal(passed.evidence.providerRisk,'PUBLIC_EXECUTE_EXTERNALLY_OPEN');assert.equal(passed.evidence.providerRiskRecorded,true);
+ const missingCounts=async()=>({status:'PASS',evidence:{...runtime(),pgNetIsolationVerified:true,
+  applicationPgNetCallSitesZero:true,applicationDbPgNetReferencesZero:true}});
+ assert.deepEqual(await createProviderAclCheckOperation({query,isolationProof:missingCounts}).check(args),{status:'BLOCKED_EXTERNAL'});
  const incomplete=createPgNetIsolationProof({query,verifyRuntimeIsolation:async()=>({...runtime(),arbitraryUrlDenied:false}),scanSource:cleanScan});
  assert.deepEqual(await createProviderAclCheckOperation({query,isolationProof:incomplete}).check(args),{status:'BLOCKED_EXTERNAL'});
 });

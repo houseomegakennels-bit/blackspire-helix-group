@@ -13,7 +13,8 @@ const aclRows=()=>PROVIDER_ACL_FUNCTIONS.map(functionName=>({functionName,argume
  ownerExecute:true,postgresExecute:true,serviceRoleExecute:true,writerExecute:false}));
 const isolationProof=async()=>({status:'PASS',evidence:{pgNetIsolationVerified:true,applicationDbCredentialsAbsent:true,
  gatewayTransportVerified:true,arbitrarySqlDenied:true,arbitraryFunctionDenied:true,arbitraryUrlDenied:true,
- applicationPgNetCallSitesZero:true,applicationDbPgNetReferencesZero:true}});
+ applicationPgNetCallSitesZero:true,applicationDbPgNetReferencesZero:true,applicationPgNetCallSiteCount:0,
+ applicationDbPgNetReferenceCount:0,sourceScanDigest:'b'.repeat(64),functionBodyDigest:'c'.repeat(64)}});
 
 test('provider ACL operation performs one fixed read-only exact-twelve catalog check',async()=>{
  let calls=0;const operation=createProviderAclCheckOperation({query:async(sql,values)=>{

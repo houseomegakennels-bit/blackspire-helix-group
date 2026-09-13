@@ -4,6 +4,7 @@ Description=Blackspire Buyer Writer local Unix-socket gateway
 After=network-online.target
 Wants=network-online.target
 Before=blackspire-command.service blackspire-command-worker.service
+PartOf=blackspire-command.target
 StartLimitIntervalSec=600
 StartLimitBurst=5
 
@@ -43,4 +44,4 @@ StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=blackspire-command.target

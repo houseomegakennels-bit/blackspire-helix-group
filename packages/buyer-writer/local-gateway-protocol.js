@@ -31,8 +31,11 @@ function rejectDuplicateKeys(text) {
   for(let i=0;i<text.length;i++){
     const c=text[i];
     if(string){
-      if(escaped){escaped=false;continue;}
-      if(c==='\\'){escaped=true;continue;}
+      // Preserve escapes verbatim so JSON.parse below compares decoded key
+      // values. Dropping the escaped character lets `"key"` and an escaped
+      // spelling of the same key acquire different scanner representations.
+      if(escaped){token+=c;escaped=false;continue;}
+      if(c==='\\'){token+=c;escaped=true;continue;}
       if(c==='"'){
         string=false;
         if(isKey){let decoded;try{decoded=JSON.parse(`"${token}"`);}catch{reject('MALFORMED_JSON');}
@@ -56,7 +59,7 @@ function rejectDuplicateKeys(text) {
 
 function rejectForbidden(value) {
   if(typeof value==='string'){
-    if(/(?:\bpg_net\b|\bnet\s*\.\s*http_(?:get|post|delete|collect_response)\b|(?:https?|postgres(?:ql)?)\s*:\/\/)/iu.test(value))reject('FORBIDDEN_INPUT');
+    if(/(?:\bpg_net\b|\bnet\s*\.\s*http_[a-z0-9_]*\b|\b[a-z][a-z0-9+.-]*\s*:\/\/)/iu.test(value))reject('FORBIDDEN_INPUT');
     return;
   }
   if(!value||typeof value!=='object')return;

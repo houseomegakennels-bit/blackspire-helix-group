@@ -18,7 +18,8 @@ where pg_get_userbyid(p.proowner) in ('postgres','buyer_writer_owner')
 order by n.nspname,p.proname,pg_get_function_identity_arguments(p.oid),p.oid`;
 
 export const PG_NET_SOURCE_TERMS=Object.freeze([
- 'net.http_get','net.http_post','net.http_delete','net.http_collect_response','pg_net',
+ Object.freeze({term:'net.http_*',pattern:/\bnet\s*\.\s*http_[a-z0-9_]*/iu}),
+ Object.freeze({term:'pg_net',pattern:/\bpg_net\b/iu}),
 ]);
 
 // Exact files only. These contain the provider observer, the identity denial,
@@ -33,8 +34,11 @@ export const PG_NET_SOURCE_ALLOWLIST=Object.freeze([
  'packages/buyer-writer/local-gateway-postgres.js',
  'packages/buyer-writer/postgres.js',
  'scripts/test-buyer-migration-executor-postgres.mjs',
+ 'scripts/test-buyer-migration-executor-session.mjs',
  'scripts/test-buyer-writer-acl.mjs',
+ 'scripts/test-buyer-writer-postgres.mjs',
  'docs/BLACKSPIRE_ACTIVE_CONTEXT.md',
+ 'docs/BLACKSPIRE_DECISIONS.md',
  'docs/BLACKSPIRE_NEXT_ACTIONS.md',
  'docs/BLACKSPIRE_SESSION_LOG.md',
  'docs/BLACKSPIRE_SOURCE_OF_TRUTH.md',
@@ -66,8 +70,7 @@ export function scanApplicationPgNetSource({root=process.cwd(),files}={}){
   for(const [path,source] of entries){
    if(typeof path!=='string'||typeof source!=='string'||!sourcePath(path))throw new Error('invalid source input');
    if(allow.has(path))continue;
-   const lower=source.toLowerCase();
-   for(const term of PG_NET_SOURCE_TERMS)if(lower.includes(term))violations.push(Object.freeze({path,term}));
+   for(const {term,pattern} of PG_NET_SOURCE_TERMS)if(pattern.test(source))violations.push(Object.freeze({path,term}));
   }
   const ordered=violations.sort((a,b)=>a.path.localeCompare(b.path)||a.term.localeCompare(b.term));
   return Object.freeze({available:true,applicationPgNetCallSitesZero:ordered.length===0,callSiteCount:ordered.length,

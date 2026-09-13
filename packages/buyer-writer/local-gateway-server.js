@@ -35,6 +35,10 @@ function validateResult(operation,p,result){
     if(!result.found&&result.receipt!==null)rejectResult();
   }else if(operation==='context'){
     if(!exact(result,['criteria','sourceContext','sourceContextDigest'])||typeof result.sourceContextDigest!=='string'||!/^[a-f0-9]{64}$/.test(result.sourceContextDigest))rejectResult();
+    if(!exact(result.criteria,['state','county','property_type','date_range_start','date_range_end','min_purchases','cash_buyers_only','llc_buyers_only']))rejectResult();
+    for(const field of ['state','county','property_type','date_range_start','date_range_end'])if(typeof result.criteria[field]!=='string'||result.criteria[field].length>128)rejectResult();
+    if(result.criteria.min_purchases!==null&&(!Number.isSafeInteger(result.criteria.min_purchases)||result.criteria.min_purchases<1||result.criteria.min_purchases>5))rejectResult();
+    for(const field of ['cash_buyers_only','llc_buyers_only'])if(result.criteria[field]!==null&&typeof result.criteria[field]!=='boolean')rejectResult();
     validateBuyerSourceContext(result.sourceContext);
   }
   return result;

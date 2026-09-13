@@ -664,9 +664,24 @@ test('the production supervisor requires one explicit role and only the API prob
 // nonzero without reaching the check under test, so each supervisor test below states which
 // documented reason it expects and rejects the others by name.
 function runSupervisor(env, spawnOptions = {}) {
-  return spawnSync(node, ['scripts/production-supervisor.js', '--api-only'], {
+  // The suite itself may be launched from an interpreter below a root-only home directory
+  // (for example /root/.hermes). Once the fixture drops to the production-like unprivileged
+  // identity, that path is intentionally not traversable and spawnSync returns EACCES without
+  // ever executing the supervisor. Prefer the reviewed production interpreter when it is
+  // installed; otherwise prove that the current supported interpreter is executable by the
+  // same identity before using it.
+  const candidates = ['/opt/nodejs/node-v22.23.1-linux-x64/bin/node', node];
+  const executable = candidates.find((candidate, index) => {
+    if (index > 0 && candidates[index - 1] === candidate) return false;
+    const probe = spawnSync(candidate, ['--version'], { encoding: 'utf8', timeout: 5000, ...spawnOptions });
+    return probe.status === 0 && /^v(?:22|23|24)\./.test(probe.stdout.trim());
+  });
+  assert.ok(executable, 'no supported Node interpreter is executable by the production test identity');
+  const result = spawnSync(executable, ['scripts/production-supervisor.js', '--api-only'], {
     cwd: process.cwd(), encoding: 'utf8', timeout: 20000, env, ...spawnOptions,
   });
+  assert.equal(result.error, undefined, `the supervisor process must start: ${result.error?.message}`);
+  return result;
 }
 
 const SUPERVISOR_REASONS = {
@@ -746,7 +761,7 @@ test('the production supervisor refuses an occupied port without touching the li
   assert.equal(stillBusy.code, 'EADDRINUSE');
 });
 
-test('the production supervisor fails closed with a usable diagnostic on an unverified deployment identity', () => {
+test('the production supervisor fails closed with a usable diagnostic on an unverified deployment identity', async () => {
   // This gate previously had only a source-text grep for the function name plus an indexOf
   // ordering check, so it never executed. Two consequences shipped: (a) the fatal path crashed
   // with "Cannot read properties of undefined (reading 'map')" because it passed a non-existent
@@ -757,7 +772,11 @@ test('the production supervisor fails closed with a usable diagnostic on an unve
   grantDisposableRootTo(identity.uid);
   // cwd is the repository checkout, which carries no COMMIT_SHA manifest, so a vps-production
   // owner cannot verify its build identity. No release tree or host path is touched.
-  const r = runSupervisor(productionChildEnv({ BLACKSPIRE_RUNTIME_USER: identity.username }), identity.spawnOptions);
+  const port = await reserveFreePort();
+  const r = runSupervisor(productionChildEnv({
+    BLACKSPIRE_RUNTIME_USER: identity.username,
+    PORT: String(port),
+  }), identity.spawnOptions);
 
   assert.equal(r.status, 1, `the supervisor must fail closed on an unverified identity: ${r.stderr}`);
   assert.match(r.stderr, /fatal: deployment identity verification failed/);
@@ -906,7 +925,7 @@ test('systemd independently supervises the API and existing worker under one tar
   assert.match(unit, /^KillMode=mixed$/m, 'only the API supervisor receives the first drain signal');
   assert.match(worker, /^RestrictNamespaces=user mnt pid ipc uts net cgroup$/m, 'the worker must permit namespace primitives required by the Codex bubblewrap sandbox');
   assert.match(unit, /^RestrictNamespaces=yes$/m, 'the API does not spawn Codex and keeps namespace creation disabled');
-  assert.match(target, /^Wants=blackspire-command\.service blackspire-command-worker\.service$/m);
+  assert.match(target, /^Wants=blackspire-buyer-writer-gateway\.service blackspire-command\.service blackspire-command-worker\.service$/m);
   assert.match(unit, /^PartOf=blackspire-command\.target$/m);
   assert.match(worker, /^PartOf=blackspire-command\.target$/m);
   assert.doesNotMatch(unit, /Requires=blackspire-command-worker/, 'worker failure must not terminate the API');

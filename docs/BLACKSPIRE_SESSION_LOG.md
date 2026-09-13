@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-13 — gateway runtime hardening and regression recovery
+
+- Recovered local head `22989f85218516c2b6a54658a2129c76e33a693d`, one commit ahead of remote `475998653e700eec9cd223dd2ced56d2ba36a036`, and preserved all eight inherited follow-up files without reset, clean, stash or amend.
+- Root-caused all three production-bind failures to the harness dropping to UID/GID 65534 while invoking a Node binary below `/root`; the supervisor never executed and `spawnSync` returned `EACCES`. The bounded harness now selects the reviewed production Node or proves a supported fallback is executable by the same identity. All three cases and the complete bind file pass without weakening fail-closed semantics.
+- Hardened local protocol duplicate-key decoding, arbitrary `net.http_*` and URI-scheme denial, result validation and socket availability; preserved persistent database idempotence across gateway restart. Extended systemd target ownership and production-preflight validation to the gateway service and installed-unit drift.
+- Strengthened pg_net isolation evidence with exact zero counts, required scan/body digests, broader source detection and ACL-state digest binding. PUBLIC EXECUTE 12/12 remains explicitly risky and acceptable only with every complete isolation proof; the repository scan reports zero unauthorized call sites.
+- Focused validation passes 67 gateway/configuration/ACL/bind tests, 30 PostgreSQL writer checks, native TLS/lock verification, 133 broader release/preflight/reconciliation tests with three expected host skips, and the PostgreSQL migration-executor proof. Full trusted validation passes 1,920 total / 1,878 passed / 42 expected skips / zero failures across all 192 files, with drained output and zero descendants. Lint, typecheck, build, secret scan, living-memory, root dependency audit and whitespace checks pass; the optional frontend audit retains one moderate `adm-zip` advisory outside the required high-severity gate. Push and exact-head external checks remain pending. No production service, database, n8n, merge, release or OPEN mutation occurred; `SU-471370` remains open.
+
 ## 2026-09-13 — pg_net-independent Buyer Writer gateway checkpoint
 
 - Recovered clean exact local/remote/PR head `475998653e700eec9cd223dd2ced56d2ba36a036` and preserved current main `726b54a89b0e871531a12d1421f58c3e47d256be` without resetting unrelated work.

@@ -57,11 +57,15 @@ export async function createBuyerWriterRuntime({configurationFile,clientConfigur
       observeBinding:createBinding({...bindingOptions,requireCommit:false})});
     let closed=false,closing;
     const checkAvailability=async()=>{
-      try {return !closed&&database.isHealthy()===true&&await available()===true&&!closed&&database.isHealthy()===true;}
+      try {return !closed&&database.isHealthy()===true
+        &&(typeof database.checkAvailability!=='function'||await database.checkAvailability()===true)
+        &&await available()===true&&!closed&&database.isHealthy()===true;}
       catch{return false;}
     };
     const checkPreparation=async()=>{
-      try{return !closed&&database.isHealthy()===true&&await prepared()===true&&!closed&&database.isHealthy()===true;}
+      try{return !closed&&database.isHealthy()===true
+        &&(typeof database.checkAvailability!=='function'||await database.checkAvailability()===true)
+        &&await prepared()===true&&!closed&&database.isHealthy()===true;}
       catch{return false;}
     };
     const handler=createBuyerWriterRequestHandler({credential:ingress.writerCredential,workspace,query:database.runtimeQuery,isAvailable:checkAvailability,

@@ -62,5 +62,17 @@ export function createBuyerWriterLocalClient({socketPath=BUYER_WRITER_DEFAULT_SO
     const result=await request(q.operation,q.payload,{principal:q.principal,dispatchId:q.dispatchId,generation:q.generation});
     return {rows:[{result}]};
   };
-  return Object.freeze({request,runtimeQuery:query('runtime'),issuerQuery:query('issuer'),isHealthy:()=>!closed&&healthy,close:async()=>{closed=true;healthy=false;}});
+  // Readiness is a local transport observation only. The gateway creates its
+  // socket after both fixed database pools pass their identity probes, while
+  // application processes never receive enough authority to probe PostgreSQL.
+  const checkAvailability=()=>new Promise(resolve=>{
+    if(closed)return resolve(false);
+    let socket,timer,settled=false;
+    const finish=ok=>{if(settled)return;settled=true;clearTimeout(timer);socket?.destroy();healthy=ok;resolve(ok);};
+    try{socket=connect({path:socketPath});}catch{return finish(false);}
+    timer=setTimeout(()=>finish(false),Math.min(timeoutMs,2000));timer.unref();
+    socket.once('connect',()=>finish(true));socket.once('error',()=>finish(false));
+  });
+  return Object.freeze({request,runtimeQuery:query('runtime'),issuerQuery:query('issuer'),checkAvailability,
+    isHealthy:()=>!closed&&healthy,close:async()=>{closed=true;healthy=false;}});
 }

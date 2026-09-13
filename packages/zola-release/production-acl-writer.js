@@ -97,7 +97,9 @@ function aclEvidence(value,bound){
    ||typeof row.owner!=='string'||row.owner.length>63
    ||![row.publicExecute,row.ownerExecute,row.postgresExecute,row.serviceRoleExecute,row.writerExecute].every(item=>typeof item==='boolean'))reject();
   if(!row.ownerExecute||!row.postgresExecute||!row.serviceRoleExecute)reject();
-  identities.push({name:row.functionName,arguments:row.arguments,owner:row.owner});
+  identities.push({name:row.functionName,arguments:row.arguments,owner:row.owner,publicExecute:row.publicExecute,
+   ownerExecute:row.ownerExecute,postgresExecute:row.postgresExecute,serviceRoleExecute:row.serviceRoleExecute,
+   writerExecute:row.writerExecute});
  }
  if(expected.size)return null;
  const publicExecuteCount=rows.filter(row=>row.publicExecute).length;
@@ -110,6 +112,14 @@ function aclEvidence(value,bound){
 
 const isolationKeys=['pgNetIsolationVerified','applicationDbCredentialsAbsent','gatewayTransportVerified','arbitrarySqlDenied',
  'arbitraryFunctionDenied','arbitraryUrlDenied','applicationPgNetCallSitesZero','applicationDbPgNetReferencesZero'];
+const isolationEvidenceKeys=[...isolationKeys,'applicationPgNetCallSiteCount','applicationDbPgNetReferenceCount',
+ 'sourceScanDigest','functionBodyDigest'];
+
+function completeIsolationEvidence(value){
+ return exact(value,isolationEvidenceKeys)&&isolationKeys.every(key=>value[key]===true)
+  &&value.applicationPgNetCallSiteCount===0&&value.applicationDbPgNetReferenceCount===0
+  &&digest(value.sourceScanDigest)&&digest(value.functionBodyDigest);
+}
 
 export function createProviderAclCheckOperation({query,isolationProof}){
  if(typeof query!=='function')reject();
@@ -119,7 +129,7 @@ export function createProviderAclCheckOperation({query,isolationProof}){
    const provider=aclEvidence(await query(PROVIDER_ACL_CHECK_SQL,[]),bound);
    if(provider===null||typeof isolationProof!=='function')return blocked();
    const isolation=await isolationProof();
-   if(isolation?.status!=='PASS'||!isolation.evidence||isolationKeys.some(key=>isolation.evidence[key]!==true))return blocked();
+   if(isolation?.status!=='PASS'||!completeIsolationEvidence(isolation.evidence))return blocked();
    return Object.freeze({status:'PASS',evidence:Object.freeze({...provider,...isolation.evidence,
     providerAcl:provider.publicExecuteCount===0,providerRiskRecorded:provider.publicExecuteCount>0})});
   }catch(error){

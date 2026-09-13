@@ -2,7 +2,7 @@
 
 ## 2026-09-13 — validate and publish the local gateway tranche
 
-1. Create the checkpoint commit after memory/security checks, then run the required focused Buyer Writer PostgreSQL/native, release adapter/sequence, migration and reconciliation suites plus the full trusted suite, lint, typecheck, build, secret scan, audit and whitespace checks. Fix every regression before the final commit.
+1. Push the recovered gateway commit and the follow-up hardening commit now that focused, PostgreSQL/native, full trusted, lint, typecheck, build, secret, root audit, living-memory and whitespace gates are green.
 2. Push every reviewed commit to `release/zola-production-live` and require exact-new-head CI, receiver, Vercel frontend/root and aggregate checks. Do not treat pre-change evidence as current.
 3. Keep `SU-471370` open and continue reporting provider PUBLIC EXECUTE as externally risky. Do not claim ACL repair; the release gate may pass 12/12 only from complete live gateway/application/function/source isolation evidence.
 4. After exact-head external checks and live isolation installation are green, fetch current main and create an entirely fresh n8n pin, release package, protected descriptor/input and operation ID. Never reuse `6cc8d935-ab34-432b-acf9-13c34e68a056` or `zola-production-release-90610dd.json`.
