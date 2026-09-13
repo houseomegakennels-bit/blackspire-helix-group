@@ -2,7 +2,7 @@
 
 ## 2026-09-13 — validate and publish the gateway acceptance correction
 
-1. Complete the full trusted suite plus lint, typecheck, build, secret scan, root high-severity audit, living-memory and whitespace checks; commit the coherent correction and push it to `release/zola-production-live`.
+1. Push implementation commit `0f3cee8d40997d13643337a3ff801f61c631229d` and this canonical evidence refresh to `release/zola-production-live`; focused 326/326, full trusted 1,943 total / 1,900 passed / 43 expected skips / zero failures, lint, typecheck, build, secret scan, root high-severity audit, living-memory and whitespace checks are green.
 2. Require new exact-head CI, receiver audit and Vercel frontend/root/aggregate success. The receiver artifact must show a complete fixed-project environment-key inventory with zero prohibited database keys; unavailable inventory is failure.
 3. Only after exact-head gates are green, provision a fresh protected gateway configuration bound to that exact SHA and new operation/attempt IDs, create the sealed immutable artifact, and run the gateway-only installer. Start only the gateway and require signed zero-query readiness, exact socket/no-TCP proof, API/worker secret denial, configured-state isolation, all protocol denials, source count zero and both fixed catalog observations.
 4. If the provider remains PUBLIC EXECUTE 12/12, record `DEFENSE-IN-DEPTH OPEN` while keeping `SU-471370` open. Do not merge, repin n8n, migrate, cut over, or OPEN in this tranche. A missing credential, artifact, catalog observation, Vercel inventory, ownership proof or protocol result keeps the isolation gate failed.
