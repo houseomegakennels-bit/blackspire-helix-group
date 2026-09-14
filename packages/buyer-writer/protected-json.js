@@ -19,7 +19,7 @@ export function readRootOwnedMetadataSnapshot(filename,{groupId,io=fs,aclTool=sp
 }
 
 function readSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}={},ceiling) {
-  let fd;
+  let fd,bytes;
   try {
     if(!Number.isInteger(groupId)||groupId<0||groupId>4294967294||typeof filename!=='string'||filename.length>4096||!path.isAbsolute(filename)
       ||path.resolve(filename)!==filename||filename==='/'||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>ceiling)throw new Error();
@@ -39,7 +39,7 @@ function readSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}=
       stdio:['ignore','pipe','pipe',fd],encoding:'utf8',timeout:250,maxBuffer:4096,killSignal:'SIGKILL',env:{PATH:'/usr/bin:/bin'},
     });
     if(acl.status!==0||acl.error||acl.stdout!==''||acl.stderr!=='')throw new Error();
-    const bytes=Buffer.alloc(maxBytes+1);let used=0;
+    bytes=Buffer.alloc(maxBytes+1);let used=0;
     while(used<bytes.length){const count=io.readSync(fd,bytes,used,bytes.length-used,null);if(count===0)break;used+=count;}
     if(used!==before.size||used>maxBytes)throw new Error();
     const after=io.fstatSync(fd);
@@ -48,5 +48,11 @@ function readSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}=
     if(!result||typeof result!=='object'||Array.isArray(result))throw new Error();
     return Object.freeze({value:result,identity:Object.freeze(Object.fromEntries(['uid','gid','mode','nlink','size','dev','ino','mtimeMs','ctimeMs'].map(key=>[key,after[key]])))});
   }catch{throw new Error('Buyer writer protected configuration unavailable');}
-  finally{if(fd!==undefined){try{io.closeSync(fd);}catch{throw new Error('Buyer writer protected configuration unavailable');}}}
+  finally{
+    // The parsed object necessarily retains its credential strings for the
+    // caller, but the extra raw JSON allocation has no reason to outlive this
+    // read. Wipe it on success and on every parser/I/O failure path.
+    bytes?.fill(0);
+    if(fd!==undefined){try{io.closeSync(fd);}catch{throw new Error('Buyer writer protected configuration unavailable');}}
+  }
 }

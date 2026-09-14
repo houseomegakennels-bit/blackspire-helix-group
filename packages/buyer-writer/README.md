@@ -4,6 +4,23 @@ This component is implemented and tested in isolation, with an opt-in canonical
 API mount. It is not enabled or installed in production, and the live n8n workflow
 still uses its previous writer.
 
+Production role provisioning is explicit and root-operated:
+
+```bash
+bash scripts/with-node.sh scripts/provision-buyer-writer-production.js --inspect --management-config /protected/postgres.json
+bash scripts/with-node.sh scripts/provision-buyer-writer-production.js --apply --management-config /protected/postgres.json
+bash scripts/with-node.sh scripts/provision-buyer-writer-production.js --verify --management-config /protected/postgres.json
+bash scripts/with-node.sh scripts/provision-buyer-writer-production.js --rollback --management-config /protected/postgres.json
+```
+
+`--inspect` is read-only. `--apply` provisions only an absent installation and
+is authentication-proved idempotent once compliant. `--reconcile` is the sole
+explicit credential-rebinding mode for a reviewed partial installation or an
+intentional password rotation. `--verify` fails closed by disabling runtime and
+issuer LOGIN if catalog or credential verification fails. The separate
+management file is root:root `0600` JSON containing exactly `host`, `password`,
+and `ca`; it is never derived from the gateway's scoped credentials.
+
 `sql/install.sql` creates a private PostgreSQL permit, sale-evidence and receipt
 ledger. The dedicated runtime can execute only the fixed write, receipt and scoped context
 routines; it cannot read Buyer tables, issue permits or assume the routine owner.
