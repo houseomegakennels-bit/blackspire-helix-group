@@ -17,7 +17,9 @@ test('provisioning journal has a closed sanitized schema',()=>{
  assert.equal(JSON.parse(encodeBuyerWriterProvisioningJournal({...base,mode:'verify'})).mode,'verify');
 });
 
-test('provisioning journal is atomically replaced as a private root file',()=>{
+test('provisioning journal is atomically replaced as a private root file',{
+ skip:process.getuid?.()!==0?'root ownership is unavailable in the contained non-root suite':false,
+},()=>{
  const parent=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-writer-journal-'));const root=path.join(parent,'state');
  try{
   const value=writeBuyerWriterProvisioningJournal(base,{root,uid:0});
