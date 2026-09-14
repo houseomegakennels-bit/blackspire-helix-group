@@ -44,6 +44,7 @@ export const PG_NET_SOURCE_ALLOWLIST=Object.freeze([
  'docs/BLACKSPIRE_SOURCE_OF_TRUTH.md',
  'docs/ZOLA_PROVIDER_ACL_REQUEST.md',
  'tests/buyer-writer-local-gateway.test.js',
+ 'tests/buyer-writer-production-verifier.test.js',
  'tests/zola-pg-net-isolation.test.js',
 ]);
 
