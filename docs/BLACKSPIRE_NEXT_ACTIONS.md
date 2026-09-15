@@ -1,10 +1,10 @@
 # Blackspire Next Actions
 
-## 2026-09-15 — publish verifier hardening, then recover management authority
+## 2026-09-15 — recover management authority, then provision and accept the gateway
 
-1. Complete full validation, commit and push the external-`SECURITY DEFINER` catalog verifier correction and its PostgreSQL regression. Require fresh exact-final-SHA CI and receiver success plus fresh Vercel frontend/root/aggregate contexts. Record root truthfully as ignored/CANCELED if the committed root ignore contract remains; do not call that deployment READY.
-2. Do not pass runtime or issuer passwords through the provider SQL interface. Prefer recovery of the existing postgres management credential into the reviewed separate root:root `0600` JSON. Do not reset it unless credential recovery and a separately proven secret-safe temporary-token channel are both unavailable and every dependent management connection has first been inventoried.
-3. Optionally execute the exact canonical installer through the fixed authenticated Supabase project only while final-SHA gates are green. Treat the result as a NOLOGIN foundation only; on timeout inspect catalogs before any retry. Any later management completion must use `--reconcile` and independently pass the complete verifier plus runtime/issuer login proofs.
+1. Treat verifier implementation SHA `425eaacf1d460bd043e88a9e4e0888f45ebd5f93` as externally green: CI, receiver, frontend, root and aggregate contexts succeeded. Root exact-head ignored-build SUCCESS is the intended VPS boundary; literal root READY is not required and must not be manufactured. Refresh the same gates for any later documentation or implementation head before production mutation.
+2. Recover an existing postgres management credential, or owner-provision a separately reviewed temporary-access credential, directly into the provisioner's root:root `0600` management JSON. Do not pass any credential through model/tool SQL, GitHub Actions, PostgREST, argv, environment or logs. Do not reset the main postgres password.
+3. Reinspect the three roles/schema. If they remain absent, use `--apply`; if an authorized provider NOLOGIN bootstrap is first performed, use `--reconcile`. Require complete catalog verification plus runtime and issuer authentication before gateway work.
 4. Keep gateway installation, n8n, migrations, merge, cutover and OPEN held until both credentialed roles authenticate and the corrected verifier passes. Keep `SU-471370` open while provider PUBLIC EXECUTE remains 12/12.
 
 ## 2026-09-15 — provision Buyer Writer roles only after exact-head and protected-authority gates
