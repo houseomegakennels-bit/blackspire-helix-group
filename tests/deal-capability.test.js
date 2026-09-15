@@ -218,10 +218,10 @@ test('Deal analysis: correct dispatch with canonical underwriting returned', asy
 test('Deal analysis: non-existent deal fails gracefully from adapter', async () => {
   let adapterCalls = 0;
   const created = analysisTask('Show the underwriting for deal DE-9999.');
-  const result = await processTask(created, { capabilityOptions:{ adapters:{ dealAnalysis:async () => { adapterCalls += 1; return { ok: false, error: 'Deal not found' }; } } } });
+  const result = await processTask(created, { capabilityOptions:{ adapters:{ dealAnalysis:async () => { adapterCalls += 1; return { found: false, dealId: 'DE-9999', sourceSnapshotAt: '2026-09-02T00:00:00.000Z' }; } } } });
   assert.equal(adapterCalls, 1);
-  // Adapter returned clean {ok:false} — output validation fails (no dealId), transitioning to outcome_unknown
-  assert.equal(result.status, 'outcome_unknown');
+  assert.equal(result.status, 'completed');
+  assert.match(JSON.parse(result.summary).result, /No Deal Engine analysis is available for DE-9999/);
 });
 
 test('revoked grant after response prevents disclosure', async () => {

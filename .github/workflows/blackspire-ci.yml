@@ -61,7 +61,7 @@ jobs:
         run: mkdir -p ci-logs
 
       - name: npm ci
-        run: npm ci --ignore-scripts 2>&1 | tee ci-logs/01-install.log
+        run: node scripts/install-runtime-dependencies.js "$PWD" 2>&1 | tee ci-logs/01-install.log
 
       - name: Clean local Blackspire Command state
         run: rm -rf .blackspire-command
@@ -72,6 +72,51 @@ jobs:
       - name: Run test suite
         run: npm test 2>&1 | tee ci-logs/03-test.log
 
+      - name: Verify scoped Buyer writer on disposable PostgreSQL 17.6
+        timeout-minutes: 5
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          docker pull "$BUYER_WRITER_TEST_IMAGE"
+          env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            node scripts/test-buyer-writer-postgres.mjs 2>&1 | tee ci-logs/03-writer-postgres.log
+
+      - name: Verify native Buyer driver TLS and lock timeout
+        timeout-minutes: 2
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            node scripts/test-buyer-writer-native.mjs 2>&1 | tee ci-logs/03-writer-native.log
+
+      - name: Verify guarded provider and application migration transactions
+        timeout-minutes: 3
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            BUYER_WRITER_ACL_RUN_ID="$(node -e 'process.stdout.write(require("crypto").randomBytes(16).toString("hex"))')" \
+            BUYER_WRITER_ACL_OWNER="$(node -e 'process.stdout.write(require("crypto").randomBytes(16).toString("hex"))')" \
+            node scripts/test-buyer-writer-acl.mjs 2>&1 | tee ci-logs/03-writer-acl-application.log
+
+      - name: Verify dedicated application migration executor and reconciliation
+        timeout-minutes: 4
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          sudo -n env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            timeout --signal=TERM --kill-after=15s 180s "$(command -v node)" \
+            scripts/test-buyer-migration-executor-postgres.mjs 2>&1 | tee ci-logs/03-migration-executor.log
+
+      - name: Verify six-read database observer on disposable PostgreSQL 17.6
+        timeout-minutes: 4
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          sudo -n env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            timeout --signal=TERM --kill-after=15s 180s "$(command -v node)" \
+            scripts/test-zola-six-read-database-postgres.mjs 2>&1 | tee ci-logs/03-six-read-database-observer.log
+
       - name: Run build check
         run: npm run build 2>&1 | tee ci-logs/04-build.log
 
@@ -79,6 +124,7 @@ jobs:
         run: |
           mkdir -p ci-artifacts/release-package
           git archive HEAD -- .node-version package.json package-lock.json apps packages scripts ops | tar -x -C ci-artifacts/release-package
+          node scripts/install-runtime-dependencies.js "$PWD/ci-artifacts/release-package"
           git rev-parse HEAD > ci-artifacts/release-package/COMMIT_SHA
           BLACKSPIRE_EXPECTED_ENVIRONMENT=disposable-staging \
           BLACKSPIRE_BUILD_TIMESTAMP="$(git show -s --format=%cI HEAD)" \
@@ -139,6 +185,7 @@ jobs:
             ci-artifacts/release-package
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true
 
       - name: Upload logs on failure
         if: failure()

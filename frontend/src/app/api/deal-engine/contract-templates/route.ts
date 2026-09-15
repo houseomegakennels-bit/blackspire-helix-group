@@ -1,3 +1,4 @@
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { listContractTemplates } from "@/lib/deal-engine-server";
@@ -13,6 +14,8 @@ function getSupabaseAdmin() {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const type = request.nextUrl.searchParams.get("type")?.trim() || undefined;
     const state = request.nextUrl.searchParams.get("state")?.trim() || undefined;
@@ -28,6 +31,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const supabase = getSupabaseAdmin();
     if (!supabase) {

@@ -1,4 +1,6 @@
 import "server-only";
+import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
+import { scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -1204,8 +1206,9 @@ async function getDealEnginePersistenceStatus() {
   };
 }
 
-export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> {
-  const supabase = getSupabaseAdmin();
+export async function listDealEngineLeads(limit = 6, { readOnly = false, readClient }: { readOnly?: boolean; readClient?: SupabaseClient } = {}): Promise<DealEngineLead[]> {
+  if (readOnly && !readClient) throw new Error("Observed read client required");
+  const supabase = readClient ?? getSupabaseAdmin();
   const sellerHandoffFallback = async () => {
     const sellerLeads = await listSellerLeads().catch(() => []);
     return sellerLeads
@@ -1214,7 +1217,10 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
       .slice(0, limit)
       .map(toDealLeadFromSellerHandoff);
   };
-  if (!supabase) return sellerHandoffFallback();
+  if (!supabase) {
+    if (readOnly) throw new Error("Deal capability unavailable");
+    return sellerHandoffFallback();
+  }
 
   const { data, error } = await supabase
     .from("deal_leads")
@@ -1224,6 +1230,7 @@ export async function listDealEngineLeads(limit = 6): Promise<DealEngineLead[]> 
     .order("motivation_score", { ascending: false })
     .limit(limit);
 
+  if (readOnly && error) throw new Error("Deal capability unavailable");
   if (isMissingDealTableError(error)) return sellerHandoffFallback();
   if (error || !data?.length) return [];
   return (data as unknown as DealLeadJoin[]).map(toLead);
@@ -2167,7 +2174,7 @@ async function createBuyerSearchJobWithFallback(input: {
   dateRangeStart: string;
   dateRangeEnd: string;
   minPurchases: number;
-}) {
+}, authority?: BuyerDispatchAuthority | null) {
   try {
     return await createSearchJob({
       title: `${input.county} buyer search`,
@@ -2178,9 +2185,9 @@ async function createBuyerSearchJobWithFallback(input: {
       dateRangeEnd: input.dateRangeEnd,
       minPurchases: input.minPurchases,
       notes: "",
-    });
+    }, authority);
   } catch (error) {
-    if (!isBuyerSearchAuthBlock(error)) throw error;
+    if (authority || scopedBuyerWriterEnabled() || !isBuyerSearchAuthBlock(error)) throw error;
   }
 
   const supabase = getSupabaseAdmin();
@@ -3321,7 +3328,10 @@ export async function estimateDealArv(input: EstimateDealArvInput) {
   };
 }
 
-export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDealInput) {
+export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDealInput, authority?: BuyerDispatchAuthority | null) {
+  if (scopedBuyerWriterEnabled() && !authority) {
+    return { ok: false as const, error: "Authenticated Buyer dispatch authority is required." };
+  }
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
@@ -3357,7 +3367,7 @@ export async function launchBuyerSearchFromDeal(input: LaunchBuyerSearchFromDeal
       dateRangeStart: toIsoDateString(rangeStart),
       dateRangeEnd: toIsoDateString(rangeEnd),
       minPurchases: 2,
-    });
+    }, authority);
 
     const [dealUpdate, conversationUpdate, logInsert, taskInsert] = await Promise.all([
       supabase.from("deal_leads").update({
@@ -4130,16 +4140,62 @@ export async function saveDealCloseout(input: SaveDealCloseoutInput) {
   return { ok: true as const };
 }
 
-export async function getDealEngineDealDetail(dealId: string): Promise<DealEngineDealDetail | null> {
-  const [leads, sellerSignals, buyerSignals, drafts] = await Promise.all([
-    listDealEngineLeads(100),
+// The internal read capability needs only persisted underwriting inputs. Keep it
+// independent of the UI detail graph, which can scaffold state and tolerate errors.
+export async function getDealEngineAnalysisForCapability(dealId: string, readClient: SupabaseClient) {
+  if (!/^DE-\d{4}$/.test(dealId)) throw new Error("Deal capability unavailable");
+  const supabase = readClient;
+  if (!supabase) throw new Error("Deal capability unavailable");
+  const { data, error } = await supabase
+    .from("deal_leads")
+    .select("id,owner_name,property_address,county,status,motivation_score,recommended_next_action,deal_analysis(maximum_allowable_offer,assignment_fee_target),seller_conversations(next_action),buyer_matches(exit_strategy)")
+    .eq("id", dealId)
+    .limit(1)
+    .limit(1, { referencedTable: "deal_analysis" })
+    .limit(1, { referencedTable: "seller_conversations" })
+    .limit(1, { referencedTable: "buyer_matches" })
+    .maybeSingle();
+  if (error) throw new Error("Deal capability unavailable");
+  if (!data) return null;
+  const lead = toLead(data as unknown as DealLeadJoin);
+  const { data: analysis, error: analysisError } = await supabase
+    .from("deal_analysis")
+    .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating")
+    .eq("lead_id", dealId)
+    .limit(1)
+    .maybeSingle();
+  if (analysisError) throw new Error("Deal capability unavailable");
+  return { lead, underwriting: buildUnderwritingSnapshot(lead, analysis as DealAnalysisRow | null) };
+}
+
+export async function getDealEngineDealDetail(
+  dealId: string,
+  { persistScaffold = true }: { persistScaffold?: boolean } = {},
+): Promise<DealEngineDealDetail | null> {
+  const supabase = getSupabaseAdmin();
+  let lead: DealEngineLead | null;
+  if (!persistScaffold) {
+    if (!supabase) throw new Error("Deal capability unavailable");
+    // A capability ID identifies persisted state, independent of the UI's ranked list.
+    const { data, error } = await supabase
+      .from("deal_leads")
+      .select(
+        "id,owner_name,property_address,county,status,motivation_score,recommended_next_action,deal_analysis(maximum_allowable_offer,assignment_fee_target),seller_conversations(next_action),buyer_matches(exit_strategy)",
+      )
+      .eq("id", dealId)
+      .maybeSingle();
+    if (error) throw new Error("Deal capability unavailable");
+    lead = data ? toLead(data as unknown as DealLeadJoin) : null;
+  } else {
+    lead = (await listDealEngineLeads(100)).find((item) => item.id === dealId) ?? null;
+  }
+  if (!lead) return null;
+
+  const [sellerSignals, buyerSignals, drafts] = await Promise.all([
     listDealEngineSellerSignals(12),
     listDealEngineBuyerSignals(20),
     listOutreachDraftRecords().catch(() => []),
   ]);
-
-  const lead = leads.find((item) => item.id === dealId) ?? null;
-  if (!lead) return null;
 
   const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
   const relatedBuyerSignals = rankBuyerSignalsForLead(lead, buyerSignals, 6);
@@ -4176,21 +4232,23 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
   );
   let room = buildFallbackRoom(lead, packet);
 
-  const supabase = getSupabaseAdmin();
   if (supabase) {
     const nexusContact = await findNexusContactForDeal(supabase, lead);
     sellerContact = mergeNexusContactProfile(sellerContact, nexusContact);
     sellerContactWorkflow = buildSellerContactWorkflow(lead, sellerContact);
     sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
     packet = enrichPacketWithSellerContactStatus(packet, sellerContact);
-    await syncDealBuyerMatches(supabase, lead, relatedBuyerSignals).catch(() => null);
-    await ensureDealExecutionScaffold(supabase, lead, contractDraft, packet, room).catch(() => null);
+    if (persistScaffold) {
+      await syncDealBuyerMatches(supabase, lead, relatedBuyerSignals).catch(() => null);
+      await ensureDealExecutionScaffold(supabase, lead, contractDraft, packet, room).catch(() => null);
+    }
 
-    const { data } = await supabase
+    const { data, error: packetError } = await supabase
       .from("deal_packets")
       .select("property_notes,investor_summary,buyer_email_blast,buyer_sms_alert,contact_instructions,deadline_to_submit_offer,comps_placeholder")
       .eq("lead_id", dealId)
       .maybeSingle();
+    if (!persistScaffold && packetError) throw new Error("Deal capability unavailable");
     const livePacket = data as DealPacketRow | null;
     if (livePacket) {
       packet = {
@@ -4206,11 +4264,12 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       room = buildFallbackRoom(lead, packet);
     }
 
-    const { data: analysisData } = await supabase
+    const { data: analysisData, error: analysisError } = await supabase
       .from("deal_analysis")
       .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating")
       .eq("lead_id", dealId)
       .maybeSingle();
+    if (!persistScaffold && analysisError) throw new Error("Deal capability unavailable");
     underwriting = buildUnderwritingSnapshot(lead, analysisData as DealAnalysisRow | null);
     if (contractDraft) {
       contractDraft = {
@@ -4225,11 +4284,12 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       };
     }
 
-    const { data: contractData } = await supabase
+    const { data: contractData, error: contractError } = await supabase
       .from("contracts")
       .select("contract_sent,contract_signed,inspection_period,earnest_money_deposit,assignment_status")
       .eq("lead_id", dealId)
       .maybeSingle();
+    if (!persistScaffold && contractError) throw new Error("Deal capability unavailable");
     const liveContract = contractData as ContractRow | null;
     if (liveContract) {
       coordination = {
@@ -4255,11 +4315,12 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       }
     }
 
-    const { data: roomData } = await supabase
+    const { data: roomData, error: roomError } = await supabase
       .from("deal_rooms")
       .select("slug,property_summary,financial_breakdown,map_placeholder,comps_placeholder,downloadable_pdf_label,submit_interest_label,request_walkthrough_label")
       .eq("lead_id", dealId)
       .maybeSingle();
+    if (!persistScaffold && roomError) throw new Error("Deal capability unavailable");
     const liveRoom = roomData as DealRoomRow | null;
     if (liveRoom) {
       room = {
@@ -4274,12 +4335,13 @@ export async function getDealEngineDealDetail(dealId: string): Promise<DealEngin
       };
     }
 
-    const { data: dispositionData } = await supabase
+    const { data: dispositionData, error: dispositionError } = await supabase
       .from("disposition_logs")
       .select("id,action_type,payload,created_at")
       .eq("lead_id", dealId)
       .in("action_type", ["investor_interest", "investor_follow_up", "stage_update", "contract_update", "packet_update", "buyer_draft_created", "buyer_search_launched", "seller_draft_saved", "operator_task", "coordination_update", "analysis_update", "outreach_execution_logged", "deal_closeout_recorded", "document_uploaded", "email_sent"])
       .order("created_at", { ascending: false });
+    if (!persistScaffold && dispositionError) throw new Error("Deal capability unavailable");
     if (dispositionData?.length) {
       const logs = dispositionData as DispositionLogRow[];
       sellerDrafts = parseSellerDrafts(logs);

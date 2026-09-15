@@ -1,0 +1,65 @@
+# Post-ACL acceptance sequence
+
+Status: production workflow replacement, database changes, canonical activation, real reads, merge and cutover remain held. The isolated scoped proof and host runtime ownership correction below do not authorize them. Provider ACL is a proven external boundary, but it is not the sole remaining rollback/acceptance requirement.
+
+## Current executable preparation
+
+- Offline six-route/authority rehearsal (source worktree only; frontend and test fixtures are not in the runtime archive): `bash scripts/with-node.sh scripts/zola-six-read-offline.js`. This reports offline scope and `productionReady:false`; it does not activate services or load production credentials.
+- Migration package (run from the clean release source worktree, not the sealed runtime archive; frontend SQL and Git identity are required): `env -i PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin node scripts/prepare-buyer-migration-package.js /protected/input.json /protected/new-package-directory`. The root-owned 0600 input contains exactly `releaseSha` (actual clean HEAD) and the reviewed `providerManifest` object. Output is standalone `application.sql`, transaction-only `application-body.sql` for an existing transaction, and `manifest.json`. Review all release prerequisites before execution. Use the body with an authorized migration API only when its transaction/history semantics are confirmed; never nest/commit an API-owned transaction inadvertently. No production command has been run.
+- Resolved n8n package: `/var/lib/blackspire-operator/preparation/n8n-current-74ae0e00-192c-4f82-ada6-ed2099bcb151/package`. Distinct credential references and gateway now exist; actual Cloud execution does not. Re-pin after the final commit. The gateway uses canonical port 8789, so draft preparation can precede activation but **publication must follow healthy scoped writer activation**.
+- Vercel protection inventory: the existing maintenance CI workflow runs the GET-only fixed-project script and uploads a sanitized exact-head artifact. Its `denialProven` remains false even if inventory completes. Inspect controls before preparing any routing mutation.
+
+The application package imposes a total transaction deadline and temporary exact row copies. Confirm database free/temp capacity and a coordinated window excluding role/ACL/extension changes; a timeout aborts the transaction. After committed application restrictions, code rollback retains those restrictions. The safe n8n rollback deactivates intake and preserves receipt ledgers; the legacy anonymous definition is not automatically republished.
+
+## Verified anchors
+
+- Verified scoped runtime source: `8645ab219759cb637575150e48c2a3d0edbd3ce5`; PR125 remains canonical. Refresh exact HEAD, runtime-source equivalence and CI before execution.
+- Supabase project: `kchtrvfcixnimvxxctkj`. The reviewed guarded ACL package is `/tmp/zola-provider-acl-reviewed-KDmBB8`; file hashes and fresh authority proof are in `ZOLA_PROVIDER_ACL_REQUEST.md`.
+- Live n8n workflow: `VvMHSIbycYCx4CZN`, `blackspire-buyer-engine`, published version `cdd141ba-8d20-4981-b598-6af8e35aff86`. Fresh nodes/connections match the protected pre-change backup. Seven nodes contain the nine legacy writes.
+- Only rollback: `2c0b600c268faa0571f08322e16d7f81f37789be`. Its freshly recomputed artifact digest remains `0028052a7d08b1e7e73b8ce8cd441f90d10f16b288e10d10416891b5598f58bd`.
+- Saved rollback boot evidence proves API-before-worker behavior, readiness wait success, stopped-generation denial and owned-unit shutdown with stop held. It explicitly says six reads were not run. Reuse this evidence for that limited claim; it is not complete functional rollback acceptance.
+
+## Execution order and stopping conditions
+
+1. Verify provider-approved SQL hashes, scheduled administration window, recovery/backup evidence and fresh catalog match. Execute only through the authorized identity. The transaction must verify all preserved consumers, exact post-state, and present writer denials before COMMIT. Recheck committed state independently. Abort on drift; retain the exact rollback manifest.
+2. Provision the existing reviewed scoped writer SQL and separate issuer/runtime identities. Recheck least privilege after provisioning, including no unrelated table, sequence, function or inherited PUBLIC authority. Do not infer future-role denial from an ACL run where those identities were absent.
+3. Preserve the completed actual scoped rehearsal at `8645ab2`, recorded in the canonical source of truth. It uses disposable TLS PostgreSQL, real supervisors and the actual protected root activation entrypoint, with three committed activations, five-table writer/reconciliation, both role restarts/stale-binding denial and nonempty synthetic state preservation. Repeat only if runtime inputs change. It does not prove stale task-result rejection or six reads. The host's exact pinned Node ownership prerequisite is repaired without changing executable bytes.
+4. Complete secure Buyer intake continuity for immutable rollback `2c0b600`, plus the contained paired read harness. The legacy public webhook must never acquire privileged writer authority. Existing unsafe `/tmp/zola-final-six-read-runner.mjs` and `/tmp/zola-resume-supervise-reads.py` are not executable acceptance evidence.
+5. Prepare n8n with `buildBuyerWorkflow()` from `packages/buyer-writer/n8n-workflow.js`. Required actual inputs are a verified HTTPS gateway origin, distinct secure `httpHeaderAuth` credential IDs for `x-buyer-ingress-key` and `x-buyer-writer-key`, and the preserved existing webhook ID. Never supply the issuer credential to n8n. Do not fabricate credential IDs or redirect the published workflow to an unavailable gateway.
+6. Use an isolated candidate workflow/gateway context for Cloud validation while preserving the published Buyer workflow. Validate the candidate's exact payloads, credential references, connections, source-byte checks, receipt matching, sequential operation loop, timeout reconciliation, disabled execution saving, and empty pin data. Current offline tests pass; actual Cloud credential resolution/item pairing remains required. Verify all five Buyer tables in bounded isolated acceptance, with replay/expiry/malformed/cross-owner/failure/uncertain-response denials and no provider calls, outreach or fan-out.
+7. When the original writer, n8n, rollback, disk, recovery, authority, grant and harness gates all pass, perform controlled canonical API health, worker readiness and generation-fence acceptance. Coordinate live workflow publication with a functioning authenticated gateway and caller continuity. Verify the published version matches the reviewed new definition; `active=true` alone is insufficient. Export the new protected snapshot and digest.
+8. Run all six real paired candidate reads. Apply only the reviewed Buyer/Nexus migrations after the required runtime/writer/rollback gates pass; verify row preservation, browser denial, own-job isolation, scoped writer success and n8n continuity immediately. An unexpected write attempt fails read-only acceptance even if the application catches the error.
+9. Refresh backups and exact-head CI/diff/secret/audit evidence. Merge PR125 only after every original gate is green, using expected-head protection. Deploy the same resulting main SHA to frontend and VPS, then rerun six live reads and production smoke. Preserve rollback artifacts.
+
+## Six-read inputs still requiring real witnesses
+
+The recovered checkpoint directly verified deployment `dpl_AXu7aZGBscWBeECi3B9xJp1kYotC`, hostname `frontend-otyutqb1g-houseomegakennels-4825s-projects.vercel.app`, as READY at exact `8645ab219759cb637575150e48c2a3d0edbd3ce5`. This supersedes the canceled db9 deployment. It is a preview and has not been promoted or used for six-read acceptance. Revalidate READY status and exact accepted SHA immediately before pairing; a green GitHub check alone is insufficient.
+
+The runtime workspace is `blackspire-command`. Resolve the actual authenticated principal and all six current persisted grants from protected authority evidence. Existing primary Command authentication is available; do not request it again. An actual unauthorized principal and actual owner-A/owner-B Buyer job/report witnesses remain unresolved; anonymous denial is additional coverage, not their replacement.
+
+| Capability | Bounded input/result requirement | Required observation |
+| --- | --- | --- |
+| Seller | limit 5; successful actual Seller query | Exact receiver/transport, no private contact disclosure |
+| Buyer Profiles | limit 5 shared catalog rows | Workspace capability grant; do not invent per-user catalog ownership |
+| Buyer Matches | known persisted `DE-NNNN` with resolvable county; result limit 5 | Actual deal and bounded candidate queries, not a synthetic empty shortcut |
+| Deal Records | known persisted deal; bounded list | Reject swallowed SQL errors and fallback-only results |
+| Deal Analysis | same persisted deal | All associated reads; no scaffold or Storage bucket creation attempt |
+| Nexus Status | actual contact linked to the same persisted deal; limit 1 | Status-only output, zero paid provider calls and zero enrichment writes |
+
+For every task, collect real route/workspace/principal/permission/transport evidence, generation-fenced task completion, bounded output, cross-owner denial and authoritative mutation observations. Stable before/after snapshots alone cannot rule out write-and-revert or caught failed mutations. The draft observer map documents those limitations; it does not establish completed acceptance.
+
+## Executable offline n8n packaging
+
+Run with Node 22.23.1 as root; neither command reads the n8n API key or contacts n8n:
+
+```bash
+env -i PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin   node scripts/prepare-buyer-workflow-package.js /protected/input.json /protected/new-package-directory
+```
+
+The input must be root-owned 0600 under trusted non-writable ancestors and contain exactly `version` (1), `workflowId`, `workflowVersion`, `releaseSha`, `backupSha256`, `gatewayOrigin`, `webhookId`, `ingressCredentialId` and `writerCredentialId`. The three unresolved gateway/credential fields may be null; in that case the command emits only `manifest.json` with `requirements-pending`. A complete configuration emits deterministic `workflow.json` and a manifest last, using exclusive protected files. Existing destinations are rejected. Credential values and legacy exports are not accepted inputs. Supplied references, revision and digest still require live verification before any mutation.
+
+The combined disposable PostgreSQL lane is `scripts/test-buyer-writer-postgres.mjs`, using the pinned PostgreSQL 17.6 image from canonical CI. It now runs both exact reviewed migrations before writer installation and reapplies both afterward, including private-ledger preservation and dedicated-writer success. This does not authorize production execution.
+
+Actual baseline lifecycle evidence is protected under `/var/lib/blackspire-zola-rehearsal/activation/2591e27f-74f6-4a32-923e-5c59e09d618d/operator-result.json` (release 6bc968d) and `/var/lib/blackspire-zola-rehearsal/activation/caf73888-8e6e-48ad-90a1-11044909a752/operator-result.json` (mandated recovery). Each uses an exact sealed artifact, fresh synthetic database/authentication, real role accounts, private loopback networking and actual supervisors. Startup, readiness, stopped-worker denial, new restart generation, all non-heartbeat state preservation and cleanup pass. Scoped writer is disabled in these older baselines. The later actual scoped proof is recorded above; the production activation sequence and six-read command remain incomplete. Do not execute the previously rejected six-read drafts.
+
+The frontend ignored-build hook explicitly builds `release/zola-production-live` even when frontend bytes are unchanged, using Vercel's [system-provided branch reference](https://vercel.com/docs/environment-variables/system-environment-variables#vercel_git_commit_ref). Verify the resulting deployment is READY at the exact pushed SHA before pairing; a green GitHub deployment status alone remains insufficient.

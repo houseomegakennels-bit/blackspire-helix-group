@@ -1,3 +1,4 @@
+import { withReleaseAdmission } from '../../packages/shared/release-admission.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TELEGRAM_ALLOWED_USERS, ADMIN_TOKEN, PUBLIC_BASE_URL, ATTACHMENTS_DIR, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
@@ -16,7 +17,7 @@ const sessions = new Map();
 const conversations = new Map();
 const seen = new Set();
 
-export async function handleTelegramUpdate(update, apiBase = PUBLIC_BASE_URL) {
+async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
   if (seen.has(update.update_id)) return { ignored: true, reason: 'duplicate' };
   seen.add(update.update_id);
   const msg = update.message || update.callback_query?.message;
@@ -91,14 +92,14 @@ function deliverPayload(chatId, payload, filename, send) {
   return { chatId, document: { path: filePath, caption: filename } };
 }
 
-export async function telegramGetFile(token, fileId) {
+async function telegramGetFileAdmitted(token, fileId) {
   const response = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`);
   const body = await response.json();
   if (!body.ok) throw new Error(`Telegram getFile failed: ${body.description || 'unknown error'}`);
   return body.result;
 }
 
-export async function telegramDownloadFile(token, filePath) {
+async function telegramDownloadFileAdmitted(token, filePath) {
   const response = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
   if (!response.ok) throw new Error(`Telegram file download failed with status ${response.status}`);
   return Buffer.from(await response.arrayBuffer());
@@ -114,7 +115,7 @@ function cleanupTelegramFile(filePath) {
   try { fs.rmSync(filePath, { force: true }); } catch { /* already gone */ }
 }
 
-export async function handleTelegramAttachment(update, apiBase = PUBLIC_BASE_URL, send = (message) => ({ text: chunk(escapeMarkdown(message)) })) {
+async function handleTelegramAttachmentAdmitted(update, apiBase = PUBLIC_BASE_URL, send = (message) => ({ text: chunk(escapeMarkdown(message)) })) {
   const message = update.message || {};
   const file = message.document || message.voice;
   const kind = message.voice ? 'voice' : 'document';
@@ -184,7 +185,7 @@ async function handleVoiceNote({ file, mime, buffer, storedPath, chatId, workspa
   return send(result.taskId ? `${result.denied ? 'Voice task denied' : 'Voice task queued'} ${result.taskId}${result.denied ? `: ${result.error}` : `: ${transcription.text}`}` : `Voice task rejected: ${result.error}`);
 }
 
-export async function sendTelegramDocument(token, chatId, filePath, caption = '') {
+async function sendTelegramDocumentAdmitted(token, chatId, filePath, caption = '') {
   const body = new FormData();
   body.append('chat_id', String(chatId));
   body.append('caption', caption);
@@ -193,7 +194,7 @@ export async function sendTelegramDocument(token, chatId, filePath, caption = ''
   return response.json();
 }
 
-export async function sendTelegramMessage(token, chatId, text, extra = {}) {
+async function sendTelegramMessageAdmitted(token, chatId, text, extra = {}) {
   const chunks = chunk(text);
   const sent = [];
   for (const part of chunks) {
@@ -210,7 +211,7 @@ export async function sendTelegramMessage(token, chatId, text, extra = {}) {
 // Live Telegram transport (getUpdates/sendMessage/sendDocument/getFile against api.telegram.org) is
 // UNVERIFIED in this environment: it has only been exercised against a mocked fetch in tests. It becomes
 // verified only once a real TELEGRAM_BOT_TOKEN is configured and a human confirms delivery end-to-end.
-export async function dispatchReply(token, reply) {
+async function dispatchReplyAdmitted(token, reply) {
   if (!reply || reply.ignored) return { sent: false, reason: 'ignored' };
   if (process.env.TELEGRAM_MODE === 'mock') return { sent: true, mode: 'mock', result: { fixture: true } };
   if (!token) return { sent: false, reason: 'no bot token configured (dry-run)' };
@@ -231,7 +232,7 @@ export async function runPolling({ token = process.env.TELEGRAM_BOT_TOKEN, apiBa
   }
   let offset = 0;
   let stopped = false;
-  async function poll() {
+  async function pollAdmitted() {
     if (stopped) return;
     try {
       const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates?timeout=10&offset=${offset}`);
@@ -246,6 +247,10 @@ export async function runPolling({ token = process.env.TELEGRAM_BOT_TOKEN, apiBa
     } finally {
       if (!stopped) setTimeout(poll, pollMs).unref();
     }
+  }
+  async function poll() {
+    try { await withReleaseAdmission(pollAdmitted); }
+    catch(error) { if(error?.code!=='RELEASE_ADMISSION_HELD')throw error; if(!stopped)setTimeout(poll,pollMs).unref(); }
   }
   poll();
   console.log(JSON.stringify({ service: 'telegram', mode: 'polling' }));
@@ -272,3 +277,17 @@ async function post(path, body, base) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) runPolling();
+
+export async function handleTelegramUpdate(...args) { return withReleaseAdmission(() => handleTelegramUpdateAdmitted(...args)); }
+
+export async function handleTelegramAttachment(...args) { return withReleaseAdmission(() => handleTelegramAttachmentAdmitted(...args)); }
+
+export async function telegramGetFile(...args) { return withReleaseAdmission(() => telegramGetFileAdmitted(...args)); }
+
+export async function telegramDownloadFile(...args) { return withReleaseAdmission(() => telegramDownloadFileAdmitted(...args)); }
+
+export async function sendTelegramDocument(...args) { return withReleaseAdmission(() => sendTelegramDocumentAdmitted(...args)); }
+
+export async function sendTelegramMessage(...args) { return withReleaseAdmission(() => sendTelegramMessageAdmitted(...args)); }
+
+export async function dispatchReply(...args) { return withReleaseAdmission(() => dispatchReplyAdmitted(...args)); }

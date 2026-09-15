@@ -1,10 +1,18 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
   turbopack: {
-    root: __dirname,
+    root: path.resolve(__dirname, ".."),
   },
+  outputFileTracingRoot: path.resolve(__dirname, ".."),
   outputFileTracingExcludes: {
+    "*": [
+      "../**/.env*",
+      "../**/.git",
+      "../**/.git/**/*",
+      "../**/.vercel/**/*",
+    ],
     "/api/books/[bookId]/analyze": [
       "./node_modules/@img/**/*",
       "./node_modules/ffmpeg-static/**/*",
