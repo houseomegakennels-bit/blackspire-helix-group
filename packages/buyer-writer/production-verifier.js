@@ -35,6 +35,24 @@ role_state as (
   has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE') as "issuerExecute",
   has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE WITH GRANT OPTION') as "issuerGrant"
  from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='buyer_writer'
+), target_public_relations as (
+ select n.nspname as schema,c.relname as name,a.privilege_type as privilege
+ from pg_class c join pg_namespace n on n.oid=c.relnamespace
+ cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+ where n.nspname='public' and c.relname in('SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport')
+  and c.relkind in('r','p') and a.grantee=0
+  and a.privilege_type in('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN')
+), target_relations as (
+ select c.relname as name from pg_class c join pg_namespace n on n.oid=c.relnamespace
+ where n.nspname='public' and c.relname in('SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport')
+  and c.relkind in('r','p')
+), target_public_columns as (
+ select n.nspname as schema,c.relname as name,x.attname as "column",a.privilege_type as privilege
+ from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute x on x.attrelid=c.oid
+ cross join lateral aclexplode(x.attacl) a
+ where n.nspname='public' and c.relname in('SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport')
+  and c.relkind in('r','p') and x.attnum>0 and not x.attisdropped and x.attacl is not null and a.grantee=0
+  and a.privilege_type in('SELECT','INSERT','UPDATE','REFERENCES')
 ), direct_relations as (
  select w.name as role,n.nspname as schema,c.relname as name,c.relkind::text as kind,
   has_table_privilege(w.name,c.oid,'SELECT') as "select",has_table_privilege(w.name,c.oid,'INSERT') as "insert",
@@ -45,13 +63,16 @@ role_state as (
  from writer_roles w cross join pg_class c join pg_namespace n on n.oid=c.relnamespace
  where w.name in('buyer_writer_runtime','buyer_writer_issuer') and c.relkind in('r','p','v','m','f')
   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+  and has_schema_privilege(w.name,n.oid,'USAGE')
 ), direct_sequences as (
  select w.name as role,n.nspname as schema,c.relname as name,
-  has_sequence_privilege(w.name,c.oid,'SELECT') as "select",has_sequence_privilege(w.name,c.oid,'UPDATE') as "update",
-  has_sequence_privilege(w.name,c.oid,'USAGE') as usage
+  case when c.relkind='S' then has_sequence_privilege(w.name,c.oid,'SELECT') else false end as "select",
+  case when c.relkind='S' then has_sequence_privilege(w.name,c.oid,'UPDATE') else false end as "update",
+  case when c.relkind='S' then has_sequence_privilege(w.name,c.oid,'USAGE') else false end as usage
  from writer_roles w cross join pg_class c join pg_namespace n on n.oid=c.relnamespace
  where w.name in('buyer_writer_runtime','buyer_writer_issuer') and c.relkind='S'
   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+  and has_schema_privilege(w.name,n.oid,'USAGE')
 ), schema_create as (
  select w.name as role,n.nspname as schema from writer_roles w cross join pg_namespace n
  where w.name in('buyer_writer_runtime','buyer_writer_issuer') and n.nspname !~ '^pg_temp'
@@ -80,6 +101,9 @@ select jsonb_build_object(
  'memberships',(select coalesce(jsonb_agg(to_jsonb(m) order by role,member,grantor),'[]'::jsonb) from membership_state m),
  'schema',(select to_jsonb(s)-'oid' from schema_state s),
  'routines',(select coalesce(jsonb_agg(to_jsonb(r)-'oid' order by signature),'[]'::jsonb) from routine_state r),
+ 'targetRelations',(select coalesce(jsonb_agg(name order by name),'[]'::jsonb) from target_relations),
+ 'targetPublicRelations',(select coalesce(jsonb_agg(to_jsonb(t) order by schema,name,privilege),'[]'::jsonb) from target_public_relations t),
+ 'targetPublicColumns',(select coalesce(jsonb_agg(to_jsonb(t) order by schema,name,"column",privilege),'[]'::jsonb) from target_public_columns t),
  'directRelations',(select coalesce(jsonb_agg(to_jsonb(d) order by role,schema,name),'[]'::jsonb) from direct_relations d
    where "select" or "insert" or "update" or "delete" or "truncate" or "references" or "trigger" or maintain or "anyColumn"),
  'directSequences',(select coalesce(jsonb_agg(to_jsonb(d) order by role,schema,name),'[]'::jsonb) from direct_sequences d
@@ -133,9 +157,10 @@ const sameSet=(values,expected)=>values.length===expected.length&&new Set(values
 export function verifyBuyerWriterProductionEvidence(raw){
  try{
   if(Buffer.byteLength(JSON.stringify(raw))>1024*1024
-   ||!exact(raw,['roles','memberships','schema','routines','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','pgNet'])
-   ||![raw.roles,raw.memberships,raw.routines,raw.directRelations,raw.directSequences,raw.schemaCreate,raw.externalRoutines,raw.pgNet].every(Array.isArray))fail();
+   ||!exact(raw,['roles','memberships','schema','routines','targetRelations','targetPublicRelations','targetPublicColumns','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','pgNet'])
+   ||![raw.roles,raw.memberships,raw.routines,raw.targetRelations,raw.targetPublicRelations,raw.targetPublicColumns,raw.directRelations,raw.directSequences,raw.schemaCreate,raw.externalRoutines,raw.pgNet].every(Array.isArray))fail();
   const roleNames=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'];
+  if(!sameSet(raw.targetRelations,['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport']))fail();
   if(!sameSet(raw.roles.map(role=>role?.name),roleNames))fail();
   for(const role of raw.roles){
    if(!exact(role,['name','login','inherit','superuser','createDb','createRole','replication','bypassRls'])
@@ -172,7 +197,7 @@ export function verifyBuyerWriterProductionEvidence(raw){
    validateAclEdges(routine.edges,[['buyer_writer_owner','EXECUTE',false],...(runtime?[['buyer_writer_runtime','EXECUTE',false]]:[]),
     ...(issuer?[['buyer_writer_issuer','EXECUTE',false]]:[])]);
   }
-  if(raw.directRelations.length||raw.directSequences.length||raw.schemaCreate.length||raw.externalRoutines.length
+  if(raw.targetPublicRelations.length||raw.targetPublicColumns.length||raw.directRelations.length||raw.directSequences.length||raw.schemaCreate.length||raw.externalRoutines.length
    ||!exact(raw.databaseCreate,['buyer_writer_runtime','buyer_writer_issuer'])
    ||raw.databaseCreate.buyer_writer_runtime!==false||raw.databaseCreate.buyer_writer_issuer!==false)fail();
   if(raw.pgNet.length!==12||!sameSet(raw.pgNet.map(row=>row?.name),BUYER_WRITER_PG_NET_FUNCTIONS))fail();
@@ -182,6 +207,9 @@ export function verifyBuyerWriterProductionEvidence(raw){
   const evidence=structuredClone(raw);
   evidence.compliant=true;
   evidence.unexpectedMembershipCount=0;
+  evidence.targetRelationCount=5;
+  evidence.targetTablePublicPrivilegeCount=0;
+  evidence.targetColumnPublicPrivilegeCount=0;
   evidence.directTableAccessDenied=true;
   evidence.directSequenceAccessDenied=true;
   evidence.schemaCreateDenied=true;

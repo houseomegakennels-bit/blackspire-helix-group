@@ -42,15 +42,37 @@ do $$declare ns oid; r text; begin
    raise exception 'Unexpected existing writer namespace';
   end if;
  end if;
+ -- Target relations are always private even if schema USAGE is independently
+ -- revoked. Unrelated relation ACLs matter only when a writer can reach their
+ -- schema; ordinary inaccessible PUBLIC database facilities are out of scope.
+ if exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+    where n.nspname='public' and c.relname in('SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport')
+     and c.relkind in('r','p') and a.grantee=0
+     and a.privilege_type in('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'))
+  or exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute x on x.attrelid=c.oid
+    cross join lateral aclexplode(x.attacl) a
+    where n.nspname='public' and c.relname in('SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport')
+     and c.relkind in('r','p') and x.attnum>0 and not x.attisdropped and x.attacl is not null and a.grantee=0
+     and a.privilege_type in('SELECT','INSERT','UPDATE','REFERENCES')) then
+  raise exception 'Unexpected target PUBLIC privileges';
+ end if;
  foreach r in array array['buyer_writer_runtime','buyer_writer_issuer'] loop
   if exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
      where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
-       and (has_table_privilege(r,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+       and has_schema_privilege(r,n.oid,'USAGE')
+       and (has_table_privilege(r,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
          or has_any_column_privilege(r,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
+    or exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+       and has_schema_privilege(r,n.oid,'USAGE')
+       and case when c.relkind='S' then has_sequence_privilege(r,c.oid,'SELECT,UPDATE,USAGE') else false end)
     or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prosecdef and p.prorettype<>'event_trigger'::regtype
       and n.nspname not in('pg_catalog','information_schema','buyer_writer')
       and has_schema_privilege(r,n.oid,'USAGE') and has_function_privilege(r,p.oid,'EXECUTE'))
-    or has_schema_privilege(r,'public','CREATE') then raise exception 'Unexpected writer role privileges';end if;
+    or exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(r,n.oid,'CREATE')) then
+   raise exception 'Unexpected writer role privileges';
+  end if;
  end loop;
 end$$;
 create schema if not exists buyer_writer authorization buyer_writer_owner;

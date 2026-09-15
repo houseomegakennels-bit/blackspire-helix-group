@@ -7,6 +7,7 @@ import { createBuyerWriterHttpServer } from '../packages/buyer-writer/http.js';
 import { planBuyerWrites } from '../packages/buyer-writer/plan.js';
 import { normalizeBuyerSales } from '../packages/buyer-writer/normalize.js';
 import { WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
+import { BUYER_WRITER_GATEWAY_IDENTITY_SQL } from '../packages/buyer-writer/local-gateway-postgres.js';
 import { BUYER_WRITER_PRODUCTION_VERIFY_SQL } from '../packages/buyer-writer/production-verifier.js';
 assert.equal(process.versions.node, '22.23.1');
 const image = process.env.BUYER_WRITER_TEST_IMAGE;
@@ -128,7 +129,94 @@ try {
   sql('create role fixture_manager nologin nosuperuser createrole;grant create on database writer_test to fixture_manager;grant usage,create on schema public to fixture_manager;');
   for(const table of ['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport'])sql(`alter table public."${table}" owner to fixture_manager`);
   const installSql='set session authorization fixture_manager;'+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
-  sql(installSql);
+  const writerFunctions={
+    runtime:['buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'],
+    issuer:['buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'],
+  };
+  const gatewayIdentity=(kind='runtime')=>{
+    const user=`buyer_writer_${kind}`;
+    return role(user,`set local statement_timeout='10s';set local lock_timeout='5s';set local search_path=pg_catalog;
+      prepare zola_gateway_identity(text,text[]) as ${BUYER_WRITER_GATEWAY_IDENTITY_SQL};
+      execute zola_gateway_identity(${literal(user)},array[${writerFunctions[kind].map(literal).join(',')}]);`);
+  };
+  sql(`create role fixture_provider_owner nologin;create schema provider_fixture authorization fixture_provider_owner;
+    create schema provider_sequence_fixture authorization fixture_provider_owner;
+    create schema provider_routine_fixture authorization fixture_provider_owner;
+    set role fixture_provider_owner;create table provider_fixture.unrelated(id integer,private_value text);
+    create sequence provider_sequence_fixture.unrelated_seq;
+    create function provider_routine_fixture.unrelated() returns integer language sql security definer as 'select 1';
+    grant select on provider_fixture.unrelated to public;grant update(private_value) on provider_fixture.unrelated to public;
+    grant usage on sequence provider_sequence_fixture.unrelated_seq to public;reset role;
+    revoke all on schema provider_fixture,provider_sequence_fixture,provider_routine_fixture from public`);
+  const providerAcl=()=>sql(`select jsonb_build_object(
+    'relation',(select relacl from pg_class where oid='provider_fixture.unrelated'::regclass),
+    'column',(select attacl from pg_attribute where attrelid='provider_fixture.unrelated'::regclass and attname='private_value'),
+    'sequence',(select relacl from pg_class where oid='provider_sequence_fixture.unrelated_seq'::regclass),
+    'schemas',(select jsonb_agg(jsonb_build_array(nspname,nspacl) order by nspname) from pg_namespace
+      where nspname in('provider_fixture','provider_sequence_fixture','provider_routine_fixture')))`);
+  check('installer accepts unreachable unrelated PUBLIC relation, column and sequence grants without mutation authority',()=>{
+    const before=providerAcl();
+    assert.equal(sql("select pg_get_userbyid(relowner)<>'fixture_manager' and not has_table_privilege('fixture_manager',oid,'SELECT WITH GRANT OPTION') from pg_class where oid='provider_fixture.unrelated'::regclass"),'t');
+    assert.equal(sql("select not has_column_privilege('fixture_manager','provider_fixture.unrelated','private_value','UPDATE WITH GRANT OPTION')"),'t');
+    assert.equal(sql("select pg_get_userbyid(relowner)<>'fixture_manager' and not has_sequence_privilege('fixture_manager',oid,'USAGE WITH GRANT OPTION') from pg_class where oid='provider_sequence_fixture.unrelated_seq'::regclass"),'t');
+    sql(installSql);
+    sql('alter role buyer_writer_runtime login;alter role buyer_writer_issuer login');
+    assert.equal(role('buyer_writer_runtime','select * from provider_fixture.unrelated',{fail:true,permissionDenied:true}),undefined);
+    assert.equal(role('buyer_writer_issuer','select * from provider_fixture.unrelated',{fail:true,permissionDenied:true}),undefined);
+    assert.equal(gatewayIdentity(),'t');assert.equal(gatewayIdentity('issuer'),'t');
+    const observed=JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL));
+    assert.deepEqual(observed.directRelations,[]);assert.deepEqual(observed.directSequences,[]);assert.deepEqual(observed.externalRoutines,[]);
+    assert.equal(providerAcl(),before);
+  });
+  check('installer rejects an effective path to an unrelated PUBLIC relation privilege',()=>{
+    sql('grant usage on schema provider_fixture to public');
+    assert.equal(role('buyer_writer_runtime','select count(*) from provider_fixture.unrelated'),'0');
+    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
+    assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directRelations.some(row=>row.select));
+    sql(installSql,{fail:true});
+    sql('revoke select on provider_fixture.unrelated from public');
+  });
+  check('installer independently rejects a reachable unrelated PUBLIC column privilege',()=>{
+    role('buyer_writer_runtime',"update provider_fixture.unrelated set private_value='reachable'");
+    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
+    const exposed=JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directRelations;
+    assert.ok(exposed.some(row=>row.anyColumn&&!row.select&&!row.insert&&!row.update&&!row.delete&&!row.truncate&&!row.references&&!row.trigger&&!row.maintain));
+    sql(installSql,{fail:true});
+    sql('revoke usage on schema provider_fixture from public');
+    sql(installSql);
+  });
+  check('installer independently rejects an effective path to an unrelated PUBLIC sequence',()=>{
+    sql('grant usage on schema provider_sequence_fixture to public');
+    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
+    assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directSequences.length>0);
+    sql(installSql,{fail:true});sql('revoke usage on schema provider_sequence_fixture from public');sql(installSql);
+  });
+  check('installer rejects reachable but accepts unreachable external SECURITY DEFINER routines',()=>{
+    sql(installSql);sql('grant usage on schema provider_routine_fixture to public');
+    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
+    assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).externalRoutines.length>0);
+    sql(installSql,{fail:true});sql('revoke usage on schema provider_routine_fixture from public');sql(installSql);
+  });
+  check('installer always rejects target table and target column PUBLIC privileges',()=>{
+    sql('revoke usage on schema public from public');
+    for(const privilege of ['select','insert','update','delete','truncate','references','trigger','maintain']){
+      sql(`grant ${privilege} on public."SearchJob" to public`);
+      assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
+      assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).targetPublicRelations.some(row=>row.name==='SearchJob'&&row.privilege===privilege.toUpperCase()));
+      sql(installSql,{fail:true});sql(`revoke ${privilege} on public."SearchJob" from public`);
+    }
+    for(const privilege of ['select','insert','update','references']){
+      sql(`grant ${privilege}(user_id) on public."SearchJob" to public`);
+      assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
+      assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).targetPublicColumns.some(row=>row.name==='SearchJob'&&row.column==='user_id'&&row.privilege===privilege.toUpperCase()));
+      sql(installSql,{fail:true});sql(`revoke ${privilege}(user_id) on public."SearchJob" from public`);
+    }
+    sql('grant usage on schema public to public');sql(installSql);
+  });
+  check('installer rejects CREATE authority on every unrelated non-temporary schema',()=>{
+    sql('grant create on schema provider_fixture to buyer_writer_runtime');sql(installSql,{fail:true});
+    sql('revoke create on schema provider_fixture from buyer_writer_runtime');sql(installSql);
+  });
   check('production catalog observation detects later external SECURITY DEFINER execution',()=>{
     const observe=()=>JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL));
     assert.deepEqual(observe().externalRoutines,[]);
@@ -139,6 +227,7 @@ try {
     sql('drop function public.late_privileged_bridge(text)');
     assert.deepEqual(observe().externalRoutines,[]);
   });
+  sql('drop schema provider_fixture,provider_sequence_fixture,provider_routine_fixture cascade;drop role fixture_provider_owner');
   check('dedicated roles cannot select tables, issue arbitrary permits or assume the owner role',()=>{
     for(const r of ['anon','authenticated','buyer_writer_runtime','buyer_writer_issuer']) {
       for(const t of ['RawSale','CleanSale','BuyerProfile','BuyerReport']) role(r,`select * from public."${t}"`,{fail:true});
@@ -402,14 +491,10 @@ try {
     assert.notEqual(denied.status,0);
   });
   check('pool identity query accepts actual separate logins and rejects privilege or routine drift',()=>{
-    const functions={
-      runtime:['buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'],
-      issuer:['buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'],
-    };
     const identity=(kind='runtime',substitute=false)=>{
       const user=`buyer_writer_${kind}`;
       const statement=`${substitute?`set role ${user};`:''}set statement_timeout='10s';set lock_timeout='5s';set search_path=pg_catalog;
-        prepare zola_identity(text,text[]) as ${WRITER_IDENTITY_SQL};execute zola_identity(${literal(user)},array[${functions[kind].map(literal).join(',')}]);`;
+        prepare zola_identity(text,text[]) as ${WRITER_IDENTITY_SQL};execute zola_identity(${literal(user)},array[${writerFunctions[kind].map(literal).join(',')}]);`;
       const result=run(['exec','-i',name,'psql','-X','-qAt','-U',substitute?'postgres':user,'-d','writer_test','-v','ON_ERROR_STOP=1'],statement);
       assert.equal(result.status,0,'isolated identity query must execute');return result.stdout.trim();
     };

@@ -25,7 +25,7 @@ const fixture=()=>({
     ...(issuer?[acl('buyer_writer_issuer','EXECUTE',false)]:[])],
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false};
  }),
- directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
+ targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
  databaseCreate:{buyer_writer_runtime:false,buyer_writer_issuer:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',
   publicExecute:true,ownerExecute:true,runtimeExecute:true,issuerExecute:true})),
@@ -37,6 +37,8 @@ test('fixed verifier accepts exact security state and reports provider truth wit
  const evidence=verifyBuyerWriterProductionEvidence(fixture());
  assert.equal(evidence.compliant,true);
  assert.equal(evidence.unexpectedMembershipCount,0);
+ assert.equal(evidence.targetTablePublicPrivilegeCount,0);
+ assert.equal(evidence.targetColumnPublicPrivilegeCount,0);
  assert.equal(evidence.directTableAccessDenied,true);
  assert.equal(evidence.crossRoutineAccessDenied,true);
  assert.deepEqual(evidence.pgNetTruth,{functionCount:12,publicExecuteCount:12,ownerEffectiveExecuteCount:12,
@@ -67,6 +69,9 @@ test('fixed verifier rejects routine widening, external SECURITY DEFINER access 
 
 test('fixed verifier rejects direct relation, sequence, schema and database authority',()=>{
  for(const mutation of [
+  value=>{value.targetPublicRelations.push({schema:'public',name:'SearchJob',privilege:'SELECT'});},
+  value=>{value.targetRelations.pop();},
+  value=>{value.targetPublicColumns.push({schema:'public',name:'SearchJob',column:'user_id',privilege:'UPDATE'});},
   value=>{value.directRelations.push({role:'buyer_writer_runtime',schema:'public',name:'Buyer','kind':'r',select:true});},
   value=>{value.directRelations.push({role:'buyer_writer_runtime',schema:'public',name:'Buyer','kind':'r',anyColumn:true});},
   value=>{value.directSequences.push({role:'buyer_writer_issuer',schema:'public',name:'ids',select:false,update:false,usage:true});},
@@ -96,6 +101,8 @@ test('catalog statement is read-only and cannot expose credential material',()=>
  assert.doesNotMatch(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/pg_authid|rolpassword|password|credential|current_setting/iu);
  assert.doesNotMatch(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/(?:^|;)\s*(insert|update|delete|alter|create|drop|grant|revoke|call)\b/iu);
  assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/directRelations/);
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/targetPublicRelations/);
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/targetPublicColumns/);
  assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/externalRoutines/);
  assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/p\.prosecdef/);
  assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/publicExecute/);

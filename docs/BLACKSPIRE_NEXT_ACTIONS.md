@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-09-15 — finish correction evidence, then resolve actual provider-object reachability
+
+1. Commit and push the locally validated reachability-scoped installer correction, then require fresh exact-head CI, receiver and Vercel frontend/root/aggregate success. Do not run production apply merely because inaccessible provider ACL metadata now passes.
+2. Preserve the production blocker: 16 effective PUBLIC relation privileges on two provider-owned objects and three effective PUBLIC sequence privileges remain reachable by a newly created runtime/issuer identity through schema `USAGE`. Obtain a provider-authorized, consumer-preserving ACL correction or another separately reviewed way to eliminate those effective capabilities; do not alter provider objects blindly or special-case names.
+3. After fresh read-only evidence shows effective unrelated relation/column/sequence exposure is zero, rerun `--inspect`, require all three roles absent, and execute the reviewed `--apply` only from the exact externally green SHA. Keep pg_net 12/12 as the separate `SU-471370` isolation risk and do not merge, repin n8n, cut over or OPEN.
+
 ## 2026-09-15 — one owner action for Temporary Access and protected input
 
 1. In Supabase Database Settings for `kchtrvfcixnimvxxctkj`, verify SSL enforcement and Temporary Access are enabled; verify the intended owner is mapped specifically to existing role `postgres`; preserve all existing access and ensure applicable project and mapping restrictions include server egress `204.168.239.241/32` and `2a01:4f9:c012:57ac::1/128`; and ensure both mapping and PAT expiry cover inspection, provisioning and fail-closed recovery. Enabling SSL enforcement requires separate approval because it reboots the database and may interrupt it for minutes. Do not replace an existing mapping or global allowlist merely to add this host.

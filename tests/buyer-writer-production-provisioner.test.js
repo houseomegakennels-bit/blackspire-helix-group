@@ -31,7 +31,7 @@ const evidence=()=>({
   return {signature,owner:'buyer_writer_owner',securityDefiner:runtime||issuer,searchPathLocked:runtime||issuer,
    edges:[acl('buyer_writer_owner','EXECUTE'),...(runtime?[acl('buyer_writer_runtime','EXECUTE')]:[]),...(issuer?[acl('buyer_writer_issuer','EXECUTE')]:[])],
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false};}),
- directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],databaseCreate:{buyer_writer_runtime:false,buyer_writer_issuer:false},
+ targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],databaseCreate:{buyer_writer_runtime:false,buyer_writer_issuer:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',publicExecute:true,
   ownerExecute:true,runtimeExecute:true,issuerExecute:true})),
 });

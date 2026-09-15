@@ -7,7 +7,7 @@ import {observeBuyerWriterProductionState} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
 export const BUYER_WRITER_GATEWAY_CONFIGURATION='/etc/blackspire-buyer-writer-gateway/gateway.json';
-export const BUYER_WRITER_INSTALLER_SHA256='ce990a62730268dc3ccb368485a188de35ab59a2db6ea014526e2106f0148b17';
+export const BUYER_WRITER_INSTALLER_SHA256='7a867ee5e389f2c1767f1d78788c117eb73cfd86ef55f7c24b92cd74a13ba62f';
 export const BUYER_WRITER_PROVISIONING_LOCK=Object.freeze([206994,127]);
 
 const INSTALLER=fileURLToPath(new URL('./sql/install.sql',import.meta.url));
@@ -172,6 +172,8 @@ async function disableLogins({connect,management,onLocked,onDisabled}){
 function sanitizedInspection(roles,evidence){
   return Object.freeze({status:evidence?'COMPLIANT':'NONCOMPLIANT',compliant:Boolean(evidence),roles:roles.map(role=>Object.freeze({...role})),
     ...(evidence?{unexpectedMembershipCount:evidence.unexpectedMembershipCount,directTableAccessDenied:evidence.directTableAccessDenied,
+      targetTablePublicPrivilegeCount:evidence.targetTablePublicPrivilegeCount,
+      targetColumnPublicPrivilegeCount:evidence.targetColumnPublicPrivilegeCount,
       crossRoutineAccessDenied:evidence.crossRoutineAccessDenied,pgNetTruth:evidence.pgNetTruth}:{})});
 }
 
