@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-07 — Geminara production gate
+
+Keep PR #126 draft/unmerged pending independent review. Identify the exact approved next chapter and canonical revision, prepare it in the isolated local store with Onyx assignments, and approve the source digest and paid workload before provider work. Real chapter creative/narration review and separate publication approval remain required. The no-cost diagnostic, actual Drive files, and local browser/release rehearsal are complete; do not repeat remote-terminal troubleshooting or copy production credentials into previews. PR #124’s four reviewed runtime P2 findings remain a separate, UNVERIFIED follow-up.
+
 ## ZOLA critical path (2026-08-31 UTC)
 
 1. NEXT — branch `fix/pr120-p2s-660dfb` contains the locally validated PR #120 candidate through implementation commit `09d9dfa39fb24cd3c683608080ede07e097ddcbf`, followed only by the canonical-memory checkpoint. All 16 review topics are fixed or superseded in the local tree; remote PR head `660dfb63444069c734dcff50415cb84c4fd919b6` lacks the three latest P2 corrections. Nothing is pushed. The single next action is operator authorization to push the final local candidate SHA, followed by fresh exact-head CI and independent remote review.
