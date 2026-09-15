@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-15 — provision Buyer Writer roles only after exact-head and protected-authority gates
+
+1. Push `8019ac9`, `2b5690f`, `39866dc` and this canonical record to `release/zola-production-live`; then require CI, receiver and Vercel frontend/root/aggregate success for that exact final SHA.
+2. Locate or provision through the authorized secret-management path one separate root:root `0600`, regular, non-symlink postgres management JSON containing exactly `host`, `password` and `ca`. Keep the endpoint `db.kchtrvfcixnimvxxctkj.supabase.co:5432`. Never derive this file from the runtime or issuer credential and never pass its values through argv, environment, logs or an MCP/tool SQL argument.
+3. With the exact-head checks still green, run `bash scripts/with-node.sh scripts/provision-buyer-writer-production.js --apply --management-config <absolute-protected-management-json>`. Require the sanitized verifier and runtime/issuer authentication proofs to pass in the same locked operation. Any failure must leave runtime and issuer NOLOGIN.
+4. Only after provisioning succeeds, resume the gateway live acceptance with a new immutable artifact and protected checkpoint. Keep `SU-471370` open while provider PUBLIC EXECUTE is nonzero. Do not merge, repin n8n, migrate, cut over or OPEN in this tranche.
+
 ## 2026-09-13 — validate and publish the gateway acceptance correction
 
 1. Push separate gateway lifecycle fix `156bb0c9d8370b7840b939a844ed5f244879af7b` and this canonical evidence refresh to `release/zola-production-live`; recovered commits `0f3cee8` and `734de77` are already pushed. Focused 340/340 plus final affected 19/19, full trusted 1,945 total / 1,902 passed / 43 expected skips / zero failures, lint, typecheck, build, secret scan, root high-severity audit, living-memory and whitespace checks are green.
