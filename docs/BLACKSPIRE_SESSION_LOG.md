@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-15 — Temporary Access review and owner-input helper
+
+- Recovered clean local/remote PR #125 head `760e0de466d67a97dc37b87af96f5ff7ca416a8a`, unchanged main `726b54a89b0e871531a12d1421f58c3e47d256be`, successful exact-head CI `34924829238`, receiver `34924848708`, and successful frontend/root/aggregate Vercel contexts. Root remains the accepted intentionally ignored build target.
+- Current official Supabase documentation requires Temporary Access enablement, SSL enforcement, PostgreSQL `17.6.1.081` or newer, an existing user-to-role mapping, and any configured expiry/network restrictions. The project is healthy on `17.6.1.155`; host egress is `204.168.239.241` and `2a01:4f9:c012:57ac::1`. Available provider tools cannot observe the feature state, SSL enforcement, intended owner's `postgres` mapping, expiry/CIDRs, project restrictions, or a host-usable PAT, so management authentication remains unproven.
+- Added the fixed terminal-only root helper and isolated fixtures. It uses `/dev/tty` with echo disabled and signal restoration, validates the protected fixed endpoint/CA binding, rejects unsafe paths, symlinks, links, reuse and overwrite, and creates only the exact root:root `0600` management JSON. Seventeen focused helper/protected-reader/provisioner tests, non-terminal refusal, lint, typecheck, build, living-memory, secret and whitespace checks pass. No real credential was supplied and the management file remains absent.
+- Fresh connector catalog observation retains all three Buyer Writer roles absent, schema absent, and provider PUBLIC EXECUTE `12/12`. Provisioning, runtime/issuer authentication and gateway acceptance were not run. Database administrative changes, business mutations and n8n mutations were zero.
+
 ## 2026-09-15 — production Buyer Writer role provisioner
 
 - Implemented an explicit production provisioner and deterministic sanitized verifier around the unchanged canonical Buyer Writer installer. The command uses an advisory lock, protected-file descriptor/snapshot checks, parameter-only credential transport, a fail-closed NOLOGIN boundary, complete ACL/role/membership/catalog verification, authentication proof, explicit reconciliation and a root-only fsync journal with no diagnostic or secret fields.

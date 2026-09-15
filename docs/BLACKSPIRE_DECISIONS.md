@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-09-15 — management credentials enter only through a fixed terminal-only file creator
+
+An owner-supplied postgres password or Supabase Temporary Access PAT may enter the host only through the fixed root-only helper's hidden `/dev/tty` prompt. The helper accepts no credential through argv, environment, stdin, chat or logs; copies the already protected trusted CA and fixed endpoint binding; and creates one non-replacing root:root `0600` management file. Preparation is not authentication. Only the provisioner's `--inspect` path may establish the first host connection proof; `--verify` is excluded because its failure path can mutate role LOGIN state. Temporary Access settings and expiry remain owner-visible prerequisites and are never inferred from connector SQL success.
+
 ## 2026-09-15 — provider assistance may create only a NOLOGIN foundation without a secret-safe caller channel
 
 The authenticated Supabase provider channel may execute the exact digest-pinned canonical Buyer Writer installer because it contains no credentials and commits all three roles as NOLOGIN. That action is a bounded foundation, never complete provisioning and never evidence in place of live catalog verification. A provider-side password binder is rejected unless the host first has a separately authenticated, fixed-purpose caller channel that transfers only parameter-bound runtime/issuer passwords without model/tool/SQL-text/argv/log exposure and retains fixed fail-close rollback authority. The present channel does not meet that contract. Preserve the separate management-config backend; following a provider foundation, use its explicit `--reconcile` mode. Do not reset the postgres password merely because the provider channel exists.

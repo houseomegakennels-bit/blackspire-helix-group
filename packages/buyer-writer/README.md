@@ -13,6 +13,22 @@ bash scripts/with-node.sh scripts/provision-buyer-writer-production.js --verify 
 bash scripts/with-node.sh scripts/provision-buyer-writer-production.js --rollback --management-config /protected/postgres.json
 ```
 
+When no protected management file exists, an authorized owner may prepare the
+fixed production path from a real terminal. The helper accepts no arguments or
+environment credential, reads the credential from `/dev/tty` with echo disabled,
+and refuses to replace an existing file:
+
+```bash
+sudo bash scripts/with-node.sh scripts/prepare-buyer-writer-management-config.js
+```
+
+For a Supabase Temporary Access PAT, first verify in the dashboard that SSL
+enforcement and Temporary Access are enabled, that the PAT owner is mapped to
+the existing `postgres` role, that the server egress is allowed, and that both
+the mapping and PAT remain valid through provisioning and fail-closed recovery.
+File preparation is not authentication; run the printed `--inspect` command
+before selecting any mutating provisioner mode.
+
 `--inspect` is read-only. `--apply` provisions only an absent installation and
 is authentication-proved idempotent once compliant. `--reconcile` is the sole
 explicit credential-rebinding mode for a reviewed partial installation or an

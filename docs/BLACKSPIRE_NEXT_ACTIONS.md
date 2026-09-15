@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-09-15 — one owner action for Temporary Access and protected input
+
+1. In Supabase Database Settings for `kchtrvfcixnimvxxctkj`, verify SSL enforcement and Temporary Access are enabled; verify the intended owner is mapped specifically to existing role `postgres`; preserve all existing access and ensure applicable project and mapping restrictions include server egress `204.168.239.241/32` and `2a01:4f9:c012:57ac::1/128`; and ensure both mapping and PAT expiry cover inspection, provisioning and fail-closed recovery. Enabling SSL enforcement requires separate approval because it reboots the database and may interrupt it for minutes. Do not replace an existing mapping or global allowlist merely to add this host.
+2. From a real terminal in this exact worktree, run `cd /opt/blackspire/.worktrees/codex-zola-production-live && sudo bash scripts/with-node.sh scripts/prepare-buyer-writer-management-config.js`. Enter the PAT only at its hidden `/dev/tty` prompt. Never place it in chat, argv, an environment variable or logs. The helper refuses an existing output and prints the exact non-mutating `--inspect` command.
+3. Treat preparation as unauthenticated until that printed `--inspect` succeeds from the host with fixed user `postgres`, TLS verification and the required actor authority. Do not run `--verify`, `--apply` or `--reconcile` merely to test the credential.
+
 ## 2026-09-15 — recover management authority, then provision and accept the gateway
 
 1. Treat verifier implementation SHA `425eaacf1d460bd043e88a9e4e0888f45ebd5f93` as externally green: CI, receiver, frontend, root and aggregate contexts succeeded. Root exact-head ignored-build SUCCESS is the intended VPS boundary; literal root READY is not required and must not be manufactured. Refresh the same gates for any later documentation or implementation head before production mutation.
