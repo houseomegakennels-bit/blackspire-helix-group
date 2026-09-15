@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-15 — publish verifier hardening, then recover management authority
+
+1. Complete full validation, commit and push the external-`SECURITY DEFINER` catalog verifier correction and its PostgreSQL regression. Require fresh exact-final-SHA CI and receiver success plus fresh Vercel frontend/root/aggregate contexts. Record root truthfully as ignored/CANCELED if the committed root ignore contract remains; do not call that deployment READY.
+2. Do not pass runtime or issuer passwords through the provider SQL interface. Prefer recovery of the existing postgres management credential into the reviewed separate root:root `0600` JSON. Do not reset it unless credential recovery and a separately proven secret-safe temporary-token channel are both unavailable and every dependent management connection has first been inventoried.
+3. Optionally execute the exact canonical installer through the fixed authenticated Supabase project only while final-SHA gates are green. Treat the result as a NOLOGIN foundation only; on timeout inspect catalogs before any retry. Any later management completion must use `--reconcile` and independently pass the complete verifier plus runtime/issuer login proofs.
+4. Keep gateway installation, n8n, migrations, merge, cutover and OPEN held until both credentialed roles authenticate and the corrected verifier passes. Keep `SU-471370` open while provider PUBLIC EXECUTE remains 12/12.
+
 ## 2026-09-15 — provision Buyer Writer roles only after exact-head and protected-authority gates
 
 1. Push `8019ac9`, `2b5690f`, `39866dc` and this canonical record to `release/zola-production-live`; then require CI, receiver and Vercel frontend/root/aggregate success for that exact final SHA.

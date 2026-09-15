@@ -25,7 +25,7 @@ const fixture=()=>({
     ...(issuer?[acl('buyer_writer_issuer','EXECUTE',false)]:[])],
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false};
  }),
- directRelations:[],directSequences:[],schemaCreate:[],
+ directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
  databaseCreate:{buyer_writer_runtime:false,buyer_writer_issuer:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',
   publicExecute:true,ownerExecute:true,runtimeExecute:true,issuerExecute:true})),
@@ -54,12 +54,13 @@ test('fixed verifier rejects unsafe role flags, absence and unexpected membershi
  ]){const value=fixture();mutation(value);denied(value);}
 });
 
-test('fixed verifier rejects routine widening, cross-access and incomplete catalogs',()=>{
+test('fixed verifier rejects routine widening, external SECURITY DEFINER access and incomplete catalogs',()=>{
  for(const mutation of [
   value=>{value.routines.find(row=>row.signature.includes('.issue(')).runtimeExecute=true;},
   value=>{value.routines.find(row=>row.signature.includes('.apply(')).issuerExecute=true;},
   value=>{value.routines.find(row=>row.signature.includes('.apply(')).runtimeGrant=true;},
   value=>{value.routines.find(row=>row.signature.includes('.apply(')).edges.push(acl('PUBLIC','EXECUTE',false));},
+  value=>{value.externalRoutines.push({role:'buyer_writer_runtime',schema:'public',signature:'public.admin_bridge(text)',owner:'postgres'});},
   value=>{value.routines.pop();},value=>{value.schema.edges.pop();},
  ]){const value=fixture();mutation(value);denied(value);}
 });
@@ -95,5 +96,7 @@ test('catalog statement is read-only and cannot expose credential material',()=>
  assert.doesNotMatch(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/pg_authid|rolpassword|password|credential|current_setting/iu);
  assert.doesNotMatch(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/(?:^|;)\s*(insert|update|delete|alter|create|drop|grant|revoke|call)\b/iu);
  assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/directRelations/);
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/externalRoutines/);
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/p\.prosecdef/);
  assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/publicExecute/);
 });

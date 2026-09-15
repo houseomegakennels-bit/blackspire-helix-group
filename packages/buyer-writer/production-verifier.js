@@ -56,6 +56,15 @@ role_state as (
  select w.name as role,n.nspname as schema from writer_roles w cross join pg_namespace n
  where w.name in('buyer_writer_runtime','buyer_writer_issuer') and n.nspname !~ '^pg_temp'
   and has_schema_privilege(w.name,n.oid,'CREATE')
+), external_routines as (
+ select w.name as role,n.nspname as schema,p.oid::regprocedure::text as signature,
+  pg_get_userbyid(p.proowner) as owner
+ from writer_roles w cross join pg_proc p join pg_namespace n on n.oid=p.pronamespace
+ where w.name in('buyer_writer_runtime','buyer_writer_issuer') and p.prosecdef
+  and p.prorettype<>'event_trigger'::regtype
+  and n.nspname not in('pg_catalog','information_schema','buyer_writer')
+  and has_schema_privilege(w.name,n.oid,'USAGE')
+  and has_function_privilege(w.name,p.oid,'EXECUTE')
 ), net_state as (
  select e.name,p.oid::regprocedure::text as signature,pg_get_userbyid(p.proowner) as owner,
   exists(select from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
@@ -76,6 +85,7 @@ select jsonb_build_object(
  'directSequences',(select coalesce(jsonb_agg(to_jsonb(d) order by role,schema,name),'[]'::jsonb) from direct_sequences d
    where "select" or "update" or usage),
  'schemaCreate',(select coalesce(jsonb_agg(to_jsonb(s) order by role,schema),'[]'::jsonb) from schema_create s),
+ 'externalRoutines',(select coalesce(jsonb_agg(to_jsonb(r) order by role,schema,signature),'[]'::jsonb) from external_routines r),
  'databaseCreate',jsonb_build_object(
    'buyer_writer_runtime',coalesce(has_database_privilege('buyer_writer_runtime',current_database(),'CREATE'),false),
    'buyer_writer_issuer',coalesce(has_database_privilege('buyer_writer_issuer',current_database(),'CREATE'),false)),
@@ -123,8 +133,8 @@ const sameSet=(values,expected)=>values.length===expected.length&&new Set(values
 export function verifyBuyerWriterProductionEvidence(raw){
  try{
   if(Buffer.byteLength(JSON.stringify(raw))>1024*1024
-   ||!exact(raw,['roles','memberships','schema','routines','directRelations','directSequences','schemaCreate','databaseCreate','pgNet'])
-   ||![raw.roles,raw.memberships,raw.routines,raw.directRelations,raw.directSequences,raw.schemaCreate,raw.pgNet].every(Array.isArray))fail();
+   ||!exact(raw,['roles','memberships','schema','routines','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','pgNet'])
+   ||![raw.roles,raw.memberships,raw.routines,raw.directRelations,raw.directSequences,raw.schemaCreate,raw.externalRoutines,raw.pgNet].every(Array.isArray))fail();
   const roleNames=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'];
   if(!sameSet(raw.roles.map(role=>role?.name),roleNames))fail();
   for(const role of raw.roles){
@@ -162,7 +172,7 @@ export function verifyBuyerWriterProductionEvidence(raw){
    validateAclEdges(routine.edges,[['buyer_writer_owner','EXECUTE',false],...(runtime?[['buyer_writer_runtime','EXECUTE',false]]:[]),
     ...(issuer?[['buyer_writer_issuer','EXECUTE',false]]:[])]);
   }
-  if(raw.directRelations.length||raw.directSequences.length||raw.schemaCreate.length
+  if(raw.directRelations.length||raw.directSequences.length||raw.schemaCreate.length||raw.externalRoutines.length
    ||!exact(raw.databaseCreate,['buyer_writer_runtime','buyer_writer_issuer'])
    ||raw.databaseCreate.buyer_writer_runtime!==false||raw.databaseCreate.buyer_writer_issuer!==false)fail();
   if(raw.pgNet.length!==12||!sameSet(raw.pgNet.map(row=>row?.name),BUYER_WRITER_PG_NET_FUNCTIONS))fail();
@@ -175,7 +185,7 @@ export function verifyBuyerWriterProductionEvidence(raw){
   evidence.directTableAccessDenied=true;
   evidence.directSequenceAccessDenied=true;
   evidence.schemaCreateDenied=true;
-  evidence.crossRoutineAccessDenied=true;
+  evidence.crossRoutineAccessDenied=raw.externalRoutines.length===0;
   evidence.pgNetTruth={functionCount:12,publicExecuteCount,
    ownerEffectiveExecuteCount:raw.pgNet.filter(row=>row.ownerExecute).length,
    runtimeEffectiveExecuteCount:raw.pgNet.filter(row=>row.runtimeExecute).length,

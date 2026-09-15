@@ -7,6 +7,7 @@ import { createBuyerWriterHttpServer } from '../packages/buyer-writer/http.js';
 import { planBuyerWrites } from '../packages/buyer-writer/plan.js';
 import { normalizeBuyerSales } from '../packages/buyer-writer/normalize.js';
 import { WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
+import { BUYER_WRITER_PRODUCTION_VERIFY_SQL } from '../packages/buyer-writer/production-verifier.js';
 assert.equal(process.versions.node, '22.23.1');
 const image = process.env.BUYER_WRITER_TEST_IMAGE;
 assert.match(image ?? '', /^postgres@sha256:[a-f0-9]{64}$/);
@@ -128,6 +129,16 @@ try {
   for(const table of ['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport'])sql(`alter table public."${table}" owner to fixture_manager`);
   const installSql='set session authorization fixture_manager;'+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
   sql(installSql);
+  check('production catalog observation detects later external SECURITY DEFINER execution',()=>{
+    const observe=()=>JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL));
+    assert.deepEqual(observe().externalRoutines,[]);
+    sql("create function public.late_privileged_bridge(text) returns integer language sql security definer as 'select 1'");
+    const widened=observe().externalRoutines;
+    assert.deepEqual(widened.map(row=>row.role).sort(),['buyer_writer_issuer','buyer_writer_runtime']);
+    assert.ok(widened.every(row=>row.schema==='public'&&row.signature.endsWith('late_privileged_bridge(text)')&&row.owner==='postgres'));
+    sql('drop function public.late_privileged_bridge(text)');
+    assert.deepEqual(observe().externalRoutines,[]);
+  });
   check('dedicated roles cannot select tables, issue arbitrary permits or assume the owner role',()=>{
     for(const r of ['anon','authenticated','buyer_writer_runtime','buyer_writer_issuer']) {
       for(const t of ['RawSale','CleanSale','BuyerProfile','BuyerReport']) role(r,`select * from public."${t}"`,{fail:true});
