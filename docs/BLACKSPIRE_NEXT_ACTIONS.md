@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-09-15 — obtain provider consumer decision and owner authority for pg_net closure
+
+1. Commit and push the validated raw-sequence-capability correction, then require fresh exact-head CI, receiver and Vercel frontend/root/aggregate success.
+2. Have Supabase/provider authority decide the exact intended consumer set. The provider hook explicitly names five roles, but PUBLIC currently supplies all 32 roles; final review rejected silently dropping the other 27 and quarantined the earlier five-role draft. Generate an exact-state, retry-safe apply/rollback package only after that decision, and execute it solely under a coordinated session that can SET `supabase_admin`.
+3. Immediately rerun sanitized schema/routine/relation/column/sequence reachability. Only at zero may `--inspect` and then `--apply` proceed. Keep PUBLIC routine EXECUTE 12/12 and `SU-471370` open until actually corrected; no merge, n8n repin, cutover or OPEN is authorized.
+
 ## 2026-09-15 — finish correction evidence, then resolve actual provider-object reachability
 
 1. Require fresh exact-head CI, receiver and Vercel frontend/root/aggregate success for pushed implementation `aa6ef2d7a3600199cbf56cbeb7686dfe3478fafc`. Do not run production apply merely because inaccessible provider ACL metadata now passes.

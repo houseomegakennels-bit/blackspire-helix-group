@@ -72,7 +72,6 @@ role_state as (
  from writer_roles w cross join pg_class c join pg_namespace n on n.oid=c.relnamespace
  where w.name in('buyer_writer_runtime','buyer_writer_issuer') and c.relkind='S'
   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
-  and has_schema_privilege(w.name,n.oid,'USAGE')
 ), schema_create as (
  select w.name as role,n.nspname as schema from writer_roles w cross join pg_namespace n
  where w.name in('buyer_writer_runtime','buyer_writer_issuer') and n.nspname !~ '^pg_temp'

@@ -39,7 +39,6 @@ export const BUYER_WRITER_GATEWAY_IDENTITY_SQL=`select (
    and (has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') or has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
-   and has_schema_privilege(current_user,n.oid,'USAGE')
    and case when c.relkind='S' then has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE') else false end)
  and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
    where n.nspname not in('pg_catalog','information_schema','buyer_writer','net')

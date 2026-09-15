@@ -145,8 +145,7 @@ try {
     set role fixture_provider_owner;create table provider_fixture.unrelated(id integer,private_value text);
     create sequence provider_sequence_fixture.unrelated_seq;
     create function provider_routine_fixture.unrelated() returns integer language sql security definer as 'select 1';
-    grant select on provider_fixture.unrelated to public;grant update(private_value) on provider_fixture.unrelated to public;
-    grant usage on sequence provider_sequence_fixture.unrelated_seq to public;reset role;
+    grant select on provider_fixture.unrelated to public;grant update(private_value) on provider_fixture.unrelated to public;reset role;
     revoke all on schema provider_fixture,provider_sequence_fixture,provider_routine_fixture from public`);
   const providerAcl=()=>sql(`select jsonb_build_object(
     'relation',(select relacl from pg_class where oid='provider_fixture.unrelated'::regclass),
@@ -154,11 +153,10 @@ try {
     'sequence',(select relacl from pg_class where oid='provider_sequence_fixture.unrelated_seq'::regclass),
     'schemas',(select jsonb_agg(jsonb_build_array(nspname,nspacl) order by nspname) from pg_namespace
       where nspname in('provider_fixture','provider_sequence_fixture','provider_routine_fixture')))`);
-  check('installer accepts unreachable unrelated PUBLIC relation, column and sequence grants without mutation authority',()=>{
+  check('installer accepts unreachable unrelated PUBLIC relation and column grants without mutation authority',()=>{
     const before=providerAcl();
     assert.equal(sql("select pg_get_userbyid(relowner)<>'fixture_manager' and not has_table_privilege('fixture_manager',oid,'SELECT WITH GRANT OPTION') from pg_class where oid='provider_fixture.unrelated'::regclass"),'t');
     assert.equal(sql("select not has_column_privilege('fixture_manager','provider_fixture.unrelated','private_value','UPDATE WITH GRANT OPTION')"),'t');
-    assert.equal(sql("select pg_get_userbyid(relowner)<>'fixture_manager' and not has_sequence_privilege('fixture_manager',oid,'USAGE WITH GRANT OPTION') from pg_class where oid='provider_sequence_fixture.unrelated_seq'::regclass"),'t');
     sql(installSql);
     sql('alter role buyer_writer_runtime login;alter role buyer_writer_issuer login');
     assert.equal(role('buyer_writer_runtime','select * from provider_fixture.unrelated',{fail:true,permissionDenied:true}),undefined);
@@ -185,11 +183,16 @@ try {
     sql('revoke usage on schema provider_fixture from public');
     sql(installSql);
   });
-  check('installer independently rejects an effective path to an unrelated PUBLIC sequence',()=>{
-    sql('grant usage on schema provider_sequence_fixture to public');
+  check('installer rejects PUBLIC sequence capability even without schema USAGE',()=>{
+    sql('set role fixture_provider_owner;grant usage on sequence provider_sequence_fixture.unrelated_seq to public;reset role');
+    assert.equal(sql("select has_schema_privilege('buyer_writer_runtime','provider_sequence_fixture','USAGE')"),'f');
+    assert.equal(sql("select has_schema_privilege('buyer_writer_issuer','provider_sequence_fixture','USAGE')"),'f');
+    assert.equal(role('buyer_writer_runtime',`select nextval(${sql("select oid::text from pg_class where oid='provider_sequence_fixture.unrelated_seq'::regclass")}::oid::regclass)`),'1');
     assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
-    assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directSequences.length>0);
-    sql(installSql,{fail:true});sql('revoke usage on schema provider_sequence_fixture from public');sql(installSql);
+    assert.deepEqual(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directSequences.map(({role,usage})=>({role,usage})),[
+      {role:'buyer_writer_issuer',usage:true},{role:'buyer_writer_runtime',usage:true}
+    ]);
+    sql(installSql,{fail:true});sql('set role fixture_provider_owner;revoke usage on sequence provider_sequence_fixture.unrelated_seq from public;reset role');sql(installSql);
   });
   check('installer rejects reachable but accepts unreachable external SECURITY DEFINER routines',()=>{
     sql(installSql);sql('grant usage on schema provider_routine_fixture to public');
