@@ -1,6 +1,6 @@
-# ZOLA provider-owned ACL prerequisite
+# ZOLA provider-owned ACL hardening option
 
-Status: request prepared for provider review. No provider message has been sent and no production ACL change has been applied.
+Status: superseded as a release prerequisite on 2026-09-15. Retained as an optional defense-in-depth request and historical record. No provider message has been sent and no production ACL change has been applied. Release readiness now requires fresh proof that the dedicated Buyer Writer roles cannot reach these provider objects; if schema or membership reachability makes any captured privilege effective, the release remains blocked.
 
 ## Request to Supabase Support
 

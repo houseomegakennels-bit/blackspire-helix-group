@@ -40,6 +40,17 @@ test('authorization, replay and malformed input return explicit non-success stat
  assert.equal((await gateway(async()=>assert.fail('must not query'))({...request,body:Buffer.from('{}')})).status,400);
 });
 
+test('gateway input cannot nominate database statements or network destinations',async()=>{
+ let calls=0;const handle=gateway(async()=>{calls++;});
+ const parsed=JSON.parse(body);
+ for(const candidate of [
+  {...request,jobId:`${jobId}';select pg_sleep(1)`},
+  {...request,body:Buffer.from(JSON.stringify({...parsed,sql:'select * from pg_authid'}))},
+  {...request,body:Buffer.from(JSON.stringify({...parsed,payload:{url:'http://169.254.169.254/'}}))},
+ ])assert.equal((await handle(candidate)).status,400);
+ assert.equal(calls,0);
+});
+
 test('receipt lookup is separately scoped and never retries an operation',async()=>{
  const {createWriterReceiptGateway}=await import('../packages/buyer-writer/gateway.js');
  let captured;

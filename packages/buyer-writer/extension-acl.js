@@ -132,9 +132,9 @@ BEGIN
   END LOOP;
   IF phase=0 THEN
    IF NOT before_ok AND NOT after_ok THEN RAISE EXCEPTION 'Partial or unexpected ACL state';END IF;
-   ${verifyOnly?`IF NOT after_ok THEN RAISE EXCEPTION 'Provider ACL poststate required';END IF;
+   ${verifyOnly?`IF NOT (before_ok OR after_ok) THEN RAISE EXCEPTION 'Provider ACL baseline or replacement required';END IF;
    change_needed:=false;`:'change_needed:=CASE WHEN rollback_mode THEN after_ok ELSE before_ok END;'}
-  ELSIF NOT (CASE WHEN rollback_mode THEN before_ok ELSE after_ok END) THEN RAISE EXCEPTION 'ACL result verification failed';
+  ELSIF ${verifyOnly?'NOT (before_ok OR after_ok)':'NOT (CASE WHEN rollback_mode THEN before_ok ELSE after_ok END)'} THEN RAISE EXCEPTION 'ACL result verification failed';
   END IF;
   FOR item IN SELECT value FROM jsonb_array_elements(m->'effective') LOOP
    SELECT (value->>'oid')::oid INTO target_oid FROM jsonb_array_elements(base->'objects') WHERE value->>'schema'=item->>1 AND value->>'name'=item->>2;
@@ -155,7 +155,11 @@ BEGIN
    FOR writer_name IN SELECT rolname FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') LOOP
     FOR obj IN SELECT value FROM jsonb_array_elements(m->'objects') LOOP
      target_oid:=(obj->>'oid')::oid;
-     IF (CASE WHEN obj->>'kind'='function' THEN has_function_privilege(writer_name,target_oid,'EXECUTE')
+     -- Object ACLs inherited from PUBLIC or another role are authority only
+     -- when the writer can also resolve the containing schema. This permits a
+     -- provider to retain unreachable defaults without granting Buyer Writer a
+     -- database or network capability.
+     IF has_schema_privilege(writer_name,obj->>'schema','USAGE') AND (CASE WHEN obj->>'kind'='function' THEN has_function_privilege(writer_name,target_oid,'EXECUTE')
       WHEN obj->>'kind'='S' THEN has_sequence_privilege(writer_name,target_oid,'SELECT,UPDATE,USAGE')
       ELSE has_table_privilege(writer_name,target_oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') OR has_any_column_privilege(writer_name,target_oid,'SELECT,INSERT,UPDATE,REFERENCES') END) THEN
       RAISE EXCEPTION 'Unexpected writer extension privilege';

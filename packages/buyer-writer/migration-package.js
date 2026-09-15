@@ -10,7 +10,9 @@ const tables=['public."SearchJob"','public."RawSale"','public."CleanSale"','publ
  'buyer_writer.dispatches','buyer_writer.receipts','buyer_writer.sales'];
 const digest=s=>createHash('sha256').update(s).digest('hex');
 // No network, credential discovery, provisioning or production execution. The
-// caller must obtain provider execution evidence and the remaining release gates.
+// caller must supply a fresh read-only provider catalog capture and satisfy the
+// remaining release gates. Provider mutation is not required when the scoped
+// writer roles cannot reach provider-owned objects through schema access.
 export function prepareBuyerMigrationPackage({releaseSha,providerManifest}){
  if(!/^[a-f0-9]{40}$/.test(releaseSha??''))throw new Error('Release SHA rejected');
  const providerCheck=buyerWriterExtensionPostcondition(providerManifest);
@@ -79,11 +81,12 @@ BEGIN;
 ${body}COMMIT;
 `;
  const manifest={version:1,status:'prepared-not-applied',releaseSha,providerManifestSha256:digest(JSON.stringify(providerManifest)),
+  providerMutationPolicy:'optional-if-effective-isolation-passes',
   preparationEnvironment:'clean release source checkout only; not executable from sealed runtime archive',
   migrationSources:migrations.map(([file,sha256])=>({file,sha256})),sqlSha256:digest(sql),bodySha256:digest(body),
   migrationHistory:'execute_sql/psql does not record Supabase migration history; apply_migration records the actual invocation version, not these source versions',
   rollback:'Abort restores the entire transaction. After commit retain read restrictions on code rollback; never restore unsafe browser or PUBLIC grants.',
-  requiredExternalGates:['verified-provider-execution-and-exclusive-window','live-n8n-scoped-continuity','writer-e2e','functional-rollback','six-reads-before'],
+  requiredExternalGates:['fresh-read-only-provider-catalog','live-n8n-scoped-continuity','writer-e2e','functional-rollback','six-reads-before'],
   productionApplied:false};
  return {sql,body,manifest,manifestBytes:JSON.stringify(manifest,null,2)+'\n'};
 }

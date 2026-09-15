@@ -65,9 +65,12 @@ do $$declare ns oid; r text; begin
          or has_any_column_privilege(r,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
     or exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+       and has_schema_privilege(r,n.oid,'USAGE')
        and case when c.relkind='S' then has_sequence_privilege(r,c.oid,'SELECT,UPDATE,USAGE') else false end)
     or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prosecdef and p.prorettype<>'event_trigger'::regtype
       and n.nspname not in('pg_catalog','information_schema','buyer_writer')
+      and has_schema_privilege(r,n.oid,'USAGE') and has_function_privilege(r,p.oid,'EXECUTE'))
+    or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='net'
       and has_schema_privilege(r,n.oid,'USAGE') and has_function_privilege(r,p.oid,'EXECUTE'))
     or exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(r,n.oid,'CREATE')) then
    raise exception 'Unexpected writer role privileges';

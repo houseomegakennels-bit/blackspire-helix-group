@@ -39,7 +39,7 @@ export function prepareOfflineReleaseBundle({releaseSha,n8nConfiguration,provide
    sourceSha256:digest(fs.readFileSync(new URL('./offline-bundle.js',import.meta.url))),
    files:Object.fromEntries(Object.entries(files).map(([name,bytes])=>[name,digest(bytes)])),
    productionAccepted:false,liveApplied:false,
-   pending:['fresh live backup and revision verification','provider ACL verification','credential execution',
+   pending:['fresh live backup and revision verification','fresh provider reachability verification','credential execution',
     'writer and rollback acceptance','connected six reads','global release orchestration'],
   };
   const manifestBytes=json(manifest);

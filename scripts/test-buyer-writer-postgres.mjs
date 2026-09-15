@@ -510,13 +510,18 @@ try {
     denied('alter role buyer_writer_runtime inherit','alter role buyer_writer_runtime noinherit');
     denied('alter role buyer_writer_owner login','alter role buyer_writer_owner nologin');
     sql('create role isolated_membership nologin');
-    denied('grant isolated_membership to buyer_writer_runtime','revoke isolated_membership from buyer_writer_runtime');sql('drop role isolated_membership');
+    denied('grant isolated_membership to buyer_writer_runtime','revoke isolated_membership from buyer_writer_runtime');
+    denied('grant buyer_writer_runtime to isolated_membership','revoke buyer_writer_runtime from isolated_membership');
+    sql('drop role isolated_membership');
     denied('alter function buyer_writer.context(text,text,uuid,uuid,bigint) security invoker','alter function buyer_writer.context(text,text,uuid,uuid,bigint) security definer');
     denied('alter function buyer_writer.context(text,text,uuid,uuid,bigint) set search_path=public','alter function buyer_writer.context(text,text,uuid,uuid,bigint) set search_path=pg_catalog');
-    sql('create schema net;grant usage on schema net to public;create table net.http_request_queue(id integer);');
-    denied('grant all on net.http_request_queue to public','revoke all on net.http_request_queue from public');
+    sql('create schema net;create table net.http_request_queue(id integer);grant all on net.http_request_queue to public;');
+    assert.equal(identity(),'t','PUBLIC relation ACL without schema USAGE is unreachable');
+    denied('grant usage on schema net to public','revoke usage on schema net from public');
     sql("create function net.isolated_network_function() returns integer language sql as 'select 1'");
-    assert.equal(identity(),'f');sql('revoke execute on function net.isolated_network_function() from public');assert.equal(identity(),'t');
+    assert.equal(identity(),'t','PUBLIC network EXECUTE without schema USAGE is unreachable');
+    sql('grant usage on schema net to public');assert.equal(identity(),'f');
+    sql('revoke usage on schema net from public');assert.equal(identity(),'t');
     sql('drop schema net cascade');
   });
   const asyncSql=(statement)=>new Promise((resolve,reject)=>{

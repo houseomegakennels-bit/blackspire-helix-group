@@ -127,7 +127,10 @@ try {
   // inert provider objects. No provider credentials or extension functions run.
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/schema.sql',import.meta.url),'utf8'));
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/nexus.sql',import.meta.url),'utf8'));
-  const applicationAcl=makePlan();sql(applicationAcl.applySql);
+  // Preserve the provider-owned PUBLIC object ACLs. Removing schema reachability
+  // is sufficient isolation and is already the observed production shape.
+  sql('revoke usage on schema net,extensions from public');
+  const applicationAcl=makePlan();
   const postcondition=buyerWriterExtensionPostcondition(applicationAcl.manifest);
   sql('begin;'+postcondition+'commit;',{fail:/All scoped writer roles required/});
   sql(readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8'));
@@ -146,7 +149,16 @@ try {
   sql(injected,{fail:/expected application abort/});same(appState(),initialApp);
   checks.push('application package abort restores all application ACLs and policies');
   sql(prepared.sql);const appliedApp=appState();sql(prepared.sql);same(appState(),appliedApp);
+  checks.push('unreachable provider-owned PUBLIC privileges require no provider mutation');
   checks.push('exact application package preserves six tables/private ledgers and reapplies safely');
+  sql('grant usage on schema net to public');
+  sql(prepared.sql,{fail:/ACL catalog preconditions changed/});
+  sql('revoke usage on schema net from public');
+  checks.push('PUBLIC network functions become a blocker when schema reachability appears');
+  sql('grant consumer to buyer_writer_runtime with inherit true,set true');
+  sql(prepared.sql,{fail:/Writer membership drift/});
+  sql('revoke consumer from buyer_writer_runtime');
+  checks.push('inherited and SET-capable membership paths fail before application mutation');
   sql('grant select on net.http_request_queue to buyer_writer_runtime');
   const driftedApp=appState();sql(prepared.sql,{fail:/Partial or unexpected ACL state/});same(appState(),driftedApp);
   sql('revoke select on net.http_request_queue from buyer_writer_runtime');

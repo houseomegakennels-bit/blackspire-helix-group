@@ -1,6 +1,6 @@
-# Post-ACL acceptance sequence
+# Buyer Writer isolation acceptance sequence
 
-Status: production workflow replacement, database changes, canonical activation, real reads, merge and cutover remain held. The isolated scoped proof and host runtime ownership correction below do not authorize them. Provider ACL is a proven external boundary, but it is not the sole remaining rollback/acceptance requirement.
+Status: production workflow replacement, database changes, canonical activation, real reads, merge and cutover remain held. The isolated scoped proof and host runtime ownership correction below do not authorize them. Provider-owned ACL mutation is optional when fresh exact catalog and role evidence proves the privileges unreachable; any effective provider capability remains a hard blocker.
 
 ## Current executable preparation
 
@@ -21,7 +21,7 @@ The application package imposes a total transaction deadline and temporary exact
 
 ## Execution order and stopping conditions
 
-1. Verify provider-approved SQL hashes, scheduled administration window, recovery/backup evidence and fresh catalog match. Execute only through the authorized identity. The transaction must verify all preserved consumers, exact post-state, and present writer denials before COMMIT. Recheck committed state independently. Abort on drift; retain the exact rollback manifest.
+1. Capture a fresh read-only provider catalog and verify the dedicated roles' effective reachability. If the unchanged baseline passes, retain it without provider mutation. If any provider ACL replacement is still chosen, verify approved SQL hashes, the administration window and rollback evidence, execute only through authorized provider identity, and independently recheck the committed state. Abort on any drift.
 2. Provision the existing reviewed scoped writer SQL and separate issuer/runtime identities. Recheck least privilege after provisioning, including no unrelated table, sequence, function or inherited PUBLIC authority. Do not infer future-role denial from an ACL run where those identities were absent.
 3. Preserve the completed actual scoped rehearsal at `8645ab2`, recorded in the canonical source of truth. It uses disposable TLS PostgreSQL, real supervisors and the actual protected root activation entrypoint, with three committed activations, five-table writer/reconciliation, both role restarts/stale-binding denial and nonempty synthetic state preservation. Repeat only if runtime inputs change. It does not prove stale task-result rejection or six reads. The host's exact pinned Node ownership prerequisite is repaired without changing executable bytes.
 4. Complete secure Buyer intake continuity for immutable rollback `2c0b600`, plus the contained paired read harness. The legacy public webhook must never acquire privileged writer authority. Existing unsafe `/tmp/zola-final-six-read-runner.mjs` and `/tmp/zola-resume-supervise-reads.py` are not executable acceptance evidence.

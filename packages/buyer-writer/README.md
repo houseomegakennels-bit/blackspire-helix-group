@@ -185,9 +185,11 @@ database login, using test-only prepared psql calls, and verifies all five table
 The fixture matches the exercised Buyer column and unique-key semantics, but is
 not a full production database restore or the complete Nexus rehearsal.
 
-Before deployment, finish the real supervised activation rehearsal, secure n8n HTTP
-credentials and actual execution validation, provider-authorized extension ACL
-changes, and the immutable rollback intake bridge.
+Before deployment, obtain fresh read-only effective-role/catalog evidence, finish
+the real supervised activation rehearsal, secure n8n HTTP credentials and actual
+execution validation, and finish the immutable rollback intake bridge. Provider-
+authorized extension ACL replacement is optional hardening when the captured
+PUBLIC object privileges remain unreachable to all scoped writer roles.
 Keep the old protected workflow snapshot available. Do not switch the live
 workflow until its callers and the new writer have a reviewed coordinated path.
 All release gates, including actual six-read acceptance, remain required.
@@ -221,9 +223,10 @@ validation remain unfinished. Injected transports are not production source witn
 configuration. It never loads ambient PostgreSQL variables or credential files.
 TLS verification, actual role/catalog checks on every checkout, bounded admission,
 server lock/statement deadlines, connection destruction on failure and bounded
-shutdown fail closed. PUBLIC extension privileges count as effective authority;
-provider-owned ACLs must be corrected through authorized administration before
-production identities can pass these checks.
+shutdown fail closed. PUBLIC and inherited object privileges count as effective
+authority whenever their schema is reachable. Unreachable provider-owned defaults
+do not require mutation, but any later schema or membership expansion immediately
+causes checkout validation to fail before a gateway statement runs.
 
 `scripts/install-runtime-dependencies.js` installs only fresh unsealed copies with
 locked registry integrity, disabled lifecycle scripts and private empty npm

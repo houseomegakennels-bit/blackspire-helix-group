@@ -17,12 +17,18 @@ const signatures = {
 };
 const unavailable = () => new Error('Buyer writer database unavailable');
 
-// The PUBLIC grants of extensions count too. In particular pg_net access must
-// be removed through an authorized ACL migration before these LOGINs are safe.
+// ACLs inherited from PUBLIC or another role count whenever their schema is
+// reachable. Unreachable provider-owned defaults do not become writer authority.
 export const WRITER_IDENTITY_SQL = `select (
  session_user=$1 and current_user=$1
  and r.rolcanlogin and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls or r.rolinherit)
- and not exists(select from pg_auth_members where member=r.oid)
+ and (select count(*) from pg_auth_members om join pg_roles o on o.oid=om.roleid
+   where o.rolname='buyer_writer_owner' and not om.admin_option and om.inherit_option and om.set_option
+   and om.grantor=om.member)=1
+ and not exists(select from pg_auth_members m where (member=r.oid or roleid=r.oid)
+   and not(roleid=r.oid and m.admin_option and not m.inherit_option and not m.set_option
+    and m.member=(select om.member from pg_auth_members om join pg_roles o on o.oid=om.roleid
+      where o.rolname='buyer_writer_owner' and not om.admin_option and om.inherit_option and om.set_option and om.grantor=om.member)))
  and exists(select from pg_roles where rolname='buyer_writer_owner' and not(rolcanlogin or rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls or rolinherit))
  and has_schema_privilege(current_user,'buyer_writer','USAGE')
  and not exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(current_user,n.oid,'CREATE'))
@@ -35,13 +41,16 @@ export const WRITER_IDENTITY_SQL = `select (
    where n.nspname='buyer_writer' and has_function_privilege(current_user,p.oid,'EXECUTE') and not(p.oid=any(array(select to_regprocedure(s)::oid from unnest($2::text[]) s))))
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+   and has_schema_privilege(current_user,n.oid,'USAGE')
    and (has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') or has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
-   where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
-   and has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE'))
+   where n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+   and has_schema_privilege(current_user,n.oid,'USAGE')
+   and case when c.relkind='S' then has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE') else false end)
  and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
    where n.nspname not in('pg_catalog','information_schema','buyer_writer')
-   and (n.nspname='net' or (p.prosecdef and p.prorettype<>'event_trigger'::regtype and has_schema_privilege(current_user,n.oid,'USAGE')))
+   and (n.nspname='net' or (p.prosecdef and p.prorettype<>'event_trigger'::regtype))
+   and has_schema_privilege(current_user,n.oid,'USAGE')
    and has_function_privilege(current_user,p.oid,'EXECUTE'))
  and current_setting('statement_timeout')='10s' and current_setting('lock_timeout')='5s'
  and current_setting('search_path')='pg_catalog'

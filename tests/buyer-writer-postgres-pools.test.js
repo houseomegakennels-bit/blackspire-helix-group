@@ -7,6 +7,12 @@ import { createBuyerWriterPostgres, WRITER_IDENTITY_SQL } from '../packages/buye
 const connection = () => ({host:'database.invalid',port:5432,database:'writer_test',password:randomBytes(32).toString('base64url')});
 const apply='select buyer_writer.apply($1,$2,$3::jsonb) as result';
 const issue='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
+test('identity probe treats inherited and PUBLIC authority as capability only when its schema is reachable',()=>{
+  assert.match(WRITER_IDENTITY_SQL,/not exists\(select from pg_auth_members[^)]*member=r\.oid or roleid=r\.oid/s);
+  const networkGuard=WRITER_IDENTITY_SQL.slice(WRITER_IDENTITY_SQL.indexOf("and (n.nspname='net'"));
+  assert.ok(networkGuard.indexOf("has_schema_privilege(current_user,n.oid,'USAGE')")
+    <networkGuard.indexOf("has_function_privilege(current_user,p.oid,'EXECUTE')"));
+});
 function pools({unsafe=false,fail=false}={}) {
   const instances=[];
   class Pool extends EventEmitter {
