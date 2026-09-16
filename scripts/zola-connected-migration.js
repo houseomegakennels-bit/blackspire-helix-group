@@ -13,7 +13,7 @@ try{
  const [mode,inputFile,outputFile]=process.argv.slice(2);
  if(!['--prepare','--claim','--reconcile'].includes(mode))throw new Error();
  const input=readRootOwnedMetadataSnapshot(inputFile,{groupId:0}).value;
- const keys=['releaseSha','providerManifest','manifestBytes','body','expectedManifestSha256'];
+ const keys=['releaseSha','providerManifest','creatorOid','manifestBytes','body','expectedManifestSha256'];
  if(Object.keys(input).sort().join(',')!==[...keys,...(mode==='--reconcile'?['observationFile']:[])].sort().join(','))throw new Error();
  const plan=prepareConnectedBuyerMigration(input);
  verifyReleaseSource(input.releaseSha,{requireRemote:mode==='--claim'});

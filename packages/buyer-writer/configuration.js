@@ -60,8 +60,9 @@ export function validateBuyerWriterGatewayProvisioningConfiguration(value,{works
 export function validateBuyerWriterConfiguration(value,{workspace,environment='production',rehearsal}={}) {
   try {
     if(typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)
-      ||!exact(value,['version','workspace','bindingFile','writerCredential','issuerCredential','runtime','issuer'],['units','rehearsalFile'])
-      ||value.version!==1||value.workspace!==workspace||!canonicalPath(value.bindingFile))throw new Error();
+      ||!exact(value,['version','workspace','bindingFile','writerCredential','issuerCredential','creatorOid','runtime','issuer'],['units','rehearsalFile'])
+      ||value.version!==1||value.workspace!==workspace||!canonicalPath(value.bindingFile)
+      ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)throw new Error();
     for(const config of [value.runtime,value.issuer]){
       if(!exact(config,['host','port','database','password'],['ca'])||typeof config.host!=='string'||config.host.length>253
         ||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(config.host)||!Number.isInteger(config.port)||config.port<1||config.port>65535

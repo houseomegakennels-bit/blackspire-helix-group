@@ -159,12 +159,22 @@ legacy partial acquisition after failed Forsyth detail calls.
 The installer is separate from the already-reviewed Buyer/Nexus migrations. It
 does not provision login passwords or revoke the legacy browser grants itself.
 Its managed installer needs CREATEROLE, ownership of the five Buyer tables and
-schema creation authority. The NOLOGIN routine owner has only the required
+schema creation authority. Its session must supply
+`blackspire.buyer_writer_creator_oid` from the independently reviewed catalog;
+the SQL refuses name/database-owner rediscovery as a substitute. The NOLOGIN routine owner has only the required
 public column grants. PostgreSQL 17 creator ADMIN membership is accepted only
-for the trusted installer; runtime and issuer cannot inherit or assume other
-roles. Unexpected namespaces, role privileges and reachable external privileged
-functions are rejected. Future privilege drift still requires operational audit.
-Ordinary PUBLIC database facilities are not claimed to be completely revoked.
+for the independently pinned creator OID and bootstrap grantor; the schema keeps
+the installation-time creator pin and protected runtime configuration repeats it.
+Runtime and issuer cannot inherit or assume other roles. Every reachable
+non-system executable routine is rejected except the exact reviewed entrypoints;
+PUBLIC and inherited EXECUTE count when schema USAGE makes them reachable. The
+installer, application postcondition and checkout also reject schema/database
+CREATE, effective CONNECT to any connectable non-target database,
+relation/column/sequence drift, unexpected triggers on the eight touched
+relations, and exact routine body/language/attribute drift. Each fixed operation
+runs in one transaction behind digest-bound public/private relation locks and a
+fresh final identity predicate; the scoped logins receive no table-lock
+privilege. Future privilege drift still requires operational audit.
 
 Run the isolated database acceptance with Node 22.23.1 and Docker:
 
@@ -256,7 +266,9 @@ actual inherited systemd invocation identifier. Development/test entrypoints do
 not discover or load the production configuration.
 
 Configuration requires `version`, `workspace`, `bindingFile`, `writerCredential`,
-`issuerCredential`, `runtime` and `issuer`. Each database configuration has `host`,
+`issuerCredential`, `creatorOid`, `runtime` and `issuer`. `creatorOid` is copied
+from the separately reviewed creator-role catalog capture and is compared on every
+checkout; it is not discovered from the live role name at runtime. Each database configuration has `host`,
 `port`, `database`, `password` and optional `ca`; roles are fixed by the driver.
 Optional `units` overrides require verified staging identity or a separately protected, exactly matching isolated production rehearsal descriptor. Production defaults remain the canonical API and worker units.
 All four credentials must be distinct canonical 32-byte base64url values. Never

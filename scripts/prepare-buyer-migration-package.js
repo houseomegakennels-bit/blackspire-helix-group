@@ -9,7 +9,7 @@ try {
  if(process.versions.node!=='22.23.1'||process.getuid?.()!==0||process.argv.length!==4)throw new Error();
  const [configuration,output]=process.argv.slice(2);
  const input=readRootOwnedMetadataSnapshot(configuration,{groupId:0});
- if(Object.keys(input.value).sort().join(',')!=='providerManifest,releaseSha')throw new Error();
+ if(Object.keys(input.value).sort().join(',')!=='creatorOid,providerManifest,releaseSha')throw new Error();
  const root=fileURLToPath(new URL('..',import.meta.url));
  const gitArgs=['--no-replace-objects','-c','core.useReplaceRefs=false','-C',root];
  const gitOptions={encoding:'utf8',timeout:5000,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',GIT_NO_REPLACE_OBJECTS:'1'}};

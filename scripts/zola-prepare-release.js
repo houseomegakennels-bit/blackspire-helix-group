@@ -10,9 +10,9 @@ try{
  verifyReleaseSource(input.releaseSha);
  const n8n=readRootOwnedJson(input.n8nConfigurationFile,{groupId:0});
  const migration=readRootOwnedMetadataSnapshot(input.migrationConfigurationFile,{groupId:0}).value;
- if(Object.keys(migration).sort().join(',')!=='providerManifest,releaseSha'||migration.releaseSha!==input.releaseSha)throw new Error();
+ if(Object.keys(migration).sort().join(',')!=='creatorOid,providerManifest,releaseSha'||migration.releaseSha!==input.releaseSha)throw new Error();
  const backupBytes=readReleaseProtectedBytes(input.backupFile,2*1024*1024);
- const bundle=prepareOfflineReleaseBundle({releaseSha:input.releaseSha,n8nConfiguration:n8n,providerManifest:migration.providerManifest,backupBytes});
+ const bundle=prepareOfflineReleaseBundle({releaseSha:input.releaseSha,n8nConfiguration:n8n,providerManifest:migration.providerManifest,creatorOid:migration.creatorOid,backupBytes});
  verifyReleaseSource(input.releaseSha);
  const result=writeOfflineReleaseBundle(outputDirectory,bundle);
  verifyReleaseSource(input.releaseSha);

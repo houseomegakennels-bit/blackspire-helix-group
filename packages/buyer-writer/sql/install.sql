@@ -1,34 +1,64 @@
 -- Explicitly installed, separately reviewed writer schema. NOT a production
 -- migration runner input. No login/password provisioning or public RPC surface.
 begin;
+set local search_path=pg_catalog;
 set local lock_timeout='5s';
 set local statement_timeout='30s';
-do $$declare r text; bootstrap oid:=(select oid from pg_roles where rolname=current_user); begin
+do $$declare r text; bootstrap oid:=(select oid from pg_roles where rolname='postgres'); expected oid:=current_setting('blackspire.buyer_writer_creator_oid',true)::oid; created boolean; begin
+ if bootstrap is null or bootstrap<>(select oid from pg_roles where rolname=current_user)
+  or expected is null or bootstrap<>expected
+  or bootstrap<>(select datdba from pg_database where datname=current_database()) then
+  raise exception 'Trusted writer bootstrap relationship required';
+ end if;
  foreach r in array array['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'] loop
+  created:=false;
   if not exists(select from pg_roles where rolname=r) then
    -- PostgreSQL17 managed CREATEROLE automatically grants ADMIN to its
    -- creator. Only the trusted installer inherits/sets the NOLOGIN owner for
    -- ownership transfer; runtime/issuer never inherit or assume another role.
-   perform set_config('createrole_self_grant',case when r='buyer_writer_owner' then 'set,inherit' else '' end,true);
+   perform set_config('createrole_self_grant',case when r='buyer_writer_owner' then 'set' else '' end,true);
    execute format('create role %I nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls',r);
+   created:=true;
   end if;
-  if exists(select from pg_roles where rolname=r and (rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls or rolinherit or (r='buyer_writer_owner' and rolcanlogin)))
-     or exists(select from pg_auth_members m join pg_roles p on p.oid=m.roleid or p.oid=m.member where p.rolname=r
-      and not (m.roleid=p.oid and m.member=bootstrap and (
-        (m.admin_option and not m.inherit_option and not m.set_option)
-        or (r='buyer_writer_owner' and not m.admin_option and m.inherit_option and m.set_option and m.grantor=bootstrap)))) then
+  if created and not exists(select from pg_auth_members where roleid=to_regrole(r) and member=bootstrap) then
+   execute format('grant %I to postgres with admin true, inherit false, set %s granted by postgres',r,case when r='buyer_writer_owner' then 'true' else 'false' end);
+  elsif created and r='buyer_writer_owner' and not exists(select from pg_auth_members where roleid=to_regrole(r) and member=bootstrap and set_option) then
+   execute format('grant %I to postgres with admin false, inherit false, set true granted by postgres',r);
+  end if;
+  if exists(select from pg_roles where rolname=r and (rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls or rolinherit or (r='buyer_writer_owner' and rolcanlogin))) then
    raise exception 'Unsafe existing writer role';
   end if;
  end loop;
+ if (select count(*) from pg_auth_members m join pg_roles p on p.oid=m.roleid where p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')) not between 3 and 4
+  or (select count(distinct p.rolname) from pg_auth_members m join pg_roles p on p.oid=m.roleid
+   where p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and m.admin_option and not m.inherit_option
+   and (p.rolname='buyer_writer_owner' or not m.set_option) and m.grantor=10
+   and coalesce((select rolsuper from pg_roles where oid=10),false))<>3
+  or not exists(select from pg_auth_members m join pg_roles p on p.oid=m.roleid join pg_roles u on u.oid=m.member
+   where p.rolname='buyer_writer_owner' and u.rolname='postgres'
+   and u.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option and m.set_option)
+  or exists(select from pg_auth_members m join pg_roles p on p.oid=m.roleid join pg_roles u on u.oid=m.member
+   where (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') or u.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
+   and not (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
+    and u.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option
+    and ((m.admin_option and not m.set_option and m.grantor=10 and coalesce((select rolsuper from pg_roles where oid=10),false))
+     or (p.rolname='buyer_writer_owner' and m.set_option and pg_get_userbyid(m.grantor)='postgres')))) then
+  raise exception 'Trusted writer bootstrap relationship required';
+ end if;
 end$$;
 -- Reject namespace collisions and pre-existing privilege outside this component.
-do $$declare ns oid; r text; begin
+do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_writer_creator_oid',true)::oid; begin
  select oid into ns from pg_namespace where nspname='buyer_writer';
- if ns is not null then
-  if (select nspowner from pg_namespace where oid=ns)<>(select oid from pg_roles where rolname='buyer_writer_owner')
+ perform set_config('buyer_writer.schema_was_absent',(ns is null)::text,true);
+  if ns is not null then
+  if obj_description(ns,'pg_namespace') is distinct from
+      'blackspire-buyer-writer:v1:creator-oid='||expected::text
+   or (select nspowner from pg_namespace where oid=ns)<>(select oid from pg_roles where rolname='buyer_writer_owner')
    or exists(select from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a
       where n.oid=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')))
    or exists(select from pg_proc where pronamespace=ns and oid::regprocedure::text not in(
+     'buyer_writer.lock_public_scope()',
+     'buyer_writer.lock_scope()',
      'buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone)','buyer_writer.issue(uuid,uuid,text,text,boolean)','buyer_writer.issue(uuid,uuid,text,text,jsonb)','buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
      'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)',
      'buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.commit_buyers(buyer_writer.dispatches)',
@@ -38,8 +68,34 @@ do $$declare ns oid; r text; begin
      'dispatches_job_id_generation_key','receipts_pkey','sales_pkey'))
    or exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace=ns and not t.tgisinternal)
    or exists(select from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
-      where p.pronamespace=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))) then
+      where p.pronamespace=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
+       and not(p.oid::regprocedure::text='buyer_writer.lock_public_scope()' and a.grantee=expected)) then
    raise exception 'Unexpected existing writer namespace';
+  end if;
+  if exists(select from (values
+    ('buyer_writer.lock_public_scope()','8653f179e4814e4c73f6c337017ec6d8faa237ec5fe149e5307aebbc31c6d911','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','creator'),
+    ('buyer_writer.lock_scope()','d6b012ceae457702e804942d1bb04eeb9c922802de2751ebb56b065758627e39','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.criteria(jsonb)','578a1b4f9820b4380f3b8f2e18a4a9b85d5ad60f0ced1284a9641d1c907e5919','sql',false,array['search_path=pg_catalog'],'i','writer'),
+    ('buyer_writer.valid_context(jsonb)','a95cf4477dccce9adca8c52d057cfac50552a4c5be08be00e97f107858d4a7a3','plpgsql',false,array['search_path=pg_catalog'],'i','writer'),
+    ('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','929b93c1d6b48c1ba5078af0881a2aabe515ac633c4bc40f3bfb017c03e7d78e','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.cancel(uuid,uuid,text)','8b67a388bad04646f19977170d209f76ef0d86ace9f351d4599c5ec92ccdd71f','plpgsql',true,array['search_path=pg_catalog'],'v','writer'),
+    ('buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)','1c9edca5057194a129e23431ccf0c2d02f296a612e3dd4b9f54f9b1807c9adbe','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.valid_sale(jsonb)','e478ccb56ce5c121a895268c6f44caa7d3cf535306f8f22dd0db92e4fd98f4dd','plpgsql',false,array['search_path=pg_catalog'],'i','writer'),
+    ('buyer_writer.eligible(jsonb,jsonb)','3c15ee24e7c2a31adbfe8d39c737ad9560ef09c97c2f6786b848190be245fc05','sql',false,array['search_path=pg_catalog'],'i','writer'),
+    ('buyer_writer.commit_buyers(buyer_writer.dispatches)','503f8027fdb2992a466e8271467165a94b3b2b2ed96ff8507c59663cda6ae496','plpgsql',false,array['search_path=pg_catalog'],'v','writer'),
+    ('buyer_writer.apply(text,text,jsonb)','784c971700b19f0e2262f67d1e6fc1991079237d2631466f5c823a0b2338fd3c','plpgsql',true,array['search_path=pg_catalog','TimeZone=UTC','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.context(text,text,uuid,uuid,bigint)','44afc911defb0d273553fd78ab06960506257863b4ed392827b98cf689914ff2','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','3a5f587c8b6ff018ab6d5e91b339fc60b479d0250ea0a74c7d06935035e593de','plpgsql',true,array['search_path=pg_catalog'],'v','writer')
+   ) expected(signature,digest,language,security_definer,config,volatility,owner_kind)
+   left join pg_namespace pn on pn.nspname='buyer_writer'
+   left join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
+   left join pg_language l on l.oid=p.prolang
+   where p.oid is null or p.proowner<>case when expected.owner_kind='creator' then current_setting('blackspire.buyer_writer_creator_oid')::oid else (select oid from pg_roles where rolname='buyer_writer_owner') end
+    or p.prosecdef is distinct from expected.security_definer or l.lanname is distinct from expected.language
+    or encode(sha256(convert_to(p.prosrc,'UTF8')),'hex') is distinct from expected.digest
+    or p.proconfig is distinct from expected.config or p.provolatile::text is distinct from expected.volatility
+    or p.prokind<>'f' or p.proisstrict or p.proleakproof or p.proparallel<>'u') then
+   raise exception 'Writer routine definition drift';
   end if;
  end if;
  -- Target relations are always private even if schema USAGE is independently
@@ -61,26 +117,101 @@ do $$declare ns oid; r text; begin
   if exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
      where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
        and has_schema_privilege(r,n.oid,'USAGE')
-       and (has_table_privilege(r,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
-         or has_any_column_privilege(r,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
+       and case when c.relkind in('r','p','v','m','f') then
+        has_table_privilege(r,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+         or has_any_column_privilege(r,c.oid,'SELECT,INSERT,UPDATE,REFERENCES') else false end)
     or exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
        and has_schema_privilege(r,n.oid,'USAGE')
        and case when c.relkind='S' then has_sequence_privilege(r,c.oid,'SELECT,UPDATE,USAGE') else false end)
-    or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prosecdef and p.prorettype<>'event_trigger'::regtype
-      and n.nspname not in('pg_catalog','information_schema','buyer_writer')
-      and has_schema_privilege(r,n.oid,'USAGE') and has_function_privilege(r,p.oid,'EXECUTE'))
-    or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='net'
-      and has_schema_privilege(r,n.oid,'USAGE') and has_function_privilege(r,p.oid,'EXECUTE'))
-    or exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(r,n.oid,'CREATE')) then
-   raise exception 'Unexpected writer role privileges';
-  end if;
+     or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prorettype<>'event_trigger'::regtype
+      and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_temp'
+      and has_schema_privilege(r,n.oid,'USAGE') and has_function_privilege(r,p.oid,'EXECUTE')
+      and not (n.nspname='buyer_writer' and
+       ((r='buyer_writer_runtime' and p.oid::regprocedure::text in(
+        'buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'))
+       or (r='buyer_writer_issuer' and p.oid::regprocedure::text in(
+        'buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)')))))
+     or exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(r,n.oid,'CREATE'))
+     or has_database_privilege(r,current_database(),'CREATE') then raise exception 'Unexpected writer role privileges';end if;
  end loop;
+ if exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+    where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT')) then
+  raise exception 'Unexpected writer cross-database CONNECT privilege';
+ end if;
+ if exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
+    where not t.tgisinternal and (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))) then
+  raise exception 'Unexpected Buyer Writer relation trigger';
+ end if;
+ if exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+     and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE')
+     and case when c.relkind in('r','p','v','m','f') then
+      has_table_privilege('buyer_writer_owner',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') else false end
+     and n.nspname<>'buyer_writer')
+  or exists(select from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace
+    cross join (values('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) privilege(name)
+    where a.attnum>0 and not a.attisdropped and c.relkind in('r','p','v','m','f')
+     and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+     and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE')
+     and case when c.relkind in('r','p','v','m','f') then has_column_privilege('buyer_writer_owner',c.oid,a.attnum,privilege.name) else false end
+     and not (n.nspname='buyer_writer' or (n.nspname='public' and case
+      when c.relname='SearchJob' then (privilege.name='SELECT' and a.attname=any(array['id','user_id','state','county','property_type','date_range_start','date_range_end','min_purchases','cash_buyers_only','llc_buyers_only','status','updated_at'])) or (privilege.name='UPDATE' and a.attname=any(array['status','total_sales_analyzed','total_buyers_found','error_message','updated_at']))
+      when c.relname in('RawSale','CleanSale') then privilege.name='INSERT' and a.attname=any(array['search_job_id','buyer_name','seller_name','property_address','mailing_address','county','state','sale_price','sale_date','property_type','parcel_id','deed_type','lender_name'])
+      when c.relname='BuyerProfile' then (privilege.name='SELECT' and a.attname=any(array['id','buyer_name','mailing_address','county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at'])) or (privilege.name='INSERT' and a.attname=any(array['buyer_name','mailing_address','county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at'])) or (privilege.name='UPDATE' and a.attname=any(array['county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at']))
+      when c.relname='BuyerReport' then privilege.name='INSERT' and a.attname=any(array['search_job_id','buyer_profile_id','buyer_name_snapshot','mailing_address_snapshot','score','purchase_count','total_spend','is_llc','is_cash_buyer'])
+      else false end)))
+  or exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+     and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE')
+     and case when c.relkind='S' then has_sequence_privilege('buyer_writer_owner',c.oid,'SELECT,UPDATE,USAGE') else false end
+     and n.nspname<>'buyer_writer')
+  or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prorettype<>'event_trigger'::regtype
+    and n.nspname not in('pg_catalog','information_schema','buyer_writer') and n.nspname !~ '^pg_temp'
+    and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE') and has_function_privilege('buyer_writer_owner',p.oid,'EXECUTE'))
+  or exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and n.nspname<>'buyer_writer'
+    and has_schema_privilege('buyer_writer_owner',n.oid,'CREATE'))
+  or has_database_privilege('buyer_writer_owner',current_database(),'CREATE') then
+  raise exception 'Unexpected writer role privileges';
+ end if;
 end$$;
 create schema if not exists buyer_writer authorization buyer_writer_owner;
+set local role buyer_writer_owner;
+do $$declare expected oid:=current_setting('blackspire.buyer_writer_creator_oid',true)::oid; begin
+ if current_setting('buyer_writer.schema_was_absent')::boolean then
+  execute format('comment on schema buyer_writer is %L','blackspire-buyer-writer:v1:creator-oid='||expected::text);
+ end if;
+end$$;
 revoke all on schema buyer_writer from public,anon,authenticated;
 grant usage on schema buyer_writer to buyer_writer_runtime,buyer_writer_issuer;
+reset role;
 grant usage on schema public to buyer_writer_owner;
+
+-- The creator owns the public tables and installs their exact owner grants and
+-- policies. REFERENCES is needed only while the owner creates its private FK.
+grant select(id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,updated_at)
+ on public."SearchJob" to buyer_writer_owner;
+grant update(status,total_sales_analyzed,total_buyers_found,error_message,updated_at) on public."SearchJob" to buyer_writer_owner;
+grant references(id) on public."SearchJob" to buyer_writer_owner;
+grant insert(search_job_id,buyer_name,seller_name,property_address,mailing_address,county,state,sale_price,sale_date,property_type,parcel_id,deed_type,lender_name)
+ on public."RawSale",public."CleanSale" to buyer_writer_owner;
+grant insert(buyer_name,mailing_address,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,first_purchase_date,last_purchase_date,property_types,score,score_breakdown,parcel_ids,updated_at),
+ update(county,state,is_llc,is_cash_buyer,purchase_count,total_spend,first_purchase_date,last_purchase_date,property_types,score,score_breakdown,parcel_ids,updated_at),
+ select(id,buyer_name,mailing_address,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,first_purchase_date,last_purchase_date,property_types,score,score_breakdown,parcel_ids,updated_at) on public."BuyerProfile" to buyer_writer_owner;
+grant insert(search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer)
+ on public."BuyerReport" to buyer_writer_owner;
+do $$declare t text; begin
+ foreach t in array array['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport'] loop
+  execute format('drop policy if exists buyer_writer_internal on public.%I',t);
+  execute format('create policy buyer_writer_internal on public.%I to buyer_writer_owner using(true) with check(true)',t);
+ end loop;
+end$$;
+
+-- All component-owned DDL, including idempotent re-entry, runs as the NOLOGIN
+-- owner through the one pinned SET edge.
+set local role buyer_writer_owner;
 
 create table if not exists buyer_writer.dispatches (
  id uuid primary key default gen_random_uuid(),job_id uuid not null references public."SearchJob"(id),
@@ -109,24 +240,6 @@ create table if not exists buyer_writer.sales (
  row_digest text not null,data jsonb not null,ordinal bigint generated always as identity,
  primary key(dispatch_id,kind,row_digest)
 );
--- The NOLOGIN owner can only reach public Buyer columns needed by fixed routines.
-grant select(id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,updated_at)
- on public."SearchJob" to buyer_writer_owner;
-grant update(status,total_sales_analyzed,total_buyers_found,error_message,updated_at) on public."SearchJob" to buyer_writer_owner;
-grant insert(search_job_id,buyer_name,seller_name,property_address,mailing_address,county,state,sale_price,sale_date,property_type,parcel_id,deed_type,lender_name)
- on public."RawSale",public."CleanSale" to buyer_writer_owner;
-grant insert(buyer_name,mailing_address,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,first_purchase_date,last_purchase_date,property_types,score,score_breakdown,parcel_ids,updated_at),
- update(county,state,is_llc,is_cash_buyer,purchase_count,total_spend,first_purchase_date,last_purchase_date,property_types,score,score_breakdown,parcel_ids,updated_at),
- select(id,buyer_name,mailing_address,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,first_purchase_date,last_purchase_date,property_types,score,score_breakdown,parcel_ids,updated_at) on public."BuyerProfile" to buyer_writer_owner;
-grant insert(search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer)
- on public."BuyerReport" to buyer_writer_owner;
--- Policies grant only the isolated NOLOGIN routine owner, never the runtime or browser.
-do $$declare t text; begin
- foreach t in array array['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport'] loop
-  execute format('drop policy if exists buyer_writer_internal on public.%I',t);
-  execute format('create policy buyer_writer_internal on public.%I to buyer_writer_owner using(true) with check(true)',t);
- end loop;
-end$$;
 
 create or replace function buyer_writer.criteria(j jsonb) returns jsonb
 language sql immutable set search_path=pg_catalog as $$
@@ -470,6 +583,33 @@ begin
  return jsonb_build_object('found',result is not null,'receipt',result);
 end$$;
 
+-- Runtime obtains an atomic DDL fence without receiving table privileges. The
+-- pinned creator and NOLOGIN owner each own one digest-bound SECURITY DEFINER
+-- routine; their bodies can only lock their exact reviewed relation subsets.
+grant usage,create on schema buyer_writer to postgres;
+reset role;
+create or replace function buyer_writer.lock_public_scope() returns boolean
+language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
+begin
+ lock table public."SearchJob",public."RawSale",public."CleanSale",public."BuyerProfile",public."BuyerReport" in row exclusive mode;
+ return true;
+end
+$$;
+revoke all on function buyer_writer.lock_public_scope() from public,anon,authenticated,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;
+grant execute on function buyer_writer.lock_public_scope() to buyer_writer_owner;
+set local role buyer_writer_owner;
+revoke all on schema buyer_writer from postgres;
+create or replace function buyer_writer.lock_scope() returns boolean
+language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
+begin
+ perform buyer_writer.lock_public_scope();
+ lock table buyer_writer.dispatches,buyer_writer.receipts,buyer_writer.sales in row exclusive mode;
+ return true;
+end
+$$;
+revoke all on function buyer_writer.lock_scope() from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer;
+grant execute on function buyer_writer.lock_scope() to buyer_writer_runtime,buyer_writer_issuer;
+
 do $$declare t text; signature text; begin
  foreach t in array array['dispatches','receipts','sales'] loop
   execute format('alter table buyer_writer.%I owner to buyer_writer_owner',t);
@@ -490,4 +630,14 @@ do $$declare t text; signature text; begin
 end$$;
 grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid),buyer_writer.cancel(uuid,uuid,text),buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone) to buyer_writer_issuer;
 grant execute on function buyer_writer.context(text,text,uuid,uuid,bigint),buyer_writer.apply(text,text,jsonb),buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer) to buyer_writer_runtime;
+reset role;
+revoke references(id) on public."SearchJob" from buyer_writer_owner;
+do $$begin
+ if exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
+    where not t.tgisinternal and (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))) then
+  raise exception 'Unexpected Buyer Writer relation trigger';
+ end if;
+end$$;
 commit;

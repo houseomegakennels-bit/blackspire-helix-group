@@ -1,7 +1,10 @@
 import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
+import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareBuyerWriterExtensionAcl,buyerWriterExtensionPostcondition} from '../packages/buyer-writer/extension-acl.js';
+import {BUYER_WRITER_ROUTINES} from '../packages/buyer-writer/routine-policy.js';
 const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
 function fixture(){
  const roles=['postgres','supabase_admin','consumer'].map((name,i)=>({name,oid:String(i+10),superuser:false,inherit:true,login:false,createRole:false,createDb:false,replication:false,bypassRls:false}));
@@ -20,6 +23,27 @@ function fixture(){
  const effective=roles.flatMap(r=>objects.flatMap(o=>privileges(o).map(p=>[r.name,o.schema,o.name,o.kind,o.arguments,p,true,r.name===o.owner])));
  return{inventory,columns:{columns},effective:{effective,schemaEffective:roles.flatMap(r=>['extensions','net'].map(s=>[r.name,s,true,false]))}};
 }
+test('reviewed routine policy covers every installed body with an exact digest',()=>{
+ const source=readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
+ assert.match(source,/begin;\nset local search_path=pg_catalog;/);
+ assert.match(source,/current_setting\('blackspire\.buyer_writer_creator_oid',true\)::oid/);
+ assert.ok(source.indexOf('set local role buyer_writer_owner',source.indexOf('grant references(id)'))<source.indexOf('create table if not exists buyer_writer.dispatches'));
+ assert.ok(source.indexOf('revoke references(id) on public."SearchJob" from buyer_writer_owner')<source.lastIndexOf('commit;'));
+ assert.match(source,/blackspire-buyer-writer:v1:creator-oid=/);
+ assert.match(source,/has_table_privilege\('buyer_writer_owner',[\s\S]*MAINTAIN/);
+ assert.match(source,/has_column_privilege\('buyer_writer_owner'/);
+ assert.match(source,/has_sequence_privilege\('buyer_writer_owner'/);
+ assert.match(source,/r='buyer_writer_runtime'[\s\S]*buyer_writer\.apply\(text,text,jsonb\)/);
+ const bodies=[...source.matchAll(/create or replace function\s+([^\n]+)[\s\S]*?\bas \$\$([\s\S]*?)\$\$;/gi)];
+ assert.equal(bodies.length,BUYER_WRITER_ROUTINES.length);
+ for(const match of bodies){
+  const routineName=match[1].match(/^(buyer_writer\.[^(]+)/)?.[1];
+  const policy=BUYER_WRITER_ROUTINES.find(item=>item.signature.startsWith(routineName+'('));
+  assert.ok(policy,`missing policy for ${routineName}`);
+  assert.equal(createHash('sha256').update(match[2]).digest('hex'),policy.digest);
+  assert.ok(source.includes(`'${policy.signature}','${policy.digest}'`),`installer preflight missing ${policy.signature}`);
+ }
+});
 test('deterministic ACL package preserves prior edges/options and records only missing owner grants',()=>{
  const f=fixture(),p=prepareBuyerWriterExtensionAcl(f);assert.deepEqual(p,prepareBuyerWriterExtensionAcl(f));
  assert.equal(p.manifest.objects.length,17);assert.equal(p.manifest.publicEdges,33);assert.equal(p.manifest.addedEdges,66);
@@ -47,21 +71,38 @@ test('captured text cannot terminate the DO body and server version remains a pr
 
 test('application package cannot execute provider mutations and rejects fabricated manifest edges',()=>{
  const manifest=prepareBuyerWriterExtensionAcl(fixture()).manifest;
- const assertion=buyerWriterExtensionPostcondition(manifest);
+ const creatorOid=10;
+ const assertion=buyerWriterExtensionPostcondition(manifest,creatorOid);
  assert.doesNotMatch(assertion,/EXECUTE format|SET LOCAL ROLE|COMMIT;|Provider session authority required/);
  assert.match(assertion,/All scoped writer roles required/);
  assert.match(assertion,/Provider ACL baseline or replacement required/);
  assert.match(assertion,/has_schema_privilege\(writer_name,obj->>'schema','USAGE'\)/);
- const p=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest});
- assert.deepEqual(p,prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest}));
+ assert.match(assertion,/Unexpected reachable writer routine/);
+ assert.match(assertion,/Unexpected writer schema CREATE privilege/);
+ assert.match(assertion,/Unexpected writer database CREATE privilege/);
+ assert.match(assertion,/Unexpected writer cross-database CONNECT privilege/);
+ assert.match(assertion,/Unexpected Buyer Writer relation trigger/);
+ assert.match(assertion,/buyer_writer\.lock_scope\(\)/);
+ assert.match(assertion,/Unexpected writer relation privilege/);
+ assert.match(assertion,/Unexpected writer sequence privilege/);
+ assert.match(assertion,/Writer routine definition drift/);
+ assert.match(assertion,/Trusted writer bootstrap relationship required/);
+ assert.match(assertion,/u\.oid=\(SELECT datdba FROM pg_database WHERE datname=current_database\(\)\)/);
+ assert.match(assertion,/u\.oid=10::oid/);
+ assert.match(assertion,/blackspire-buyer-writer:v1:creator-oid=/);
+ const p=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest,creatorOid});
+ assert.deepEqual(p,prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest,creatorOid}));
  assert.match(p.sql,/transaction_timeout='120s'/);
  assert.ok(p.sql.indexOf("lock_timeout='5s'")<p.sql.indexOf('drop policy'));
  assert.equal((p.sql.match(/CREATE TEMP TABLE zola_rows_/g)||[]).length,9);
  assert.equal(p.manifest.productionApplied,false);
+ assert.equal(p.manifest.creatorOid,creatorOid);
  assert.equal(p.manifest.providerMutationPolicy,'optional-if-effective-isolation-passes');
  assert.ok(!p.manifest.requiredExternalGates.includes('verified-provider-execution-and-exclusive-window'));
  assert.match(p.manifest.migrationHistory,/does not record Supabase migration history/);
- assert.throws(()=>prepareBuyerMigrationPackage({releaseSha:'main',providerManifest:manifest}));
+ assert.throws(()=>prepareBuyerMigrationPackage({releaseSha:'main',providerManifest:manifest,creatorOid}));
+ assert.throws(()=>prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest}));
+ assert.throws(()=>buyerWriterExtensionPostcondition(manifest));
  const tampered=structuredClone(manifest);tampered.objects[0].after=[];
- assert.throws(()=>buyerWriterExtensionPostcondition(tampered),/ACL manifest drift/);
+ assert.throws(()=>buyerWriterExtensionPostcondition(tampered,creatorOid),/ACL manifest drift/);
 });

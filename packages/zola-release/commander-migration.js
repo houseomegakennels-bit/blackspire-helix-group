@@ -21,7 +21,7 @@ export function verifyReleaseMigrationPackage({releaseSha,configurationFile},{
    ||!path.isAbsolute(configurationFile)||path.resolve(configurationFile)!==configurationFile
    ||path.basename(configurationFile)!=='migration-input.json')reject();
   const configuration=readJson(configurationFile);
-  if(Object.keys(configuration).sort().join(',')!=='providerManifest,releaseSha'||configuration.releaseSha!==releaseSha)reject();
+  if(Object.keys(configuration).sort().join(',')!=='creatorOid,providerManifest,releaseSha'||configuration.releaseSha!==releaseSha)reject();
   const prepared=prepareBuyerMigrationPackage(configuration),root=path.dirname(configurationFile);
   const manifestBytes=readBytes(path.join(root,'migration-manifest.json'),2*1024*1024);
   const body=readBytes(path.join(root,'application-body.sql'),2*1024*1024);

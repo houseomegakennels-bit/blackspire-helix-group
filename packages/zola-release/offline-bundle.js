@@ -15,12 +15,12 @@ const reject=()=>{throw new Error('Offline release bundle rejected');};
 // Regenerate reviewed source bytes, never copy prior readiness claims or the
 // secret-bearing legacy workflow backup. Backup bytes are consumed only by the
 // existing strict transition planner; their digest binds the output.
-export function prepareOfflineReleaseBundle({releaseSha,n8nConfiguration,providerManifest,backupBytes}){
+export function prepareOfflineReleaseBundle({releaseSha,n8nConfiguration,providerManifest,creatorOid,backupBytes}){
  try{
   if(!/^[a-f0-9]{40}$/.test(releaseSha??'')||n8nConfiguration?.releaseSha!==releaseSha)reject();
   const workflow=prepareBuyerWorkflowPackage(n8nConfiguration);
   const transition=prepareN8nTransition({configuration:n8nConfiguration,backupBytes});
-  const migration=prepareBuyerMigrationPackage({releaseSha,providerManifest});
+  const migration=prepareBuyerMigrationPackage({releaseSha,providerManifest,creatorOid});
   const files={
    'n8n-configuration.json':json(n8nConfiguration),
    'n8n-manifest.json':workflow.manifestBytes,
@@ -28,7 +28,7 @@ export function prepareOfflineReleaseBundle({releaseSha,n8nConfiguration,provide
    'n8n-update.json':json(transition.payload),
    'n8n-rollback.json':json({method:'POST',pathname:`/api/v1/workflows/${WORKFLOW_ID}/deactivate`,body:{},
     prerequisite:'exact active candidate identity verified by executeN8nTransition',restoresLegacy:false}),
-   'migration-input.json':json({releaseSha,providerManifest}),
+   'migration-input.json':json({releaseSha,creatorOid,providerManifest}),
    'migration-manifest.json':migration.manifestBytes,
    'application.sql':migration.sql,
    'application-body.sql':migration.body,

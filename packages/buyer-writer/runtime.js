@@ -35,7 +35,7 @@ export async function createBuyerWriterRuntime({configurationFile,clientConfigur
       // tests. No production composition imports or defaults to PostgreSQL.
       config=validateBuyerWriterConfiguration(input,{workspace,environment,rehearsal});
       if(config.bindingFile===configurationFile)throw new Error();
-      database=await createPostgres({runtime:config.runtime,issuer:config.issuer});
+      database=await createPostgres({runtime:config.runtime,issuer:config.issuer,creatorOid:config.creatorOid});
       ingress=config;
     }else{
       config=validateBuyerWriterClientConfiguration(input,{workspace,environment});

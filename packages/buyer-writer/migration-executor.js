@@ -7,11 +7,11 @@ const plans=new WeakMap();
 // No credential discovery or gate override. The release commander owns the
 // protected file readers, exclusive window, fresh acceptance and session TLS.
 // Only byte-identical regenerated reviewed packages become executable plans.
-export function prepareBuyerMigrationExecution({releaseSha,providerManifest,manifestBytes,body,expectedManifestSha256,migrationVersion}) {
+export function prepareBuyerMigrationExecution({releaseSha,providerManifest,creatorOid,manifestBytes,body,expectedManifestSha256,migrationVersion}) {
   try {
     if(typeof manifestBytes!=='string'||typeof body!=='string'||!/^\d{14}$/.test(migrationVersion??'')
       ||digest(manifestBytes)!==expectedManifestSha256)throw new Error();
-    const prepared=prepareBuyerMigrationPackage({releaseSha,providerManifest});
+    const prepared=prepareBuyerMigrationPackage({releaseSha,providerManifest,creatorOid});
     if(prepared.manifestBytes!==manifestBytes||prepared.body!==body)throw new Error();
     const name=`zola_guarded_application_${releaseSha}`;
     const key=`zola:${releaseSha}:${digest(body)}`;

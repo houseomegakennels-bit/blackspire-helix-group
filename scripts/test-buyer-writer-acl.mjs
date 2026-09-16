@@ -24,6 +24,11 @@ const sql = (statement, { fail = false } = {}) => {
   assert.equal(r.status, 0, `isolated SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0, 600)}`);
   return r.stdout.trim();
 };
+const adminSql = statement => {
+  const r = run(['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'], statement);
+  assert.equal(r.status,0,`isolated admin SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0,600)}`);
+  return r.stdout.trim();
+};
 const cleanup = () => {
   if(!owned && creationAttempted) {
     // A create RPC can time out after daemon-side creation. It has not been
@@ -65,6 +70,9 @@ try {
   }
   assert.ok(ready,'isolated PostgreSQL readiness timed out');
   assert.match(sql('show server_version'),/^17\.6/);
+  sql('create role fixture_admin superuser login');
+  sql('create database writer_other');
+  sql('revoke connect on database postgres,template1,writer_other from public');
 
   // Inert stand-ins reproduce ACL semantics; no extension/network function runs.
   sql(`create role supabase_admin nologin;create role consumer nologin;create role observer nologin;
@@ -111,9 +119,8 @@ try {
   sql(plan.rollbackSql);same(capture(),baseline);checks.push('rollback reapplication is an exact no-op');
   sql('create role buyer_writer_runtime login noinherit;');
   sql(plan.rollbackSql,{fail:/Writer identities must be disabled and drained/});checks.push('rollback refuses enabled writer even when ACL is already original');
-  sql(plan.applySql);checks.push('apply denies extension privileges to newly present scoped writer');
-  sql(plan.rollbackSql,{fail:/Writer identities must be disabled and drained/});
-  sql('alter role buyer_writer_runtime nologin;');sql(plan.rollbackSql);
+  sql(plan.applySql,{fail:/All scoped writer roles required/});checks.push('provider transaction rejects a partial scoped-role installation');
+  sql('alter role buyer_writer_runtime nologin;');
   sql('drop role buyer_writer_runtime;');same(capture(),baseline);
   sql(`grant select("column$zola_acl$\\'") on net._http_response to consumer;`);const columnDrift=capture();
   sql(plan.applySql,{fail:/ACL catalog preconditions changed/});same(capture(),columnDrift);checks.push('column ACL drift fails before mutation');
@@ -129,18 +136,21 @@ try {
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/nexus.sql',import.meta.url),'utf8'));
   // Preserve the provider-owned PUBLIC object ACLs. Removing schema reachability
   // is sufficient isolation and is already the observed production shape.
+  const reachableBaselineAcl=makePlan();
   sql('revoke usage on schema net,extensions from public');
   const applicationAcl=makePlan();
-  const postcondition=buyerWriterExtensionPostcondition(applicationAcl.manifest);
+  const trustedCreatorOid=sql("select oid from pg_roles where rolname='postgres'");
+  const postcondition=buyerWriterExtensionPostcondition(applicationAcl.manifest,Number(trustedCreatorOid));
   sql('begin;'+postcondition+'commit;',{fail:/All scoped writer roles required/});
-  sql(readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8'));
+  const installSql=`set blackspire.buyer_writer_creator_oid=${literal(trustedCreatorOid)};`+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
+  sql(installSql);
   sql(`insert into public."SearchJob"(id,user_id,state,county,property_type) values
    ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000001','NC','Wake','land');
    insert into public."RawSale"(search_job_id,buyer_name) values ('00000000-0000-4000-8000-000000000010','PRESERVE');
    insert into public."CleanSale"(search_job_id,buyer_name) values ('00000000-0000-4000-8000-000000000010','PRESERVE');
    insert into public."BuyerProfile"(id,buyer_name) values ('00000000-0000-4000-8000-000000000011','PRESERVE');
    insert into public."BuyerReport"(search_job_id,buyer_profile_id) values ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000011');`);
-  const prepared=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:applicationAcl.manifest});
+  const prepared=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:applicationAcl.manifest,creatorOid:Number(trustedCreatorOid)});
   const appState=()=>sql(`select jsonb_agg(jsonb_build_array(c.oid,c.relacl,
    (select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p where p.schemaname='public' and p.tablename=c.relname)) order by c.oid)
    from pg_class c where c.relnamespace='public'::regnamespace and c.relkind='r'`);
@@ -151,22 +161,90 @@ try {
   sql(prepared.sql);const appliedApp=appState();sql(prepared.sql);same(appState(),appliedApp);
   checks.push('unreachable provider-owned PUBLIC privileges require no provider mutation');
   checks.push('exact application package preserves six tables/private ledgers and reapplies safely');
+  sql('grant usage on schema net,extensions to public');
+  const reachablePrepared=prepareBuyerMigrationPackage({releaseSha:'b'.repeat(40),providerManifest:reachableBaselineAcl.manifest,creatorOid:Number(trustedCreatorOid)});
+  sql(reachablePrepared.sql,{fail:/Unexpected writer (relation privilege|reachable writer routine|extension privilege)/});
+  sql('revoke usage on schema net,extensions from public');
+  checks.push('captured reachable provider baseline fails the release predicate');
   sql('grant usage on schema net to public');
-  sql(prepared.sql,{fail:/ACL catalog preconditions changed/});
+  sql(prepared.sql,{fail:/Unexpected writer (relation privilege|reachable writer routine|extension privilege)/});
   sql('revoke usage on schema net from public');
   checks.push('PUBLIC network functions become a blocker when schema reachability appears');
   sql('grant consumer to buyer_writer_runtime with inherit true,set true');
-  sql(prepared.sql,{fail:/Writer membership drift/});
+  sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
   sql('revoke consumer from buyer_writer_runtime');
   checks.push('inherited and SET-capable membership paths fail before application mutation');
+  sql(`revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres;
+   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to consumer with admin true,set false,inherit false;
+   set role consumer;
+   grant buyer_writer_owner to consumer with admin false,set true,inherit false granted by consumer;
+   reset role;`);
+  sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
+  sql(`revoke buyer_writer_owner from consumer granted by consumer;
+   revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from consumer granted by postgres;
+   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false;
+   grant buyer_writer_owner to postgres with admin true,set true,inherit false granted by postgres;
+   `);
+  checks.push('application preflight rejects creator and owner SET ROLE substitution');
+  for(const [grant,revoke,failure,label] of [
+    ['grant create on schema public to buyer_writer_runtime','revoke create on schema public from buyer_writer_runtime','Unexpected writer schema CREATE privilege','schema CREATE'],
+    ['grant create on database writer_test to buyer_writer_runtime','revoke create on database writer_test from buyer_writer_runtime','Unexpected writer database CREATE privilege','database CREATE'],
+    ['grant maintain on public."RawSale" to buyer_writer_runtime','revoke maintain on public."RawSale" from buyer_writer_runtime','Unexpected writer relation privilege','relation MAINTAIN'],
+    ['grant select(buyer_name) on public."BuyerProfile" to buyer_writer_runtime','revoke select(buyer_name) on public."BuyerProfile" from buyer_writer_runtime','Unexpected writer relation privilege','column privilege'],
+    ['grant usage on sequence buyer_writer.sales_ordinal_seq to buyer_writer_runtime','revoke usage on sequence buyer_writer.sales_ordinal_seq from buyer_writer_runtime','Unexpected writer sequence privilege','sequence privilege'],
+    ['grant create on schema public to buyer_writer_owner','revoke create on schema public from buyer_writer_owner','Unexpected writer schema CREATE privilege','owner schema CREATE'],
+    ['grant create on database writer_test to buyer_writer_owner','revoke create on database writer_test from buyer_writer_owner','Unexpected writer database CREATE privilege','owner database CREATE'],
+    ['grant select on public."RawSale" to buyer_writer_owner','revoke select on public."RawSale" from buyer_writer_owner','Unexpected writer relation privilege','owner relation privilege'],
+    ['grant select(error_message) on public."SearchJob" to buyer_writer_owner','revoke select(error_message) on public."SearchJob" from buyer_writer_owner','Unexpected writer relation privilege','owner column privilege'],
+    ['grant execute on function buyer_writer.valid_sale(jsonb) to buyer_writer_runtime','revoke execute on function buyer_writer.valid_sale(jsonb) from buyer_writer_runtime','Unexpected reachable writer routine','non-entrypoint Buyer Writer routine'],
+  ]){
+    sql(grant);sql(prepared.sql,{fail:new RegExp(failure)});sql(revoke);checks.push(`application preflight rejects ${label}`);
+  }
+  sql('grant connect on database writer_other to public');
+  sql(prepared.sql,{fail:/Unexpected writer cross-database CONNECT privilege/});
+  sql(installSql,{fail:/Unexpected writer cross-database CONNECT privilege/});
+  sql('revoke connect on database writer_other from public');
+  checks.push('application and installer reject effective PUBLIC CONNECT to a non-target database');
+  sql(`create function public.hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
+   create trigger hidden_trigger before insert on public."RawSale" for each row execute function public.hidden_trigger();
+   revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+  sql(prepared.sql,{fail:/Unexpected Buyer Writer relation trigger/});
+  sql(installSql,{fail:/Unexpected Buyer Writer relation trigger/});
+  sql('drop trigger hidden_trigger on public."RawSale";drop function public.hidden_trigger()');
+  checks.push('application and installer reject a hidden SECURITY DEFINER trigger on a touched relation');
+  sql('create sequence public.fixture_writer_sequence;grant usage on sequence public.fixture_writer_sequence to buyer_writer_owner');
+  sql(prepared.sql,{fail:/Unexpected writer sequence privilege/});sql('drop sequence public.fixture_writer_sequence');
+  checks.push('application preflight rejects owner sequence privilege');
+  for(const schema of ['extensions','public','other_reachable']){
+    if(schema==='extensions')sql('revoke select on extensions.pg_stat_statements,extensions.pg_stat_statements_info from public;grant usage on schema extensions to public');
+    if(schema==='other_reachable')sql(`create schema ${schema};grant usage on schema ${schema} to public`);
+    sql(`create function ${schema}.public_invoker() returns integer language sql as 'select 1'`);
+    sql(prepared.sql,{fail:/Unexpected reachable writer routine/});
+    sql(`drop function ${schema}.public_invoker()`);
+    if(schema==='extensions')sql('revoke usage on schema extensions from public;grant select on extensions.pg_stat_statements,extensions.pg_stat_statements_info to public');
+    if(schema==='other_reachable')sql(`drop schema ${schema}`);
+  }
+  checks.push('application preflight rejects reachable PUBLIC SECURITY INVOKER routines in extensions, public and another schema');
+  const contextDefinition=sql("select pg_get_functiondef('buyer_writer.context(text,text,uuid,uuid,bigint)'::regprocedure)");
+  sql('create trusted procedural language plpgsql_alias handler pg_catalog.plpgsql_call_handler inline pg_catalog.plpgsql_inline_handler validator pg_catalog.plpgsql_validator');
+  const languageDrift=contextDefinition.replace('LANGUAGE plpgsql','LANGUAGE plpgsql_alias');assert.notEqual(languageDrift,contextDefinition);
+  sql(languageDrift);sql(prepared.sql,{fail:/Writer routine definition drift/});sql(installSql,{fail:/Writer routine definition drift/});
+  sql(contextDefinition);sql('drop language plpgsql_alias');
+  checks.push('application and installer preflight reject allowlisted function language drift with unchanged body');
+  sql(`create or replace function buyer_writer.context(p_digest text,p_workspace text,p_job uuid,p_dispatch uuid,p_generation bigint)
+    returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$begin return '{}'::jsonb;end$$;`);
+  sql(prepared.sql,{fail:/Writer routine definition drift/});
+  sql(installSql,{fail:/Writer routine definition drift/});
+  sql(contextDefinition);
+  checks.push('application preflight rejects allowlisted function body drift');
   sql('grant select on net.http_request_queue to buyer_writer_runtime');
   const driftedApp=appState();sql(prepared.sql,{fail:/Partial or unexpected ACL state/});same(appState(),driftedApp);
   sql('revoke select on net.http_request_queue from buyer_writer_runtime');
   checks.push('application package rejects provider ACL drift before application mutation');
   sql('grant select on public."RawSale" to public');
-  const unsafeApp=appState();sql(prepared.sql,{fail:/Browser authority remains/});same(appState(),unsafeApp);
+  const unsafeApp=appState();sql(prepared.sql,{fail:/Unexpected writer relation privilege/});same(appState(),unsafeApp);
   sql('revoke select on public."RawSale" from public');
-  checks.push('application postconditions detect inherited browser authority and atomically abort');
+  checks.push('application preflight detects PUBLIC relation authority and atomically aborts before browser postconditions');
   sql('create policy unexpected_browser on public."SearchJob" for select to authenticated using(true)');
   const badPolicy=appState();sql(prepared.sql,{fail:/Unexpected SearchJob browser policy/});same(appState(),badPolicy);
   sql('drop policy unexpected_browser on public."SearchJob"');
@@ -204,5 +282,22 @@ try {
   checks.push('dedicated scoped writer succeeds across all five tables after packaged migrations, duplicate replay creates no rows');
   sql('begin;set local role consumer;'+postcondition+'commit;');
   checks.push('provider postcondition requires no superuser and performs no grant or revoke');
+  sql('revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by postgres');
+  adminSql(`alter role postgres rename to original_creator;
+   create role postgres superuser login;
+   alter database writer_test owner to postgres;
+   set role original_creator;
+   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by original_creator;
+   reset role;`);
+  assert.equal(sql("select oid from pg_roles where rolname='original_creator'"),trustedCreatorOid);
+  assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles u on u.oid=m.member
+   where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
+    and m.grantor=${trustedCreatorOid}::oid and m.admin_option and not m.inherit_option and not m.set_option`),'3');
+  sql(`grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres;
+   set role buyer_writer_owner;
+   comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v1:creator-oid='+sql("select oid from pg_roles where rolname='postgres'"))};
+   reset role;`);
+  sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
+  checks.push('application package rejects renamed and replaced creator OID despite substituted name, ownership, memberships and schema comment');
   console.log(JSON.stringify({status:'PASS',checks,objects:17,paidProviderCalls:0,productionMutations:0,environment:'isolated PostgreSQL 17.6; inert extension stand-ins'},null,2));
 } finally { cleanup(); }

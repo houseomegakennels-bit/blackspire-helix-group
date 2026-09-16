@@ -31,9 +31,9 @@ function fixture(){
 }
 
 const providerManifest=prepareBuyerWriterExtensionAcl(fixture()).manifest;
-const releaseSha='a'.repeat(40),migrationVersion='20260908000000';
-const prepared=prepareBuyerMigrationPackage({releaseSha,providerManifest});
-const args={releaseSha,providerManifest,manifestBytes:prepared.manifestBytes,body:prepared.body,
+const releaseSha='a'.repeat(40),migrationVersion='20260908000000',creatorOid=10;
+const prepared=prepareBuyerMigrationPackage({releaseSha,providerManifest,creatorOid});
+const args={releaseSha,providerManifest,creatorOid,manifestBytes:prepared.manifestBytes,body:prepared.body,
  expectedManifestSha256:createHash('sha256').update(prepared.manifestBytes).digest('hex'),migrationVersion};
 const plan=prepareBuyerMigrationExecution(args);
 const authorityDeps={acquireAuthority:async()=>({assertCurrent:async()=>{},close(){}})};
@@ -47,7 +47,7 @@ function completedLifecycle(){
 test('release adapter independently regenerates both migration transports and refuses changed protected bytes',()=>{
  const input={releaseSha,configurationFile:'/bundle/migration-input.json'};
  const files={'migration-manifest.json':prepared.manifestBytes,'application-body.sql':prepared.body,'application.sql':prepared.sql};
- const deps={readJson:()=>({releaseSha,providerManifest}),readBytes:file=>files[file.split('/').at(-1)]};
+ const deps={readJson:()=>({releaseSha,providerManifest,creatorOid}),readBytes:file=>files[file.split('/').at(-1)]};
  const proof=verifyReleaseMigrationPackage(input,deps);
  assert.equal(proof.productionAcceptance,false);assert.equal(proof.status,'PACKAGE_VERIFIED_EXECUTION_GATED');
  assert.equal(proof.connectedQuerySha256,prepareConnectedBuyerMigration(args).querySha256);
@@ -57,10 +57,11 @@ test('release adapter independently regenerates both migration transports and re
   assert.throws(()=>verifyReleaseMigrationPackage(input,deps),/preparation rejected/);files[file]=value;
  }
  assert.throws(()=>verifyReleaseMigrationPackage({...input,releaseSha:'b'.repeat(40)},deps));
+ assert.throws(()=>verifyReleaseMigrationPackage(input,{...deps,readJson:()=>({releaseSha,providerManifest,creatorOid:creatorOid+1})}));
  assert.throws(()=>verifyReleaseMigrationPackage({...input,configurationFile:'/bundle/../migration-input.json'},deps));
  let reads=0;
  assert.throws(()=>verifyReleaseMigrationPackage(input,{...deps,readBytes:file=>++reads>3?deps.readBytes(file)+' ':deps.readBytes(file)}));
- assert.throws(()=>verifyReleaseMigrationPackage(input,{...deps,readJson:()=>({releaseSha,providerManifest,approved:true})}));
+ assert.throws(()=>verifyReleaseMigrationPackage(input,{...deps,readJson:()=>({releaseSha,providerManifest,creatorOid,approved:true})}));
 });
 function session({prior=[],fail='',locked=true,actor='postgres',superuser=false,commitLost=false}={}){
  const calls=[];let history;
@@ -283,6 +284,8 @@ test('live admission fence is checked under advisory lock, immediately before bo
 
 
 test('connected migration binds exact body and leaves transaction/history to API',()=>{
+ const cli=fs.readFileSync(new URL('../scripts/zola-connected-migration.js',import.meta.url),'utf8');
+ assert.match(cli,/const keys=\['releaseSha','providerManifest','creatorOid','manifestBytes','body','expectedManifestSha256'\]/);
  const p=prepareConnectedBuyerMigration(args);
  assert.equal(p.request.project_id,'kchtrvfcixnimvxxctkj');
  assert.match(p.request.query,/^SET LOCAL statement_timeout='30s';/);

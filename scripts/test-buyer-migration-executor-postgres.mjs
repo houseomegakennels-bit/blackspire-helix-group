@@ -64,6 +64,8 @@ try {
   const bootstrap=run(['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','postgres','-v','ON_ERROR_STOP=1'],'CREATE ROLE postgres SUPERUSER LOGIN; ALTER DATABASE postgres OWNER TO postgres;');
   assert.equal(bootstrap.status,0,bootstrap.stderr?.slice(0,500));
   assert.match(sql('show server_version'),/^17\.6/);
+  sql('create database writer_other');
+  sql('revoke connect on database template1,writer_other from public');
 
   // Inert stand-ins reproduce ACL semantics; no extension/network function runs.
   sql(`create role supabase_admin nologin;create role consumer nologin;create role observer nologin;
@@ -108,12 +110,13 @@ try {
   const provider=makePlan();
   const apply=run(['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','postgres','-v','ON_ERROR_STOP=1'],provider.applySql);
   assert.equal(apply.status,0,apply.stderr?.slice(0,500));
-  sql(readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8'));
+  const creatorOid=sql("select oid from pg_roles where rolname='postgres'");
+  sql(`set blackspire.buyer_writer_creator_oid=${literal(creatorOid)};`+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8'));
   sql('CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,statements text[],name text,created_by text,idempotency_key text,rollback text[]);');
   const pid=JSON.parse(run(['inspect',containerId]).stdout)[0].State.Pid;
   assert.ok(Number.isSafeInteger(pid)&&pid>1);
   const proof=spawnSync('/usr/bin/nsenter',['--target',String(pid),'--net',process.execPath,'--max-old-space-size=256',new URL('./test-buyer-migration-executor-session.mjs',import.meta.url).pathname],{
-    input:JSON.stringify(provider.manifest),encoding:'utf8',timeout:90000,maxBuffer:1024*1024,
+    input:JSON.stringify({providerManifest:provider.manifest,creatorOid:Number(creatorOid)}),encoding:'utf8',timeout:90000,maxBuffer:1024*1024,
     env:{PATH:'/usr/bin:/bin',ZOLA_DISPOSABLE_EXECUTOR:'1',ZOLA_DISPOSABLE_NETNS:readlinkSync(`/proc/${pid}/ns/net`)},killSignal:'SIGKILL'});
   assert.equal(proof.status,0,proof.stderr?.slice(0,1200));
   console.log(proof.stdout.trim());

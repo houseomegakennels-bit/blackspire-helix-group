@@ -1,3 +1,5 @@
+import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES} from './routine-policy.js';
+
 // Explicit credentials only. No environment, credential file, database URL or
 // listener is loaded here. Deployment must supply the locked PostgreSQL driver.
 const statements = {
@@ -11,10 +13,8 @@ const statements = {
     'select buyer_writer.reconcile($1,$2,$3,$4,$5::timestamptz) as result',
   ]),
 };
-const signatures = {
-  runtime: ['buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'],
-  issuer: ['buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'],
-};
+const signatures = BUYER_WRITER_ENTRYPOINTS;
+const routinePolicy=JSON.stringify(BUYER_WRITER_ROUTINES);
 const unavailable = () => new Error('Buyer writer database unavailable');
 
 // ACLs inherited from PUBLIC or another role count whenever their schema is
@@ -22,39 +22,74 @@ const unavailable = () => new Error('Buyer writer database unavailable');
 export const WRITER_IDENTITY_SQL = `select (
  session_user=$1 and current_user=$1
  and r.rolcanlogin and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls or r.rolinherit)
- and (select count(*) from pg_auth_members om join pg_roles o on o.oid=om.roleid
-   where o.rolname='buyer_writer_owner' and not om.admin_option and om.inherit_option and om.set_option
-   and om.grantor=om.member)=1
- and not exists(select from pg_auth_members m where (member=r.oid or roleid=r.oid)
-   and not(roleid=r.oid and m.admin_option and not m.inherit_option and not m.set_option
-    and m.member=(select om.member from pg_auth_members om join pg_roles o on o.oid=om.roleid
-      where o.rolname='buyer_writer_owner' and not om.admin_option and om.inherit_option and om.set_option and om.grantor=om.member)))
+ and (select count(*) from pg_auth_members m join pg_roles role on role.oid=m.roleid
+   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')) between 3 and 4
+ and (select count(distinct role.rolname) from pg_auth_members m join pg_roles role on role.oid=m.roleid
+   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and m.admin_option and not m.inherit_option
+   and (role.rolname='buyer_writer_owner' or not m.set_option) and m.grantor=10
+   and coalesce((select rolsuper from pg_roles where oid=10),false))=3
+ and exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
+   where role.rolname='buyer_writer_owner' and member.rolname='postgres'
+   and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database())
+   and obj_description('buyer_writer'::regnamespace,'pg_namespace')='blackspire-buyer-writer:v1:creator-oid='||member.oid::text
+   and not m.inherit_option and m.set_option)
+ and not exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
+   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')
+   and not(member.rolname='postgres' and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option and (
+    (m.admin_option and not m.set_option and m.grantor=10 and coalesce((select rolsuper from pg_roles where oid=10),false))
+    or (role.rolname='buyer_writer_owner' and m.set_option and pg_get_userbyid(m.grantor)='postgres'))))
+ and not exists(select from pg_auth_members m join pg_roles member on member.oid=m.member
+   where member.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
  and exists(select from pg_roles where rolname='buyer_writer_owner' and not(rolcanlogin or rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls or rolinherit))
  and has_schema_privilege(current_user,'buyer_writer','USAGE')
  and not exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(current_user,n.oid,'CREATE'))
  and not has_database_privilege(current_user,current_database(),'CREATE')
+ and not exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+   where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT'))
+ and not exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
+   where not t.tgisinternal and (n.nspname,c.relname) in(
+    ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')))
  and coalesce((select bool_and(coalesce(has_function_privilege(current_user,to_regprocedure(s),'EXECUTE'),false)) from unnest($2::text[]) s),false)
- and not exists(select from unnest($2::text[]) s left join pg_proc p on p.oid=to_regprocedure(s)
-   where p.oid is null or p.proowner<>(select oid from pg_roles where rolname='buyer_writer_owner') or not p.prosecdef
-   or not coalesce(p.proconfig @> array['search_path=pg_catalog'],false))
- and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-   where n.nspname='buyer_writer' and has_function_privilege(current_user,p.oid,'EXECUTE') and not(p.oid=any(array(select to_regprocedure(s)::oid from unnest($2::text[]) s))))
+ and not exists(select from jsonb_to_recordset($3::jsonb) expected(signature text,digest text,language text,"securityDefiner" boolean,config text[],volatility text,owner text)
+   left join pg_proc p on p.oid=to_regprocedure(expected.signature) left join pg_language l on l.oid=p.prolang
+   where p.oid is null or p.proowner<>case when expected.owner='creator' then $4::oid else (select oid from pg_roles where rolname='buyer_writer_owner') end
+   or p.prosecdef is distinct from expected."securityDefiner" or l.lanname is distinct from expected.language
+   or encode(sha256(convert_to(p.prosrc,'UTF8')),'hex') is distinct from expected.digest
+   or p.proconfig is distinct from expected.config or p.provolatile::text is distinct from expected.volatility
+   or p.prokind<>'f' or p.proisstrict or p.proleakproof or p.proparallel<>'u')
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
    and has_schema_privilege(current_user,n.oid,'USAGE')
-   and (has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') or has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
+   and case when c.relkind in('r','p','v','m','f') then
+    has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+     or has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES') else false end)
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
    and has_schema_privilege(current_user,n.oid,'USAGE')
    and case when c.relkind='S' then has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE') else false end)
  and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-   where n.nspname not in('pg_catalog','information_schema','buyer_writer')
-   and (n.nspname='net' or (p.prosecdef and p.prorettype<>'event_trigger'::regtype))
-   and has_schema_privilege(current_user,n.oid,'USAGE')
-   and has_function_privilege(current_user,p.oid,'EXECUTE'))
+   cross join (values(current_user),('buyer_writer_owner')) w(role_name)
+   where n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_temp'
+   and p.prorettype<>'event_trigger'::regtype
+   and has_schema_privilege(w.role_name,n.oid,'USAGE')
+   and has_function_privilege(w.role_name,p.oid,'EXECUTE')
+   and not(
+    (w.role_name=current_user and p.oid=any(array(select to_regprocedure(s)::oid from unnest($2::text[]) s)))
+    or (w.role_name='buyer_writer_owner' and p.oid=any(array(select to_regprocedure(expected.signature)::oid
+      from jsonb_to_recordset($3::jsonb) expected(signature text))))))
  and current_setting('statement_timeout')='10s' and current_setting('lock_timeout')='5s'
  and current_setting('search_path')='pg_catalog'
 ) as safe from pg_roles r where r.rolname=$1`;
+
+const fenceSql=`with checked as materialized (${WRITER_IDENTITY_SQL})
+select checked.safe,case when checked.safe then buyer_writer.lock_scope() else false end as locked from checked`;
+const operationSql=text=>{
+  const shifted=text.replaceAll(/\$(\d+)/g,(_,n)=>`$${Number(n)+4}`);
+  return `with checked as materialized (${WRITER_IDENTITY_SQL})
+select checked.safe,case when checked.safe then operation.result end as result
+from checked cross join lateral (${shifted}) operation`;
+};
 
 function configuration(value,kind) {
   if(!value||typeof value!=='object'||Array.isArray(value)
@@ -74,9 +109,10 @@ function configuration(value,kind) {
   };
 }
 
-export async function createBuyerWriterPostgres({runtime,issuer,Pool}) {
+export async function createBuyerWriterPostgres({runtime,issuer,creatorOid,Pool}) {
   const configs={runtime:configuration(runtime,'runtime'),issuer:configuration(issuer,'issuer')};
-  if(runtime.password===issuer.password||runtime.host.toLowerCase()!==issuer.host.toLowerCase()
+  if(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295
+    ||runtime.password===issuer.password||runtime.host.toLowerCase()!==issuer.host.toLowerCase()
     ||runtime.port!==issuer.port||runtime.database!==issuer.database)throw unavailable();
   const pools={};const counts={runtime:0,issuer:0};const clients=new Set();
   let closed=false,healthy=true,closing;
@@ -97,7 +133,7 @@ export async function createBuyerWriterPostgres({runtime,issuer,Pool}) {
   const run=async(kind,text,values,probe=false)=>{
     if(closed||!healthy||counts[kind]>=configs[kind].max||(!probe&&(!statements[kind].has(text)||!Array.isArray(values))))throw unavailable();
     counts[kind]++;
-    let client,released=false,timer,expired=false;
+    let client,released=false,timer,expired=false,inTransaction=false;
     const release=destroy=>{
       if(!client||released)return;
       released=true;client.release(destroy);
@@ -110,16 +146,25 @@ export async function createBuyerWriterPostgres({runtime,issuer,Pool}) {
           client=await pools[kind].connect();
           if(expired||closed){release(true);throw unavailable();}
           clients.add(destroy);
-          const result=await client.query(WRITER_IDENTITY_SQL,[configs[kind].user,signatures[kind]]);
-          if(expired||closed||performance.now()>=deadline||result?.rows?.length!==1||result.rows[0]?.safe!==true)throw unavailable();
-          if(probe)return;
-          const written=await client.query(text,values);
+          const identityValues=[configs[kind].user,signatures[kind],routinePolicy,creatorOid];
+          if(probe){
+            const result=await client.query(WRITER_IDENTITY_SQL,identityValues);
+            if(expired||closed||performance.now()>=deadline||result?.rows?.length!==1||result.rows[0]?.safe!==true)throw unavailable();
+            return;
+          }
+          await client.query('begin');inTransaction=true;
+          const fenced=await client.query(fenceSql,identityValues);
+          if(expired||closed||performance.now()>=deadline||fenced?.rows?.length!==1||fenced.rows[0]?.safe!==true||fenced.rows[0]?.locked!==true)throw unavailable();
+          const written=await client.query(operationSql(text),[...identityValues,...values]);
+          if(expired||closed||performance.now()>=deadline||written?.rows?.length!==1||written.rows[0]?.safe!==true)throw unavailable();
+          await client.query('commit');inTransaction=false;
           if(expired||closed||performance.now()>=deadline)throw unavailable();
           return written;
         })(),
         new Promise((_,reject)=>{timer=setTimeout(()=>{expired=true;destroy();reject(unavailable());},14000);}),
       ]);
     }catch(error){
+      if(inTransaction&&!released)try{await client.query('rollback');}catch{}
       destroy();const safe=unavailable();
       if(['42501','23505','22023','22P02','22003','22008','54000'].includes(error?.code))safe.code=error.code;
       throw safe;

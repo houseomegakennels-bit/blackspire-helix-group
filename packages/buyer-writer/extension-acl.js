@@ -1,4 +1,5 @@
 import {EXTENSION_ACL_CATALOG_SQL} from './extension-acl-catalog.js';
+import {BUYER_WRITER_ROUTINES} from './routine-policy.js';
 const writers=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'];
 const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
 const privileges=o=>o.kind==='function'?['EXECUTE']:o.kind==='S'?['SELECT','UPDATE','USAGE']:['DELETE','INSERT','MAINTAIN','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE'];
@@ -64,14 +65,15 @@ export function prepareBuyerWriterExtensionAcl(input){
 // Read-only post-provider assertion for a separately reviewed application
 // transaction. It cannot grant/revoke or assume provider authority. Revalidate
 // untrusted manifests through the same generator before embedding any data.
-export function buyerWriterExtensionPostcondition(manifest){
+export function buyerWriterExtensionPostcondition(manifest,creatorOid){
+ if(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295)throw new Error('ACL manifest drift');
  const checked=prepareBuyerWriterExtensionAcl({inventory:manifest.baseline,columns:manifest.baseline,
   effective:{effective:manifest.effective,schemaEffective:manifest.schemaEffective}}).manifest;
  if(JSON.stringify(checked)!==JSON.stringify(manifest))throw new Error('ACL manifest drift');
- return transaction(checked,false,true);
+ return transaction(checked,false,true,creatorOid);
 }
 
-function transaction(manifest,rollback,verifyOnly=false){
+function transaction(manifest,rollback,verifyOnly=false,expectedCreatorOid){
  const serialized=JSON.stringify(manifest);
  let dataDelimiter='$zola_manifest$';
  for(let n=1;serialized.includes(dataDelimiter);n++)dataDelimiter=`$zola_manifest_${n}$`;
@@ -87,6 +89,7 @@ SET LOCAL statement_timeout='30s';`}
 DO ${delimiter}
 DECLARE
  m jsonb:=${dataDelimiter}${serialized}${dataDelimiter}::jsonb;
+ routine_policy jsonb:=$zola_routine_policy$${JSON.stringify(BUYER_WRITER_ROUTINES)}$zola_routine_policy$::jsonb;
  observed_catalog jsonb; base jsonb:=m->'baseline'; observed jsonb; obj jsonb; edge jsonb; item jsonb;
  before_ok boolean; after_ok boolean; change_needed boolean; allowed boolean; grantable boolean;
  initial_role text:=current_user; target text; target_oid oid; phase integer; writer_name text;
@@ -97,22 +100,129 @@ BEGIN
  END IF;`: `IF NOT coalesce((SELECT rolsuper FROM pg_roles WHERE rolname=session_user),false) THEN
   RAISE EXCEPTION 'Provider session authority required';
  END IF;`}
+ IF rollback_mode AND (EXISTS(SELECT FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') AND rolcanlogin)
+  OR EXISTS(SELECT FROM pg_stat_activity WHERE usename IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))) THEN
+  RAISE EXCEPTION 'Writer identities must be disabled and drained before ACL rollback';
+ END IF;
  FOR phase IN 0..1 LOOP
   ${EXTENSION_ACL_CATALOG_SQL.replace(') as metadata', ') INTO observed_catalog')};
+  IF (SELECT count(*) FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')) NOT IN (0,3) THEN
+   RAISE EXCEPTION 'All scoped writer roles required';
+  END IF;
   IF EXISTS(SELECT FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')
    AND (rolsuper OR rolinherit OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR (rolname='buyer_writer_owner' AND rolcanlogin))) THEN
    RAISE EXCEPTION 'Writer role drift';
   END IF;
-  IF EXISTS(SELECT FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid JOIN pg_roles u ON u.oid=a.member
-   WHERE (r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') OR u.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
-   AND NOT (r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') AND u.rolname='postgres'
-    AND ((a.admin_option AND NOT a.inherit_option AND NOT a.set_option)
-     OR (r.rolname='buyer_writer_owner' AND NOT a.admin_option AND a.inherit_option AND a.set_option AND pg_get_userbyid(a.grantor)='postgres')))) THEN
-   RAISE EXCEPTION 'Writer membership drift';
-  END IF;
-  IF rollback_mode AND (EXISTS(SELECT FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') AND rolcanlogin)
-   OR EXISTS(SELECT FROM pg_stat_activity WHERE usename IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))) THEN
-   RAISE EXCEPTION 'Writer identities must be disabled and drained before ACL rollback';
+  IF (SELECT count(*) FROM pg_roles WHERE rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))=3 THEN
+   IF (SELECT count(*) FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid
+       WHERE r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')) NOT BETWEEN 3 AND 4
+    OR (SELECT count(DISTINCT r.rolname) FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid
+       WHERE r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') AND a.admin_option AND NOT a.inherit_option
+       AND (r.rolname='buyer_writer_owner' OR NOT a.set_option) AND a.grantor=10
+       AND coalesce((SELECT rolsuper FROM pg_roles WHERE oid=10),false))<>3
+    OR NOT EXISTS(SELECT FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid JOIN pg_roles u ON u.oid=a.member
+       WHERE r.rolname='buyer_writer_owner' AND u.rolname='postgres'
+       ${expectedCreatorOid===undefined?'':`AND u.oid=${expectedCreatorOid}::oid`}
+       AND u.oid=(SELECT datdba FROM pg_database WHERE datname=current_database())
+       AND obj_description((SELECT oid FROM pg_namespace WHERE nspname='buyer_writer'),'pg_namespace')='blackspire-buyer-writer:v1:creator-oid='||u.oid::text
+       AND NOT a.inherit_option AND a.set_option)
+    OR EXISTS(SELECT FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid JOIN pg_roles u ON u.oid=a.member
+       WHERE (r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') OR u.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
+       AND NOT (r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') AND u.rolname='postgres'
+        ${expectedCreatorOid===undefined?'':`AND u.oid=${expectedCreatorOid}::oid`}
+        AND u.oid=(SELECT datdba FROM pg_database WHERE datname=current_database()) AND NOT a.inherit_option
+        AND ((a.admin_option AND NOT a.set_option AND a.grantor=10 AND coalesce((SELECT rolsuper FROM pg_roles WHERE oid=10),false))
+         OR (r.rolname='buyer_writer_owner' AND a.set_option AND pg_get_userbyid(a.grantor)='postgres')))) THEN
+    RAISE EXCEPTION 'Trusted writer bootstrap relationship required';
+   END IF;
+   IF EXISTS(SELECT FROM pg_namespace n CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+       WHERE n.nspname !~ '^pg_temp' AND has_schema_privilege(w.role_name,n.oid,'CREATE')
+       AND NOT (w.role_name='buyer_writer_owner' AND n.nspname='buyer_writer')) THEN
+    RAISE EXCEPTION 'Unexpected writer schema CREATE privilege';
+   END IF;
+   IF EXISTS(SELECT FROM (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+       WHERE has_database_privilege(w.role_name,current_database(),'CREATE')) THEN
+    RAISE EXCEPTION 'Unexpected writer database CREATE privilege';
+   END IF;
+   IF EXISTS(SELECT FROM pg_database d CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+       WHERE d.datname<>current_database() AND d.datallowconn AND has_database_privilege(w.role_name,d.oid,'CONNECT')) THEN
+    RAISE EXCEPTION 'Unexpected writer cross-database CONNECT privilege';
+   END IF;
+   IF EXISTS(SELECT FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+       WHERE NOT t.tgisinternal AND (n.nspname,c.relname) IN (
+        ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+        ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))) THEN
+    RAISE EXCEPTION 'Unexpected Buyer Writer relation trigger';
+   END IF;
+   IF EXISTS(SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+       CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+       WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_(toast|temp)'
+       AND has_schema_privilege(w.role_name,n.oid,'USAGE')
+       AND CASE WHEN c.relkind IN ('r','p','v','m','f') THEN
+        has_table_privilege(w.role_name,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') ELSE false END
+       AND NOT (w.role_name='buyer_writer_owner' AND n.nspname='buyer_writer')) THEN
+    RAISE EXCEPTION 'Unexpected writer relation privilege';
+   END IF;
+   IF EXISTS(SELECT FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+       CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+       CROSS JOIN (VALUES('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) privilege(name)
+       WHERE a.attnum>0 AND NOT a.attisdropped AND c.relkind IN ('r','p','v','m','f')
+       AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_(toast|temp)'
+       AND has_schema_privilege(w.role_name,n.oid,'USAGE')
+       AND CASE WHEN c.relkind IN ('r','p','v','m','f') THEN has_column_privilege(w.role_name,c.oid,a.attnum,privilege.name) ELSE false END
+       AND NOT (w.role_name='buyer_writer_owner' AND (n.nspname='buyer_writer' OR (n.nspname='public' AND CASE
+        WHEN c.relname='SearchJob' THEN (privilege.name='SELECT' AND a.attname=ANY(ARRAY['id','user_id','state','county','property_type','date_range_start','date_range_end','min_purchases','cash_buyers_only','llc_buyers_only','status','updated_at'])) OR (privilege.name='UPDATE' AND a.attname=ANY(ARRAY['status','total_sales_analyzed','total_buyers_found','error_message','updated_at']))
+        WHEN c.relname IN ('RawSale','CleanSale') THEN privilege.name='INSERT' AND a.attname=ANY(ARRAY['search_job_id','buyer_name','seller_name','property_address','mailing_address','county','state','sale_price','sale_date','property_type','parcel_id','deed_type','lender_name'])
+        WHEN c.relname='BuyerProfile' THEN (privilege.name='SELECT' AND a.attname=ANY(ARRAY['id','buyer_name','mailing_address','county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at'])) OR (privilege.name='INSERT' AND a.attname=ANY(ARRAY['buyer_name','mailing_address','county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at'])) OR (privilege.name='UPDATE' AND a.attname=ANY(ARRAY['county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at']))
+        WHEN c.relname='BuyerReport' THEN privilege.name='INSERT' AND a.attname=ANY(ARRAY['search_job_id','buyer_profile_id','buyer_name_snapshot','mailing_address_snapshot','score','purchase_count','total_spend','is_llc','is_cash_buyer'])
+        ELSE false END)))) THEN
+    RAISE EXCEPTION 'Unexpected writer relation privilege';
+   END IF;
+   IF EXISTS(SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+       CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+       WHERE c.relkind='S' AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_(toast|temp)'
+       AND has_schema_privilege(w.role_name,n.oid,'USAGE')
+       AND CASE WHEN c.relkind='S' THEN has_sequence_privilege(w.role_name,c.oid,'SELECT,UPDATE,USAGE') ELSE false END
+       AND NOT (w.role_name='buyer_writer_owner' AND n.nspname='buyer_writer')) THEN
+    RAISE EXCEPTION 'Unexpected writer sequence privilege';
+   END IF;
+   IF EXISTS(SELECT FROM jsonb_to_recordset(routine_policy) expected(signature text,digest text,language text,"securityDefiner" boolean,config text[],volatility text,owner text)
+       LEFT JOIN pg_namespace pn ON pn.nspname='buyer_writer'
+       LEFT JOIN pg_proc p ON p.pronamespace=pn.oid AND p.oid::regprocedure::text=expected.signature
+       LEFT JOIN pg_language l ON l.oid=p.prolang
+       WHERE p.oid IS NULL OR p.proowner<>CASE WHEN expected.owner='creator' THEN ${expectedCreatorOid===undefined?`(SELECT datdba FROM pg_database WHERE datname=current_database())`:`${expectedCreatorOid}::oid`} ELSE (SELECT oid FROM pg_roles WHERE rolname='buyer_writer_owner') END
+       OR p.prosecdef IS DISTINCT FROM expected."securityDefiner" OR l.lanname IS DISTINCT FROM expected.language
+       OR encode(sha256(convert_to(p.prosrc,'UTF8')),'hex') IS DISTINCT FROM expected.digest
+       OR p.proconfig IS DISTINCT FROM expected.config OR p.provolatile::text IS DISTINCT FROM expected.volatility
+       OR p.prokind<>'f' OR p.proisstrict OR p.proleakproof OR p.proparallel<>'u') THEN
+    RAISE EXCEPTION 'Writer routine definition drift';
+   END IF;
+   IF NOT has_schema_privilege('buyer_writer_runtime','buyer_writer','USAGE')
+    OR NOT has_schema_privilege('buyer_writer_issuer','buyer_writer','USAGE')
+    OR EXISTS(SELECT FROM unnest(ARRAY['buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)']) s
+       LEFT JOIN pg_proc p ON p.oid::regprocedure::text=s
+        AND p.pronamespace=(SELECT oid FROM pg_namespace WHERE nspname='buyer_writer')
+       WHERE p.oid IS NULL OR NOT has_function_privilege('buyer_writer_runtime',p.oid,'EXECUTE'))
+    OR EXISTS(SELECT FROM unnest(ARRAY['buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)']) s
+       LEFT JOIN pg_proc p ON p.oid::regprocedure::text=s
+        AND p.pronamespace=(SELECT oid FROM pg_namespace WHERE nspname='buyer_writer')
+       WHERE p.oid IS NULL OR NOT has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE')) THEN
+    RAISE EXCEPTION 'Writer entrypoint privilege drift';
+   END IF;
+   IF EXISTS(SELECT FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+       WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_temp' AND p.prorettype<>'event_trigger'::regtype
+       AND has_schema_privilege(w.role_name,n.oid,'USAGE') AND has_function_privilege(w.role_name,p.oid,'EXECUTE')
+       AND NOT (
+        (w.role_name='buyer_writer_owner' AND p.oid::regprocedure::text IN
+          (SELECT x.signature FROM jsonb_to_recordset(routine_policy) x(signature text)))
+        OR (w.role_name='buyer_writer_runtime' AND p.oid::regprocedure::text IN
+          ('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'))
+        OR (w.role_name='buyer_writer_issuer' AND p.oid::regprocedure::text IN
+          ('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'))
+       )) THEN
+    RAISE EXCEPTION 'Unexpected reachable writer routine';
+   END IF;
   END IF;
   observed_catalog:=jsonb_set(observed_catalog,'{roles}',(SELECT jsonb_agg(value ORDER BY ord) FROM jsonb_array_elements(observed_catalog->'roles') WITH ORDINALITY t(value,ord)
    WHERE value->>'name' NOT IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')));

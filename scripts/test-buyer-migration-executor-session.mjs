@@ -15,13 +15,14 @@ assert.deepEqual(fs.readFileSync('/proc/net/dev','utf8').trim().split('\n').slic
 assert.equal(fs.readFileSync('/proc/net/route','utf8').trim().split('\n').length,1);
 // Child of the owned --network=none container's network namespace. Only
 // loopback exists. Inputs are synthetic catalogs, never production credentials.
-const providerManifest=JSON.parse(fs.readFileSync(0,'utf8'));
+const {providerManifest,creatorOid}=JSON.parse(fs.readFileSync(0,'utf8'));
 assert.equal(providerManifest.baseline.database,'postgres');
+assert.ok(Number.isInteger(creatorOid)&&creatorOid>0);
 const clients=[];
 const connect=async user=>{const c=new pg.Client({host:'127.0.0.1',port:5432,user:user??'postgres',database:'postgres',connectionTimeoutMillis:2000,query_timeout:35000});await c.connect();clients.push(c);return c;};
 const makePlan=(letter,version)=>{
- const releaseSha=letter.repeat(40),p=prepareBuyerMigrationPackage({releaseSha,providerManifest});
- return prepareBuyerMigrationExecution({releaseSha,providerManifest,body:p.body,manifestBytes:p.manifestBytes,
+ const releaseSha=letter.repeat(40),p=prepareBuyerMigrationPackage({releaseSha,providerManifest,creatorOid});
+ return prepareBuyerMigrationExecution({releaseSha,providerManifest,creatorOid,body:p.body,manifestBytes:p.manifestBytes,
   expectedManifestSha256:createHash('sha256').update(p.manifestBytes).digest('hex'),migrationVersion:version});
 };
 const checks=[];
@@ -54,8 +55,8 @@ try{
  await assert.rejects(executeBuyerMigration({client,plan,mode:'reconcile'}),e=>e.code==='MIGRATION_FAILED');
  checks.push('tampered history rejected');
 
- const connectedSha='d'.repeat(40),packageD=prepareBuyerMigrationPackage({releaseSha:connectedSha,providerManifest});
- const connected=prepareConnectedBuyerMigration({releaseSha:connectedSha,providerManifest,body:packageD.body,manifestBytes:packageD.manifestBytes,
+ const connectedSha='d'.repeat(40),packageD=prepareBuyerMigrationPackage({releaseSha:connectedSha,providerManifest,creatorOid});
+ const connected=prepareConnectedBuyerMigration({releaseSha:connectedSha,providerManifest,creatorOid,body:packageD.body,manifestBytes:packageD.manifestBytes,
   expectedManifestSha256:createHash('sha256').update(packageD.manifestBytes).digest('hex')});
  const observe=async()=>{
   const results=await client.query(connected.reconciliationQuery);
@@ -65,8 +66,8 @@ try{
  await locker.query('BEGIN; SELECT pg_advisory_xact_lock(206994,125)');
  await client.query('BEGIN');await assert.rejects(client.query(connected.request.query),/competing execution/);await client.query('ROLLBACK');
  await locker.query('ROLLBACK');
- const packageA=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest});
- const afterNative=prepareConnectedBuyerMigration({releaseSha:'a'.repeat(40),providerManifest,body:packageA.body,manifestBytes:packageA.manifestBytes,
+ const packageA=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest,creatorOid});
+ const afterNative=prepareConnectedBuyerMigration({releaseSha:'a'.repeat(40),providerManifest,creatorOid,body:packageA.body,manifestBytes:packageA.manifestBytes,
   expectedManifestSha256:createHash('sha256').update(packageA.manifestBytes).digest('hex')});
  await client.query('BEGIN');await assert.rejects(client.query(afterNative.request.query),/already recorded/);await client.query('ROLLBACK');
  checks.push('connected execution refuses competing backend and existing native history');
@@ -84,8 +85,8 @@ try{
  await client.query('BEGIN');await assert.rejects(client.query(connected.request.query),/already recorded/);await client.query('ROLLBACK');
  await assert.rejects(executeBuyerMigration({client,plan:makePlan('d','20260908000004'),mode:'apply'}),e=>e.code==='MIGRATION_FAILED');
  checks.push('connected envelope actual PG atomic body/history, row preservation, exact reconciliation, duplicate and cross-transport rejection');
- const freshSha='e'.repeat(40),packageE=prepareBuyerMigrationPackage({releaseSha:freshSha,providerManifest});
- const fresh=prepareConnectedBuyerMigration({releaseSha:freshSha,providerManifest,body:packageE.body,manifestBytes:packageE.manifestBytes,
+ const freshSha='e'.repeat(40),packageE=prepareBuyerMigrationPackage({releaseSha:freshSha,providerManifest,creatorOid});
+ const fresh=prepareConnectedBuyerMigration({releaseSha:freshSha,providerManifest,creatorOid,body:packageE.body,manifestBytes:packageE.manifestBytes,
   expectedManifestSha256:createHash('sha256').update(packageE.manifestBytes).digest('hex')});
  // Splitting SET LOCAL away from the DO cannot silently lose timeout guards.
  await assert.rejects(client.query(fresh.request.query.slice(fresh.request.query.indexOf('DO $zola_connected$'))),/one API-owned transaction/);

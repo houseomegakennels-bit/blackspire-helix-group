@@ -11,9 +11,9 @@ export const ZOLA_SUPABASE_PROJECT='kchtrvfcixnimvxxctkj';
 // the native executor's transaction wrapper through it. One DO statement also
 // keeps the guarded body atomic if an endpoint changes its batching behavior.
 // This prepares a request, not permission to bypass the enclosing release gates.
-export function prepareConnectedBuyerMigration({releaseSha,providerManifest,manifestBytes,body,expectedManifestSha256}){
+export function prepareConnectedBuyerMigration({releaseSha,providerManifest,creatorOid,manifestBytes,body,expectedManifestSha256}){
  try{
-  const regenerated=prepareBuyerMigrationPackage({releaseSha,providerManifest});
+  const regenerated=prepareBuyerMigrationPackage({releaseSha,providerManifest,creatorOid});
   if(regenerated.manifestBytes!==manifestBytes||regenerated.body!==body||digest(manifestBytes)!==expectedManifestSha256)refuse();
   const name=`zola_guarded_connected_${releaseSha}`;
   // Both delimiters are chosen from the exact bytes, and explicitly checked.

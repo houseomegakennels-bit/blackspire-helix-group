@@ -6,7 +6,7 @@ import {activateBuyerWriterFromProfile} from '../packages/buyer-writer/activatio
 function fixture(){
   const context={filename:'/etc/blackspire/binding.json',credentialGroupId:984,workspace:'isolated',releaseSha:'a'.repeat(40),apiGeneration:'b'.repeat(32),apiUid:994,apiPid:111,workerUid:993,apiUnit:'blackspire-command.service',workerUnit:'blackspire-command-worker.service',artifactRoot:'/opt/blackspire/releases/'+'a'.repeat(40),environment:'production',host:'127.0.0.1',port:8789};
   const profile={version:1,configurationFile:'/etc/blackspire/config.json',context};
-  const config={version:1,workspace:'isolated',bindingFile:context.filename,writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),runtime:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')},issuer:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')}};
+  const config={version:1,workspace:'isolated',bindingFile:context.filename,writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),creatorOid:16384,runtime:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')},issuer:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')}};
   const events=[];const options={filename:'/etc/blackspire/profile.json',
     verifyContainer:async()=>{events.push('container');},
     readSnapshot:(filename,{groupId})=>{events.push('read');assert.equal(groupId,filename==='/etc/blackspire/profile.json'?0:984);return{value:structuredClone(filename==='/etc/blackspire/profile.json'?profile:config),identity:{ino:1}};},

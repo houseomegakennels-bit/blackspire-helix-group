@@ -32,7 +32,7 @@ test('production targets, descriptor drift and labels alone cannot authorize a r
 });
 test('production unit override requires the exact protected-descriptor proof rather than a copied approval object',()=>{
   const f=fixture();
-  Object.assign(f.config,{version:1,workspace:'isolated',writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url')});
+  Object.assign(f.config,{version:1,workspace:'isolated',writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),creatorOid:16384});
   for(const target of [f.config.runtime,f.config.issuer])target.password=randomBytes(32).toString('base64url');
   const proof=validateBuyerWriterRehearsal(f.descriptor,f.config,f.context);
   assert.deepEqual(validateBuyerWriterConfiguration(f.config,{workspace:'isolated',environment:'production',rehearsal:proof}).units,f.config.units);

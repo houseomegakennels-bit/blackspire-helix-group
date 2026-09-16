@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {validateBuyerWriterConfiguration} from '../packages/buyer-writer/configuration.js';
-const fixture=()=>({version:1,workspace:'isolated',bindingFile:'/etc/blackspire/writer-binding.json',writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),
+const fixture=()=>({version:1,workspace:'isolated',bindingFile:'/etc/blackspire/writer-binding.json',writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),creatorOid:16384,
   runtime:{host:'isolated.example.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')},
   issuer:{host:'isolated.example.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')}});
 test('explicit configuration preserves separate scoped identities without consulting ambient settings',()=>{
@@ -23,7 +23,7 @@ test('malformed scope, paths, secrets, database settings and unexpected fields f
     v=>{v.workspace='other';},v=>{v.extra='PRIVATE';},v=>{v.bindingFile='/etc/blackspire/../writer.json';},
     v=>{v.bindingFile='relative.json';},v=>{v.bindingFile='/';},v=>{v.writerCredential='PRIVATE';},
     v=>{v.runtime.password='x'.repeat(43);},v=>{v.runtime.port=0;},v=>{v.runtime.host='host/path';},
-    v=>{v.runtime.ca='PRIVATE';},v=>{delete v.issuer;},
+    v=>{v.runtime.ca='PRIVATE';},v=>{delete v.issuer;},v=>{v.creatorOid=0;},v=>{v.creatorOid='16384';},
   ]){const value=fixture();mutate(value);assert.throws(()=>validateBuyerWriterConfiguration(value,{workspace:'isolated'}),error=>error.message==='Buyer writer configuration rejected'&&!error.cause);}
 });
 test('only verified staging configuration accepts a distinct noncanonical unit pair',()=>{

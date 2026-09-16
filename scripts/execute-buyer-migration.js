@@ -22,7 +22,7 @@ try {
   // entrypoint deliberately remains validation-only so it cannot bypass them.
   if(mode!=='--dry-run')throw new Error();
   const input=readRootOwnedMetadataSnapshot(inputPath,{groupId:0}).value;
-  if(Object.keys(input).sort().join(',')!=='body,databaseConfigPath,expectedManifestSha256,manifestBytes,migrationVersion,providerManifest,releaseSha')throw new Error();
+  if(Object.keys(input).sort().join(',')!=='body,creatorOid,databaseConfigPath,expectedManifestSha256,manifestBytes,migrationVersion,providerManifest,releaseSha')throw new Error();
   const plan=prepareBuyerMigrationExecution(input);
   const root=fileURLToPath(new URL('..',import.meta.url));
   const options={encoding:'utf8',timeout:5000,maxBuffer:1024*1024,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',GIT_NO_REPLACE_OBJECTS:'1'}};

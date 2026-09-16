@@ -32,7 +32,7 @@ function input(){
  const backup={id:WORKFLOW_ID,name:'PRIVATE_LEGACY_VALUE',nodes:[],connections:{},settings:{},active:true,versionId,activeVersionId:versionId,
   activeVersion:{workflowId:WORKFLOW_ID,versionId,nodes:[],connections:{}}};
  const backupBytes=JSON.stringify(backup);
- return{releaseSha,backupBytes,providerManifest:prepareBuyerWriterExtensionAcl(fixture()).manifest,n8nConfiguration:{version:1,workflowId:WORKFLOW_ID,
+ return{releaseSha,creatorOid:10,backupBytes,providerManifest:prepareBuyerWriterExtensionAcl(fixture()).manifest,n8nConfiguration:{version:1,workflowId:WORKFLOW_ID,
   workflowVersion:versionId,releaseSha,backupSha256:digest(backupBytes),gatewayOrigin:'https://jarvis.blackspirehelix.com',webhookId:'buyer-engine',ingressCredentialId:'intake',writerCredentialId:'writer'}};
 }
 test('bundle regenerates exact-SHA packages without carrying backup secrets or live readiness claims',()=>{
@@ -51,7 +51,7 @@ test('bundle regenerates exact-SHA packages without carrying backup secrets or l
 });
 test('mixed SHA, unresolved references, backup drift and provider manifest drift refuse without diagnostic leakage',()=>{
  for(const change of [c=>c.n8nConfiguration.releaseSha='b'.repeat(40),c=>c.n8nConfiguration.writerCredentialId=null,
-  c=>c.backupBytes+=' ',c=>c.providerManifest.publicEdges=0,c=>c.n8nConfiguration.secret='PRIVATE_VALUE']){
+  c=>c.backupBytes+=' ',c=>c.providerManifest.publicEdges=0,c=>c.creatorOid=0,c=>c.n8nConfiguration.secret='PRIVATE_VALUE']){
   const c=input();change(c);assert.throws(()=>prepareOfflineReleaseBundle(c),{message:'Offline release bundle rejected'});
  }
 });

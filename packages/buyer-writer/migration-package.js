@@ -8,14 +8,16 @@ const migrations=[
 ];
 const tables=['public."SearchJob"','public."RawSale"','public."CleanSale"','public."BuyerProfile"','public."BuyerReport"','public.nexus_contacts',
  'buyer_writer.dispatches','buyer_writer.receipts','buyer_writer.sales'];
+const applicationTables=tables.slice(0,6);
+const privateTables=tables.slice(6);
 const digest=s=>createHash('sha256').update(s).digest('hex');
 // No network, credential discovery, provisioning or production execution. The
 // caller must supply a fresh read-only provider catalog capture and satisfy the
 // remaining release gates. Provider mutation is not required when the scoped
 // writer roles cannot reach provider-owned objects through schema access.
-export function prepareBuyerMigrationPackage({releaseSha,providerManifest}){
- if(!/^[a-f0-9]{40}$/.test(releaseSha??''))throw new Error('Release SHA rejected');
- const providerCheck=buyerWriterExtensionPostcondition(providerManifest);
+export function prepareBuyerMigrationPackage({releaseSha,providerManifest,creatorOid}){
+ if(!/^[a-f0-9]{40}$/.test(releaseSha??'')||!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295)throw new Error('Release SHA rejected');
+ const providerCheck=buyerWriterExtensionPostcondition(providerManifest,creatorOid);
  const source=migrations.map(([file,sha256])=>{
   const bytes=readFileSync(new URL('../../frontend/supabase/migrations/'+file,import.meta.url));
   if(digest(bytes)!==sha256)throw new Error('Reviewed migration drift');
@@ -23,13 +25,13 @@ export function prepareBuyerMigrationPackage({releaseSha,providerManifest}){
  }).join('\n');
  // Exact row multisets, not counts/hashes. Only temporary transaction-local
  // copies are made. Table locks prevent concurrent writers during comparison.
- const snapshots=tables.map((t,i)=>`CREATE TEMP TABLE zola_rows_${i} ON COMMIT DROP AS SELECT to_jsonb(t) AS row FROM ${t} t;`).join('\n');
- const preservation=tables.map((t,i)=>`IF EXISTS((SELECT row FROM pg_temp.zola_rows_${i} EXCEPT ALL SELECT to_jsonb(t) FROM ${t} t)
-  UNION ALL (SELECT to_jsonb(t) FROM ${t} t EXCEPT ALL SELECT row FROM pg_temp.zola_rows_${i})) THEN
+ const snapshots=(selected,offset)=>selected.map((t,i)=>`CREATE TEMP TABLE zola_rows_${i+offset} ON COMMIT DROP AS SELECT to_jsonb(t) AS row FROM ${t} t;`).join('\n');
+ const preservation=(selected,offset)=>selected.map((t,i)=>`IF EXISTS((SELECT row FROM pg_temp.zola_rows_${i+offset} EXCEPT ALL SELECT to_jsonb(t) FROM ${t} t)
+  UNION ALL (SELECT to_jsonb(t) FROM ${t} t EXCEPT ALL SELECT row FROM pg_temp.zola_rows_${i+offset})) THEN
   RAISE EXCEPTION 'Migration row preservation failed';END IF;`).join('\n');
  const writerAcl=`SELECT jsonb_build_object(
- 'classes',(SELECT jsonb_agg(jsonb_build_array(c.oid,c.relowner,c.relacl) ORDER BY c.oid) FROM pg_class c WHERE c.relnamespace='buyer_writer'::regnamespace),
- 'functions',(SELECT jsonb_agg(jsonb_build_array(p.oid,p.proowner,p.proacl,p.proconfig,md5(pg_get_functiondef(p.oid))) ORDER BY p.oid) FROM pg_proc p WHERE p.pronamespace='buyer_writer'::regnamespace),
+ 'classes',(SELECT jsonb_agg(jsonb_build_array(c.oid,c.relowner,c.relacl) ORDER BY c.oid) FROM pg_class c WHERE c.relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='buyer_writer')),
+ 'functions',(SELECT jsonb_agg(jsonb_build_array(p.oid,p.proowner,p.proacl,p.proconfig,md5(pg_get_functiondef(p.oid))) ORDER BY p.oid) FROM pg_proc p WHERE p.pronamespace=(SELECT oid FROM pg_namespace WHERE nspname='buyer_writer')),
  'columns',(SELECT jsonb_agg(jsonb_build_array(a.attrelid,a.attnum,a.attacl) ORDER BY a.attrelid,a.attnum) FROM pg_attribute a WHERE a.attrelid IN (${tables.slice(0,5).map(t=>`'${t}'::regclass`).join(',')}) AND a.attnum>0 AND NOT a.attisdropped)
  ) AS value`;
  const browserCheck=`DO $zola_browser$
@@ -60,14 +62,24 @@ SET LOCAL statement_timeout='30s';
 SET LOCAL transaction_timeout='120s';
 SET LOCAL idle_in_transaction_session_timeout='10s';
 ${providerCheck}
-LOCK TABLE ${tables.join(',')} IN ACCESS EXCLUSIVE MODE;
-${snapshots}
+LOCK TABLE ${applicationTables.join(',')} IN ACCESS EXCLUSIVE MODE;
+${snapshots(applicationTables,0)}
+SET LOCAL ROLE buyer_writer_owner;
+LOCK TABLE ${privateTables.join(',')} IN ACCESS EXCLUSIVE MODE;
+${snapshots(privateTables,applicationTables.length)}
+RESET ROLE;
 CREATE TEMP TABLE zola_writer_acl ON COMMIT DROP AS ${writerAcl};
 ${source}
+SET LOCAL ROLE buyer_writer_owner;
+DO $zola_private_rows$
+BEGIN
+${preservation(privateTables,applicationTables.length)}
+END $zola_private_rows$;
+RESET ROLE;
 DO $zola_rows$
 DECLARE observed jsonb;
 BEGIN
-${preservation}
+${preservation(applicationTables,0)}
 ${writerAcl.replace(' AS value',' INTO observed')};
 IF observed IS DISTINCT FROM (SELECT value FROM pg_temp.zola_writer_acl) THEN
  RAISE EXCEPTION 'Private writer authority changed';END IF;
@@ -80,7 +92,7 @@ ${providerCheck}
 BEGIN;
 ${body}COMMIT;
 `;
- const manifest={version:1,status:'prepared-not-applied',releaseSha,providerManifestSha256:digest(JSON.stringify(providerManifest)),
+ const manifest={version:1,status:'prepared-not-applied',releaseSha,creatorOid,providerManifestSha256:digest(JSON.stringify(providerManifest)),
   providerMutationPolicy:'optional-if-effective-isolation-passes',
   preparationEnvironment:'clean release source checkout only; not executable from sealed runtime archive',
   migrationSources:migrations.map(([file,sha256])=>({file,sha256})),sqlSha256:digest(sql),bodySha256:digest(body),

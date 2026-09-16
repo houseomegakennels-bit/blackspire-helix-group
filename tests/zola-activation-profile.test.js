@@ -12,7 +12,7 @@ function fixture(){
   const runtime={api:{supervisor:api.supervisor,invocationId:'b'.repeat(32),controlGroup:'/system.slice/'+apiUnit},worker:{pid:20,invocationId:'c'.repeat(32),controlGroup:'/system.slice/'+workerUnit}};
   const input={releaseSha,configurationFile:'/etc/blackspire/writer.json'};
   const secret=()=>randomBytes(32).toString('base64url');
-  const config={version:1,workspace:'blackspire-command',bindingFile:'/etc/blackspire/binding.json',writerCredential:secret(),issuerCredential:secret(),runtime:{host:'db.test',port:5432,database:'postgres',password:secret()},issuer:{host:'db.test',port:5432,database:'postgres',password:secret()}};
+  const config={version:1,workspace:'blackspire-command',bindingFile:'/etc/blackspire/binding.json',writerCredential:secret(),issuerCredential:secret(),creatorOid:16384,runtime:{host:'db.test',port:5432,database:'postgres',password:secret()},issuer:{host:'db.test',port:5432,database:'postgres',password:secret()}};
   const options={uid:0,run:async()=>({stdout:'10\n',stderr:''}),collect:({role})=>structuredClone(role==='api'?api:worker),
     inspectFactory:()=>async()=>structuredClone(runtime),resolveIdentity:async()=>({uid:900,credentialGroupId:901,workerUid:902}),
     readSnapshot:()=>({identity:{ino:1},value:structuredClone(config)}),inspectArtifact:async()=>({releaseSha,environment:'production',artifactDigest:'d'.repeat(64)})};

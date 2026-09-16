@@ -57,7 +57,7 @@ export async function repinExactHeadN8n({releaseSha,priorInputFile},{transportFa
  writeProtected(path.join(directory,'n8n-input.json'),n8n);writeProtected(path.join(directory,'migration-input.json'),migration);
  const input={releaseSha,n8nConfigurationFile:path.join(directory,'n8n-input.json'),migrationConfigurationFile:path.join(directory,'migration-input.json'),backupFile};
  const inputFile=path.join(directory,'input.json');writeProtected(inputFile,input);
- const bundle=prepareOfflineReleaseBundle({releaseSha,n8nConfiguration:n8n,providerManifest:migration.providerManifest,backupBytes});
+ const bundle=prepareOfflineReleaseBundle({releaseSha,n8nConfiguration:n8n,providerManifest:migration.providerManifest,creatorOid:migration.creatorOid,backupBytes});
  const result=writeOfflineReleaseBundle(path.join(directory,'bundle'),bundle);
  verifyReleaseSource(releaseSha);
  const report={...result,inputFile,bundleDirectory:path.join(directory,'bundle'),backupFile,n8nState:observed.state,

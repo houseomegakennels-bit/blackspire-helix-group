@@ -5,13 +5,13 @@ import http from 'node:http';
 import {createBuyerWriterRuntime} from '../packages/buyer-writer/runtime.js';
 function fixture(){
   const releaseSha='a'.repeat(40),apiGeneration='b'.repeat(32),workerGeneration='c'.repeat(32);
-  const config={version:1,workspace:'isolated',bindingFile:'/etc/blackspire/binding.json',writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),runtime:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')},issuer:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')}};
+  const config={version:1,workspace:'isolated',bindingFile:'/etc/blackspire/binding.json',writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),creatorOid:16384,runtime:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')},issuer:{host:'isolated.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')}};
   const base={ok:true,service:'blackspire-command-api',lifecycle:'ready',database:'available',emergencyStop:false,deploymentIdentity:{state:'VERIFIED',build:{value:releaseSha},environment:{value:'disposable-staging'}},dependencies:{worker:{required:true,ok:true,state:'idle',heartbeatAgeMs:1,generationId:workerGeneration}}};
   let closes=0,reads=0,poolCreates=0,healthy=true,approved=false;
   const options={configurationFile:'/etc/blackspire/config.json',workspace:'isolated',releaseSha,apiGeneration,environment:'disposable-staging',getHealth:()=>base,getReadiness:()=>base,
     resolveIdentity:async()=>({uid:994,credentialGroupId:984,workerUid:993}),
     readConfiguration:(filename,options)=>{assert.equal(filename,'/etc/blackspire/config.json');assert.equal(options.groupId,984);reads++;return config;},
-    createPostgres:async values=>{poolCreates++;assert.deepEqual(values.runtime,config.runtime);return{runtimeQuery:async()=>({rows:[]}),issuerQuery:async()=>({rows:[]}),isHealthy:()=>healthy,close:async()=>{closes++;}};},
+    createPostgres:async values=>{poolCreates++;assert.deepEqual(values.runtime,config.runtime);assert.equal(values.creatorOid,config.creatorOid);return{runtimeQuery:async()=>({rows:[]}),issuerQuery:async()=>({rows:[]}),isHealthy:()=>healthy,close:async()=>{closes++;}};},
     createBinding:values=>{assert.equal(values.workerUid,993);assert.equal(values.filename,config.bindingFile);return async()=>approved?{approved:true,credentialsSeparated:true,workspace:'isolated',releaseSha,apiGeneration,workerGeneration}:null;},
   };
   return{config,base,options,counts:()=>({closes,reads,poolCreates}),approve:()=>{approved=true;},unhealthy:()=>{healthy=false;}};

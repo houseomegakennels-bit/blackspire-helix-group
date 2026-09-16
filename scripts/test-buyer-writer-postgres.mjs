@@ -7,8 +7,7 @@ import { createBuyerWriterHttpServer } from '../packages/buyer-writer/http.js';
 import { planBuyerWrites } from '../packages/buyer-writer/plan.js';
 import { normalizeBuyerSales } from '../packages/buyer-writer/normalize.js';
 import { WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
-import { BUYER_WRITER_GATEWAY_IDENTITY_SQL } from '../packages/buyer-writer/local-gateway-postgres.js';
-import { BUYER_WRITER_PRODUCTION_VERIFY_SQL } from '../packages/buyer-writer/production-verifier.js';
+import { BUYER_WRITER_ENTRYPOINTS, BUYER_WRITER_ROUTINES } from '../packages/buyer-writer/routine-policy.js';
 assert.equal(process.versions.node, '22.23.1');
 const image = process.env.BUYER_WRITER_TEST_IMAGE;
 assert.match(image ?? '', /^postgres@sha256:[a-f0-9]{64}$/);
@@ -22,6 +21,11 @@ const sql = (statement, { fail = false, permissionDenied = false } = {}) => {
   const r = run(['exec','-i',name,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'], statement);
   if (fail) { assert.notEqual(r.status, 0, 'expected database denial'); assert.match(r.stderr ?? '', permissionDenied ? /ERROR:  permission denied/ : /ERROR:/, 'denial must be the expected PostgreSQL error'); return; }
   assert.equal(r.status, 0, `isolated SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0, 600)}`);
+  return r.stdout.trim();
+};
+const adminSql = statement => {
+  const r = run(['exec','-i',name,'psql','-X','-qAt','-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'], statement);
+  assert.equal(r.status,0,`isolated admin SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0,600)}`);
   return r.stdout.trim();
 };
 const cleanup = () => {
@@ -91,7 +95,7 @@ const apply = (d, operation, payload = {}, overrides = {}, fail = false) => {
 };
 try {
   creationAttempted=true;
-  const created = run(['create','--name',name,'--label','blackspire.disposable=buyer-writer-test','--label',`blackspire.test-owner=${ownership}`,'--network','none','--read-only','--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/var/lib/postgresql/data:rw,size=192m','--tmpfs','/var/run/postgresql:rw,size=8m','--tmpfs','/tmp:rw,size=16m','-e','POSTGRES_HOST_AUTH_METHOD=trust','-e','POSTGRES_DB=writer_test',image]);
+  const created = run(['create','--name',name,'--label','blackspire.disposable=buyer-writer-test','--label',`blackspire.test-owner=${ownership}`,'--network','none','--read-only','--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/var/lib/postgresql/data:rw,size=192m','--tmpfs','/var/run/postgresql:rw,size=8m','--tmpfs','/tmp:rw,size=16m','-e','POSTGRES_USER=fixture_admin','-e','POSTGRES_HOST_AUTH_METHOD=trust','-e','POSTGRES_DB=writer_test',image]);
   assert.equal(created.status,0,'isolated PostgreSQL container creation failed');
   containerId=created.stdout.trim();assert.match(containerId,/^[a-f0-9]{64}$/);
   const container = JSON.parse(run(['inspect',containerId]).stdout)[0];
@@ -102,10 +106,13 @@ try {
   assert.equal(run(['start',containerId]).status,0,'isolated PostgreSQL container failed to start');
   let ready = false;
   for (let i=0;i<60;i++) {
-    if (run(['exec',name,'sh','-c','test "$(cat /proc/1/comm)" = postgres && pg_isready -U postgres -d writer_test']).status===0) { ready=true;break; }
+    if (run(['exec',name,'sh','-c','test "$(cat /proc/1/comm)" = postgres && pg_isready -U fixture_admin -d writer_test']).status===0) { ready=true;break; }
     await new Promise(r=>setTimeout(r,500));
   }
   assert.ok(ready,'isolated PostgreSQL readiness timed out');
+  adminSql('create role postgres superuser login;alter database writer_test owner to postgres;');
+  adminSql('create database writer_other');
+  sql('revoke connect on database postgres,template1,writer_other from public');
   assert.match(sql('show server_version'),/^17\.6/);
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/schema.sql',import.meta.url),'utf8'));
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/nexus.sql',import.meta.url),'utf8'));
@@ -126,111 +133,21 @@ try {
     assert.equal(snapshot(),before);assert.equal(acl(),beforeAcl);
     sql('begin;'+migrations+'commit;');assert.equal(snapshot(),before);
   });
-  sql('create role fixture_manager nologin nosuperuser createrole;grant create on database writer_test to fixture_manager;grant usage,create on schema public to fixture_manager;');
-  for(const table of ['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport'])sql(`alter table public."${table}" owner to fixture_manager`);
-  const installSql='set session authorization fixture_manager;'+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
-  const writerFunctions={
-    runtime:['buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'],
-    issuer:['buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'],
-  };
-  const gatewayIdentity=(kind='runtime')=>{
-    const user=`buyer_writer_${kind}`;
-    return role(user,`set local statement_timeout='10s';set local lock_timeout='5s';set local search_path=pg_catalog;
-      prepare zola_gateway_identity(text,text[]) as ${BUYER_WRITER_GATEWAY_IDENTITY_SQL};
-      execute zola_gateway_identity(${literal(user)},array[${writerFunctions[kind].map(literal).join(',')}]);`);
-  };
-  sql(`create role fixture_provider_owner nologin;create schema provider_fixture authorization fixture_provider_owner;
-    create schema provider_sequence_fixture authorization fixture_provider_owner;
-    create schema provider_routine_fixture authorization fixture_provider_owner;
-    set role fixture_provider_owner;create table provider_fixture.unrelated(id integer,private_value text);
-    create sequence provider_sequence_fixture.unrelated_seq;
-    create function provider_routine_fixture.unrelated() returns integer language sql security definer as 'select 1';
-    grant select on provider_fixture.unrelated to public;grant update(private_value) on provider_fixture.unrelated to public;reset role;
-    revoke all on schema provider_fixture,provider_sequence_fixture,provider_routine_fixture from public`);
-  const providerAcl=()=>sql(`select jsonb_build_object(
-    'relation',(select relacl from pg_class where oid='provider_fixture.unrelated'::regclass),
-    'column',(select attacl from pg_attribute where attrelid='provider_fixture.unrelated'::regclass and attname='private_value'),
-    'sequence',(select relacl from pg_class where oid='provider_sequence_fixture.unrelated_seq'::regclass),
-    'schemas',(select jsonb_agg(jsonb_build_array(nspname,nspacl) order by nspname) from pg_namespace
-      where nspname in('provider_fixture','provider_sequence_fixture','provider_routine_fixture')))`);
-  check('installer accepts unreachable unrelated PUBLIC relation and column grants without mutation authority',()=>{
-    const before=providerAcl();
-    assert.equal(sql("select pg_get_userbyid(relowner)<>'fixture_manager' and not has_table_privilege('fixture_manager',oid,'SELECT WITH GRANT OPTION') from pg_class where oid='provider_fixture.unrelated'::regclass"),'t');
-    assert.equal(sql("select not has_column_privilege('fixture_manager','provider_fixture.unrelated','private_value','UPDATE WITH GRANT OPTION')"),'t');
-    sql(installSql);
-    sql('alter role buyer_writer_runtime login;alter role buyer_writer_issuer login');
-    assert.equal(role('buyer_writer_runtime','select * from provider_fixture.unrelated',{fail:true,permissionDenied:true}),undefined);
-    assert.equal(role('buyer_writer_issuer','select * from provider_fixture.unrelated',{fail:true,permissionDenied:true}),undefined);
-    assert.equal(gatewayIdentity(),'t');assert.equal(gatewayIdentity('issuer'),'t');
-    const observed=JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL));
-    assert.deepEqual(observed.directRelations,[]);assert.deepEqual(observed.directSequences,[]);assert.deepEqual(observed.externalRoutines,[]);
-    assert.equal(providerAcl(),before);
+  const trustedCreatorOid=adminSql("select oid from pg_roles where rolname='postgres'");
+  const installSql=`set blackspire.buyer_writer_creator_oid=${literal(trustedCreatorOid)};`+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
+  adminSql('alter role postgres nosuperuser createrole;');
+  sql(installSql);
+  check('non-superuser database-owner creator has only pinned PostgreSQL 17 bootstrap and owner SET grants',()=>{
+    assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
+      where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')`),'4');
+    assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles u on u.oid=m.member
+      where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
+       and u.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option
+       and ((m.grantor=10 and m.admin_option and not m.set_option) or
+       (r.rolname='buyer_writer_owner' and pg_get_userbyid(m.grantor)='postgres' and not m.admin_option and m.set_option))`),'4');
   });
-  check('installer rejects an effective path to an unrelated PUBLIC relation privilege',()=>{
-    sql('grant usage on schema provider_fixture to public');
-    assert.equal(role('buyer_writer_runtime','select count(*) from provider_fixture.unrelated'),'0');
-    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
-    assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directRelations.some(row=>row.select));
-    sql(installSql,{fail:true});
-    sql('revoke select on provider_fixture.unrelated from public');
-  });
-  check('installer independently rejects a reachable unrelated PUBLIC column privilege',()=>{
-    role('buyer_writer_runtime',"update provider_fixture.unrelated set private_value='reachable'");
-    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
-    const exposed=JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directRelations;
-    assert.ok(exposed.some(row=>row.anyColumn&&!row.select&&!row.insert&&!row.update&&!row.delete&&!row.truncate&&!row.references&&!row.trigger&&!row.maintain));
-    sql(installSql,{fail:true});
-    sql('revoke usage on schema provider_fixture from public');
-    sql(installSql);
-  });
-  check('installer rejects PUBLIC sequence capability even without schema USAGE',()=>{
-    sql('set role fixture_provider_owner;grant usage on sequence provider_sequence_fixture.unrelated_seq to public;reset role');
-    assert.equal(sql("select has_schema_privilege('buyer_writer_runtime','provider_sequence_fixture','USAGE')"),'f');
-    assert.equal(sql("select has_schema_privilege('buyer_writer_issuer','provider_sequence_fixture','USAGE')"),'f');
-    assert.equal(role('buyer_writer_runtime',`select nextval(${sql("select oid::text from pg_class where oid='provider_sequence_fixture.unrelated_seq'::regclass")}::oid::regclass)`),'1');
-    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
-    assert.deepEqual(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).directSequences.map(({role,usage})=>({role,usage})),[
-      {role:'buyer_writer_issuer',usage:true},{role:'buyer_writer_runtime',usage:true}
-    ]);
-    sql(installSql,{fail:true});sql('set role fixture_provider_owner;revoke usage on sequence provider_sequence_fixture.unrelated_seq from public;reset role');sql(installSql);
-  });
-  check('installer rejects reachable but accepts unreachable external SECURITY DEFINER routines',()=>{
-    sql(installSql);sql('grant usage on schema provider_routine_fixture to public');
-    assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
-    assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).externalRoutines.length>0);
-    sql(installSql,{fail:true});sql('revoke usage on schema provider_routine_fixture from public');sql(installSql);
-  });
-  check('installer always rejects target table and target column PUBLIC privileges',()=>{
-    sql('revoke usage on schema public from public');
-    for(const privilege of ['select','insert','update','delete','truncate','references','trigger','maintain']){
-      sql(`grant ${privilege} on public."SearchJob" to public`);
-      assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
-      assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).targetPublicRelations.some(row=>row.name==='SearchJob'&&row.privilege===privilege.toUpperCase()));
-      sql(installSql,{fail:true});sql(`revoke ${privilege} on public."SearchJob" from public`);
-    }
-    for(const privilege of ['select','insert','update','references']){
-      sql(`grant ${privilege}(user_id) on public."SearchJob" to public`);
-      assert.equal(gatewayIdentity(),'f');assert.equal(gatewayIdentity('issuer'),'f');
-      assert.ok(JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL)).targetPublicColumns.some(row=>row.name==='SearchJob'&&row.column==='user_id'&&row.privilege===privilege.toUpperCase()));
-      sql(installSql,{fail:true});sql(`revoke ${privilege}(user_id) on public."SearchJob" from public`);
-    }
-    sql('grant usage on schema public to public');sql(installSql);
-  });
-  check('installer rejects CREATE authority on every unrelated non-temporary schema',()=>{
-    sql('grant create on schema provider_fixture to buyer_writer_runtime');sql(installSql,{fail:true});
-    sql('revoke create on schema provider_fixture from buyer_writer_runtime');sql(installSql);
-  });
-  check('production catalog observation detects later external SECURITY DEFINER execution',()=>{
-    const observe=()=>JSON.parse(sql(BUYER_WRITER_PRODUCTION_VERIFY_SQL));
-    assert.deepEqual(observe().externalRoutines,[]);
-    sql("create function public.late_privileged_bridge(text) returns integer language sql security definer as 'select 1'");
-    const widened=observe().externalRoutines;
-    assert.deepEqual(widened.map(row=>row.role).sort(),['buyer_writer_issuer','buyer_writer_runtime']);
-    assert.ok(widened.every(row=>row.schema==='public'&&row.signature.endsWith('late_privileged_bridge(text)')&&row.owner==='postgres'));
-    sql('drop function public.late_privileged_bridge(text)');
-    assert.deepEqual(observe().externalRoutines,[]);
-  });
-  sql('drop schema provider_fixture,provider_sequence_fixture,provider_routine_fixture cascade;drop role fixture_provider_owner');
+  sql(installSql);checks.push('non-superuser creator reapplies owner DDL through the pinned SET edge');
+  adminSql('alter role postgres superuser;');
   check('dedicated roles cannot select tables, issue arbitrary permits or assume the owner role',()=>{
     for(const r of ['anon','authenticated','buyer_writer_runtime','buyer_writer_issuer']) {
       for(const t of ['RawSale','CleanSale','BuyerProfile','BuyerReport']) role(r,`select * from public."${t}"`,{fail:true});
@@ -342,6 +259,8 @@ try {
     sql(`set role buyer_writer_owner;create function buyer_writer.issue(uuid,uuid,text,text,jsonb) returns jsonb language sql security definer set search_path=pg_catalog as 'select null::jsonb';revoke all on function buyer_writer.issue(uuid,uuid,text,text,jsonb) from public;grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb) to buyer_writer_issuer;`);
     assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,boolean)') is not null"),'t');
     sql(`set role buyer_writer_owner;create function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz) returns jsonb language sql security definer set search_path=pg_catalog as 'select null::jsonb';revoke all on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz) from public;grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz) to buyer_writer_issuer;`);
+    sql(installSql,{fail:true});
+    sql(`set role buyer_writer_owner;revoke execute on function buyer_writer.issue(uuid,uuid,text,text,boolean) from buyer_writer_issuer;revoke execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb) from buyer_writer_issuer;revoke execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz) from buyer_writer_issuer;`);
     sql(installSql);
     assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamptz)') is null"),'t');
     assert.equal(sql("select to_regprocedure('buyer_writer.issue(uuid,uuid,text,text,boolean)') is null"),'t');
@@ -482,6 +401,25 @@ try {
     sql('drop function buyer_writer.unexpected()');
     sql('grant select(buyer_name) on public."BuyerProfile" to buyer_writer_runtime');sql(install,{fail:true});
     sql('revoke select(buyer_name) on public."BuyerProfile" from buyer_writer_runtime');
+    for(const [grant,revoke] of [
+      ['grant create on schema public to buyer_writer_runtime','revoke create on schema public from buyer_writer_runtime'],
+      ['grant create on database writer_test to buyer_writer_runtime','revoke create on database writer_test from buyer_writer_runtime'],
+      ['grant maintain on public."RawSale" to buyer_writer_runtime','revoke maintain on public."RawSale" from buyer_writer_runtime'],
+      ['grant usage on sequence buyer_writer.sales_ordinal_seq to buyer_writer_runtime','revoke usage on sequence buyer_writer.sales_ordinal_seq from buyer_writer_runtime'],
+      ['grant select on public."RawSale" to buyer_writer_owner','revoke select on public."RawSale" from buyer_writer_owner'],
+      ['grant select(error_message) on public."SearchJob" to buyer_writer_owner','revoke select(error_message) on public."SearchJob" from buyer_writer_owner'],
+      ['grant execute on function buyer_writer.valid_sale(jsonb) to buyer_writer_runtime','revoke execute on function buyer_writer.valid_sale(jsonb) from buyer_writer_runtime'],
+    ]){sql(grant);sql(install,{fail:true});sql(revoke);}
+    sql('grant connect on database writer_other to public');sql(install,{fail:true});sql('revoke connect on database writer_other from public');
+    sql(`create function public.fixture_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
+      create trigger fixture_hidden_trigger before insert on public."RawSale" for each row execute function public.fixture_hidden_trigger();
+      revoke execute on function public.fixture_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+    sql(install,{fail:true});
+    sql('drop trigger fixture_hidden_trigger on public."RawSale";drop function public.fixture_hidden_trigger()');
+    sql('create sequence public.fixture_writer_sequence;grant usage on sequence public.fixture_writer_sequence to buyer_writer_owner');
+    sql(install,{fail:true});sql('drop sequence public.fixture_writer_sequence');
+    sql("create function public.fixture_invoker() returns integer language sql as 'select 1';grant usage on schema public to buyer_writer_runtime;");
+    sql(install,{fail:true});sql('revoke usage on schema public from buyer_writer_runtime;drop function public.fixture_invoker()');
     sql("create function public.fixture_trigger() returns trigger language plpgsql security definer as 'begin return new;end';");
     sql(install,{fail:true});sql('drop function public.fixture_trigger()');
     sql("create function public.fixture_event() returns event_trigger language plpgsql security definer as 'begin return;end';");
@@ -494,16 +432,24 @@ try {
     assert.notEqual(denied.status,0);
   });
   check('pool identity query accepts actual separate logins and rejects privilege or routine drift',()=>{
+    const creatorOid=trustedCreatorOid;
+    const functions=BUYER_WRITER_ENTRYPOINTS;
     const identity=(kind='runtime',substitute=false)=>{
       const user=`buyer_writer_${kind}`;
       const statement=`${substitute?`set role ${user};`:''}set statement_timeout='10s';set lock_timeout='5s';set search_path=pg_catalog;
-        prepare zola_identity(text,text[]) as ${WRITER_IDENTITY_SQL};execute zola_identity(${literal(user)},array[${writerFunctions[kind].map(literal).join(',')}]);`;
+        prepare zola_identity(text,text[],jsonb,oid) as ${WRITER_IDENTITY_SQL};execute zola_identity(${literal(user)},array[${functions[kind].map(literal).join(',')}],${literal(JSON.stringify(BUYER_WRITER_ROUTINES))}::jsonb,${creatorOid}::oid);`;
       const result=run(['exec','-i',name,'psql','-X','-qAt','-U',substitute?'postgres':user,'-d','writer_test','-v','ON_ERROR_STOP=1'],statement);
       assert.equal(result.status,0,'isolated identity query must execute');return result.stdout.trim();
     };
     assert.equal(identity(),'t');assert.equal(identity('issuer'),'t');assert.equal(identity('runtime',true),'f');
     const denied=(grant,revoke)=>{sql(grant);assert.equal(identity(),'f');sql(revoke);assert.equal(identity(),'t');};
     denied('grant create on schema buyer_writer to buyer_writer_runtime','revoke create on schema buyer_writer from buyer_writer_runtime');
+    denied('grant create on database writer_test to buyer_writer_runtime','revoke create on database writer_test from buyer_writer_runtime');
+    denied('grant connect on database writer_other to public','revoke connect on database writer_other from public');
+    sql('create role inherited_cross_database nologin;grant connect on database writer_other to inherited_cross_database');
+    denied('alter role buyer_writer_runtime inherit;grant inherited_cross_database to buyer_writer_runtime','revoke inherited_cross_database from buyer_writer_runtime;alter role buyer_writer_runtime noinherit');
+    sql('revoke connect on database writer_other from inherited_cross_database;drop role inherited_cross_database');
+    denied('grant maintain on public."RawSale" to buyer_writer_runtime','revoke maintain on public."RawSale" from buyer_writer_runtime');
     denied('grant select(user_id) on public."SearchJob" to buyer_writer_runtime','revoke select(user_id) on public."SearchJob" from buyer_writer_runtime');
     denied('grant usage on sequence buyer_writer.sales_ordinal_seq to buyer_writer_runtime','revoke usage on sequence buyer_writer.sales_ordinal_seq from buyer_writer_runtime');
     denied('grant execute on function buyer_writer.cancel(uuid,uuid,text) to buyer_writer_runtime','revoke execute on function buyer_writer.cancel(uuid,uuid,text) from buyer_writer_runtime');
@@ -515,6 +461,77 @@ try {
     sql('drop role isolated_membership');
     denied('alter function buyer_writer.context(text,text,uuid,uuid,bigint) security invoker','alter function buyer_writer.context(text,text,uuid,uuid,bigint) security definer');
     denied('alter function buyer_writer.context(text,text,uuid,uuid,bigint) set search_path=public','alter function buyer_writer.context(text,text,uuid,uuid,bigint) set search_path=pg_catalog');
+    const contextDefinition=sql("select pg_get_functiondef('buyer_writer.context(text,text,uuid,uuid,bigint)'::regprocedure)");
+    sql('create trusted procedural language plpgsql_alias handler pg_catalog.plpgsql_call_handler inline pg_catalog.plpgsql_inline_handler validator pg_catalog.plpgsql_validator');
+    const languageDrift=contextDefinition.replace('LANGUAGE plpgsql','LANGUAGE plpgsql_alias');assert.notEqual(languageDrift,contextDefinition);
+    sql(languageDrift);assert.equal(identity(),'f','reviewed entrypoint language drift must fail checkout closed');
+    sql(installSql,{fail:true});sql(contextDefinition);sql('drop language plpgsql_alias');assert.equal(identity(),'t');
+    sql(`create or replace function buyer_writer.context(p_digest text,p_workspace text,p_job uuid,p_dispatch uuid,p_generation bigint)
+      returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$begin return '{}'::jsonb;end$$;`);
+    assert.equal(identity(),'f','reviewed entrypoint body drift must fail closed');
+    sql(installSql,{fail:true});sql(contextDefinition);assert.equal(identity(),'t');
+    const helperDefinition=sql("select pg_get_functiondef('buyer_writer.valid_sale(jsonb)'::regprocedure)");
+    sql(`create or replace function buyer_writer.valid_sale(r jsonb) returns boolean
+      language plpgsql immutable set search_path=pg_catalog as $$begin return true;end$$;`);
+    assert.equal(identity('runtime'),'f','reviewed helper body drift must fail runtime closed');
+    assert.equal(identity('issuer'),'f','reviewed helper body drift must fail issuer closed');
+    sql(installSql,{fail:true});sql(helperDefinition);
+    assert.equal(identity('runtime'),'t');assert.equal(identity('issuer'),'t');
+    for(const schema of ['extensions','public','other_reachable']){
+      if(schema==='extensions'||schema==='other_reachable')sql(`create schema ${schema};grant usage on schema ${schema} to public;`);
+      sql(`create function ${schema}.public_invoker() returns integer language sql as 'select 1'`);
+      assert.equal(identity(),'f',`reachable PUBLIC SECURITY INVOKER in ${schema} must fail closed`);
+      sql(`drop function ${schema}.public_invoker()`);
+      if(schema!=='public')sql(`drop schema ${schema}`);
+      assert.equal(identity(),'t');
+    }
+    sql("create function public.owner_only_invoker() returns integer language sql as 'select 1';revoke execute on function public.owner_only_invoker() from public;grant execute on function public.owner_only_invoker() to buyer_writer_owner;");
+    assert.equal(identity(),'f','owner-only reachable external routine must fail every runtime checkout');
+    sql('drop function public.owner_only_invoker()');assert.equal(identity(),'t');
+    sql(`create function public.hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
+      create trigger hidden_trigger before insert on public."RawSale" for each row execute function public.hidden_trigger();
+      revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+    assert.equal(identity(),'f','attached trigger remains executable without writer EXECUTE and must fail checkout closed');
+    sql(installSql,{fail:true});sql('drop trigger hidden_trigger on public."RawSale";drop function public.hidden_trigger()');assert.equal(identity(),'t');
+    const otherDatabase=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_runtime','-d','writer_other','-v','ON_ERROR_STOP=1'],'select 1');
+    assert.notEqual(otherDatabase.status,0,'safe non-target database must reject the runtime login');
+    sql('create role substituted_bootstrap nologin');
+    sql('revoke buyer_writer_owner from postgres granted by postgres');
+    adminSql('revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by fixture_admin');
+    sql(`grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to substituted_bootstrap with admin true,set false,inherit false;
+      set role substituted_bootstrap;
+      grant buyer_writer_owner to substituted_bootstrap with admin false,set true,inherit true granted by substituted_bootstrap;
+      reset role;`);
+    assert.equal(identity(),'f','substituted creator and SET ROLE path must fail closed');
+    sql(`revoke buyer_writer_owner from substituted_bootstrap granted by substituted_bootstrap;
+      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from substituted_bootstrap granted by postgres;
+      reset role;`);
+    adminSql('grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin');
+    sql(`set role postgres;
+      grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres;
+      reset role;drop role substituted_bootstrap;`);
+    assert.equal(identity(),'t');
+    adminSql(`alter role postgres rename to original_creator;
+      create role postgres superuser login;
+      alter database writer_test owner to postgres;
+      revoke buyer_writer_owner from original_creator granted by original_creator;
+      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from original_creator granted by fixture_admin;
+      grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin;`);
+    sql('grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres');
+    const replacementCreatorOid=sql("select oid from pg_roles where rolname='postgres'");
+    assert.notEqual(replacementCreatorOid,creatorOid);
+    assert.equal(identity(),'f','renamed and replaced postgres/database owner must not substitute for the pinned creator OID');
+    sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v1:creator-oid='+replacementCreatorOid)};reset role;`);
+    sql(installSql,{fail:true});
+    adminSql(`revoke buyer_writer_owner from postgres granted by postgres;
+      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by fixture_admin;
+      alter database writer_test owner to original_creator;
+      drop role postgres;
+      alter role original_creator rename to postgres;
+      grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin;`);
+    sql('grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres');
+    sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v1:creator-oid='+trustedCreatorOid)};reset role;`);
+    assert.equal(sql("select oid from pg_roles where rolname='postgres'"),creatorOid);assert.equal(identity(),'t');
     sql('create schema net;create table net.http_request_queue(id integer);grant all on net.http_request_queue to public;');
     assert.equal(identity(),'t','PUBLIC relation ACL without schema USAGE is unreachable');
     denied('grant usage on schema net to public','revoke usage on schema net from public');
