@@ -29,7 +29,9 @@ test('reviewed routine policy covers every installed body with an exact digest',
  assert.match(source,/current_setting\('blackspire\.buyer_writer_creator_oid',true\)::oid/);
  assert.ok(source.indexOf('set local role buyer_writer_owner',source.indexOf('grant references(id)'))<source.indexOf('create table if not exists buyer_writer.dispatches'));
  assert.ok(source.indexOf('revoke references(id) on public."SearchJob" from buyer_writer_owner')<source.lastIndexOf('commit;'));
- assert.match(source,/blackspire-buyer-writer:v1:creator-oid=/);
+ assert.match(source,/blackspire-buyer-writer:v2:/);
+ assert.match(source,/relkind[\s\S]*relowner[\s\S]*relispartition[\s\S]*pg_inherits/);
+ assert.match(source,/WITH RECURSIVE protected[\s\S]*pg_trigger[\s\S]*pg_rewrite[\s\S]*_RETURN/i);
  assert.match(source,/has_table_privilege\('buyer_writer_owner',[\s\S]*MAINTAIN/);
  assert.match(source,/has_column_privilege\('buyer_writer_owner'/);
  assert.match(source,/has_sequence_privilege\('buyer_writer_owner'/);
@@ -82,6 +84,11 @@ test('application package cannot execute provider mutations and rejects fabricat
  assert.match(assertion,/Unexpected writer database CREATE privilege/);
  assert.match(assertion,/Unexpected writer cross-database CONNECT privilege/);
  assert.match(assertion,/Unexpected Buyer Writer relation trigger/);
+ assert.match(assertion,/Unexpected Buyer Writer relation rewrite rule/);
+ assert.match(assertion,/Writer relation identity drift/);
+ assert.match(assertion,/Writer schema or routine ACL drift/);
+ assert.doesNotMatch(assertion,/to_regprocedure\(/);
+ assert.match(assertion,/JOIN pg_namespace pn ON pn\.nspname='buyer_writer'[\s\S]*p\.pronamespace=pn\.oid[\s\S]*p\.oid::regprocedure::text=expected\.signature/);
  assert.match(assertion,/buyer_writer\.lock_scope\(\)/);
  assert.match(assertion,/Unexpected writer relation privilege/);
  assert.match(assertion,/Unexpected writer sequence privilege/);
@@ -89,7 +96,7 @@ test('application package cannot execute provider mutations and rejects fabricat
  assert.match(assertion,/Trusted writer bootstrap relationship required/);
  assert.match(assertion,/u\.oid=\(SELECT datdba FROM pg_database WHERE datname=current_database\(\)\)/);
  assert.match(assertion,/u\.oid=10::oid/);
- assert.match(assertion,/blackspire-buyer-writer:v1:creator-oid=/);
+ assert.match(assertion,/blackspire-buyer-writer:v2:/);
  const p=prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest,creatorOid});
  assert.deepEqual(p,prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest,creatorOid}));
  assert.match(p.sql,/transaction_timeout='120s'/);
@@ -105,4 +112,20 @@ test('application package cannot execute provider mutations and rejects fabricat
  assert.throws(()=>buyerWriterExtensionPostcondition(manifest));
  const tampered=structuredClone(manifest);tampered.objects[0].after=[];
  assert.throws(()=>buyerWriterExtensionPostcondition(tampered,creatorOid),/ACL manifest drift/);
+});
+
+test('ACL harness separates creator metadata substitution from bootstrap identity rejection',()=>{
+ const source=readFileSync(new URL('../scripts/test-buyer-writer-acl.mjs',import.meta.url),'utf8');
+ const substitution=source.indexOf('JSON.stringify(replacementWriterMetadata)');
+ const identityRejection=source.indexOf('sql(prepared.sql,{fail:/Writer relation identity drift/});',substitution);
+ const restoration=source.indexOf('JSON.stringify(trustedWriterMetadata)',substitution);
+ const exactRestoration=source.indexOf('assert.deepEqual(restoredWriterMetadata,trustedWriterMetadata);',restoration);
+ const bootstrapRejection=source.indexOf('sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});',exactRestoration);
+ assert.ok(substitution>=0);
+ assert.ok(identityRejection>substitution);
+ assert.ok(restoration>identityRejection);
+ assert.ok(exactRestoration>restoration);
+ assert.ok(bootstrapRejection>exactRestoration);
+ assert.match(source,/replacement-creator v2 metadata substitution with exact protected relation metadata is rejected by Writer relation identity drift/);
+ assert.match(source,/original exact v2 metadata leaves the substituted postgres graph to the Trusted writer bootstrap relationship gate/);
 });

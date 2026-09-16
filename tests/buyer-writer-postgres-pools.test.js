@@ -8,16 +8,20 @@ const connection = () => ({host:'database.invalid',port:5432,database:'writer_te
 const create = options => createBuyerWriterPostgres({creatorOid:16384,...options});
 const apply='select buyer_writer.apply($1,$2,$3::jsonb) as result';
 const issue='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
+const isFence=text=>text.includes('else false end as locked');
 test('identity probe treats inherited and PUBLIC authority as capability only when its schema is reachable',()=>{
   assert.match(WRITER_IDENTITY_SQL,/role\.rolname in\('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'\)[\s\S]*member\.rolname='postgres'/);
   assert.match(WRITER_IDENTITY_SQL,/member\.oid=\$4::oid[\s\S]*member\.oid=\(select datdba from pg_database where datname=current_database\(\)\)/);
-  assert.match(WRITER_IDENTITY_SQL,/blackspire-buyer-writer:v1:creator-oid=/);
+  assert.match(WRITER_IDENTITY_SQL,/blackspire-buyer-writer:v2:/);
+  assert.match(WRITER_IDENTITY_SQL,/relations[\s\S]*relkind[\s\S]*relowner[\s\S]*relispartition[\s\S]*pg_inherits/);
   assert.match(WRITER_IDENTITY_SQL,/pg_get_userbyid\([^)]*\)='postgres'/);
   assert.match(WRITER_IDENTITY_SQL,/sha256\(convert_to\(p\.prosrc,'UTF8'\)\)/);
   assert.match(WRITER_IDENTITY_SQL,/values\(current_user\),\('buyer_writer_owner'\)[\s\S]*has_schema_privilege\(w\.role_name,n\.oid,'USAGE'\)[\s\S]*has_function_privilege\(w\.role_name,p\.oid,'EXECUTE'\)/);
   assert.match(WRITER_IDENTITY_SQL,/w\.role_name='buyer_writer_owner'[\s\S]*jsonb_to_recordset\(\$3::jsonb\)/);
   assert.match(WRITER_IDENTITY_SQL,/pg_database[\s\S]*datname<>current_database\(\)[\s\S]*datallowconn[\s\S]*has_database_privilege\([^)]*'CONNECT'\)/);
-  assert.match(WRITER_IDENTITY_SQL,/pg_trigger[\s\S]*not t\.tgisinternal[\s\S]*SearchJob[\s\S]*dispatches/);
+  assert.match(WRITER_IDENTITY_SQL,/with recursive protected[\s\S]*pg_inherits[\s\S]*pg_trigger[\s\S]*not t\.tgisinternal/);
+  assert.match(WRITER_IDENTITY_SQL,/pg_rewrite[\s\S]*_RETURN/);
+  assert.match(WRITER_IDENTITY_SQL,/aclexplode[\s\S]*buyer_writer_runtime[\s\S]*buyer_writer_issuer/);
 });
 function pools({unsafe=false,fail=false}={}) {
   const instances=[];
@@ -29,7 +33,7 @@ function pools({unsafe=false,fail=false}={}) {
         pool.calls.push({text,values});
         if(text===WRITER_IDENTITY_SQL)return {rows:[{safe:!unsafe}]};
         if(fail)throw Object.assign(new Error('PRIVATE DATABASE DETAILS'),{code:'42501'});
-        if(text.includes('buyer_writer.lock_scope()'))return {rows:[{safe:!unsafe,locked:!unsafe}]};
+        if(isFence(text))return {rows:[{safe:!unsafe,locked:!unsafe}]};
         if(text.includes('with checked as materialized')&&text.includes('buyer_writer.'))return {rows:[{safe:!unsafe,result:{ok:true}}]};
         return {rows:[{result:{ok:true}}]};
       },release:destroy=>pool.destroyed.push(Boolean(destroy))};
@@ -54,14 +58,17 @@ test('dedicated pools pin TLS, roles, timeouts and validate every checkout',asyn
     assert.equal(instances[0].calls.filter(c=>c.text===WRITER_IDENTITY_SQL).length,1);
     assert.equal(instances[1].calls.filter(c=>c.text===WRITER_IDENTITY_SQL).length,1);
     assert.equal(instances[0].calls.filter(c=>c.text==='begin').length,2);
-    assert.equal(instances[0].calls.filter(c=>c.text.includes('buyer_writer.lock_scope()')).length,2);
-    assert.equal(instances[0].calls.filter(c=>c.text.includes('buyer_writer.apply(')&&c.text!==apply).length,2);
+    assert.equal(instances[0].calls.filter(c=>isFence(c.text)).length,2);
+    assert.equal(instances[0].calls.filter(c=>c.text.includes('case when checked.safe then buyer_writer.apply(')).length,2);
     assert.equal(instances[0].calls.filter(c=>c.text==='commit').length,2);
     assert.equal(instances[0].calls.filter(c=>c.text===apply).length,0);
-    const firstOperation=instances[0].calls.find(c=>c.text.includes('buyer_writer.apply(')&&c.text!==apply);
-    assert.match(firstOperation.text,/pg_database[\s\S]*pg_trigger[\s\S]*case when checked\.safe then operation\.result/);
+    const firstOperation=instances[0].calls.find(c=>c.text.includes('case when checked.safe then buyer_writer.apply('));
+    assert.match(firstOperation.text,/pg_database[\s\S]*pg_trigger[\s\S]*case when checked\.safe then buyer_writer\.apply/);
+    assert.match(firstOperation.text,/buyer_writer\.apply\(\$5,\$6,\$7::jsonb\)/);
+    assert.doesNotMatch(firstOperation.text,/left join lateral/);
     assert.equal(firstOperation.values.length,7);
-    assert.deepEqual(instances[0].calls.slice(1,5).map(c=>c.text==='begin'||c.text==='commit'?c.text:c.text.includes('lock_scope')?'fence':'operation'),['begin','fence','operation','commit']);
+    assert.deepEqual(firstOperation.values.slice(4),['digest','workspace','{}']);
+    assert.deepEqual(instances[0].calls.slice(1,5).map(c=>c.text==='begin'||c.text==='commit'?c.text:isFence(c.text)?'fence':'operation'),['begin','fence','operation','commit']);
     for(const call of instances.flatMap(pool=>pool.calls.filter(c=>c.text===WRITER_IDENTITY_SQL))){
       assert.equal(call.values.length,4);assert.equal(JSON.parse(call.values[2]).length,13);assert.equal(call.values[3],16384);
     }
@@ -137,12 +144,12 @@ test('final in-transaction identity drift rolls back without committing the fixe
   instances[0].connect=async()=>({query:async(text)=>{
     calls.push(text);
     if(text==='begin'||text==='rollback')return {rows:[]};
-    if(text.includes('buyer_writer.lock_scope()'))return {rows:[{safe:true,locked:true}]};
+    if(isFence(text))return {rows:[{safe:true,locked:true}]};
     if(text.includes('buyer_writer.apply('))return {rows:[{safe:false,result:null}]};
     assert.fail('unexpected transaction statement');
   },release:destroy=>assert.equal(destroy,true)});
   await assert.rejects(db.runtimeQuery(apply,['digest','workspace','{}']),/unavailable/);
-  assert.deepEqual(calls.map(text=>text==='begin'||text==='rollback'?text:text.includes('lock_scope')?'fence':'operation'),['begin','fence','operation','rollback']);
+  assert.deepEqual(calls.map(text=>text==='begin'||text==='rollback'?text:isFence(text)?'fence':'operation'),['begin','fence','operation','rollback']);
   assert.ok(!calls.includes('commit'));await db.close();
 });
 test('timed-out checkout is destroyed on late arrival without executing SQL',async t=>{

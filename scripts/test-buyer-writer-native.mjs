@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
 import path from 'node:path';
+import {Pool as PgPool} from 'pg';
 import {createBuyerWriterPostgres} from '../packages/buyer-writer/postgres.js';
 import {createBuyerWriterHttpServer} from '../packages/buyer-writer/http.js';
 import {planBuyerWrites} from '../packages/buyer-writer/plan.js';
@@ -19,6 +20,24 @@ let cleaning=false;
 const docker=(args,input)=>spawnSync('docker',args,{input,encoding:'utf8',timeout:cleaning?5000:30000,maxBuffer:1024*1024});
 const requireSuccess=result=>{assert.equal(result.status,0,'isolated native operation failed');return result.stdout.trim();};
 let networkId,containerId,networkAttempted=false,containerAttempted=false,pools,server,proxy;
+let operationWitnessArmed=false,operationWitnessReplacement='';
+class WitnessPool extends PgPool {
+  constructor(config){super(config);this.witnessRuntime=config.user==='buyer_writer_runtime';}
+  async connect(){
+    const client=await super.connect();
+    if(this.witnessRuntime){
+      const query=client.query.bind(client);
+      client.query=async(text,...args)=>{
+        if(operationWitnessArmed&&typeof text==='string'&&text.includes('case when checked.safe then buyer_writer.apply(')){
+          operationWitnessArmed=false;
+          sql(operationWitnessReplacement);
+        }
+        return query(text,...args);
+      };
+    }
+    return client;
+  }
+}
 const proxySockets=new Set();
 const checks=[];
 function discover(kind,identifier) {
@@ -121,11 +140,24 @@ try {
   const base={host:'127.0.0.1',port,database:'writer_test',ca:fs.readFileSync(cert,'utf8')};
   const config={creatorOid,runtime:{...base,password:runtimePassword},issuer:{...base,password:issuerPassword}};
   phase='driver-identities';
-  pools=await createBuyerWriterPostgres(config);
+  pools=await createBuyerWriterPostgres({...config,Pool:WitnessPool});
   assert.equal(sql("select count(distinct a.usename)=2 and bool_and(s.ssl) from pg_stat_activity a join pg_stat_ssl s using(pid) where a.usename in('buyer_writer_runtime','buyer_writer_issuer')"),'t');
   await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,ca:undefined},issuer:{...config.issuer,ca:undefined}}),/unavailable/);
   await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,password:randomBytes(32).toString('base64url')}}),/unavailable/);
   checks.push('actual driver rejects untrusted TLS and wrong SCRAM credentials; both dedicated TLS identities accepted');
+  phase='operation-nonentry-witness';
+  const applyDefinition=sql("select pg_get_functiondef('buyer_writer.apply(text,text,jsonb)'::regprocedure)");
+  sql(`create sequence buyer_writer.operation_nonentry_witness;grant usage on sequence buyer_writer.operation_nonentry_witness to buyer_writer_owner`);
+  operationWitnessReplacement=`create or replace function buyer_writer.apply(p_digest text,p_workspace text,q jsonb) returns jsonb
+    language plpgsql security definer set search_path=pg_catalog set "TimeZone"='UTC' set lock_timeout='5s' as $$
+    begin perform nextval('buyer_writer.operation_nonentry_witness');return '{"ok":true}'::jsonb;end $$;`;
+  operationWitnessArmed=true;
+  await assert.rejects(pools.runtimeQuery('select buyer_writer.apply($1,$2,$3::jsonb) as result',['a'.repeat(64),'isolated','{}']),/unavailable/);
+  assert.equal(operationWitnessArmed,false,'operation witness drift was not injected after the fence');
+  assert.equal(sql('select is_called from buyer_writer.operation_nonentry_witness'),'f','unsafe writer operation entered despite fresh identity denial');
+  sql(applyDefinition);
+  sql('drop sequence buyer_writer.operation_nonentry_witness');
+  checks.push('fresh unsafe identity prevents writer operation entry with a non-rollback sequence witness');
   const workload=randomBytes(32).toString('base64url'),issuerKey=randomBytes(32).toString('base64url');
   phase='native-http-writes';
   server=createBuyerWriterHttpServer({credential:workload,workspace:'isolated',query:pools.runtimeQuery,isAvailable:()=>pools.isHealthy(),issuer:{credential:issuerKey,query:pools.issuerQuery}});

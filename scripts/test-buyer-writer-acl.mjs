@@ -196,7 +196,7 @@ try {
     ['grant create on database writer_test to buyer_writer_owner','revoke create on database writer_test from buyer_writer_owner','Unexpected writer database CREATE privilege','owner database CREATE'],
     ['grant select on public."RawSale" to buyer_writer_owner','revoke select on public."RawSale" from buyer_writer_owner','Unexpected writer relation privilege','owner relation privilege'],
     ['grant select(error_message) on public."SearchJob" to buyer_writer_owner','revoke select(error_message) on public."SearchJob" from buyer_writer_owner','Unexpected writer relation privilege','owner column privilege'],
-    ['grant execute on function buyer_writer.valid_sale(jsonb) to buyer_writer_runtime','revoke execute on function buyer_writer.valid_sale(jsonb) from buyer_writer_runtime','Unexpected reachable writer routine','non-entrypoint Buyer Writer routine'],
+    ['grant execute on function buyer_writer.valid_sale(jsonb) to buyer_writer_runtime','revoke execute on function buyer_writer.valid_sale(jsonb) from buyer_writer_runtime','Writer schema or routine ACL drift','non-entrypoint Buyer Writer routine ACL'],
   ]){
     sql(grant);sql(prepared.sql,{fail:new RegExp(failure)});sql(revoke);checks.push(`application preflight rejects ${label}`);
   }
@@ -212,6 +212,55 @@ try {
   sql(installSql,{fail:/Unexpected Buyer Writer relation trigger/});
   sql('drop trigger hidden_trigger on public."RawSale";drop function public.hidden_trigger()');
   checks.push('application and installer reject a hidden SECURITY DEFINER trigger on a touched relation');
+  sql('create role writer_entrypoint_outsider nologin');
+  sql(`grant usage on schema buyer_writer to writer_entrypoint_outsider;
+   grant execute on function buyer_writer.apply(text,text,jsonb) to writer_entrypoint_outsider`);
+  sql(prepared.sql,{fail:/Writer schema or routine ACL drift/});
+  sql(installSql,{fail:/Unexpected existing writer namespace|Writer schema or routine ACL drift/});
+  sql(`revoke execute on function buyer_writer.apply(text,text,jsonb) from writer_entrypoint_outsider;
+   revoke usage on schema buyer_writer from writer_entrypoint_outsider`);
+  sql(`grant usage on schema buyer_writer to public;
+   grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid) to public`);
+  sql(prepared.sql,{fail:/Writer schema or routine ACL drift/});
+  sql(installSql,{fail:/Unexpected existing writer namespace|Writer schema or routine ACL drift/});
+  sql(`revoke execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid) from public;
+   revoke usage on schema buyer_writer from public;
+   grant buyer_writer_runtime to writer_entrypoint_outsider`);
+  sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
+  sql('revoke buyer_writer_runtime from writer_entrypoint_outsider;drop role writer_entrypoint_outsider');
+  checks.push('application and installer reject outsider, PUBLIC and inherited reachability to approved SECURITY DEFINER entrypoints');
+  sql(`create table public."RawSale_hook_child"() inherits (public."RawSale");
+   create function public.child_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
+   create trigger child_hidden_trigger before insert on public."RawSale_hook_child" for each row execute function public.child_hidden_trigger();
+   revoke execute on function public.child_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+  sql(prepared.sql,{fail:/Unexpected Buyer Writer relation trigger/});
+  sql(installSql,{fail:/Unexpected Buyer Writer relation trigger/});
+  sql('drop table public."RawSale_hook_child";drop function public.child_hidden_trigger()');
+  sql('create rule raw_sale_rewrite_guard as on insert to public."RawSale" do also notify zola_rule_witness');
+  sql(prepared.sql,{fail:/Unexpected Buyer Writer relation rewrite rule/});
+  sql(installSql,{fail:/Unexpected Buyer Writer relation rewrite rule/});
+  sql('drop rule raw_sale_rewrite_guard on public."RawSale"');
+  checks.push('application and installer reject descendant hooks and nontrivial rewrite rules');
+  sql('alter table public."RawSale" owner to consumer');
+  sql(prepared.sql,{fail:/Writer relation identity drift/});
+  sql(installSql,{fail:/Unexpected existing writer namespace/});
+  sql('alter table public."RawSale" owner to postgres');
+  sql('alter table public."RawSale" rename to "RawSale_bound"');
+  sql(prepared.sql,{fail:/Writer relation identity drift/});
+  sql(installSql,{fail:/Unexpected existing writer namespace/});
+  sql('alter table public."RawSale_bound" rename to "RawSale"');
+  sql(`alter table public."RawSale" rename to "RawSale_bound";
+   create table public."RawSale" (like public."RawSale_bound" including defaults including constraints)`);
+  sql(prepared.sql,{fail:/Writer relation identity drift/});
+  sql(installSql,{fail:/Unexpected existing writer namespace/});
+  sql('drop table public."RawSale";alter table public."RawSale_bound" rename to "RawSale"');
+  sql(`alter table public."RawSale" rename to "RawSale_bound";
+  create table public."RawSale" (like public."RawSale_bound" including defaults including constraints) partition by list(search_job_id)`);
+  sql(prepared.sql,{fail:/Writer relation identity drift/});
+  sql(installSql,{fail:/Unexpected existing writer namespace/});
+  sql('drop table public."RawSale";alter table public."RawSale_bound" rename to "RawSale"');
+  sql(prepared.sql);
+  checks.push('application preflight binds protected OIDs, owners and non-partitioned relation shape across rename, replacement and partition substitution');
   sql('create sequence public.fixture_writer_sequence;grant usage on sequence public.fixture_writer_sequence to buyer_writer_owner');
   sql(prepared.sql,{fail:/Unexpected writer sequence privilege/});sql('drop sequence public.fixture_writer_sequence');
   checks.push('application preflight rejects owner sequence privilege');
@@ -280,8 +329,13 @@ try {
   sql(prepared.sql);assert.equal(ledgerState(),nonempty);
   checks.push('package reapplication preserves nonempty dispatch, receipt and sale ledgers');
   checks.push('dedicated scoped writer succeeds across all five tables after packaged migrations, duplicate replay creates no rows');
+  assert.equal(sql("select has_schema_privilege('consumer','buyer_writer','USAGE')"),'f');
   sql('begin;set local role consumer;'+postcondition+'commit;');
-  checks.push('provider postcondition requires no superuser and performs no grant or revoke');
+  checks.push('provider postcondition requires neither superuser nor Buyer Writer schema reachability and performs no grant or revoke');
+  const writerMarkerPrefix='blackspire-buyer-writer:v2:';
+  const trustedWriterMetadata=JSON.parse(sql(`select substring(obj_description((select oid from pg_namespace where nspname='buyer_writer'),'pg_namespace') from ${writerMarkerPrefix.length+1})`));
+  assert.equal(trustedWriterMetadata.creatorOid,trustedCreatorOid);
+  assert.equal(trustedWriterMetadata.relations.length,8);
   sql('revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by postgres');
   adminSql(`alter role postgres rename to original_creator;
    create role postgres superuser login;
@@ -293,11 +347,25 @@ try {
   assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles u on u.oid=m.member
    where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
     and m.grantor=${trustedCreatorOid}::oid and m.admin_option and not m.inherit_option and not m.set_option`),'3');
+  const replacementCreatorOid=sql("select oid from pg_roles where rolname='postgres'");
+  assert.notEqual(replacementCreatorOid,trustedCreatorOid);
+  const replacementWriterMetadata={...trustedWriterMetadata,creatorOid:replacementCreatorOid};
+  assert.deepEqual(replacementWriterMetadata.relations,trustedWriterMetadata.relations);
   sql(`grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres;
    set role buyer_writer_owner;
-   comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v1:creator-oid='+sql("select oid from pg_roles where rolname='postgres'"))};
+   comment on schema buyer_writer is ${literal(writerMarkerPrefix+JSON.stringify(replacementWriterMetadata))};
    reset role;`);
+  const substitutedWriterMetadata=JSON.parse(sql(`select substring(obj_description((select oid from pg_namespace where nspname='buyer_writer'),'pg_namespace') from ${writerMarkerPrefix.length+1})`));
+  assert.equal(substitutedWriterMetadata.creatorOid,replacementCreatorOid);
+  assert.deepEqual(substitutedWriterMetadata,replacementWriterMetadata);
+  sql(prepared.sql,{fail:/Writer relation identity drift/});
+  checks.push('replacement-creator v2 metadata substitution with exact protected relation metadata is rejected by Writer relation identity drift');
+  sql(`set role buyer_writer_owner;
+   comment on schema buyer_writer is ${literal(writerMarkerPrefix+JSON.stringify(trustedWriterMetadata))};
+   reset role;`);
+  const restoredWriterMetadata=JSON.parse(sql(`select substring(obj_description((select oid from pg_namespace where nspname='buyer_writer'),'pg_namespace') from ${writerMarkerPrefix.length+1})`));
+  assert.deepEqual(restoredWriterMetadata,trustedWriterMetadata);
   sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
-  checks.push('application package rejects renamed and replaced creator OID despite substituted name, ownership, memberships and schema comment');
+  checks.push('original exact v2 metadata leaves the substituted postgres graph to the Trusted writer bootstrap relationship gate');
   console.log(JSON.stringify({status:'PASS',checks,objects:17,paidProviderCalls:0,productionMutations:0,environment:'isolated PostgreSQL 17.6; inert extension stand-ins'},null,2));
 } finally { cleanup(); }

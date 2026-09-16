@@ -47,12 +47,24 @@ do $$declare r text; bootstrap oid:=(select oid from pg_roles where rolname='pos
  end if;
 end$$;
 -- Reject namespace collisions and pre-existing privilege outside this component.
+set local role buyer_writer_owner;
 do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_writer_creator_oid',true)::oid; begin
  select oid into ns from pg_namespace where nspname='buyer_writer';
  perform set_config('buyer_writer.schema_was_absent',(ns is null)::text,true);
   if ns is not null then
-  if obj_description(ns,'pg_namespace') is distinct from
-      'blackspire-buyer-writer:v1:creator-oid='||expected::text
+  if (case when left(obj_description(ns,'pg_namespace'),length('blackspire-buyer-writer:v2:'))='blackspire-buyer-writer:v2:' then
+      substring(obj_description(ns,'pg_namespace') from length('blackspire-buyer-writer:v2:')+1)::jsonb is distinct from
+       (select jsonb_build_object('creatorOid',expected::text,'relations',jsonb_agg(jsonb_build_object(
+         'schema',reviewed.schema_name,'name',reviewed.relation_name,'oid',c.oid::text,'relkind',c.relkind,
+         'relowner',c.relowner::text,'relispartition',c.relispartition,'relpersistence',c.relpersistence,
+         'relrowsecurity',c.relrowsecurity,'relforcerowsecurity',c.relforcerowsecurity,
+         'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
+        ) order by reviewed.schema_name,reviewed.relation_name))
+        from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+         ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) reviewed(schema_name,relation_name)
+        left join pg_namespace n on n.nspname=reviewed.schema_name
+        left join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name)
+      else true end)
    or (select nspowner from pg_namespace where oid=ns)<>(select oid from pg_roles where rolname='buyer_writer_owner')
    or exists(select from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a
       where n.oid=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')))
@@ -97,6 +109,33 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     or p.prokind<>'f' or p.proisstrict or p.proleakproof or p.proparallel<>'u') then
    raise exception 'Writer routine definition drift';
   end if;
+  if (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
+      from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a where n.oid=ns) is distinct from
+     (select array_agg(array[edge.grantor::text,edge.grantee::text,edge.privilege,edge.grantable::text] order by edge.grantee,edge.privilege,edge.grantor,edge.grantable)
+      from (values
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'CREATE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'USAGE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_runtime'),'USAGE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false)
+      ) edge(grantor,grantee,privilege,grantable))
+   or exists(select from (values
+    ('buyer_writer.lock_public_scope()'),('buyer_writer.lock_scope()'),('buyer_writer.criteria(jsonb)'),('buyer_writer.valid_context(jsonb)'),
+    ('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)'),('buyer_writer.cancel(uuid,uuid,text)'),
+    ('buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'),('buyer_writer.valid_sale(jsonb)'),('buyer_writer.eligible(jsonb,jsonb)'),
+    ('buyer_writer.commit_buyers(buyer_writer.dispatches)'),('buyer_writer.apply(text,text,jsonb)'),('buyer_writer.context(text,text,uuid,uuid,bigint)'),
+    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)')) expected(signature)
+    join pg_namespace pn on pn.nspname='buyer_writer'
+    join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
+    cross join lateral (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
+      from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a) actual(edges)
+    cross join lateral (select array_agg(array[p.proowner::text,g.oid::text,'EXECUTE','false'] order by g.oid,p.proowner)
+      from pg_roles g where g.oid=p.proowner
+       or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')) reviewed(edges)
+    where actual.edges is distinct from reviewed.edges) then
+   raise exception 'Writer schema or routine ACL drift';
+  end if;
  end if;
  -- Target relations are always private even if schema USAGE is independently
  -- revoked. Unrelated relation ACLs matter only when a writer can reach their
@@ -139,11 +178,22 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT')) then
   raise exception 'Unexpected writer cross-database CONNECT privilege';
  end if;
- if exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
-    where not t.tgisinternal and (n.nspname,c.relname) in(
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))) then
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+    select from protected p join pg_trigger t on t.tgrelid=p.oid where not t.tgisinternal) then
   raise exception 'Unexpected Buyer Writer relation trigger';
+ end if;
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+    select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
+    where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead)) then
+  raise exception 'Unexpected Buyer Writer relation rewrite rule';
  end if;
  if exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
     where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
@@ -177,13 +227,9 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
   raise exception 'Unexpected writer role privileges';
  end if;
 end$$;
+reset role;
 create schema if not exists buyer_writer authorization buyer_writer_owner;
 set local role buyer_writer_owner;
-do $$declare expected oid:=current_setting('blackspire.buyer_writer_creator_oid',true)::oid; begin
- if current_setting('buyer_writer.schema_was_absent')::boolean then
-  execute format('comment on schema buyer_writer is %L','blackspire-buyer-writer:v1:creator-oid='||expected::text);
- end if;
-end$$;
 revoke all on schema buyer_writer from public,anon,authenticated;
 grant usage on schema buyer_writer to buyer_writer_runtime,buyer_writer_issuer;
 reset role;
@@ -632,12 +678,78 @@ grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,tim
 grant execute on function buyer_writer.context(text,text,uuid,uuid,bigint),buyer_writer.apply(text,text,jsonb),buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer) to buyer_writer_runtime;
 reset role;
 revoke references(id) on public."SearchJob" from buyer_writer_owner;
+set local role buyer_writer_owner;
+do $$declare expected oid:=current_setting('blackspire.buyer_writer_creator_oid',true)::oid; metadata jsonb; begin
+ if exists(select from (values
+    ('public','SearchJob',expected),('public','RawSale',expected),('public','CleanSale',expected),('public','BuyerProfile',expected),('public','BuyerReport',expected),
+    ('buyer_writer','dispatches',(select oid from pg_roles where rolname='buyer_writer_owner')),
+    ('buyer_writer','receipts',(select oid from pg_roles where rolname='buyer_writer_owner')),
+    ('buyer_writer','sales',(select oid from pg_roles where rolname='buyer_writer_owner'))
+   ) reviewed(schema_name,relation_name,owner_oid)
+   left join pg_namespace n on n.nspname=reviewed.schema_name
+   left join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name
+   where c.oid is null or c.relkind<>'r' or c.relowner<>reviewed.owner_oid or c.relispartition
+    or exists(select from pg_inherits i where i.inhrelid=c.oid)) then
+  raise exception 'Writer relation identity drift';
+ end if;
+ select jsonb_build_object('creatorOid',expected::text,'relations',jsonb_agg(jsonb_build_object(
+   'schema',reviewed.schema_name,'name',reviewed.relation_name,'oid',c.oid::text,'relkind',c.relkind,
+   'relowner',c.relowner::text,'relispartition',c.relispartition,'relpersistence',c.relpersistence,
+   'relrowsecurity',c.relrowsecurity,'relforcerowsecurity',c.relforcerowsecurity,
+   'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
+  ) order by reviewed.schema_name,reviewed.relation_name)) into metadata
+  from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+   ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) reviewed(schema_name,relation_name)
+  join pg_namespace n on n.nspname=reviewed.schema_name join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name;
+ execute format('comment on schema buyer_writer is %L','blackspire-buyer-writer:v2:'||metadata::text);
+end$$;
+reset role;
+set local role buyer_writer_owner;
 do $$begin
- if exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
-    where not t.tgisinternal and (n.nspname,c.relname) in(
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))) then
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+    select from protected p join pg_trigger t on t.tgrelid=p.oid where not t.tgisinternal) then
   raise exception 'Unexpected Buyer Writer relation trigger';
  end if;
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+    select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
+    where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead)) then
+  raise exception 'Unexpected Buyer Writer relation rewrite rule';
+ end if;
+ if (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
+     from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a where n.nspname='buyer_writer') is distinct from
+    (select array_agg(array[edge.grantor::text,edge.grantee::text,edge.privilege,edge.grantable::text] order by edge.grantee,edge.privilege,edge.grantor,edge.grantable)
+     from (values
+      ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'CREATE',false),
+      ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'USAGE',false),
+      ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_runtime'),'USAGE',false),
+      ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false)
+     ) edge(grantor,grantee,privilege,grantable))
+  or exists(select from (values
+    ('buyer_writer.lock_public_scope()'),('buyer_writer.lock_scope()'),('buyer_writer.criteria(jsonb)'),('buyer_writer.valid_context(jsonb)'),
+    ('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)'),('buyer_writer.cancel(uuid,uuid,text)'),
+    ('buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'),('buyer_writer.valid_sale(jsonb)'),('buyer_writer.eligible(jsonb,jsonb)'),
+    ('buyer_writer.commit_buyers(buyer_writer.dispatches)'),('buyer_writer.apply(text,text,jsonb)'),('buyer_writer.context(text,text,uuid,uuid,bigint)'),
+    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)')) expected(signature)
+    join pg_namespace pn on pn.nspname='buyer_writer'
+    join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
+    cross join lateral (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
+      from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a) actual(edges)
+    cross join lateral (select array_agg(array[p.proowner::text,g.oid::text,'EXECUTE','false'] order by g.oid,p.proowner)
+      from pg_roles g where g.oid=p.proowner
+       or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')) reviewed(edges)
+    where actual.edges is distinct from reviewed.edges) then
+  raise exception 'Writer schema or routine ACL drift';
+ end if;
 end$$;
+reset role;
 commit;

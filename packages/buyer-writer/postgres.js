@@ -31,7 +31,19 @@ export const WRITER_IDENTITY_SQL = `select (
  and exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
    where role.rolname='buyer_writer_owner' and member.rolname='postgres'
    and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database())
-   and obj_description('buyer_writer'::regnamespace,'pg_namespace')='blackspire-buyer-writer:v1:creator-oid='||member.oid::text
+   and case when left(obj_description('buyer_writer'::regnamespace,'pg_namespace'),length('blackspire-buyer-writer:v2:'))='blackspire-buyer-writer:v2:' then
+    substring(obj_description('buyer_writer'::regnamespace,'pg_namespace') from length('blackspire-buyer-writer:v2:')+1)::jsonb=
+     (select jsonb_build_object('creatorOid',$4::text,'relations',jsonb_agg(jsonb_build_object(
+       'schema',expected.schema_name,'name',expected.relation_name,'oid',c.oid::text,'relkind',c.relkind,
+       'relowner',c.relowner::text,'relispartition',c.relispartition,'relpersistence',c.relpersistence,
+       'relrowsecurity',c.relrowsecurity,'relforcerowsecurity',c.relforcerowsecurity,
+       'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
+      ) order by expected.schema_name,expected.relation_name))
+      from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+       ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) expected(schema_name,relation_name)
+      left join pg_namespace n on n.nspname=expected.schema_name
+      left join pg_class c on c.relnamespace=n.oid and c.relname=expected.relation_name)
+    else false end
    and not m.inherit_option and m.set_option)
  and not exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
    where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')
@@ -46,10 +58,19 @@ export const WRITER_IDENTITY_SQL = `select (
  and not has_database_privilege(current_user,current_database(),'CREATE')
  and not exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
    where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT'))
- and not exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
-   where not t.tgisinternal and (n.nspname,c.relname) in(
+ and not exists(with recursive protected(oid) as (
+   select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+   union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+   select from protected p join pg_trigger t on t.tgrelid=p.oid where not t.tgisinternal)
+ and not exists(with recursive protected(oid) as (
+   select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+    ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+   union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+   select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
+   where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead))
  and coalesce((select bool_and(coalesce(has_function_privilege(current_user,to_regprocedure(s),'EXECUTE'),false)) from unnest($2::text[]) s),false)
  and not exists(select from jsonb_to_recordset($3::jsonb) expected(signature text,digest text,language text,"securityDefiner" boolean,config text[],volatility text,owner text)
    left join pg_proc p on p.oid=to_regprocedure(expected.signature) left join pg_language l on l.oid=p.prolang
@@ -58,6 +79,26 @@ export const WRITER_IDENTITY_SQL = `select (
    or encode(sha256(convert_to(p.prosrc,'UTF8')),'hex') is distinct from expected.digest
    or p.proconfig is distinct from expected.config or p.provolatile::text is distinct from expected.volatility
    or p.prokind<>'f' or p.proisstrict or p.proleakproof or p.proparallel<>'u')
+ and (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
+      from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a where n.nspname='buyer_writer')=
+     (select array_agg(array[edge.grantor::text,edge.grantee::text,edge.privilege,edge.grantable::text] order by edge.grantee,edge.privilege,edge.grantor,edge.grantable)
+      from (values
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'CREATE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'USAGE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_runtime'),'USAGE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false)
+      ) edge(grantor,grantee,privilege,grantable))
+  and not exists(select from jsonb_to_recordset($3::jsonb) expected(signature text)
+   join pg_namespace pn on pn.nspname='buyer_writer'
+   join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
+   cross join lateral (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
+     from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a) actual(edges)
+   cross join lateral (select array_agg(array[p.proowner::text,g.oid::text,'EXECUTE','false'] order by g.oid,p.proowner)
+     from pg_roles g where g.oid=p.proowner
+      or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
+      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
+      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')) reviewed(edges)
+   where actual.edges is distinct from reviewed.edges)
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
    and has_schema_privilege(current_user,n.oid,'USAGE')
@@ -85,10 +126,15 @@ export const WRITER_IDENTITY_SQL = `select (
 const fenceSql=`with checked as materialized (${WRITER_IDENTITY_SQL})
 select checked.safe,case when checked.safe then buyer_writer.lock_scope() else false end as locked from checked`;
 const operationSql=text=>{
-  const shifted=text.replaceAll(/\$(\d+)/g,(_,n)=>`$${Number(n)+4}`);
+  const prefix='select ',suffix=' as result';
+  if(!text.startsWith(prefix)||!text.endsWith(suffix))throw unavailable();
+  const shifted=text.slice(prefix.length,-suffix.length).replaceAll(/\$(\d+)/g,(_,n)=>`$${Number(n)+4}`);
+  // Keep the volatile SECURITY DEFINER call inside the CASE arm itself. A
+  // lateral subquery can be pulled up/reordered by PostgreSQL and is therefore
+  // not an execution fence even when it carries a checked.safe predicate.
   return `with checked as materialized (${WRITER_IDENTITY_SQL})
-select checked.safe,case when checked.safe then operation.result end as result
-from checked cross join lateral (${shifted}) operation`;
+select checked.safe,case when checked.safe then ${shifted} else null::jsonb end as result
+from checked`;
 };
 
 function configuration(value,kind) {

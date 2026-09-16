@@ -441,6 +441,19 @@ try {
       const result=run(['exec','-i',name,'psql','-X','-qAt','-U',substitute?'postgres':user,'-d','writer_test','-v','ON_ERROR_STOP=1'],statement);
       assert.equal(result.status,0,'isolated identity query must execute');return result.stdout.trim();
     };
+    const bindCurrentRelations=()=>sql(`set role buyer_writer_owner;
+      do $$declare metadata jsonb;begin
+       select jsonb_build_object('creatorOid',${creatorOid}::text,'relations',jsonb_agg(jsonb_build_object(
+        'schema',reviewed.schema_name,'name',reviewed.relation_name,'oid',c.oid::text,'relkind',c.relkind,
+        'relowner',c.relowner::text,'relispartition',c.relispartition,'relpersistence',c.relpersistence,
+        'relrowsecurity',c.relrowsecurity,'relforcerowsecurity',c.relforcerowsecurity,
+        'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
+       ) order by reviewed.schema_name,reviewed.relation_name)) into metadata
+       from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+        ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) reviewed(schema_name,relation_name)
+       join pg_namespace n on n.nspname=reviewed.schema_name join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name;
+       execute format('comment on schema buyer_writer is %L','blackspire-buyer-writer:v2:'||metadata::text);
+      end$$;reset role;`);
     assert.equal(identity(),'t');assert.equal(identity('issuer'),'t');assert.equal(identity('runtime',true),'f');
     const denied=(grant,revoke)=>{sql(grant);assert.equal(identity(),'f');sql(revoke);assert.equal(identity(),'t');};
     denied('grant create on schema buyer_writer to buyer_writer_runtime','revoke create on schema buyer_writer from buyer_writer_runtime');
@@ -493,6 +506,62 @@ try {
       revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
     assert.equal(identity(),'f','attached trigger remains executable without writer EXECUTE and must fail checkout closed');
     sql(installSql,{fail:true});sql('drop trigger hidden_trigger on public."RawSale";drop function public.hidden_trigger()');assert.equal(identity(),'t');
+    sql('create role writer_entrypoint_outsider nologin');
+    denied(`grant usage on schema buyer_writer to writer_entrypoint_outsider;
+      grant execute on function buyer_writer.apply(text,text,jsonb) to writer_entrypoint_outsider`,
+     `revoke execute on function buyer_writer.apply(text,text,jsonb) from writer_entrypoint_outsider;
+      revoke usage on schema buyer_writer from writer_entrypoint_outsider`);
+    sql(`grant usage on schema buyer_writer to public;
+      grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid) to public`);
+    assert.equal(identity('runtime'),'f','PUBLIC schema reachability to an approved entrypoint must fail runtime checkout');
+    assert.equal(identity('issuer'),'f','PUBLIC schema reachability to an approved entrypoint must fail issuer checkout');
+    sql(`revoke execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid) from public;
+      revoke usage on schema buyer_writer from public`);
+    sql(`grant usage on schema buyer_writer to writer_entrypoint_outsider;
+      grant execute on function buyer_writer.apply(text,text,jsonb) to writer_entrypoint_outsider;
+      alter role buyer_writer_runtime inherit;
+      grant writer_entrypoint_outsider to buyer_writer_runtime`);
+    assert.equal(identity(),'f','an inherited outsider entrypoint grant must fail checkout');
+    sql(`revoke writer_entrypoint_outsider from buyer_writer_runtime;
+      alter role buyer_writer_runtime noinherit;
+      revoke execute on function buyer_writer.apply(text,text,jsonb) from writer_entrypoint_outsider;
+      revoke usage on schema buyer_writer from writer_entrypoint_outsider;
+      drop role writer_entrypoint_outsider`);assert.equal(identity(),'t');
+    sql(`create table public."RawSale_hook_child"() inherits (public."RawSale");
+      create function public.child_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
+      create trigger child_hidden_trigger before insert on public."RawSale_hook_child" for each row execute function public.child_hidden_trigger();
+      revoke execute on function public.child_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+    assert.equal(identity(),'f','a trigger on a pg_inherits descendant of a protected relation must fail checkout');
+    sql(installSql,{fail:true});
+    sql('drop table public."RawSale_hook_child";drop function public.child_hidden_trigger()');assert.equal(identity(),'t');
+    const stableRelationBinding=sql("select obj_description('buyer_writer'::regnamespace,'pg_namespace')");
+    sql(`alter table public."RawSale" rename to "RawSale_bound";
+      create table public."RawSale" (like public."RawSale_bound" including defaults including constraints) partition by list(search_job_id);
+      create table public."RawSale_partition" partition of public."RawSale" default;
+      create function public.partition_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
+      create trigger partition_hidden_trigger before insert on public."RawSale_partition" for each row execute function public.partition_hidden_trigger();
+      revoke execute on function public.partition_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+    bindCurrentRelations();
+    assert.equal(identity(),'f','a trigger on a declarative partition child must fail checkout even when installation metadata matches the partition graph');
+    sql(installSql,{fail:true});
+    sql(`drop table public."RawSale";alter table public."RawSale_bound" rename to "RawSale";
+      set role buyer_writer_owner;comment on schema buyer_writer is ${literal(stableRelationBinding)};reset role;
+      drop function public.partition_hidden_trigger()`);assert.equal(identity(),'t');
+    sql(`create rule raw_sale_rewrite_guard as on insert to public."RawSale" do also notify zola_rule_witness`);
+    assert.equal(identity(),'f','a nontrivial rewrite rule on a protected relation must fail checkout');
+    sql(installSql,{fail:true});sql('drop rule raw_sale_rewrite_guard on public."RawSale"');assert.equal(identity(),'t');
+    sql('alter table public."RawSale" owner to anon');assert.equal(identity(),'f','protected relation owner drift must fail checkout');
+    sql('alter table public."RawSale" owner to postgres');assert.equal(identity(),'t');
+    sql('alter table public."RawSale" rename to "RawSale_bound"');assert.equal(identity(),'f','protected relation rename must fail checkout');
+    sql('alter table public."RawSale_bound" rename to "RawSale"');assert.equal(identity(),'t');
+    sql(`alter table public."RawSale" rename to "RawSale_bound";
+      create table public."RawSale" (like public."RawSale_bound" including defaults including constraints)`);
+    assert.equal(identity(),'f','ordinary equivalent-name relation replacement must fail checkout');
+    sql('drop table public."RawSale";alter table public."RawSale_bound" rename to "RawSale"');assert.equal(identity(),'t');
+    sql(`alter table public."RawSale" rename to "RawSale_bound";
+      create table public."RawSale" (like public."RawSale_bound" including defaults including constraints) partition by list(search_job_id)`);
+    assert.equal(identity(),'f','partitioned equivalent-name substitution must fail checkout');
+    sql('drop table public."RawSale";alter table public."RawSale_bound" rename to "RawSale"');assert.equal(identity(),'t');
     const otherDatabase=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_runtime','-d','writer_other','-v','ON_ERROR_STOP=1'],'select 1');
     assert.notEqual(otherDatabase.status,0,'safe non-target database must reject the runtime login');
     sql('create role substituted_bootstrap nologin');
@@ -511,6 +580,7 @@ try {
       grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres;
       reset role;drop role substituted_bootstrap;`);
     assert.equal(identity(),'t');
+    const relationBindingComment=sql("select obj_description('buyer_writer'::regnamespace,'pg_namespace')");
     adminSql(`alter role postgres rename to original_creator;
       create role postgres superuser login;
       alter database writer_test owner to postgres;
@@ -521,7 +591,7 @@ try {
     const replacementCreatorOid=sql("select oid from pg_roles where rolname='postgres'");
     assert.notEqual(replacementCreatorOid,creatorOid);
     assert.equal(identity(),'f','renamed and replaced postgres/database owner must not substitute for the pinned creator OID');
-    sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v1:creator-oid='+replacementCreatorOid)};reset role;`);
+    sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v2:{"creatorOid":"'+replacementCreatorOid+'","relations":[]}')};reset role;`);
     sql(installSql,{fail:true});
     adminSql(`revoke buyer_writer_owner from postgres granted by postgres;
       revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by fixture_admin;
@@ -530,7 +600,7 @@ try {
       alter role original_creator rename to postgres;
       grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin;`);
     sql('grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres');
-    sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v1:creator-oid='+trustedCreatorOid)};reset role;`);
+    sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal(relationBindingComment)};reset role;`);
     assert.equal(sql("select oid from pg_roles where rolname='postgres'"),creatorOid);assert.equal(identity(),'t');
     sql('create schema net;create table net.http_request_queue(id integer);grant all on net.http_request_queue to public;');
     assert.equal(identity(),'t','PUBLIC relation ACL without schema USAGE is unreachable');
