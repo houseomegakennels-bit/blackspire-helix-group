@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-09-16 — publish reconciled isolation, then require new exact-head evidence
+
+1. Confirm `origin/release/zola-production-live` still equals reconciliation base `dcde3a8d1d5a01bdb63daf4643963aea52e340d4`; update it only by normal fast-forward to the final reconciliation head. Never force-push or overwrite intervening release work.
+2. Require fresh CI, receiver and Vercel frontend/root/aggregate evidence for the exact pushed head before any production provisioning or release action. Local approval and disposable PostgreSQL evidence are not live acceptance.
+3. Preserve the existing provider blockers and approval boundaries. Do not deploy, cut over, mutate Supabase/provider objects, repin n8n, touch production data or run the production Buyer Writer provisioner without separate explicit authority and the remaining external gates.
+
 ## 2026-09-15 — obtain provider consumer decision and owner authority for pg_net closure
 
 1. Commit and push the validated raw-sequence-capability correction, then require fresh exact-head CI, receiver and Vercel frontend/root/aggregate success.

@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-16 — Buyer Writer release reconciliation approved locally
+
+Implementation commit `0409b7c8bbcb25edaf1d9237062303fbf7ec78f6` reconciles the three reviewed isolation commits onto release base `dcde3a8d1d5a01bdb63daf4643963aea52e340d4` without discarding the 44 intervening release commits. The current installer digest is `52b7bcf19e294485c6bc434e3a155a160e76326c50f5d7567a9e495e5c513a3b`. Runtime checkout, installer pre/postflight, migration postcondition and production verification now agree on creator identity, exact membership/routine/ACL policy, relation hooks and executable expression dependencies, custom column types, external reachability and raw sequence capability. The local final review is APPROVED; requested Node/PostgreSQL/static gates are green. No live action was taken.
+
+The release branch may receive this reconciliation only by a normal non-force update after confirming its remote head remains `dcde3a8d1d5a01bdb63daf4643963aea52e340d4`. Production provisioning, provider ACL correction, gateway installation, n8n repinning, deployment, cutover and data mutation remain separate and unauthorized.
+
 ## 2026-09-15 — provider ACL inventory complete; sequence invariant correction validated
 
 Fresh provider inventory identifies five roles explicitly named by the provider pg_net hook (`postgres`, `anon`, `authenticated`, `service_role`, `supabase_functions_admin`), no cron/webhook/Supabase Functions/application catalog consumer, and only `postgres` in cumulative statement history. However, PUBLIC schema/object/routine ACLs currently confer effective pg_net capability on all 32 existing roles. The live object blocker is 16 PUBLIC relation edges on `net._http_response` and `net.http_request_queue` plus three PUBLIC sequence edges on `net.http_request_queue_id_seq`; PUBLIC schema USAGE and 12/12 PUBLIC routine EXECUTE also remain. Final security review rejected a five-role replacement as insufficiently consumer-preserving and rejected its rollback guards, so those drafts are quarantined read-only and must not be executed. Ordinary `postgres` cannot SET owner `supabase_admin`; an exact provider-approved consumer decision and owner-authorized migration remain required under `SU-471370`.
