@@ -106,6 +106,20 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     or p.prosecdef is distinct from expected.security_definer or l.lanname is distinct from expected.language
     or encode(sha256(convert_to(p.prosrc,'UTF8')),'hex') is distinct from expected.digest
     or p.proconfig is distinct from expected.config or p.provolatile::text is distinct from expected.volatility
+    or coalesce(p.proargnames,'{}'::text[]) is distinct from case expected.signature
+      when 'buyer_writer.lock_public_scope()' then array[]::text[] when 'buyer_writer.lock_scope()' then array[]::text[]
+      when 'buyer_writer.criteria(jsonb)' then array['j'] when 'buyer_writer.valid_context(jsonb)' then array['c']
+      when 'buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)' then array['p_job','p_owner','p_workspace','p_digest','p_context','p_expected_criteria','p_expected_updated_at','p_request']
+      when 'buyer_writer.cancel(uuid,uuid,text)' then array['p_job','p_owner','p_workspace']
+      when 'buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)' then array['p_job','p_owner','p_workspace','p_request','p_expected_updated_at']
+      when 'buyer_writer.valid_sale(jsonb)' then array['r'] when 'buyer_writer.eligible(jsonb,jsonb)' then array['r','c']
+      when 'buyer_writer.commit_buyers(buyer_writer.dispatches)' then array['d'] when 'buyer_writer.apply(text,text,jsonb)' then array['p_digest','p_workspace','q']
+      when 'buyer_writer.context(text,text,uuid,uuid,bigint)' then array['p_digest','p_workspace','p_job','p_dispatch','p_generation']
+      when 'buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)' then array['p_digest','p_workspace','p_job','p_dispatch','p_generation','p_operation','p_index'] end
+    or p.prorettype::regtype::text is distinct from case when expected.signature='buyer_writer.cancel(uuid,uuid,text)' then 'void'
+      when expected.signature in('buyer_writer.lock_public_scope()','buyer_writer.lock_scope()','buyer_writer.valid_context(jsonb)','buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)') then 'boolean'
+      when expected.signature='buyer_writer.commit_buyers(buyer_writer.dispatches)' then 'integer' else 'jsonb' end
+    or p.pronargdefaults<>0 or p.proretset or p.provariadic<>0 or p.proallargtypes is not null or p.proargmodes is not null
     or p.prokind<>'f' or p.proisstrict or p.proleakproof or p.proparallel<>'u') then
    raise exception 'Writer routine definition drift';
   end if;
@@ -161,7 +175,6 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
          or has_any_column_privilege(r,c.oid,'SELECT,INSERT,UPDATE,REFERENCES') else false end)
     or exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
-       and has_schema_privilege(r,n.oid,'USAGE')
        and case when c.relkind='S' then has_sequence_privilege(r,c.oid,'SELECT,UPDATE,USAGE') else false end)
      or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prorettype<>'event_trigger'::regtype
       and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_temp'
@@ -195,6 +208,36 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead)) then
   raise exception 'Unexpected Buyer Writer relation rewrite rule';
  end if;
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent),
+   expression_objects(classid,objid) as (
+    select 'pg_constraint'::regclass,co.oid from pg_constraint co join protected p on p.oid=co.conrelid where co.conbin is not null
+    union select 'pg_attrdef'::regclass,a.oid from pg_attrdef a join protected p on p.oid=a.adrelid
+    union select 'pg_policy'::regclass,po.oid from pg_policy po join protected p on p.oid=po.polrelid
+    union select 'pg_class'::regclass,i.indexrelid from pg_index i join protected p on p.oid=i.indrelid where i.indexprs is not null or i.indpred is not null),
+   dependency_walk(rootclassid,rootobjid,classid,objid,depth) as (
+    select classid,objid,classid,objid,0 from expression_objects
+    union select w.rootclassid,w.rootobjid,d.refclassid,d.refobjid,w.depth+1 from dependency_walk w join pg_depend d on d.classid=w.classid and d.objid=w.objid
+     where w.depth<4 and (w.depth=0 or w.classid in('pg_operator'::regclass,'pg_cast'::regclass,'pg_type'::regclass)))
+    select from dependency_walk w join pg_proc p on w.classid='pg_proc'::regclass and p.oid=w.objid join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname<>'pg_catalog' and not(n.nspname='auth' and p.proname='uid' and p.pronargs=0 and p.prorettype='uuid'::regtype
+     and w.rootclassid='pg_policy'::regclass and exists(select from pg_policy po join pg_class c on c.oid=po.polrelid join pg_namespace pn on pn.oid=c.relnamespace
+      where po.oid=w.rootobjid and pn.nspname='public' and c.relname='SearchJob' and po.polname='user_read_own_search_jobs' and po.polcmd='r'
+       and po.polroles=array[(select oid from pg_roles where rolname='authenticated')]::oid[]))) then
+  raise exception 'Unexpected protected expression routine';
+ end if;
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+    select from protected p join pg_attribute a on a.attrelid=p.oid join pg_type t on t.oid=a.atttypid join pg_namespace n on n.oid=t.typnamespace
+    where a.attnum>0 and not a.attisdropped and n.nspname<>'pg_catalog') then
+  raise exception 'Unexpected protected column type';
+ end if;
  if exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
     where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
      and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE')
@@ -215,7 +258,6 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
       else false end)))
   or exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
     where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
-     and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE')
      and case when c.relkind='S' then has_sequence_privilege('buyer_writer_owner',c.oid,'SELECT,UPDATE,USAGE') else false end
      and n.nspname<>'buyer_writer')
   or exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prorettype<>'event_trigger'::regtype
@@ -689,7 +731,7 @@ do $$declare expected oid:=current_setting('blackspire.buyer_writer_creator_oid'
    left join pg_namespace n on n.nspname=reviewed.schema_name
    left join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name
    where c.oid is null or c.relkind<>'r' or c.relowner<>reviewed.owner_oid or c.relispartition
-    or exists(select from pg_inherits i where i.inhrelid=c.oid)) then
+    or exists(select from pg_inherits i where i.inhrelid=c.oid or i.inhparent=c.oid)) then
   raise exception 'Writer relation identity drift';
  end if;
  select jsonb_build_object('creatorOid',expected::text,'relations',jsonb_agg(jsonb_build_object(
@@ -722,6 +764,36 @@ do $$begin
     select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
     where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead)) then
   raise exception 'Unexpected Buyer Writer relation rewrite rule';
+ end if;
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent),
+   expression_objects(classid,objid) as (
+    select 'pg_constraint'::regclass,co.oid from pg_constraint co join protected p on p.oid=co.conrelid where co.conbin is not null
+    union select 'pg_attrdef'::regclass,a.oid from pg_attrdef a join protected p on p.oid=a.adrelid
+    union select 'pg_policy'::regclass,po.oid from pg_policy po join protected p on p.oid=po.polrelid
+    union select 'pg_class'::regclass,i.indexrelid from pg_index i join protected p on p.oid=i.indrelid where i.indexprs is not null or i.indpred is not null),
+   dependency_walk(rootclassid,rootobjid,classid,objid,depth) as (
+    select classid,objid,classid,objid,0 from expression_objects
+    union select w.rootclassid,w.rootobjid,d.refclassid,d.refobjid,w.depth+1 from dependency_walk w join pg_depend d on d.classid=w.classid and d.objid=w.objid
+     where w.depth<4 and (w.depth=0 or w.classid in('pg_operator'::regclass,'pg_cast'::regclass,'pg_type'::regclass)))
+    select from dependency_walk w join pg_proc p on w.classid='pg_proc'::regclass and p.oid=w.objid join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname<>'pg_catalog' and not(n.nspname='auth' and p.proname='uid' and p.pronargs=0 and p.prorettype='uuid'::regtype
+     and w.rootclassid='pg_policy'::regclass and exists(select from pg_policy po join pg_class c on c.oid=po.polrelid join pg_namespace pn on pn.oid=c.relnamespace
+      where po.oid=w.rootobjid and pn.nspname='public' and c.relname='SearchJob' and po.polname='user_read_own_search_jobs' and po.polcmd='r'
+       and po.polroles=array[(select oid from pg_roles where rolname='authenticated')]::oid[]))) then
+  raise exception 'Unexpected protected expression routine';
+ end if;
+ if exists(with recursive protected(oid) as (
+    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+    select from protected p join pg_attribute a on a.attrelid=p.oid join pg_type t on t.oid=a.atttypid join pg_namespace n on n.oid=t.typnamespace
+    where a.attnum>0 and not a.attisdropped and n.nspname<>'pg_catalog') then
+  raise exception 'Unexpected protected column type';
  end if;
  if (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
      from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a where n.nspname='buyer_writer') is distinct from

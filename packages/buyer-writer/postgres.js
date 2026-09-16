@@ -10,6 +10,7 @@ const statements = {
   ]),
   issuer: new Set([
     'select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result',
+    'select buyer_writer.cancel($1,$2,$3) as result',
     'select buyer_writer.reconcile($1,$2,$3,$4,$5::timestamptz) as result',
   ]),
 };
@@ -56,6 +57,9 @@ export const WRITER_IDENTITY_SQL = `select (
  and has_schema_privilege(current_user,'buyer_writer','USAGE')
  and not exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(current_user,n.oid,'CREATE'))
  and not has_database_privilege(current_user,current_database(),'CREATE')
+ and not exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and n.nspname<>'buyer_writer'
+   and has_schema_privilege('buyer_writer_owner',n.oid,'CREATE'))
+ and not has_database_privilege('buyer_writer_owner',current_database(),'CREATE')
  and not exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
    where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT'))
  and not exists(with recursive protected(oid) as (
@@ -71,13 +75,45 @@ export const WRITER_IDENTITY_SQL = `select (
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
    select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
    where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead))
+ and not exists(with recursive protected(oid) as (
+   select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+    ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+   union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent),
+ expression_objects(classid,objid) as (
+   select 'pg_constraint'::regclass,co.oid from pg_constraint co join protected p on p.oid=co.conrelid where co.conbin is not null
+   union select 'pg_attrdef'::regclass,a.oid from pg_attrdef a join protected p on p.oid=a.adrelid
+   union select 'pg_policy'::regclass,po.oid from pg_policy po join protected p on p.oid=po.polrelid
+   union select 'pg_class'::regclass,i.indexrelid from pg_index i join protected p on p.oid=i.indrelid where i.indexprs is not null or i.indpred is not null),
+ dependency_walk(rootclassid,rootobjid,classid,objid,depth) as (
+   select classid,objid,classid,objid,0 from expression_objects
+   union select w.rootclassid,w.rootobjid,d.refclassid,d.refobjid,w.depth+1 from dependency_walk w join pg_depend d on d.classid=w.classid and d.objid=w.objid
+    where w.depth<4 and (w.depth=0 or w.classid in('pg_operator'::regclass,'pg_cast'::regclass,'pg_type'::regclass)))
+   select from dependency_walk w join pg_proc p on w.classid='pg_proc'::regclass and p.oid=w.objid join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname<>'pg_catalog' and not(n.nspname='auth' and p.proname='uid' and p.pronargs=0 and p.prorettype='uuid'::regtype
+    and w.rootclassid='pg_policy'::regclass and exists(select from pg_policy po join pg_class c on c.oid=po.polrelid join pg_namespace pn on pn.oid=c.relnamespace
+     where po.oid=w.rootobjid and pn.nspname='public' and c.relname='SearchJob' and po.polname='user_read_own_search_jobs' and po.polcmd='r'
+      and po.polroles=array[(select oid from pg_roles where rolname='authenticated')]::oid[])))
+ and not exists(with recursive protected(oid) as (
+   select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+    ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+   union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
+   select from protected p join pg_attribute a on a.attrelid=p.oid join pg_type t on t.oid=a.atttypid join pg_namespace n on n.oid=t.typnamespace
+   where a.attnum>0 and not a.attisdropped and n.nspname<>'pg_catalog')
+ and not exists(select from pg_inherits i join pg_class c on c.oid in(i.inhparent,i.inhrelid)
+   join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
+    ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')))
  and coalesce((select bool_and(coalesce(has_function_privilege(current_user,to_regprocedure(s),'EXECUTE'),false)) from unnest($2::text[]) s),false)
- and not exists(select from jsonb_to_recordset($3::jsonb) expected(signature text,digest text,language text,"securityDefiner" boolean,config text[],volatility text,owner text)
+ and not exists(select from jsonb_to_recordset($3::jsonb) expected(signature text,digest text,language text,"securityDefiner" boolean,config text[],volatility text,owner text,arguments text[],result text)
    left join pg_proc p on p.oid=to_regprocedure(expected.signature) left join pg_language l on l.oid=p.prolang
    where p.oid is null or p.proowner<>case when expected.owner='creator' then $4::oid else (select oid from pg_roles where rolname='buyer_writer_owner') end
    or p.prosecdef is distinct from expected."securityDefiner" or l.lanname is distinct from expected.language
    or encode(sha256(convert_to(p.prosrc,'UTF8')),'hex') is distinct from expected.digest
    or p.proconfig is distinct from expected.config or p.provolatile::text is distinct from expected.volatility
+   or coalesce(p.proargnames,'{}'::text[]) is distinct from expected.arguments or p.prorettype::regtype::text is distinct from expected.result
+   or p.pronargdefaults<>0 or p.proretset or p.provariadic<>0 or p.proallargtypes is not null or p.proargmodes is not null
    or p.prokind<>'f' or p.proisstrict or p.proleakproof or p.proparallel<>'u')
  and (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
       from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a where n.nspname='buyer_writer')=
@@ -98,7 +134,17 @@ export const WRITER_IDENTITY_SQL = `select (
       or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')) reviewed(edges)
-   where actual.edges is distinct from reviewed.edges)
+  where actual.edges is distinct from reviewed.edges)
+ and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+   where n.nspname='public' and c.relname in('SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport')
+   and c.relkind in('r','p') and a.grantee=0
+   and a.privilege_type in('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'))
+ and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute x on x.attrelid=c.oid
+   cross join lateral aclexplode(x.attacl) a
+   where n.nspname='public' and c.relname in('SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport')
+   and c.relkind in('r','p') and x.attnum>0 and not x.attisdropped and x.attacl is not null and a.grantee=0
+   and a.privilege_type in('SELECT','INSERT','UPDATE','REFERENCES'))
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
    and has_schema_privilege(current_user,n.oid,'USAGE')
@@ -106,9 +152,26 @@ export const WRITER_IDENTITY_SQL = `select (
     has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
      or has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES') else false end)
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
-   where n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
-   and has_schema_privilege(current_user,n.oid,'USAGE')
-   and case when c.relkind='S' then has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE') else false end)
+   where c.relkind='S' and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+   and has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE'))
+ and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+   and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE') and n.nspname<>'buyer_writer'
+   and has_table_privilege('buyer_writer_owner',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'))
+ and not exists(select from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace
+   cross join (values('SELECT'),('INSERT'),('UPDATE'),('REFERENCES')) privilege(name)
+   where a.attnum>0 and not a.attisdropped and c.relkind in('r','p','v','m','f')
+   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
+   and has_schema_privilege('buyer_writer_owner',n.oid,'USAGE') and has_column_privilege('buyer_writer_owner',c.oid,a.attnum,privilege.name)
+   and not(n.nspname='buyer_writer' or (n.nspname='public' and case
+    when c.relname='SearchJob' then (privilege.name='SELECT' and a.attname=any(array['id','user_id','state','county','property_type','date_range_start','date_range_end','min_purchases','cash_buyers_only','llc_buyers_only','status','updated_at'])) or (privilege.name='UPDATE' and a.attname=any(array['status','total_sales_analyzed','total_buyers_found','error_message','updated_at']))
+    when c.relname in('RawSale','CleanSale') then privilege.name='INSERT' and a.attname=any(array['search_job_id','buyer_name','seller_name','property_address','mailing_address','county','state','sale_price','sale_date','property_type','parcel_id','deed_type','lender_name'])
+    when c.relname='BuyerProfile' then (privilege.name='SELECT' and a.attname=any(array['id','buyer_name','mailing_address','county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at'])) or (privilege.name='INSERT' and a.attname=any(array['buyer_name','mailing_address','county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at'])) or (privilege.name='UPDATE' and a.attname=any(array['county','state','is_llc','is_cash_buyer','purchase_count','total_spend','first_purchase_date','last_purchase_date','property_types','score','score_breakdown','parcel_ids','updated_at']))
+    when c.relname='BuyerReport' then privilege.name='INSERT' and a.attname=any(array['search_job_id','buyer_profile_id','buyer_name_snapshot','mailing_address_snapshot','score','purchase_count','total_spend','is_llc','is_cash_buyer'])
+    else false end)))
+ and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)' and n.nspname<>'buyer_writer'
+   and case when c.relkind='S' then has_sequence_privilege('buyer_writer_owner',c.oid,'SELECT,UPDATE,USAGE') else false end)
  and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
    cross join (values(current_user),('buyer_writer_owner')) w(role_name)
    where n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_temp'
@@ -132,8 +195,11 @@ const operationSql=text=>{
   // Keep the volatile SECURITY DEFINER call inside the CASE arm itself. A
   // lateral subquery can be pulled up/reordered by PostgreSQL and is therefore
   // not an execution fence even when it carries a checked.safe predicate.
+  const expression=text==='select buyer_writer.cancel($1,$2,$3) as result'
+    ?`case when checked.safe then ${shifted} end`
+    :`case when checked.safe then ${shifted} else null::jsonb end`;
   return `with checked as materialized (${WRITER_IDENTITY_SQL})
-select checked.safe,case when checked.safe then ${shifted} else null::jsonb end as result
+select checked.safe,${expression} as result
 from checked`;
 };
 

@@ -38,8 +38,9 @@ export function validateBuyerWriterClientConfiguration(value,{workspace,environm
 export function validateBuyerWriterGatewayProvisioningConfiguration(value,{workspace}={}) {
   try {
     if(typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)
-      ||!exact(value,['version','workspace','bindingFile','writerCredential','issuerCredential','gatewayCapability','authority','runtime','issuer'])
-      ||value.version!==3||value.workspace!==workspace||!canonicalPath(value.bindingFile))throw new Error();
+      ||!exact(value,['version','workspace','bindingFile','writerCredential','issuerCredential','gatewayCapability','creatorOid','authority','runtime','issuer'])
+      ||value.version!==3||value.workspace!==workspace||!canonicalPath(value.bindingFile)
+      ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)throw new Error();
     for(const config of [value.runtime,value.issuer]){
       if(!exact(config,['host','port','database','password'],['ca'])||typeof config.host!=='string'||config.host.length>253
         ||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(config.host)||!Number.isInteger(config.port)||config.port<1||config.port>65535

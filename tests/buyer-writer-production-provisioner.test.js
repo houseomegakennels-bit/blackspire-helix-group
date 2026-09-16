@@ -6,6 +6,7 @@ import {
  BUYER_WRITER_ROUTINES,BUYER_WRITER_RUNTIME_ROUTINES,
 } from '../packages/buyer-writer/production-verifier.js';
 import {BUYER_WRITER_INSTALLER_SHA256,provisionBuyerWriterProduction} from '../packages/buyer-writer/production-provisioner.js';
+import {BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '../packages/buyer-writer/routine-policy.js';
 
 const runtimeSecret='runtime-password-never-disclose';
 const issuerSecret='issuer-password-never-disclose';
@@ -13,25 +14,33 @@ const managementSecret='management-password-never-disclose';
 const ca='-----BEGIN CERTIFICATE-----\nfixture-only\n-----END CERTIFICATE-----\n';
 const identity=(gid,mode)=>({uid:0,gid,mode,nlink:1,size:100,dev:1,ino:gid+10,mtimeMs:1,ctimeMs:1});
 const gateway={version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',
- gatewayCapability:'a'.repeat(43),authority:{releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-456789abcdef',
+ gatewayCapability:'a'.repeat(43),creatorOid:16384,authority:{releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-456789abcdef',
   attemptId:'11234567-89ab-cdef-0123-456789abcdef',workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'},
  runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:runtimeSecret,ca},
  issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:issuerSecret,ca}};
 const management={host:gateway.runtime.host,password:managementSecret,ca};
-const acl=(grantee,privilege,grantable=false)=>({grantor:'buyer_writer_owner',grantee,privilege,grantable});
+const ownerOid='16390';
+const acl=(grantee,privilege,grantable=false,grantor='buyer_writer_owner')=>({grantor,grantee,privilege,grantable});
 const evidence=()=>({
  roles:['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'].map(name=>({name,login:name!=='buyer_writer_owner',inherit:false,
   superuser:false,createDb:false,createRole:false,replication:false,bypassRls:false})),
- memberships:[{role:'buyer_writer_owner',member:'postgres',grantor:'postgres',admin:false,inherit:true,set:true},
-  {role:'buyer_writer_runtime',member:'postgres',grantor:'postgres',admin:true,inherit:false,set:false},
-  {role:'buyer_writer_issuer',member:'postgres',grantor:'postgres',admin:true,inherit:false,set:false}],
+ memberships:[{role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(gateway.creatorOid),grantor:'postgres',grantorOid:String(gateway.creatorOid),admin:false,inherit:false,set:true},
+  {role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(gateway.creatorOid),grantor:'fixture_admin',grantorOid:'10',admin:true,inherit:false,set:false},
+  {role:'buyer_writer_runtime',roleOid:'16391',member:'postgres',memberOid:String(gateway.creatorOid),grantor:'fixture_admin',grantorOid:'10',admin:true,inherit:false,set:false},
+  {role:'buyer_writer_issuer',roleOid:'16392',member:'postgres',memberOid:String(gateway.creatorOid),grantor:'fixture_admin',grantorOid:'10',admin:true,inherit:false,set:false}],
  schema:{name:'buyer_writer',owner:'buyer_writer_owner',edges:[acl('buyer_writer_owner','CREATE'),acl('buyer_writer_owner','USAGE'),
   acl('buyer_writer_runtime','USAGE'),acl('buyer_writer_issuer','USAGE')]},
- routines:BUYER_WRITER_ROUTINES.map(signature=>{const runtime=BUYER_WRITER_RUNTIME_ROUTINES.includes(signature),issuer=BUYER_WRITER_ISSUER_ROUTINES.includes(signature);
-  return {signature,owner:'buyer_writer_owner',securityDefiner:runtime||issuer,searchPathLocked:runtime||issuer,
-   edges:[acl('buyer_writer_owner','EXECUTE'),...(runtime?[acl('buyer_writer_runtime','EXECUTE')]:[]),...(issuer?[acl('buyer_writer_issuer','EXECUTE')]:[])],
+ routines:BUYER_WRITER_ROUTINES.map(signature=>{const policy=ROUTINE_POLICY.find(value=>value.signature===signature),creator=policy.owner==='creator';
+  const runtime=BUYER_WRITER_RUNTIME_ROUTINES.includes(signature),issuer=BUYER_WRITER_ISSUER_ROUTINES.includes(signature),owner=creator?'postgres':'buyer_writer_owner';
+  return {signature,owner,ownerOid:creator?String(gateway.creatorOid):ownerOid,securityDefiner:policy.securityDefiner,
+   language:policy.language,digest:policy.digest,config:[...policy.config],volatility:policy.volatility,kind:'f',strict:false,leakproof:false,parallel:'u',
+   argumentNames:[...policy.arguments],result:policy.result,argumentDefaults:0,returnsSet:false,variadic:'0',hasAllArgumentTypes:false,hasArgumentModes:false,
+   edges:[acl(owner,'EXECUTE',false,owner),...(signature==='buyer_writer.lock_public_scope()'?[acl('buyer_writer_owner','EXECUTE',false,owner)]:[]),
+    ...(runtime?[acl('buyer_writer_runtime','EXECUTE',false,owner)]:[]),...(issuer?[acl('buyer_writer_issuer','EXECUTE',false,owner)]:[])],
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false};}),
- targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],databaseCreate:{buyer_writer_runtime:false,buyer_writer_issuer:false},
+ targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
+ creatorOid:String(gateway.creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
+ databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',publicExecute:true,
   ownerExecute:true,runtimeExecute:true,issuerExecute:true})),
 });
@@ -49,14 +58,15 @@ function harness({exists=false,login=exists,compliant=exists,authWorks=exists,au
  };
  const connect=async()=>{
   const client={ended:false,async query(text,values=[]){calls.push({text,values,client});
-    if(text.includes("current_setting('server_version_num')"))return {rows:authority?[{actor:'postgres',database:'postgres',version:170006,
-      superuser:false,createDb:true,createRole:true,replication:true,bypassRls:true}]:[{actor:'postgres',database:'postgres',version:170006,
+    if(text.includes("current_setting('server_version_num')"))return {rows:authority?[{actor:'postgres',creatorOid:16384,database:'postgres',version:170006,
+      superuser:false,createDb:true,createRole:true,replication:true,bypassRls:true}]:[{actor:'postgres',creatorOid:16384,database:'postgres',version:170006,
       superuser:false,createDb:true,createRole:false,replication:true,bypassRls:true}]};
     if(text.includes('pg_try_advisory_lock'))return {rows:[{acquired:true}]};
     if(text.includes('pg_advisory_unlock'))return {rows:[{released:true}]};
     if(text.includes('wanted.name')){if(readinessFailure)throw new Error(`catalog ${managementSecret}`);return {rows:[{roles:roles()}]};}
     if(text===BUYER_WRITER_PRODUCTION_VERIFY_SQL)return {rows:[{evidence:state.compliant?evidence():{}}]};
     if(text.startsWith('-- Explicitly installed')){assert.equal(createHash('sha256').update(text).digest('hex'),BUYER_WRITER_INSTALLER_SHA256);
+      assert.ok(calls.some(row=>row.text?.includes("set_config('blackspire.buyer_writer_creator_oid'")&&row.values?.[0]==='16384'));
       state.exists=true;state.ownerLogin=state.runtimeLogin=state.issuerLogin=false;state.compliant=false;return {rows:[]};}
     if(text.includes('blackspire_fail_closed')){state.ownerLogin=state.runtimeLogin=state.issuerLogin=false;state.compliant=false;state.failClosed++;return {rows:[]};}
     if(text.includes('count(*)::int as count'))return {rows:[{count:Number(state.runtimeLogin||state.issuerLogin)}]};

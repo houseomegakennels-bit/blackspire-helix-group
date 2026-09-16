@@ -117,7 +117,7 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     const artifact=await inspectArtifact({artifactRoot:path.join(paths.releaseRoot,releaseSha),releaseSha,environment:'production'});
     if(artifact.releaseSha!==releaseSha||artifact.environment!=='production'||!(/^[a-f0-9]{64}$/).test(artifact.artifactDigest??''))reject();
     const socketPath='/run/blackspire/buyer-writer.sock';
-    const gatewayConfig=Object.freeze({version:2,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,authority:config.authority,
+    const gatewayConfig=Object.freeze({version:2,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,creatorOid:config.creatorOid,authority:config.authority,
       runtime:config.runtime,issuer:config.issuer});
     const clientConfig=validateBuyerWriterClientConfiguration({version:3,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,authority:config.authority},
       {workspace:'blackspire-command',environment:'production'});
@@ -156,7 +156,7 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     checkDirectoryDefaultAcl(p.acl,p.paths.gatewayConfigDirectory);
     // Only the existing fixed scoped-role allow/deny SQL is run. No role creation,
     // SQL writes, issuer permit, writer apply or provider call is reachable here.
-    database=await connect({runtime:p.snapshot.value.runtime,issuer:p.snapshot.value.issuer});
+    database=await connect({runtime:p.snapshot.value.runtime,issuer:p.snapshot.value.issuer,creatorOid:p.snapshot.value.creatorOid});
     if(database.isHealthy()!==true)reject();await database.close();database=undefined;
     await hostState(p.run);
     if(!same(p.ids,await p.identity(p.run))||!same(p.snapshot,p.readSnapshot(p.input.configurationFile,{groupId:p.ids.credentialGroupId,maxBytes:65536})))reject();

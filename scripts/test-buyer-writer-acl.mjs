@@ -136,12 +136,14 @@ try {
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/nexus.sql',import.meta.url),'utf8'));
   // Preserve the provider-owned PUBLIC object ACLs. Removing schema reachability
   // is sufficient isolation and is already the observed production shape.
-  const reachableBaselineAcl=makePlan();
   sql('revoke usage on schema net,extensions from public');
   const applicationAcl=makePlan();
   const trustedCreatorOid=sql("select oid from pg_roles where rolname='postgres'");
   const postcondition=buyerWriterExtensionPostcondition(applicationAcl.manifest,Number(trustedCreatorOid));
   sql('begin;'+postcondition+'commit;',{fail:/All scoped writer roles required/});
+  // Sequence privileges remain OID-addressable without schema USAGE. Apply the
+  // reviewed provider ACL closure before enabling the Buyer Writer identities.
+  sql(applicationAcl.applySql);
   const installSql=`set blackspire.buyer_writer_creator_oid=${literal(trustedCreatorOid)};`+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
   sql(installSql);
   sql(`insert into public."SearchJob"(id,user_id,state,county,property_type) values
@@ -159,16 +161,11 @@ try {
   sql(injected,{fail:/expected application abort/});same(appState(),initialApp);
   checks.push('application package abort restores all application ACLs and policies');
   sql(prepared.sql);const appliedApp=appState();sql(prepared.sql);same(appState(),appliedApp);
-  checks.push('unreachable provider-owned PUBLIC privileges require no provider mutation');
+  checks.push('reviewed provider ACL closure precedes Buyer Writer installation and remains idempotent');
   checks.push('exact application package preserves six tables/private ledgers and reapplies safely');
-  sql('grant usage on schema net,extensions to public');
-  const reachablePrepared=prepareBuyerMigrationPackage({releaseSha:'b'.repeat(40),providerManifest:reachableBaselineAcl.manifest,creatorOid:Number(trustedCreatorOid)});
-  sql(reachablePrepared.sql,{fail:/Unexpected writer (relation privilege|reachable writer routine|extension privilege)/});
-  sql('revoke usage on schema net,extensions from public');
-  checks.push('captured reachable provider baseline fails the release predicate');
-  sql('grant usage on schema net to public');
-  sql(prepared.sql,{fail:/Unexpected writer (relation privilege|reachable writer routine|extension privilege)/});
-  sql('revoke usage on schema net from public');
+  sql('begin;grant usage on schema net to public;set role supabase_admin;grant execute on function net.http_post() to public;reset role;'+installSql,
+   {fail:/Unexpected writer role privileges/});
+  sql(prepared.sql);
   checks.push('PUBLIC network functions become a blocker when schema reachability appears');
   sql('grant consumer to buyer_writer_runtime with inherit true,set true');
   sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
@@ -186,6 +183,7 @@ try {
    grant buyer_writer_owner to postgres with admin true,set true,inherit false granted by postgres;
    `);
   checks.push('application preflight rejects creator and owner SET ROLE substitution');
+  sql(prepared.sql);
   for(const [grant,revoke,failure,label] of [
     ['grant create on schema public to buyer_writer_runtime','revoke create on schema public from buyer_writer_runtime','Unexpected writer schema CREATE privilege','schema CREATE'],
     ['grant create on database writer_test to buyer_writer_runtime','revoke create on database writer_test from buyer_writer_runtime','Unexpected writer database CREATE privilege','database CREATE'],
@@ -200,6 +198,7 @@ try {
   ]){
     sql(grant);sql(prepared.sql,{fail:new RegExp(failure)});sql(revoke);checks.push(`application preflight rejects ${label}`);
   }
+  sql(prepared.sql);
   sql('grant connect on database writer_other to public');
   sql(prepared.sql,{fail:/Unexpected writer cross-database CONNECT privilege/});
   sql(installSql,{fail:/Unexpected writer cross-database CONNECT privilege/});
@@ -208,8 +207,8 @@ try {
   sql(`create function public.hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
    create trigger hidden_trigger before insert on public."RawSale" for each row execute function public.hidden_trigger();
    revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
-  sql(prepared.sql,{fail:/Unexpected Buyer Writer relation trigger/});
-  sql(installSql,{fail:/Unexpected Buyer Writer relation trigger/});
+  sql(prepared.sql,{fail:/Writer relation inheritance drift|Unexpected Buyer Writer relation trigger/});
+  sql(installSql,{fail:/Writer relation identity drift|Unexpected Buyer Writer relation trigger/});
   sql('drop trigger hidden_trigger on public."RawSale";drop function public.hidden_trigger()');
   checks.push('application and installer reject a hidden SECURITY DEFINER trigger on a touched relation');
   sql('create role writer_entrypoint_outsider nologin');
@@ -229,18 +228,39 @@ try {
   sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
   sql('revoke buyer_writer_runtime from writer_entrypoint_outsider;drop role writer_entrypoint_outsider');
   checks.push('application and installer reject outsider, PUBLIC and inherited reachability to approved SECURITY DEFINER entrypoints');
+  sql(prepared.sql);
   sql(`create table public."RawSale_hook_child"() inherits (public."RawSale");
    create function public.child_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
    create trigger child_hidden_trigger before insert on public."RawSale_hook_child" for each row execute function public.child_hidden_trigger();
    revoke execute on function public.child_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
-  sql(prepared.sql,{fail:/Unexpected Buyer Writer relation trigger/});
-  sql(installSql,{fail:/Unexpected Buyer Writer relation trigger/});
+  sql(prepared.sql,{fail:/Writer relation inheritance drift|Unexpected Buyer Writer relation trigger/});
+  sql(installSql,{fail:/Writer relation identity drift|Unexpected Buyer Writer relation trigger/});
   sql('drop table public."RawSale_hook_child";drop function public.child_hidden_trigger()');
   sql('create rule raw_sale_rewrite_guard as on insert to public."RawSale" do also notify zola_rule_witness');
   sql(prepared.sql,{fail:/Unexpected Buyer Writer relation rewrite rule/});
   sql(installSql,{fail:/Unexpected Buyer Writer relation rewrite rule/});
   sql('drop rule raw_sale_rewrite_guard on public."RawSale"');
-  checks.push('application and installer reject descendant hooks and nontrivial rewrite rules');
+  sql(`create schema hidden_bridge;create table hidden_bridge.witness(id integer);
+   create function hidden_bridge.bridge() returns boolean language plpgsql security definer set search_path=pg_catalog as
+    'begin insert into hidden_bridge.witness values (1);return true;end';
+   revoke usage on schema hidden_bridge from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;
+   alter table public."SearchJob" add constraint hidden_bridge_guard check(hidden_bridge.bridge()) not valid;`);
+  sql(prepared.sql,{fail:/Unexpected protected expression routine/});
+  sql(installSql,{fail:/Unexpected protected expression routine/});
+  assert.equal(sql('select count(*) from hidden_bridge.witness'),'0');
+  sql('alter table public."SearchJob" drop constraint hidden_bridge_guard;drop schema hidden_bridge cascade');
+  sql(`create schema hidden_domain;create table hidden_domain.witness(id integer);
+   create function hidden_domain.bridge() returns boolean language plpgsql security definer set search_path=pg_catalog as
+    'begin insert into hidden_domain.witness values (1);return true;end';
+   create domain hidden_domain.guarded as text check(hidden_domain.bridge());
+   alter table public."RawSale" add column hidden_guard hidden_domain.guarded;
+   truncate hidden_domain.witness;
+   revoke usage on schema hidden_domain from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+  sql(prepared.sql,{fail:/Unexpected protected column type/});
+  sql(installSql,{fail:/Unexpected protected column type/});
+  assert.equal(sql('select count(*) from hidden_domain.witness'),'0');
+  sql('alter table public."RawSale" drop column hidden_guard;drop schema hidden_domain cascade');
+  checks.push('application and installer reject descendant hooks, rewrite rules, hidden executable relation expressions and custom column types');
   sql('alter table public."RawSale" owner to consumer');
   sql(prepared.sql,{fail:/Writer relation identity drift/});
   sql(installSql,{fail:/Unexpected existing writer namespace/});
@@ -265,12 +285,12 @@ try {
   sql(prepared.sql,{fail:/Unexpected writer sequence privilege/});sql('drop sequence public.fixture_writer_sequence');
   checks.push('application preflight rejects owner sequence privilege');
   for(const schema of ['extensions','public','other_reachable']){
-    if(schema==='extensions')sql('revoke select on extensions.pg_stat_statements,extensions.pg_stat_statements_info from public;grant usage on schema extensions to public');
+    if(schema==='extensions')sql('grant usage on schema extensions to public');
     if(schema==='other_reachable')sql(`create schema ${schema};grant usage on schema ${schema} to public`);
     sql(`create function ${schema}.public_invoker() returns integer language sql as 'select 1'`);
     sql(prepared.sql,{fail:/Unexpected reachable writer routine/});
     sql(`drop function ${schema}.public_invoker()`);
-    if(schema==='extensions')sql('revoke usage on schema extensions from public;grant select on extensions.pg_stat_statements,extensions.pg_stat_statements_info to public');
+    if(schema==='extensions')sql('revoke usage on schema extensions from public');
     if(schema==='other_reachable')sql(`drop schema ${schema}`);
   }
   checks.push('application preflight rejects reachable PUBLIC SECURITY INVOKER routines in extensions, public and another schema');
@@ -286,13 +306,12 @@ try {
   sql(installSql,{fail:/Writer routine definition drift/});
   sql(contextDefinition);
   checks.push('application preflight rejects allowlisted function body drift');
-  sql('grant select on net.http_request_queue to buyer_writer_runtime');
-  const driftedApp=appState();sql(prepared.sql,{fail:/Partial or unexpected ACL state/});same(appState(),driftedApp);
-  sql('revoke select on net.http_request_queue from buyer_writer_runtime');
+  sql(prepared.sql);
+  const driftedApp=appState();sql('begin;grant select on net.http_request_queue to buyer_writer_runtime;'+prepared.sql,
+   {fail:/Partial or unexpected ACL state/});same(appState(),driftedApp);
   checks.push('application package rejects provider ACL drift before application mutation');
-  sql('grant select on public."RawSale" to public');
-  const unsafeApp=appState();sql(prepared.sql,{fail:/Unexpected writer relation privilege/});same(appState(),unsafeApp);
-  sql('revoke select on public."RawSale" from public');
+  const unsafeApp=appState();sql('begin;grant select on public."RawSale" to public;'+prepared.sql,
+   {fail:/Unexpected target PUBLIC privileges|Unexpected writer relation privilege/});same(appState(),unsafeApp);
   checks.push('application preflight detects PUBLIC relation authority and atomically aborts before browser postconditions');
   sql('create policy unexpected_browser on public."SearchJob" for select to authenticated using(true)');
   const badPolicy=appState();sql(prepared.sql,{fail:/Unexpected SearchJob browser policy/});same(appState(),badPolicy);

@@ -215,7 +215,7 @@ async function withFixedWriter(configurationFile,bound,work,{groupId,readSnapsho
   if(typeof configurationFile!=='string'||typeof acceptanceFile!=='string'||acceptanceFile!==WRITER_ACCEPTANCE_TARGET_FILE||typeof work!=='function')reject();
   const gid=groupId??apiGroupId(),before=fixedConfiguration(configurationFile,gid,readSnapshot);
   const acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
-  database=await openDatabase({runtime:before.config.runtime,issuer:before.config.issuer});
+  database=await openDatabase({runtime:before.config.runtime,issuer:before.config.issuer,creatorOid:before.config.creatorOid});
   if(database?.isHealthy?.()!==true||typeof database.runtimeQuery!=='function'||typeof database.issuerQuery!=='function'||typeof database.close!=='function')reject();
   const result=await work(before.config,database,acceptance.target);
   const after=fixedConfiguration(configurationFile,gid,readSnapshot),acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);

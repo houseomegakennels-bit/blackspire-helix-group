@@ -7,7 +7,7 @@ import {observeBuyerWriterProductionState} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
 export const BUYER_WRITER_GATEWAY_CONFIGURATION='/etc/blackspire-buyer-writer-gateway/gateway.json';
-export const BUYER_WRITER_INSTALLER_SHA256='0776a2d5d72ea1d1ea06c8e5e36e75925f2e838072a161d80dbb76febfe3469a';
+export const BUYER_WRITER_INSTALLER_SHA256='52b7bcf19e294485c6bc434e3a155a160e76326c50f5d7567a9e495e5c513a3b';
 export const BUYER_WRITER_PROVISIONING_LOCK=Object.freeze([206994,127]);
 
 const INSTALLER=fileURLToPath(new URL('./sql/install.sql',import.meta.url));
@@ -28,7 +28,7 @@ const ROLE_READINESS_SQL=`select coalesce(jsonb_agg(jsonb_build_object(
 from (values ('buyer_writer_issuer'),('buyer_writer_owner'),('buyer_writer_runtime')) wanted(name)
 left join pg_roles r on r.rolname=wanted.name`;
 
-const SESSION_IDENTITY_SQL=`select current_user as actor,current_database() as database,
+const SESSION_IDENTITY_SQL=`select current_user as actor,current_database() as database,r.oid::int as "creatorOid",
  current_setting('server_version_num')::int as version,
  r.rolsuper as superuser,r.rolcreatedb as "createDb",r.rolcreaterole as "createRole",
  r.rolreplication as replication,r.rolbypassrls as "bypassRls"
@@ -125,9 +125,10 @@ function installerBytes(io){
   }catch{fail();}
 }
 
-async function identityAndLock(client){
+async function identityAndLock(client,creatorOid){
   const identity=await client.query(SESSION_IDENTITY_SQL,[]),actor=identity.rows?.[0];
   if(identity.rows?.length!==1||actor.actor!=='postgres'||actor.database!=='postgres'||actor.version<170000||actor.version>=180000
+    ||actor.creatorOid!==creatorOid
     ||actor.superuser!==false||actor.createRole!==true||actor.createDb!==true||actor.replication!==true||actor.bypassRls!==true)fail();
   const lock=await client.query(ACQUIRE_LOCK_SQL,[]);
   if(lock.rows?.length!==1||lock.rows[0]?.acquired!==true)fail();
@@ -140,8 +141,8 @@ async function readiness(client){
   return roles;
 }
 
-async function verified(client){
-  return observeBuyerWriterProductionState((text,values)=>client.query(text,values));
+async function verified(client,creatorOid){
+  return observeBuyerWriterProductionState((text,values)=>client.query(text,values),creatorOid);
 }
 
 async function closeClient(client){
@@ -149,11 +150,11 @@ async function closeClient(client){
   try{await client?.end();}catch{}
 }
 
-async function disableLogins({connect,management,onLocked,onDisabled}){
+async function disableLogins({connect,management,creatorOid,onLocked,onDisabled}){
   for(let attempt=0;attempt<2;attempt++){
     let client,began=false,commitSent=false;
     try{
-      client=await connect(management);await identityAndLock(client);onLocked?.();
+      client=await connect(management);await identityAndLock(client,creatorOid);onLocked?.();
       await client.query('begin');began=true;
       await client.query("set local search_path=pg_catalog; set local lock_timeout='5s'; set local statement_timeout='15s'");
       await client.query(FAIL_CLOSED_SQL,[]);
@@ -201,7 +202,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
   if(mode==='rollback'){
     let journalFailed=false;
     const safeJournal=(phase,status)=>{try{journal(phase,status);}catch{journalFailed=true;}};
-    const result=await disableLogins({connect,management,onLocked:()=>safeJournal('started','IN_PROGRESS'),
+    const result=await disableLogins({connect,management,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
       onDisabled:()=>safeJournal('roles-disabled','IN_PROGRESS')});
     safeJournal('rollback-complete','COMPLETED');
     if(journalFailed){const error=new Error('Buyer writer production rollback completed without durable journal');error.rollbackSafe=true;throw error;}
@@ -210,7 +211,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
 
   let client,mutationStarted=false;
   try{
-    client=await connect(management);await identityAndLock(client);
+    client=await connect(management);await identityAndLock(client,gateway.creatorOid);
     mutationStarted=mode!=='inspect';
     const recheckSnapshots=()=>{
       const gatewayAgain=readSnapshot(gatewayConfigPath,{groupId,maxBytes:65536});
@@ -220,7 +221,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     };
     const roles=await readiness(client);
     let evidence=null;
-    try{evidence=await verified(client);}catch{}
+    try{evidence=await verified(client,gateway.creatorOid);}catch{}
     if(mode==='inspect')return sanitizedInspection(roles,evidence);
     if(mode==='verify'){
       if(!evidence)fail();
@@ -250,6 +251,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
 
     // The canonical installer owns this transaction byte-for-byte. It leaves
     // every created role NOLOGIN, so the explicit phase boundary is fail-closed.
+    await client.query("select set_config('blackspire.buyer_writer_creator_oid',$1,false)",[String(gateway.creatorOid)]);
     await client.query(installerBytes(io));
     journal('installer-committed','IN_PROGRESS');
     const installed=await readiness(client);
@@ -266,11 +268,11 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
       await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',['buyer_writer_runtime',gateway.runtime.password]);
       await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',['buyer_writer_issuer',gateway.issuer.password]);
       await client.query("alter role buyer_writer_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null; alter role buyer_writer_runtime login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls; alter role buyer_writer_issuer login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls");
-      const finalEvidence=await verified(client);
+      const finalEvidence=await verified(client,gateway.creatorOid);
       recheckSnapshots();
       commitSent=true;await client.query('commit');began=false;
       await client.query('begin read only');
-      const committedEvidence=await verified(client);
+      const committedEvidence=await verified(client,gateway.creatorOid);
       await client.query('rollback');
       await authenticate('runtime',gateway.runtime);await authenticate('issuer',gateway.issuer);
       recheckSnapshots();
@@ -285,7 +287,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     await closeClient(client);client=null;
     if(mutationStarted){
       const safeJournal=(phase,status)=>{try{journal(phase,status);}catch{}};
-      try{await disableLogins({connect,management,onLocked:()=>safeJournal('started','IN_PROGRESS'),
+      try{await disableLogins({connect,management,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
         onDisabled:()=>safeJournal('roles-disabled','IN_PROGRESS')});}
       catch(error){safeJournal('failed','FAILED');throw error;}
       safeJournal('fail-closed','FAIL_CLOSED');

@@ -46,9 +46,10 @@ export function readBuyerWriterGatewayConfiguration(filename,{io=fs,identity}={}
   }catch{fail();}finally{if(fd!==undefined)io.closeSync(fd);}
 }
 export function validateBuyerWriterGatewayServiceConfiguration(value){
-  if(!exact(value,['version','workspace','socketPath','gatewayCapability','authority','runtime','issuer'])||value.version!==2
+  if(!exact(value,['version','workspace','socketPath','gatewayCapability','creatorOid','authority','runtime','issuer'])||value.version!==2
     ||value.socketPath!==BUYER_WRITER_DEFAULT_SOCKET||typeof value.workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(value.workspace)
-    ||!/^[A-Za-z0-9_-]{43}$/.test(value.gatewayCapability??''))fail();
+    ||!/^[A-Za-z0-9_-]{43}$/.test(value.gatewayCapability??'')
+    ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)fail();
   let authority;try{authority=validateBuyerWriterGatewayAuthority(value.authority,{workspace:value.workspace});}catch{fail();}
   return Object.freeze({...value,authority});
 }
@@ -59,7 +60,7 @@ export async function startBuyerWriterGateway({configurationFile,read=readBuyerW
   let database,gateway;
   try{
     const identity=resolveIdentity(),config=validateBuyerWriterGatewayServiceConfiguration(read(configurationFile,{identity}));
-    database=await createPostgres({runtime:config.runtime,issuer:config.issuer});
+    database=await createPostgres({runtime:config.runtime,issuer:config.issuer,creatorOid:config.creatorOid});
     gateway=createGateway({socketPath:config.socketPath,capability:config.gatewayCapability,authority:config.authority,
       gatewayIdentityVerified:identity.verified===true,runtimeQuery:database.runtimeQuery,issuerQuery:database.issuerQuery,log});
     await gateway.listen();

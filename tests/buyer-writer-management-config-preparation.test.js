@@ -13,7 +13,7 @@ assert.ok(new X509Certificate(ca));
 const runtimePassword='fixture-runtime-password';
 const issuerPassword='fixture-issuer-password';
 const managementPassword='fixture-temporary-access-token';
-const gateway={version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:'a'.repeat(43),
+const gateway={version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:'a'.repeat(43),creatorOid:16384,
  authority:{releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-456789abcdef',attemptId:'11234567-89ab-cdef-0123-456789abcdef',
   workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'},
  runtime:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',password:runtimePassword,ca},

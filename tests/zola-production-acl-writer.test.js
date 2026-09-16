@@ -68,8 +68,8 @@ test('bounded writer operation blocks unavailable evidence and fails closed on u
 
 test('fixed production composition uses the real buyer-writer host protocol and reconciles response loss',async()=>{
  const secrets=[1,2,3,4].map(byte=>Buffer.alloc(32,byte).toString('base64url'));
- const config={version:1,workspace:'blackspire-command',bindingFile:'/etc/blackspire/buyer-writer-binding.json',
-  writerCredential:secrets[0],issuerCredential:secrets[1],
+const config={version:1,workspace:'blackspire-command',bindingFile:'/etc/blackspire/buyer-writer-binding.json',
+  writerCredential:secrets[0],issuerCredential:secrets[1],creatorOid:16384,
   runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secrets[2]},
   issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secrets[3]}};
  const snapshot=Object.freeze({value:config,identity:Object.freeze({uid:0,gid:0,mode:33152,nlink:1,size:1,dev:1,ino:1,mtimeMs:1,ctimeMs:1})});
@@ -79,7 +79,7 @@ test('fixed production composition uses the real buyer-writer host protocol and 
    cash_buyers_only:false,llc_buyers_only:false},updatedAt:'2026-09-11T12:34:56.123456Z'};
  const targetSnapshot=Object.freeze({value:target,identity:Object.freeze({uid:0,gid:0,mode:33152,nlink:1,size:1,dev:2,ino:2,mtimeMs:2,ctimeMs:2})});
  let dispatchId,generation=7,state='absent',applyCalls=0,reconcileCalls=0,closed=0;
- const openDatabase=async()=>({isHealthy:()=>true,close:async()=>{closed++;},
+ const openDatabase=async options=>{assert.equal(options.creatorOid,config.creatorOid);return {isHealthy:()=>true,close:async()=>{closed++;},
   issuerQuery:async(sql,values)=>{
    if(sql.includes('.issue(')){
     assert.equal(values[0],target.jobId);assert.equal(values[1],target.ownerId);assert.equal(values[6],target.updatedAt);
@@ -94,7 +94,7 @@ test('fixed production composition uses the real buyer-writer host protocol and 
    if(sql.includes('.apply(')){applyCalls++;state='failed';return{rows:[{result:{ok:true,operation:'fail',chunkIndex:0}}]};}
    assert.ok(sql.includes('.receipt('));assert.equal(values[5],'fail');
    return{rows:[{result:{found:true,receipt:{ok:true,operation:'fail',chunkIndex:0}}}]};
-  }});
+  }};};
  const input={...base.input,previousMainSha:'b'.repeat(40),recoverySha:'c'.repeat(40),protectedInputDigest:d('protected'),inputDigest:d('sequence')};
  const stateFor=(pending=false)=>({context:{operationId,releaseSha:a,workspace:input.workspace,principal:input.principal},...(pending?{pending:{attemptId,inputDigest:d('input'),checkOutputDigest:d('check')}}:{})});
  const context={input,release:{releaseSha:a,activationConfigurationFile:'/fixed/activation.json'},journal:{stream:()=>({events:()=>[],append(){}})}};
@@ -112,7 +112,7 @@ test('fixed production composition uses the real buyer-writer host protocol and 
  assert.equal(applyCalls,1);assert.equal(reconcileCalls,1);assert.equal(closed,3);
 
  state='absent';dispatchId=undefined;generation=8;applyCalls=0;reconcileCalls=0;
- const lossyDatabase=async()=>({...(await openDatabase()),runtimeQuery:async(sql)=>{
+ const lossyDatabase=async()=>({...(await openDatabase({creatorOid:config.creatorOid})),runtimeQuery:async(sql)=>{
   if(sql.includes('.apply(')){applyCalls++;throw new Error('response lost');}
   throw new Error('receipt must not be queried for cancellation');
  }});
@@ -124,7 +124,7 @@ test('fixed production composition uses the real buyer-writer host protocol and 
 
  state='absent';dispatchId=undefined;applyCalls=0;reconcileCalls=0;
  const missingDatabase=async()=>{
-  const database=await openDatabase();
+  const database=await openDatabase({creatorOid:config.creatorOid});
   return{...database,issuerQuery:async(sql,values)=>{
    if(sql.includes('.issue('))throw new Error('acceptance job missing');
    assert.ok(sql.includes('.reconcile('));reconcileCalls++;

@@ -68,7 +68,7 @@ test('readiness requires verified runtime identity, private supplementary group,
   })[`${args[0]}:${args[1]}`];
   const identity=resolveBuyerWriterGatewayIdentity({userInfo:()=>({username:'blackspire-writer',uid:61001}),getuid:()=>61001,getgid:()=>61002,
     getgroups:()=>[61002,61003],lookup});
-  const config={version:2,workspace,socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:capability,authority,runtime:{},issuer:{}};
+  const config={version:2,workspace,socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:capability,creatorOid:16384,authority,runtime:{},issuer:{}};
   let authenticated=0,closed=0;
   const result=await waitForBuyerWriterGateway({configurationFile:'/etc/blackspire-buyer-writer-gateway/gateway.json',timeoutMs:1000,
     resolveIdentity:()=>identity,readConfiguration:(_filename,options)=>{assert.equal(options.identity,identity);return config;},

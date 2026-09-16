@@ -6,7 +6,7 @@ import {APPLICATION_FUNCTION_PG_NET_SQL} from '../packages/zola-release/pg-net-i
 import {PROVIDER_ACL_CHECK_SQL,queryFixedProviderAcl} from '../packages/zola-release/production-acl-writer.js';
 
 const releaseSha='a'.repeat(40),secret=Buffer.alloc(32,7).toString('base64url');
-const gateway={version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:secret,
+const gateway={version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:secret,creatorOid:16384,
  authority:{releaseSha,operationId:'11111111-1111-4111-8111-111111111111',attemptId:'22222222-2222-4222-8222-222222222222',
   workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'},
  runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:'runtime-secret'},

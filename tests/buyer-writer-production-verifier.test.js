@@ -5,36 +5,44 @@ import {
  BUYER_WRITER_ROUTINES,BUYER_WRITER_RUNTIME_ROUTINES,observeBuyerWriterProductionState,
  verifyBuyerWriterProductionEvidence,
 } from '../packages/buyer-writer/production-verifier.js';
+import {BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '../packages/buyer-writer/routine-policy.js';
 
 const role=name=>({name,login:name!=='buyer_writer_owner',inherit:false,superuser:false,createDb:false,
  createRole:false,replication:false,bypassRls:false});
-const acl=(grantee,privilege,grantable)=>({grantor:'buyer_writer_owner',grantee,privilege,grantable});
+const creatorOid=16384,ownerOid='16390';
+const acl=(grantee,privilege,grantable,grantor='buyer_writer_owner')=>({grantor,grantee,privilege,grantable});
 const fixture=()=>({
  roles:['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'].map(role),
  memberships:[
-  {role:'buyer_writer_owner',member:'postgres',grantor:'postgres',admin:false,inherit:true,set:true},
-  {role:'buyer_writer_runtime',member:'postgres',grantor:'postgres',admin:true,inherit:false,set:false},
-  {role:'buyer_writer_issuer',member:'postgres',grantor:'postgres',admin:true,inherit:false,set:false},
+  {role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(creatorOid),grantor:'postgres',grantorOid:String(creatorOid),admin:false,inherit:false,set:true},
+  {role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(creatorOid),grantor:'fixture_admin',grantorOid:'10',admin:true,inherit:false,set:false},
+  {role:'buyer_writer_runtime',roleOid:'16391',member:'postgres',memberOid:String(creatorOid),grantor:'fixture_admin',grantorOid:'10',admin:true,inherit:false,set:false},
+  {role:'buyer_writer_issuer',roleOid:'16392',member:'postgres',memberOid:String(creatorOid),grantor:'fixture_admin',grantorOid:'10',admin:true,inherit:false,set:false},
  ],
  schema:{name:'buyer_writer',owner:'buyer_writer_owner',edges:[acl('buyer_writer_owner','CREATE',false),
   acl('buyer_writer_owner','USAGE',false),acl('buyer_writer_runtime','USAGE',false),acl('buyer_writer_issuer','USAGE',false)]},
  routines:BUYER_WRITER_ROUTINES.map(signature=>{
+  const policy=ROUTINE_POLICY.find(value=>value.signature===signature),creator=policy.owner==='creator';
   const runtime=BUYER_WRITER_RUNTIME_ROUTINES.includes(signature),issuer=BUYER_WRITER_ISSUER_ROUTINES.includes(signature);
-  return {signature,owner:'buyer_writer_owner',securityDefiner:runtime||issuer,searchPathLocked:runtime||issuer,
-   edges:[acl('buyer_writer_owner','EXECUTE',false),...(runtime?[acl('buyer_writer_runtime','EXECUTE',false)]:[]),
-    ...(issuer?[acl('buyer_writer_issuer','EXECUTE',false)]:[])],
+  const owner=creator?'postgres':'buyer_writer_owner',grantor=owner;
+  return {signature,owner,ownerOid:creator?String(creatorOid):ownerOid,securityDefiner:policy.securityDefiner,
+   language:policy.language,digest:policy.digest,config:[...policy.config],volatility:policy.volatility,kind:'f',strict:false,leakproof:false,parallel:'u',
+   argumentNames:[...policy.arguments],result:policy.result,argumentDefaults:0,returnsSet:false,variadic:'0',hasAllArgumentTypes:false,hasArgumentModes:false,
+   edges:[acl(owner,'EXECUTE',false,grantor),...(signature==='buyer_writer.lock_public_scope()'?[acl('buyer_writer_owner','EXECUTE',false,grantor)]:[]),
+    ...(runtime?[acl('buyer_writer_runtime','EXECUTE',false,grantor)]:[]),...(issuer?[acl('buyer_writer_issuer','EXECUTE',false,grantor)]:[])],
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false};
  }),
  targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
- databaseCreate:{buyer_writer_runtime:false,buyer_writer_issuer:false},
+ creatorOid:String(creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
+ databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',
   publicExecute:true,ownerExecute:true,runtimeExecute:true,issuerExecute:true})),
 });
-const denied=raw=>assert.throws(()=>verifyBuyerWriterProductionEvidence(raw),
+const denied=raw=>assert.throws(()=>verifyBuyerWriterProductionEvidence(raw,creatorOid),
  error=>error.message==='Buyer writer production verification failed');
 
 test('fixed verifier accepts exact security state and reports provider truth without force-pass',()=>{
- const evidence=verifyBuyerWriterProductionEvidence(fixture());
+ const evidence=verifyBuyerWriterProductionEvidence(fixture(),creatorOid);
  assert.equal(evidence.compliant,true);
  assert.equal(evidence.unexpectedMembershipCount,0);
  assert.equal(evidence.targetTablePublicPrivilegeCount,0);
@@ -44,7 +52,7 @@ test('fixed verifier accepts exact security state and reports provider truth wit
  assert.deepEqual(evidence.pgNetTruth,{functionCount:12,publicExecuteCount:12,ownerEffectiveExecuteCount:12,
   runtimeEffectiveExecuteCount:12,issuerEffectiveExecuteCount:12,supabaseAclFixed:false,providerAcl:'DEFENSE_IN_DEPTH_OPEN'});
  const closed=fixture();for(const row of closed.pgNet)Object.assign(row,{publicExecute:false,ownerExecute:false,runtimeExecute:false,issuerExecute:false});
- assert.equal(verifyBuyerWriterProductionEvidence(closed).pgNetTruth.supabaseAclFixed,true);
+ assert.equal(verifyBuyerWriterProductionEvidence(closed,creatorOid).pgNetTruth.supabaseAclFixed,true);
 });
 
 test('fixed verifier rejects unsafe role flags, absence and unexpected memberships',()=>{
@@ -52,7 +60,7 @@ test('fixed verifier rejects unsafe role flags, absence and unexpected membershi
   value=>{value.roles[1].login=false;},value=>{value.roles[2].inherit=true;},value=>{value.roles[0].superuser=true;},
   value=>{value.roles.pop();},value=>{value.roles[0]={...value.roles[1]};},
   value=>{value.memberships.push({role:'broad_admin',member:'buyer_writer_runtime',grantor:'postgres',admin:false,inherit:true,set:true});},
-  value=>{value.memberships[1].set=true;},
+  value=>{value.memberships[2].set=true;},
  ]){const value=fixture();mutation(value);denied(value);}
 });
 
@@ -61,6 +69,7 @@ test('fixed verifier rejects routine widening, external SECURITY DEFINER access 
   value=>{value.routines.find(row=>row.signature.includes('.issue(')).runtimeExecute=true;},
   value=>{value.routines.find(row=>row.signature.includes('.apply(')).issuerExecute=true;},
   value=>{value.routines.find(row=>row.signature.includes('.apply(')).runtimeGrant=true;},
+  value=>{value.routines.find(row=>row.signature.includes('.apply(')).argumentNames.reverse();},
   value=>{value.routines.find(row=>row.signature.includes('.apply(')).edges.push(acl('PUBLIC','EXECUTE',false));},
   value=>{value.externalRoutines.push({role:'buyer_writer_runtime',schema:'public',signature:'public.admin_bridge(text)',owner:'postgres'});},
   value=>{value.routines.pop();},value=>{value.schema.edges.pop();},
@@ -85,15 +94,17 @@ test('pg_net observation must contain each expected function exactly once with t
   value=>{value.pgNet[0].signature=null;},value=>{value.pgNet[0].publicExecute='yes';}]){
   const value=fixture();mutation(value);denied(value);
  }
+ const absent=fixture();Object.assign(absent.pgNet[0],{signature:null,owner:null,publicExecute:false,ownerExecute:false,runtimeExecute:false,issuerExecute:false});
+ assert.equal(verifyBuyerWriterProductionEvidence(absent,creatorOid).pgNetTruth.functionCount,11);
 });
 
-test('observer runs one fixed parameter-free statement and sanitizes failure',async()=>{
+test('observer binds only creator OID and reviewed routine policy to one fixed statement and sanitizes failure',async()=>{
  const calls=[];
- const result=await observeBuyerWriterProductionState(async(text,values)=>{calls.push([text,values]);return{rows:[{evidence:fixture()}]};});
- assert.equal(result.compliant,true);assert.deepEqual(calls,[[BUYER_WRITER_PRODUCTION_VERIFY_SQL,[]]]);
- await assert.rejects(()=>observeBuyerWriterProductionState(async()=>({rows:[]})),
+ const result=await observeBuyerWriterProductionState(async(text,values)=>{calls.push([text,values]);return{rows:[{evidence:fixture()}]};},creatorOid);
+ assert.equal(result.compliant,true);assert.equal(calls[0][0],BUYER_WRITER_PRODUCTION_VERIFY_SQL);assert.equal(calls[0][1][0],creatorOid);assert.equal(JSON.parse(calls[0][1][1]).length,13);
+ await assert.rejects(()=>observeBuyerWriterProductionState(async()=>({rows:[]}),creatorOid),
   error=>error.message==='Buyer writer production verification failed');
- await assert.rejects(()=>observeBuyerWriterProductionState(async()=>{throw new Error('password=do-not-leak');}),
+ await assert.rejects(()=>observeBuyerWriterProductionState(async()=>{throw new Error('password=do-not-leak');},creatorOid),
   error=>error.message==='Buyer writer production verification failed');
 });
 

@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { createBuyerWriterPostgres, WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
+import { BUYER_WRITER_GATEWAY_IDENTITY_SQL } from '../packages/buyer-writer/local-gateway-postgres.js';
 
 const connection = () => ({host:'database.invalid',port:5432,database:'writer_test',password:randomBytes(32).toString('base64url')});
 const create = options => createBuyerWriterPostgres({creatorOid:16384,...options});
 const apply='select buyer_writer.apply($1,$2,$3::jsonb) as result';
 const issue='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
+const cancel='select buyer_writer.cancel($1,$2,$3) as result';
 const isFence=text=>text.includes('else false end as locked');
 test('identity probe treats inherited and PUBLIC authority as capability only when its schema is reachable',()=>{
+  assert.equal(BUYER_WRITER_GATEWAY_IDENTITY_SQL,WRITER_IDENTITY_SQL,'gateway must use the canonical reviewed identity predicate');
   assert.match(WRITER_IDENTITY_SQL,/role\.rolname in\('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'\)[\s\S]*member\.rolname='postgres'/);
   assert.match(WRITER_IDENTITY_SQL,/member\.oid=\$4::oid[\s\S]*member\.oid=\(select datdba from pg_database where datname=current_database\(\)\)/);
   assert.match(WRITER_IDENTITY_SQL,/blackspire-buyer-writer:v2:/);
@@ -21,6 +24,9 @@ test('identity probe treats inherited and PUBLIC authority as capability only wh
   assert.match(WRITER_IDENTITY_SQL,/pg_database[\s\S]*datname<>current_database\(\)[\s\S]*datallowconn[\s\S]*has_database_privilege\([^)]*'CONNECT'\)/);
   assert.match(WRITER_IDENTITY_SQL,/with recursive protected[\s\S]*pg_inherits[\s\S]*pg_trigger[\s\S]*not t\.tgisinternal/);
   assert.match(WRITER_IDENTITY_SQL,/pg_rewrite[\s\S]*_RETURN/);
+  assert.match(WRITER_IDENTITY_SQL,/expression_objects[\s\S]*pg_constraint[\s\S]*pg_attrdef[\s\S]*pg_policy[\s\S]*pg_index/);
+  assert.match(WRITER_IDENTITY_SQL,/pg_attribute[\s\S]*atttypid[\s\S]*typnamespace/);
+  assert.match(WRITER_IDENTITY_SQL,/proargnames[\s\S]*pronargdefaults[\s\S]*provariadic/);
   assert.match(WRITER_IDENTITY_SQL,/aclexplode[\s\S]*buyer_writer_runtime[\s\S]*buyer_writer_issuer/);
 });
 function pools({unsafe=false,fail=false}={}) {
@@ -34,7 +40,7 @@ function pools({unsafe=false,fail=false}={}) {
         if(text===WRITER_IDENTITY_SQL)return {rows:[{safe:!unsafe}]};
         if(fail)throw Object.assign(new Error('PRIVATE DATABASE DETAILS'),{code:'42501'});
         if(isFence(text))return {rows:[{safe:!unsafe,locked:!unsafe}]};
-        if(text.includes('with checked as materialized')&&text.includes('buyer_writer.'))return {rows:[{safe:!unsafe,result:{ok:true}}]};
+        if(text.includes('with checked as materialized')&&text.includes('buyer_writer.'))return {rows:[{safe:!unsafe,result:text.includes('buyer_writer.cancel(')?null:{ok:true}}]};
         return {rows:[{result:{ok:true}}]};
       },release:destroy=>pool.destroyed.push(Boolean(destroy))};
     }
@@ -55,6 +61,7 @@ test('dedicated pools pin TLS, roles, timeouts and validate every checkout',asyn
     await db.runtimeQuery(apply,['digest','workspace','{}']);
     await db.runtimeQuery(apply,['digest','workspace','{}']);
     await db.issuerQuery(issue,Array(8).fill(null));
+    const cancelled=await db.issuerQuery(cancel,Array(3).fill(null));assert.deepEqual(cancelled.rows,[{safe:true,result:null}]);
     assert.equal(instances[0].calls.filter(c=>c.text===WRITER_IDENTITY_SQL).length,1);
     assert.equal(instances[1].calls.filter(c=>c.text===WRITER_IDENTITY_SQL).length,1);
     assert.equal(instances[0].calls.filter(c=>c.text==='begin').length,2);
@@ -69,6 +76,8 @@ test('dedicated pools pin TLS, roles, timeouts and validate every checkout',asyn
     assert.equal(firstOperation.values.length,7);
     assert.deepEqual(firstOperation.values.slice(4),['digest','workspace','{}']);
     assert.deepEqual(instances[0].calls.slice(1,5).map(c=>c.text==='begin'||c.text==='commit'?c.text:isFence(c.text)?'fence':'operation'),['begin','fence','operation','commit']);
+    const cancelOperation=instances[1].calls.find(c=>c.text.includes('case when checked.safe then buyer_writer.cancel('));
+    assert.match(cancelOperation.text,/buyer_writer\.cancel\(\$5,\$6,\$7\)[\s\S]*end as result/);
     for(const call of instances.flatMap(pool=>pool.calls.filter(c=>c.text===WRITER_IDENTITY_SQL))){
       assert.equal(call.values.length,4);assert.equal(JSON.parse(call.values[2]).length,13);assert.equal(call.values[3],16384);
     }

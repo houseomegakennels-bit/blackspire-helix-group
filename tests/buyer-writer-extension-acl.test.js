@@ -32,6 +32,9 @@ test('reviewed routine policy covers every installed body with an exact digest',
  assert.match(source,/blackspire-buyer-writer:v2:/);
  assert.match(source,/relkind[\s\S]*relowner[\s\S]*relispartition[\s\S]*pg_inherits/);
  assert.match(source,/WITH RECURSIVE protected[\s\S]*pg_trigger[\s\S]*pg_rewrite[\s\S]*_RETURN/i);
+ assert.match(source,/expression_objects[\s\S]*pg_constraint[\s\S]*pg_attrdef[\s\S]*pg_policy[\s\S]*pg_index/i);
+ assert.match(source,/Unexpected protected column type/);
+ assert.match(source,/proargnames[\s\S]*pronargdefaults[\s\S]*provariadic/i);
  assert.match(source,/has_table_privilege\('buyer_writer_owner',[\s\S]*MAINTAIN/);
  assert.match(source,/has_column_privilege\('buyer_writer_owner'/);
  assert.match(source,/has_sequence_privilege\('buyer_writer_owner'/);
@@ -85,6 +88,8 @@ test('application package cannot execute provider mutations and rejects fabricat
  assert.match(assertion,/Unexpected writer cross-database CONNECT privilege/);
  assert.match(assertion,/Unexpected Buyer Writer relation trigger/);
  assert.match(assertion,/Unexpected Buyer Writer relation rewrite rule/);
+ assert.match(assertion,/Unexpected protected expression routine/);
+ assert.match(assertion,/Unexpected protected column type/);
  assert.match(assertion,/Writer relation identity drift/);
  assert.match(assertion,/Writer schema or routine ACL drift/);
  assert.doesNotMatch(assertion,/to_regprocedure\(/);
