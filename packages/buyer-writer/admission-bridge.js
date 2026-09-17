@@ -1,6 +1,8 @@
 import {timingSafeEqual} from 'node:crypto';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {createOperationPermitVerifier} from './operation-permit.js';
 import {parseWriterOperation} from './protocol.js';
+import {AdmissionUnavailableError,isAttestedAdmissionExecutor,runAttestedAdmission} from './admission-executor.js';
 
 export const ADMISSION_SQL=Object.freeze({
  reserve:'select buyer_writer.reserve_operation($1,$2::uuid,$3::uuid,$4,$5::timestamptz) as accepted',
@@ -13,6 +15,7 @@ class AdmissionBridgeError extends Error {
 }
 const reject=status=>{throw new AdmissionBridgeError(status);};
 const response=(status,code)=>({status,body:{ok:false,code,automaticRetry:false}});
+const sqlStatus=new Map([['42501',403],['22023',400],['22P02',400],['23505',409]]);
 const plain=(value,keys)=>{
  if(value===null||typeof value!=='object'||Array.isArray(value))return false;
  if(![Object.prototype,null].includes(Object.getPrototypeOf(value)))return false;
@@ -87,16 +90,33 @@ function recoveryResponse(value,operation,index){
   ?{status:200,body:{...value.result,recovered:true,automaticRetry:false}}
   :response(409,'WRITE_FAILED');
 }
+async function boundedQuery(query,text,values,timeoutMs){
+ const controller=new AbortController();let timer;
+ try{
+  return await Promise.race([
+   query(text,values,{signal:controller.signal}),
+   new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new AdmissionUnavailableError());},timeoutMs);}),
+  ]);
+ }finally{clearTimeout(timer);}
+}
 
-// admissionQuery must be backed by the dedicated admission-only database identity;
-// this boundary never accepts or falls back to a runtime/issuer/admin connection.
-export function createAdmissionBridge({mode,configuration,publicKeyPem,admissionQuery,now,reserveTimeoutMs=1000}={}){
- if(mode!=='research-admission'||typeof admissionQuery!=='function')throw new TypeError('Buyer admission configuration unavailable');
+// The executor is a module-attested capability backed by a pinned admission-only
+// session. Runtime, issuer and admin query functions cannot satisfy this boundary.
+export function createAdmissionBridge({mode,configuration,publicKeyPem,admissionExecutor,now,
+ reserveTimeoutMs=1000,executeTimeoutMs=5000,correlateTimeoutMs=3000}={}){
+ if(mode!=='research-admission'||!isAttestedAdmissionExecutor(admissionExecutor)
+  ||![executeTimeoutMs,correlateTimeoutMs].every(value=>
+   Number.isInteger(value)&&value>=10&&value<=10000))throw new TypeError('Buyer admission configuration unavailable');
+ const sessions=new AsyncLocalStorage();
  const reserve=async(record,signal)=>{
-  const result=await admissionQuery(ADMISSION_SQL.reserve,[
-   record.issuer,record.jti,record.requestId,record.bodyDigest,new Date(record.expiresAt*1000).toISOString(),
-  ],{signal});
-  return one(result,'accepted')===true;
+  const store=sessions.getStore();
+  if(!store||typeof store.query!=='function')throw new AdmissionUnavailableError();
+  try{
+   const result=await store.query(ADMISSION_SQL.reserve,[
+    record.issuer,record.jti,record.requestId,record.bodyDigest,new Date(record.expiresAt*1000).toISOString(),
+   ],{signal});
+   return one(result,'accepted')===true;
+  }catch(error){store.unavailable=true;throw error;}
  };
  const verifier=createOperationPermitVerifier({
   mode:'isolated-prototype',configuration,publicKeyPem,consume:reserve,now,reserveTimeoutMs,
@@ -106,27 +126,41 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
   },
  });
  return async function handle(request){
-  let auth,parsed;
+  let attempt;
   try{
-   auth=await verifier.authorize(readHttpRequest(request));
-   ({parsed}=parsedApply(auth.parameters));
+   attempt=await runAttestedAdmission(admissionExecutor,query=>{
+    const store={query,unavailable:false};
+    return sessions.run(store,async()=>{
+     let auth;
+     try{auth=await verifier.authorize(readHttpRequest(request));}
+     catch(error){if(store.unavailable)throw new AdmissionUnavailableError();throw error;}
+     const {parsed}=parsedApply(auth.parameters),base=admissionParameters(auth);
+     try{
+      const result=await boundedQuery(query,ADMISSION_SQL.apply,[
+       ...base,auth.parameters.p_digest,JSON.stringify(auth.parameters.q),
+      ],executeTimeoutMs);
+      const value=one(result,'result'),kind=canonicalResult(value,parsed.operation,parsed.chunkIndex);
+      if(kind==='succeeded')return {done:true,response:{status:200,body:{...value,automaticRetry:false}}};
+      if(kind==='business_failed')return {done:true,response:response(409,'WRITE_FAILED')};
+      return {done:false,auth,parsed};
+     }catch(error){
+      const status=sqlStatus.get(error?.code);
+      if(status)return {done:true,response:response(status,status===403?'ADMISSION_REJECTED':'ADMISSION_INVALID')};
+      return {done:false,auth,parsed};
+     }
+    });
+   });
   }catch(error){
+   if(error instanceof AdmissionUnavailableError)return response(503,'ADMISSION_UNAVAILABLE');
    const status=error instanceof AdmissionBridgeError?error.status:401;
-   return response(status,status===503?'ADMISSION_UNAVAILABLE':'ADMISSION_REJECTED');
+   return response(status,'ADMISSION_REJECTED');
   }
-  const base=admissionParameters(auth);
+  if(attempt.done)return attempt.response;
+  const base=admissionParameters(attempt.auth);
   try{
-   const result=await admissionQuery(ADMISSION_SQL.apply,[
-    ...base,auth.parameters.p_digest,JSON.stringify(auth.parameters.q),
-   ]);
-   const value=one(result,'result');
-   const kind=canonicalResult(value,parsed.operation,parsed.chunkIndex);
-   if(kind==='succeeded')return {status:200,body:{...value,automaticRetry:false}};
-   if(kind==='business_failed')return response(409,'WRITE_FAILED');
-  }catch{}
-  try{
-   const correlated=one(await admissionQuery(ADMISSION_SQL.correlate,base),'result');
-   return recoveryResponse(correlated,parsed.operation,parsed.chunkIndex);
+   const correlated=await runAttestedAdmission(admissionExecutor,async query=>
+    one(await boundedQuery(query,ADMISSION_SQL.correlate,base,correlateTimeoutMs),'result'));
+   return recoveryResponse(correlated,attempt.parsed.operation,attempt.parsed.chunkIndex);
   }catch{
    return response(503,'ADMISSION_UNKNOWN');
   }
