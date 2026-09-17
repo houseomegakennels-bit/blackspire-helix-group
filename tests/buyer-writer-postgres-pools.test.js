@@ -3,20 +3,23 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { createBuyerWriterPostgres, TEMPLATE1_IDENTITY_SQL, WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
+import { BUYER_WRITER_ROUTINES } from '../packages/buyer-writer/routine-policy.js';
 import { BUYER_WRITER_GATEWAY_IDENTITY_SQL } from '../packages/buyer-writer/local-gateway-postgres.js';
 
 const connection = () => ({host:'database.invalid',port:5432,database:'writer_test',password:randomBytes(32).toString('base64url')});
 const create = options => createBuyerWriterPostgres({creatorOid:16388,...options});
 const apply='select buyer_writer.apply($1,$2,$3::jsonb) as result';
+const context='select buyer_writer.context($1,$2,$3,$4,$5) as result';
 const issue='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
 const cancel='select buyer_writer.cancel($1,$2,$3) as result';
 const isFence=text=>text.includes('else false end as locked');
 test('identity probe treats inherited and PUBLIC authority as capability only when its schema is reachable',()=>{
   assert.equal(BUYER_WRITER_GATEWAY_IDENTITY_SQL,WRITER_IDENTITY_SQL,'gateway must use the canonical reviewed identity predicate');
-  assert.match(WRITER_IDENTITY_SQL,/role\.rolname in\('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'\)[\s\S]*member\.rolname='postgres'/);
+  assert.match(WRITER_IDENTITY_SQL,/role\.rolname in\('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'\)[\s\S]*member\.rolname='postgres'/);
   assert.match(WRITER_IDENTITY_SQL,/member\.oid=\$4::oid[\s\S]*member\.oid=\(select datdba from pg_database where datname=current_database\(\)\)/);
   assert.match(WRITER_IDENTITY_SQL,/blackspire-buyer-writer:v2:/);
   assert.match(WRITER_IDENTITY_SQL,/relations[\s\S]*relkind[\s\S]*relowner[\s\S]*relispartition[\s\S]*pg_inherits/);
+  assert.match(WRITER_IDENTITY_SQL,/\('buyer_writer','operation_admissions'\)/);
   assert.match(WRITER_IDENTITY_SQL,/pg_get_userbyid\([^)]*\)='postgres'/);
   assert.match(WRITER_IDENTITY_SQL,/sha256\(convert_to\(p\.prosrc,'UTF8'\)\)/);
   assert.match(WRITER_IDENTITY_SQL,/values\(current_user\),\('buyer_writer_owner'\)[\s\S]*has_schema_privilege\(w\.role_name,n\.oid,'USAGE'\)[\s\S]*has_function_privilege\(w\.role_name,p\.oid,'EXECUTE'\)/);
@@ -30,7 +33,7 @@ test('identity probe treats inherited and PUBLIC authority as capability only wh
   assert.match(WRITER_IDENTITY_SQL,/expression_objects[\s\S]*pg_constraint[\s\S]*pg_attrdef[\s\S]*pg_policy[\s\S]*pg_index/);
   assert.match(WRITER_IDENTITY_SQL,/pg_attribute[\s\S]*atttypid[\s\S]*typnamespace/);
   assert.match(WRITER_IDENTITY_SQL,/proargnames[\s\S]*pronargdefaults[\s\S]*provariadic/);
-  assert.match(WRITER_IDENTITY_SQL,/aclexplode[\s\S]*buyer_writer_runtime[\s\S]*buyer_writer_issuer/);
+  assert.match(WRITER_IDENTITY_SQL,/aclexplode[\s\S]*buyer_writer_runtime[\s\S]*buyer_writer_issuer[\s\S]*buyer_writer_admission/);
 });
 function pools({unsafe=false,fail=false}={}) {
   const instances=[];
@@ -62,34 +65,34 @@ test('dedicated pools pin TLS, roles, timeouts and validate every checkout',asyn
       assert.match(pool.config.options,/statement_timeout=10000/);assert.match(pool.config.options,/lock_timeout=5000/);
       assert.equal(pool.config.connectionString,undefined);
     }
-    await db.runtimeQuery(apply,['digest','workspace','{}']);
-    await db.runtimeQuery(apply,['digest','workspace','{}']);
+    await db.runtimeQuery(context,['digest','workspace','job','dispatch',1]);
+    await db.runtimeQuery(context,['digest','workspace','job','dispatch',1]);
     await db.issuerQuery(issue,Array(8).fill(null));
     const cancelled=await db.issuerQuery(cancel,Array(3).fill(null));assert.deepEqual(cancelled.rows,[{safe:true,result:null}]);
     assert.equal(instances[0].calls.filter(c=>c.text===WRITER_IDENTITY_SQL).length,1);
     assert.equal(instances[1].calls.filter(c=>c.text===WRITER_IDENTITY_SQL).length,1);
     assert.equal(instances[0].calls.filter(c=>c.text==='begin').length,2);
     assert.equal(instances[0].calls.filter(c=>isFence(c.text)).length,2);
-    assert.equal(instances[0].calls.filter(c=>c.text.includes('case when checked.safe then buyer_writer.apply(')).length,2);
+    assert.equal(instances[0].calls.filter(c=>c.text.includes('case when checked.safe then buyer_writer.context(')).length,2);
     assert.equal(instances[0].calls.filter(c=>c.text==='commit').length,2);
-    assert.equal(instances[0].calls.filter(c=>c.text===apply).length,0);
-    const firstOperation=instances[0].calls.find(c=>c.text.includes('case when checked.safe then buyer_writer.apply('));
-    assert.match(firstOperation.text,/pg_database[\s\S]*pg_trigger[\s\S]*case when checked\.safe then buyer_writer\.apply/);
-    assert.match(firstOperation.text,/buyer_writer\.apply\(\$5,\$6,\$7::jsonb\)/);
+    assert.equal(instances[0].calls.filter(c=>c.text===context).length,0);
+    const firstOperation=instances[0].calls.find(c=>c.text.includes('case when checked.safe then buyer_writer.context('));
+    assert.match(firstOperation.text,/pg_database[\s\S]*pg_trigger[\s\S]*case when checked\.safe then buyer_writer\.context/);
+    assert.match(firstOperation.text,/buyer_writer\.context\(\$5,\$6,\$7,\$8,\$9\)/);
     assert.doesNotMatch(firstOperation.text,/left join lateral/);
-    assert.equal(firstOperation.values.length,7);
-    assert.deepEqual(firstOperation.values.slice(4),['digest','workspace','{}']);
+    assert.equal(firstOperation.values.length,9);
+    assert.deepEqual(firstOperation.values.slice(4),['digest','workspace','job','dispatch',1]);
     assert.deepEqual(instances[0].calls.slice(1,5).map(c=>c.text==='begin'||c.text==='commit'?c.text:isFence(c.text)?'fence':'operation'),['begin','fence','operation','commit']);
     const cancelOperation=instances[1].calls.find(c=>c.text.includes('case when checked.safe then buyer_writer.cancel('));
     assert.match(cancelOperation.text,/buyer_writer\.cancel\(\$5,\$6,\$7\)[\s\S]*end as result/);
     for(const call of instances.flatMap(pool=>pool.calls.filter(c=>c.text===WRITER_IDENTITY_SQL))){
-      assert.equal(call.values.length,4);assert.equal(JSON.parse(call.values[2]).length,13);assert.equal(call.values[3],16388);
+      assert.equal(call.values.length,4);assert.deepEqual(JSON.parse(call.values[2]),BUYER_WRITER_ROUTINES);assert.equal(call.values[3],16388);
     }
     assert.ok(instances[2].calls.every(call=>call.text===TEMPLATE1_IDENTITY_SQL));
     assert.ok(instances[3].calls.every(call=>call.text===TEMPLATE1_IDENTITY_SQL));
   } finally {await db.close();}
   assert.ok(instances.every(p=>p.ended));
-  await assert.rejects(db.runtimeQuery(apply,[]),/unavailable/);
+  await assert.rejects(db.runtimeQuery(context,[]),/unavailable/);
 });
 test('config cannot inject an admin role, connection string, ambient default or disabled TLS',async()=>{
   for(const bad of [{user:'postgres'},{connectionString:'postgres://invalid'},{ssl:false},{host:''},{password:''},{port:0}]) {
@@ -108,20 +111,20 @@ test('idle pool errors stop admission without exposing driver details',async()=>
   const {Pool,instances}=pools();const db=await create({runtime:connection(),issuer:connection(),Pool});
   assert.equal(db.isHealthy(),true);instances[0].emit('error',new Error('PRIVATE SOCKET DETAILS'));
   assert.equal(db.isHealthy(),false);
-  await assert.rejects(db.runtimeQuery(apply,[]),/unavailable/);await db.close();
+  await assert.rejects(db.runtimeQuery(context,[]),/unavailable/);await db.close();
 });
 test('capacity saturation rejects without driver work and close fences an in-flight result',async()=>{
   const {Pool,instances}=pools();const db=await create({runtime:connection(),issuer:connection(),Pool});
   const original=instances[0].connect.bind(instances[0]);const releases=[];
   instances[0].connect=async()=>{
     const client=await original();const query=client.query;
-    client.query=(text,values)=>text.includes('with checked as materialized')&&text.includes('buyer_writer.apply(')?new Promise(resolve=>releases.push(()=>resolve({rows:[{safe:true,result:{ok:true}}]}))):query(text,values);
+    client.query=(text,values)=>text.includes('with checked as materialized')&&text.includes('buyer_writer.context(')?new Promise(resolve=>releases.push(()=>resolve({rows:[{safe:true,result:{ok:true}}]}))):query(text,values);
     return client;
   };
-  const requests=Array.from({length:4},()=>db.runtimeQuery(apply,[]));
+  const requests=Array.from({length:4},()=>db.runtimeQuery(context,[]));
   const observed=requests.map(request=>assert.rejects(request,/unavailable/));
   await new Promise(resolve=>setImmediate(resolve));assert.equal(releases.length,4);
-  await assert.rejects(db.runtimeQuery(apply,[]),/unavailable/);
+  await assert.rejects(db.runtimeQuery(context,[]),/unavailable/);
   await db.close();releases.forEach(release=>release());await Promise.all(observed);
   assert.equal(instances[0].destroyed.filter(Boolean).length,4);
 });
@@ -142,7 +145,7 @@ test('statement injection and opposite-role statements never reach the driver',a
 test('database errors destroy the connection without replay or private error disclosure',async()=>{
   const {Pool,instances}=pools({fail:true});const db=await create({runtime:connection(),issuer:connection(),Pool});
   try {
-    await assert.rejects(db.runtimeQuery(apply,['digest','workspace','{}']),error=>error.code==='42501'&&!String(error).includes('PRIVATE'));
+    await assert.rejects(db.runtimeQuery(context,['digest','workspace','job','dispatch',1]),error=>error.code==='42501'&&!String(error).includes('PRIVATE'));
     assert.equal(instances[0].calls.filter(c=>c.text==='begin').length,1);assert.equal(instances[0].destroyed.at(-1),true);
   } finally {await db.close();}
 });
@@ -150,7 +153,7 @@ test('malformed identity results destroy the connection before a write',async()=
   for(const rows of [[],[{}],[{safe:'true'}],[{safe:true},{safe:true}]]) {
     const {Pool,instances}=pools();const db=await create({runtime:connection(),issuer:connection(),Pool});
     instances[0].connect=async()=>({query:async text=>{assert.equal(text,WRITER_IDENTITY_SQL);return {rows};},release:destroy=>assert.equal(destroy,true)});
-    await assert.rejects(db.runtimeQuery(apply,[]),/unavailable/);await db.close();
+    await assert.rejects(db.runtimeQuery(context,[]),/unavailable/);await db.close();
   }
 });
 test('final in-transaction identity drift rolls back without committing the fixed operation',async()=>{
@@ -160,10 +163,10 @@ test('final in-transaction identity drift rolls back without committing the fixe
     calls.push(text);
     if(text==='begin'||text==='rollback')return {rows:[]};
     if(isFence(text))return {rows:[{safe:true,locked:true}]};
-    if(text.includes('buyer_writer.apply('))return {rows:[{safe:false,result:null}]};
+    if(text.includes('buyer_writer.context('))return {rows:[{safe:false,result:null}]};
     assert.fail('unexpected transaction statement');
   },release:destroy=>assert.equal(destroy,true)});
-  await assert.rejects(db.runtimeQuery(apply,['digest','workspace','{}']),/unavailable/);
+  await assert.rejects(db.runtimeQuery(context,['digest','workspace','job','dispatch',1]),/unavailable/);
   assert.deepEqual(calls.map(text=>text==='begin'||text==='rollback'?text:isFence(text)?'fence':'operation'),['begin','fence','operation','rollback']);
   assert.ok(!calls.includes('commit'));await db.close();
 });
@@ -171,7 +174,7 @@ test('timed-out checkout is destroyed on late arrival without executing SQL',asy
   t.mock.timers.enable({apis:['setTimeout']});
   const {Pool,instances}=pools();const db=await create({runtime:connection(),issuer:connection(),Pool});
   let arrived;instances[0].connect=()=>new Promise(resolve=>{arrived=resolve;});
-  const rejection=assert.rejects(db.runtimeQuery(apply,[]),/unavailable/);
+  const rejection=assert.rejects(db.runtimeQuery(context,[]),/unavailable/);
   await new Promise(resolve=>setImmediate(resolve));
   t.mock.timers.tick(14000);await rejection;
   let destroyed=false;
