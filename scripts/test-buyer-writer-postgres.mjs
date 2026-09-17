@@ -149,6 +149,7 @@ try {
   const trustedCreatorOid=adminSql("select oid from pg_roles where rolname='postgres'");
   assert.equal(trustedCreatorOid,'16388','fixture must represent the live managed postgres creator OID');
   const installSql=`set blackspire.buyer_writer_creator_oid=${literal(trustedCreatorOid)};`+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
+  const admissionSql=readFileSync(new URL('../packages/buyer-writer/sql/admission.sql',import.meta.url),'utf8');
   adminSql('alter role postgres nosuperuser createrole;');
   adminSql('grant temporary on database template1 to public');sql(installSql,{fail:true});
   assert.equal(adminSql("select count(*) from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')"),'0');
@@ -876,6 +877,67 @@ try {
     for(const item of planBuyerWrites({...empty,criteria,raw:[],clean:[]}))apply(empty,item.operation,item.payload);
     assert.equal(sql(`select status from public."SearchJob" where id=${literal(empty.jobId)}`),'completed');
     assert.equal(sql(`select count(*) from public."BuyerReport" where search_job_id=${literal(empty.jobId)}`),'0');
+  });
+  sql('begin;'+admissionSql+'commit;');
+  {
+    const issuer='race-operator',jti=randomUUID(),requestId=randomUUID();
+    const args=[issuer,jti,requestId,randomBytes(32).toString('hex'),owner,
+      'b'.repeat(40),randomUUID(),randomUUID(),workspace];
+    const reserve=`select buyer_writer.reserve_operation(${args.map(literal).join(',')},
+      'apply',clock_timestamp()+interval '1 minute')`;
+    const calls=await Promise.all([
+      asyncSql(`set session authorization buyer_writer_runtime;${reserve};`),
+      asyncSql(`set session authorization buyer_writer_runtime;${reserve};`)
+    ]);
+    assert.deepEqual(calls.map(x=>x.status),[0,0]);
+    assert.deepEqual(calls.map(x=>x.out.trim()).sort(),['f','t']);
+    assert.equal(sql(`select count(*) from buyer_writer.operation_admissions
+      where issuer=${literal(issuer)} and jti=${literal(jti)}`),'1');
+    checks.push('separate PostgreSQL processes race one admission reservation without duplicate authority');
+  }
+  {
+    const label='admission_rollback_reservation',issuer='rollback-operator';
+    const args=[issuer,randomUUID(),randomUUID(),randomBytes(32).toString('hex'),
+      owner,'c'.repeat(40),randomUUID(),randomUUID(),workspace];
+    const reserve=`select buyer_writer.reserve_operation(${args.map(literal).join(',')},
+      'apply',clock_timestamp()+interval '1 minute')`;
+    const rolledBack=asyncSql(`set application_name=${literal(label)};
+      set session authorization buyer_writer_runtime;begin;${reserve};
+      select pg_sleep(2);rollback;`);
+    await waitForSleeper(label);
+    const successor=await asyncSql(`set session authorization buyer_writer_runtime;${reserve};`);
+    assert.equal((await rolledBack).status,0);assert.equal(successor.status,0);
+    assert.equal(successor.out.trim(),'t');
+    assert.equal(sql(`select count(*) from buyer_writer.operation_admissions
+      where issuer=${literal(issuer)} and jti=${literal(args[1])}`),'1');
+    checks.push('rolled-back reservation leaves no uniqueness tombstone and successor reserves exactly once');
+  }
+  check('same-database admission binds canonical apply and receipt atomically',()=>{
+    const d=issue(),q=request(d,'start');
+    const meta={issuer:'fixture-operator',jti:randomUUID(),requestId:randomUUID(),
+      rawDigest:randomBytes(32).toString('hex'),release:'a'.repeat(40),
+      operationId:randomUUID(),attemptId:randomUUID()};
+    const args=[meta.issuer,meta.jti,meta.requestId,meta.rawDigest,owner,
+      meta.release,meta.operationId,meta.attemptId,workspace];
+    const reserve=`select buyer_writer.reserve_operation(${args.map(literal).join(',')},'apply',clock_timestamp()+interval '1 minute')`;
+    assert.equal(role('buyer_writer_runtime',reserve),'t');
+    assert.equal(role('buyer_writer_runtime',reserve),'f');
+    const correlate=`select buyer_writer.correlate_admission(${args.map(literal).join(',')})`;
+    assert.deepEqual(JSON.parse(role('buyer_writer_runtime',correlate)),
+      {state:'reserved',automaticRetry:false});
+    const execute=`select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},
+      ${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`;
+    assert.deepEqual(JSON.parse(role('buyer_writer_runtime',execute)),
+      {ok:true,operation:'start',chunkIndex:0});
+    assert.deepEqual(JSON.parse(role('buyer_writer_runtime',correlate)),
+      {state:'succeeded',result:{ok:true,operation:'start',chunkIndex:0},
+       automaticRetry:false,requestCorrelated:true});
+    assert.equal(sql(`select count(*) from buyer_writer.receipts
+      where dispatch_id=${literal(d.dispatchId)} and operation='start' and chunk_index=0`),'1');
+    role('buyer_writer_runtime','select * from buyer_writer.operation_admissions',{fail:true});
+    role('buyer_writer_runtime',execute,{fail:true});
+    assert.equal(sql(`select count(*) from buyer_writer.receipts
+      where dispatch_id=${literal(d.dispatchId)} and operation='start' and chunk_index=0`),'1');
   });
   console.log(JSON.stringify({postgres:'17.6',checksPassed:checks.length,checks,productionConnections:0,providerCalls:0,outreach:0}));
 } finally {
