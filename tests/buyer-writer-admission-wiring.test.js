@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {randomBytes,randomUUID} from 'node:crypto';
+import {generateKeyPairSync,randomBytes,randomUUID} from 'node:crypto';
 import {createBuyerWriterLocalGateway,BUYER_WRITER_LOCAL_STATEMENTS} from '../packages/buyer-writer/local-gateway-server.js';
 import {createBuyerWriterLocalClient} from '../packages/buyer-writer/local-gateway-client.js';
 import {startBuyerWriterGateway,validateBuyerWriterGatewayServiceConfiguration} from '../packages/buyer-writer/gateway-entry.js';
@@ -17,30 +17,37 @@ const capability=randomBytes(32).toString('base64url');
 const permitConfiguration=JSON.stringify({issuer:'issuer',audience:'audience',subject:id(),keyId:'key',
   origin:'https://writer.invalid',releaseSha:authority.releaseSha,operationId:authority.operationId,
   attemptId:authority.attemptId,workspace});
+const ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
+const credential=()=>randomBytes(32).toString('base64url');
+const runtime={host:'db.invalid',port:5432,database:'isolated',password:credential(),ca};
+const issuer={host:'db.invalid',port:5432,database:'isolated',password:credential(),ca};
 const admission={connection:{host:'db.invalid',port:5432,database:'isolated',user:BUYER_WRITER_ADMISSION_LOGIN,
-  password:'secret',ca:'certificate'},operationPermitConfiguration:permitConfiguration,
-  publicKeyPem:'-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----'};
+  password:credential(),ca},operationPermitConfiguration:permitConfiguration,
+  publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})};
 const serviceConfig={version:3,mode:'research-admission',workspace,socketPath:BUYER_WRITER_DEFAULT_SOCKET,
-  gatewayCapability:capability,creatorOid:16384,authority,runtime:{},issuer:{},admission};
+  gatewayCapability:capability,creatorOid:16384,authority,runtime,issuer,admission};
 
 test('research service configuration and startup wire only the attested admission executor into the bridge',async()=>{
   assert.equal(validateBuyerWriterGatewayServiceConfiguration(serviceConfig).mode,'research-admission');
   for(const bad of [{...serviceConfig,extra:true},{...serviceConfig,mode:'production'},
     {...serviceConfig,admission:{...admission,connection:{...admission.connection,user:'admin'}}},
-    {...serviceConfig,admission:{...admission,operationPermitConfiguration:JSON.stringify({...JSON.parse(permitConfiguration),workspace:'other'})}}])
+    {...serviceConfig,admission:{...admission,connection:{...admission.connection,host:'other.invalid'}}},
+    {...serviceConfig,admission:{...admission,connection:{...admission.connection,password:runtime.password}}},
+    {...serviceConfig,admission:{...admission,operationPermitConfiguration:JSON.stringify({...JSON.parse(permitConfiguration),workspace:'other'})}},
+    {...serviceConfig,admission:{...admission,publicKeyPem:generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'})}}])
     assert.throws(()=>validateBuyerWriterGatewayServiceConfiguration(bad),/startup rejected/);
   const events=[],executor={},database={runtimeQuery(){},issuerQuery(){},close:async()=>events.push('database-close')};
   const admissionDatabase={executor,close:async()=>events.push('admission-close')};
   const gateway={listen:async()=>events.push('listen'),close:async()=>events.push('gateway-close')};
-  const runtime=await startBuyerWriterGateway({configurationFile:'/ignored',
+  const started=await startBuyerWriterGateway({configurationFile:'/ignored',
     resolveIdentity:()=>({verified:true}),read:()=>serviceConfig,
-    createPostgres:async options=>{assert.deepEqual(options,{runtime:{},issuer:{},creatorOid:16384});return database;},
-    createAdmissionPostgres:async options=>{assert.deepEqual(options,{connection:admission.connection});return admissionDatabase;},
+    createPostgres:async options=>{assert.deepEqual(options,{runtime,issuer,creatorOid:16384});return database;},
+    createAdmissionPostgres:async options=>{assert.deepEqual(options,{connection:admission.connection,expectedCreatorOid:16384});return admissionDatabase;},
     createBridge:options=>{assert.equal(options.mode,'research-admission');assert.equal(options.admissionExecutor,executor);
       assert.equal(options.configuration,permitConfiguration);return async()=>({status:503,body:{ok:false}});},
     createGateway:options=>{assert.equal(typeof options.admissionBridge,'function');return gateway;}});
-  assert.equal(runtime.admissionDatabase,admissionDatabase);
-  await runtime.close();
+  assert.equal(started.admissionDatabase,admissionDatabase);
+  await started.close();
   assert.deepEqual(events,['listen','gateway-close','database-close','admission-close']);
 });
 

@@ -64,11 +64,16 @@ export function prepareBuyerWriterManagementConfig({password,writerGroupId,
       ||password.includes('\0')||password.includes('\n')||password.includes('\r'))fail();
     const snapshot=readSnapshot(gatewayConfigPath,{groupId:writerGroupId,maxBytes:65536});
     const gateway=validateBuyerWriterGatewayServiceConfiguration(snapshot.value);
+    const admission=gateway.admission?.connection;
     if(snapshot.identity.uid!==0||snapshot.identity.gid!==writerGroupId||(snapshot.identity.mode&0o7777)!==0o640
+      ||gateway.version!==3||gateway.mode!=='research-admission'
       ||gateway.runtime?.host!==BUYER_WRITER_MANAGEMENT_HOST||gateway.issuer?.host!==BUYER_WRITER_MANAGEMENT_HOST
       ||gateway.runtime?.port!==5432||gateway.issuer?.port!==5432||gateway.runtime?.database!=='postgres'||gateway.issuer?.database!=='postgres'
       ||gateway.runtime?.ca!==gateway.issuer?.ca||typeof gateway.runtime.ca!=='string'||gateway.runtime.ca.length>16384
-      ||password===gateway.runtime.password||password===gateway.issuer.password)fail();
+      ||admission?.host!==gateway.runtime.host||admission?.port!==gateway.runtime.port||admission?.database!==gateway.runtime.database
+      ||admission?.user!=='buyer_writer_admission_login'||admission?.ca!==gateway.runtime.ca
+      ||password===gateway.runtime.password||password===gateway.issuer.password||password===admission?.password
+      ||new Set([gateway.runtime.password,gateway.issuer.password,admission?.password,gateway.gatewayCapability]).size!==4)fail();
     const certificate=new X509Certificate(gateway.runtime.ca),now=Date.now();
     if(certificate.ca!==true||!Number.isFinite(Date.parse(certificate.validFrom))||!Number.isFinite(Date.parse(certificate.validTo))
       ||Date.parse(certificate.validFrom)>now||Date.parse(certificate.validTo)<=now)fail();

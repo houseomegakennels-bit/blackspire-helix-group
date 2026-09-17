@@ -24,7 +24,7 @@ try{
     await client.connect();
     return client;
   };
-  const authenticate=(kind,credential)=>authenticateBuyerWriterProductionIdentity({kind,credential,Client:pg.Client});
+  const authenticate=(kind,credential,creatorOid)=>authenticateBuyerWriterProductionIdentity({kind,credential,creatorOid,Client:pg.Client});
   const result=await provisionBuyerWriterProduction({mode:args[0].slice(2),managementConfigPath:args[2],lookupWriterGroup,connect,authenticate});
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }catch{

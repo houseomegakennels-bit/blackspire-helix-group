@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';
+import {createPublicKey,X509Certificate} from 'node:crypto';
 import {createBuyerWriterGatewayPostgres} from './local-gateway-postgres.js';
 import {createBuyerWriterAdmissionPostgres,BUYER_WRITER_ADMISSION_LOGIN} from './admission-postgres.js';
 import {createAdmissionBridge} from './admission-bridge.js';
@@ -11,6 +12,20 @@ import {validateBuyerWriterGatewayAuthority} from './configuration.js';
 
 const fail=()=>{throw new Error('Buyer writer gateway startup rejected');};
 const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
+const secret=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)
+  &&Buffer.from(value,'base64url').length===32&&Buffer.from(value,'base64url').toString('base64url')===value;
+const databaseCredential=(value,keys)=>{
+  if(!exact(value,keys)||typeof value.host!=='string'||value.host.length>253||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(value.host)
+    ||!Number.isInteger(value.port)||value.port<1||value.port>65535||typeof value.database!=='string'
+    ||!/^[a-zA-Z0-9_-]{1,63}$/.test(value.database)||!secret(value.password)||typeof value.ca!=='string'
+    ||value.ca.length<1||value.ca.length>16384||value.ca.includes('\0'))fail();
+  try{new X509Certificate(value.ca);}catch{fail();}
+};
+const connection=(value,user)=>{
+  databaseCredential(value,['host','port','database','user','password','ca']);
+  if(value.user!==user)fail();
+};
+const permitKeys=['issuer','audience','subject','keyId','origin','releaseSha','operationId','attemptId','workspace'];
 const lookupOptions=Object.freeze({encoding:'utf8',timeout:1000,maxBuffer:4096,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});
 
 export function resolveBuyerWriterGatewayIdentity({userInfo=os.userInfo,getuid=process.getuid,getgid=process.getgid,getgroups=process.getgroups,
@@ -56,14 +71,33 @@ export function validateBuyerWriterGatewayServiceConfiguration(value){
     ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)fail();
   let authority;try{authority=validateBuyerWriterGatewayAuthority(value.authority,{workspace:value.workspace});}catch{fail();}
   if(research){
-    const admission=value.admission,connection=admission?.connection;
-    if(!exact(admission,['connection','operationPermitConfiguration','publicKeyPem'])
-      ||!exact(connection,['host','port','database','user','password','ca'])||connection.user!==BUYER_WRITER_ADMISSION_LOGIN
-      ||typeof admission.operationPermitConfiguration!=='string'||admission.operationPermitConfiguration.length>4096
-      ||typeof admission.publicKeyPem!=='string'||admission.publicKeyPem.length>1024)fail();
+    const admission=value.admission,admissionConnection=admission?.connection;
+    if(!exact(admission,['connection','operationPermitConfiguration','publicKeyPem']))fail();
+    databaseCredential(value.runtime,['host','port','database','password','ca']);
+    databaseCredential(value.issuer,['host','port','database','password','ca']);
+    connection(admissionConnection,BUYER_WRITER_ADMISSION_LOGIN);
+    if(value.runtime.host.toLowerCase()!==value.issuer.host.toLowerCase()
+      ||value.runtime.host.toLowerCase()!==admissionConnection.host.toLowerCase()
+      ||value.runtime.port!==value.issuer.port||value.runtime.port!==admissionConnection.port
+      ||value.runtime.database!==value.issuer.database||value.runtime.database!==admissionConnection.database
+      ||value.runtime.ca!==value.issuer.ca||value.runtime.ca!==admissionConnection.ca
+      ||new Set([value.gatewayCapability,value.runtime.password,value.issuer.password,admissionConnection.password]).size!==4)fail();
+    if(typeof admission.operationPermitConfiguration!=='string'||admission.operationPermitConfiguration.length<2
+      ||admission.operationPermitConfiguration.length>4096||Buffer.byteLength(admission.operationPermitConfiguration)>4096)fail();
     let permit;try{permit=JSON.parse(admission.operationPermitConfiguration);}catch{fail();}
-    if(!permit||typeof permit!=='object'||permit.workspace!==value.workspace||permit.releaseSha!==authority.releaseSha
-      ||permit.operationId!==authority.operationId||permit.attemptId!==authority.attemptId)fail();
+    if(JSON.stringify(permit)!==admission.operationPermitConfiguration||!exact(permit,permitKeys)
+      ||permitKeys.some(key=>typeof permit[key]!=='string'||permit[key].length<1||permit[key].length>200)
+      ||permit.workspace!==value.workspace||permit.releaseSha!==authority.releaseSha
+      ||permit.operationId!==authority.operationId||permit.attemptId!==authority.attemptId
+      ||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(permit.subject)
+      ||!/^[A-Za-z0-9_-]{1,64}$/.test(permit.keyId))fail();
+    let origin;try{origin=new URL(permit.origin);}catch{fail();}
+    if(origin.protocol!=='https:'||origin.origin!==permit.origin||origin.username||origin.password
+      ||origin.pathname!=='/'||origin.search||origin.hash)fail();
+    if(typeof admission.publicKeyPem!=='string'||admission.publicKeyPem.length>1024
+      ||admission.publicKeyPem.includes('PRIVATE KEY')||!admission.publicKeyPem.startsWith('-----BEGIN PUBLIC KEY-----'))fail();
+    let key;try{key=createPublicKey(admission.publicKeyPem);}catch{fail();}
+    if(key.type!=='public'||key.asymmetricKeyType!=='ed25519'||key.export({type:'spki',format:'pem'})!==admission.publicKeyPem)fail();
   }
   return Object.freeze({...value,authority});
 }
@@ -78,7 +112,7 @@ export async function startBuyerWriterGateway({configurationFile,read=readBuyerW
     database=await createPostgres({runtime:config.runtime,issuer:config.issuer,creatorOid:config.creatorOid});
     let admissionBridge;
     if(config.mode==='research-admission'){
-      admissionDatabase=await createAdmissionPostgres({connection:config.admission.connection});
+      admissionDatabase=await createAdmissionPostgres({connection:config.admission.connection,expectedCreatorOid:config.creatorOid});
       admissionBridge=createBridge({mode:config.mode,configuration:config.admission.operationPermitConfiguration,
         publicKeyPem:config.admission.publicKeyPem,admissionExecutor:admissionDatabase.executor});
     }

@@ -41,7 +41,7 @@ function poolConfiguration(connection){
  });
 }
 
-export async function createBuyerWriterAdmissionPostgres({connection,Pool}={}){
+export async function createBuyerWriterAdmissionPostgres({connection,expectedCreatorOid,Pool}={}){
  const config=poolConfiguration(validateConnection(connection));
  let pool,closed=false,healthy=true,closing;
  const checkedOut=new Set();
@@ -90,7 +90,7 @@ export async function createBuyerWriterAdmissionPostgres({connection,Pool}={}){
    return client;
   };
   const executor=createAttestedAdmissionExecutor({
-   expectedLogin:BUYER_WRITER_ADMISSION_LOGIN,connect,
+   expectedLogin:BUYER_WRITER_ADMISSION_LOGIN,expectedCreatorOid,connect,
    checkoutTimeoutMs:2000,identityTimeoutMs:2000,
   });
   return Object.freeze({

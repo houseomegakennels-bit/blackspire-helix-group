@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
-import {validateBuyerWriterConfiguration} from '../packages/buyer-writer/configuration.js';
+import {generateKeyPairSync,randomBytes,randomUUID} from 'node:crypto';
+import {validateBuyerWriterConfiguration,validateBuyerWriterGatewayProvisioningConfiguration} from '../packages/buyer-writer/configuration.js';
 const fixture=()=>({version:1,workspace:'isolated',bindingFile:'/etc/blackspire/writer-binding.json',writerCredential:randomBytes(32).toString('base64url'),issuerCredential:randomBytes(32).toString('base64url'),creatorOid:16384,
   runtime:{host:'isolated.example.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')},
   issuer:{host:'isolated.example.test',port:5432,database:'postgres',password:randomBytes(32).toString('base64url')}});
@@ -36,4 +36,31 @@ test('only verified staging configuration accepts a distinct noncanonical unit p
   for(const units of [{api:'blackspire-command.service',worker:'zola-worker.service'},{api:'zola-api.service',worker:'blackspire-command-worker.service'},
     {api:'same.service',worker:'same.service'},{api:'../other.service',worker:'zola-worker.service'},{api:'one.service'},
   ])assert.throws(()=>validateBuyerWriterConfiguration({...config,units},{workspace:'isolated',environment:'disposable-staging'}));
+});
+
+const gatewayFixture=()=>{
+  const secret=()=>randomBytes(32).toString('base64url'),workspace='blackspire-command';
+  const authority={releaseSha:'a'.repeat(40),operationId:randomUUID(),attemptId:randomUUID(),workspace,gatewayIdentity:'blackspire-writer'};
+  const permit={issuer:'zola-control',audience:'buyer-writer',subject:randomUUID(),keyId:'fixture-key',origin:'https://zola.example',
+    releaseSha:authority.releaseSha,operationId:authority.operationId,attemptId:authority.attemptId,workspace};
+  const ca='-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n';
+  return {version:3,workspace,bindingFile:'/etc/blackspire/buyer-writer-binding.json',writerCredential:secret(),
+    issuerCredential:secret(),admissionCredential:secret(),gatewayCapability:secret(),creatorOid:16384,authority,
+    runtime:{host:'db.example.test',port:5432,database:'postgres',password:secret(),ca},
+    issuer:{host:'db.example.test',port:5432,database:'postgres',password:secret(),ca},
+    operationPermitConfiguration:JSON.stringify(permit),
+    operationPermitPublicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})};
+};
+test('gateway v3 provisioning accepts only pinned exact admission and public permit authority',()=>{
+  const valid=gatewayFixture();
+  assert.deepEqual(validateBuyerWriterGatewayProvisioningConfiguration(valid,{workspace:valid.workspace}),valid);
+  for(const mutate of [
+    v=>{v.admissionCredential=v.runtime.password;},v=>{v.runtime.connectionString='postgres://forbidden';},
+    v=>{delete v.runtime.ca;},v=>{v.issuer.ca+='drift';},v=>{v.issuer.host='other.example.test';},
+    v=>{v.operationPermitConfiguration=JSON.stringify({...JSON.parse(v.operationPermitConfiguration),workspace:'other'});},
+    v=>{v.operationPermitConfiguration+=' ';},v=>{v.operationPermitPublicKeyPem=generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'});},
+    v=>{v.privateKey='forbidden';},
+  ]){const value=gatewayFixture();mutate(value);
+    assert.throws(()=>validateBuyerWriterGatewayProvisioningConfiguration(value,{workspace:value.workspace}),/^Error: Buyer writer gateway provisioning configuration rejected$/);
+  }
 });

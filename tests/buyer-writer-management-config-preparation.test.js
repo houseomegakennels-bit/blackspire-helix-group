@@ -3,21 +3,29 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {X509Certificate} from 'node:crypto';
+import {generateKeyPairSync,X509Certificate} from 'node:crypto';
 import {
   BUYER_WRITER_MANAGEMENT_CONFIG,BUYER_WRITER_MANAGEMENT_HOST,prepareBuyerWriterManagementConfig,
 } from '../packages/buyer-writer/management-config-preparation.js';
 
 const ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
 assert.ok(new X509Certificate(ca));
-const runtimePassword='fixture-runtime-password';
-const issuerPassword='fixture-issuer-password';
+const runtimePassword=Buffer.alloc(32,1).toString('base64url');
+const issuerPassword=Buffer.alloc(32,2).toString('base64url');
+const admissionPassword=Buffer.alloc(32,3).toString('base64url');
 const managementPassword='fixture-temporary-access-token';
-const gateway={version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:'a'.repeat(43),creatorOid:16384,
- authority:{releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-456789abcdef',attemptId:'11234567-89ab-cdef-0123-456789abcdef',
-  workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'},
+const authority={releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-456789abcdef',
+ attemptId:'11234567-89ab-cdef-0123-456789abcdef',workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'};
+const permit=JSON.stringify({issuer:'zola-control',audience:'buyer-writer',subject:'21234567-89ab-cdef-0123-456789abcdef',
+ keyId:'fixture-key',origin:'https://zola.example',releaseSha:authority.releaseSha,operationId:authority.operationId,
+ attemptId:authority.attemptId,workspace:authority.workspace});
+const publicKeyPem=generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'});
+const gateway={version:3,mode:'research-admission',workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',
+ gatewayCapability:'a'.repeat(43),creatorOid:16384,authority,
  runtime:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',password:runtimePassword,ca},
- issuer:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',password:issuerPassword,ca}};
+ issuer:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',password:issuerPassword,ca},
+ admission:{connection:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',user:'buyer_writer_admission_login',
+  password:admissionPassword,ca},operationPermitConfiguration:permit,publicKeyPem}};
 
 function fixture(t,{unsafeParent=false,existing=false,writeLimit=Infinity,uncertainLink=false}={}){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-writer-management-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
@@ -58,7 +66,7 @@ test('unsafe parents, existing destinations, credential reuse and untrusted gate
   const existing=fixture(t,{existing:true});assert.throws(()=>prepareBuyerWriterManagementConfig({password:managementPassword,writerGroupId:44,
     readSnapshot:existing.readSnapshot,io:existing.io,nonce:'c'.repeat(32),getuid:()=>0}),/preparation failed/);
   assert.equal(fs.readFileSync(existing.target,'utf8'),'existing');
-  const normal=fixture(t);for(const password of ['',runtimePassword,issuerPassword,'line\nbreak'])assert.throws(()=>prepareBuyerWriterManagementConfig({password,
+  const normal=fixture(t);for(const password of ['',runtimePassword,issuerPassword,admissionPassword,'line\nbreak'])assert.throws(()=>prepareBuyerWriterManagementConfig({password,
     writerGroupId:44,readSnapshot:normal.readSnapshot,io:normal.io,nonce:'d'.repeat(32),getuid:()=>0}),/preparation failed/);
   const prior=gateway.runtime.host;gateway.runtime.host='other.example';
   assert.throws(()=>prepareBuyerWriterManagementConfig({password:managementPassword,writerGroupId:44,readSnapshot:normal.readSnapshot,

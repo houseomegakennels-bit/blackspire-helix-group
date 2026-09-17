@@ -1,4 +1,5 @@
 import path from 'node:path';
+import {createPublicKey} from 'node:crypto';
 import {matchesBuyerWriterRehearsal} from './rehearsal.js';
 const exact=(value,required,optional=[])=>value&&typeof value==='object'&&!Array.isArray(value)
   &&required.every(key=>Object.hasOwn(value,key))&&Object.keys(value).every(key=>[...required,...optional].includes(key));
@@ -7,6 +8,24 @@ const secret=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)
 const canonicalPath=value=>typeof value==='string'&&value.length<=4096&&path.isAbsolute(value)&&path.resolve(value)===value&&value!=='/';
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
+const permitKeys=['issuer','audience','subject','keyId','origin','releaseSha','operationId','attemptId','workspace'];
+const permitConfiguration=(value,authority,workspace)=>{
+  if(typeof value!=='string'||value.length<2||value.length>4096||Buffer.byteLength(value)>4096)throw new Error();
+  const parsed=JSON.parse(value);
+  if(JSON.stringify(parsed)!==value||!exact(parsed,permitKeys)||permitKeys.some(key=>typeof parsed[key]!=='string'||parsed[key].length<1||parsed[key].length>200)
+    ||!uuid(parsed.subject)||!/^[A-Za-z0-9_-]{1,64}$/.test(parsed.keyId)||!sha(parsed.releaseSha)
+    ||parsed.releaseSha!==authority.releaseSha||parsed.operationId!==authority.operationId||parsed.attemptId!==authority.attemptId
+    ||parsed.workspace!==workspace)throw new Error();
+  const origin=new URL(parsed.origin);
+  if(origin.protocol!=='https:'||origin.origin!==parsed.origin||origin.username||origin.password||origin.pathname!=='/'||origin.search||origin.hash)throw new Error();
+  return value;
+};
+const ed25519PublicKey=value=>{
+  if(typeof value!=='string'||value.length<1||value.length>1024||value.includes('PRIVATE KEY')||!value.startsWith('-----BEGIN PUBLIC KEY-----'))throw new Error();
+  const key=createPublicKey(value),canonical=key.export({type:'spki',format:'pem'});
+  if(key.type!=='public'||key.asymmetricKeyType!=='ed25519'||canonical!==value)throw new Error();
+  return value;
+};
 
 export function validateBuyerWriterGatewayAuthority(value,{workspace,releaseSha}={}) {
   try{
@@ -38,20 +57,24 @@ export function validateBuyerWriterClientConfiguration(value,{workspace,environm
 export function validateBuyerWriterGatewayProvisioningConfiguration(value,{workspace}={}) {
   try {
     if(typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)
-      ||!exact(value,['version','workspace','bindingFile','writerCredential','issuerCredential','gatewayCapability','creatorOid','authority','runtime','issuer'])
+      ||!exact(value,['version','workspace','bindingFile','writerCredential','issuerCredential','admissionCredential','gatewayCapability',
+        'creatorOid','authority','runtime','issuer','operationPermitConfiguration','operationPermitPublicKeyPem'])
       ||value.version!==3||value.workspace!==workspace||!canonicalPath(value.bindingFile)
       ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)throw new Error();
     for(const config of [value.runtime,value.issuer]){
-      if(!exact(config,['host','port','database','password'],['ca'])||typeof config.host!=='string'||config.host.length>253
+      if(!exact(config,['host','port','database','password','ca'])||typeof config.host!=='string'||config.host.length>253
         ||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(config.host)||!Number.isInteger(config.port)||config.port<1||config.port>65535
         ||typeof config.database!=='string'||!/^[a-zA-Z0-9_-]{1,63}$/.test(config.database)
-        ||(config.ca!==undefined&&(typeof config.ca!=='string'||config.ca.length>16384||!config.ca.includes('-----BEGIN CERTIFICATE-----'))))throw new Error();
+        ||typeof config.ca!=='string'||config.ca.length<1||config.ca.length>16384||!config.ca.includes('-----BEGIN CERTIFICATE-----'))throw new Error();
     }
-    const credentials=[value.writerCredential,value.issuerCredential,value.gatewayCapability,value.runtime.password,value.issuer.password];
+    const credentials=[value.writerCredential,value.issuerCredential,value.admissionCredential,value.gatewayCapability,
+      value.runtime.password,value.issuer.password];
     if(credentials.some(value=>!secret(value))||new Set(credentials).size!==credentials.length
       ||value.runtime.host.toLowerCase()!==value.issuer.host.toLowerCase()||value.runtime.port!==value.issuer.port
-      ||value.runtime.database!==value.issuer.database)throw new Error();
+      ||value.runtime.database!==value.issuer.database||value.runtime.ca!==value.issuer.ca)throw new Error();
     const authority=validateBuyerWriterGatewayAuthority(value.authority,{workspace});
+    permitConfiguration(value.operationPermitConfiguration,authority,workspace);
+    ed25519PublicKey(value.operationPermitPublicKeyPem);
     return Object.freeze({...value,authority,runtime:Object.freeze({...value.runtime}),issuer:Object.freeze({...value.issuer})});
   }catch{throw new Error('Buyer writer gateway provisioning configuration rejected');}
 }

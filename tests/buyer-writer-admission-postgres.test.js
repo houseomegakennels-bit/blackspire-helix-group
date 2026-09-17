@@ -40,7 +40,7 @@ function pools(){
 
 test('pins the admission login, TLS CA and fixed session limits',async()=>{
  const {Pool,instances}=pools();
- const database=await createBuyerWriterAdmissionPostgres({connection:connection(),Pool});
+ const database=await createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool});
  try{
   assert.equal(instances.length,1);
   const config=instances[0].config;
@@ -108,7 +108,7 @@ test('rejects missing, ambient, alternate-login and injectable connection config
 
 test('idle pool failure fences future checkout and close is idempotent',async()=>{
  const {Pool,instances}=pools();
- const database=await createBuyerWriterAdmissionPostgres({connection:connection(),Pool});
+ const database=await createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool});
  assert.equal(database.isHealthy(),true);
  instances[0].emit('error',new Error('PRIVATE SOCKET DETAIL'));
  assert.equal(database.isHealthy(),false);
@@ -126,7 +126,7 @@ test('idle pool failure fences future checkout and close is idempotent',async()=
 
 test('close destroys a checked-out session and exposes no generic SQL surface',async()=>{
  const {Pool,instances}=pools();
- const database=await createBuyerWriterAdmissionPostgres({connection:connection(),Pool});
+ const database=await createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool});
  let resolveIdentity;
  instances[0].connect=async()=>{
   const client={

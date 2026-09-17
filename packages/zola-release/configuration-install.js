@@ -117,8 +117,13 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     const artifact=await inspectArtifact({artifactRoot:path.join(paths.releaseRoot,releaseSha),releaseSha,environment:'production'});
     if(artifact.releaseSha!==releaseSha||artifact.environment!=='production'||!(/^[a-f0-9]{64}$/).test(artifact.artifactDigest??''))reject();
     const socketPath='/run/blackspire/buyer-writer.sock';
-    const gatewayConfig=Object.freeze({version:2,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,creatorOid:config.creatorOid,authority:config.authority,
-      runtime:config.runtime,issuer:config.issuer});
+    const gatewayConfig=Object.freeze({version:3,mode:'research-admission',workspace:config.workspace,socketPath,
+      gatewayCapability:config.gatewayCapability,creatorOid:config.creatorOid,authority:config.authority,
+      runtime:config.runtime,issuer:config.issuer,admission:Object.freeze({
+        connection:Object.freeze({host:config.runtime.host,port:config.runtime.port,database:config.runtime.database,
+          user:'buyer_writer_admission_login',password:config.admissionCredential,ca:config.runtime.ca}),
+        operationPermitConfiguration:config.operationPermitConfiguration,publicKeyPem:config.operationPermitPublicKeyPem,
+      })});
     const clientConfig=validateBuyerWriterClientConfiguration({version:3,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,authority:config.authority},
       {workspace:'blackspire-command',environment:'production'});
     const ingressConfig=Object.freeze({version:1,workspace:config.workspace,bindingFile:config.bindingFile,

@@ -4,11 +4,13 @@ import {fileURLToPath} from 'node:url';
 import {readRootOwnedJsonSnapshot} from './protected-json.js';
 import {validateBuyerWriterGatewayServiceConfiguration} from './gateway-entry.js';
 import {TEMPLATE1_IDENTITY_SQL} from './postgres.js';
+import {ADMISSION_IDENTITY_SQL} from './admission-executor.js';
+import {BUYER_WRITER_ADMISSION_LOGIN,BUYER_WRITER_ADMISSION_ROLE} from './admission-postgres.js';
 import {observeBuyerWriterProductionState} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
 export const BUYER_WRITER_GATEWAY_CONFIGURATION='/etc/blackspire-buyer-writer-gateway/gateway.json';
-export const BUYER_WRITER_INSTALLER_SHA256='9ef9d03428eefab52c5cbeb93988f07e948a765e8cd927d40d558b691a956fd0';
+export const BUYER_WRITER_INSTALLER_SHA256='b7a39ddf38357bd67eeebceed73a7e0ba054c9f2856dee96f17c53b1f2f3e2a1';
 export const BUYER_WRITER_PROVISIONING_LOCK=Object.freeze([206994,127]);
 
 const INSTALLER=fileURLToPath(new URL('./sql/install.sql',import.meta.url));
@@ -27,7 +29,7 @@ const ROLE_READINESS_SQL=`select coalesce(jsonb_agg(jsonb_build_object(
  'superuser',coalesce(r.rolsuper,false),'createDb',coalesce(r.rolcreatedb,false),
  'createRole',coalesce(r.rolcreaterole,false),'replication',coalesce(r.rolreplication,false),
  'bypassRls',coalesce(r.rolbypassrls,false)) order by wanted.name),'[]'::jsonb) as roles
-from (values ('buyer_writer_issuer'),('buyer_writer_owner'),('buyer_writer_runtime')) wanted(name)
+from (values ('buyer_writer_admission'),('buyer_writer_admission_login'),('buyer_writer_issuer'),('buyer_writer_owner'),('buyer_writer_runtime')) wanted(name)
 left join pg_roles r on r.rolname=wanted.name`;
 
 const SESSION_IDENTITY_SQL=`select current_user as actor,current_database() as database,r.oid::int as "creatorOid",
@@ -47,21 +49,36 @@ const FAIL_CLOSED_SQL=`do $blackspire_fail_closed$ begin
  if exists(select from pg_roles where rolname='buyer_writer_issuer') then
   alter role buyer_writer_issuer nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
  end if;
+ if exists(select from pg_roles where rolname='buyer_writer_admission') then
+  alter role buyer_writer_admission nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null;
+ end if;
+ if exists(select from pg_roles where rolname='buyer_writer_admission_login') then
+  alter role buyer_writer_admission_login nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null;
+ end if;
 end $blackspire_fail_closed$`;
 const LOGIN_DISABLED_SQL=`select count(*)::int as count from pg_roles
- where rolname in('buyer_writer_runtime','buyer_writer_issuer') and rolcanlogin`;
+ where rolname in('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login') and rolcanlogin`;
 const CREATE_BINDER_SQL=`create or replace function pg_temp.blackspire_bind_buyer_writer_password(role_name name,secret text)
 returns void language plpgsql set search_path=pg_catalog as $blackspire_binder$
 begin
- if role_name::text not in ('buyer_writer_runtime','buyer_writer_issuer') or secret is null or octet_length(secret) not between 1 and 1024 then
+ if role_name::text not in ('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission_login')
+  or secret is null or octet_length(secret) not between 1 and 1024 then
   raise exception 'Buyer writer credential binding rejected';
  end if;
  begin
+  if role_name::text='buyer_writer_admission_login'
+   and not exists(select from pg_roles where rolname='buyer_writer_admission_login') then
+   create role buyer_writer_admission_login nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+  end if;
   execute format('alter role %I password %L',role_name,secret);
  exception when others then
   raise exception using errcode='P0001',message='Buyer writer credential binding rejected';
  end;
 end $blackspire_binder$`;
+const BIND_ADMISSION_LOGIN_SQL=`alter role buyer_writer_admission nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null;
+ revoke buyer_writer_admission from buyer_writer_admission_login;
+ grant buyer_writer_admission to buyer_writer_admission_login with admin false,inherit false,set true granted by postgres;
+ alter role buyer_writer_admission_login login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls`;
 const LOGGING_SAFETY_SQL=`select current_setting('log_statement')='none'
  and current_setting('log_duration')='off'
  and current_setting('log_min_duration_statement')='-1'
@@ -71,28 +88,30 @@ const LOGGING_SAFETY_SQL=`select current_setting('log_statement')='none'
  and coalesce(current_setting('pgaudit.log_parameter',true),'off')='off'
  and not (regexp_split_to_array(lower(coalesce(current_setting('pgaudit.log',true),'none')),'[ ,]+') && array['all','role']) as safe`;
 
-export async function authenticateBuyerWriterProductionIdentity({kind,credential,Client}={}){
-  if(!['runtime','issuer'].includes(kind)||typeof Client!=='function'||!credential||typeof credential!=='object')authenticationFail();
-  const expected=`buyer_writer_${kind}`;
+export async function authenticateBuyerWriterProductionIdentity({kind,credential,creatorOid,Client}={}){
+  if(!['runtime','issuer','admission'].includes(kind)||typeof Client!=='function'||!credential||typeof credential!=='object')authenticationFail();
+  const admission=kind==='admission',expected=admission?BUYER_WRITER_ADMISSION_LOGIN:`buyer_writer_${kind}`;
+  if(admission&&(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295||credential.user!==expected))authenticationFail();
   const options={host:credential.host,port:5432,user:expected,password:credential.password,
     ssl:{rejectUnauthorized:true,ca:credential.ca},application_name:`blackspire-buyer-writer-${kind}-provisioning-proof`,
-    connectionTimeoutMillis:5000,query_timeout:10000,
-    options:'-c statement_timeout=7000 -c lock_timeout=3000 -c search_path=pg_catalog'};
-  const prove=async(database,text)=>{
+    connectionTimeoutMillis:5000,query_timeout:10000};
+  const prove=async(database,text,values,{setRole=false}={})=>{
     let client,failed=false;
     try{
-      client=new Client({...options,database,application_name:`blackspire-buyer-writer-${kind}-${database==='template1'?'template-proof':'provisioning-proof'}`});
+      client=new Client({...options,database,application_name:`blackspire-buyer-writer-${kind}-${database==='template1'?'template-proof':'provisioning-proof'}`,
+        options:`-c statement_timeout=7000 -c lock_timeout=3000 -c search_path=pg_catalog${setRole?` -c role=${BUYER_WRITER_ADMISSION_ROLE}`:''}`});
       client.on('error',()=>{});await client.connect();
-      const result=await client.query(text,[expected]);
+      const result=await client.query(text,values);
       if(result?.rows?.length!==1||result.rows[0]?.safe!==true)failed=true;
     }catch{failed=true;}
     try{await client?.end();}catch{failed=true;}
     if(failed)authenticationFail();
   };
-  await prove('postgres',`select current_user=$1 and session_user=$1 and current_database()='postgres'
+  if(admission)await prove('postgres',ADMISSION_IDENTITY_SQL,[expected,creatorOid],{setRole:true});
+  else await prove('postgres',`select current_user=$1 and session_user=$1 and current_database()='postgres'
    and r.rolcanlogin and not r.rolinherit and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls) as safe
-   from pg_roles r where r.rolname=$1`);
-  await prove('template1',TEMPLATE1_IDENTITY_SQL);
+   from pg_roles r where r.rolname=$1`,[expected]);
+  await prove('template1',TEMPLATE1_IDENTITY_SQL,[expected]);
 }
 
 function gatewayGroupId(lookup){
@@ -106,14 +125,18 @@ function gatewayGroupId(lookup){
 function validateGatewaySnapshot(snapshot){
  try{
   const config=validateBuyerWriterGatewayServiceConfiguration(snapshot.value);
-  if(snapshot.identity.uid!==0||(snapshot.identity.mode&0o7777)!==0o640
-    ||config.workspace!=='blackspire-command'||config.runtime?.host!==HOST||config.issuer?.host!==HOST)fail();
+  const admission=config.admission?.connection;
+  if(snapshot.identity.uid!==0||(snapshot.identity.mode&0o7777)!==0o640||config.version!==3||config.mode!=='research-admission'
+    ||config.workspace!=='blackspire-command'||config.runtime?.host!==HOST||config.issuer?.host!==HOST||admission?.host!==HOST)fail();
   for(const value of [config.runtime,config.issuer]){
-    if(!exact(value,['host','port','database','password'],['ca'])||value.port!==5432||value.database!=='postgres'
+    if(!exact(value,['host','port','database','password','ca'])||value.port!==5432||value.database!=='postgres'
       ||!validPassword(value.password)||typeof value.ca!=='string'||value.ca.length>16384
       ||!value.ca.startsWith('-----BEGIN CERTIFICATE-----'))fail();
   }
-  if(config.runtime.password===config.issuer.password||config.runtime.ca!==config.issuer.ca)fail();
+  if(!exact(admission,['host','port','database','user','password','ca'])||admission.port!==5432||admission.database!=='postgres'
+    ||admission.user!==BUYER_WRITER_ADMISSION_LOGIN||!validPassword(admission.password)
+    ||config.runtime.ca!==config.issuer.ca||config.runtime.ca!==admission.ca
+    ||new Set([config.runtime.password,config.issuer.password,admission.password,config.gatewayCapability]).size!==4)fail();
   return config;
  }catch{fail();}
 }
@@ -124,7 +147,7 @@ function validateManagementSnapshot(snapshot,gateway){
   if(snapshot.identity.uid!==0||snapshot.identity.gid!==0||(snapshot.identity.mode&0o7777)!==0o600
     ||!exact(value,['host','password','ca'])||value.host!==gateway.runtime.host||!validPassword(value.password)
     ||value.password===gateway.runtime.password||value.password===gateway.issuer.password
-    ||value.ca!==gateway.runtime.ca)fail();
+    ||value.password===gateway.admission.connection.password||value.ca!==gateway.runtime.ca)fail();
   return value;
  }catch{fail();}
 }
@@ -162,7 +185,7 @@ async function identityAndLock(client,creatorOid){
 
 async function readiness(client){
   const result=await client.query(ROLE_READINESS_SQL,[]),roles=result.rows?.[0]?.roles;
-  if(!Array.isArray(roles)||roles.length!==3||roles.some(role=>!exact(role,
+  if(!Array.isArray(roles)||roles.length!==5||roles.some(role=>!exact(role,
     ['name','exists','login','inherit','superuser','createDb','createRole','replication','bypassRls'])))fail();
   return roles;
 }
@@ -250,19 +273,22 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     try{evidence=await verified(client,gateway.creatorOid);}catch{}
     if(mode==='inspect'){
       if(evidence)try{
-        await authenticate('runtime',gateway.runtime);await authenticate('issuer',gateway.issuer);
+        await authenticate('runtime',gateway.runtime,gateway.creatorOid);await authenticate('issuer',gateway.issuer,gateway.creatorOid);
+        await authenticate('admission',gateway.admission.connection,gateway.creatorOid);
         recheckSnapshots();
       }catch{evidence=null;}
       return sanitizedInspection(roles,evidence);
     }
     if(mode==='verify'){
       if(!evidence)fail();
-      await authenticate('runtime',gateway.runtime);await authenticate('issuer',gateway.issuer);
+      await authenticate('runtime',gateway.runtime,gateway.creatorOid);await authenticate('issuer',gateway.issuer,gateway.creatorOid);
+        await authenticate('admission',gateway.admission.connection,gateway.creatorOid);
       recheckSnapshots();mutationStarted=false;return sanitizedInspection(roles,evidence);
     }
     if(evidence){
       try{
-        await authenticate('runtime',gateway.runtime);await authenticate('issuer',gateway.issuer);
+        await authenticate('runtime',gateway.runtime,gateway.creatorOid);await authenticate('issuer',gateway.issuer,gateway.creatorOid);
+        await authenticate('admission',gateway.admission.connection,gateway.creatorOid);
         recheckSnapshots();mutationStarted=false;return Object.freeze({status:'ALREADY_COMPLIANT',idempotent:true,evidence});
       }catch{
         if(mode!=='reconcile'){journal('started','IN_PROGRESS');fail();}
@@ -287,7 +313,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     await client.query(installerBytes(io));
     journal('installer-committed','IN_PROGRESS');
     const installed=await readiness(client);
-    if(installed.some(role=>!role.exists||role.login))fail();
+    if(installed.some(role=>role.name===BUYER_WRITER_ADMISSION_LOGIN?role.exists:!role.exists||role.login))fail();
 
     let began=false,commitSent=false;
     try{
@@ -299,6 +325,8 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
       await client.query(CREATE_BINDER_SQL,[]);
       await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',['buyer_writer_runtime',gateway.runtime.password]);
       await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',['buyer_writer_issuer',gateway.issuer.password]);
+      await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',[BUYER_WRITER_ADMISSION_LOGIN,gateway.admission.connection.password]);
+      await client.query(BIND_ADMISSION_LOGIN_SQL,[]);
       await client.query("alter role buyer_writer_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null; alter role buyer_writer_runtime login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls; alter role buyer_writer_issuer login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls");
       const finalEvidence=await verified(client,gateway.creatorOid);
       recheckSnapshots();
@@ -306,7 +334,8 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
       await client.query('begin read only');
       const committedEvidence=await verified(client,gateway.creatorOid);
       await client.query('rollback');
-      await authenticate('runtime',gateway.runtime);await authenticate('issuer',gateway.issuer);
+      await authenticate('runtime',gateway.runtime,gateway.creatorOid);await authenticate('issuer',gateway.issuer,gateway.creatorOid);
+        await authenticate('admission',gateway.admission.connection,gateway.creatorOid);
       recheckSnapshots();
       if(finalEvidence.compliant!==true)fail();
       journal('verified-committed','COMPLETED');
