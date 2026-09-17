@@ -37,7 +37,7 @@ try{
   reset role;
  `);
  admin(`create database ${database} owner ${creator}`);
- admin(`revoke connect,create,temp on database postgres from public; revoke connect,create,temp on database template0 from public; revoke connect,create,temp on database template1 from public`);
+ admin(`revoke connect,create,temp on database postgres from public; revoke connect,create,temp on database template0 from public; revoke connect,create,temp on database template1 from public; grant connect on database template1 to public`);
  admin(`
   revoke temp on database ${database} from public;
   revoke create on schema public from public;
@@ -130,6 +130,18 @@ try{
  admin('grant unexpected_parent to '+login+' with admin false, inherit false, set true');
  await assert.rejects(reserve(),/unavailable/);checks++;
  admin('revoke unexpected_parent from '+login);
+ admin('revoke connect on database template1 from public');
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin('grant connect on database template1 to public');
+ check((await reserve()).rows[0].accepted===true,'required inert template1 CONNECT was not restored');
+ admin('grant temp on database template1 to public');
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin('revoke temp on database template1 from public');
+ check((await reserve()).rows[0].accepted===true,'template1 TEMP revocation was not restored');
+ admin('grant connect on database template0 to public');
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin('revoke connect on database template0 from public');
+ check((await reserve()).rows[0].accepted===true,'template0 CONNECT revocation was not restored');
  admin('grant connect on database postgres to public');
  await assert.rejects(reserve(),/unavailable/);checks++;
  admin('revoke connect on database postgres from public');

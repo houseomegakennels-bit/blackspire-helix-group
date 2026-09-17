@@ -65,7 +65,11 @@ export const ADMISSION_IDENTITY_SQL=`select (
  and has_database_privilege(login.oid,(select oid from pg_database where datname=current_database()),'CONNECT')
  and not has_database_privilege(login.oid,(select oid from pg_database where datname=current_database()),'CREATE')
  and not has_database_privilege(login.oid,(select oid from pg_database where datname=current_database()),'TEMP')
- and not exists(select from pg_database d where d.datname<>current_database()
+ and exists(select from pg_database d where d.datname='template1' and d.datistemplate and d.datallowconn
+  and has_database_privilege(login.oid,d.oid,'CONNECT')
+  and not has_database_privilege(login.oid,d.oid,'CREATE')
+  and not has_database_privilege(login.oid,d.oid,'TEMP'))
+ and not exists(select from pg_database d where d.datname not in(current_database(),'template1')
   and (has_database_privilege(login.oid,d.oid,'CONNECT') or has_database_privilege(login.oid,d.oid,'CREATE')
    or has_database_privilege(login.oid,d.oid,'TEMP')))
  and not exists(select from pg_namespace n join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a on true
