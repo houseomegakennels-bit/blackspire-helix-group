@@ -7,7 +7,7 @@ import {observeBuyerWriterProductionState} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
 export const BUYER_WRITER_GATEWAY_CONFIGURATION='/etc/blackspire-buyer-writer-gateway/gateway.json';
-export const BUYER_WRITER_INSTALLER_SHA256='52b7bcf19e294485c6bc434e3a155a160e76326c50f5d7567a9e495e5c513a3b';
+export const BUYER_WRITER_INSTALLER_SHA256='082260b9d8dd0e7cf5a1095ea5b4335c766b9a6ae5d305abaf6b76b3d3ad806c';
 export const BUYER_WRITER_PROVISIONING_LOCK=Object.freeze([206994,127]);
 
 const INSTALLER=fileURLToPath(new URL('./sql/install.sql',import.meta.url));
@@ -222,7 +222,13 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     const roles=await readiness(client);
     let evidence=null;
     try{evidence=await verified(client,gateway.creatorOid);}catch{}
-    if(mode==='inspect')return sanitizedInspection(roles,evidence);
+    if(mode==='inspect'){
+      if(evidence)try{
+        await authenticate('runtime',gateway.runtime);await authenticate('issuer',gateway.issuer);
+        recheckSnapshots();
+      }catch{evidence=null;}
+      return sanitizedInspection(roles,evidence);
+    }
     if(mode==='verify'){
       if(!evidence)fail();
       await authenticate('runtime',gateway.runtime);await authenticate('issuer',gateway.issuer);

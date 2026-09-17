@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {
  BUYER_WRITER_ISSUER_ROUTINES,BUYER_WRITER_PG_NET_FUNCTIONS,BUYER_WRITER_PRODUCTION_VERIFY_SQL,
  BUYER_WRITER_ROUTINES,BUYER_WRITER_RUNTIME_ROUTINES,
@@ -14,7 +15,7 @@ const managementSecret='management-password-never-disclose';
 const ca='-----BEGIN CERTIFICATE-----\nfixture-only\n-----END CERTIFICATE-----\n';
 const identity=(gid,mode)=>({uid:0,gid,mode,nlink:1,size:100,dev:1,ino:gid+10,mtimeMs:1,ctimeMs:1});
 const gateway={version:2,workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',
- gatewayCapability:'a'.repeat(43),creatorOid:16384,authority:{releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-456789abcdef',
+ gatewayCapability:'a'.repeat(43),creatorOid:16388,authority:{releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-456789abcdef',
   attemptId:'11234567-89ab-cdef-0123-456789abcdef',workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'},
  runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:runtimeSecret,ca},
  issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:issuerSecret,ca}};
@@ -39,13 +40,13 @@ const evidence=()=>({
     ...(runtime?[acl('buyer_writer_runtime','EXECUTE',false,owner)]:[]),...(issuer?[acl('buyer_writer_issuer','EXECUTE',false,owner)]:[])],
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false};}),
  targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
- creatorOid:String(gateway.creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
+ bootstrapSuperuser:true,creatorOid:String(gateway.creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
  databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',publicExecute:true,
   ownerExecute:true,runtimeExecute:true,issuerExecute:true})),
 });
 
-function harness({exists=false,login=exists,compliant=exists,authWorks=exists,authority=true,drift=false,readinessFailure=false,journalFailure,
+function harness({exists=false,login=exists,compliant=exists,authWorks=exists,authFailures=[],authority=true,drift=false,readinessFailure=false,journalFailure,
  commitFailure=false}={}){
  const state={exists,ownerLogin:false,runtimeLogin:login,issuerLogin:login,compliant,authWorks,failClosed:0,commitFailures:commitFailure?1:0};
  const calls=[],journals=[],clients=[];let gatewayReads=0;
@@ -58,15 +59,15 @@ function harness({exists=false,login=exists,compliant=exists,authWorks=exists,au
  };
  const connect=async()=>{
   const client={ended:false,async query(text,values=[]){calls.push({text,values,client});
-    if(text.includes("current_setting('server_version_num')"))return {rows:authority?[{actor:'postgres',creatorOid:16384,database:'postgres',version:170006,
-      superuser:false,createDb:true,createRole:true,replication:true,bypassRls:true}]:[{actor:'postgres',creatorOid:16384,database:'postgres',version:170006,
+    if(text.includes("current_setting('server_version_num')"))return {rows:authority?[{actor:'postgres',creatorOid:16388,database:'postgres',version:170006,
+      superuser:false,createDb:true,createRole:true,replication:true,bypassRls:true}]:[{actor:'postgres',creatorOid:16388,database:'postgres',version:170006,
       superuser:false,createDb:true,createRole:false,replication:true,bypassRls:true}]};
     if(text.includes('pg_try_advisory_lock'))return {rows:[{acquired:true}]};
     if(text.includes('pg_advisory_unlock'))return {rows:[{released:true}]};
     if(text.includes('wanted.name')){if(readinessFailure)throw new Error(`catalog ${managementSecret}`);return {rows:[{roles:roles()}]};}
     if(text===BUYER_WRITER_PRODUCTION_VERIFY_SQL)return {rows:[{evidence:state.compliant?evidence():{}}]};
     if(text.startsWith('-- Explicitly installed')){assert.equal(createHash('sha256').update(text).digest('hex'),BUYER_WRITER_INSTALLER_SHA256);
-      assert.ok(calls.some(row=>row.text?.includes("set_config('blackspire.buyer_writer_creator_oid'")&&row.values?.[0]==='16384'));
+      assert.ok(calls.some(row=>row.text?.includes("set_config('blackspire.buyer_writer_creator_oid'")&&row.values?.[0]==='16388'));
       state.exists=true;state.ownerLogin=state.runtimeLogin=state.issuerLogin=false;state.compliant=false;return {rows:[]};}
     if(text.includes('blackspire_fail_closed')){state.ownerLogin=state.runtimeLogin=state.issuerLogin=false;state.compliant=false;state.failClosed++;return {rows:[]};}
     if(text.includes('count(*)::int as count'))return {rows:[{count:Number(state.runtimeLogin||state.issuerLogin)}]};
@@ -77,7 +78,7 @@ function harness({exists=false,login=exists,compliant=exists,authWorks=exists,au
     return {rows:[]};
    },async end(){this.ended=true;}};clients.push(client);return client;
  };
- const authenticate=async kind=>{calls.push({authenticate:kind});if(!state.authWorks)throw new Error(`auth ${kind} ${runtimeSecret}`);};
+ const authenticate=async kind=>{calls.push({authenticate:kind});if(!state.authWorks||authFailures.includes(kind))throw new Error(`auth ${kind} ${runtimeSecret}`);};
  const writeJournal=value=>{journals.push(value);if(value.phase===journalFailure)throw new Error(`journal ${managementSecret}`);return value;};
  return {state,calls,journals,clients,options:{managementConfigPath:'/var/lib/blackspire-operator/management.json',
   readSnapshot,lookupWriterGroup:()=> 'blackspire-writer:x:44:',connect,authenticate,writeJournal}};
@@ -90,6 +91,30 @@ test('protected input and management authority failures are sanitized and non-mu
  const wrong=harness({authority:false});
  await assert.rejects(()=>provisionBuyerWriterProduction({mode:'apply',...wrong.options}),/production provisioning failed/);
  assert.equal(wrong.state.failClosed,0);
+});
+
+test('inspect reports compliance only after separate runtime and issuer template attestations',async()=>{
+ const h=harness({exists:true});const result=await provisionBuyerWriterProduction({mode:'inspect',...h.options});
+ assert.equal(result.status,'COMPLIANT');assert.equal(result.compliant,true);
+ assert.deepEqual(h.calls.filter(row=>row.authenticate).map(row=>row.authenticate),['runtime','issuer']);
+ assert.deepEqual(h.journals,[]);assert.equal(h.state.failClosed,0);
+});
+
+test('production authentication uses the shared template1 attestation for either writer identity',()=>{
+ const source=readFileSync(new URL('../scripts/provision-buyer-writer-production.js',import.meta.url),'utf8');
+ assert.match(source,/import \{TEMPLATE1_IDENTITY_SQL\} from '\.\.\/packages\/buyer-writer\/postgres\.js'/);
+ assert.match(source,/const expected=`buyer_writer_\$\{kind\}`[\s\S]*database:'template1'[\s\S]*template\.query\(TEMPLATE1_IDENTITY_SQL,\[expected\]\)/);
+});
+
+test('inspect reports sanitized noncompliance without mutation when a template attestation fails',async()=>{
+ for(const kind of ['runtime','issuer']){
+  const h=harness({exists:true,authFailures:[kind]});
+  const result=await provisionBuyerWriterProduction({mode:'inspect',...h.options});
+  assert.equal(result.status,'NONCOMPLIANT');assert.equal(result.compliant,false);
+  assert.equal(JSON.stringify(result).includes(runtimeSecret),false);
+  assert.equal(h.calls.some(row=>row.authenticate===kind),true);
+  assert.deepEqual(h.journals,[]);assert.equal(h.state.failClosed,0);
+ }
 });
 
 test('absent roles install exact canonical SQL, bind only as parameters, verify, authenticate and journal',async()=>{

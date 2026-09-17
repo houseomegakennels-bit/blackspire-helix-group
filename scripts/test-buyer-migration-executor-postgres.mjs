@@ -65,7 +65,7 @@ try {
   assert.equal(bootstrap.status,0,bootstrap.stderr?.slice(0,500));
   assert.match(sql('show server_version'),/^17\.6/);
   sql('create database writer_other');
-  sql('revoke connect on database template1,writer_other from public');
+  sql('revoke connect on database writer_other from public');
 
   // Inert stand-ins reproduce ACL semantics; no extension/network function runs.
   sql(`create role supabase_admin nologin;create role consumer nologin;create role observer nologin;

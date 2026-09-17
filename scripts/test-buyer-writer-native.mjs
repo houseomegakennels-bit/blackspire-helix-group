@@ -66,7 +66,8 @@ for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
   interrupted=true;void cleanup().then(()=>process.exit(1),()=>process.exit(1));
 });
 const literal=value=>`'${String(value).replaceAll("'","''")}'`;
-const sql=statement=>requireSuccess(docker(['exec','-i',containerId,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'],statement));
+let sqlUser='fixture_admin';
+const sql=statement=>requireSuccess(docker(['exec','-i',containerId,'psql','-X','-qAt','-U',sqlUser,'-d','writer_test','-v','ON_ERROR_STOP=1'],statement));
 const copy=(filename,contents)=>requireSuccess(docker(['exec','-i','--user','postgres',containerId,'sh','-c',`umask 077; cat > ${filename}`],contents));
 let failed=false,phase='network';
 try {
@@ -79,7 +80,7 @@ try {
   containerId=requireSuccess(docker(['create','--name',name,'--label',`blackspire.test-owner=${owner}`,'--network',networkId,
     '--read-only','--memory','512m','--cpus','1','--pids-limit','128',
     '--tmpfs','/var/lib/postgresql/data:rw,size=192m','--tmpfs','/var/run/postgresql:rw,size=8m','--tmpfs','/tmp:rw,size=16m',
-    '-e','POSTGRES_HOST_AUTH_METHOD=reject','-e','POSTGRES_INITDB_ARGS=--auth-host=reject --auth-local=trust','-e','POSTGRES_DB=writer_test',
+    '-e','POSTGRES_HOST_AUTH_METHOD=reject','-e','POSTGRES_INITDB_ARGS=--auth-host=reject --auth-local=trust','-e','POSTGRES_USER=fixture_admin','-e','POSTGRES_DB=writer_test',
     '--entrypoint','sh',image,'-c',bootstrap]));
   const created=discover('container',containerId);
   assert.equal(created.HostConfig.ReadonlyRootfs,true);assert.equal(created.Mounts.some(m=>m.Type==='bind'||m.Type==='volume'),false);
@@ -87,13 +88,17 @@ try {
   phase='bootstrap';
   let ready=false;
   for(let i=0;i<60;i++){
-    if(docker(['exec',containerId,'sh','-c','test "$(cat /proc/1/comm)" = postgres && pg_isready -U postgres -d writer_test']).status===0){ready=true;break;}
+    if(docker(['exec',containerId,'sh','-c','test "$(cat /proc/1/comm)" = postgres && pg_isready -U fixture_admin -d writer_test']).status===0){ready=true;break;}
     await new Promise(resolve=>setTimeout(resolve,250));
   }
   assert.ok(ready&&!interrupted,'isolated PostgreSQL did not become ready');
   phase='server-version';assert.match(sql('show server_version'),/^17\.6/);
+  sql(`create role fixture_oid_padding_1;create role fixture_oid_padding_2;create role fixture_oid_padding_3;
+    create role postgres superuser createdb createrole replication bypassrls login;
+    alter database writer_test owner to postgres`);
+  sqlUser='postgres';
   sql('create database writer_other');
-  sql('revoke connect on database postgres,template1,writer_other from public');
+  sql('revoke connect on database postgres,writer_other from public');
   phase='loopback-binding';
   const network=discover('network',networkId), running=discover('container',containerId);
   assert.equal(network.Internal,true);
@@ -132,32 +137,36 @@ try {
   sql(fs.readFileSync(new URL('../tests/fixtures/buyer-writer/schema.sql',import.meta.url),'utf8'));
   sql('begin;'+fs.readFileSync(new URL('../frontend/supabase/migrations/20260904223151_buyer_browser_security.sql',import.meta.url),'utf8')+'commit;');
   const creatorOid=Number(sql("select oid from pg_roles where rolname='postgres'"));
+  sql('alter role postgres nosuperuser createrole');
   sql(`set blackspire.buyer_writer_creator_oid=${literal(creatorOid)};`+fs.readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8'));
   const runtimePassword=randomBytes(32).toString('base64url'),issuerPassword=randomBytes(32).toString('base64url');
-  sql(`set log_statement='none';set log_min_error_statement='panic';set password_encryption='scram-sha-256';alter role buyer_writer_runtime login password ${literal(runtimePassword)};alter role buyer_writer_issuer login password ${literal(issuerPassword)};`);
-  copy('/var/lib/postgresql/data/pg_hba.conf','local all all trust\nhostssl writer_test buyer_writer_runtime,buyer_writer_issuer 0.0.0.0/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::0/0 reject\n');
-  sql('select pg_reload_conf();');assert.equal(sql('select count(*) from pg_hba_file_rules where error is not null'),'0');
+  sql(`set password_encryption='scram-sha-256';alter role buyer_writer_runtime login password ${literal(runtimePassword)};alter role buyer_writer_issuer login password ${literal(issuerPassword)};`);
+  copy('/var/lib/postgresql/data/pg_hba.conf','local all all trust\nhostssl writer_test,template1 buyer_writer_runtime,buyer_writer_issuer 0.0.0.0/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::0/0 reject\n');
+  sqlUser='fixture_admin';sql('select pg_reload_conf();');assert.equal(sql('select count(*) from pg_hba_file_rules where error is not null'),'0');sqlUser='postgres';
   const base={host:'127.0.0.1',port,database:'writer_test',ca:fs.readFileSync(cert,'utf8')};
   const config={creatorOid,runtime:{...base,password:runtimePassword},issuer:{...base,password:issuerPassword}};
   phase='driver-identities';
   pools=await createBuyerWriterPostgres({...config,Pool:WitnessPool});
-  assert.equal(sql("select count(distinct a.usename)=2 and bool_and(s.ssl) from pg_stat_activity a join pg_stat_ssl s using(pid) where a.usename in('buyer_writer_runtime','buyer_writer_issuer')"),'t');
+  sqlUser='fixture_admin';assert.equal(sql("select count(distinct a.usename)=2 and bool_and(s.ssl) from pg_stat_activity a join pg_stat_ssl s using(pid) where a.usename in('buyer_writer_runtime','buyer_writer_issuer')"),'t');sqlUser='postgres';
   await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,ca:undefined},issuer:{...config.issuer,ca:undefined}}),/unavailable/);
   await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,password:randomBytes(32).toString('base64url')}}),/unavailable/);
   checks.push('actual driver rejects untrusted TLS and wrong SCRAM credentials; both dedicated TLS identities accepted');
   phase='operation-nonentry-witness';
-  const applyDefinition=sql("select pg_get_functiondef('buyer_writer.apply(text,text,jsonb)'::regprocedure)");
-  sql(`create sequence buyer_writer.operation_nonentry_witness;grant usage on sequence buyer_writer.operation_nonentry_witness to buyer_writer_owner`);
-  operationWitnessReplacement=`create or replace function buyer_writer.apply(p_digest text,p_workspace text,q jsonb) returns jsonb
+  const applyDefinition=sql("set role buyer_writer_owner;select pg_get_functiondef('buyer_writer.apply(text,text,jsonb)'::regprocedure)");
+  sql(`set role buyer_writer_owner;create sequence buyer_writer.operation_nonentry_witness;grant usage on sequence buyer_writer.operation_nonentry_witness to buyer_writer_owner;reset role`);
+  operationWitnessReplacement=`set role buyer_writer_owner;create or replace function buyer_writer.apply(p_digest text,p_workspace text,q jsonb) returns jsonb
     language plpgsql security definer set search_path=pg_catalog set "TimeZone"='UTC' set lock_timeout='5s' as $$
-    begin perform nextval('buyer_writer.operation_nonentry_witness');return '{"ok":true}'::jsonb;end $$;`;
+    begin perform nextval('buyer_writer.operation_nonentry_witness');return '{"ok":true}'::jsonb;end $$;reset role;`;
   operationWitnessArmed=true;
   await assert.rejects(pools.runtimeQuery('select buyer_writer.apply($1,$2,$3::jsonb) as result',['a'.repeat(64),'isolated','{}']),/unavailable/);
   assert.equal(operationWitnessArmed,false,'operation witness drift was not injected after the fence');
-  assert.equal(sql('select is_called from buyer_writer.operation_nonentry_witness'),'f','unsafe writer operation entered despite fresh identity denial');
-  sql(applyDefinition);
-  sql('drop sequence buyer_writer.operation_nonentry_witness');
+  assert.equal(sql('set role buyer_writer_owner;select is_called from buyer_writer.operation_nonentry_witness'),'f','unsafe writer operation entered despite fresh identity denial');
+  sql(`set role buyer_writer_owner;${applyDefinition};drop sequence buyer_writer.operation_nonentry_witness;reset role`);
   checks.push('fresh unsafe identity prevents writer operation entry with a non-rollback sequence witness');
+  // The remaining fixture orchestration observes and perturbs catalogs as the
+  // separate bootstrap superuser; the application pools remain the two
+  // non-superuser writer identities and postgres remains their OID-pinned owner.
+  sqlUser='fixture_admin';
   const workload=randomBytes(32).toString('base64url'),issuerKey=randomBytes(32).toString('base64url');
   phase='native-http-writes';
   server=createBuyerWriterHttpServer({credential:workload,workspace:'isolated',query:pools.runtimeQuery,isAvailable:()=>pools.isHealthy(),issuer:{credential:issuerKey,query:pools.issuerQuery}});
@@ -213,7 +222,7 @@ try {
   const issueSql='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
   const raceIssued=(await pools.issuerQuery(issueSql,[raceJob,userId,'isolated',raceDigest,sourceContext,raceCaptured.criteria,raceCaptured.updatedAt,raceRequest])).rows[0].result;
   const raceOperation=planBuyerWrites({jobId:raceJob,dispatchId:raceIssued.dispatchId,generation:raceIssued.generation,criteria:raceCaptured.criteria,raw:[sale],clean:[sale]})[0];
-  const raceDdl=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
+  const raceDdl=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
   let raceOutput='',raceBytes=0,raceReadyResolve,raceReadyReject;
   const raceReady=new Promise((resolve,reject)=>{raceReadyResolve=resolve;raceReadyReject=reject;});
   const raceDeadline=setTimeout(()=>{raceDdl.kill('SIGKILL');raceReadyReject(new Error('trigger race fixture timed out'));},12000);
@@ -235,9 +244,9 @@ try {
   assert.equal((await pools.runtimeQuery(receiptSql,receiptArgs)).rows[0].result.found,true);
   checks.push('concurrent hidden-trigger DDL serializes against the relation fence; fresh final identity rejects before the fixed write');
   phase='native-lock-timeout';
-  const oldPid=sql("select pid from pg_stat_activity where usename='buyer_writer_runtime'");
+  const oldPid=sql("select pid from pg_stat_activity where usename='buyer_writer_runtime' and datname='writer_test'");
   assert.match(oldPid,/^[0-9]+$/);
-  const blocker=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
+  const blocker=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
   let blockerOutput='',blockerBytes=0,lockedResolve,lockedReject;
   const locked=new Promise((resolve,reject)=>{lockedResolve=resolve;lockedReject=reject;});
   const blockerDeadline=setTimeout(()=>{blocker.kill('SIGKILL');lockedReject(new Error('isolated lock fixture timed out'));},12000);

@@ -86,6 +86,7 @@ test('application package cannot execute provider mutations and rejects fabricat
  assert.match(assertion,/Unexpected writer schema CREATE privilege/);
  assert.match(assertion,/Unexpected writer database CREATE privilege/);
  assert.match(assertion,/Unexpected writer cross-database CONNECT privilege/);
+ assert.match(assertion,/datname='template1'[\s\S]*datistemplate[\s\S]*datdba=10[\s\S]*'CREATE'[\s\S]*'TEMP'/);
  assert.match(assertion,/Unexpected Buyer Writer relation trigger/);
  assert.match(assertion,/Unexpected Buyer Writer relation rewrite rule/);
  assert.match(assertion,/Unexpected protected expression routine/);

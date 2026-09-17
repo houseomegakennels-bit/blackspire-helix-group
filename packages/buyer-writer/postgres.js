@@ -18,6 +18,36 @@ const signatures = BUYER_WRITER_ENTRYPOINTS;
 const routinePolicy=JSON.stringify(BUYER_WRITER_ROUTINES);
 const unavailable = () => new Error('Buyer writer database unavailable');
 
+// Run while connected to template1 as the dedicated writer. Cross-database
+// catalogs are not visible from the application database, so the narrow
+// database-level exception below is paired with this object-level attestation.
+export const TEMPLATE1_IDENTITY_SQL=`select (
+ session_user=$1 and current_user=$1 and current_database()='template1'
+ and d.datistemplate and d.datdba=10
+ and coalesce((select rolsuper from pg_roles where oid=10),false)
+ and not has_database_privilege(current_user,d.oid,'CREATE')
+ and not has_database_privilege(current_user,d.oid,'TEMP')
+ and not exists(select from pg_namespace n where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema'
+   and n.nspname<>'public' and has_schema_privilege(current_user,n.oid,'USAGE'))
+ and not exists(select from pg_namespace n where n.nspname !~ '^pg_(temp|toast_temp)_[0-9]+$'
+   and has_schema_privilege(current_user,n.oid,'CREATE'))
+ and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema'
+   and c.relkind in('r','p','v','m','f')
+   and (has_table_privilege(current_user,c.oid,'SELECT') or has_table_privilege(current_user,c.oid,'INSERT')
+    or has_table_privilege(current_user,c.oid,'UPDATE') or has_table_privilege(current_user,c.oid,'DELETE')
+    or has_table_privilege(current_user,c.oid,'TRUNCATE') or has_table_privilege(current_user,c.oid,'REFERENCES')
+    or has_table_privilege(current_user,c.oid,'TRIGGER') or has_table_privilege(current_user,c.oid,'MAINTAIN')
+    or has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
+ and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema' and c.relkind='S'
+   and (has_sequence_privilege(current_user,c.oid,'SELECT') or has_sequence_privilege(current_user,c.oid,'UPDATE')
+    or has_sequence_privilege(current_user,c.oid,'USAGE')))
+ and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema'
+   and has_schema_privilege(current_user,n.oid,'USAGE') and has_function_privilege(current_user,p.oid,'EXECUTE'))
+) as safe from pg_database d where d.datname=current_database()`;
+
 // ACLs inherited from PUBLIC or another role count whenever their schema is
 // reachable. Unreachable provider-owned defaults do not become writer authority.
 export const WRITER_IDENTITY_SQL = `select (
@@ -45,12 +75,12 @@ export const WRITER_IDENTITY_SQL = `select (
       left join pg_namespace n on n.nspname=expected.schema_name
       left join pg_class c on c.relnamespace=n.oid and c.relname=expected.relation_name)
     else false end
-   and not m.inherit_option and m.set_option)
+   and not m.admin_option and not m.inherit_option and m.set_option)
  and not exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
    where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')
    and not(member.rolname='postgres' and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option and (
     (m.admin_option and not m.set_option and m.grantor=10 and coalesce((select rolsuper from pg_roles where oid=10),false))
-    or (role.rolname='buyer_writer_owner' and m.set_option and pg_get_userbyid(m.grantor)='postgres'))))
+    or (role.rolname='buyer_writer_owner' and not m.admin_option and m.set_option and pg_get_userbyid(m.grantor)='postgres'))))
  and not exists(select from pg_auth_members m join pg_roles member on member.oid=m.member
    where member.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
  and exists(select from pg_roles where rolname='buyer_writer_owner' and not(rolcanlogin or rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls or rolinherit))
@@ -61,7 +91,11 @@ export const WRITER_IDENTITY_SQL = `select (
    and has_schema_privilege('buyer_writer_owner',n.oid,'CREATE'))
  and not has_database_privilege('buyer_writer_owner',current_database(),'CREATE')
  and not exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
-   where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT'))
+   where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT')
+   and not(d.datname='template1' and d.datistemplate and d.datdba=10
+    and coalesce((select rolsuper from pg_roles where oid=10),false)
+    and not has_database_privilege(w.role_name,d.oid,'CREATE')
+    and not has_database_privilege(w.role_name,d.oid,'TEMP')))
  and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
@@ -242,6 +276,16 @@ export async function createBuyerWriterPostgres({runtime,issuer,creatorOid,Pool}
     ]).finally(()=>clearTimeout(timer));
     return closing;
   };
+  const templateSafe=async kind=>{
+    let client,timer,expired=false,released=false;
+    const release=destroy=>{if(client&&!released){released=true;client.release(destroy);}};
+    try{return await Promise.race([
+      (async()=>{client=await pools[`${kind}Template`].connect();if(expired||closed){release(true);throw unavailable();}
+        const result=await client.query(TEMPLATE1_IDENTITY_SQL,[configs[kind].user]);
+        if(expired||closed||result?.rows?.length!==1||result.rows[0]?.safe!==true)throw unavailable();return true;})(),
+      new Promise((_,reject)=>{timer=setTimeout(()=>{expired=true;release(true);reject(unavailable());},4000);}),
+    ]);}catch{release(true);throw unavailable();}finally{clearTimeout(timer);release(false);}
+  };
   const run=async(kind,text,values,probe=false)=>{
     if(closed||!healthy||counts[kind]>=configs[kind].max||(!probe&&(!statements[kind].has(text)||!Array.isArray(values))))throw unavailable();
     counts[kind]++;
@@ -253,6 +297,7 @@ export async function createBuyerWriterPostgres({runtime,issuer,creatorOid,Pool}
     const destroy=()=>release(true);
     const deadline=performance.now()+14000;
     try {
+      await templateSafe(kind);
       return await Promise.race([
         (async()=>{
           client=await pools[kind].connect();
@@ -289,6 +334,10 @@ export async function createBuyerWriterPostgres({runtime,issuer,creatorOid,Pool}
     for(const kind of ['runtime','issuer']) {
       pools[kind]=new DriverPool(configs[kind]);
       pools[kind].on('error',()=>{healthy=false;});
+    }
+    for(const kind of ['runtime','issuer']) {
+      pools[`${kind}Template`]=new DriverPool({...configs[kind],database:'template1',application_name:`blackspire-buyer-writer-${kind}-template-attestation`,max:1});
+      pools[`${kind}Template`].on('error',()=>{healthy=false;});
     }
     await run('runtime',null,null,true);await run('issuer',null,null,true);
     return Object.freeze({runtimeQuery:(text,values)=>run('runtime',text,values),issuerQuery:(text,values)=>run('issuer',text,values),isHealthy:()=>!closed&&healthy,close});

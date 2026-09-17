@@ -36,13 +36,13 @@ do $$declare r text; bootstrap oid:=(select oid from pg_roles where rolname='pos
    and coalesce((select rolsuper from pg_roles where oid=10),false))<>3
   or not exists(select from pg_auth_members m join pg_roles p on p.oid=m.roleid join pg_roles u on u.oid=m.member
    where p.rolname='buyer_writer_owner' and u.rolname='postgres'
-   and u.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option and m.set_option)
+   and u.oid=(select datdba from pg_database where datname=current_database()) and not m.admin_option and not m.inherit_option and m.set_option)
   or exists(select from pg_auth_members m join pg_roles p on p.oid=m.roleid join pg_roles u on u.oid=m.member
    where (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') or u.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
    and not (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
     and u.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option
     and ((m.admin_option and not m.set_option and m.grantor=10 and coalesce((select rolsuper from pg_roles where oid=10),false))
-     or (p.rolname='buyer_writer_owner' and m.set_option and pg_get_userbyid(m.grantor)='postgres')))) then
+     or (p.rolname='buyer_writer_owner' and not m.admin_option and m.set_option and pg_get_userbyid(m.grantor)='postgres')))) then
   raise exception 'Trusted writer bootstrap relationship required';
  end if;
 end$$;
@@ -188,7 +188,11 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
      or has_database_privilege(r,current_database(),'CREATE') then raise exception 'Unexpected writer role privileges';end if;
  end loop;
  if exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
-    where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT')) then
+    where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT')
+    and not(d.datname='template1' and d.datistemplate and d.datdba=10
+     and coalesce((select rolsuper from pg_roles where oid=10),false)
+     and not has_database_privilege(w.role_name,d.oid,'CREATE')
+     and not has_database_privilege(w.role_name,d.oid,'TEMP'))) then
   raise exception 'Unexpected writer cross-database CONNECT privilege';
  end if;
  if exists(with recursive protected(oid) as (

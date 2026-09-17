@@ -169,8 +169,16 @@ Runtime and issuer cannot inherit or assume other roles. Every reachable
 non-system executable routine is rejected except the exact reviewed entrypoints;
 PUBLIC and inherited EXECUTE count when schema USAGE makes them reachable. The
 installer, application postcondition and checkout also reject schema/database
-CREATE, effective CONNECT to any connectable non-target database,
-relation/column/sequence drift, unexpected triggers on the eight touched
+CREATE, and effective CONNECT to any connectable non-target application
+database. The sole exception is bootstrap-superuser-owned `template1` while it
+remains a real template and grants the writer neither `CREATE` nor `TEMP`; this
+matches the tested managed Supabase PostgreSQL 17 PUBLIC CONNECT state. Because
+another database's object catalogs are not visible from the application
+database, provisioning and every writer checkout also connect as that writer to
+`template1` and reject non-system schema usage, `CREATE` on every
+non-temporary schema, relation or sequence access, and executable non-system routines. Any other database, owner,
+template flag, `CREATE`/`TEMP` capability, or reachable template object fails closed.
+Relation/column/sequence drift, unexpected triggers on the eight touched
 relations, and exact routine body/language/attribute drift. Each fixed operation
 runs in one transaction behind digest-bound public/private relation locks and a
 fresh final identity predicate; the scoped logins receive no table-lock

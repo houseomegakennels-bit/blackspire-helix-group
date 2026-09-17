@@ -1,5 +1,13 @@
 # Blackspire Decisions
 
+## 2026-09-17 — Template compliance is effective-authority complete and credential-bound
+
+The `template1` exception is safe only when each credentialed writer proves its own effective authority, not merely when management-session catalogs look acceptable. The object attestation therefore includes relation-level and column-level privileges inherited through PUBLIC or membership, `CREATE` on every non-temporary schema, sequences and executable routines. Production inspect remains read-only but may emit `COMPLIANT` only after separate runtime and issuer logins each complete the same `template1` attestation. Authentication or attestation failure is a sanitized `NONCOMPLIANT` observation, never a compliance claim and never a trigger to mutate LOGIN state.
+
+## 2026-09-16 — Treat only inert bootstrap-owned `template1` as a managed-system database
+
+Buyer Writer database isolation continues to reject effective `CONNECT` to every non-target application database. The tested managed Supabase PostgreSQL 17 image retains PUBLIC `CONNECT` on `template1`, so treating all connectable databases identically makes a clean installation impossible and atomically rolls role creation back. The database-level exception requires name `template1`, `datistemplate=true`, owner OID 10 still superuser, and no effective writer `CREATE` or `TEMP`. A separate connection as each writer must also prove no non-system schema usage, no `CREATE` on any non-temporary schema, no relation or sequence access, and no executable non-system routine during provisioning and every checkout. This recognizes provider-owned system-template reachability without trusting its database metadata as proof of object-level safety.
+
 ## 2026-09-15 — management credentials enter only through a fixed terminal-only file creator
 
 An owner-supplied postgres password or Supabase Temporary Access PAT may enter the host only through the fixed root-only helper's hidden `/dev/tty` prompt. The helper accepts no credential through argv, environment, stdin, chat or logs; copies the already protected trusted CA and fixed endpoint binding; and creates one non-replacing root:root `0600` management file. Preparation is not authentication. Only the provisioner's `--inspect` path may establish the first host connection proof; `--verify` is excluded because its failure path can mutate role LOGIN state. Temporary Access settings and expiry remain owner-visible prerequisites and are never inferred from connector SQL success.

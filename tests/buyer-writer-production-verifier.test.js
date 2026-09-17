@@ -9,7 +9,7 @@ import {BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '../packages/buyer-writer/
 
 const role=name=>({name,login:name!=='buyer_writer_owner',inherit:false,superuser:false,createDb:false,
  createRole:false,replication:false,bypassRls:false});
-const creatorOid=16384,ownerOid='16390';
+const creatorOid=16388,ownerOid='16390';
 const acl=(grantee,privilege,grantable,grantor='buyer_writer_owner')=>({grantor,grantee,privilege,grantable});
 const fixture=()=>({
  roles:['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'].map(role),
@@ -33,7 +33,7 @@ const fixture=()=>({
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false};
  }),
  targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
- creatorOid:String(creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
+ bootstrapSuperuser:true,creatorOid:String(creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
  databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',
   publicExecute:true,ownerExecute:true,runtimeExecute:true,issuerExecute:true})),
@@ -55,10 +55,15 @@ test('fixed verifier accepts exact security state and reports provider truth wit
  assert.equal(verifyBuyerWriterProductionEvidence(closed,creatorOid).pgNetTruth.supabaseAclFixed,true);
 });
 
+test('catalog query ignores only inert bootstrap-owned template1 CONNECT',()=>{
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/datname='template1'[\s\S]*datistemplate[\s\S]*datdba=10[\s\S]*'CREATE'[\s\S]*'TEMP'/);
+});
+
 test('fixed verifier rejects unsafe role flags, absence and unexpected memberships',()=>{
  for(const mutation of [
   value=>{value.roles[1].login=false;},value=>{value.roles[2].inherit=true;},value=>{value.roles[0].superuser=true;},
   value=>{value.roles.pop();},value=>{value.roles[0]={...value.roles[1]};},
+  value=>{value.bootstrapSuperuser=false;},value=>{value.memberships[0].admin=true;},
   value=>{value.memberships.push({role:'broad_admin',member:'buyer_writer_runtime',grantor:'postgres',admin:false,inherit:true,set:true});},
   value=>{value.memberships[2].set=true;},
  ]){const value=fixture();mutation(value);denied(value);}

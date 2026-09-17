@@ -1,5 +1,19 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-17 — Buyer Writer template and inspect P1 findings repaired locally
+
+- Added failing-first regressions for PUBLIC column ACLs, inherited column ACLs and ordinary, `public`, and system-schema `CREATE` inside `template1`; the runtime attestation now rejects column authority and `CREATE` on every non-temporary schema through effective privilege checks. Added production-inspect regressions requiring separate runtime and issuer credential/template proofs and sanitized read-only `NONCOMPLIANT` on either identity's proof failure.
+- Corrected only the disposable ACL harness operations that require fixture-superuser authority after the existing repair changed the modeled `postgres` creator to non-superuser OID 16388. Product ACL behavior and all assertions remain unchanged.
+- The Buyer Writer PostgreSQL harness now paces local Docker exec creation without retrying SQL after the daemon twice abandoned a still-running exec; no assertion or product behavior was weakened. Pinned Node `22.23.1` focused tests pass 4/4. The exact pinned, network-disabled PostgreSQL `17.6` digest passes Buyer Writer 32/32, ACL/application 43/43, native 6/6 with cleanup and migration executor 9/9. Lint, typecheck and build pass.
+- No production, Supabase, n8n, deployment or external service was accessed or mutated. No push, merge or deploy was performed.
+
+## 2026-09-16 — managed Supabase Buyer Writer provisioning rollback reproduced and repaired locally
+
+- Preserved approved release `6f7e0c268b75c86f8f6318725d40e3d774a59091` in a dedicated isolated worktree/branch and made no production, Supabase, n8n, deployment or external-service mutation.
+- Reproduced the all-roles-absent rollback on official network-disabled Supabase PostgreSQL `17.6.1.155`: PostgreSQL 17 role creation and the OID-10/OID-creator membership graph succeed, then the installer rejects managed PUBLIC `CONNECT` on bootstrap-owned `template1` inside the same transaction.
+- Added the narrow template database exception to installer, application postcondition, production verifier and runtime checkout, plus a separate object-level connection as each writer during provisioning and every checkout. OID-16388 regressions model non-superuser `postgres` with `CREATEDB`, `CREATEROLE`, `REPLICATION` and `BYPASSRLS`; any other database or any template owner/flag/`CREATE`/`TEMP`/schema/object/routine drift fails closed. Exact membership parity requires the creator SET edge to be non-ADMIN and production evidence proves OID 10 remains superuser. Installer digest is `082260b9d8dd0e7cf5a1095ea5b4335c766b9a6ae5d305abaf6b76b3d3ad806c`.
+- Pinned Node `22.23.1` focused tests pass 4/4; pinned network-disabled PostgreSQL `17.6` passes Buyer Writer 32/32, ACL/application 43/43, native 6/6 and migration executor 9/9. Official Supabase `.155` disposable installation succeeds and the ephemeral container was removed. Independent review, static gates and commit remain pending.
+
 ## 2026-09-16 — Buyer Writer isolation reconciled and independently approved
 
 - Created a fresh isolated worktree/branch from exact current release head `dcde3a8d1d5a01bdb63daf4643963aea52e340d4`, cherry-picked reviewed commits `42c92f4`, `5e766be` and `9d47cccb6156b770aee3fb778316dd2baf905f77`, and resolved their conflicts semantically against the newer release changes. Reviewed implementation is `0409b7c8bbcb25edaf1d9237062303fbf7ec78f6`; installer digest is `52b7bcf19e294485c6bc434e3a155a160e76326c50f5d7567a9e495e5c513a3b`.

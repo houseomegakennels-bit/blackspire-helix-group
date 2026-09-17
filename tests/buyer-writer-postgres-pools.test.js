@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { createBuyerWriterPostgres, WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
+import { createBuyerWriterPostgres, TEMPLATE1_IDENTITY_SQL, WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
 import { BUYER_WRITER_GATEWAY_IDENTITY_SQL } from '../packages/buyer-writer/local-gateway-postgres.js';
 
 const connection = () => ({host:'database.invalid',port:5432,database:'writer_test',password:randomBytes(32).toString('base64url')});
-const create = options => createBuyerWriterPostgres({creatorOid:16384,...options});
+const create = options => createBuyerWriterPostgres({creatorOid:16388,...options});
 const apply='select buyer_writer.apply($1,$2,$3::jsonb) as result';
 const issue='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
 const cancel='select buyer_writer.cancel($1,$2,$3) as result';
@@ -22,6 +22,9 @@ test('identity probe treats inherited and PUBLIC authority as capability only wh
   assert.match(WRITER_IDENTITY_SQL,/values\(current_user\),\('buyer_writer_owner'\)[\s\S]*has_schema_privilege\(w\.role_name,n\.oid,'USAGE'\)[\s\S]*has_function_privilege\(w\.role_name,p\.oid,'EXECUTE'\)/);
   assert.match(WRITER_IDENTITY_SQL,/w\.role_name='buyer_writer_owner'[\s\S]*jsonb_to_recordset\(\$3::jsonb\)/);
   assert.match(WRITER_IDENTITY_SQL,/pg_database[\s\S]*datname<>current_database\(\)[\s\S]*datallowconn[\s\S]*has_database_privilege\([^)]*'CONNECT'\)/);
+  assert.match(WRITER_IDENTITY_SQL,/datname='template1'[\s\S]*datistemplate[\s\S]*datdba=10[\s\S]*'CREATE'[\s\S]*'TEMP'/);
+  assert.match(TEMPLATE1_IDENTITY_SQL,/has_any_column_privilege\(current_user,c\.oid,'SELECT,INSERT,UPDATE,REFERENCES'\)/);
+  assert.match(TEMPLATE1_IDENTITY_SQL,/pg_namespace n[\s\S]*nspname !~ '\^pg_\(temp\|toast_temp\)_\[0-9\]\+\$'[\s\S]*has_schema_privilege\(current_user,n\.oid,'CREATE'\)/);
   assert.match(WRITER_IDENTITY_SQL,/with recursive protected[\s\S]*pg_inherits[\s\S]*pg_trigger[\s\S]*not t\.tgisinternal/);
   assert.match(WRITER_IDENTITY_SQL,/pg_rewrite[\s\S]*_RETURN/);
   assert.match(WRITER_IDENTITY_SQL,/expression_objects[\s\S]*pg_constraint[\s\S]*pg_attrdef[\s\S]*pg_policy[\s\S]*pg_index/);
@@ -37,7 +40,7 @@ function pools({unsafe=false,fail=false}={}) {
       const pool=this;
       return {query:async(text,values)=>{
         pool.calls.push({text,values});
-        if(text===WRITER_IDENTITY_SQL)return {rows:[{safe:!unsafe}]};
+        if(text===WRITER_IDENTITY_SQL||text===TEMPLATE1_IDENTITY_SQL)return {rows:[{safe:!unsafe}]};
         if(fail)throw Object.assign(new Error('PRIVATE DATABASE DETAILS'),{code:'42501'});
         if(isFence(text))return {rows:[{safe:!unsafe,locked:!unsafe}]};
         if(text.includes('with checked as materialized')&&text.includes('buyer_writer.'))return {rows:[{safe:!unsafe,result:text.includes('buyer_writer.cancel(')?null:{ok:true}}]};
@@ -52,7 +55,8 @@ test('dedicated pools pin TLS, roles, timeouts and validate every checkout',asyn
   const {Pool,instances}=pools();
   const db=await create({runtime:connection(),issuer:connection(),Pool});
   try {
-    assert.deepEqual(instances.map(p=>p.config.user),['buyer_writer_runtime','buyer_writer_issuer']);
+    assert.deepEqual(instances.map(p=>p.config.user),['buyer_writer_runtime','buyer_writer_issuer','buyer_writer_runtime','buyer_writer_issuer']);
+    assert.deepEqual(instances.map(p=>p.config.database),['writer_test','writer_test','template1','template1']);
     for(const pool of instances){
       assert.equal(pool.config.ssl.rejectUnauthorized,true);assert.equal(pool.config.connectionTimeoutMillis,2000);
       assert.match(pool.config.options,/statement_timeout=10000/);assert.match(pool.config.options,/lock_timeout=5000/);
@@ -79,8 +83,10 @@ test('dedicated pools pin TLS, roles, timeouts and validate every checkout',asyn
     const cancelOperation=instances[1].calls.find(c=>c.text.includes('case when checked.safe then buyer_writer.cancel('));
     assert.match(cancelOperation.text,/buyer_writer\.cancel\(\$5,\$6,\$7\)[\s\S]*end as result/);
     for(const call of instances.flatMap(pool=>pool.calls.filter(c=>c.text===WRITER_IDENTITY_SQL))){
-      assert.equal(call.values.length,4);assert.equal(JSON.parse(call.values[2]).length,13);assert.equal(call.values[3],16384);
+      assert.equal(call.values.length,4);assert.equal(JSON.parse(call.values[2]).length,13);assert.equal(call.values[3],16388);
     }
+    assert.ok(instances[2].calls.every(call=>call.text===TEMPLATE1_IDENTITY_SQL));
+    assert.ok(instances[3].calls.every(call=>call.text===TEMPLATE1_IDENTITY_SQL));
   } finally {await db.close();}
   assert.ok(instances.every(p=>p.ended));
   await assert.rejects(db.runtimeQuery(apply,[]),/unavailable/);
@@ -122,7 +128,7 @@ test('capacity saturation rejects without driver work and close fences an in-fli
 test('unsafe identity fails startup and closes every partially initialized pool',async()=>{
   const {Pool,instances}=pools({unsafe:true});
   await assert.rejects(create({runtime:connection(),issuer:connection(),Pool}),/unavailable/);
-  assert.ok(instances.every(p=>p.ended));assert.equal(instances[0].destroyed[0],true);
+  assert.ok(instances.every(p=>p.ended));assert.ok(instances.some(pool=>pool.destroyed.includes(true)));
 });
 test('statement injection and opposite-role statements never reach the driver',async()=>{
   const {Pool,instances}=pools();const db=await create({runtime:connection(),issuer:connection(),Pool});
@@ -166,6 +172,7 @@ test('timed-out checkout is destroyed on late arrival without executing SQL',asy
   const {Pool,instances}=pools();const db=await create({runtime:connection(),issuer:connection(),Pool});
   let arrived;instances[0].connect=()=>new Promise(resolve=>{arrived=resolve;});
   const rejection=assert.rejects(db.runtimeQuery(apply,[]),/unavailable/);
+  await new Promise(resolve=>setImmediate(resolve));
   t.mock.timers.tick(14000);await rejection;
   let destroyed=false;
   arrived({query:()=>assert.fail('late checkout must not query'),release:value=>{destroyed=value;}});

@@ -158,14 +158,14 @@ BEGIN
           LEFT JOIN pg_namespace n ON n.nspname=expected.schema_name
           LEFT JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=expected.relation_name)
         ELSE false END
-       AND NOT a.inherit_option AND a.set_option)
+       AND NOT a.admin_option AND NOT a.inherit_option AND a.set_option)
     OR EXISTS(SELECT FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid JOIN pg_roles u ON u.oid=a.member
        WHERE (r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') OR u.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
        AND NOT (r.rolname IN ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') AND u.rolname='postgres'
         ${expectedCreatorOid===undefined?'':`AND u.oid=${expectedCreatorOid}::oid`}
         AND u.oid=(SELECT datdba FROM pg_database WHERE datname=current_database()) AND NOT a.inherit_option
         AND ((a.admin_option AND NOT a.set_option AND a.grantor=10 AND coalesce((SELECT rolsuper FROM pg_roles WHERE oid=10),false))
-         OR (r.rolname='buyer_writer_owner' AND a.set_option AND pg_get_userbyid(a.grantor)='postgres')))) THEN
+         OR (r.rolname='buyer_writer_owner' AND NOT a.admin_option AND a.set_option AND pg_get_userbyid(a.grantor)='postgres')))) THEN
     RAISE EXCEPTION 'Trusted writer bootstrap relationship required';
    END IF;
    IF EXISTS(SELECT FROM pg_namespace n CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
@@ -178,7 +178,11 @@ BEGIN
     RAISE EXCEPTION 'Unexpected writer database CREATE privilege';
    END IF;
    IF EXISTS(SELECT FROM pg_database d CROSS JOIN (VALUES('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
-       WHERE d.datname<>current_database() AND d.datallowconn AND has_database_privilege(w.role_name,d.oid,'CONNECT')) THEN
+       WHERE d.datname<>current_database() AND d.datallowconn AND has_database_privilege(w.role_name,d.oid,'CONNECT')
+       AND NOT(d.datname='template1' AND d.datistemplate AND d.datdba=10
+        AND coalesce((SELECT rolsuper FROM pg_roles WHERE oid=10),false)
+        AND NOT has_database_privilege(w.role_name,d.oid,'CREATE')
+        AND NOT has_database_privilege(w.role_name,d.oid,'TEMP'))) THEN
     RAISE EXCEPTION 'Unexpected writer cross-database CONNECT privilege';
    END IF;
    IF EXISTS(SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace

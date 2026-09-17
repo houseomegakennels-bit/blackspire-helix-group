@@ -6,7 +6,7 @@ import { parseWriterOperation } from '../packages/buyer-writer/protocol.js';
 import { createBuyerWriterHttpServer } from '../packages/buyer-writer/http.js';
 import { planBuyerWrites } from '../packages/buyer-writer/plan.js';
 import { normalizeBuyerSales } from '../packages/buyer-writer/normalize.js';
-import { WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
+import { TEMPLATE1_IDENTITY_SQL, WRITER_IDENTITY_SQL } from '../packages/buyer-writer/postgres.js';
 import { BUYER_WRITER_PRODUCTION_VERIFY_SQL,verifyBuyerWriterProductionEvidence } from '../packages/buyer-writer/production-verifier.js';
 import { BUYER_WRITER_ENTRYPOINTS, BUYER_WRITER_ROUTINES } from '../packages/buyer-writer/routine-policy.js';
 assert.equal(process.versions.node, '22.23.1');
@@ -17,16 +17,25 @@ let owned = false;
 let creationAttempted = false;
 let containerId;
 const ownership = randomUUID();
-const run = (args, input) => spawnSync('docker', args, { input, encoding: 'utf8', timeout: 60000, maxBuffer: 1024 * 1024 });
+const dockerExecPacing=new Int32Array(new SharedArrayBuffer(4));
+const run = (args, input) => {
+  if(args[0]==='exec')Atomics.wait(dockerExecPacing,0,0,100);
+  return spawnSync('docker', args, { input, encoding: 'utf8', timeout: 60000, maxBuffer: 1024 * 1024 });
+};
 const sql = (statement, { fail = false, permissionDenied = false } = {}) => {
   const r = run(['exec','-i',name,'psql','-X','-qAt','-U','postgres','-d','writer_test','-v','ON_ERROR_STOP=1'], statement);
   if (fail) { assert.notEqual(r.status, 0, 'expected database denial'); assert.match(r.stderr ?? '', permissionDenied ? /ERROR:  permission denied/ : /ERROR:/, 'denial must be the expected PostgreSQL error'); return; }
-  assert.equal(r.status, 0, `isolated SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0, 600)}`);
+  assert.equal(r.status, 0, `isolated SQL failed${r.error?`: ${r.error.message}`:''}${r.signal?` (${r.signal})`:''}: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0, 600)}`);
   return r.stdout.trim();
 };
 const adminSql = statement => {
   const r = run(['exec','-i',name,'psql','-X','-qAt','-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'], statement);
   assert.equal(r.status,0,`isolated admin SQL failed: ${(r.stderr ?? '').replace(/DETAIL:[\s\S]*/, '').slice(0,600)}`);
+  return r.stdout.trim();
+};
+const adminTemplateSql = statement => {
+  const r = run(['exec','-i',name,'psql','-X','-qAt','-U','fixture_admin','-d','template1','-v','ON_ERROR_STOP=1'], statement);
+  assert.equal(r.status,0,`isolated template admin SQL failed: ${(r.stderr??'').replace(/DETAIL:[\s\S]*/,'').slice(0,600)}`);
   return r.stdout.trim();
 };
 const cleanup = () => {
@@ -111,9 +120,12 @@ try {
     await new Promise(r=>setTimeout(r,500));
   }
   assert.ok(ready,'isolated PostgreSQL readiness timed out');
-  adminSql('create role postgres superuser login;alter database writer_test owner to postgres;');
+  adminSql(`create role fixture_oid_padding_1;create role fixture_oid_padding_2;
+    create role fixture_oid_padding_3;
+    create role postgres superuser createdb createrole replication bypassrls login;
+    alter database writer_test owner to postgres;`);
   adminSql('create database writer_other');
-  sql('revoke connect on database postgres,template1,writer_other from public');
+  sql('revoke connect on database postgres,writer_other from public');
   assert.match(sql('show server_version'),/^17\.6/);
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/schema.sql',import.meta.url),'utf8'));
   sql(readFileSync(new URL('../tests/fixtures/buyer-writer/nexus.sql',import.meta.url),'utf8'));
@@ -135,10 +147,16 @@ try {
     sql('begin;'+migrations+'commit;');assert.equal(snapshot(),before);
   });
   const trustedCreatorOid=adminSql("select oid from pg_roles where rolname='postgres'");
+  assert.equal(trustedCreatorOid,'16388','fixture must represent the live managed postgres creator OID');
   const installSql=`set blackspire.buyer_writer_creator_oid=${literal(trustedCreatorOid)};`+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
   adminSql('alter role postgres nosuperuser createrole;');
+  adminSql('grant temporary on database template1 to public');sql(installSql,{fail:true});
+  assert.equal(adminSql("select count(*) from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')"),'0');
+  adminSql('revoke temporary on database template1 from public');
   sql(installSql);
-  check('non-superuser database-owner creator has only pinned PostgreSQL 17 bootstrap and owner SET grants',()=>{
+  check('Supabase-shaped non-superuser database-owner creator accepts only pinned role grants and inert template1 CONNECT',()=>{
+    assert.equal(sql("select rolsuper||','||rolcreatedb||','||rolcreaterole||','||rolreplication||','||rolbypassrls from pg_roles where oid=16388"),'false,true,true,true,true');
+    assert.equal(sql("select datistemplate and datdba=10 and has_database_privilege('buyer_writer_runtime',oid,'CONNECT') and not has_database_privilege('buyer_writer_runtime',oid,'CREATE') and not has_database_privilege('buyer_writer_runtime',oid,'TEMP') from pg_database where datname='template1'"),'t');
     assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
       where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')`),'4');
     assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles u on u.oid=m.member
@@ -444,6 +462,13 @@ try {
     };
     const productionEvidence=()=>JSON.parse(sql(`prepare zola_production(oid,jsonb) as ${BUYER_WRITER_PRODUCTION_VERIFY_SQL};
       execute zola_production(${creatorOid}::oid,${literal(JSON.stringify(BUYER_WRITER_ROUTINES))}::jsonb);`));
+    const templateIdentity=(kind='runtime')=>{
+      const user=`buyer_writer_${kind}`;
+      const result=run(['exec','-i',name,'psql','-X','-qAt','-U',user,'-d','template1','-v','ON_ERROR_STOP=1'],
+        `prepare zola_template(text) as ${TEMPLATE1_IDENTITY_SQL};execute zola_template(${literal(user)});`);
+      assert.equal(result.status,0,`template identity query must execute: ${(result.stderr??'').slice(0,600)}`);
+      return result.stdout.trim();
+    };
     const bindCurrentRelations=()=>sql(`set role buyer_writer_owner;
       do $$declare metadata jsonb;begin
        select jsonb_build_object('creatorOid',${creatorOid}::text,'relations',jsonb_agg(jsonb_build_object(
@@ -458,6 +483,27 @@ try {
        execute format('comment on schema buyer_writer is %L','blackspire-buyer-writer:v2:'||metadata::text);
       end$$;reset role;`);
     assert.equal(identity(),'t');assert.equal(identity('issuer'),'t');assert.equal(identity('runtime',true),'f');
+    assert.equal(templateIdentity(),'t');assert.equal(templateIdentity('issuer'),'t');
+    adminTemplateSql('create table public.fixture_exposed(value integer);grant select on public.fixture_exposed to public');
+    assert.equal(templateIdentity(),'f');adminTemplateSql('drop table public.fixture_exposed');
+    adminTemplateSql('create table public.fixture_column_exposed(value integer);grant select(value) on public.fixture_column_exposed to public');
+    assert.equal(templateIdentity(),'f');adminTemplateSql('drop table public.fixture_column_exposed');
+    adminTemplateSql(`create role fixture_template_reader nologin;create table public.fixture_inherited_column(value integer);
+      grant select(value) on public.fixture_inherited_column to fixture_template_reader;
+      alter role buyer_writer_runtime inherit;grant fixture_template_reader to buyer_writer_runtime`);
+    assert.equal(templateIdentity(),'f');
+    adminTemplateSql(`revoke fixture_template_reader from buyer_writer_runtime;alter role buyer_writer_runtime noinherit;
+      drop table public.fixture_inherited_column;drop role fixture_template_reader`);
+    adminTemplateSql("create function public.fixture_escalate() returns integer language sql security definer as 'select 1'");
+    assert.equal(templateIdentity(),'f');adminTemplateSql('drop function public.fixture_escalate()');
+    adminTemplateSql('create schema fixture_reachable;grant usage on schema fixture_reachable to public');
+    assert.equal(templateIdentity(),'f');adminTemplateSql('drop schema fixture_reachable');
+    adminTemplateSql('create schema fixture_creatable;grant create on schema fixture_creatable to public');
+    assert.equal(templateIdentity(),'f');adminTemplateSql('drop schema fixture_creatable');
+    adminTemplateSql('grant create on schema pg_catalog to public');assert.equal(templateIdentity(),'f');
+    adminTemplateSql('revoke create on schema pg_catalog from public');assert.equal(templateIdentity(),'t');
+    adminTemplateSql('grant create on schema public to public');assert.equal(templateIdentity(),'f');
+    adminTemplateSql('revoke create on schema public from public');assert.equal(templateIdentity(),'t');
     const baselineEvidence=productionEvidence();
     assert.equal(baselineEvidence.creatorOid,String(creatorOid));assert.equal(baselineEvidence.relationPolicySafe,true);
     assert.equal(baselineEvidence.routinePolicySafe,true);assert.equal(baselineEvidence.ownerPolicySafe,true);
@@ -467,6 +513,12 @@ try {
     denied('grant create on schema buyer_writer to buyer_writer_runtime','revoke create on schema buyer_writer from buyer_writer_runtime');
     denied('grant create on database writer_test to buyer_writer_runtime','revoke create on database writer_test from buyer_writer_runtime');
     denied('grant connect on database writer_other to public','revoke connect on database writer_other from public');
+    denied('grant temporary on database template1 to public','revoke temporary on database template1 from public');
+    denied('grant create on database template1 to public','revoke create on database template1 from public');
+    adminSql('alter database template1 is_template false');assert.equal(identity(),'f');sql(installSql,{fail:true});
+    adminSql('alter database template1 is_template true');assert.equal(identity(),'t');
+    adminSql('alter database template1 owner to postgres');assert.equal(identity(),'f');sql(installSql,{fail:true});
+    adminSql('alter database template1 owner to fixture_admin');assert.equal(identity(),'t');
     sql('create role inherited_cross_database nologin;grant connect on database writer_other to inherited_cross_database');
     denied('alter role buyer_writer_runtime inherit;grant inherited_cross_database to buyer_writer_runtime','revoke inherited_cross_database from buyer_writer_runtime;alter role buyer_writer_runtime noinherit');
     sql('revoke connect on database writer_other from inherited_cross_database;drop role inherited_cross_database');

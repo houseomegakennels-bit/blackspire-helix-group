@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## Buyer Writer managed-PostgreSQL correction (2026-09-17)
+
+1. Review the completed P1 correction diff and verified local evidence; do not weaken the new column/schema or dual-identity `template1` attestations.
+2. Retain the authorized local repair commit and report its exact SHA and verification; do not push, merge, deploy or retry production without separate authority.
+3. If later authorized, require a new exact-release artifact and normal external gates before any production retry. Re-inspect first; roles are last operator-confirmed absent. A retry must still prove exact OID-10 automatic ADMIN edges, creator-OID owner SET edge, runtime/issuer authentication, complete verifier compliance and durable journal completion.
+
 ## 2026-09-16 — publish reconciled isolation, then require new exact-head evidence
 
 1. Confirm `origin/release/zola-production-live` still equals reconciliation base `dcde3a8d1d5a01bdb63daf4643963aea52e340d4`; update it only by normal fast-forward to the final reconciliation head. Never force-push or overwrite intervening release work.

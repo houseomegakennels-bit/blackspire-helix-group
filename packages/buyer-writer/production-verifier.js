@@ -202,12 +202,17 @@ select jsonb_build_object(
    where "select" or "update" or usage),
  'schemaCreate',(select coalesce(jsonb_agg(to_jsonb(s) order by role,schema),'[]'::jsonb) from schema_create s),
  'externalRoutines',(select coalesce(jsonb_agg(to_jsonb(r) order by role,schema,signature),'[]'::jsonb) from external_routines r),
+ 'bootstrapSuperuser',coalesce((select rolsuper from pg_roles where oid=10),false),
  'creatorOid',(select datdba::text from pg_database where datname=current_database()),
  'relationPolicySafe',(select safe from relation_policy),
  'routinePolicySafe',(select safe from routine_policy),
  'ownerPolicySafe',(select safe from owner_policy),
  'crossDatabaseConnect',(select coalesce(jsonb_agg(jsonb_build_object('role',w.name,'database',d.datname) order by w.name,d.datname),'[]'::jsonb)
-   from writer_roles w cross join pg_database d where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.name,d.oid,'CONNECT')),
+   from writer_roles w cross join pg_database d where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.name,d.oid,'CONNECT')
+   and not(d.datname='template1' and d.datistemplate and d.datdba=10
+    and coalesce((select rolsuper from pg_roles where oid=10),false)
+    and not has_database_privilege(w.name,d.oid,'CREATE')
+    and not has_database_privilege(w.name,d.oid,'TEMP'))),
  'databaseCreate',jsonb_build_object(
    'buyer_writer_owner',coalesce(has_database_privilege('buyer_writer_owner',current_database(),'CREATE'),false),
    'buyer_writer_runtime',coalesce(has_database_privilege('buyer_writer_runtime',current_database(),'CREATE'),false),
@@ -237,9 +242,9 @@ const sameSet=(values,expected)=>values.length===expected.length&&new Set(values
 export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
  try{
   if(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295||Buffer.byteLength(JSON.stringify(raw))>1024*1024
-   ||!exact(raw,['roles','memberships','schema','routines','targetRelations','targetPublicRelations','targetPublicColumns','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','pgNet','creatorOid','relationPolicySafe','routinePolicySafe','ownerPolicySafe','crossDatabaseConnect'])
+   ||!exact(raw,['roles','memberships','schema','routines','targetRelations','targetPublicRelations','targetPublicColumns','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','pgNet','bootstrapSuperuser','creatorOid','relationPolicySafe','routinePolicySafe','ownerPolicySafe','crossDatabaseConnect'])
    ||![raw.roles,raw.memberships,raw.routines,raw.targetRelations,raw.targetPublicRelations,raw.targetPublicColumns,raw.directRelations,raw.directSequences,raw.schemaCreate,raw.externalRoutines,raw.pgNet,raw.crossDatabaseConnect].every(Array.isArray)
-   ||raw.creatorOid!==String(creatorOid)||raw.relationPolicySafe!==true||raw.routinePolicySafe!==true||raw.ownerPolicySafe!==true)fail();
+   ||raw.bootstrapSuperuser!==true||raw.creatorOid!==String(creatorOid)||raw.relationPolicySafe!==true||raw.routinePolicySafe!==true||raw.ownerPolicySafe!==true)fail();
   const roleNames=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'];
   if(!sameSet(raw.targetRelations,['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport']))fail();
   if(!sameSet(raw.roles.map(role=>role?.name),roleNames))fail();
@@ -255,8 +260,9 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
    if(!exact(edge,['role','roleOid','member','memberOid','grantor','grantorOid','admin','inherit','set'])
     ||![edge.role,edge.member,edge.grantor].every(value=>string(value,63))||![edge.roleOid,edge.memberOid,edge.grantorOid].every(value=>/^\d{1,10}$/.test(value))
     ||![edge.admin,edge.inherit,edge.set].every(bool))fail();
-   // Match the installer's PostgreSQL 17 managed-CREATEROLE exception. The
-   // automatic ADMIN edge may be recorded with the created role as grantor.
+   // Match the installer's PostgreSQL 17 managed-CREATEROLE graph. Automatic
+   // ADMIN edges are attributed to the bootstrap superuser rather than the
+   // non-superuser creator that receives them.
    const managerAdmin=roleNames.includes(edge.role)&&edge.member==='postgres'&&edge.memberOid===String(creatorOid)
     &&edge.grantorOid==='10'&&edge.admin&&!edge.inherit&&!edge.set;
    const ownerSet=edge.role==='buyer_writer_owner'&&edge.member==='postgres'&&edge.grantor==='postgres'
