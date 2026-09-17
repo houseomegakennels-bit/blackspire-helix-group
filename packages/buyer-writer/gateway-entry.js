@@ -3,6 +3,8 @@ import path from 'node:path';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {createBuyerWriterGatewayPostgres} from './local-gateway-postgres.js';
+import {createBuyerWriterAdmissionPostgres,BUYER_WRITER_ADMISSION_LOGIN} from './admission-postgres.js';
+import {createAdmissionBridge} from './admission-bridge.js';
 import {createBuyerWriterLocalGateway} from './local-gateway-server.js';
 import {BUYER_WRITER_DEFAULT_SOCKET} from './local-gateway-protocol.js';
 import {validateBuyerWriterGatewayAuthority} from './configuration.js';
@@ -46,27 +48,46 @@ export function readBuyerWriterGatewayConfiguration(filename,{io=fs,identity}={}
   }catch{fail();}finally{if(fd!==undefined)io.closeSync(fd);}
 }
 export function validateBuyerWriterGatewayServiceConfiguration(value){
-  if(!exact(value,['version','workspace','socketPath','gatewayCapability','creatorOid','authority','runtime','issuer'])||value.version!==2
-    ||value.socketPath!==BUYER_WRITER_DEFAULT_SOCKET||typeof value.workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(value.workspace)
+  const legacy=exact(value,['version','workspace','socketPath','gatewayCapability','creatorOid','authority','runtime','issuer'])&&value.version===2;
+  const research=exact(value,['version','mode','workspace','socketPath','gatewayCapability','creatorOid','authority','runtime','issuer','admission'])
+    &&value.version===3&&value.mode==='research-admission';
+  if((!legacy&&!research)||value.socketPath!==BUYER_WRITER_DEFAULT_SOCKET||typeof value.workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(value.workspace)
     ||!/^[A-Za-z0-9_-]{43}$/.test(value.gatewayCapability??'')
     ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)fail();
   let authority;try{authority=validateBuyerWriterGatewayAuthority(value.authority,{workspace:value.workspace});}catch{fail();}
+  if(research){
+    const admission=value.admission,connection=admission?.connection;
+    if(!exact(admission,['connection','operationPermitConfiguration','publicKeyPem'])
+      ||!exact(connection,['host','port','database','user','password','ca'])||connection.user!==BUYER_WRITER_ADMISSION_LOGIN
+      ||typeof admission.operationPermitConfiguration!=='string'||admission.operationPermitConfiguration.length>4096
+      ||typeof admission.publicKeyPem!=='string'||admission.publicKeyPem.length>1024)fail();
+    let permit;try{permit=JSON.parse(admission.operationPermitConfiguration);}catch{fail();}
+    if(!permit||typeof permit!=='object'||permit.workspace!==value.workspace||permit.releaseSha!==authority.releaseSha
+      ||permit.operationId!==authority.operationId||permit.attemptId!==authority.attemptId)fail();
+  }
   return Object.freeze({...value,authority});
 }
 
 export async function startBuyerWriterGateway({configurationFile,read=readBuyerWriterGatewayConfiguration,createPostgres=createBuyerWriterGatewayPostgres,
+  createAdmissionPostgres=createBuyerWriterAdmissionPostgres,createBridge=createAdmissionBridge,
   createGateway=createBuyerWriterLocalGateway,resolveIdentity=resolveBuyerWriterGatewayIdentity,
   log=record=>process.stdout.write(`${JSON.stringify(record)}\n`)}={}){
-  let database,gateway;
+  let database,admissionDatabase,gateway;
   try{
     const identity=resolveIdentity(),config=validateBuyerWriterGatewayServiceConfiguration(read(configurationFile,{identity}));
     database=await createPostgres({runtime:config.runtime,issuer:config.issuer,creatorOid:config.creatorOid});
+    let admissionBridge;
+    if(config.mode==='research-admission'){
+      admissionDatabase=await createAdmissionPostgres({connection:config.admission.connection});
+      admissionBridge=createBridge({mode:config.mode,configuration:config.admission.operationPermitConfiguration,
+        publicKeyPem:config.admission.publicKeyPem,admissionExecutor:admissionDatabase.executor});
+    }
     gateway=createGateway({socketPath:config.socketPath,capability:config.gatewayCapability,authority:config.authority,
-      gatewayIdentityVerified:identity.verified===true,runtimeQuery:database.runtimeQuery,issuerQuery:database.issuerQuery,log});
+      gatewayIdentityVerified:identity.verified===true,runtimeQuery:database.runtimeQuery,issuerQuery:database.issuerQuery,admissionBridge,log});
     await gateway.listen();
-    const close=async()=>{await gateway.close();await database.close();};
-    return Object.freeze({gateway,database,close});
-  }catch{try{await gateway?.close();}catch{}try{await database?.close();}catch{}fail();}
+    const close=async()=>{await Promise.all([gateway.close(),database.close(),admissionDatabase?.close()]);};
+    return Object.freeze({gateway,database,...(admissionDatabase?{admissionDatabase}:{}),close});
+  }catch{try{await gateway?.close();}catch{}try{await admissionDatabase?.close();}catch{}try{await database?.close();}catch{}fail();}
 }
 
 if(import.meta.url===`file://${process.argv[1]}`){

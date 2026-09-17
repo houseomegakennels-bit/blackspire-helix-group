@@ -3,7 +3,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 export const BUYER_WRITER_DEFAULT_SOCKET='/run/blackspire/buyer-writer.sock';
 export const BUYER_WRITER_LOCAL_MAX_BYTES=384*1024;
 export const BUYER_WRITER_LOCAL_TIMEOUT_MS=15_000;
-export const BUYER_WRITER_LOCAL_OPERATIONS=Object.freeze(['ready','issue','cancel','reconcile','context','apply','receipt']);
+export const BUYER_WRITER_LOCAL_OPERATIONS=Object.freeze(['ready','issue','cancel','reconcile','context','apply','receipt','admit']);
 
 const forbidden=new Set(['sql','query','schema','function','procedure','rpc','url','endpoint','method','host','port','database','username','password']);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
@@ -74,7 +74,7 @@ export function decodeLocalGatewayJson(bytes) {
   let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{reject('MALFORMED_JSON');}
   rejectDuplicateKeys(text);
   let value;try{value=JSON.parse(text);}catch{reject('MALFORMED_JSON');}
-  rejectForbidden(value);return value;
+  if(value?.operation!=='admit')rejectForbidden(value);return value;
 }
 
 function validateBinding(value,operation,expected) {
@@ -91,7 +91,8 @@ function validateBinding(value,operation,expected) {
 
 const payloadKeys={ready:[],issue:['jobId','ownerId','requestId','criteria','updatedAt','sourceContext','permitDigest'],cancel:['jobId','ownerId'],
   reconcile:['jobId','ownerId','requestId','updatedAt'],context:['permitDigest','jobId','dispatchId','generation'],
-  apply:['permitDigest','jobId','request'],receipt:['permitDigest','jobId','request']};
+  apply:['permitDigest','jobId','request'],receipt:['permitDigest','jobId','request'],
+  admit:['origin','method','path','rawHeaders','body']};
 
 function validatePayload(operation,value,binding) {
   if(!exact(value,payloadKeys[operation]))reject('PAYLOAD_REJECTED');
@@ -109,6 +110,15 @@ function validatePayload(operation,value,binding) {
   }else if(operation==='apply'||operation==='receipt'){
     if(!digest(value.permitDigest)||!uuid(value.jobId)||!Buffer.from(JSON.stringify(value.request)).length)reject('PAYLOAD_REJECTED');
     if(value.request?.dispatchId!==binding.dispatchId||value.request?.generation!==binding.generation)reject('PAYLOAD_REJECTED');
+  }else if(operation==='admit'){
+    if(binding.principal!=='buyer-writer-runtime'||binding.dispatchId!==null||binding.generation!==null
+      ||typeof value.origin!=='string'||value.origin.length>512||value.method!=='POST'||value.path!=='/rest/v1/rpc/apply'
+      ||!Array.isArray(value.rawHeaders)||value.rawHeaders.length>200||value.rawHeaders.length%2
+      ||value.rawHeaders.some(item=>typeof item!=='string')||typeof value.body!=='string'
+      ||value.body.length<3||value.body.length>87384||!/^[A-Za-z0-9_-]+$/.test(value.body))reject('PAYLOAD_REJECTED');
+    let bytes;try{bytes=Buffer.from(value.body,'base64url');}catch{reject('PAYLOAD_REJECTED');}
+    if(bytes.length<2||bytes.length>65536||bytes.toString('base64url')!==value.body)reject('PAYLOAD_REJECTED');
+    let headerBytes=0;for(const item of value.rawHeaders){headerBytes+=Buffer.byteLength(item);if(headerBytes>32768)reject('PAYLOAD_REJECTED');}
   }
   return value;
 }

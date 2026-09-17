@@ -45,11 +45,20 @@ function validateResult(operation,p,result){
   return result;
 }
 
-function dispatcher({workspace,runtimeQuery,issuerQuery,authority}) {
+function dispatcher({workspace,runtimeQuery,issuerQuery,authority,admissionBridge}) {
   return async request=>{
     const p=request.payload;
     if(request.operation==='ready')return Object.freeze({status:'ready',protocolVersion:1,releaseShaMatch:true,workspaceMatch:true,
       authorityBindingLoaded:true,databaseConfigurationPresent:true,gatewayIdentityMatch:true});
+    if(request.operation==='admit'){
+      if(typeof admissionBridge!=='function')throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
+      const result=await admissionBridge({origin:p.origin,method:p.method,path:p.path,rawHeaders:[...p.rawHeaders],body:Buffer.from(p.body,'base64url')});
+      if(!exact(result,['status','body'])||![200,400,401,403,409,503].includes(result.status)
+        ||!result.body||typeof result.body!=='object'||Array.isArray(result.body)
+        ||Buffer.byteLength(JSON.stringify(result.body))>65536)throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
+      return result;
+    }
+    if(admissionBridge&&(request.operation==='apply'||request.operation==='receipt'))throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
     if(request.operation==='issue'){
       const captured=captureBuyerJobVersion({...p.criteria,updated_at:p.updatedAt});
       const context=validateBuyerSourceContext(p.sourceContext);
@@ -83,13 +92,14 @@ function verifySocketParent(socketPath,io,uid) {
   if(!stat.isDirectory()||stat.isSymbolicLink()||![0,uid].includes(stat.uid)||(stat.mode&0o0022)!==0)throw new Error('Buyer writer gateway socket directory rejected');
 }
 
-export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_SOCKET,capability,authority,gatewayIdentityVerified,runtimeQuery,issuerQuery,
+export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_SOCKET,capability,authority,gatewayIdentityVerified,runtimeQuery,issuerQuery,admissionBridge,
   timeoutMs=BUYER_WRITER_LOCAL_TIMEOUT_MS,maxConnections=32,io=fs,uid=process.getuid?.()??-1,now=Date.now,log=()=>{}}) {
   if(typeof runtimeQuery!=='function'||typeof issuerQuery!=='function'||gatewayIdentityVerified!==true||!authority||typeof authority!=='object'
+    ||(admissionBridge!==undefined&&typeof admissionBridge!=='function')
     ||!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30_000)throw new Error('Buyer writer gateway configuration rejected');
   try{authority=validateBuyerWriterGatewayAuthority(authority);}catch{throw new Error('Buyer writer gateway configuration rejected');}
   verifySocketParent(socketPath,io,uid);
-  const workspace=authority.workspace,dispatch=dispatcher({workspace,runtimeQuery,issuerQuery,authority});
+  const workspace=authority.workspace,dispatch=dispatcher({workspace,runtimeQuery,issuerQuery,authority,admissionBridge});
   const nonces=new Map(),sockets=new Map(),drainWaiters=new Set();let stopped=false,active=0,ready=false,closePromise=null;
   const consumeNonce=(nonce,timestamp)=>{
     const cutoff=now()-30_000;for(const [key,value] of nonces)if(value<cutoff)nonces.delete(key);
