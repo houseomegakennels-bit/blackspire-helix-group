@@ -24,22 +24,38 @@ const configuration=JSON.stringify({
 const q={jobId:ids.jobId,version:1,dispatchId:ids.dispatchId,generation:1,
  operation:'start',chunkIndex:0,chunkCount:1,payload:{}};
 const parameters={p_digest:'b'.repeat(64),p_workspace:'isolated',q};
+const criteria={state:'NC',county:'Wake',property_type:'land',date_range_start:'2026-01-01',
+ date_range_end:'2026-12-31',min_purchases:1,cash_buyers_only:false,llc_buyers_only:false};
+const sourceContext={version:1,mode:'county_fetch',sources:[{sourceId:'00000000-0000-4000-8000-000000000008',
+ sourceType:'arcgis',endpointId:'approved',endpointConfigDigest:'c'.repeat(64),cashDisabled:false}],
+ budgets:{maxRequests:10,maxRows:100,maxBytes:10000},rawPayload:null};
+const routeParameters={
+ issue:{p_job:ids.jobId,p_owner:ids.subject,p_workspace:'isolated',p_digest:'b'.repeat(64),
+  p_context:sourceContext,p_expected_criteria:criteria,p_expected_updated_at:'2026-09-17T20:00:00Z',p_request:ids.operationId},
+ cancel:{p_job:ids.jobId,p_owner:ids.subject,p_workspace:'isolated'},
+ reconcile:{p_job:ids.jobId,p_owner:ids.subject,p_workspace:'isolated',p_request:ids.dispatchId,
+  p_expected_updated_at:'2026-09-17T20:00:00Z'},
+ receipt:{p_digest:'b'.repeat(64),p_workspace:'isolated',p_job:ids.jobId,p_dispatch:ids.dispatchId,
+  p_generation:1,p_operation:'start',p_index:0},
+};
 function encoded(value){return Buffer.from(JSON.stringify(value)).toString('base64url');}
 function fixture(overrides={}){
  const requestId=overrides.requestId??ids.requestId;
  const jti=overrides.jti??ids.jti;
- const envelope={version:1,requestId,operation:'apply',parameters,
+ const operation=overrides.operation??'apply',routeParameters=overrides.parameters??parameters;
+ const kind=overrides.kind??(['issue','cancel','reconcile'].includes(operation)?'issuer':'runtime');
+ const envelope={version:1,requestId,operation,parameters:routeParameters,
   releaseSha:'a'.repeat(40),operationId:ids.operationId,attemptId:ids.attemptId,workspace:'isolated'};
  const body=Buffer.from(JSON.stringify({envelope}));
  const header=encoded({alg:'Ed25519',typ:'zola-operation+jwt',kid:'test-key'});
  const claims=encoded({iss:'https://issuer.example',aud:'zola-buyer-writer',sub:ids.subject,jti,
-  iat:now,nbf:now,exp:now+30,kind:'runtime',operation:'apply',requestId,
+  iat:now,nbf:now,exp:now+30,kind,operation,requestId,
   bodyDigest:createHash('sha256').update(body).digest('hex'),releaseSha:'a'.repeat(40),
   operationId:ids.operationId,attemptId:ids.attemptId,workspace:'isolated'});
  const token=`${header}.${claims}.${sign(null,Buffer.from(`${header}.${claims}`),privateKey).toString('base64url')}`;
  const rawHeaders=['Authorization',`Bearer ${token}`,'Content-Type','application/json',
   'Content-Length',String(body.length)];
- return {origin:'https://writer.example',method:'POST',path:'/rest/v1/rpc/apply',rawHeaders,body};
+ return {origin:'https://writer.example',method:'POST',path:`/rest/v1/rpc/${operation}`,rawHeaders,body};
 }
 function executor(query,{safe=true,releases=[]}={}){
  return createAttestedAdmissionExecutor({expectedLogin:'buyer_writer_admission_login',expectedCreatorOid:16388,connect:async()=>({
@@ -79,6 +95,41 @@ test('valid signed raw request reserves before one admitted apply using fixed SQ
  assert.equal(calls[0].options.signal instanceof AbortSignal,true);
 });
 
+test('typed issue, cancel, reconcile and receipt use only their exact admitted wrappers',async()=>{
+ const cases=[
+  ['issue',{dispatchId:ids.operationId,generation:1},15],
+  ['cancel',{cancelled:true,jobId:ids.jobId},10],
+  ['reconcile',{dispatchId:ids.dispatchId,generation:null,state:'absent'},12],
+  ['receipt',{found:false,receipt:null},15],
+ ];
+ for(const [operation,result,count] of cases){
+  const calls=[];
+  const output=await bridge(async(sql,params)=>{
+   calls.push({sql,params});
+   if(sql===ADMISSION_SQL.reserve)return reserveResult;
+   if(sql===ADMISSION_SQL[operation])return {rows:[{result}]};
+   assert.fail('unexpected query');
+  })(fixture({operation,parameters:routeParameters[operation]}));
+  assert.deepEqual(output,{status:200,body:{...result,automaticRetry:false}});
+  assert.deepEqual(calls.map(call=>call.sql),[ADMISSION_SQL.reserve,ADMISSION_SQL[operation]]);
+  assert.equal(calls[1].params.length,count);
+ }
+});
+
+test('typed lost acknowledgement correlates by route and never replays',async()=>{
+ const calls=[],result={dispatchId:ids.operationId,generation:1};
+ const output=await bridge(async sql=>{
+  calls.push(sql);
+  if(sql===ADMISSION_SQL.reserve)return reserveResult;
+  if(sql===ADMISSION_SQL.issue)throw new Error('lost acknowledgement');
+  if(sql===ADMISSION_SQL.correlate)return {rows:[{result:{state:'succeeded',routeOperation:'issue',
+   result,automaticRetry:false,requestCorrelated:true}}]};
+  assert.fail('unexpected query');
+ })(fixture({operation:'issue',parameters:routeParameters.issue}));
+ assert.deepEqual(output,{status:200,body:{...result,recovered:true,automaticRetry:false}});
+ assert.deepEqual(calls,[ADMISSION_SQL.reserve,ADMISSION_SQL.issue,ADMISSION_SQL.correlate]);
+});
+
 test('lost apply acknowledgement correlates once and never replays apply',async()=>{
  const calls=[];
  const handle=bridge(async(sql)=>{
@@ -86,7 +137,7 @@ test('lost apply acknowledgement correlates once and never replays apply',async(
   if(sql===ADMISSION_SQL.reserve)return reserveResult;
   if(sql===ADMISSION_SQL.apply)throw new Error('lost acknowledgement');
   if(sql===ADMISSION_SQL.correlate)return {rows:[{result:{
-   state:'succeeded',result:success,automaticRetry:false,requestCorrelated:true,
+   state:'succeeded',routeOperation:'apply',result:success,automaticRetry:false,requestCorrelated:true,
   }}]};
  });
  assert.deepEqual(await handle(fixture()),{

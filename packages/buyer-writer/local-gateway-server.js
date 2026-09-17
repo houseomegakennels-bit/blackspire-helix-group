@@ -58,7 +58,7 @@ function dispatcher({workspace,runtimeQuery,issuerQuery,authority,admissionBridg
         ||Buffer.byteLength(JSON.stringify(result.body))>65536)throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
       return result;
     }
-    if(admissionBridge&&(request.operation==='apply'||request.operation==='receipt'))throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
+    if(admissionBridge&&['issue','cancel','reconcile','apply','receipt'].includes(request.operation))throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
     if(request.operation==='issue'){
       const captured=captureBuyerJobVersion({...p.criteria,updated_at:p.updatedAt});
       const context=validateBuyerSourceContext(p.sourceContext);

@@ -5,6 +5,10 @@ const exact=(value,keys)=>value!==null&&typeof value==='object'&&!Array.isArray(
 const statements=Object.freeze({
  reserve:Object.freeze({text:'select buyer_writer.reserve_operation($1,$2::uuid,$3::uuid,$4,$5::timestamptz) as accepted',count:5}),
  apply:Object.freeze({text:'select buyer_writer.execute_admitted_apply($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10,$11::jsonb) as result',count:11}),
+ issue:Object.freeze({text:'select buyer_writer.execute_admitted_issue($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10::uuid,$11,$12::jsonb,$13::jsonb,$14::timestamptz,$15::uuid) as result',count:15}),
+ cancel:Object.freeze({text:'select buyer_writer.execute_admitted_cancel($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10::uuid) as result',count:10}),
+ reconcile:Object.freeze({text:'select buyer_writer.execute_admitted_reconcile($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10::uuid,$11::uuid,$12::timestamptz) as result',count:12}),
+ receipt:Object.freeze({text:'select buyer_writer.execute_admitted_receipt($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10,$11::uuid,$12::uuid,$13::bigint,$14,$15::integer) as result',count:15}),
  correlate:Object.freeze({text:'select buyer_writer.correlate_admission($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9) as result',count:9}),
 });
 
@@ -33,6 +37,10 @@ export const ADMISSION_IDENTITY_SQL=`select (
  and has_function_privilege(current_user,'buyer_writer.lock_scope()','EXECUTE')
  and has_function_privilege(current_user,'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','EXECUTE')
  and has_function_privilege(current_user,'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','EXECUTE')
+ and has_function_privilege(current_user,'buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','EXECUTE')
+ and has_function_privilege(current_user,'buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','EXECUTE')
+ and has_function_privilege(current_user,'buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','EXECUTE')
+ and has_function_privilege(current_user,'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','EXECUTE')
  and has_function_privilege(current_user,'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','EXECUTE')
  and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema'
@@ -41,6 +49,10 @@ export const ADMISSION_IDENTITY_SQL=`select (
    to_regprocedure('buyer_writer.lock_scope()'),
    to_regprocedure('buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)'),
    to_regprocedure('buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)'),
+   to_regprocedure('buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)'),
+   to_regprocedure('buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)'),
+   to_regprocedure('buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)'),
+   to_regprocedure('buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)'),
    to_regprocedure('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')]))
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema'
@@ -49,7 +61,13 @@ export const ADMISSION_IDENTITY_SQL=`select (
  and not exists(select from pg_namespace n where n.nspname !~ '^pg_(temp|toast_temp)_[0-9]+$'
   and has_schema_privilege(current_user,n.oid,'CREATE'))
  and not exists(select from pg_database d join lateral aclexplode(coalesce(d.datacl,acldefault('d',d.datdba))) a on true
-  where d.datname=current_database() and a.grantee=login.oid)
+  where a.grantee=login.oid)
+ and has_database_privilege(login.oid,(select oid from pg_database where datname=current_database()),'CONNECT')
+ and not has_database_privilege(login.oid,(select oid from pg_database where datname=current_database()),'CREATE')
+ and not has_database_privilege(login.oid,(select oid from pg_database where datname=current_database()),'TEMP')
+ and not exists(select from pg_database d where d.datname<>current_database()
+  and (has_database_privilege(login.oid,d.oid,'CONNECT') or has_database_privilege(login.oid,d.oid,'CREATE')
+   or has_database_privilege(login.oid,d.oid,'TEMP')))
  and not exists(select from pg_namespace n join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a on true
   where a.grantee=login.oid)
  and not exists(select from pg_class c join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 'S'::"char" else 'r'::"char" end,c.relowner))) a on true

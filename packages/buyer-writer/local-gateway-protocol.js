@@ -112,7 +112,8 @@ function validatePayload(operation,value,binding) {
     if(value.request?.dispatchId!==binding.dispatchId||value.request?.generation!==binding.generation)reject('PAYLOAD_REJECTED');
   }else if(operation==='admit'){
     if(binding.principal!=='buyer-writer-runtime'||binding.dispatchId!==null||binding.generation!==null
-      ||typeof value.origin!=='string'||value.origin.length>512||value.method!=='POST'||value.path!=='/rest/v1/rpc/apply'
+      ||typeof value.origin!=='string'||value.origin.length>512||value.method!=='POST'
+      ||!/^\/rest\/v1\/rpc\/(?:issue|cancel|reconcile|apply|receipt)$/.test(value.path)
       ||!Array.isArray(value.rawHeaders)||value.rawHeaders.length>200||value.rawHeaders.length%2
       ||value.rawHeaders.some(item=>typeof item!=='string')||typeof value.body!=='string'
       ||value.body.length<3||value.body.length>87384||!/^[A-Za-z0-9_-]+$/.test(value.body))reject('PAYLOAD_REJECTED');

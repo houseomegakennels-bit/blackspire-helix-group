@@ -68,12 +68,17 @@ export function createBuyerWriterLocalClient({socketPath=BUYER_WRITER_DEFAULT_SO
     const result=await request(q.operation,q.payload,{principal:q.principal,dispatchId:q.dispatchId,generation:q.generation});
     return {rows:[{result}]};
   };
-  const admittedApply=async(value)=>{
+  const admittedRequest=async(value)=>{
     if(!exact(value,['origin','method','path','rawHeaders','body'])||typeof value.origin!=='string'||value.method!=='POST'
-      ||value.path!=='/rest/v1/rpc/apply'||!Array.isArray(value.rawHeaders)||!Buffer.isBuffer(value.body))throw unavailable();
+      ||!/^\/rest\/v1\/rpc\/(?:issue|cancel|reconcile|apply|receipt)$/.test(value.path)
+      ||!Array.isArray(value.rawHeaders)||!Buffer.isBuffer(value.body))throw unavailable();
     return request('admit',{origin:value.origin,method:value.method,path:value.path,
       rawHeaders:[...value.rawHeaders],body:value.body.toString('base64url')},
     {principal:'buyer-writer-runtime',dispatchId:null,generation:null});
+  };
+  const admittedApply=async value=>{
+    if(value?.path!=='/rest/v1/rpc/apply')throw unavailable();
+    return admittedRequest(value);
   };
   // This is an authenticated protocol round-trip. The server's `ready`
   // dispatcher is deliberately implemented without either database adapter.
@@ -84,6 +89,6 @@ export function createBuyerWriterLocalClient({socketPath=BUYER_WRITER_DEFAULT_SO
     return Object.freeze({...value});
   };
   const checkAvailability=async()=>{try{await readiness();return true;}catch{return false;}};
-  return Object.freeze({request,admittedApply,readiness,runtimeQuery:query('runtime'),issuerQuery:query('issuer'),checkAvailability,
+  return Object.freeze({request,admittedRequest,admittedApply,readiness,runtimeQuery:query('runtime'),issuerQuery:query('issuer'),checkAvailability,
     isHealthy:()=>!closed&&healthy,close:async()=>{closed=true;healthy=false;}});
 }
