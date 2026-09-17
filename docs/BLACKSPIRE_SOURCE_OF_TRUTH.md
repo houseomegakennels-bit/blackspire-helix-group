@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-17 — isolated delayed gateway reply correction
+
+A separate candidate based on reviewed release `7062fe1485f9fa311dc8abcb652277b2ae25664a` retains the gateway socket writable half until its existing asynchronous success/error handler responds. A delayed-response regression failed on the original and passed with `allowHalfOpen:true`; delayed failures remain sanitized. The only runtime source change is this socket option. No permission, installer, source-scan allowlist or database-identity check was relaxed.
+
+The earlier non-release options branch `ba4e602c9514657cb4e1f3c34b1d2594df2960a6` completed 23 gateway/permission and six clean-database assertions, but a subsequent full suite correctly rejected its unallowlisted research files. Those experiments remain intact outside this code-only candidate. This candidate does not include them and does not add exemptions. Fresh full-suite validation and independent approval are pending; no push, merge, gateway activation or production write was performed for this correction.
+
 ## 2026-09-17 — Buyer Writer Supabase PostgreSQL 17 provisioning rollback localized and repaired locally
 
 Operator-confirmed production evidence at approved release `6f7e0c268b75c86f8f6318725d40e3d774a59091` shows the protected `postgres` management identity at OID `16388` is a non-superuser with `CREATEDB`, `CREATEROLE`, `REPLICATION` and `BYPASSRLS`; inspect succeeds, apply fails closed, and all three Buyer Writer roles remain absent afterward. The supplied identity result does not expose `pg_database.datdba`, and no production diagnostic identifies the hidden SQL error, so live database ownership and the exact live error remain `UNVERIFIED`. A network-disabled reproduction on official Supabase PostgreSQL `17.6.1.155`, with OID 16388 as the target database owner, executes the release installer through role creation, then fails inside the same transaction with `Unexpected writer cross-database CONNECT privilege` because managed `template1` retains bootstrap-owned PUBLIC `CONNECT`. Transaction rollback removes the newly created roles, matching the observed production state. PostgreSQL 17 correctly records three automatic ADMIN edges under bootstrap superuser OID 10 and the owner SET edge under the non-superuser creator; those grantor assumptions are not the defect.

@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-17 — delayed gateway reply candidate
+
+Validate the separate socket-only candidate with the full contained suite and existing source isolation gate. Obtain independent review before release integration. Keep all provider privilege guards intact; this transport correction does not resolve the database permission contract or authorize live provisioning. Research evidence remains outside this production-candidate source tree.
+
 ## Buyer Writer managed-PostgreSQL correction (2026-09-17)
 
 1. Review the completed P1 correction diff and verified local evidence; do not weaken the new column/schema or dual-identity `template1` attestations.

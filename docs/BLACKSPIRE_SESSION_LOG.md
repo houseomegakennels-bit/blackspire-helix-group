@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-17 — preserve research separately and isolate gateway response fix
+
+- Recovered checksummed options research and ran its full contained suite: 1,980 total, 1,935 passed, 44 expected skips, one source-isolation failure for newly introduced research material. The gate was not bypassed.
+- Created a separate branch from exact reviewed release `7062fe1`, copying only the one-line socket correction and its delayed success/error tests. All research files and earlier commits remain preserved.
+- No installer, role predicate, production verifier, source-scan allowlist, credential, live service or external service was changed. Full validation and independent review of this isolated candidate remain pending.
+
 ## 2026-09-17 — Buyer Writer template and inspect P1 findings repaired locally
 
 - Added failing-first regressions for PUBLIC column ACLs, inherited column ACLs and ordinary, `public`, and system-schema `CREATE` inside `template1`; the runtime attestation now rejects column authority and `CREATE` on every non-temporary schema through effective privilege checks. Added production-inspect regressions requiring separate runtime and issuer credential/template proofs and sanitized read-only `NONCOMPLIANT` on either identity's proof failure.

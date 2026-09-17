@@ -95,7 +95,7 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
     const cutoff=now()-30_000;for(const [key,value] of nonces)if(value<cutoff)nonces.delete(key);
     if(nonces.has(nonce))return false;nonces.set(nonce,timestamp);return true;
   };
-  const server=net.createServer(socket=>{
+  const server=net.createServer({allowHalfOpen:true},socket=>{
     if(stopped||active>=maxConnections)return socket.destroy();
     active++;let bytes=0,settled=false,processed=false;const chunks=[];
     socket.setTimeout(timeoutMs,()=>socket.destroy());
