@@ -2,7 +2,7 @@ import {timingSafeEqual} from 'node:crypto';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {createOperationPermitVerifier} from './operation-permit.js';
 import {parseWriterOperation} from './protocol.js';
-import {AdmissionUnavailableError,isAttestedAdmissionExecutor,runAttestedAdmission} from './admission-executor.js';
+import {AdmissionUnavailableError,executeAdmission} from './admission-executor.js';
 
 export const ADMISSION_SQL=Object.freeze({
  reserve:'select buyer_writer.reserve_operation($1,$2::uuid,$3::uuid,$4,$5::timestamptz) as accepted',
@@ -90,29 +90,29 @@ function recoveryResponse(value,operation,index){
   ?{status:200,body:{...value.result,recovered:true,automaticRetry:false}}
   :response(409,'WRITE_FAILED');
 }
-async function boundedQuery(query,text,values,timeoutMs){
+async function boundedOperation(executor,operation,values,timeoutMs){
  const controller=new AbortController();let timer;
  try{
   return await Promise.race([
-   query(text,values,{signal:controller.signal}),
+   executeAdmission(executor,operation,values,{signal:controller.signal}),
    new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new AdmissionUnavailableError());},timeoutMs);}),
   ]);
  }finally{clearTimeout(timer);}
 }
 
-// The executor is a module-attested capability backed by a pinned admission-only
-// session. Runtime, issuer and admin query functions cannot satisfy this boundary.
+// The closed executor selects one of three fixed admission statements and attests
+// every session. Production wiring must separately pin its connector and TLS endpoint.
 export function createAdmissionBridge({mode,configuration,publicKeyPem,admissionExecutor,now,
  reserveTimeoutMs=1000,executeTimeoutMs=5000,correlateTimeoutMs=3000}={}){
- if(mode!=='research-admission'||!isAttestedAdmissionExecutor(admissionExecutor)
+ if(mode!=='research-admission'||!admissionExecutor||typeof admissionExecutor!=='object'
   ||![executeTimeoutMs,correlateTimeoutMs].every(value=>
    Number.isInteger(value)&&value>=10&&value<=10000))throw new TypeError('Buyer admission configuration unavailable');
  const sessions=new AsyncLocalStorage();
  const reserve=async(record,signal)=>{
   const store=sessions.getStore();
-  if(!store||typeof store.query!=='function')throw new AdmissionUnavailableError();
+  if(!store)throw new AdmissionUnavailableError();
   try{
-   const result=await store.query(ADMISSION_SQL.reserve,[
+   const result=await executeAdmission(admissionExecutor,'reserve',[
     record.issuer,record.jti,record.requestId,record.bodyDigest,new Date(record.expiresAt*1000).toISOString(),
    ],{signal});
    return one(result,'accepted')===true;
@@ -126,17 +126,15 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
   },
  });
  return async function handle(request){
-  let attempt;
+  let attempt;const store={unavailable:false};
   try{
-   attempt=await runAttestedAdmission(admissionExecutor,query=>{
-    const store={query,unavailable:false};
-    return sessions.run(store,async()=>{
+   attempt=await sessions.run(store,async()=>{
      let auth;
      try{auth=await verifier.authorize(readHttpRequest(request));}
      catch(error){if(store.unavailable)throw new AdmissionUnavailableError();throw error;}
      const {parsed}=parsedApply(auth.parameters),base=admissionParameters(auth);
      try{
-      const result=await boundedQuery(query,ADMISSION_SQL.apply,[
+      const result=await boundedOperation(admissionExecutor,'apply',[
        ...base,auth.parameters.p_digest,JSON.stringify(auth.parameters.q),
       ],executeTimeoutMs);
       const value=one(result,'result'),kind=canonicalResult(value,parsed.operation,parsed.chunkIndex);
@@ -148,7 +146,6 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
       if(status)return {done:true,response:response(status,status===403?'ADMISSION_REJECTED':'ADMISSION_INVALID')};
       return {done:false,auth,parsed};
      }
-    });
    });
   }catch(error){
    if(error instanceof AdmissionUnavailableError)return response(503,'ADMISSION_UNAVAILABLE');
@@ -158,8 +155,7 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
   if(attempt.done)return attempt.response;
   const base=admissionParameters(attempt.auth);
   try{
-   const correlated=await runAttestedAdmission(admissionExecutor,async query=>
-    one(await boundedQuery(query,ADMISSION_SQL.correlate,base,correlateTimeoutMs),'result'));
+   const correlated=one(await boundedOperation(admissionExecutor,'correlate',base,correlateTimeoutMs),'result');
    return recoveryResponse(correlated,attempt.parsed.operation,attempt.parsed.chunkIndex);
   }catch{
    return response(503,'ADMISSION_UNKNOWN');

@@ -2,6 +2,11 @@ const executors=new WeakSet();
 const fail=()=>new AdmissionUnavailableError();
 const exact=(value,keys)=>value!==null&&typeof value==='object'&&!Array.isArray(value)
  &&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
+const statements=Object.freeze({
+ reserve:Object.freeze({text:'select buyer_writer.reserve_operation($1,$2::uuid,$3::uuid,$4,$5::timestamptz) as accepted',count:5}),
+ apply:Object.freeze({text:'select buyer_writer.execute_admitted_apply($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10,$11::jsonb) as result',count:11}),
+ correlate:Object.freeze({text:'select buyer_writer.correlate_admission($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9) as result',count:9}),
+});
 
 export class AdmissionUnavailableError extends Error {
  constructor(){super('Buyer admission unavailable');this.name='AdmissionUnavailableError';}
@@ -13,10 +18,15 @@ export const ADMISSION_IDENTITY_SQL=`select (
   or login.rolreplication or login.rolbypassrls or login.rolinherit)
  and not admission.rolcanlogin and not(admission.rolsuper or admission.rolcreatedb
   or admission.rolcreaterole or admission.rolreplication or admission.rolbypassrls or admission.rolinherit)
+ and (select count(*) from pg_auth_members m where m.roleid=admission.oid)=2
  and exists(select from pg_auth_members m where m.roleid=admission.oid and m.member=login.oid
   and not m.admin_option and not m.inherit_option and m.set_option)
- and not exists(select from pg_auth_members m join pg_roles r on r.oid=m.roleid
-  where m.member=login.oid and r.rolname<>'buyer_writer_admission')
+ and exists(select from pg_auth_members m where m.roleid=admission.oid and m.member=10
+  and m.admin_option and not m.inherit_option and not m.set_option and m.grantor=10)
+ and not exists(select from pg_auth_members m where m.member=login.oid and m.roleid<>admission.oid)
+ and not exists(select from pg_auth_members m where m.member=admission.oid)
+ and not exists(select from pg_default_acl d where d.defaclrole in(login.oid,admission.oid)
+  and coalesce(array_length(d.defaclacl,1),0)>0)
  and has_schema_privilege(current_user,'buyer_writer','USAGE')
  and has_function_privilege(current_user,'buyer_writer.lock_scope()','EXECUTE')
  and has_function_privilege(current_user,'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','EXECUTE')
@@ -36,6 +46,14 @@ export const ADMISSION_IDENTITY_SQL=`select (
    or has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
  and not exists(select from pg_namespace n where n.nspname !~ '^pg_(temp|toast_temp)_[0-9]+$'
   and has_schema_privilege(current_user,n.oid,'CREATE'))
+ and not exists(select from pg_database d join lateral aclexplode(coalesce(d.datacl,acldefault('d',d.datdba))) a on true
+  where d.datname=current_database() and a.grantee=login.oid)
+ and not exists(select from pg_namespace n join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a on true
+  where a.grantee=login.oid)
+ and not exists(select from pg_class c join lateral aclexplode(coalesce(c.relacl,acldefault(case when c.relkind='S' then 'S'::"char" else 'r'::"char" end,c.relowner))) a on true
+  where c.relkind in('r','p','v','m','f','S') and a.grantee=login.oid)
+ and not exists(select from pg_proc p join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a on true
+  where a.grantee=login.oid)
  and not has_database_privilege(current_user,current_database(),'CREATE')
  and not has_database_privilege(current_user,current_database(),'TEMP')
 ) as safe
@@ -58,11 +76,10 @@ export function createAttestedAdmissionExecutor({expectedLogin,connect,checkoutT
  executors.add(executor);
  return executor;
 }
-
-export const isAttestedAdmissionExecutor=executor=>executors.has(executor);
-
-export async function runAttestedAdmission(executor,work){
- if(!executors.has(executor)||typeof work!=='function')throw fail();
+export async function executeAdmission(executor,operation,values,{signal}={}){
+ const statement=statements[operation];
+ if(!executors.has(executor)||!statement||!Array.isArray(values)||values.length!==statement.count
+  ||(signal!==undefined&&!(signal instanceof AbortSignal)))throw fail();
  let client,released=false,destroy=false,checkoutExpired=false;
  const release=force=>{if(client&&!released){released=true;client.release(force);}};
  try{
@@ -80,18 +97,12 @@ export async function runAttestedAdmission(executor,work){
   }catch{destroy=true;throw fail();}
   if(!identity||!Array.isArray(identity.rows)||identity.rows.length!==1
    ||!exact(identity.rows[0],['safe'])||identity.rows[0].safe!==true){destroy=true;throw fail();}
-  const query=(text,values,{signal}={})=>{
-   if(typeof text!=='string'||!Array.isArray(values))throw fail();
-   if(signal!==undefined&&!(signal instanceof AbortSignal))throw fail();
-   if(signal?.aborted)destroy=true;
-   signal?.addEventListener('abort',()=>{destroy=true;},{once:true});
-   return client.query({text,values,...(signal===undefined?{}:{signal})}).catch(error=>{destroy=true;throw error;});
-  };
-  return await work(query);
+  if(signal?.aborted)destroy=true;
+  signal?.addEventListener('abort',()=>{destroy=true;},{once:true});
+  try{return await client.query({text:statement.text,values,...(signal===undefined?{}:{signal})});}
+  catch(error){destroy=true;throw error;}
  }catch(error){
   if(error instanceof AdmissionUnavailableError)destroy=true;
   throw error;
- }finally{
-  release(destroy);
- }
+ }finally{release(destroy);}
 }

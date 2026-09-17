@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {ADMISSION_SQL,createAdmissionBridge} from '../packages/buyer-writer/admission-bridge.js';
-import {ADMISSION_IDENTITY_SQL,createAttestedAdmissionExecutor} from '../packages/buyer-writer/admission-executor.js';
+import {ADMISSION_IDENTITY_SQL,createAttestedAdmissionExecutor,executeAdmission} from '../packages/buyer-writer/admission-executor.js';
 
 const {publicKey,privateKey}=generateKeyPairSync('ed25519');
 const publicKeyPem=publicKey.export({type:'spki',format:'pem'});
@@ -169,12 +169,15 @@ test('database detail and malformed results are never exposed',async()=>{
  }
 });
 
-test('bridge requires the attested executor capability and never falls back to runtime',()=>{
+test('forged executor capability never falls back to runtime',async()=>{
  let runtimeCalls=0;
- assert.throws(()=>createAdmissionBridge({
+ const handle=createAdmissionBridge({
   mode:'research-admission',configuration,publicKeyPem,
   admissionExecutor:{run:async()=>{}},runtimeQuery:async()=>{runtimeCalls++;},now:()=>now,
- }),/configuration unavailable/);
+ });
+ const result=await handle(fixture());
+ assert.equal(result.status,503);
+ assert.equal(result.body.code,'ADMISSION_UNAVAILABLE');
  assert.equal(runtimeCalls,0);
 });
 
@@ -240,5 +243,11 @@ test('execute and correlation deadlines abort and destroy their pinned sessions'
  assert.equal(executeAborted,true);
  assert.equal(correlateAborted,true);
  assert.deepEqual(calls,[ADMISSION_SQL.reserve,ADMISSION_SQL.apply,ADMISSION_SQL.correlate]);
- assert.deepEqual(releases,[true,true]);
+ assert.deepEqual(releases,[false,true,true]);
+});
+
+test('executor exposes no arbitrary SQL and enforces exact fixed argument counts',async()=>{
+ const admission=executor(async()=>{assert.fail('must not query');});
+ await assert.rejects(executeAdmission(admission,'select * from pg_authid',[]),/unavailable/);
+ await assert.rejects(executeAdmission(admission,'reserve',[]),/unavailable/);
 });

@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict';
+import {execFileSync,spawnSync} from 'node:child_process';
+import {setTimeout as delay} from 'node:timers/promises';
+import {ADMISSION_IDENTITY_SQL,createAttestedAdmissionExecutor,executeAdmission} from '../packages/buyer-writer/admission-executor.js';
+
+const image=process.env.BUYER_WRITER_TEST_IMAGE
+ ??'postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94';
+const name=`zola-admission-executor-${process.pid}-${Date.now()}`;
+const password='disposable-admission-fixture';
+const login='buyer_writer_admission_login';
+const run=args=>execFileSync('docker',args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:60_000}).trim();
+const admin=statement=>run(['exec',name,'psql','-X','-qAt','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',statement]);
+const literal=value=>`'${String(value).replaceAll("'","''")}'`;
+let container=false,checks=0;
+const check=(value,message)=>{assert.equal(value,true,message);checks++;};
+try{
+ run(['run','--detach','--rm','--name',name,'-e',`POSTGRES_PASSWORD=${password}`,image]);
+ container=true;
+ for(let i=0;i<80;i++){
+  const ready=spawnSync('docker',['exec',name,'pg_isready','-U','postgres'],{stdio:'ignore'});
+  if(ready.status===0)break;
+  if(i===79)assert.fail('disposable PostgreSQL did not become ready');
+  await delay(250);
+ }
+ admin(`
+  revoke temp on database postgres from public;
+  revoke create on schema public from public;
+  create role buyer_writer_admission nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+  create role ${login} login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password '${password}';
+  grant buyer_writer_admission to postgres with admin true, inherit false, set false;
+  grant buyer_writer_admission to ${login} with admin false, inherit false, set true;
+  create schema buyer_writer authorization postgres;
+  create function buyer_writer.lock_scope() returns boolean language sql security definer
+   set search_path=pg_catalog as 'select true';
+  create function buyer_writer.reserve_operation(text,uuid,uuid,text,timestamptz) returns boolean language sql security definer
+   set search_path=pg_catalog as 'select true';
+  create function buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)
+   returns jsonb language sql security definer set search_path=pg_catalog
+   as 'select jsonb_build_object(''ok'',true,''operation'',''start'',''chunkIndex'',0)';
+  create function buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)
+   returns jsonb language sql security definer set search_path=pg_catalog
+   as 'select jsonb_build_object(''state'',''reserved'',''automaticRetry'',false)';
+  revoke all on schema buyer_writer from public;
+  grant usage on schema buyer_writer to buyer_writer_admission;
+  revoke all on function buyer_writer.lock_scope() from public;
+  revoke all on function buyer_writer.reserve_operation(text,uuid,uuid,text,timestamptz) from public;
+  revoke all on function buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb) from public;
+  revoke all on function buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) from public;
+  grant execute on function buyer_writer.lock_scope(),
+   buyer_writer.reserve_operation(text,uuid,uuid,text,timestamptz),
+   buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb),
+   buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) to buyer_writer_admission;
+ `);
+ const query=async config=>{
+  let statement=config.text;
+  for(let i=config.values.length;i>0;i--)statement=statement.replaceAll(`$${i}`,literal(config.values[i-1]));
+  const output=run(['exec','-e',`PGPASSWORD=${password}`,'-e','PGOPTIONS=-c role=buyer_writer_admission -c search_path=pg_catalog',
+   name,'psql','-X','-qAt','-U',login,'-d','postgres','-v','ON_ERROR_STOP=1','-c',statement]);
+  const value=output.split('\n').filter(Boolean).at(-1);
+  if(config.text===ADMISSION_IDENTITY_SQL)return {rows:[{safe:value==='t'}]};
+  if(config.text.includes('reserve_operation'))return {rows:[{accepted:value==='t'}]};
+  throw new Error('unexpected statement');
+ };
+ const executor=createAttestedAdmissionExecutor({expectedLogin:login,connect:async()=>({query,release:()=>{}})});
+ const ids=['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002'];
+ const args=['https://issuer.example',ids[0],ids[1],'a'.repeat(64),new Date(Date.now()+30_000).toISOString()];
+ const reserve=()=>executeAdmission(executor,'reserve',args);
+ check((await reserve()).rows[0].accepted===true,'valid admission identity rejected');
+ admin('create table public.direct_leak(id integer); grant select on public.direct_leak to '+login);
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin('revoke select on public.direct_leak from '+login+'; drop table public.direct_leak');
+ admin('create role unexpected_parent; grant unexpected_parent to buyer_writer_admission with admin false, inherit false, set true');
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin('revoke unexpected_parent from buyer_writer_admission');
+ admin("create function public.unexpected() returns integer language sql as 'select 1'");
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin('drop function public.unexpected()');
+ admin('grant unexpected_parent to '+login+' with admin false, inherit false, set true');
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin('revoke unexpected_parent from '+login);
+ await assert.rejects(executeAdmission(executor,'arbitrary',[]),/unavailable/);checks++;
+ process.stdout.write(JSON.stringify({ok:true,checks,postgres:'disposable',productionTouched:false})+'\n');
+}finally{
+ if(container)try{run(['rm','-f',name]);}catch{}
+}
