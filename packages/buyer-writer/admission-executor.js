@@ -21,8 +21,10 @@ export const ADMISSION_IDENTITY_SQL=`select (
  and (select count(*) from pg_auth_members m where m.roleid=admission.oid)=2
  and exists(select from pg_auth_members m where m.roleid=admission.oid and m.member=login.oid
   and not m.admin_option and not m.inherit_option and m.set_option)
- and exists(select from pg_auth_members m where m.roleid=admission.oid and m.member=10
-  and m.admin_option and not m.inherit_option and not m.set_option and m.grantor=10)
+ and creator.oid=$2::oid and creator.oid=(select datdba from pg_database where datname=current_database())
+ and exists(select from pg_auth_members m join pg_roles grantor on grantor.oid=m.grantor
+  where m.roleid=admission.oid and m.member=creator.oid and m.admin_option
+  and not m.inherit_option and not m.set_option and grantor.rolsuper)
  and not exists(select from pg_auth_members m where m.member=login.oid and m.roleid<>admission.oid)
  and not exists(select from pg_auth_members m where m.member=admission.oid)
  and not exists(select from pg_default_acl d where d.defaclrole in(login.oid,admission.oid)
@@ -57,8 +59,8 @@ export const ADMISSION_IDENTITY_SQL=`select (
  and not has_database_privilege(current_user,current_database(),'CREATE')
  and not has_database_privilege(current_user,current_database(),'TEMP')
 ) as safe
-from pg_roles login cross join pg_roles admission
-where login.rolname=session_user and admission.rolname='buyer_writer_admission'`;
+from pg_roles login cross join pg_roles admission cross join pg_roles creator
+where login.rolname=session_user and admission.rolname='buyer_writer_admission' and creator.oid=$2::oid`;
 
 function deadline(task,timeoutMs,onExpire){
  let timer,expired=false;
@@ -68,11 +70,12 @@ function deadline(task,timeoutMs,onExpire){
  ]).finally(()=>clearTimeout(timer));
 }
 
-export function createAttestedAdmissionExecutor({expectedLogin,connect,checkoutTimeoutMs=2000,identityTimeoutMs=2000}={}){
+export function createAttestedAdmissionExecutor({expectedLogin,expectedCreatorOid,connect,checkoutTimeoutMs=2000,identityTimeoutMs=2000}={}){
  if(typeof expectedLogin!=='string'||!/^[a-z_][a-z0-9_]{0,62}$/.test(expectedLogin)
-  ||expectedLogin==='buyer_writer_admission'||typeof connect!=='function'
+  ||expectedLogin==='buyer_writer_admission'||!Number.isInteger(expectedCreatorOid)
+  ||expectedCreatorOid<1||expectedCreatorOid>4294967295||typeof connect!=='function'
   ||![checkoutTimeoutMs,identityTimeoutMs].every(value=>Number.isInteger(value)&&value>=10&&value<=5000))throw fail();
- const executor=Object.freeze({expectedLogin,connect,checkoutTimeoutMs,identityTimeoutMs});
+ const executor=Object.freeze({expectedLogin,expectedCreatorOid,connect,checkoutTimeoutMs,identityTimeoutMs});
  executors.add(executor);
  return executor;
 }
@@ -92,7 +95,7 @@ export async function executeAdmission(executor,operation,values,{signal}={}){
   const controller=new AbortController();let identity;
   try{
    identity=await deadline(
-    ()=>client.query({text:ADMISSION_IDENTITY_SQL,values:[executor.expectedLogin],signal:controller.signal}),
+    ()=>client.query({text:ADMISSION_IDENTITY_SQL,values:[executor.expectedLogin,executor.expectedCreatorOid],signal:controller.signal}),
     executor.identityTimeoutMs,()=>{destroy=true;controller.abort();});
   }catch{destroy=true;throw fail();}
   if(!identity||!Array.isArray(identity.rows)||identity.rows.length!==1

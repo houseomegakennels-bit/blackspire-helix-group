@@ -42,7 +42,7 @@ function fixture(overrides={}){
  return {origin:'https://writer.example',method:'POST',path:'/rest/v1/rpc/apply',rawHeaders,body};
 }
 function executor(query,{safe=true,releases=[]}={}){
- return createAttestedAdmissionExecutor({expectedLogin:'buyer_writer_admission_login',connect:async()=>({
+ return createAttestedAdmissionExecutor({expectedLogin:'buyer_writer_admission_login',expectedCreatorOid:16388,connect:async()=>({
   query:async config=>config.text===ADMISSION_IDENTITY_SQL?{rows:[{safe}]}:query(config.text,config.values,{signal:config.signal}),
   release:destroy=>releases.push(destroy),
  })});
@@ -191,6 +191,7 @@ test('database identity attestation failure is availability, not authentication'
  assert.equal(operationCalls,0);
  assert.match(ADMISSION_IDENTITY_SQL,/current_user='buyer_writer_admission'/);
  assert.match(ADMISSION_IDENTITY_SQL,/session_user=\$1/);
+ assert.match(ADMISSION_IDENTITY_SQL,/creator\.oid=\$2::oid/);
  assert.match(ADMISSION_IDENTITY_SQL,/buyer_writer\.execute_admitted_apply/);
  assert.match(ADMISSION_IDENTITY_SQL,/not exists\(select from pg_auth_members/);
 });
@@ -250,4 +251,5 @@ test('executor exposes no arbitrary SQL and enforces exact fixed argument counts
  const admission=executor(async()=>{assert.fail('must not query');});
  await assert.rejects(executeAdmission(admission,'select * from pg_authid',[]),/unavailable/);
  await assert.rejects(executeAdmission(admission,'reserve',[]),/unavailable/);
+ assert.throws(()=>createAttestedAdmissionExecutor({expectedLogin:'buyer_writer_admission_login',expectedCreatorOid:0,connect:async()=>{}}),/unavailable/);
 });
