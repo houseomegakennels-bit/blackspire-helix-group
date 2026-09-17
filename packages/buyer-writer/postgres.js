@@ -57,11 +57,11 @@ export const WRITER_IDENTITY_SQL = `select (
  session_user=$1 and current_user=$1
  and r.rolcanlogin and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls or r.rolinherit)
  and (select count(*) from pg_auth_members m join pg_roles role on role.oid=m.roleid
-   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')) between 4 and 5
+   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'))=6
  and (select count(distinct role.rolname) from pg_auth_members m join pg_roles role on role.oid=m.roleid
    where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and m.admin_option and not m.inherit_option
-   and (role.rolname='buyer_writer_owner' or not m.set_option) and m.grantor=10
-   and coalesce((select rolsuper from pg_roles where oid=10),false))=4
+   and (role.rolname='buyer_writer_owner' or not m.set_option)
+   and coalesce((select rolsuper from pg_roles where oid=m.grantor),false))=4
  and exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
    where role.rolname='buyer_writer_owner' and member.rolname='postgres'
    and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database())
@@ -81,9 +81,12 @@ export const WRITER_IDENTITY_SQL = `select (
    and not m.admin_option and not m.inherit_option and m.set_option)
  and not exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
    where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')
-   and not(member.rolname='postgres' and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option and (
-    (m.admin_option and not m.set_option and m.grantor=10 and coalesce((select rolsuper from pg_roles where oid=10),false))
-    or (role.rolname='buyer_writer_owner' and not m.admin_option and m.set_option and pg_get_userbyid(m.grantor)='postgres'))))
+   and not((member.rolname='postgres' and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option and (
+    (m.admin_option and not m.set_option and coalesce((select rolsuper from pg_roles where oid=m.grantor),false))
+    or (role.rolname='buyer_writer_owner' and not m.admin_option and m.set_option and pg_get_userbyid(m.grantor)='postgres')))
+    or (role.rolname='buyer_writer_admission' and member.rolname='buyer_writer_admission_login'
+     and member.rolcanlogin and not member.rolinherit and not m.admin_option and not m.inherit_option and m.set_option
+     and m.grantor=$4::oid)))
  and not exists(select from pg_auth_members m join pg_roles member on member.oid=m.member
    where member.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'))
  and exists(select from pg_roles where rolname='buyer_writer_owner' and not(rolcanlogin or rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls or rolinherit))
@@ -93,7 +96,7 @@ export const WRITER_IDENTITY_SQL = `select (
  and not exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and n.nspname<>'buyer_writer'
    and has_schema_privilege('buyer_writer_owner',n.oid,'CREATE'))
  and not has_database_privilege('buyer_writer_owner',current_database(),'CREATE')
- and not exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+ and not exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer'),('buyer_writer_admission')) w(role_name)
    where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT')
    and not(d.datname='template1' and d.datistemplate and d.datdba=10
     and coalesce((select rolsuper from pg_roles where oid=10),false)
@@ -172,7 +175,7 @@ export const WRITER_IDENTITY_SQL = `select (
       or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')
-      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') and g.rolname='buyer_writer_admission')) reviewed(edges)
+      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') and g.rolname='buyer_writer_admission')) reviewed(edges)
   where actual.edges is distinct from reviewed.edges)
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a

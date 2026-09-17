@@ -308,7 +308,7 @@ BEGIN
          OR (expected.signature='buyer_writer.lock_public_scope()' AND g.rolname='buyer_writer_owner')
          OR (expected.signature IN ('buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)') AND g.rolname='buyer_writer_runtime')
          OR (expected.signature IN ('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') AND g.rolname='buyer_writer_issuer')
-         OR (expected.signature IN ('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') AND g.rolname='buyer_writer_admission')) reviewed(edges)
+         OR (expected.signature IN ('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') AND g.rolname='buyer_writer_admission')) reviewed(edges)
        WHERE actual.edges IS DISTINCT FROM reviewed.edges) THEN
     RAISE EXCEPTION 'Writer schema or routine ACL drift';
    END IF;
@@ -323,7 +323,7 @@ BEGIN
        LEFT JOIN pg_proc p ON p.oid::regprocedure::text=s
         AND p.pronamespace=(SELECT oid FROM pg_namespace WHERE nspname='buyer_writer')
        WHERE p.oid IS NULL OR NOT has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE'))
-    OR EXISTS(SELECT FROM unnest(ARRAY['buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)']) s
+    OR EXISTS(SELECT FROM unnest(ARRAY['buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)']) s
        LEFT JOIN pg_proc p ON p.oid::regprocedure::text=s
         AND p.pronamespace=(SELECT oid FROM pg_namespace WHERE nspname='buyer_writer')
        WHERE p.oid IS NULL OR NOT has_function_privilege('buyer_writer_admission',p.oid,'EXECUTE')) THEN
@@ -341,7 +341,7 @@ BEGIN
         OR (w.role_name='buyer_writer_issuer' AND p.oid::regprocedure::text IN
           ('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'))
         OR (w.role_name='buyer_writer_admission' AND p.oid::regprocedure::text IN
-          ('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'))
+          ('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'))
        )) THEN
     RAISE EXCEPTION 'Unexpected reachable writer routine';
    END IF;

@@ -17,6 +17,10 @@ const ROUTINE_METADATA=Object.freeze({
   'buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)':[ ['p_digest','p_workspace','p_job','p_dispatch','p_generation','p_operation','p_index'],'jsonb'],
   'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_expires_at'],'boolean'],
   'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_permit_digest','q'],'jsonb'],
+  'buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_job','p_permit_digest','p_context','p_expected_criteria','p_expected_updated_at','p_dispatch_request'],'jsonb'],
+  'buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_job'],'jsonb'],
+  'buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_job','p_dispatch_request','p_expected_updated_at'],'jsonb'],
+  'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_permit_digest','p_job','p_dispatch','p_generation','p_business_operation','p_chunk_index'],'jsonb'],
   'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace'],'jsonb'],
 });
 export const BUYER_WRITER_ROUTINES=Object.freeze([
@@ -35,7 +39,11 @@ export const BUYER_WRITER_ROUTINES=Object.freeze([
   ['buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','3a5f587c8b6ff018ab6d5e91b339fc60b479d0250ea0a74c7d06935035e593de','plpgsql',true,['search_path=pg_catalog'],'v'],
   ['buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','a705d6a8fb84fd22ae424aaa6c19b36cc71692be54d7abdfe655ad379a1064ca','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
   ['buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','947472a925825b1628f38a0d3b232da6ac62414727c653fe047dffc3dafeb6cc','plpgsql',true,['search_path=pg_catalog','TimeZone=UTC','lock_timeout=5s'],'v'],
-  ['buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','733fc600c83c00cccdf26a241ef799ee6dcf5030aab3f4c059c6d1354ace88c7','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
+  ['buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','76701c67f63bd8ffc04ca012431994f3d4086707500369803039543e6f45f41d','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
+  ['buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','ae1fdc1c4baa85f264d43dc58a8e3db731b58c0811ea51cc6c3756979975a854','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
+  ['buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','e6e4e51af093ae9f191c1f5d4569a1c044d2f364200fe72200634d44f3e0f32f','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
+  ['buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','b6cf6d1de315b436687ab02ee32ceef221429973a00c76293ff602d8677c4a8b','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
+  ['buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','9fbeb13300e17490f7a648a8e0171f03bc9da8cc6b5ad6dd675792342664398b','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
 ].map(([signature,digest,language,securityDefiner,config,volatility,owner='writer'])=>{
   const [arguments_,result]=ROUTINE_METADATA[signature]??[];
   if(!arguments_||!result)throw new Error('Buyer Writer routine metadata missing');
@@ -46,5 +54,5 @@ export const BUYER_WRITER_ROUTINES=Object.freeze([
 export const BUYER_WRITER_ENTRYPOINTS=Object.freeze({
   runtime:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)']),
   issuer:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)']),
-  admission:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)']),
+  admission:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)']),
 });

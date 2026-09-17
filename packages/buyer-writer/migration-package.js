@@ -7,7 +7,7 @@ const migrations=[
  ['20260904223151_buyer_browser_security.sql','61baa67314a77d4fa0f0b587821de9216dfa0220d1bb9e22b2808bc2002ae01e'],
 ];
 const tables=['public."SearchJob"','public."RawSale"','public."CleanSale"','public."BuyerProfile"','public."BuyerReport"','public.nexus_contacts',
- 'buyer_writer.dispatches','buyer_writer.receipts','buyer_writer.sales'];
+ 'buyer_writer.dispatches','buyer_writer.receipts','buyer_writer.sales','buyer_writer.operation_admissions'];
 const applicationTables=tables.slice(0,6);
 const privateTables=tables.slice(6);
 const digest=s=>createHash('sha256').update(s).digest('hex');

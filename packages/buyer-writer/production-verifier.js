@@ -16,8 +16,9 @@ role_state as (
 ), membership_state as (
  select pg_get_userbyid(m.roleid) as role,m.roleid::text as "roleOid",pg_get_userbyid(m.member) as member,m.member::text as "memberOid",
   pg_get_userbyid(m.grantor) as grantor,m.grantor::text as "grantorOid",
+  member.rolcanlogin as "memberLogin",grantor.rolsuper as "grantorSuperuser",
   m.admin_option as admin,m.inherit_option as inherit,m.set_option as "set"
- from pg_auth_members m where pg_get_userbyid(m.roleid) in(select name from writer_roles)
+ from pg_auth_members m join pg_roles member on member.oid=m.member join pg_roles grantor on grantor.oid=m.grantor where pg_get_userbyid(m.roleid) in(select name from writer_roles)
   or pg_get_userbyid(m.member) in(select name from writer_roles)
 ), schema_state as (
  select n.oid,n.nspname as name,pg_get_userbyid(n.nspowner) as owner,
@@ -256,26 +257,26 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
   for(const role of raw.roles){
    if(!exact(role,['name','login','inherit','superuser','createDb','createRole','replication','bypassRls'])
     ||![role.login,role.inherit,role.superuser,role.createDb,role.createRole,role.replication,role.bypassRls].every(bool))fail();
-   const login=role.name!=='buyer_writer_owner';
+   const login=role.name==='buyer_writer_runtime'||role.name==='buyer_writer_issuer';
    if(role.login!==login||role.inherit||role.superuser||role.createDb||role.createRole||role.replication||role.bypassRls)fail();
   }
-  if(raw.memberships.length!==5)fail();
-  const adminRoles=new Set();let ownerSetCount=0;
+  if(raw.memberships.length!==6)fail();
+  const adminRoles=new Set();let ownerSetCount=0,admissionSetCount=0;
   for(const edge of raw.memberships){
-   if(!exact(edge,['role','roleOid','member','memberOid','grantor','grantorOid','admin','inherit','set'])
+   if(!exact(edge,['role','roleOid','member','memberOid','grantor','grantorOid','memberLogin','grantorSuperuser','admin','inherit','set'])
     ||![edge.role,edge.member,edge.grantor].every(value=>string(value,63))||![edge.roleOid,edge.memberOid,edge.grantorOid].every(value=>/^\d{1,10}$/.test(value))
-    ||![edge.admin,edge.inherit,edge.set].every(bool))fail();
-   // Match the installer's PostgreSQL 17 managed-CREATEROLE graph. Automatic
-   // ADMIN edges are attributed to the bootstrap superuser rather than the
-   // non-superuser creator that receives them.
+    ||![edge.memberLogin,edge.grantorSuperuser,edge.admin,edge.inherit,edge.set].every(bool))fail();
    const managerAdmin=roleNames.includes(edge.role)&&edge.member==='postgres'&&edge.memberOid===String(creatorOid)
-    &&edge.grantorOid==='10'&&edge.admin&&!edge.inherit&&!edge.set;
-   const ownerSet=edge.role==='buyer_writer_owner'&&edge.member==='postgres'&&edge.grantor==='postgres'
+    &&edge.grantorSuperuser&&edge.admin&&!edge.inherit&&!edge.set;
+   const ownerSet=edge.role==='buyer_writer_owner'&&edge.member==='postgres'
     &&edge.memberOid===String(creatorOid)&&edge.grantorOid===String(creatorOid)&&!edge.admin&&!edge.inherit&&edge.set;
-   if(!managerAdmin&&!ownerSet)fail();
-   if(managerAdmin){if(adminRoles.has(edge.role))fail();adminRoles.add(edge.role);}else ownerSetCount++;
+   const admissionSet=edge.role==='buyer_writer_admission'&&edge.member==='buyer_writer_admission_login'
+    &&edge.memberLogin&&edge.grantorOid===String(creatorOid)&&!edge.admin&&!edge.inherit&&edge.set;
+   if(!managerAdmin&&!ownerSet&&!admissionSet)fail();
+   if(managerAdmin){if(adminRoles.has(edge.role))fail();adminRoles.add(edge.role);}
+   else if(ownerSet)ownerSetCount++;else admissionSetCount++;
   }
-  if(adminRoles.size!==4||ownerSetCount!==1)fail();
+  if(adminRoles.size!==4||ownerSetCount!==1||admissionSetCount!==1)fail();
   if(!exact(raw.schema,['name','owner','edges'])||raw.schema.name!=='buyer_writer'||raw.schema.owner!=='buyer_writer_owner'
    ||!Array.isArray(raw.schema.edges))fail();
   const schemaEdges=[

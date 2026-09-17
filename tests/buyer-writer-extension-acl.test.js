@@ -107,7 +107,7 @@ test('application package cannot execute provider mutations and rejects fabricat
  assert.deepEqual(p,prepareBuyerMigrationPackage({releaseSha:'a'.repeat(40),providerManifest:manifest,creatorOid}));
  assert.match(p.sql,/transaction_timeout='120s'/);
  assert.ok(p.sql.indexOf("lock_timeout='5s'")<p.sql.indexOf('drop policy'));
- assert.equal((p.sql.match(/CREATE TEMP TABLE zola_rows_/g)||[]).length,9);
+ assert.equal((p.sql.match(/CREATE TEMP TABLE zola_rows_/g)||[]).length,10);
  assert.equal(p.manifest.productionApplied,false);
  assert.equal(p.manifest.creatorOid,creatorOid);
  assert.equal(p.manifest.providerMutationPolicy,'optional-if-effective-isolation-passes');
