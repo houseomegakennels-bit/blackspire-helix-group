@@ -32,8 +32,9 @@ const management={host:gateway.runtime.host,password:managementSecret,ca};
 const ownerOid='16390';
 const acl=(grantee,privilege,grantable=false,grantor='buyer_writer_owner')=>({grantor,grantee,privilege,grantable});
 const evidence=()=>({
- roles:['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission']
-  .map(name=>({name,login:['buyer_writer_runtime','buyer_writer_issuer'].includes(name),inherit:false,
+ roles:['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login']
+  .map(name=>({name,oid:{buyer_writer_owner:ownerOid,buyer_writer_runtime:'16391',buyer_writer_issuer:'16392',buyer_writer_admission:'16393',buyer_writer_admission_login:'16394'}[name],
+   login:['buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission_login'].includes(name),inherit:false,
    superuser:false,createDb:false,createRole:false,replication:false,bypassRls:false})),
  memberships:[{role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(gateway.creatorOid),grantor:'postgres',grantorOid:String(gateway.creatorOid),memberLogin:true,grantorSuperuser:false,admin:false,inherit:false,set:true},
   {role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(gateway.creatorOid),grantor:'fixture_admin',grantorOid:'10',memberLogin:true,grantorSuperuser:true,admin:true,inherit:false,set:false},
@@ -56,7 +57,8 @@ const evidence=()=>({
    runtimeExecute:runtime,runtimeGrant:false,issuerExecute:issuer,issuerGrant:false,admissionExecute:admission,admissionGrant:false};}),
  targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
  bootstrapSuperuser:true,creatorOid:String(gateway.creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
- databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false,buyer_writer_admission:false},
+ databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false,buyer_writer_admission:false,buyer_writer_admission_login:false},
+ databaseTemporary:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false,buyer_writer_admission:false,buyer_writer_admission_login:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',publicExecute:true,
   ownerExecute:true,runtimeExecute:true,issuerExecute:true,admissionExecute:true})),
 });
@@ -95,7 +97,7 @@ function harness({exists=false,login=exists,compliant=exists,authWorks=exists,au
     if(text.startsWith('select pg_temp.blackspire_bind')){assert.ok(values[0].startsWith('buyer_writer_'));
       assert.ok([runtimeSecret,issuerSecret,admissionSecret].includes(values[1]));
       if(values[0]==='buyer_writer_admission_login')state.admissionLoginExists=true;return {rows:[]};}
-    if(text.startsWith('alter role buyer_writer_admission nologin')){state.admissionLogin=true;return {rows:[]};}
+    if(text.includes('alter role buyer_writer_admission nologin')){state.admissionLogin=true;return {rows:[]};}
     if(text.startsWith('alter role buyer_writer_owner')){state.ownerLogin=false;state.runtimeLogin=state.issuerLogin=true;
       state.compliant=state.admissionLogin;state.authWorks=true;return {rows:[]};}
     if(text==='commit'&&state.commitFailures-->0)throw new Error(`commit error ${managementSecret}`);
@@ -195,6 +197,8 @@ test('absent roles install exact canonical SQL, bind only as parameters, verify,
   ['installer-committed','IN_PROGRESS'],['credential-transaction-started','IN_PROGRESS'],['verified-committed','COMPLETED']]);
  const queryText=h.calls.filter(row=>row.text).map(row=>row.text).join('\n');
  for(const secret of [runtimeSecret,issuerSecret,admissionSecret,managementSecret])assert.equal(queryText.includes(secret),false);
+ assert.match(queryText,/revoke create,temporary on database postgres from public;/);
+ assert.match(queryText,/revoke all privileges on database postgres from buyer_writer_admission_login;/);
  assert.equal(JSON.stringify(result).includes(runtimeSecret),false);
  assert.deepEqual(h.calls.filter(row=>row.authenticate).map(row=>row.authenticate),['runtime','issuer','admission']);
 });

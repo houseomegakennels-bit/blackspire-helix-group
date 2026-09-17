@@ -75,7 +75,9 @@ begin
   raise exception using errcode='P0001',message='Buyer writer credential binding rejected';
  end;
 end $blackspire_binder$`;
-const BIND_ADMISSION_LOGIN_SQL=`alter role buyer_writer_admission nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null;
+const BIND_ADMISSION_LOGIN_SQL=`revoke create,temporary on database postgres from public;
+ revoke all privileges on database postgres from buyer_writer_admission_login;
+ alter role buyer_writer_admission nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null;
  revoke buyer_writer_admission from buyer_writer_admission_login;
  grant buyer_writer_admission to buyer_writer_admission_login with admin false,inherit false,set true granted by postgres;
  alter role buyer_writer_admission_login login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls`;

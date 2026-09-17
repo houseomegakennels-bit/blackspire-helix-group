@@ -4,13 +4,13 @@ import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '
 // pg_authid, password hashes, settings containing credentials, or application
 // rows. The provisioner runs it in the same transaction as role reconciliation.
 export const BUYER_WRITER_PRODUCTION_VERIFY_SQL=`with
-writer_roles(name) as (values ('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer'),('buyer_writer_admission')),
+writer_roles(name) as (values ('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer'),('buyer_writer_admission'),('buyer_writer_admission_login')),
 expected_net(name) as (values
  ('_await_response'),('_encode_url_with_params_array'),('_http_collect_response'),('_urlencode_string'),
  ('check_worker_is_up'),('http_collect_response'),('http_delete'),('http_get'),('http_post'),
  ('wait_until_running'),('wake'),('worker_restart')),
 role_state as (
- select r.rolname as name,r.rolcanlogin as login,r.rolinherit as inherit,r.rolsuper as superuser,
+ select r.rolname as name,r.oid::text as oid,r.rolcanlogin as login,r.rolinherit as inherit,r.rolsuper as superuser,
   r.rolcreatedb as "createDb",r.rolcreaterole as "createRole",r.rolreplication as replication,r.rolbypassrls as "bypassRls"
  from pg_roles r join writer_roles w on w.name=r.rolname
 ), membership_state as (
@@ -71,7 +71,7 @@ role_state as (
   has_table_privilege(w.name,c.oid,'TRIGGER') as "trigger",has_table_privilege(w.name,c.oid,'MAINTAIN') as maintain,
   has_any_column_privilege(w.name,c.oid,'SELECT,INSERT,UPDATE,REFERENCES') as "anyColumn"
  from writer_roles w cross join pg_class c join pg_namespace n on n.oid=c.relnamespace
- where w.name in('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and c.relkind in('r','p','v','m','f')
+ where w.name in('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login') and c.relkind in('r','p','v','m','f')
   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
   and has_schema_privilege(w.name,n.oid,'USAGE')
 ), direct_sequences as (
@@ -80,7 +80,7 @@ role_state as (
   case when c.relkind='S' then has_sequence_privilege(w.name,c.oid,'UPDATE') else false end as "update",
   case when c.relkind='S' then has_sequence_privilege(w.name,c.oid,'USAGE') else false end as usage
  from writer_roles w cross join pg_class c join pg_namespace n on n.oid=c.relnamespace
- where w.name in('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and c.relkind='S'
+ where w.name in('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login') and c.relkind='S'
   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
 ), schema_create as (
  select w.name as role,n.nspname as schema from writer_roles w cross join pg_namespace n
@@ -221,7 +221,14 @@ select jsonb_build_object(
    'buyer_writer_owner',coalesce(has_database_privilege('buyer_writer_owner',current_database(),'CREATE'),false),
    'buyer_writer_runtime',coalesce(has_database_privilege('buyer_writer_runtime',current_database(),'CREATE'),false),
    'buyer_writer_issuer',coalesce(has_database_privilege('buyer_writer_issuer',current_database(),'CREATE'),false),
-   'buyer_writer_admission',coalesce(has_database_privilege('buyer_writer_admission',current_database(),'CREATE'),false)),
+   'buyer_writer_admission',coalesce(has_database_privilege('buyer_writer_admission',current_database(),'CREATE'),false),
+   'buyer_writer_admission_login',coalesce(has_database_privilege('buyer_writer_admission_login',current_database(),'CREATE'),false)),
+ 'databaseTemporary',jsonb_build_object(
+   'buyer_writer_owner',coalesce(has_database_privilege('buyer_writer_owner',current_database(),'TEMP'),false),
+   'buyer_writer_runtime',coalesce(has_database_privilege('buyer_writer_runtime',current_database(),'TEMP'),false),
+   'buyer_writer_issuer',coalesce(has_database_privilege('buyer_writer_issuer',current_database(),'TEMP'),false),
+   'buyer_writer_admission',coalesce(has_database_privilege('buyer_writer_admission',current_database(),'TEMP'),false),
+   'buyer_writer_admission_login',coalesce(has_database_privilege('buyer_writer_admission_login',current_database(),'TEMP'),false)),
  'pgNet',(select coalesce(jsonb_agg(to_jsonb(n) order by name,signature),'[]'::jsonb) from net_state n)
 ) as evidence`;
 
@@ -248,16 +255,20 @@ const sameSet=(values,expected)=>values.length===expected.length&&new Set(values
 export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
  try{
   if(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295||Buffer.byteLength(JSON.stringify(raw))>1024*1024
-   ||!exact(raw,['roles','memberships','schema','routines','targetRelations','targetPublicRelations','targetPublicColumns','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','pgNet','bootstrapSuperuser','creatorOid','relationPolicySafe','routinePolicySafe','ownerPolicySafe','crossDatabaseConnect'])
+   ||!exact(raw,['roles','memberships','schema','routines','targetRelations','targetPublicRelations','targetPublicColumns','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','databaseTemporary','pgNet','bootstrapSuperuser','creatorOid','relationPolicySafe','routinePolicySafe','ownerPolicySafe','crossDatabaseConnect'])
    ||![raw.roles,raw.memberships,raw.routines,raw.targetRelations,raw.targetPublicRelations,raw.targetPublicColumns,raw.directRelations,raw.directSequences,raw.schemaCreate,raw.externalRoutines,raw.pgNet,raw.crossDatabaseConnect].every(Array.isArray)
    ||raw.bootstrapSuperuser!==true||raw.creatorOid!==String(creatorOid)||raw.relationPolicySafe!==true||raw.routinePolicySafe!==true||raw.ownerPolicySafe!==true)fail();
-  const roleNames=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'];
+  const managedRoleNames=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'];
+  const roleNames=[...managedRoleNames,'buyer_writer_admission_login'];
   if(!sameSet(raw.targetRelations,['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport']))fail();
   if(!sameSet(raw.roles.map(role=>role?.name),roleNames))fail();
+  const roleOids=new Map(),seenRoleOids=new Set();
   for(const role of raw.roles){
-   if(!exact(role,['name','login','inherit','superuser','createDb','createRole','replication','bypassRls'])
+   if(!exact(role,['name','oid','login','inherit','superuser','createDb','createRole','replication','bypassRls'])
+    ||!/^\d{1,10}$/.test(role.oid)||seenRoleOids.has(role.oid)
     ||![role.login,role.inherit,role.superuser,role.createDb,role.createRole,role.replication,role.bypassRls].every(bool))fail();
-   const login=role.name==='buyer_writer_runtime'||role.name==='buyer_writer_issuer';
+   roleOids.set(role.name,role.oid);seenRoleOids.add(role.oid);
+   const login=role.name==='buyer_writer_runtime'||role.name==='buyer_writer_issuer'||role.name==='buyer_writer_admission_login';
    if(role.login!==login||role.inherit||role.superuser||role.createDb||role.createRole||role.replication||role.bypassRls)fail();
   }
   if(raw.memberships.length!==6)fail();
@@ -265,8 +276,9 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
   for(const edge of raw.memberships){
    if(!exact(edge,['role','roleOid','member','memberOid','grantor','grantorOid','memberLogin','grantorSuperuser','admin','inherit','set'])
     ||![edge.role,edge.member,edge.grantor].every(value=>string(value,63))||![edge.roleOid,edge.memberOid,edge.grantorOid].every(value=>/^\d{1,10}$/.test(value))
-    ||![edge.memberLogin,edge.grantorSuperuser,edge.admin,edge.inherit,edge.set].every(bool))fail();
-   const managerAdmin=roleNames.includes(edge.role)&&edge.member==='postgres'&&edge.memberOid===String(creatorOid)
+    ||![edge.memberLogin,edge.grantorSuperuser,edge.admin,edge.inherit,edge.set].every(bool)
+    ||roleOids.get(edge.role)!==edge.roleOid||(roleOids.has(edge.member)&&roleOids.get(edge.member)!==edge.memberOid))fail();
+   const managerAdmin=managedRoleNames.includes(edge.role)&&edge.member==='postgres'&&edge.memberOid===String(creatorOid)
     &&edge.grantorSuperuser&&edge.admin&&!edge.inherit&&!edge.set;
    const ownerSet=edge.role==='buyer_writer_owner'&&edge.member==='postgres'
     &&edge.memberOid===String(creatorOid)&&edge.grantorOid===String(creatorOid)&&!edge.admin&&!edge.inherit&&edge.set;
@@ -306,8 +318,12 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
     ...(admission?[[routineOwner,'buyer_writer_admission','EXECUTE',false]]:[])]);
   }
   if(raw.targetPublicRelations.length||raw.targetPublicColumns.length||raw.directRelations.length||raw.directSequences.length||raw.schemaCreate.length||raw.externalRoutines.length
-   ||raw.crossDatabaseConnect.length||!exact(raw.databaseCreate,['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'])
-   ||raw.databaseCreate.buyer_writer_owner!==false||raw.databaseCreate.buyer_writer_runtime!==false||raw.databaseCreate.buyer_writer_issuer!==false||raw.databaseCreate.buyer_writer_admission!==false)fail();
+   ||raw.crossDatabaseConnect.length||!exact(raw.databaseCreate,['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login'])
+   ||raw.databaseCreate.buyer_writer_owner!==false||raw.databaseCreate.buyer_writer_runtime!==false||raw.databaseCreate.buyer_writer_issuer!==false
+   ||raw.databaseCreate.buyer_writer_admission!==false||raw.databaseCreate.buyer_writer_admission_login!==false
+   ||!exact(raw.databaseTemporary,['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login'])
+   ||raw.databaseTemporary.buyer_writer_owner!==false||raw.databaseTemporary.buyer_writer_runtime!==false||raw.databaseTemporary.buyer_writer_issuer!==false
+   ||raw.databaseTemporary.buyer_writer_admission!==false||raw.databaseTemporary.buyer_writer_admission_login!==false)fail();
   if(raw.pgNet.length!==12||!sameSet(raw.pgNet.map(row=>row?.name),BUYER_WRITER_PG_NET_FUNCTIONS))fail();
   for(const row of raw.pgNet){
    const absent=row.signature===null&&row.owner===null;

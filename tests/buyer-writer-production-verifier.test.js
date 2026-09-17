@@ -7,12 +7,13 @@ import {
 } from '../packages/buyer-writer/production-verifier.js';
 import {BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '../packages/buyer-writer/routine-policy.js';
 
-const role=name=>({name,login:['buyer_writer_runtime','buyer_writer_issuer'].includes(name),inherit:false,superuser:false,createDb:false,
- createRole:false,replication:false,bypassRls:false});
 const creatorOid=16388,ownerOid='16390';
+const roleOids={buyer_writer_owner:ownerOid,buyer_writer_runtime:'16391',buyer_writer_issuer:'16392',buyer_writer_admission:'16393',buyer_writer_admission_login:'16394'};
+const role=name=>({name,oid:roleOids[name],login:['buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission_login'].includes(name),inherit:false,superuser:false,createDb:false,
+ createRole:false,replication:false,bypassRls:false});
 const acl=(grantee,privilege,grantable,grantor='buyer_writer_owner')=>({grantor,grantee,privilege,grantable});
 const fixture=()=>({
- roles:['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'].map(role),
+ roles:['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login'].map(role),
  memberships:[
   {role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(creatorOid),grantor:'postgres',grantorOid:String(creatorOid),memberLogin:true,grantorSuperuser:false,admin:false,inherit:false,set:true},
   {role:'buyer_writer_owner',roleOid:ownerOid,member:'postgres',memberOid:String(creatorOid),grantor:'fixture_admin',grantorOid:'10',memberLogin:true,grantorSuperuser:true,admin:true,inherit:false,set:false},
@@ -37,7 +38,8 @@ const fixture=()=>({
  }),
  targetRelations:['BuyerProfile','BuyerReport','CleanSale','RawSale','SearchJob'],targetPublicRelations:[],targetPublicColumns:[],directRelations:[],directSequences:[],schemaCreate:[],externalRoutines:[],
  bootstrapSuperuser:true,creatorOid:String(creatorOid),relationPolicySafe:true,routinePolicySafe:true,ownerPolicySafe:true,crossDatabaseConnect:[],
- databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false,buyer_writer_admission:false},
+ databaseCreate:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false,buyer_writer_admission:false,buyer_writer_admission_login:false},
+ databaseTemporary:{buyer_writer_owner:false,buyer_writer_runtime:false,buyer_writer_issuer:false,buyer_writer_admission:false,buyer_writer_admission_login:false},
  pgNet:BUYER_WRITER_PG_NET_FUNCTIONS.map(name=>({name,signature:`net.${name}()`,owner:'supabase_admin',
   publicExecute:true,ownerExecute:true,runtimeExecute:true,issuerExecute:true,admissionExecute:true})),
 });
@@ -58,13 +60,17 @@ test('fixed verifier accepts exact security state and reports provider truth wit
  assert.equal(verifyBuyerWriterProductionEvidence(closed,creatorOid).pgNetTruth.supabaseAclFixed,true);
 });
 
-test('catalog query ignores only inert bootstrap-owned template1 CONNECT',()=>{
+test('catalog query covers the external admission login and ignores only inert bootstrap-owned template1 CONNECT',()=>{
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/writer_roles[\s\S]*buyer_writer_admission_login/);
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/crossDatabaseConnect[\s\S]*from writer_roles/);
+ assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/databaseCreate[\s\S]*buyer_writer_admission_login/);
  assert.match(BUYER_WRITER_PRODUCTION_VERIFY_SQL,/datname='template1'[\s\S]*datistemplate[\s\S]*datdba=10[\s\S]*'CREATE'[\s\S]*'TEMP'/);
 });
 
 test('fixed verifier rejects unsafe role flags, absence and unexpected memberships',()=>{
  for(const mutation of [
   value=>{value.roles[1].login=false;},value=>{value.roles[2].inherit=true;},value=>{value.roles[0].superuser=true;},
+  value=>{value.roles[4].login=false;},value=>{value.roles[4].inherit=true;},value=>{value.roles[4].oid='16395';},
   value=>{value.roles.pop();},value=>{value.roles[0]={...value.roles[1]};},
   value=>{value.bootstrapSuperuser=false;},value=>{value.memberships[0].admin=true;},
   value=>{value.memberships.push({role:'broad_admin',member:'buyer_writer_runtime',grantor:'postgres',admin:false,inherit:true,set:true});},
@@ -93,7 +99,11 @@ test('fixed verifier rejects direct relation, sequence, schema and database auth
   value=>{value.directRelations.push({role:'buyer_writer_runtime',schema:'public',name:'Buyer','kind':'r',anyColumn:true});},
   value=>{value.directSequences.push({role:'buyer_writer_issuer',schema:'public',name:'ids',select:false,update:false,usage:true});},
   value=>{value.schemaCreate.push({role:'buyer_writer_runtime',schema:'public'});},
-  value=>{value.databaseCreate.buyer_writer_issuer=true;},
+  value=>{value.directRelations.push({role:'buyer_writer_admission_login',schema:'public',name:'Buyer',kind:'r',select:true});},
+  value=>{value.externalRoutines.push({role:'buyer_writer_admission_login',schema:'public',signature:'public.escape()',owner:'postgres'});},
+  value=>{value.crossDatabaseConnect.push({role:'buyer_writer_admission_login',database:'postgres_shadow'});},
+  value=>{value.databaseCreate.buyer_writer_issuer=true;},value=>{value.databaseCreate.buyer_writer_admission_login=true;},
+  value=>{value.databaseTemporary.buyer_writer_runtime=true;},value=>{value.databaseTemporary.buyer_writer_admission_login=true;},
  ]){const value=fixture();mutation(value);denied(value);}
 });
 

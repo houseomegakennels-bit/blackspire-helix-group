@@ -490,6 +490,8 @@ $legacy$;
     sql(install);role('buyer_writer_runtime','select public.fixture_event()',{fail:true});sql('drop function public.fixture_event()');
     sql(`alter role buyer_writer_runtime login;alter role buyer_writer_issuer login;
       create role buyer_writer_admission_login login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+      revoke create,temporary on database writer_test from public;
+      revoke all privileges on database writer_test from buyer_writer_admission_login;
       grant buyer_writer_admission to buyer_writer_admission_login with admin false,inherit false,set true granted by postgres;`);
     sql(install);
     const login=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_runtime','-d','writer_test','-v','ON_ERROR_STOP=1'], 'select session_user;');
@@ -593,7 +595,8 @@ $legacy$;
     assert.equal(role('buyer_writer_runtime',`select nextval(${hiddenSequenceOid}::oid::regclass)`),'1');
     assert.equal(identity(),'f','OID-addressable sequence capability must fail without schema USAGE');
     assert.deepEqual(productionEvidence().directSequences.map(({role,usage})=>({role,usage})),[
-      {role:'buyer_writer_admission',usage:true},{role:'buyer_writer_issuer',usage:true},{role:'buyer_writer_runtime',usage:true}
+      {role:'buyer_writer_admission',usage:true},{role:'buyer_writer_admission_login',usage:true},
+      {role:'buyer_writer_issuer',usage:true},{role:'buyer_writer_runtime',usage:true}
     ]);
     sql(installSql,{fail:true});sql('revoke usage on sequence hidden_sequence_fixture.ids from public;drop schema hidden_sequence_fixture cascade');assert.equal(identity(),'t');
     sql('revoke usage on schema public from public;grant select on public."SearchJob" to public');
