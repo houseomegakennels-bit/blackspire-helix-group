@@ -18,10 +18,13 @@ const check=(value,message)=>{assert.equal(value,true,message);checks++;};
 try{
  run(['run','--detach','--rm','--name',name,'-e',`POSTGRES_PASSWORD=${password}`,image]);
  container=true;
- for(let i=0;i<80;i++){
-  const ready=spawnSync('docker',['exec',name,'pg_isready','-U','postgres'],{stdio:'ignore'});
-  if(ready.status===0)break;
-  if(i===79)assert.fail('disposable PostgreSQL did not become ready');
+ let consecutiveReady=0;
+ for(let i=0;i<120;i++){
+  const ready=spawnSync('docker',['exec',name,'sh','-c',
+   'grep -qx postgres /proc/1/comm && pg_isready -U postgres >/dev/null'],{stdio:'ignore'});
+  consecutiveReady=ready.status===0?consecutiveReady+1:0;
+  if(consecutiveReady>=3)break;
+  if(i===119)assert.fail('final disposable PostgreSQL server did not become ready');
   await delay(250);
  }
  admin(`
