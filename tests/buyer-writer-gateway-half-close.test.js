@@ -40,3 +40,30 @@ test('shutdown closes an idle peer without discarding an accepted operation',asy
   assert.equal(f.calls(),0);assert.equal(f.gateway.isDrained(),true);assert.equal(f.gateway.isReady(),false);
  }finally{s.destroy();if(closing)await closing;else await f.gateway.close();fs.rmSync(f.root,{recursive:true,force:true});}
 });
+
+test('shutdown drains an accepted half-closed request and preserves its delayed reply',async()=>{
+ const {createBuyerWriterLocalClient}=await import('../packages/buyer-writer/local-gateway-client.js');
+ const {BUYER_WRITER_LOCAL_STATEMENTS}=await import('../packages/buyer-writer/local-gateway-server.js');
+ const root=fs.mkdtempSync('/tmp/zola-draining-reply-');fs.chmodSync(root,0o700);
+ const socketPath=root+'/writer.sock',capability=randomBytes(32).toString('base64url');
+ const authority={releaseSha:'a'.repeat(40),operationId:randomUUID(),attemptId:randomUUID(),workspace:'fixture',gatewayIdentity:'blackspire-writer'};
+ let started,release,calls=0,closed=false,pending,closing;
+ const entered=new Promise(resolve=>{started=resolve;}),backend=new Promise(resolve=>{release=resolve;});
+ const gateway=createBuyerWriterLocalGateway({socketPath,capability,authority,gatewayIdentityVerified:true,timeoutMs:30000,
+  runtimeQuery:async()=>{calls++;started();await backend;return{rows:[{result:{ok:true,operation:'start',chunkIndex:0}}]};},
+  issuerQuery:async()=>assert.fail('issuer must not run')});
+ const client=createBuyerWriterLocalClient({socketPath,capability,authority,timeoutMs:30000});
+ try{
+  await gateway.listen();
+  pending=client.runtimeQuery(BUYER_WRITER_LOCAL_STATEMENTS.apply,['b'.repeat(64),'fixture',JSON.stringify({jobId:randomUUID(),version:1,dispatchId:randomUUID(),generation:1,operation:'start',chunkIndex:0,chunkCount:1,payload:{}})]);
+  pending.catch(()=>{});await bounded(entered);
+  closing=gateway.close().then(()=>{closed=true;});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(closed,false);assert.equal(gateway.isReady(),false);assert.equal(gateway.isDrained(),false);
+  release();const result=await bounded(pending);await bounded(closing);
+  assert.equal(result.rows[0].result.ok,true);assert.equal(calls,1);assert.equal(gateway.isDrained(),true);
+ }finally{
+  release();if(pending)await pending.catch(()=>{});
+  if(closing)await closing;else await gateway.close();
+  await client.close();fs.rmSync(root,{recursive:true,force:true});
+ }
+});

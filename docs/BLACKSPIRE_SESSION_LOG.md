@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-17 — completed independent repair review and added drain-response regression
+
+The user completed dedicated reviewer authentication. A fresh read-only reviewer finished successfully, accepted gateway repair `ab990155` at the source level pending execution, and accepted the isolated RPC prototype after all three original findings were addressed. The transport regressions changed from 28 passed/six failed before repair to 34 passed/zero failed; the gateway in-memory lifecycle model changed from one passed/three failed to four passed/zero failed. These are bounded local proofs, not live acceptance.
+
+Added the specifically requested real-socket regression for preserving an accepted delayed half-closed reply while shutdown drains it. It is supplied but not executed. The prior real-socket execution restriction was not bypassed; no new full-suite result is claimed for the gateway repair. No runtime code, permission predicate, provider privilege, production configuration or external service changed in this test/documentation follow-up.
+
 ## 2026-09-17 — dedicated reviewer restored; findings retained and repaired locally
 
 - Verified the user's dedicated reviewer device sign-in and completed a fresh read-only review. The reviewer requested a socket EOF repair plus two offline transport repairs; no clean verdict was claimed.
