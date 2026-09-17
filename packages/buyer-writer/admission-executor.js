@@ -20,7 +20,7 @@ export const ADMISSION_IDENTITY_SQL=`select (
   or admission.rolcreaterole or admission.rolreplication or admission.rolbypassrls or admission.rolinherit)
  and (select count(*) from pg_auth_members m where m.roleid=admission.oid)=2
  and exists(select from pg_auth_members m where m.roleid=admission.oid and m.member=login.oid
-  and not m.admin_option and not m.inherit_option and m.set_option)
+  and not m.admin_option and not m.inherit_option and m.set_option and m.grantor=creator.oid)
  and creator.oid=$2::oid and creator.oid=(select datdba from pg_database where datname=current_database())
  and exists(select from pg_auth_members m join pg_roles grantor on grantor.oid=m.grantor
   where m.roleid=admission.oid and m.member=creator.oid and m.admin_option

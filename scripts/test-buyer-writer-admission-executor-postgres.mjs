@@ -32,7 +32,9 @@ try{
   create role buyer_writer_admission nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
   create role ${login} login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password '${password}';
   grant buyer_writer_admission to ${creator} with admin true, inherit false, set false;
+  set role ${creator};
   grant buyer_writer_admission to ${login} with admin false, inherit false, set true;
+  reset role;
  `);
  admin(`create database ${database} owner ${creator}`);
  admin(`
@@ -71,9 +73,11 @@ try{
   throw new Error('unexpected statement');
  };
  const creatorOid=Number(admin(`select oid from pg_roles where rolname='${creator}'`));
- const grantorOid=Number(admin(`select m.grantor from pg_auth_members m where m.roleid='buyer_writer_admission'::regrole and m.member='${creator}'::regrole`));
+ const adminGrantorOid=Number(admin(`select m.grantor from pg_auth_members m where m.roleid='buyer_writer_admission'::regrole and m.member='${creator}'::regrole`));
+ const loginGrantorOid=Number(admin(`select m.grantor from pg_auth_members m where m.roleid='buyer_writer_admission'::regrole and m.member='${login}'::regrole`));
  check(Number.isInteger(creatorOid)&&creatorOid>10,'fixture creator must model a non-bootstrap database owner');
- check(Number.isInteger(grantorOid)&&grantorOid!==creatorOid,'fixture must separate trusted member from bootstrap grantor');
+ check(Number.isInteger(adminGrantorOid)&&adminGrantorOid!==creatorOid,'creator admin edge must originate at bootstrap');
+ check(loginGrantorOid===creatorOid,'login SET edge must originate at trusted creator');
  const executor=createAttestedAdmissionExecutor({expectedLogin:login,expectedCreatorOid:creatorOid,connect:async()=>({query,release:()=>{}})});
  const ids=['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002'];
  const args=['https://issuer.example',ids[0],ids[1],'a'.repeat(64),new Date(Date.now()+30_000).toISOString()];
@@ -81,6 +85,10 @@ try{
  check((await reserve()).rows[0].accepted===true,'valid admission identity rejected');
  const wrongCreator=createAttestedAdmissionExecutor({expectedLogin:login,expectedCreatorOid:10,connect:async()=>({query,release:()=>{}})});
  await assert.rejects(executeAdmission(wrongCreator,'reserve',args),/unavailable/);checks++;
+ admin(`revoke buyer_writer_admission from ${login}; grant buyer_writer_admission to ${login} with admin false, inherit false, set true`);
+ await assert.rejects(reserve(),/unavailable/);checks++;
+ admin(`revoke buyer_writer_admission from ${login}; set role ${creator}; grant buyer_writer_admission to ${login} with admin false, inherit false, set true; reset role`);
+ check((await reserve()).rows[0].accepted===true,'creator-granted login edge was not restored');
  admin('create table public.direct_leak(id integer); grant select on public.direct_leak to '+login,database);
  await assert.rejects(reserve(),/unavailable/);checks++;
  admin('revoke select on public.direct_leak from '+login+'; drop table public.direct_leak',database);
@@ -94,7 +102,7 @@ try{
  await assert.rejects(reserve(),/unavailable/);checks++;
  admin('revoke unexpected_parent from '+login);
  await assert.rejects(executeAdmission(executor,'arbitrary',[]),/unavailable/);checks++;
- process.stdout.write(JSON.stringify({ok:true,checks,postgres:'disposable',supabaseShaped:true,creatorOid,grantorOid,productionTouched:false})+'\n');
+ process.stdout.write(JSON.stringify({ok:true,checks,postgres:'disposable',supabaseShaped:true,creatorOid,adminGrantorOid,loginGrantorOid,productionTouched:false})+'\n');
 }finally{
  if(container)try{run(['rm','-f',name]);}catch{}
 }
