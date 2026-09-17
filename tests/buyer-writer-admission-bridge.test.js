@@ -95,6 +95,50 @@ test('valid signed raw request reserves before one admitted apply using fixed SQ
  assert.equal(calls[0].options.signal instanceof AbortSignal,true);
 });
 
+test('default reservation budget accommodates a slow cold admission checkout',async()=>{
+ const calls=[];
+ const output=await bridge(async sql=>{
+  calls.push(sql);
+  if(sql===ADMISSION_SQL.reserve){
+   await new Promise(resolve=>setTimeout(resolve,1100));
+   return reserveResult;
+  }
+  if(sql===ADMISSION_SQL.apply)return {rows:[{result:success}]};
+  assert.fail('unexpected query');
+ })(fixture());
+ assert.deepEqual(output,{status:200,body:{...success,automaticRetry:false}});
+ assert.deepEqual(calls,[ADMISSION_SQL.reserve,ADMISSION_SQL.apply]);
+});
+
+test('reservation deadline is availability and a late acceptance never executes',async()=>{
+ const calls=[];let lateAcceptance=false;
+ const handle=bridge(async(sql,_params,{signal}={})=>{
+  calls.push(sql);
+  if(sql!==ADMISSION_SQL.reserve)assert.fail('late reservation must not execute a wrapper');
+  return new Promise(resolve=>signal.addEventListener('abort',()=>setTimeout(()=>{
+   lateAcceptance=true;resolve(reserveResult);
+  },15),{once:true}));
+ },{bridgeOptions:{reserveTimeoutMs:10}});
+ const output=await handle(fixture());
+ assert.deepEqual(output,{status:503,body:{ok:false,code:'ADMISSION_UNAVAILABLE',automaticRetry:false}});
+ await new Promise(resolve=>setTimeout(resolve,30));
+ assert.equal(lateAcceptance,true);
+ assert.deepEqual(calls,[ADMISSION_SQL.reserve]);
+});
+
+test('late reserve completion is unavailable even before the abort timer runs',async()=>{
+ const calls=[];
+ const output=await bridge(async sql=>{
+  calls.push(sql);
+  if(sql!==ADMISSION_SQL.reserve)assert.fail('late acceptance must not execute a wrapper');
+  const deadline=Date.now()+15;
+  while(Date.now()<deadline){}
+  return reserveResult;
+ },{bridgeOptions:{reserveTimeoutMs:10}})(fixture());
+ assert.deepEqual(output,{status:503,body:{ok:false,code:'ADMISSION_UNAVAILABLE',automaticRetry:false}});
+ assert.deepEqual(calls,[ADMISSION_SQL.reserve]);
+});
+
 test('typed issue, cancel, reconcile and receipt use only their exact admitted wrappers',async()=>{
  const cases=[
   ['issue',{dispatchId:ids.operationId,generation:1},15],

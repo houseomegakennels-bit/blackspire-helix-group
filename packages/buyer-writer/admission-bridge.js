@@ -1,5 +1,6 @@
 import {timingSafeEqual} from 'node:crypto';
 import {AsyncLocalStorage} from 'node:async_hooks';
+import {performance} from 'node:perf_hooks';
 import {createOperationPermitVerifier} from './operation-permit.js';
 import {captureBuyerJobVersion,validateBuyerJobRevision} from './criteria.js';
 import {validateBuyerSourceContext} from './source-context.js';
@@ -153,7 +154,7 @@ async function boundedOperation(executor,operation,values,timeoutMs){
 // The closed executor selects one of seven fixed admission statements and attests
 // every session. Production wiring must separately pin its connector and TLS endpoint.
 export function createAdmissionBridge({mode,configuration,publicKeyPem,admissionExecutor,now,
- reserveTimeoutMs=1000,executeTimeoutMs=5000,correlateTimeoutMs=3000}={}){
+ reserveTimeoutMs=5000,executeTimeoutMs=5000,correlateTimeoutMs=3000}={}){
  if(mode!=='research-admission'||!admissionExecutor||typeof admissionExecutor!=='object'
   ||![executeTimeoutMs,correlateTimeoutMs].every(value=>
    Number.isInteger(value)&&value>=10&&value<=10000))throw new TypeError('Buyer admission configuration unavailable');
@@ -161,12 +162,18 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
  const reserve=async(record,signal)=>{
   const store=sessions.getStore();
   if(!store)throw new AdmissionUnavailableError();
+  const deadline=performance.now()+reserveTimeoutMs;
+  const unavailable=()=>{store.unavailable=true;};
+  signal.addEventListener('abort',unavailable,{once:true});
   try{
+   if(signal.aborted)throw new AdmissionUnavailableError();
    const result=await executeAdmission(admissionExecutor,'reserve',[
     record.issuer,record.jti,record.requestId,record.bodyDigest,new Date(record.expiresAt*1000).toISOString(),
    ],{signal});
+   if(signal.aborted||performance.now()>=deadline)throw new AdmissionUnavailableError();
    return one(result,'accepted')===true;
   }catch(error){store.unavailable=true;throw error;}
+  finally{signal.removeEventListener('abort',unavailable);}
  };
  const verifier=createOperationPermitVerifier({
   mode:'isolated-prototype',configuration,publicKeyPem,consume:reserve,now,reserveTimeoutMs,
