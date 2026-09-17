@@ -72,6 +72,40 @@ test('pins the admission login, TLS CA and fixed session limits',async()=>{
  assert.equal(instances[0].ended,true);
 });
 
+test('abort during identity prevents any late reserve statement',async()=>{
+ let operationCalls=0,client;
+ class Pool extends EventEmitter{
+  on(...args){return super.on(...args);}
+  async connect(){
+   client={
+    async query(config){
+     if(config.text===ADMISSION_IDENTITY_SQL){
+      await new Promise(resolve=>setTimeout(resolve,30));
+      return {rows:[{safe:true}]};
+     }
+     operationCalls++;
+     return {rows:[{accepted:true}]};
+    },
+    release(destroy){this.destroyed=Boolean(destroy);},
+   };
+   return client;
+  }
+  async end(){}
+ }
+ const database=await createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool});
+ try{
+  const controller=new AbortController();
+  setTimeout(()=>controller.abort(),5);
+  await assert.rejects(executeAdmission(database.executor,'reserve',[
+   'issuer','00000000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-000000000002','a'.repeat(64),
+   '2030-01-01T00:00:00Z',
+  ],{signal:controller.signal}),/unavailable/);
+  assert.equal(operationCalls,0);
+  assert.equal(client.destroyed,true);
+ }finally{await database.close();}
+});
+
 test('rejects missing, ambient, alternate-login and injectable connection configuration',async()=>{
  const original={DATABASE_URL:process.env.DATABASE_URL,PGHOST:process.env.PGHOST};
  process.env.DATABASE_URL='postgresql://postgres:secret@live.invalid/postgres';

@@ -122,7 +122,7 @@ export async function executeAdmission(executor,operation,values,{signal}={}){
   }catch{destroy=true;throw fail();}
   if(!identity||!Array.isArray(identity.rows)||identity.rows.length!==1
    ||!exact(identity.rows[0],['safe'])||identity.rows[0].safe!==true){destroy=true;throw fail();}
-  if(signal?.aborted)destroy=true;
+  if(signal?.aborted){destroy=true;throw fail();}
   signal?.addEventListener('abort',()=>{destroy=true;},{once:true});
   try{return await client.query({text:statement.text,values,...(signal===undefined?{}:{signal})});}
   catch(error){destroy=true;throw error;}
