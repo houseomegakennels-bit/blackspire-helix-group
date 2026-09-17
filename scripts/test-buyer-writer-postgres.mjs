@@ -883,8 +883,8 @@ try {
     const issuer='race-operator',jti=randomUUID(),requestId=randomUUID();
     const args=[issuer,jti,requestId,randomBytes(32).toString('hex'),owner,
       'b'.repeat(40),randomUUID(),randomUUID(),workspace];
-    const reserve=`select buyer_writer.reserve_operation(${args.map(literal).join(',')},
-      'apply',clock_timestamp()+interval '1 minute')`;
+    const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
+      clock_timestamp()+interval '1 minute')`;
     const calls=await Promise.all([
       asyncSql(`set session authorization buyer_writer_runtime;${reserve};`),
       asyncSql(`set session authorization buyer_writer_runtime;${reserve};`)
@@ -899,8 +899,8 @@ try {
     const label='admission_rollback_reservation',issuer='rollback-operator';
     const args=[issuer,randomUUID(),randomUUID(),randomBytes(32).toString('hex'),
       owner,'c'.repeat(40),randomUUID(),randomUUID(),workspace];
-    const reserve=`select buyer_writer.reserve_operation(${args.map(literal).join(',')},
-      'apply',clock_timestamp()+interval '1 minute')`;
+    const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
+      clock_timestamp()+interval '1 minute')`;
     const rolledBack=asyncSql(`set application_name=${literal(label)};
       set session authorization buyer_writer_runtime;begin;${reserve};
       select pg_sleep(2);rollback;`);
@@ -912,6 +912,54 @@ try {
       where issuer=${literal(issuer)} and jti=${literal(args[1])}`),'1');
     checks.push('rolled-back reservation leaves no uniqueness tombstone and successor reserves exactly once');
   }
+  {
+    const d=issue(),q=request(d,'start'),label='admission_crash_before_commit';
+    const args=['crash-operator',randomUUID(),randomUUID(),randomBytes(32).toString('hex'),
+      owner,'d'.repeat(40),randomUUID(),randomUUID(),workspace];
+    const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
+      clock_timestamp()+interval '1 minute')`;
+    assert.equal(role('buyer_writer_runtime',reserve),'t');
+    const execute=`select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},
+      ${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`;
+    const crashed=asyncSql(`set application_name=${literal(label)};
+      set session authorization buyer_writer_runtime;begin;${execute};
+      select pg_sleep(30);commit;`);
+    await waitForSleeper(label);
+    assert.equal(sql(`select pg_terminate_backend(pid) from pg_stat_activity
+      where application_name=${literal(label)} and pid<>pg_backend_pid()`),'t');
+    assert.notEqual((await crashed).status,0);
+    assert.equal(sql(`select state from buyer_writer.operation_admissions
+      where issuer=${literal(args[0])} and jti=${literal(args[1])}`),'reserved');
+    assert.equal(sql(`select count(*) from buyer_writer.receipts
+      where dispatch_id=${literal(d.dispatchId)}`),'0');
+    assert.equal(sql(`select state from buyer_writer.dispatches
+      where id=${literal(d.dispatchId)}`),'pending');
+    checks.push('backend crash before commit rolls back business effect and leaves admission reserved without retry authority');
+  }
+  {
+    const d=issue(),q=request(d,'start'),label='admission_lost_commit_ack';
+    const args=['ack-operator',randomUUID(),randomUUID(),randomBytes(32).toString('hex'),
+      owner,'e'.repeat(40),randomUUID(),randomUUID(),workspace];
+    const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
+      clock_timestamp()+interval '1 minute')`;
+    assert.equal(role('buyer_writer_runtime',reserve),'t');
+    const execute=`select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},
+      ${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`;
+    const disconnected=asyncSql(`set application_name=${literal(label)};
+      set session authorization buyer_writer_runtime;begin;${execute};commit;
+      select pg_sleep(30);`);
+    await waitForSleeper(label);
+    assert.equal(sql(`select pg_terminate_backend(pid) from pg_stat_activity
+      where application_name=${literal(label)} and pid<>pg_backend_pid()`),'t');
+    assert.notEqual((await disconnected).status,0);
+    const correlate=`select buyer_writer.correlate_admission(${args.map(literal).join(',')})`;
+    const recovered=JSON.parse(role('buyer_writer_runtime',correlate));
+    assert.equal(recovered.state,'succeeded');assert.equal(recovered.requestCorrelated,true);
+    assert.equal(recovered.automaticRetry,false);
+    assert.equal(sql(`select count(*) from buyer_writer.receipts
+      where dispatch_id=${literal(d.dispatchId)} and operation='start'`),'1');
+    checks.push('killed client after commit recovers correlated receipt without replaying mutation');
+  }
   check('same-database admission binds canonical apply and receipt atomically',()=>{
     const d=issue(),q=request(d,'start');
     const meta={issuer:'fixture-operator',jti:randomUUID(),requestId:randomUUID(),
@@ -919,9 +967,13 @@ try {
       operationId:randomUUID(),attemptId:randomUUID()};
     const args=[meta.issuer,meta.jti,meta.requestId,meta.rawDigest,owner,
       meta.release,meta.operationId,meta.attemptId,workspace];
-    const reserve=`select buyer_writer.reserve_operation(${args.map(literal).join(',')},'apply',clock_timestamp()+interval '1 minute')`;
+    const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},clock_timestamp()+interval '1 minute')`;
     assert.equal(role('buyer_writer_runtime',reserve),'t');
     assert.equal(role('buyer_writer_runtime',reserve),'f');
+    assert.equal(sql(`select (subject is null and release_sha is null
+      and operation_id is null and attempt_id is null and workspace is null
+      and route_operation is null)::text from buyer_writer.operation_admissions
+      where issuer=${literal(meta.issuer)} and jti=${literal(meta.jti)}`),'true');
     const correlate=`select buyer_writer.correlate_admission(${args.map(literal).join(',')})`;
     assert.deepEqual(JSON.parse(role('buyer_writer_runtime',correlate)),
       {state:'reserved',automaticRetry:false});
@@ -929,6 +981,11 @@ try {
       ${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`;
     assert.deepEqual(JSON.parse(role('buyer_writer_runtime',execute)),
       {ok:true,operation:'start',chunkIndex:0});
+    assert.equal(sql(`select (subject=${literal(owner)} and release_sha=${literal(meta.release)}
+      and operation_id=${literal(meta.operationId)} and attempt_id=${literal(meta.attemptId)}
+      and workspace=${literal(workspace)} and route_operation='apply')::text
+      from buyer_writer.operation_admissions where issuer=${literal(meta.issuer)}
+      and jti=${literal(meta.jti)}`),'true');
     assert.deepEqual(JSON.parse(role('buyer_writer_runtime',correlate)),
       {state:'succeeded',result:{ok:true,operation:'start',chunkIndex:0},
        automaticRetry:false,requestCorrelated:true});
