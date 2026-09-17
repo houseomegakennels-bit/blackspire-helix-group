@@ -3,6 +3,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {readRootOwnedJsonSnapshot} from './protected-json.js';
 import {validateBuyerWriterGatewayServiceConfiguration} from './gateway-entry.js';
+import {TEMPLATE1_IDENTITY_SQL} from './postgres.js';
 import {observeBuyerWriterProductionState} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
@@ -13,6 +14,7 @@ export const BUYER_WRITER_PROVISIONING_LOCK=Object.freeze([206994,127]);
 const INSTALLER=fileURLToPath(new URL('./sql/install.sql',import.meta.url));
 const HOST='db.kchtrvfcixnimvxxctkj.supabase.co';
 const fail=()=>{throw new Error('Buyer writer production provisioning failed');};
+const authenticationFail=()=>{throw new Error('Buyer writer production authentication failed');};
 const exact=(value,keys,optional=[])=>value&&typeof value==='object'&&!Array.isArray(value)
   &&keys.every(key=>Object.hasOwn(value,key))&&Object.keys(value).every(key=>[...keys,...optional].includes(key));
 const validPassword=value=>typeof value==='string'&&value.length>=1&&value.length<=1024&&!value.includes('\0');
@@ -68,6 +70,30 @@ const LOGGING_SAFETY_SQL=`select current_setting('log_statement')='none'
  and current_setting('log_parameter_max_length_on_error')='0'
  and coalesce(current_setting('pgaudit.log_parameter',true),'off')='off'
  and not (regexp_split_to_array(lower(coalesce(current_setting('pgaudit.log',true),'none')),'[ ,]+') && array['all','role']) as safe`;
+
+export async function authenticateBuyerWriterProductionIdentity({kind,credential,Client}={}){
+  if(!['runtime','issuer'].includes(kind)||typeof Client!=='function'||!credential||typeof credential!=='object')authenticationFail();
+  const expected=`buyer_writer_${kind}`;
+  const options={host:credential.host,port:5432,user:expected,password:credential.password,
+    ssl:{rejectUnauthorized:true,ca:credential.ca},application_name:`blackspire-buyer-writer-${kind}-provisioning-proof`,
+    connectionTimeoutMillis:5000,query_timeout:10000,
+    options:'-c statement_timeout=7000 -c lock_timeout=3000 -c search_path=pg_catalog'};
+  const prove=async(database,text)=>{
+    let client,failed=false;
+    try{
+      client=new Client({...options,database,application_name:`blackspire-buyer-writer-${kind}-${database==='template1'?'template-proof':'provisioning-proof'}`});
+      client.on('error',()=>{});await client.connect();
+      const result=await client.query(text,[expected]);
+      if(result?.rows?.length!==1||result.rows[0]?.safe!==true)failed=true;
+    }catch{failed=true;}
+    try{await client?.end();}catch{failed=true;}
+    if(failed)authenticationFail();
+  };
+  await prove('postgres',`select current_user=$1 and session_user=$1 and current_database()='postgres'
+   and r.rolcanlogin and not r.rolinherit and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls) as safe
+   from pg_roles r where r.rolname=$1`);
+  await prove('template1',TEMPLATE1_IDENTITY_SQL);
+}
 
 function gatewayGroupId(lookup){
  try{

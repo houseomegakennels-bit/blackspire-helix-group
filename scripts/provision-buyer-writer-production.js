@@ -2,8 +2,7 @@
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import pg from 'pg';
-import {provisionBuyerWriterProduction} from '../packages/buyer-writer/production-provisioner.js';
-import {TEMPLATE1_IDENTITY_SQL} from '../packages/buyer-writer/postgres.js';
+import {authenticateBuyerWriterProductionIdentity,provisionBuyerWriterProduction} from '../packages/buyer-writer/production-provisioner.js';
 
 const stopped=()=>{throw new Error('Buyer writer production provisioner stopped');};
 const args=process.argv.slice(2);
@@ -25,26 +24,7 @@ try{
     await client.connect();
     return client;
   };
-  const authenticate=async(kind,credential)=>{
-    const expected=`buyer_writer_${kind}`;
-    const options={host:credential.host,port:5432,user:expected,password:credential.password,
-      ssl:{rejectUnauthorized:true,ca:credential.ca},application_name:`blackspire-buyer-writer-${kind}-provisioning-proof`,
-      connectionTimeoutMillis:5000,query_timeout:10000,
-      options:'-c statement_timeout=7000 -c lock_timeout=3000 -c search_path=pg_catalog'};
-    const client=new pg.Client({...options,database:'postgres'});client.on('error',()=>{});
-    try{
-      await client.connect();
-      const result=await client.query(`select current_user=$1 and session_user=$1 and current_database()='postgres'
-       and r.rolcanlogin and not r.rolinherit and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls) as safe
-       from pg_roles r where r.rolname=$1`,[expected]);
-      if(result.rows?.length!==1||result.rows[0]?.safe!==true)stopped();
-    }finally{await client.end().catch(()=>{});}
-    const template=new pg.Client({...options,database:'template1',application_name:`blackspire-buyer-writer-${kind}-template-proof`});
-    template.on('error',()=>{});
-    try{await template.connect();const result=await template.query(TEMPLATE1_IDENTITY_SQL,[expected]);
-      if(result.rows?.length!==1||result.rows[0]?.safe!==true)stopped();
-    }finally{await template.end().catch(()=>{});}
-  };
+  const authenticate=(kind,credential)=>authenticateBuyerWriterProductionIdentity({kind,credential,Client:pg.Client});
   const result=await provisionBuyerWriterProduction({mode:args[0].slice(2),managementConfigPath:args[2],lookupWriterGroup,connect,authenticate});
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }catch{

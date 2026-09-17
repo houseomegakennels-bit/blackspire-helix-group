@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
 import {
  BUYER_WRITER_ISSUER_ROUTINES,BUYER_WRITER_PG_NET_FUNCTIONS,BUYER_WRITER_PRODUCTION_VERIFY_SQL,
  BUYER_WRITER_ROUTINES,BUYER_WRITER_RUNTIME_ROUTINES,
 } from '../packages/buyer-writer/production-verifier.js';
-import {BUYER_WRITER_INSTALLER_SHA256,provisionBuyerWriterProduction} from '../packages/buyer-writer/production-provisioner.js';
+import {authenticateBuyerWriterProductionIdentity,BUYER_WRITER_INSTALLER_SHA256,provisionBuyerWriterProduction} from '../packages/buyer-writer/production-provisioner.js';
+import {TEMPLATE1_IDENTITY_SQL} from '../packages/buyer-writer/postgres.js';
 import {BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '../packages/buyer-writer/routine-policy.js';
 
 const runtimeSecret='runtime-password-never-disclose';
@@ -100,10 +100,48 @@ test('inspect reports compliance only after separate runtime and issuer template
  assert.deepEqual(h.journals,[]);assert.equal(h.state.failClosed,0);
 });
 
-test('production authentication uses the shared template1 attestation for either writer identity',()=>{
- const source=readFileSync(new URL('../scripts/provision-buyer-writer-production.js',import.meta.url),'utf8');
- assert.match(source,/import \{TEMPLATE1_IDENTITY_SQL\} from '\.\.\/packages\/buyer-writer\/postgres\.js'/);
- assert.match(source,/const expected=`buyer_writer_\$\{kind\}`[\s\S]*database:'template1'[\s\S]*template\.query\(TEMPLATE1_IDENTITY_SQL,\[expected\]\)/);
+test('production authentication executes the shared attestation for both databases and identities',async()=>{
+ const clients=[];
+ class Client{
+  constructor(config){this.config=config;this.queries=[];clients.push(this);}
+  on(){}
+  async connect(){}
+  async query(text,values){this.queries.push({text,values});return {rows:[{safe:true}]};}
+  async end(){this.ended=true;}
+ }
+ for(const kind of ['runtime','issuer'])await authenticateBuyerWriterProductionIdentity({kind,credential:gateway[kind],Client});
+ assert.deepEqual(clients.map(client=>[client.config.user,client.config.database]),[
+  ['buyer_writer_runtime','postgres'],['buyer_writer_runtime','template1'],
+  ['buyer_writer_issuer','postgres'],['buyer_writer_issuer','template1'],
+ ]);
+ for(const client of clients){
+  assert.equal(client.ended,true);assert.equal(client.config.ssl.rejectUnauthorized,true);
+  assert.deepEqual(client.queries[0].values,[client.config.user]);
+  if(client.config.database==='template1')assert.equal(client.queries[0].text,TEMPLATE1_IDENTITY_SQL);
+ }
+});
+
+test('production authentication rejects every incomplete or failed template attestation generically',async()=>{
+ for(const failure of ['false','empty','malformed','connect','query','end']){
+  class Client{
+   constructor(config){this.config=config;}
+   on(){}
+   async connect(){if(this.config.database==='template1'&&failure==='connect')throw new Error(runtimeSecret);}
+   async query(){
+    if(this.config.database==='template1'&&failure==='query')throw new Error(runtimeSecret);
+    if(this.config.database!=='template1')return {rows:[{safe:true}]};
+    if(failure==='false')return {rows:[{safe:false}]};
+    if(failure==='empty')return {rows:[]};
+    if(failure==='malformed')return {rows:[{safe:'true'}]};
+    return {rows:[{safe:true}]};
+   }
+   async end(){if(this.config.database==='template1'&&failure==='end')throw new Error(runtimeSecret);}
+  }
+  await assert.rejects(
+   authenticateBuyerWriterProductionIdentity({kind:'runtime',credential:gateway.runtime,Client}),
+   error=>error.message==='Buyer writer production authentication failed'&&!error.message.includes(runtimeSecret),
+  );
+ }
 });
 
 test('inspect reports sanitized noncompliance without mutation when a template attestation fails',async()=>{
