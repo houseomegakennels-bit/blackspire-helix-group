@@ -4,7 +4,7 @@ import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '
 // pg_authid, password hashes, settings containing credentials, or application
 // rows. The provisioner runs it in the same transaction as role reconciliation.
 export const BUYER_WRITER_PRODUCTION_VERIFY_SQL=`with
-writer_roles(name) as (values ('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')),
+writer_roles(name) as (values ('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer'),('buyer_writer_admission')),
 expected_net(name) as (values
  ('_await_response'),('_encode_url_with_params_array'),('_http_collect_response'),('_urlencode_string'),
  ('check_worker_is_up'),('http_collect_response'),('http_delete'),('http_get'),('http_post'),
@@ -40,7 +40,9 @@ role_state as (
   has_function_privilege('buyer_writer_runtime',p.oid,'EXECUTE') as "runtimeExecute",
   has_function_privilege('buyer_writer_runtime',p.oid,'EXECUTE WITH GRANT OPTION') as "runtimeGrant",
   has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE') as "issuerExecute",
-  has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE WITH GRANT OPTION') as "issuerGrant"
+  has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE WITH GRANT OPTION') as "issuerGrant",
+  has_function_privilege('buyer_writer_admission',p.oid,'EXECUTE') as "admissionExecute",
+  has_function_privilege('buyer_writer_admission',p.oid,'EXECUTE WITH GRANT OPTION') as "admissionGrant"
  from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang where n.nspname='buyer_writer'
 ), target_public_relations as (
  select n.nspname as schema,c.relname as name,a.privilege_type as privilege
@@ -68,7 +70,7 @@ role_state as (
   has_table_privilege(w.name,c.oid,'TRIGGER') as "trigger",has_table_privilege(w.name,c.oid,'MAINTAIN') as maintain,
   has_any_column_privilege(w.name,c.oid,'SELECT,INSERT,UPDATE,REFERENCES') as "anyColumn"
  from writer_roles w cross join pg_class c join pg_namespace n on n.oid=c.relnamespace
- where w.name in('buyer_writer_runtime','buyer_writer_issuer') and c.relkind in('r','p','v','m','f')
+ where w.name in('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and c.relkind in('r','p','v','m','f')
   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
   and has_schema_privilege(w.name,n.oid,'USAGE')
 ), direct_sequences as (
@@ -77,7 +79,7 @@ role_state as (
   case when c.relkind='S' then has_sequence_privilege(w.name,c.oid,'UPDATE') else false end as "update",
   case when c.relkind='S' then has_sequence_privilege(w.name,c.oid,'USAGE') else false end as usage
  from writer_roles w cross join pg_class c join pg_namespace n on n.oid=c.relnamespace
- where w.name in('buyer_writer_runtime','buyer_writer_issuer') and c.relkind='S'
+ where w.name in('buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and c.relkind='S'
   and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
 ), schema_create as (
  select w.name as role,n.nspname as schema from writer_roles w cross join pg_namespace n
@@ -102,31 +104,31 @@ role_state as (
       'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
      ) order by expected.schema_name,expected.relation_name))
      from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-      ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) expected(schema_name,relation_name)
+      ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions')) expected(schema_name,relation_name)
      left join pg_namespace n on n.nspname=expected.schema_name
      left join pg_class c on c.relnamespace=n.oid and c.relname=expected.relation_name)
   else false end
   and not exists(select from pg_inherits i join pg_class c on c.oid in(i.inhparent,i.inhrelid)
    join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions')))
   and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
    select from protected p join pg_trigger t on t.tgrelid=p.oid where not t.tgisinternal)
   and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
    select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
    where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead))
   and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent),
   expression_objects(classid,objid) as (
    select 'pg_constraint'::regclass,co.oid from pg_constraint co join protected p on p.oid=co.conrelid where co.conbin is not null
@@ -145,7 +147,7 @@ role_state as (
   and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
    select from protected p join pg_attribute a on a.attrelid=p.oid join pg_type t on t.oid=a.atttypid join pg_namespace n on n.oid=t.typnamespace
    where a.attnum>0 and not a.attisdropped and n.nspname<>'pg_catalog') as safe
@@ -184,7 +186,8 @@ role_state as (
    where a.grantee=0 and a.privilege_type='EXECUTE') as "publicExecute",
   coalesce(has_function_privilege('buyer_writer_owner',p.oid,'EXECUTE'),false) as "ownerExecute",
   coalesce(has_function_privilege('buyer_writer_runtime',p.oid,'EXECUTE'),false) as "runtimeExecute",
-  coalesce(has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE'),false) as "issuerExecute"
+  coalesce(has_function_privilege('buyer_writer_issuer',p.oid,'EXECUTE'),false) as "issuerExecute",
+  coalesce(has_function_privilege('buyer_writer_admission',p.oid,'EXECUTE'),false) as "admissionExecute"
  from expected_net e left join pg_namespace n on n.nspname='net'
  left join pg_proc p on p.pronamespace=n.oid and p.proname=e.name
 )
@@ -216,13 +219,15 @@ select jsonb_build_object(
  'databaseCreate',jsonb_build_object(
    'buyer_writer_owner',coalesce(has_database_privilege('buyer_writer_owner',current_database(),'CREATE'),false),
    'buyer_writer_runtime',coalesce(has_database_privilege('buyer_writer_runtime',current_database(),'CREATE'),false),
-   'buyer_writer_issuer',coalesce(has_database_privilege('buyer_writer_issuer',current_database(),'CREATE'),false)),
+   'buyer_writer_issuer',coalesce(has_database_privilege('buyer_writer_issuer',current_database(),'CREATE'),false),
+   'buyer_writer_admission',coalesce(has_database_privilege('buyer_writer_admission',current_database(),'CREATE'),false)),
  'pgNet',(select coalesce(jsonb_agg(to_jsonb(n) order by name,signature),'[]'::jsonb) from net_state n)
 ) as evidence`;
 
 export const BUYER_WRITER_ROUTINES=Object.freeze(ROUTINE_POLICY.map(routine=>routine.signature));
 export const BUYER_WRITER_RUNTIME_ROUTINES=BUYER_WRITER_ENTRYPOINTS.runtime;
 export const BUYER_WRITER_ISSUER_ROUTINES=BUYER_WRITER_ENTRYPOINTS.issuer;
+export const BUYER_WRITER_ADMISSION_ROUTINES=BUYER_WRITER_ENTRYPOINTS.admission;
 export const BUYER_WRITER_PG_NET_FUNCTIONS=Object.freeze([
  '_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string',
  'check_worker_is_up','http_collect_response','http_delete','http_get','http_post',
@@ -245,7 +250,7 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
    ||!exact(raw,['roles','memberships','schema','routines','targetRelations','targetPublicRelations','targetPublicColumns','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','pgNet','bootstrapSuperuser','creatorOid','relationPolicySafe','routinePolicySafe','ownerPolicySafe','crossDatabaseConnect'])
    ||![raw.roles,raw.memberships,raw.routines,raw.targetRelations,raw.targetPublicRelations,raw.targetPublicColumns,raw.directRelations,raw.directSequences,raw.schemaCreate,raw.externalRoutines,raw.pgNet,raw.crossDatabaseConnect].every(Array.isArray)
    ||raw.bootstrapSuperuser!==true||raw.creatorOid!==String(creatorOid)||raw.relationPolicySafe!==true||raw.routinePolicySafe!==true||raw.ownerPolicySafe!==true)fail();
-  const roleNames=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'];
+  const roleNames=['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'];
   if(!sameSet(raw.targetRelations,['SearchJob','RawSale','CleanSale','BuyerProfile','BuyerReport']))fail();
   if(!sameSet(raw.roles.map(role=>role?.name),roleNames))fail();
   for(const role of raw.roles){
@@ -254,7 +259,7 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
    const login=role.name!=='buyer_writer_owner';
    if(role.login!==login||role.inherit||role.superuser||role.createDb||role.createRole||role.replication||role.bypassRls)fail();
   }
-  if(raw.memberships.length!==4)fail();
+  if(raw.memberships.length!==5)fail();
   const adminRoles=new Set();let ownerSetCount=0;
   for(const edge of raw.memberships){
    if(!exact(edge,['role','roleOid','member','memberOid','grantor','grantorOid','admin','inherit','set'])
@@ -270,43 +275,45 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
    if(!managerAdmin&&!ownerSet)fail();
    if(managerAdmin){if(adminRoles.has(edge.role))fail();adminRoles.add(edge.role);}else ownerSetCount++;
   }
-  if(adminRoles.size!==3||ownerSetCount!==1)fail();
+  if(adminRoles.size!==4||ownerSetCount!==1)fail();
   if(!exact(raw.schema,['name','owner','edges'])||raw.schema.name!=='buyer_writer'||raw.schema.owner!=='buyer_writer_owner'
    ||!Array.isArray(raw.schema.edges))fail();
   const schemaEdges=[
    ['buyer_writer_owner','buyer_writer_owner','CREATE',false],['buyer_writer_owner','buyer_writer_owner','USAGE',false],
    ['buyer_writer_owner','buyer_writer_runtime','USAGE',false],['buyer_writer_owner','buyer_writer_issuer','USAGE',false],
+   ['buyer_writer_owner','buyer_writer_admission','USAGE',false],
   ];
   validateAclEdges(raw.schema.edges,schemaEdges);
   if(!sameSet(raw.routines.map(routine=>routine?.signature),BUYER_WRITER_ROUTINES))fail();
   for(const routine of raw.routines){
    const policy=ROUTINE_POLICY.find(expected=>expected.signature===routine.signature);
-   if(!policy||!exact(routine,['signature','owner','ownerOid','securityDefiner','language','digest','config','argumentNames','result','argumentDefaults','returnsSet','variadic','hasAllArgumentTypes','hasArgumentModes','volatility','kind','strict','leakproof','parallel','edges','runtimeExecute','runtimeGrant','issuerExecute','issuerGrant'])
+   if(!policy||!exact(routine,['signature','owner','ownerOid','securityDefiner','language','digest','config','argumentNames','result','argumentDefaults','returnsSet','variadic','hasAllArgumentTypes','hasArgumentModes','volatility','kind','strict','leakproof','parallel','edges','runtimeExecute','runtimeGrant','issuerExecute','issuerGrant','admissionExecute','admissionGrant'])
     ||routine.ownerOid!==(policy.owner==='creator'?String(creatorOid):raw.routines.find(row=>row.signature==='buyer_writer.lock_scope()')?.ownerOid)
     ||routine.securityDefiner!==policy.securityDefiner||routine.language!==policy.language||routine.digest!==policy.digest
     ||JSON.stringify(routine.config)!==JSON.stringify(policy.config)||routine.volatility!==policy.volatility
     ||JSON.stringify(routine.argumentNames)!==JSON.stringify(policy.arguments)||routine.result!==policy.result
     ||routine.argumentDefaults!==0||routine.returnsSet||routine.variadic!=='0'||routine.hasAllArgumentTypes||routine.hasArgumentModes
     ||routine.kind!=='f'||routine.strict||routine.leakproof||routine.parallel!=='u'||!Array.isArray(routine.edges)
-    ||![routine.securityDefiner,routine.returnsSet,routine.hasAllArgumentTypes,routine.hasArgumentModes,routine.strict,routine.leakproof,routine.runtimeExecute,routine.runtimeGrant,routine.issuerExecute,routine.issuerGrant].every(bool))fail();
-   const runtime=BUYER_WRITER_RUNTIME_ROUTINES.includes(routine.signature),issuer=BUYER_WRITER_ISSUER_ROUTINES.includes(routine.signature);
-   if(routine.runtimeExecute!==runtime||routine.issuerExecute!==issuer||routine.runtimeGrant||routine.issuerGrant)fail();
+    ||![routine.securityDefiner,routine.returnsSet,routine.hasAllArgumentTypes,routine.hasArgumentModes,routine.strict,routine.leakproof,routine.runtimeExecute,routine.runtimeGrant,routine.issuerExecute,routine.issuerGrant,routine.admissionExecute,routine.admissionGrant].every(bool))fail();
+   const runtime=BUYER_WRITER_RUNTIME_ROUTINES.includes(routine.signature),issuer=BUYER_WRITER_ISSUER_ROUTINES.includes(routine.signature),admission=BUYER_WRITER_ADMISSION_ROUTINES.includes(routine.signature);
+   if(routine.runtimeExecute!==runtime||routine.issuerExecute!==issuer||routine.admissionExecute!==admission||routine.runtimeGrant||routine.issuerGrant||routine.admissionGrant)fail();
    const routineOwner=policy.owner==='creator'?routine.owner:'buyer_writer_owner';
    validateAclEdges(routine.edges,[[routineOwner,routineOwner,'EXECUTE',false],
     ...(routine.signature==='buyer_writer.lock_public_scope()'?[[routineOwner,'buyer_writer_owner','EXECUTE',false]]:[]),
     ...(runtime?[[routineOwner,'buyer_writer_runtime','EXECUTE',false]]:[]),
-    ...(issuer?[[routineOwner,'buyer_writer_issuer','EXECUTE',false]]:[])]);
+    ...(issuer?[[routineOwner,'buyer_writer_issuer','EXECUTE',false]]:[]),
+    ...(admission?[[routineOwner,'buyer_writer_admission','EXECUTE',false]]:[])]);
   }
   if(raw.targetPublicRelations.length||raw.targetPublicColumns.length||raw.directRelations.length||raw.directSequences.length||raw.schemaCreate.length||raw.externalRoutines.length
-   ||raw.crossDatabaseConnect.length||!exact(raw.databaseCreate,['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'])
-   ||raw.databaseCreate.buyer_writer_owner!==false||raw.databaseCreate.buyer_writer_runtime!==false||raw.databaseCreate.buyer_writer_issuer!==false)fail();
+   ||raw.crossDatabaseConnect.length||!exact(raw.databaseCreate,['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'])
+   ||raw.databaseCreate.buyer_writer_owner!==false||raw.databaseCreate.buyer_writer_runtime!==false||raw.databaseCreate.buyer_writer_issuer!==false||raw.databaseCreate.buyer_writer_admission!==false)fail();
   if(raw.pgNet.length!==12||!sameSet(raw.pgNet.map(row=>row?.name),BUYER_WRITER_PG_NET_FUNCTIONS))fail();
   for(const row of raw.pgNet){
    const absent=row.signature===null&&row.owner===null;
-   if(!exact(row,['name','signature','owner','publicExecute','ownerExecute','runtimeExecute','issuerExecute'])
+   if(!exact(row,['name','signature','owner','publicExecute','ownerExecute','runtimeExecute','issuerExecute','admissionExecute'])
     ||(!absent&&(!string(row.signature)||!string(row.owner,63)))
-    ||![row.publicExecute,row.ownerExecute,row.runtimeExecute,row.issuerExecute].every(bool)
-    ||(absent&&[row.publicExecute,row.ownerExecute,row.runtimeExecute,row.issuerExecute].some(Boolean)))fail();
+    ||![row.publicExecute,row.ownerExecute,row.runtimeExecute,row.issuerExecute,row.admissionExecute].every(bool)
+    ||(absent&&[row.publicExecute,row.ownerExecute,row.runtimeExecute,row.issuerExecute,row.admissionExecute].some(Boolean)))fail();
   }
   const publicExecuteCount=raw.pgNet.filter(row=>row.publicExecute).length;
   const evidence=structuredClone(raw);

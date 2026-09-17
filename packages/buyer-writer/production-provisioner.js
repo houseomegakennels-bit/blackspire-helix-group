@@ -8,7 +8,7 @@ import {observeBuyerWriterProductionState} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
 export const BUYER_WRITER_GATEWAY_CONFIGURATION='/etc/blackspire-buyer-writer-gateway/gateway.json';
-export const BUYER_WRITER_INSTALLER_SHA256='082260b9d8dd0e7cf5a1095ea5b4335c766b9a6ae5d305abaf6b76b3d3ad806c';
+export const BUYER_WRITER_INSTALLER_SHA256='9ef9d03428eefab52c5cbeb93988f07e948a765e8cd927d40d558b691a956fd0';
 export const BUYER_WRITER_PROVISIONING_LOCK=Object.freeze([206994,127]);
 
 const INSTALLER=fileURLToPath(new URL('./sql/install.sql',import.meta.url));

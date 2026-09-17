@@ -15,10 +15,13 @@ const ROUTINE_METADATA=Object.freeze({
   'buyer_writer.apply(text,text,jsonb)':[ ['p_digest','p_workspace','q'],'jsonb'],
   'buyer_writer.context(text,text,uuid,uuid,bigint)':[ ['p_digest','p_workspace','p_job','p_dispatch','p_generation'],'jsonb'],
   'buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)':[ ['p_digest','p_workspace','p_job','p_dispatch','p_generation','p_operation','p_index'],'jsonb'],
+  'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_expires_at'],'boolean'],
+  'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_permit_digest','q'],'jsonb'],
+  'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)':[ ['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace'],'jsonb'],
 });
 export const BUYER_WRITER_ROUTINES=Object.freeze([
   ['buyer_writer.lock_public_scope()','8653f179e4814e4c73f6c337017ec6d8faa237ec5fe149e5307aebbc31c6d911','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v','creator'],
-  ['buyer_writer.lock_scope()','d6b012ceae457702e804942d1bb04eeb9c922802de2751ebb56b065758627e39','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
+  ['buyer_writer.lock_scope()','8c3f7564d40b5746db81e0dac735cf845a0fbeaeebb288c03120da9e9b82fc4f','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
   ['buyer_writer.criteria(jsonb)','578a1b4f9820b4380f3b8f2e18a4a9b85d5ad60f0ced1284a9641d1c907e5919','sql',false,['search_path=pg_catalog'],'i'],
   ['buyer_writer.valid_context(jsonb)','a95cf4477dccce9adca8c52d057cfac50552a4c5be08be00e97f107858d4a7a3','plpgsql',false,['search_path=pg_catalog'],'i'],
   ['buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','929b93c1d6b48c1ba5078af0881a2aabe515ac633c4bc40f3bfb017c03e7d78e','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
@@ -30,6 +33,9 @@ export const BUYER_WRITER_ROUTINES=Object.freeze([
   ['buyer_writer.apply(text,text,jsonb)','784c971700b19f0e2262f67d1e6fc1991079237d2631466f5c823a0b2338fd3c','plpgsql',true,['search_path=pg_catalog','TimeZone=UTC','lock_timeout=5s'],'v'],
   ['buyer_writer.context(text,text,uuid,uuid,bigint)','44afc911defb0d273553fd78ab06960506257863b4ed392827b98cf689914ff2','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
   ['buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','3a5f587c8b6ff018ab6d5e91b339fc60b479d0250ea0a74c7d06935035e593de','plpgsql',true,['search_path=pg_catalog'],'v'],
+  ['buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','a705d6a8fb84fd22ae424aaa6c19b36cc71692be54d7abdfe655ad379a1064ca','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
+  ['buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','947472a925825b1628f38a0d3b232da6ac62414727c653fe047dffc3dafeb6cc','plpgsql',true,['search_path=pg_catalog','TimeZone=UTC','lock_timeout=5s'],'v'],
+  ['buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','733fc600c83c00cccdf26a241ef799ee6dcf5030aab3f4c059c6d1354ace88c7','plpgsql',true,['search_path=pg_catalog','lock_timeout=5s'],'v'],
 ].map(([signature,digest,language,securityDefiner,config,volatility,owner='writer'])=>{
   const [arguments_,result]=ROUTINE_METADATA[signature]??[];
   if(!arguments_||!result)throw new Error('Buyer Writer routine metadata missing');
@@ -38,6 +44,7 @@ export const BUYER_WRITER_ROUTINES=Object.freeze([
 }));
 
 export const BUYER_WRITER_ENTRYPOINTS=Object.freeze({
-  runtime:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)']),
+  runtime:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)']),
   issuer:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)']),
+  admission:Object.freeze(['buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)']),
 });

@@ -100,7 +100,10 @@ const request = (d, operation, payload = {}, overrides = {}) => {
 };
 const apply = (d, operation, payload = {}, overrides = {}, fail = false) => {
   const q = request(d,operation,payload,overrides);
-  const result = role('buyer_writer_runtime',`select buyer_writer.apply(${literal(d.permitDigest)},${literal(workspace)},${literal(JSON.stringify(q))}::jsonb)`,{fail});
+  const jti=randomUUID(),requestId=randomUUID(),operationId=randomUUID(),attemptId=randomUUID();
+  const rawDigest=createHash('sha256').update(JSON.stringify(q)).digest('hex');
+  role('buyer_writer_admission',`select buyer_writer.reserve_operation(${literal('https://issuer.invalid')},${literal(jti)},${literal(requestId)},${literal(rawDigest)},clock_timestamp()+interval '5 minutes')`);
+  const result = role('buyer_writer_admission',`select buyer_writer.execute_admitted_apply(${literal('https://issuer.invalid')},${literal(jti)},${literal(requestId)},${literal(rawDigest)},${literal(owner)},${literal('a'.repeat(40))},${literal(operationId)},${literal(attemptId)},${literal(workspace)},${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`,{fail});
   return fail ? null : JSON.parse(result);
 };
 try {
@@ -149,27 +152,26 @@ try {
   const trustedCreatorOid=adminSql("select oid from pg_roles where rolname='postgres'");
   assert.equal(trustedCreatorOid,'16388','fixture must represent the live managed postgres creator OID');
   const installSql=`set blackspire.buyer_writer_creator_oid=${literal(trustedCreatorOid)};`+readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
-  const admissionSql=readFileSync(new URL('../packages/buyer-writer/sql/admission.sql',import.meta.url),'utf8');
   adminSql('alter role postgres nosuperuser createrole;');
   adminSql('grant temporary on database template1 to public');sql(installSql,{fail:true});
-  assert.equal(adminSql("select count(*) from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')"),'0');
+  assert.equal(adminSql("select count(*) from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')"),'0');
   adminSql('revoke temporary on database template1 from public');
   sql(installSql);
   check('Supabase-shaped non-superuser database-owner creator accepts only pinned role grants and inert template1 CONNECT',()=>{
     assert.equal(sql("select rolsuper||','||rolcreatedb||','||rolcreaterole||','||rolreplication||','||rolbypassrls from pg_roles where oid=16388"),'false,true,true,true,true');
     assert.equal(sql("select datistemplate and datdba=10 and has_database_privilege('buyer_writer_runtime',oid,'CONNECT') and not has_database_privilege('buyer_writer_runtime',oid,'CREATE') and not has_database_privilege('buyer_writer_runtime',oid,'TEMP') from pg_database where datname='template1'"),'t');
     assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
-      where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')`),'4');
+      where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')`),'5');
     assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles u on u.oid=m.member
-      where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
+      where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and u.rolname='postgres'
        and u.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option
        and ((m.grantor=10 and m.admin_option and not m.set_option) or
-       (r.rolname='buyer_writer_owner' and pg_get_userbyid(m.grantor)='postgres' and not m.admin_option and m.set_option))`),'4');
+       (r.rolname='buyer_writer_owner' and pg_get_userbyid(m.grantor)='postgres' and not m.admin_option and m.set_option))`),'5');
   });
   sql(installSql);checks.push('non-superuser creator reapplies owner DDL through the pinned SET edge');
   adminSql('alter role postgres superuser;');
   check('dedicated roles cannot select tables, issue arbitrary permits or assume the owner role',()=>{
-    for(const r of ['anon','authenticated','buyer_writer_runtime','buyer_writer_issuer']) {
+    for(const r of ['anon','authenticated','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission']) {
       for(const t of ['RawSale','CleanSale','BuyerProfile','BuyerReport']) role(r,`select * from public."${t}"`,{fail:true});
     }
     role('buyer_writer_runtime','set role buyer_writer_owner',{fail:true});
@@ -349,7 +351,7 @@ try {
     assert.deepEqual(apply(d,'buyers.commit'),{ok:false,code:'WRITE_FAILED'});
     assert.equal(count('BuyerProfile'),profiles);assert.equal(count('BuyerReport'),reports);
     assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'failed');
-    const receipt=JSON.parse(role('buyer_writer_runtime',`select buyer_writer.receipt(${literal(d.permitDigest)},${literal(workspace)},${literal(d.jobId)},${literal(d.dispatchId)},${d.generation},'buyers.commit',0)`));
+    const receipt=JSON.parse(role('buyer_writer_owner',`select buyer_writer.receipt(${literal(d.permitDigest)},${literal(workspace)},${literal(d.jobId)},${literal(d.dispatchId)},${d.generation},'buyers.commit',0)`));
     assert.deepEqual(receipt,{found:true,receipt:{ok:false,code:'WRITE_FAILED'}});
     apply(d,'buyers.commit',{}, {},true);
     sql('alter table public."BuyerReport" drop constraint fixture_failure');
@@ -397,7 +399,7 @@ try {
       for(const statement of [`select * from public."${t}"`,`insert into public."${t}"(id) values(gen_random_uuid())`,
         `update public."${t}" set id=id where false`,`delete from public."${t}" where false`])role(r,statement,{fail:true,permissionDenied:true});
     }
-    for(const r of ['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'])role(r,'select * from public.nexus_contacts',{fail:true,permissionDenied:true});
+    for(const r of ['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'])role(r,'select * from public.nexus_contacts',{fail:true,permissionDenied:true});
     assert.equal(role('service_role','select count(*) from public.nexus_contacts'),'2');
     const d=issue();apply(d,'start');apply(d,'raw.append',{rows:[sale]});apply(d,'clean.append',{rows:[sale]});apply(d,'buyers.commit');apply(d,'complete');
     assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
@@ -433,7 +435,7 @@ try {
     sql('grant connect on database writer_other to public');sql(install,{fail:true});sql('revoke connect on database writer_other from public');
     sql(`create function public.fixture_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
       create trigger fixture_hidden_trigger before insert on public."RawSale" for each row execute function public.fixture_hidden_trigger();
-      revoke execute on function public.fixture_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+      revoke execute on function public.fixture_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
     sql(install,{fail:true});
     sql('drop trigger fixture_hidden_trigger on public."RawSale";drop function public.fixture_hidden_trigger()');
     sql('create sequence public.fixture_writer_sequence;grant usage on sequence public.fixture_writer_sequence to buyer_writer_owner');
@@ -444,7 +446,7 @@ try {
     sql(install,{fail:true});sql('drop function public.fixture_trigger()');
     sql("create function public.fixture_event() returns event_trigger language plpgsql security definer as 'begin return;end';");
     sql(install);role('buyer_writer_runtime','select public.fixture_event()',{fail:true});sql('drop function public.fixture_event()');
-    sql('alter role buyer_writer_runtime login;alter role buyer_writer_issuer login;');
+    sql('alter role buyer_writer_runtime login;alter role buyer_writer_issuer login;alter role buyer_writer_admission login;');
     sql(install);
     const login=run(['exec','-i',name,'psql','-X','-qAt','-U','buyer_writer_runtime','-d','writer_test','-v','ON_ERROR_STOP=1'], 'select session_user;');
     assert.equal(login.status,0);assert.equal(login.stdout.trim(),'buyer_writer_runtime');
@@ -479,12 +481,12 @@ try {
         'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
        ) order by reviewed.schema_name,reviewed.relation_name)) into metadata
        from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-        ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) reviewed(schema_name,relation_name)
+        ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions')) reviewed(schema_name,relation_name)
        join pg_namespace n on n.nspname=reviewed.schema_name join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name;
        execute format('comment on schema buyer_writer is %L','blackspire-buyer-writer:v2:'||metadata::text);
       end$$;reset role;`);
-    assert.equal(identity(),'t');assert.equal(identity('issuer'),'t');assert.equal(identity('runtime',true),'f');
-    assert.equal(templateIdentity(),'t');assert.equal(templateIdentity('issuer'),'t');
+    assert.equal(identity(),'t');assert.equal(identity('issuer'),'t');assert.equal(identity('admission'),'t');assert.equal(identity('runtime',true),'f');
+    assert.equal(templateIdentity(),'t');assert.equal(templateIdentity('issuer'),'t');assert.equal(templateIdentity('admission'),'t');
     adminTemplateSql('create table public.fixture_exposed(value integer);grant select on public.fixture_exposed to public');
     assert.equal(templateIdentity(),'f');adminTemplateSql('drop table public.fixture_exposed');
     adminTemplateSql('create table public.fixture_column_exposed(value integer);grant select(value) on public.fixture_column_exposed to public');
@@ -545,7 +547,7 @@ try {
     assert.equal(role('buyer_writer_runtime',`select nextval(${hiddenSequenceOid}::oid::regclass)`),'1');
     assert.equal(identity(),'f','OID-addressable sequence capability must fail without schema USAGE');
     assert.deepEqual(productionEvidence().directSequences.map(({role,usage})=>({role,usage})),[
-      {role:'buyer_writer_issuer',usage:true},{role:'buyer_writer_runtime',usage:true}
+      {role:'buyer_writer_admission',usage:true},{role:'buyer_writer_issuer',usage:true},{role:'buyer_writer_runtime',usage:true}
     ]);
     sql(installSql,{fail:true});sql('revoke usage on sequence hidden_sequence_fixture.ids from public;drop schema hidden_sequence_fixture cascade');assert.equal(identity(),'t');
     sql('revoke usage on schema public from public;grant select on public."SearchJob" to public');
@@ -584,7 +586,7 @@ try {
     sql('drop function public.owner_only_invoker()');assert.equal(identity(),'t');
     sql(`create function public.hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
       create trigger hidden_trigger before insert on public."RawSale" for each row execute function public.hidden_trigger();
-      revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+      revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
     assert.equal(identity(),'f','attached trigger remains executable without writer EXECUTE and must fail checkout closed');
     sql(installSql,{fail:true});sql('drop trigger hidden_trigger on public."RawSale";drop function public.hidden_trigger()');assert.equal(identity(),'t');
     sql('create role writer_entrypoint_outsider nologin');
@@ -611,7 +613,7 @@ try {
     sql(`create table public."RawSale_hook_child"() inherits (public."RawSale");
       create function public.child_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
       create trigger child_hidden_trigger before insert on public."RawSale_hook_child" for each row execute function public.child_hidden_trigger();
-      revoke execute on function public.child_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+      revoke execute on function public.child_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
     assert.equal(identity(),'f','a trigger on a pg_inherits descendant of a protected relation must fail checkout');
     sql(installSql,{fail:true});
     sql('drop table public."RawSale_hook_child";drop function public.child_hidden_trigger()');assert.equal(identity(),'t');
@@ -621,7 +623,7 @@ try {
       create table public."RawSale_partition" partition of public."RawSale" default;
       create function public.partition_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
       create trigger partition_hidden_trigger before insert on public."RawSale_partition" for each row execute function public.partition_hidden_trigger();
-      revoke execute on function public.partition_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+      revoke execute on function public.partition_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
     bindCurrentRelations();
     assert.equal(identity(),'f','a trigger on a declarative partition child must fail checkout even when installation metadata matches the partition graph');
     sql(installSql,{fail:true});
@@ -634,7 +636,7 @@ try {
     sql(`create schema hidden_bridge;create table hidden_bridge.witness(id integer);
       create function hidden_bridge.bridge() returns boolean language plpgsql security definer set search_path=pg_catalog as
        'begin insert into hidden_bridge.witness values (1);return true;end';
-      revoke usage on schema hidden_bridge from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;
+      revoke usage on schema hidden_bridge from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;
       alter table public."SearchJob" add constraint hidden_bridge_guard check(hidden_bridge.bridge()) not valid;`);
     assert.equal(identity(),'f','an OID-bound function in a protected relation expression must fail checkout without schema reachability');
     assert.equal(productionEvidence().relationPolicySafe,false);sql(installSql,{fail:true});
@@ -646,7 +648,7 @@ try {
       create domain hidden_domain.guarded as text check(hidden_domain.bridge());
       alter table public."RawSale" add column hidden_guard hidden_domain.guarded;
       truncate hidden_domain.witness;
-      revoke usage on schema hidden_domain from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+      revoke usage on schema hidden_domain from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
     assert.equal(identity(),'f','a custom column type on a protected relation must fail checkout without schema reachability');
     assert.equal(productionEvidence().relationPolicySafe,false);sql(installSql,{fail:true});
     assert.equal(sql('select count(*) from hidden_domain.witness'),'0','rejected identity inspection must not execute a hidden domain constraint');
@@ -672,24 +674,24 @@ try {
     const applyDefinition=sql("select pg_get_functiondef('buyer_writer.apply(text,text,jsonb)'::regprocedure)");
     const swappedApplyDefinition=applyDefinition.replace('p_digest text, p_workspace text','p_workspace text, p_digest text');
     assert.notEqual(swappedApplyDefinition,applyDefinition);
-    const installApply=definition=>sql(`set role buyer_writer_owner;${definition};revoke all on function buyer_writer.apply(text,text,jsonb) from public;
-      grant execute on function buyer_writer.apply(text,text,jsonb) to buyer_writer_runtime;reset role;`);
+    const installApply=definition=>sql(`set role buyer_writer_owner;${definition};
+      revoke all on function buyer_writer.apply(text,text,jsonb) from public,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;reset role;`);
     sql('drop function buyer_writer.apply(text,text,jsonb)');installApply(swappedApplyDefinition);
     assert.equal(identity(),'f','reviewed routine argument-name drift must fail checkout even when body and signature are unchanged');
     assert.equal(productionEvidence().routinePolicySafe,false);sql(installSql,{fail:true});
     sql('drop function buyer_writer.apply(text,text,jsonb)');installApply(applyDefinition);assert.equal(identity(),'t');
     sql('create role substituted_bootstrap nologin');
     sql('revoke buyer_writer_owner from postgres granted by postgres');
-    adminSql('revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by fixture_admin');
-    sql(`grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to substituted_bootstrap with admin true,set false,inherit false;
+    adminSql('revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission from postgres granted by fixture_admin');
+    sql(`grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission to substituted_bootstrap with admin true,set false,inherit false;
       set role substituted_bootstrap;
       grant buyer_writer_owner to substituted_bootstrap with admin false,set true,inherit true granted by substituted_bootstrap;
       reset role;`);
     assert.equal(identity(),'f','substituted creator and SET ROLE path must fail closed');
     sql(`revoke buyer_writer_owner from substituted_bootstrap granted by substituted_bootstrap;
-      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from substituted_bootstrap granted by postgres;
+      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission from substituted_bootstrap granted by postgres;
       reset role;`);
-    adminSql('grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin');
+    adminSql('grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission to postgres with admin true,set false,inherit false granted by fixture_admin');
     sql(`set role postgres;
       grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres;
       reset role;drop role substituted_bootstrap;`);
@@ -699,8 +701,8 @@ try {
       create role postgres superuser login;
       alter database writer_test owner to postgres;
       revoke buyer_writer_owner from original_creator granted by original_creator;
-      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from original_creator granted by fixture_admin;
-      grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin;`);
+      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission from original_creator granted by fixture_admin;
+      grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission to postgres with admin true,set false,inherit false granted by fixture_admin;`);
     sql('grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres');
     const replacementCreatorOid=sql("select oid from pg_roles where rolname='postgres'");
     assert.notEqual(replacementCreatorOid,creatorOid);
@@ -708,11 +710,11 @@ try {
     sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal('blackspire-buyer-writer:v2:{"creatorOid":"'+replacementCreatorOid+'","relations":[]}')};reset role;`);
     sql(installSql,{fail:true});
     adminSql(`revoke buyer_writer_owner from postgres granted by postgres;
-      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by fixture_admin;
+      revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission from postgres granted by fixture_admin;
       alter database writer_test owner to original_creator;
       drop role postgres;
       alter role original_creator rename to postgres;
-      grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin;`);
+      grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission to postgres with admin true,set false,inherit false granted by fixture_admin;`);
     sql('grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres');
     sql(`set role buyer_writer_owner;comment on schema buyer_writer is ${literal(relationBindingComment)};reset role;`);
     assert.equal(sql("select oid from pg_roles where rolname='postgres'"),creatorOid);assert.equal(identity(),'t');
@@ -768,7 +770,7 @@ try {
     const d=issue();sql(`update buyer_writer.dispatches set expires_at=clock_timestamp()+interval '1 second' where id=${literal(d.dispatchId)}`);
     const lock=asyncSql(`set application_name='writer_expiry_lock';begin;select id from public."SearchJob" where id=${literal(d.jobId)} for update;select pg_sleep(2);commit;`);
     await waitForSleeper('writer_expiry_lock');
-    const operation=await asyncSql(`set session authorization buyer_writer_runtime;select buyer_writer.apply(${literal(d.permitDigest)},${literal(workspace)},${literal(JSON.stringify(request(d,'start')))}::jsonb);`);
+    const operation=await asyncSql(`set session authorization buyer_writer_owner;select buyer_writer.apply(${literal(d.permitDigest)},${literal(workspace)},${literal(JSON.stringify(request(d,'start')))}::jsonb);`);
     assert.equal((await lock).status,0);assert.notEqual(operation.status,0);assert.match(operation.err,/42501/);
     assert.equal(sql(`select count(*) from buyer_writer.receipts where dispatch_id=${literal(d.dispatchId)}`),'0');
     checks.push('permit expiring while blocked on job lock is rejected after lock acquisition');
@@ -777,7 +779,7 @@ try {
     const d=issue();apply(d,'start');
     const cancel=asyncSql(`set application_name='writer_cancel_lock';set session authorization buyer_writer_issuer;begin;select buyer_writer.cancel(${literal(d.jobId)},${literal(owner)},${literal(workspace)});select pg_sleep(2);commit;`);
     await waitForSleeper('writer_cancel_lock');
-    const operation=await asyncSql(`set session authorization buyer_writer_runtime;select buyer_writer.apply(${literal(d.permitDigest)},${literal(workspace)},${literal(JSON.stringify(request(d,'raw.append',{rows:[sale]})))}::jsonb);`);
+    const operation=await asyncSql(`set session authorization buyer_writer_owner;select buyer_writer.apply(${literal(d.permitDigest)},${literal(workspace)},${literal(JSON.stringify(request(d,'raw.append',{rows:[sale]})))}::jsonb);`);
     assert.equal((await cancel).status,0);assert.notEqual(operation.status,0);assert.match(operation.err,/42501/);
     assert.equal(sql(`select count(*) from public."RawSale" where search_job_id=${literal(d.jobId)}`),'0');
     checks.push('cancellation acknowledgement fences a concurrent waiting write');
@@ -841,20 +843,13 @@ try {
         return{status:response.status,body:await response.json()};
       };
       assert.equal((await send('start',{}, {'x-buyer-writer-key':'invalid'})).status,401);
-      assert.equal((await send('start')).status,200);
-      assert.equal((await send('start')).status,409);
-      const contextResponse=await fetch(endpoint.replace(/operations$/,'context'),{method:'POST',redirect:'error',headers:{'content-type':'application/json','x-buyer-writer-key':workload,'x-buyer-job-permit':d.permit},body:JSON.stringify({version:1,dispatchId:d.dispatchId,generation:d.generation})});
-      assert.equal(contextResponse.status,200);assert.deepEqual((await contextResponse.json()).sourceContext,httpSourceContext);
-
-      const criteria={county:'Wake',state:'NC',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-12-31'};
-      const normalized=normalizeBuyerSales({...criteria,raw_sales:httpRawSales});
-      const plan=planBuyerWrites({...d,criteria,...normalized});
-      for(const item of plan)assert.equal((await send(item.operation,item.payload,{}, {chunkIndex:item.chunkIndex,chunkCount:item.chunkCount})).status,200);
-      for(const table of ['RawSale','CleanSale'])assert.equal(sql(`select count(*) from public."${table}" where search_job_id=${literal(d.jobId)}`),'201');
-      assert.equal(sql(`select count(*) from public."BuyerReport" where search_job_id=${literal(d.jobId)}`),'1');
-      assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'completed');
-      assert.equal(sql(`select count(*) from public."BuyerProfile" where buyer_name='HTTP ISOLATED LLC'`),'1');
-      checks.push('real loopback HTTP issues through separate issuer login then executes multi-chunk plan through dedicated runtime and all five tables');
+      // The legacy HTTP gateway still targets buyer_writer.apply directly. The
+      // canonical ACL must fail closed until production composes the separately
+      // reviewed signed-admission bridge with its dedicated admission connector.
+      assert.equal((await send('start')).status,403);
+      for(const table of ['RawSale','CleanSale','BuyerReport'])assert.equal(sql(`select count(*) from public."${table}" where search_job_id=${literal(d.jobId)}`),'0');
+      assert.equal(sql(`select status from public."SearchJob" where id=${literal(d.jobId)}`),'pending');
+      checks.push('legacy direct-runtime HTTP operation fails closed without mutating Buyer tables; admitted bridge integration remains mandatory');
     } finally {
       server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
     }
@@ -878,7 +873,7 @@ try {
     assert.equal(sql(`select status from public."SearchJob" where id=${literal(empty.jobId)}`),'completed');
     assert.equal(sql(`select count(*) from public."BuyerReport" where search_job_id=${literal(empty.jobId)}`),'0');
   });
-  sql('begin;'+admissionSql+'commit;');
+  sql(installSql);
   {
     const issuer='race-operator',jti=randomUUID(),requestId=randomUUID();
     const args=[issuer,jti,requestId,randomBytes(32).toString('hex'),owner,
@@ -886,8 +881,8 @@ try {
     const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
       clock_timestamp()+interval '1 minute')`;
     const calls=await Promise.all([
-      asyncSql(`set session authorization buyer_writer_runtime;${reserve};`),
-      asyncSql(`set session authorization buyer_writer_runtime;${reserve};`)
+      asyncSql(`set session authorization buyer_writer_admission;${reserve};`),
+      asyncSql(`set session authorization buyer_writer_admission;${reserve};`)
     ]);
     assert.deepEqual(calls.map(x=>x.status),[0,0]);
     assert.deepEqual(calls.map(x=>x.out.trim()).sort(),['f','t']);
@@ -902,10 +897,10 @@ try {
     const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
       clock_timestamp()+interval '1 minute')`;
     const rolledBack=asyncSql(`set application_name=${literal(label)};
-      set session authorization buyer_writer_runtime;begin;${reserve};
+      set session authorization buyer_writer_admission;begin;${reserve};
       select pg_sleep(2);rollback;`);
     await waitForSleeper(label);
-    const successor=await asyncSql(`set session authorization buyer_writer_runtime;${reserve};`);
+    const successor=await asyncSql(`set session authorization buyer_writer_admission;${reserve};`);
     assert.equal((await rolledBack).status,0);assert.equal(successor.status,0);
     assert.equal(successor.out.trim(),'t');
     assert.equal(sql(`select count(*) from buyer_writer.operation_admissions
@@ -918,11 +913,11 @@ try {
       owner,'d'.repeat(40),randomUUID(),randomUUID(),workspace];
     const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
       clock_timestamp()+interval '1 minute')`;
-    assert.equal(role('buyer_writer_runtime',reserve),'t');
+    assert.equal(role('buyer_writer_admission',reserve),'t');
     const execute=`select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},
       ${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`;
     const crashed=asyncSql(`set application_name=${literal(label)};
-      set session authorization buyer_writer_runtime;begin;${execute};
+      set session authorization buyer_writer_admission;begin;${execute};
       select pg_sleep(30);commit;`);
     await waitForSleeper(label);
     assert.equal(sql(`select pg_terminate_backend(pid) from pg_stat_activity
@@ -942,18 +937,18 @@ try {
       owner,'e'.repeat(40),randomUUID(),randomUUID(),workspace];
     const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},
       clock_timestamp()+interval '1 minute')`;
-    assert.equal(role('buyer_writer_runtime',reserve),'t');
+    assert.equal(role('buyer_writer_admission',reserve),'t');
     const execute=`select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},
       ${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`;
     const disconnected=asyncSql(`set application_name=${literal(label)};
-      set session authorization buyer_writer_runtime;begin;${execute};commit;
+      set session authorization buyer_writer_admission;begin;${execute};commit;
       select pg_sleep(30);`);
     await waitForSleeper(label);
     assert.equal(sql(`select pg_terminate_backend(pid) from pg_stat_activity
       where application_name=${literal(label)} and pid<>pg_backend_pid()`),'t');
     assert.notEqual((await disconnected).status,0);
     const correlate=`select buyer_writer.correlate_admission(${args.map(literal).join(',')})`;
-    const recovered=JSON.parse(role('buyer_writer_runtime',correlate));
+    const recovered=JSON.parse(role('buyer_writer_admission',correlate));
     assert.equal(recovered.state,'succeeded');assert.equal(recovered.requestCorrelated,true);
     assert.equal(recovered.automaticRetry,false);
     assert.equal(sql(`select count(*) from buyer_writer.receipts
@@ -968,31 +963,31 @@ try {
     const args=[meta.issuer,meta.jti,meta.requestId,meta.rawDigest,owner,
       meta.release,meta.operationId,meta.attemptId,workspace];
     const reserve=`select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},clock_timestamp()+interval '1 minute')`;
-    assert.equal(role('buyer_writer_runtime',reserve),'t');
-    assert.equal(role('buyer_writer_runtime',reserve),'f');
+    assert.equal(role('buyer_writer_admission',reserve),'t');
+    assert.equal(role('buyer_writer_admission',reserve),'f');
     assert.equal(sql(`select (subject is null and release_sha is null
       and operation_id is null and attempt_id is null and workspace is null
       and route_operation is null)::text from buyer_writer.operation_admissions
       where issuer=${literal(meta.issuer)} and jti=${literal(meta.jti)}`),'true');
     const correlate=`select buyer_writer.correlate_admission(${args.map(literal).join(',')})`;
-    assert.deepEqual(JSON.parse(role('buyer_writer_runtime',correlate)),
+    assert.deepEqual(JSON.parse(role('buyer_writer_admission',correlate)),
       {state:'reserved',automaticRetry:false});
     const execute=`select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},
       ${literal(d.permitDigest)},${literal(JSON.stringify(q))}::jsonb)`;
-    assert.deepEqual(JSON.parse(role('buyer_writer_runtime',execute)),
+    assert.deepEqual(JSON.parse(role('buyer_writer_admission',execute)),
       {ok:true,operation:'start',chunkIndex:0});
     assert.equal(sql(`select (subject=${literal(owner)} and release_sha=${literal(meta.release)}
       and operation_id=${literal(meta.operationId)} and attempt_id=${literal(meta.attemptId)}
       and workspace=${literal(workspace)} and route_operation='apply')::text
       from buyer_writer.operation_admissions where issuer=${literal(meta.issuer)}
       and jti=${literal(meta.jti)}`),'true');
-    assert.deepEqual(JSON.parse(role('buyer_writer_runtime',correlate)),
+    assert.deepEqual(JSON.parse(role('buyer_writer_admission',correlate)),
       {state:'succeeded',result:{ok:true,operation:'start',chunkIndex:0},
        automaticRetry:false,requestCorrelated:true});
     assert.equal(sql(`select count(*) from buyer_writer.receipts
       where dispatch_id=${literal(d.dispatchId)} and operation='start' and chunk_index=0`),'1');
     role('buyer_writer_runtime','select * from buyer_writer.operation_admissions',{fail:true});
-    role('buyer_writer_runtime',execute,{fail:true});
+    role('buyer_writer_admission',execute,{fail:true});
     assert.equal(sql(`select count(*) from buyer_writer.receipts
       where dispatch_id=${literal(d.dispatchId)} and operation='start' and chunk_index=0`),'1');
   });

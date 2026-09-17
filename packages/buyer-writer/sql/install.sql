@@ -10,7 +10,7 @@ do $$declare r text; bootstrap oid:=(select oid from pg_roles where rolname='pos
   or bootstrap<>(select datdba from pg_database where datname=current_database()) then
   raise exception 'Trusted writer bootstrap relationship required';
  end if;
- foreach r in array array['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'] loop
+ foreach r in array array['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'] loop
   created:=false;
   if not exists(select from pg_roles where rolname=r) then
    -- PostgreSQL17 managed CREATEROLE automatically grants ADMIN to its
@@ -29,17 +29,17 @@ do $$declare r text; bootstrap oid:=(select oid from pg_roles where rolname='pos
    raise exception 'Unsafe existing writer role';
   end if;
  end loop;
- if (select count(*) from pg_auth_members m join pg_roles p on p.oid=m.roleid where p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')) not between 3 and 4
+ if (select count(*) from pg_auth_members m join pg_roles p on p.oid=m.roleid where p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')) not between 4 and 5
   or (select count(distinct p.rolname) from pg_auth_members m join pg_roles p on p.oid=m.roleid
-   where p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and m.admin_option and not m.inherit_option
+   where p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and m.admin_option and not m.inherit_option
    and (p.rolname='buyer_writer_owner' or not m.set_option) and m.grantor=10
-   and coalesce((select rolsuper from pg_roles where oid=10),false))<>3
+   and coalesce((select rolsuper from pg_roles where oid=10),false))<>4
   or not exists(select from pg_auth_members m join pg_roles p on p.oid=m.roleid join pg_roles u on u.oid=m.member
    where p.rolname='buyer_writer_owner' and u.rolname='postgres'
    and u.oid=(select datdba from pg_database where datname=current_database()) and not m.admin_option and not m.inherit_option and m.set_option)
   or exists(select from pg_auth_members m join pg_roles p on p.oid=m.roleid join pg_roles u on u.oid=m.member
-   where (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') or u.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
-   and not (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
+   where (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') or u.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'))
+   and not (p.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and u.rolname='postgres'
     and u.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option
     and ((m.admin_option and not m.set_option and m.grantor=10 and coalesce((select rolsuper from pg_roles where oid=10),false))
      or (p.rolname='buyer_writer_owner' and not m.admin_option and m.set_option and pg_get_userbyid(m.grantor)='postgres')))) then
@@ -61,32 +61,36 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
          'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
         ) order by reviewed.schema_name,reviewed.relation_name))
         from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-         ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) reviewed(schema_name,relation_name)
+         ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions')) reviewed(schema_name,relation_name)
         left join pg_namespace n on n.nspname=reviewed.schema_name
         left join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name)
       else true end)
    or (select nspowner from pg_namespace where oid=ns)<>(select oid from pg_roles where rolname='buyer_writer_owner')
    or exists(select from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a
-      where n.oid=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')))
+      where n.oid=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')))
    or exists(select from pg_proc where pronamespace=ns and oid::regprocedure::text not in(
      'buyer_writer.lock_public_scope()',
      'buyer_writer.lock_scope()',
      'buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone)','buyer_writer.issue(uuid,uuid,text,text,boolean)','buyer_writer.issue(uuid,uuid,text,text,jsonb)','buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
      'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)',
      'buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.commit_buyers(buyer_writer.dispatches)',
-     'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'))
+     'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)',
+     'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)',
+     'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)',
+     'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'))
    or exists(select from pg_class where relnamespace=ns and relname not in(
      'dispatches','receipts','sales','sales_ordinal_seq','dispatches_pkey','dispatches_permit_digest_key',
-     'dispatches_job_id_generation_key','receipts_pkey','sales_pkey'))
+     'dispatches_job_id_generation_key','receipts_pkey','sales_pkey','operation_admissions',
+     'operation_admissions_pkey','operation_admissions_issuer_request_id_key'))
    or exists(select from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace=ns and not t.tgisinternal)
    or exists(select from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
-      where p.pronamespace=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
+      where p.pronamespace=ns and a.grantee not in(select oid from pg_roles where rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'))
        and not(p.oid::regprocedure::text='buyer_writer.lock_public_scope()' and a.grantee=expected)) then
    raise exception 'Unexpected existing writer namespace';
   end if;
   if exists(select from (values
     ('buyer_writer.lock_public_scope()','8653f179e4814e4c73f6c337017ec6d8faa237ec5fe149e5307aebbc31c6d911','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','creator'),
-    ('buyer_writer.lock_scope()','d6b012ceae457702e804942d1bb04eeb9c922802de2751ebb56b065758627e39','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.lock_scope()','8c3f7564d40b5746db81e0dac735cf845a0fbeaeebb288c03120da9e9b82fc4f','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.criteria(jsonb)','578a1b4f9820b4380f3b8f2e18a4a9b85d5ad60f0ced1284a9641d1c907e5919','sql',false,array['search_path=pg_catalog'],'i','writer'),
     ('buyer_writer.valid_context(jsonb)','a95cf4477dccce9adca8c52d057cfac50552a4c5be08be00e97f107858d4a7a3','plpgsql',false,array['search_path=pg_catalog'],'i','writer'),
     ('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','929b93c1d6b48c1ba5078af0881a2aabe515ac633c4bc40f3bfb017c03e7d78e','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
@@ -97,7 +101,10 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     ('buyer_writer.commit_buyers(buyer_writer.dispatches)','503f8027fdb2992a466e8271467165a94b3b2b2ed96ff8507c59663cda6ae496','plpgsql',false,array['search_path=pg_catalog'],'v','writer'),
     ('buyer_writer.apply(text,text,jsonb)','784c971700b19f0e2262f67d1e6fc1991079237d2631466f5c823a0b2338fd3c','plpgsql',true,array['search_path=pg_catalog','TimeZone=UTC','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.context(text,text,uuid,uuid,bigint)','44afc911defb0d273553fd78ab06960506257863b4ed392827b98cf689914ff2','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
-    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','3a5f587c8b6ff018ab6d5e91b339fc60b479d0250ea0a74c7d06935035e593de','plpgsql',true,array['search_path=pg_catalog'],'v','writer')
+    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','3a5f587c8b6ff018ab6d5e91b339fc60b479d0250ea0a74c7d06935035e593de','plpgsql',true,array['search_path=pg_catalog'],'v','writer'),
+    ('buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','a705d6a8fb84fd22ae424aaa6c19b36cc71692be54d7abdfe655ad379a1064ca','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','947472a925825b1628f38a0d3b232da6ac62414727c653fe047dffc3dafeb6cc','plpgsql',true,array['search_path=pg_catalog','TimeZone=UTC','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','733fc600c83c00cccdf26a241ef799ee6dcf5030aab3f4c059c6d1354ace88c7','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer')
    ) expected(signature,digest,language,security_definer,config,volatility,owner_kind)
    left join pg_namespace pn on pn.nspname='buyer_writer'
    left join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
@@ -115,9 +122,12 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
       when 'buyer_writer.valid_sale(jsonb)' then array['r'] when 'buyer_writer.eligible(jsonb,jsonb)' then array['r','c']
       when 'buyer_writer.commit_buyers(buyer_writer.dispatches)' then array['d'] when 'buyer_writer.apply(text,text,jsonb)' then array['p_digest','p_workspace','q']
       when 'buyer_writer.context(text,text,uuid,uuid,bigint)' then array['p_digest','p_workspace','p_job','p_dispatch','p_generation']
-      when 'buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)' then array['p_digest','p_workspace','p_job','p_dispatch','p_generation','p_operation','p_index'] end
+      when 'buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)' then array['p_digest','p_workspace','p_job','p_dispatch','p_generation','p_operation','p_index']
+      when 'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_expires_at']
+      when 'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_permit_digest','q']
+      when 'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace'] end
     or p.prorettype::regtype::text is distinct from case when expected.signature='buyer_writer.cancel(uuid,uuid,text)' then 'void'
-      when expected.signature in('buyer_writer.lock_public_scope()','buyer_writer.lock_scope()','buyer_writer.valid_context(jsonb)','buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)') then 'boolean'
+      when expected.signature in('buyer_writer.lock_public_scope()','buyer_writer.lock_scope()','buyer_writer.valid_context(jsonb)','buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)') then 'boolean'
       when expected.signature='buyer_writer.commit_buyers(buyer_writer.dispatches)' then 'integer' else 'jsonb' end
     or p.pronargdefaults<>0 or p.proretset or p.provariadic<>0 or p.proallargtypes is not null or p.proargmodes is not null
     or p.prokind<>'f' or p.proisstrict or p.proleakproof or p.proparallel<>'u') then
@@ -130,14 +140,18 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
        ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'CREATE',false),
        ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'USAGE',false),
        ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_runtime'),'USAGE',false),
-       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false)
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_admission'),'USAGE',false)
       ) edge(grantor,grantee,privilege,grantable))
    or exists(select from (values
     ('buyer_writer.lock_public_scope()'),('buyer_writer.lock_scope()'),('buyer_writer.criteria(jsonb)'),('buyer_writer.valid_context(jsonb)'),
     ('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)'),('buyer_writer.cancel(uuid,uuid,text)'),
     ('buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'),('buyer_writer.valid_sale(jsonb)'),('buyer_writer.eligible(jsonb,jsonb)'),
     ('buyer_writer.commit_buyers(buyer_writer.dispatches)'),('buyer_writer.apply(text,text,jsonb)'),('buyer_writer.context(text,text,uuid,uuid,bigint)'),
-    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)')) expected(signature)
+    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'),
+    ('buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)'),
+    ('buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)'),
+    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')) expected(signature)
     join pg_namespace pn on pn.nspname='buyer_writer'
     join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
     cross join lateral (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
@@ -145,8 +159,9 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     cross join lateral (select array_agg(array[p.proowner::text,g.oid::text,'EXECUTE','false'] order by g.oid,p.proowner)
       from pg_roles g where g.oid=p.proowner
        or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
-       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
-       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')) reviewed(edges)
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') and g.rolname='buyer_writer_admission')) reviewed(edges)
     where actual.edges is distinct from reviewed.edges) then
    raise exception 'Writer schema or routine ACL drift';
   end if;
@@ -166,7 +181,7 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
      and a.privilege_type in('SELECT','INSERT','UPDATE','REFERENCES')) then
   raise exception 'Unexpected target PUBLIC privileges';
  end if;
- foreach r in array array['buyer_writer_runtime','buyer_writer_issuer'] loop
+ foreach r in array array['buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'] loop
   if exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
      where c.relkind in('r','p','v','m','f') and n.nspname not in('pg_catalog','information_schema') and n.nspname !~ '^pg_(toast|temp)'
        and has_schema_privilege(r,n.oid,'USAGE')
@@ -181,13 +196,17 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
       and has_schema_privilege(r,n.oid,'USAGE') and has_function_privilege(r,p.oid,'EXECUTE')
       and not (n.nspname='buyer_writer' and
        ((r='buyer_writer_runtime' and p.oid::regprocedure::text in(
-        'buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)'))
+        'buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)'))
        or (r='buyer_writer_issuer' and p.oid::regprocedure::text in(
-        'buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)')))))
+        'buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'))
+       or (r='buyer_writer_admission' and p.oid::regprocedure::text in(
+        'buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)',
+        'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)',
+        'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')))))
      or exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(r,n.oid,'CREATE'))
      or has_database_privilege(r,current_database(),'CREATE') then raise exception 'Unexpected writer role privileges';end if;
  end loop;
- if exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer')) w(role_name)
+ if exists(select from pg_database d cross join (values('buyer_writer_owner'),('buyer_writer_runtime'),('buyer_writer_issuer'),('buyer_writer_admission')) w(role_name)
     where d.datname<>current_database() and d.datallowconn and has_database_privilege(w.role_name,d.oid,'CONNECT')
     and not(d.datname='template1' and d.datistemplate and d.datdba=10
      and coalesce((select rolsuper from pg_roles where oid=10),false)
@@ -198,7 +217,7 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
     select from protected p join pg_trigger t on t.tgrelid=p.oid where not t.tgisinternal) then
   raise exception 'Unexpected Buyer Writer relation trigger';
@@ -206,7 +225,7 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
     select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
     where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead)) then
@@ -215,7 +234,7 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent),
    expression_objects(classid,objid) as (
     select 'pg_constraint'::regclass,co.oid from pg_constraint co join protected p on p.oid=co.conrelid where co.conbin is not null
@@ -236,7 +255,7 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
     select from protected p join pg_attribute a on a.attrelid=p.oid join pg_type t on t.oid=a.atttypid join pg_namespace n on n.oid=t.typnamespace
     where a.attnum>0 and not a.attisdropped and n.nspname<>'pg_catalog') then
@@ -277,7 +296,7 @@ reset role;
 create schema if not exists buyer_writer authorization buyer_writer_owner;
 set local role buyer_writer_owner;
 revoke all on schema buyer_writer from public,anon,authenticated;
-grant usage on schema buyer_writer to buyer_writer_runtime,buyer_writer_issuer;
+grant usage on schema buyer_writer to buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;
 reset role;
 grant usage on schema public to buyer_writer_owner;
 
@@ -331,6 +350,37 @@ create table if not exists buyer_writer.sales (
  dispatch_id uuid not null references buyer_writer.dispatches(id),kind text not null check(kind in ('raw','clean')),
  row_digest text not null,data jsonb not null,ordinal bigint generated always as identity,
  primary key(dispatch_id,kind,row_digest)
+);
+create table if not exists buyer_writer.operation_admissions (
+ issuer text not null,
+ jti uuid not null,
+ request_id uuid not null,
+ raw_body_digest text not null check(raw_body_digest ~ '^[a-f0-9]{64}$'),
+ subject uuid,
+ release_sha text check(release_sha is null or release_sha ~ '^[a-f0-9]{40}$'),
+ operation_id uuid,
+ attempt_id uuid,
+ workspace text check(workspace is null or length(workspace) between 1 and 128),
+ route_operation text check(route_operation is null or route_operation in ('apply','receipt')),
+ expires_at timestamptz not null,
+ state text not null default 'reserved' check(state in ('reserved','succeeded','business_failed')),
+ job_id uuid,
+ dispatch_id uuid,
+ generation bigint,
+ business_operation text,
+ chunk_index integer,
+ request_digest text check(request_digest is null or request_digest ~ '^[a-f0-9]{64}$'),
+ result jsonb,
+ created_at timestamptz not null default clock_timestamp(),
+ completed_at timestamptz,
+ primary key(issuer,jti),
+ unique(issuer,request_id),
+ check((state='reserved' and subject is null and release_sha is null
+     and operation_id is null and attempt_id is null and workspace is null
+     and route_operation is null and result is null and completed_at is null)
+    or (state<>'reserved' and subject is not null and release_sha is not null
+     and operation_id is not null and attempt_id is not null and workspace is not null
+     and route_operation is not null and result is not null and completed_at is not null))
 );
 
 create or replace function buyer_writer.criteria(j jsonb) returns jsonb
@@ -675,6 +725,129 @@ begin
  return jsonb_build_object('found',result is not null,'receipt',result);
 end$$;
 
+create or replace function buyer_writer.reserve_operation(
+ p_issuer text,p_jti uuid,p_request uuid,p_raw_digest text,
+ p_expires_at timestamptz
+) returns boolean language plpgsql security definer
+set search_path=pg_catalog set lock_timeout='5s' as $$
+declare changed integer;
+begin
+ if p_issuer is null or length(p_issuer) not between 1 and 200
+  or p_jti is null or p_request is null
+  or p_raw_digest is null or p_raw_digest !~ '^[a-f0-9]{64}$'
+  or p_expires_at<=clock_timestamp() or not isfinite(p_expires_at) then
+  raise exception using errcode='22023',message='Buyer writer admission rejected';
+ end if;
+ insert into buyer_writer.operation_admissions(
+  issuer,jti,request_id,raw_body_digest,expires_at)
+ values(p_issuer,p_jti,p_request,p_raw_digest,p_expires_at)
+ on conflict do nothing;
+ get diagnostics changed=row_count;
+ return changed=1;
+end$$;
+
+create or replace function buyer_writer.execute_admitted_apply(
+ p_issuer text,p_jti uuid,p_request uuid,p_raw_digest text,p_subject uuid,
+ p_release text,p_operation_id uuid,p_attempt_id uuid,p_workspace text,
+ p_permit_digest text,q jsonb
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog set timezone='UTC' set lock_timeout='5s' as $$
+declare a buyer_writer.operation_admissions; d buyer_writer.dispatches;
+ j record; v_result jsonb; db_digest text; op text; idx integer;
+begin
+ if jsonb_typeof(q) is distinct from 'object'
+  or not q ?& array['jobId','dispatchId','generation','operation','chunkIndex']
+  or p_issuer is null or length(p_issuer) not between 1 and 200
+  or p_jti is null or p_request is null or p_subject is null
+  or p_raw_digest is null or p_raw_digest !~ '^[a-f0-9]{64}$'
+  or p_release is null or p_release !~ '^[a-f0-9]{40}$'
+  or p_operation_id is null or p_attempt_id is null
+  or p_workspace is null or length(p_workspace) not between 1 and 128
+  or p_permit_digest is null or p_permit_digest !~ '^[a-f0-9]{64}$' then
+  raise exception using errcode='22023',message='Buyer writer admission rejected';
+ end if;
+ -- Preserve the canonical lock order: SearchJob, dispatch, admission.
+ select id,user_id into j from public."SearchJob"
+  where id=(q->>'jobId')::uuid for update;
+ if not found then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ select * into d from buyer_writer.dispatches
+  where id=(q->>'dispatchId')::uuid and job_id=j.id for update;
+ if not found then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ select * into a from buyer_writer.operation_admissions
+  where issuer=p_issuer and jti=p_jti for update;
+ if not found or a.state<>'reserved'
+  or a.request_id is distinct from p_request
+  or a.raw_body_digest is distinct from p_raw_digest
+  or a.subject is not null or a.release_sha is not null
+  or a.operation_id is not null or a.attempt_id is not null
+  or a.workspace is not null or a.route_operation is not null
+  or a.expires_at<=clock_timestamp()
+  or j.user_id is distinct from p_subject
+  or d.workspace is distinct from p_workspace then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ op:=q->>'operation';idx:=(q->>'chunkIndex')::integer;
+ db_digest:=encode(sha256(convert_to(q::text,'UTF8')),'hex');
+ v_result:=buyer_writer.apply(p_permit_digest,p_workspace,q);
+ update buyer_writer.operation_admissions set
+  state=case when v_result->'ok'='true'::jsonb then 'succeeded' else 'business_failed' end,
+  subject=p_subject,release_sha=p_release,operation_id=p_operation_id,
+  attempt_id=p_attempt_id,workspace=p_workspace,route_operation='apply',
+  job_id=j.id,dispatch_id=d.id,generation=d.generation,
+  business_operation=op,chunk_index=idx,request_digest=db_digest,
+  result=v_result,completed_at=clock_timestamp()
+ where issuer=p_issuer and jti=p_jti;
+ return v_result;
+end$$;
+
+create or replace function buyer_writer.correlate_admission(
+ p_issuer text,p_jti uuid,p_request uuid,p_raw_digest text,p_subject uuid,
+ p_release text,p_operation_id uuid,p_attempt_id uuid,p_workspace text
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog set lock_timeout='5s' as $$
+declare a buyer_writer.operation_admissions; j record; d buyer_writer.dispatches;
+ r record;
+begin
+ select * into a from buyer_writer.operation_admissions
+  where issuer=p_issuer and jti=p_jti;
+ if not found or a.request_id is distinct from p_request
+  or a.raw_body_digest is distinct from p_raw_digest then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ if a.state='reserved' then
+  return jsonb_build_object('state','reserved','automaticRetry',false);
+ end if;
+ if a.subject is distinct from p_subject or a.release_sha is distinct from p_release
+  or a.operation_id is distinct from p_operation_id
+  or a.attempt_id is distinct from p_attempt_id
+  or a.workspace is distinct from p_workspace then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ -- Reacquire in canonical order before trusting persisted correlation.
+ select id,user_id into j from public."SearchJob" where id=a.job_id for update;
+ select * into d from buyer_writer.dispatches
+  where id=a.dispatch_id and job_id=a.job_id for update;
+ select * into a from buyer_writer.operation_admissions
+  where issuer=p_issuer and jti=p_jti for update;
+ if j.user_id is distinct from p_subject or d.id is null
+  or d.workspace<>p_workspace then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ select request_digest,result into r from buyer_writer.receipts
+  where dispatch_id=a.dispatch_id and operation=a.business_operation
+   and chunk_index=a.chunk_index;
+ if not found or r.request_digest is distinct from a.request_digest
+  or r.result is distinct from a.result then
+  return jsonb_build_object('state','inconsistent','automaticRetry',false);
+ end if;
+ return jsonb_build_object('state',a.state,'result',a.result,
+  'automaticRetry',false,'requestCorrelated',true);
+end$$;
+
 -- Runtime obtains an atomic DDL fence without receiving table privileges. The
 -- pinned creator and NOLOGIN owner each own one digest-bound SECURITY DEFINER
 -- routine; their bodies can only lock their exact reviewed relation subsets.
@@ -687,7 +860,7 @@ begin
  return true;
 end
 $$;
-revoke all on function buyer_writer.lock_public_scope() from public,anon,authenticated,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;
+revoke all on function buyer_writer.lock_public_scope() from public,anon,authenticated,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;
 grant execute on function buyer_writer.lock_public_scope() to buyer_writer_owner;
 set local role buyer_writer_owner;
 revoke all on schema buyer_writer from postgres;
@@ -695,33 +868,39 @@ create or replace function buyer_writer.lock_scope() returns boolean
 language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
 begin
  perform buyer_writer.lock_public_scope();
- lock table buyer_writer.dispatches,buyer_writer.receipts,buyer_writer.sales in row exclusive mode;
+ lock table buyer_writer.dispatches,buyer_writer.receipts,buyer_writer.sales,buyer_writer.operation_admissions in row exclusive mode;
  return true;
 end
 $$;
-revoke all on function buyer_writer.lock_scope() from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer;
-grant execute on function buyer_writer.lock_scope() to buyer_writer_runtime,buyer_writer_issuer;
+revoke all on function buyer_writer.lock_scope() from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;
+grant execute on function buyer_writer.lock_scope() to buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;
 
 do $$declare t text; signature text; begin
- foreach t in array array['dispatches','receipts','sales'] loop
+ foreach t in array array['dispatches','receipts','sales','operation_admissions'] loop
   execute format('alter table buyer_writer.%I owner to buyer_writer_owner',t);
   execute format('alter table buyer_writer.%I enable row level security',t);
   execute format('alter table buyer_writer.%I force row level security',t);
   execute format('drop policy if exists internal_owner on buyer_writer.%I',t);
   execute format('create policy internal_owner on buyer_writer.%I to buyer_writer_owner using(true) with check(true)',t);
-  execute format('revoke all on buyer_writer.%I from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer',t);
+  execute format('revoke all on buyer_writer.%I from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission',t);
  end loop;
  foreach signature in array array[
   'buyer_writer.valid_context(jsonb)','buyer_writer.context(text,text,uuid,uuid,bigint)',
   'buyer_writer.criteria(jsonb)','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)',
   'buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.commit_buyers(buyer_writer.dispatches)',
-  'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'] loop
+  'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)',
+  'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)',
+  'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)',
+  'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'] loop
   execute format('alter function %s owner to buyer_writer_owner',signature);
-  execute format('revoke all on function %s from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer',signature);
+  execute format('revoke all on function %s from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission',signature);
  end loop;
 end$$;
 grant execute on function buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid),buyer_writer.cancel(uuid,uuid,text),buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone) to buyer_writer_issuer;
-grant execute on function buyer_writer.context(text,text,uuid,uuid,bigint),buyer_writer.apply(text,text,jsonb),buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer) to buyer_writer_runtime;
+grant execute on function buyer_writer.context(text,text,uuid,uuid,bigint) to buyer_writer_runtime;
+grant execute on function buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone),
+ buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb),
+ buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) to buyer_writer_admission;
 reset role;
 revoke references(id) on public."SearchJob" from buyer_writer_owner;
 set local role buyer_writer_owner;
@@ -730,7 +909,8 @@ do $$declare expected oid:=current_setting('blackspire.buyer_writer_creator_oid'
     ('public','SearchJob',expected),('public','RawSale',expected),('public','CleanSale',expected),('public','BuyerProfile',expected),('public','BuyerReport',expected),
     ('buyer_writer','dispatches',(select oid from pg_roles where rolname='buyer_writer_owner')),
     ('buyer_writer','receipts',(select oid from pg_roles where rolname='buyer_writer_owner')),
-    ('buyer_writer','sales',(select oid from pg_roles where rolname='buyer_writer_owner'))
+    ('buyer_writer','sales',(select oid from pg_roles where rolname='buyer_writer_owner')),
+    ('buyer_writer','operation_admissions',(select oid from pg_roles where rolname='buyer_writer_owner'))
    ) reviewed(schema_name,relation_name,owner_oid)
    left join pg_namespace n on n.nspname=reviewed.schema_name
    left join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name
@@ -745,7 +925,7 @@ do $$declare expected oid:=current_setting('blackspire.buyer_writer_creator_oid'
    'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
   ) order by reviewed.schema_name,reviewed.relation_name)) into metadata
   from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-   ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) reviewed(schema_name,relation_name)
+   ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions')) reviewed(schema_name,relation_name)
   join pg_namespace n on n.nspname=reviewed.schema_name join pg_class c on c.relnamespace=n.oid and c.relname=reviewed.relation_name;
  execute format('comment on schema buyer_writer is %L','blackspire-buyer-writer:v2:'||metadata::text);
 end$$;
@@ -755,7 +935,7 @@ do $$begin
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
     select from protected p join pg_trigger t on t.tgrelid=p.oid where not t.tgisinternal) then
   raise exception 'Unexpected Buyer Writer relation trigger';
@@ -763,7 +943,7 @@ do $$begin
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
     select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
     where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead)) then
@@ -772,7 +952,7 @@ do $$begin
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent),
    expression_objects(classid,objid) as (
     select 'pg_constraint'::regclass,co.oid from pg_constraint co join protected p on p.oid=co.conrelid where co.conbin is not null
@@ -793,7 +973,7 @@ do $$begin
  if exists(with recursive protected(oid) as (
     select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
      ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+     ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
     union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
     select from protected p join pg_attribute a on a.attrelid=p.oid join pg_type t on t.oid=a.atttypid join pg_namespace n on n.oid=t.typnamespace
     where a.attnum>0 and not a.attisdropped and n.nspname<>'pg_catalog') then
@@ -806,14 +986,18 @@ do $$begin
       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'CREATE',false),
       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'USAGE',false),
       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_runtime'),'USAGE',false),
-      ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false)
+      ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false),
+      ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_admission'),'USAGE',false)
      ) edge(grantor,grantee,privilege,grantable))
   or exists(select from (values
     ('buyer_writer.lock_public_scope()'),('buyer_writer.lock_scope()'),('buyer_writer.criteria(jsonb)'),('buyer_writer.valid_context(jsonb)'),
     ('buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)'),('buyer_writer.cancel(uuid,uuid,text)'),
     ('buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)'),('buyer_writer.valid_sale(jsonb)'),('buyer_writer.eligible(jsonb,jsonb)'),
     ('buyer_writer.commit_buyers(buyer_writer.dispatches)'),('buyer_writer.apply(text,text,jsonb)'),('buyer_writer.context(text,text,uuid,uuid,bigint)'),
-    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)')) expected(signature)
+    ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)'),
+    ('buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)'),
+    ('buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)'),
+    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')) expected(signature)
     join pg_namespace pn on pn.nspname='buyer_writer'
     join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
     cross join lateral (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
@@ -821,8 +1005,9 @@ do $$begin
     cross join lateral (select array_agg(array[p.proowner::text,g.oid::text,'EXECUTE','false'] order by g.oid,p.proowner)
       from pg_roles g where g.oid=p.proowner
        or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
-       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
-       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')) reviewed(edges)
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') and g.rolname='buyer_writer_admission')) reviewed(edges)
     where actual.edges is distinct from reviewed.edges) then
   raise exception 'Writer schema or routine ACL drift';
  end if;

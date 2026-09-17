@@ -4,9 +4,12 @@ import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES} from './routine-policy.j
 // listener is loaded here. Deployment must supply the locked PostgreSQL driver.
 const statements = {
   runtime: new Set([
-    'select buyer_writer.apply($1,$2,$3::jsonb) as result',
-    'select buyer_writer.receipt($1,$2,$3,$4,$5,$6,$7) as result',
     'select buyer_writer.context($1,$2,$3,$4,$5) as result',
+  ]),
+  admission: new Set([
+    'select buyer_writer.reserve_operation($1,$2,$3,$4,$5::timestamptz) as result',
+    'select buyer_writer.execute_admitted_apply($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) as result',
+    'select buyer_writer.correlate_admission($1,$2,$3,$4,$5,$6,$7,$8,$9) as result',
   ]),
   issuer: new Set([
     'select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result',
@@ -54,11 +57,11 @@ export const WRITER_IDENTITY_SQL = `select (
  session_user=$1 and current_user=$1
  and r.rolcanlogin and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls or r.rolinherit)
  and (select count(*) from pg_auth_members m join pg_roles role on role.oid=m.roleid
-   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')) between 3 and 4
+   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')) between 4 and 5
  and (select count(distinct role.rolname) from pg_auth_members m join pg_roles role on role.oid=m.roleid
-   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and m.admin_option and not m.inherit_option
+   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and m.admin_option and not m.inherit_option
    and (role.rolname='buyer_writer_owner' or not m.set_option) and m.grantor=10
-   and coalesce((select rolsuper from pg_roles where oid=10),false))=3
+   and coalesce((select rolsuper from pg_roles where oid=10),false))=4
  and exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
    where role.rolname='buyer_writer_owner' and member.rolname='postgres'
    and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database())
@@ -71,18 +74,18 @@ export const WRITER_IDENTITY_SQL = `select (
        'parentOids',coalesce((select jsonb_agg(i.inhparent::text order by i.inhparent) from pg_inherits i where i.inhrelid=c.oid),'[]'::jsonb)
       ) order by expected.schema_name,expected.relation_name))
       from (values('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-       ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')) expected(schema_name,relation_name)
+       ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions')) expected(schema_name,relation_name)
       left join pg_namespace n on n.nspname=expected.schema_name
       left join pg_class c on c.relnamespace=n.oid and c.relname=expected.relation_name)
     else false end
    and not m.admin_option and not m.inherit_option and m.set_option)
  and not exists(select from pg_auth_members m join pg_roles role on role.oid=m.roleid join pg_roles member on member.oid=m.member
-   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer')
+   where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission')
    and not(member.rolname='postgres' and member.oid=$4::oid and member.oid=(select datdba from pg_database where datname=current_database()) and not m.inherit_option and (
     (m.admin_option and not m.set_option and m.grantor=10 and coalesce((select rolsuper from pg_roles where oid=10),false))
     or (role.rolname='buyer_writer_owner' and not m.admin_option and m.set_option and pg_get_userbyid(m.grantor)='postgres'))))
  and not exists(select from pg_auth_members m join pg_roles member on member.oid=m.member
-   where member.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer'))
+   where member.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'))
  and exists(select from pg_roles where rolname='buyer_writer_owner' and not(rolcanlogin or rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls or rolinherit))
  and has_schema_privilege(current_user,'buyer_writer','USAGE')
  and not exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(current_user,n.oid,'CREATE'))
@@ -99,20 +102,20 @@ export const WRITER_IDENTITY_SQL = `select (
  and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
    select from protected p join pg_trigger t on t.tgrelid=p.oid where not t.tgisinternal)
  and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
    select from protected p join pg_class c on c.oid=p.oid join pg_rewrite r on r.ev_class=p.oid
    where not(r.rulename='_RETURN' and c.relkind in('v','m') and r.ev_type='1' and r.is_instead))
  and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent),
  expression_objects(classid,objid) as (
    select 'pg_constraint'::regclass,co.oid from pg_constraint co join protected p on p.oid=co.conrelid where co.conbin is not null
@@ -131,14 +134,14 @@ export const WRITER_IDENTITY_SQL = `select (
  and not exists(with recursive protected(oid) as (
    select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions'))
    union select i.inhrelid from pg_inherits i join protected p on p.oid=i.inhparent)
    select from protected p join pg_attribute a on a.attrelid=p.oid join pg_type t on t.oid=a.atttypid join pg_namespace n on n.oid=t.typnamespace
    where a.attnum>0 and not a.attisdropped and n.nspname<>'pg_catalog')
  and not exists(select from pg_inherits i join pg_class c on c.oid in(i.inhparent,i.inhrelid)
    join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname) in(
     ('public','SearchJob'),('public','RawSale'),('public','CleanSale'),('public','BuyerProfile'),('public','BuyerReport'),
-    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales')))
+    ('buyer_writer','dispatches'),('buyer_writer','receipts'),('buyer_writer','sales'),('buyer_writer','operation_admissions')))
  and coalesce((select bool_and(coalesce(has_function_privilege(current_user,to_regprocedure(s),'EXECUTE'),false)) from unnest($2::text[]) s),false)
  and not exists(select from jsonb_to_recordset($3::jsonb) expected(signature text,digest text,language text,"securityDefiner" boolean,config text[],volatility text,owner text,arguments text[],result text)
    left join pg_proc p on p.oid=to_regprocedure(expected.signature) left join pg_language l on l.oid=p.prolang
@@ -156,7 +159,8 @@ export const WRITER_IDENTITY_SQL = `select (
        ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'CREATE',false),
        ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_owner'),'USAGE',false),
        ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_runtime'),'USAGE',false),
-       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false)
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_issuer'),'USAGE',false),
+       ((select oid from pg_roles where rolname='buyer_writer_owner'),(select oid from pg_roles where rolname='buyer_writer_admission'),'USAGE',false)
       ) edge(grantor,grantee,privilege,grantable))
   and not exists(select from jsonb_to_recordset($3::jsonb) expected(signature text)
    join pg_namespace pn on pn.nspname='buyer_writer'
@@ -166,8 +170,9 @@ export const WRITER_IDENTITY_SQL = `select (
    cross join lateral (select array_agg(array[p.proowner::text,g.oid::text,'EXECUTE','false'] order by g.oid,p.proowner)
      from pg_roles g where g.oid=p.proowner
       or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
-      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
-      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')) reviewed(edges)
+      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
+      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')
+      or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') and g.rolname='buyer_writer_admission')) reviewed(edges)
   where actual.edges is distinct from reviewed.edges)
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
    cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a

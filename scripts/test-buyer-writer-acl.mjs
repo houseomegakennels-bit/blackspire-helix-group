@@ -178,15 +178,15 @@ try {
   adminSql('revoke consumer from buyer_writer_runtime');
   checks.push('inherited and SET-capable membership paths fail before application mutation');
   adminSql(`revoke buyer_writer_owner from postgres granted by postgres;
-   revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres;
-   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to consumer with admin true,set false,inherit false;
+   revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission from postgres;
+   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission to consumer with admin true,set false,inherit false;
    set role consumer;
    grant buyer_writer_owner to consumer with admin false,set true,inherit false granted by consumer;
    reset role;`);
   sql(prepared.sql,{fail:/Trusted writer bootstrap relationship required/});
   adminSql(`revoke buyer_writer_owner from consumer granted by consumer;
-   revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from consumer granted by fixture_admin;
-   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by fixture_admin;
+   revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission from consumer granted by fixture_admin;
+   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission to postgres with admin true,set false,inherit false granted by fixture_admin;
    set role postgres;grant buyer_writer_owner to postgres with admin false,set true,inherit false granted by postgres;reset role`);
   checks.push('application preflight rejects creator and owner SET ROLE substitution');
   sql(prepared.sql);
@@ -212,7 +212,7 @@ try {
   checks.push('application and installer reject effective PUBLIC CONNECT to a non-target database');
   sql(`create function public.hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
    create trigger hidden_trigger before insert on public."RawSale" for each row execute function public.hidden_trigger();
-   revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+   revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
   sql(prepared.sql,{fail:/Writer relation inheritance drift|Unexpected Buyer Writer relation trigger/});
   sql(installSql,{fail:/Writer relation identity drift|Unexpected Buyer Writer relation trigger/});
   sql('drop trigger hidden_trigger on public."RawSale";drop function public.hidden_trigger()');
@@ -238,7 +238,7 @@ try {
   sql(`create table public."RawSale_hook_child"() inherits (public."RawSale");
    create function public.child_hidden_trigger() returns trigger language plpgsql security definer as 'begin return new;end';
    create trigger child_hidden_trigger before insert on public."RawSale_hook_child" for each row execute function public.child_hidden_trigger();
-   revoke execute on function public.child_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+   revoke execute on function public.child_hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
   sql(prepared.sql,{fail:/Writer relation inheritance drift|Unexpected Buyer Writer relation trigger/});
   sql(installSql,{fail:/Writer relation identity drift|Unexpected Buyer Writer relation trigger/});
   sql('drop table public."RawSale_hook_child";drop function public.child_hidden_trigger()');
@@ -249,7 +249,7 @@ try {
   sql(`create schema hidden_bridge;create table hidden_bridge.witness(id integer);
    create function hidden_bridge.bridge() returns boolean language plpgsql security definer set search_path=pg_catalog as
     'begin insert into hidden_bridge.witness values (1);return true;end';
-   revoke usage on schema hidden_bridge from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;
+   revoke usage on schema hidden_bridge from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;
    alter table public."SearchJob" add constraint hidden_bridge_guard check(hidden_bridge.bridge()) not valid;`);
   sql(prepared.sql,{fail:/Unexpected protected expression routine/});
   sql(installSql,{fail:/Unexpected protected expression routine/});
@@ -261,7 +261,7 @@ try {
    create domain hidden_domain.guarded as text check(hidden_domain.bridge());
    alter table public."RawSale" add column hidden_guard hidden_domain.guarded;
    truncate hidden_domain.witness;
-   revoke usage on schema hidden_domain from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
+   revoke usage on schema hidden_domain from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission;`);
   sql(prepared.sql,{fail:/Unexpected protected column type/});
   sql(installSql,{fail:/Unexpected protected column type/});
   assert.equal(sql('select count(*) from hidden_domain.witness'),'0');
@@ -340,13 +340,22 @@ try {
   const sale={buyer_name:'ISOLATED NEW LLC',seller_name:'SYNTHETIC',property_address:'TEST ONLY',mailing_address:'TEST, NC',sale_price:120000,sale_date:'2026-08-01',property_type:'land',parcel_id:'SYNTHETIC-1',deed_type:'TEST',lender_name:'UNKNOWN'};
   const normalized={raw:[sale],clean:[sale]};
   const writes=[{version:1,dispatchId:d.dispatchId,generation:d.generation,operation:'start',chunkIndex:0,chunkCount:1,payload:{}},...planBuyerWrites({...d,jobId:job,criteria,...normalized})];
-  const write=q=>JSON.parse(adminSql(`set session authorization buyer_writer_runtime;select buyer_writer.apply(${literal('b'.repeat(64))},'isolated',${literal(JSON.stringify({jobId:job,...q}))}::jsonb)`));
+  let admissionOrdinal=100;
+  const nextAdmissionUuid=()=>`00000000-0000-4000-8000-${(admissionOrdinal++).toString(16).padStart(12,'0')}`;
+  const admissions=new Map();
+  const write=q=>{
+   const args=['acl-reviewer',nextAdmissionUuid(),nextAdmissionUuid(),'c'.repeat(64),owner,'a'.repeat(40),nextAdmissionUuid(),nextAdmissionUuid(),'isolated'];
+   const key=`${q.operation}:${q.chunkIndex}`;admissions.set(key,args);
+   assert.equal(adminSql(`set session authorization buyer_writer_admission;select buyer_writer.reserve_operation(${args.slice(0,4).map(literal).join(',')},clock_timestamp()+interval '1 minute')`),'t');
+   return JSON.parse(adminSql(`set session authorization buyer_writer_admission;select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},${literal('b'.repeat(64))},${literal(JSON.stringify({jobId:job,...q}))}::jsonb)`));
+  };
   for(const q of writes)assert.equal(write(q).ok,true);
   const completedState=sql(`select jsonb_build_array((select count(*) from public."RawSale"),(select count(*) from public."CleanSale"),(select count(*) from public."BuyerProfile"),(select count(*) from public."BuyerReport"),(select status from public."SearchJob" where id=${literal(job)}))`);
   for(const q of writes){
-   adminSql(`set session authorization buyer_writer_runtime;select buyer_writer.apply(${literal('b'.repeat(64))},'isolated',${literal(JSON.stringify({jobId:job,...q}))}::jsonb)`,{fail:/Buyer writer request rejected/});
-   const receipt=JSON.parse(adminSql(`set session authorization buyer_writer_runtime;select buyer_writer.receipt(${literal('b'.repeat(64))},'isolated',${literal(job)},${literal(d.dispatchId)},${d.generation},${literal(q.operation)},${q.chunkIndex})`));
-   assert.equal(receipt.found,true);assert.equal(receipt.receipt.ok,true);
+   const args=admissions.get(`${q.operation}:${q.chunkIndex}`);
+   adminSql(`set session authorization buyer_writer_admission;select buyer_writer.execute_admitted_apply(${args.map(literal).join(',')},${literal('b'.repeat(64))},${literal(JSON.stringify({jobId:job,...q}))}::jsonb)`,{fail:/Buyer writer admission rejected/});
+   const correlated=JSON.parse(adminSql(`set session authorization buyer_writer_admission;select buyer_writer.correlate_admission(${args.map(literal).join(',')})`));
+   assert.equal(correlated.state,'succeeded');assert.equal(correlated.result.ok,true);
   }
   assert.equal(sql(`select jsonb_build_array((select count(*) from public."RawSale"),(select count(*) from public."CleanSale"),(select count(*) from public."BuyerProfile"),(select count(*) from public."BuyerReport"),(select status from public."SearchJob" where id=${literal(job)}))`),completedState);
   assert.deepEqual(JSON.parse(completedState),[2,2,2,2,'completed']);
@@ -361,18 +370,18 @@ try {
   const writerMarkerPrefix='blackspire-buyer-writer:v2:';
   const trustedWriterMetadata=JSON.parse(sql(`select substring(obj_description((select oid from pg_namespace where nspname='buyer_writer'),'pg_namespace') from ${writerMarkerPrefix.length+1})`));
   assert.equal(trustedWriterMetadata.creatorOid,trustedCreatorOid);
-  assert.equal(trustedWriterMetadata.relations.length,8);
-  sql('revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer from postgres granted by postgres');
+  assert.equal(trustedWriterMetadata.relations.length,9);
+  sql('revoke buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission from postgres granted by postgres');
   adminSql(`alter role postgres rename to original_creator;
    create role postgres superuser login;
    alter database writer_test owner to postgres;
    set role original_creator;
-   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer to postgres with admin true,set false,inherit false granted by original_creator;
+   grant buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission to postgres with admin true,set false,inherit false granted by original_creator;
    reset role;`);
   assert.equal(sql("select oid from pg_roles where rolname='original_creator'"),trustedCreatorOid);
   assert.equal(sql(`select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles u on u.oid=m.member
-   where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer') and u.rolname='postgres'
-    and m.grantor=${trustedCreatorOid}::oid and m.admin_option and not m.inherit_option and not m.set_option`),'3');
+   where r.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission') and u.rolname='postgres'
+    and m.grantor=${trustedCreatorOid}::oid and m.admin_option and not m.inherit_option and not m.set_option`),'4');
   const replacementCreatorOid=sql("select oid from pg_roles where rolname='postgres'");
   assert.notEqual(replacementCreatorOid,trustedCreatorOid);
   const replacementWriterMetadata={...trustedWriterMetadata,creatorOid:replacementCreatorOid};
