@@ -1,5 +1,12 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-17 — dedicated reviewer restored; findings retained and repaired locally
+
+- Verified the user's dedicated reviewer device sign-in and completed a fresh read-only review. The reviewer requested a socket EOF repair plus two offline transport repairs; no clean verdict was claimed.
+- Reproduced three socket lifecycle failures with in-memory events, then repaired incomplete EOF and idle shutdown handling; 4/4 simulations pass and accepted delayed responses remain preserved. Real-socket integration and the new full suite remain unverified.
+- The separate offline transport reproduced six added regression failures and passes 34/34 after intrinsic byte validation, a chunk-progress/count bound, and permanent transport retirement after uncertain or aborted dispatch. No prototype file was added to production source.
+- Added real-socket tests for future execution and retained all prior evidence. No production/provider mutation, live gateway start, merge, push, deployment or workflow change occurred.
+
 ## 2026-09-17 — preserve research separately and isolate gateway response fix
 
 - Recovered checksummed options research and ran its full contained suite: 1,980 total, 1,935 passed, 44 expected skips, one source-isolation failure for newly introduced research material. The gate was not bypassed.

@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-17 — review repair validation remains required
+
+Obtain a fresh independent review of the EOF/idle socket repair, then complete the new real-socket regressions and full contained validation through an available authorized execution path. Do not publish or deploy on the parent's test result. The separate fixed-RPC transport remains an offline prototype; its reviewed stream/progress and post-abort fencing corrections pass 34 mocked tests but are not production wrapper/installer acceptance.
+
 ## 2026-09-17 — delayed gateway reply candidate
 
 Validate the separate socket-only candidate with the full contained suite and existing source isolation gate. Obtain independent review before release integration. Keep all provider privilege guards intact; this transport correction does not resolve the database permission contract or authorize live provisioning. Research evidence remains outside this production-candidate source tree.

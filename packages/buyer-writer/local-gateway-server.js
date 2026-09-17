@@ -90,7 +90,7 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
   try{authority=validateBuyerWriterGatewayAuthority(authority);}catch{throw new Error('Buyer writer gateway configuration rejected');}
   verifySocketParent(socketPath,io,uid);
   const workspace=authority.workspace,dispatch=dispatcher({workspace,runtimeQuery,issuerQuery,authority});
-  const nonces=new Map();let stopped=false,active=0,ready=false;
+  const nonces=new Map(),sockets=new Map();let stopped=false,active=0,ready=false;
   const consumeNonce=(nonce,timestamp)=>{
     const cutoff=now()-30_000;for(const [key,value] of nonces)if(value<cutoff)nonces.delete(key);
     if(nonces.has(nonce))return false;nonces.set(nonce,timestamp);return true;
@@ -98,8 +98,11 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
   const server=net.createServer({allowHalfOpen:true},socket=>{
     if(stopped||active>=maxConnections)return socket.destroy();
     active++;let bytes=0,settled=false,processed=false;const chunks=[];
+    sockets.set(socket,()=>processed);
+    // An EOF without a complete request has no pending response to preserve.
+    socket.once('end',()=>{if(!processed)socket.destroy();});
     socket.setTimeout(timeoutMs,()=>socket.destroy());
-    const finish=()=>{if(!settled){settled=true;active--;}};
+    const finish=()=>{if(!settled){settled=true;sockets.delete(socket);active--;}};
     socket.once('close',finish);socket.once('error',()=>{});
     socket.on('data',chunk=>{
       if(processed)return;
@@ -130,7 +133,13 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
       try{io.chmodSync(socketPath,0o660);ready=true;server.off('error',reject);resolve();}catch(error){server.close();reject(error);}
     });
   });
-  const close=()=>new Promise(resolve=>{stopped=true;ready=false;server.close(()=>{try{io.unlinkSync(socketPath);}catch(error){if(error?.code!=='ENOENT')log({outcome:'cleanup_failed'});}resolve();});});
+  const close=()=>new Promise(resolve=>{
+    stopped=true;ready=false;
+    // Idle/partial clients have no accepted operation. Accepted responses retain
+    // the existing bounded timeout/drain behavior rather than losing a reply.
+    for(const [socket,hasCompleteFrame] of sockets)if(!hasCompleteFrame())socket.destroy();
+    server.close(()=>{try{io.unlinkSync(socketPath);}catch(error){if(error?.code!=='ENOENT')log({outcome:'cleanup_failed'});}resolve();});
+  });
   return Object.freeze({listen,close,isReady:()=>ready&&!stopped&&server.listening,isDrained:()=>active===0,address:()=>server.address()});
 }
 

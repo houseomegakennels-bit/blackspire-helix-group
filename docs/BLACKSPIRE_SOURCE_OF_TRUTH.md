@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-17 — independent review found and repaired incomplete-frame socket retention
+
+The dedicated non-root reviewer successfully reauthenticated and independently reviewed candidate `3404a2490639de510cbf2ce93e9c93b014670fbd`. That unchanged parent had a full contained result of 1,980 total tests, 1,936 passed, 44 expected skips, zero failures across 201 files. Review nevertheless identified that the half-open option retained EOF peers with no complete request until timeout. This new repair destroys those peers immediately and closes idle/partial peers on shutdown while preserving accepted delayed responses under the existing bounded timeout.
+
+Pure in-memory lifecycle regressions reproduced three failures on the parent and pass 4/4 after the repair. They open no sockets and do not prove kernel/socket integration. Three real filesystem-socket regression tests are added but have not been executed; the supplementary real-socket harness launch was rejected by the tool. No alternate real-socket execution was used. Full validation for this new commit remains UNVERIFIED; the parent's successful full suite is not carried forward as a new result. Fresh independent repair review is pending. No database privilege, source-scan allowlist, installer, credential, release or live service changed.
+
 ## 2026-09-17 — isolated delayed gateway reply correction
 
 A separate candidate based on reviewed release `7062fe1485f9fa311dc8abcb652277b2ae25664a` retains the gateway socket writable half until its existing asynchronous success/error handler responds. A delayed-response regression failed on the original and passed with `allowHalfOpen:true`; delayed failures remain sanitized. The only runtime source change is this socket option. No permission, installer, source-scan allowlist or database-identity check was relaxed.
