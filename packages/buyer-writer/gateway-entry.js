@@ -119,7 +119,12 @@ export async function startBuyerWriterGateway({configurationFile,read=readBuyerW
     gateway=createGateway({socketPath:config.socketPath,capability:config.gatewayCapability,authority:config.authority,
       gatewayIdentityVerified:identity.verified===true,runtimeQuery:database.runtimeQuery,issuerQuery:database.issuerQuery,admissionBridge,log});
     await gateway.listen();
-    const close=async()=>{await Promise.all([gateway.close(),database.close(),admissionDatabase?.close()]);};
+    const close=async()=>{
+      // Stop accepting and drain framed local requests before tearing down the
+      // PostgreSQL pools that may still be settling an admitted operation.
+      await gateway.close();
+      await Promise.all([database.close(),admissionDatabase?.close()]);
+    };
     return Object.freeze({gateway,database,...(admissionDatabase?{admissionDatabase}:{}),close});
   }catch{try{await gateway?.close();}catch{}try{await admissionDatabase?.close();}catch{}try{await database?.close();}catch{}fail();}
 }

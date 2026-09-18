@@ -51,6 +51,22 @@ test('research service configuration and startup wire only the attested admissio
   assert.deepEqual(events,['listen','gateway-close','database-close','admission-close']);
 });
 
+test('gateway shutdown drains local requests before either PostgreSQL pool closes',async()=>{
+  const events=[];let releaseDrain;
+  const drain=new Promise(resolve=>{releaseDrain=resolve;});
+  const database={runtimeQuery(){},issuerQuery(){},close:async()=>events.push('database-close')};
+  const admissionDatabase={executor:{},close:async()=>events.push('admission-close')};
+  const gateway={listen:async()=>{},close:async()=>{events.push('gateway-draining');await drain;events.push('gateway-drained');}};
+  const started=await startBuyerWriterGateway({configurationFile:'/ignored',
+    resolveIdentity:()=>({verified:true}),read:()=>serviceConfig,
+    createPostgres:async()=>database,createAdmissionPostgres:async()=>admissionDatabase,
+    createBridge:()=>async()=>({status:503,body:{ok:false}}),createGateway:()=>gateway});
+  const closing=started.close();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(events,['gateway-draining']);
+  releaseDrain();await closing;
+  assert.deepEqual(events,['gateway-draining','gateway-drained','database-close','admission-close']);
+});
+
 test('research local transport routes every signed mutation and closes all legacy mutation paths',async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-writer-admission-wire-'));fs.chmodSync(root,0o700);
   const socketPath=path.join(root,'writer.sock'),captured=[],runtimeCalls=[],issuerCalls=[];
