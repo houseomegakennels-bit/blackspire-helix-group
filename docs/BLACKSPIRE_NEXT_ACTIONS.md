@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-09-18 — review and seal the configuration-upgrade recovery path
+
+1. Commit the locally green version-2-to-version-4 gateway configuration upgrade, then obtain a fresh independent exact-head review. Preserve its sealed-artifact proof, exact invariant checks, host lock, three-service quiescence, secret-free state and all crash-window rollback behavior.
+2. Package exact-commit evidence and require the normal external gates before creating a sealed production artifact or protected admission candidate. Re-run read-only target inspection first; role absence and `NONCOMPLIANT` do not authorize mutation.
+3. If separately authorized for production, keep all three services stopped, run `--inspect` before `--upgrade`, verify the durable completed state, provision the database roles only through the reviewed protected management path, install/start only the exact-SHA gateway and retain the explicit `--rollback` command until acceptance is complete. Any artifact, state, quiescence, database or receipt uncertainty remains a hard stop; do not repin n8n, cut over API/worker, merge or OPEN in this tranche.
+
 ## 2026-09-17 — review repair validation remains required
 
 Obtain a fresh independent review of the EOF/idle socket repair, then complete the new real-socket regressions and full contained validation through an available authorized execution path. Do not publish or deploy on the parent's test result. The separate fixed-RPC transport remains an offline prototype; its reviewed stream/progress and post-abort fencing corrections pass 34 mocked tests but are not production wrapper/installer acceptance.

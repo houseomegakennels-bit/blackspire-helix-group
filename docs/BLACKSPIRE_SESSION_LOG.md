@@ -1,5 +1,11 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-18 — admission configuration upgrade and crash recovery implemented locally
+
+Recovered the clean gateway-supervisor checkpoint and preserved the prior read-only target evidence. Added a canonical shared version-4 configuration renderer and a root-only version-2-to-version-4 upgrade command that requires the exact sealed release artifact, protected input, an exclusive host lock and inactive API, worker and gateway services. The operation binds unchanged workspace/socket/capability/creator/runtime/issuer invariants, creates an exact root-only backup, journals only digests and phases, publishes atomically and rechecks quiescence immediately before every config rename. Explicit rollback now recovers intent-only, prepared, post-rename and completed states and refuses unknown config/state drift.
+
+Focused upgrade/configuration tests pass 27/27 and the complete Buyer Writer plus configuration-install suite passes 385/385. Lint, build, secret scan and whitespace checks pass. Read-only production evidence still reports `NONCOMPLIANT` with all expected Buyer Writer roles absent. No production configuration, service, database, provider, n8n, deployment or release mutation occurred. Independent exact-head review, commit/evidence packaging and external gates remain pending.
+
 ## 2026-09-17 — completed independent repair review and added drain-response regression
 
 The user completed dedicated reviewer authentication. A fresh read-only reviewer finished successfully, accepted gateway repair `ab990155` at the source level pending execution, and accepted the isolated RPC prototype after all three original findings were addressed. The transport regressions changed from 28 passed/six failed before repair to 34 passed/zero failed; the gateway in-memory lifecycle model changed from one passed/three failed to four passed/zero failed. These are bounded local proofs, not live acceptance.

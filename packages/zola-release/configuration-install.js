@@ -4,7 +4,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {execFile,spawnSync} from 'node:child_process';
 import {promisify} from 'node:util';
 import {readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
-import {validateBuyerWriterClientConfiguration,validateBuyerWriterGatewayProvisioningConfiguration} from '../buyer-writer/configuration.js';
+import {renderZolaGatewayConfigurations} from './gateway-configuration-render.js';
 import {resolveBuyerWriterIdentity} from '../buyer-writer/runtime-identity.js';
 import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {createBuyerWriterGatewayPostgres} from '../buyer-writer/local-gateway-postgres.js';
@@ -109,26 +109,13 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     const state=await hostState(run),ids=await identity(run);
     privateGatewayDirectory(io,paths.gatewayConfigDirectory,ids.gatewayGid);
     const snapshot=readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536});
-    const config=validateBuyerWriterGatewayProvisioningConfiguration(snapshot.value,{workspace:'blackspire-command'});
+    const {config,gatewayConfig,clientConfig,ingressConfig}=renderZolaGatewayConfigurations(snapshot.value);
     if(config.authority.releaseSha!==releaseSha)reject();
     if(config.bindingFile!==path.join(paths.configDirectory,'buyer-writer-binding.json')||config.units||config.rehearsalFile)reject();
     for(const c of [config.runtime,config.issuer])if(c.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||c.port!==5432||c.database!=='postgres'
       ||hash(c.ca??'')!=='700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7')reject();
     const artifact=await inspectArtifact({artifactRoot:path.join(paths.releaseRoot,releaseSha),releaseSha,environment:'production'});
     if(artifact.releaseSha!==releaseSha||artifact.environment!=='production'||!(/^[a-f0-9]{64}$/).test(artifact.artifactDigest??''))reject();
-    const socketPath='/run/blackspire/buyer-writer.sock';
-    const gatewayConfig=Object.freeze({version:4,mode:'research-admission',workspace:config.workspace,socketPath,
-      gatewayCapability:config.gatewayCapability,creatorOid:config.creatorOid,authority:config.authority,
-      runtime:config.runtime,issuer:config.issuer,admission:Object.freeze({
-        connection:Object.freeze({host:config.runtime.host,port:config.runtime.port,database:config.runtime.database,
-          user:'buyer_writer_admission_login',password:config.admissionCredential,ca:config.runtime.ca}),
-        operationPermitConfiguration:config.operationPermitConfiguration,
-        verificationConfiguration:config.operationPermitVerificationConfiguration,
-      })});
-    const clientConfig=validateBuyerWriterClientConfiguration({version:3,workspace:config.workspace,socketPath,gatewayCapability:config.gatewayCapability,authority:config.authority},
-      {workspace:'blackspire-command',environment:'production'});
-    const ingressConfig=Object.freeze({version:1,workspace:config.workspace,bindingFile:config.bindingFile,
-      writerCredential:config.writerCredential,issuerCredential:config.issuerCredential});
     const gatewayBytes=Buffer.from(JSON.stringify(gatewayConfig)+'\n'),clientBytes=Buffer.from(JSON.stringify(clientConfig)+'\n'),
       ingressBytes=Buffer.from(JSON.stringify(ingressConfig)+'\n');
     const gatewayConfigPath=path.join(paths.gatewayConfigDirectory,'gateway.json');
