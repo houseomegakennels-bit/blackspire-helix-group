@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import {EventEmitter} from 'node:events';
 import {randomBytes} from 'node:crypto';
 import {
- BUYER_WRITER_ADMISSION_LOGIN,BUYER_WRITER_ADMISSION_ROLE,createBuyerWriterAdmissionPostgres,
+ ADMISSION_TEMPLATE1_IDENTITY_SQL,BUYER_WRITER_ADMISSION_LOGIN,BUYER_WRITER_ADMISSION_ROLE,createBuyerWriterAdmissionPostgres,
 } from '../packages/buyer-writer/admission-postgres.js';
 import {
  ADMISSION_IDENTITY_SQL,executeAdmission,
@@ -26,7 +26,7 @@ function pools(){
     calls:[],
     async query(config){
      this.calls.push(config);
-     if(config.text===ADMISSION_IDENTITY_SQL)return {rows:[{safe:true}]};
+     if(config.text===ADMISSION_IDENTITY_SQL||config.text===ADMISSION_TEMPLATE1_IDENTITY_SQL)return {rows:[{safe:true}]};
      return {rows:[{accepted:true}]};
     },
     release(destroy){this.destroyed=Boolean(destroy);},
@@ -42,8 +42,14 @@ test('pins the admission login, TLS CA and fixed session limits',async()=>{
  const {Pool,instances}=pools();
  const database=await createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool});
  try{
-  assert.equal(instances.length,1);
-  const config=instances[0].config;
+  assert.equal(instances.length,2);
+  const config=instances[0].config,templateConfig=instances[1].config;
+  assert.equal(templateConfig.database,'template1');
+  assert.equal(templateConfig.user,BUYER_WRITER_ADMISSION_LOGIN);
+  assert.equal(templateConfig.application_name,'blackspire-buyer-writer-admission-template-attestation');
+  assert.match(templateConfig.options,new RegExp(`role=${BUYER_WRITER_ADMISSION_ROLE}`));
+  assert.equal(instances[1].clients[0].calls[0].text,ADMISSION_TEMPLATE1_IDENTITY_SQL);
+  assert.deepEqual(instances[1].clients[0].calls[0].values,[BUYER_WRITER_ADMISSION_LOGIN]);
   assert.equal(config.user,BUYER_WRITER_ADMISSION_LOGIN);
   assert.deepEqual(config.ssl,{rejectUnauthorized:true,ca});
   assert.equal(config.application_name,'blackspire-buyer-writer-admission');
@@ -69,7 +75,7 @@ test('pins the admission login, TLS CA and fixed session limits',async()=>{
   assert.equal(client.destroyed,false);
   assert.deepEqual(Object.keys(database).sort(),['close','executor','isHealthy']);
  }finally{await database.close();}
- assert.equal(instances[0].ended,true);
+ assert.equal(instances[0].ended,true);assert.equal(instances[1].ended,true);
 });
 
 test('abort during identity prevents any late reserve statement',async()=>{
@@ -79,6 +85,7 @@ test('abort during identity prevents any late reserve statement',async()=>{
   async connect(){
    client={
     async query(config){
+     if(config.text===ADMISSION_TEMPLATE1_IDENTITY_SQL)return {rows:[{safe:true}]};
      if(config.text===ADMISSION_IDENTITY_SQL){
       await new Promise(resolve=>setTimeout(resolve,30));
       return {rows:[{safe:true}]};
@@ -104,6 +111,36 @@ test('abort during identity prevents any late reserve statement',async()=>{
   assert.equal(operationCalls,0);
   assert.equal(client.destroyed,true);
  }finally{await database.close();}
+});
+
+test('template1 admission-role startup proof is fixed and fails closed',async()=>{
+ assert.match(ADMISSION_TEMPLATE1_IDENTITY_SQL,/session_user=\$1 and current_user='buyer_writer_admission'/);
+ assert.match(ADMISSION_TEMPLATE1_IDENTITY_SQL,/current_database\(\)='template1'/);
+ assert.match(ADMISSION_TEMPLATE1_IDENTITY_SQL,/has_database_privilege\(current_user,d\.oid,'CONNECT'\)/);
+ assert.match(ADMISSION_TEMPLATE1_IDENTITY_SQL,/has_schema_privilege\(current_user,n\.oid,'CREATE'\)/);
+ assert.match(ADMISSION_TEMPLATE1_IDENTITY_SQL,/has_function_privilege\(current_user,p\.oid,'EXECUTE'\)/);
+ for(const failure of ['connect','query','unsafe','shape']){
+  const instances=[];let templateClient;
+  class Pool extends EventEmitter{
+   constructor(config){super();this.config=config;this.ended=false;instances.push(this);}
+   async connect(){
+    if(this.config.database==='template1'&&failure==='connect')throw new Error('PRIVATE TEMPLATE DETAIL');
+    const client={async query(config){
+     if(config.text!==ADMISSION_TEMPLATE1_IDENTITY_SQL)return {rows:[{accepted:true}]};
+     if(failure==='query')throw new Error('PRIVATE TEMPLATE DETAIL');
+     if(failure==='shape')return {rows:[{safe:true,extra:true}]};
+     return {rows:[{safe:false}]};
+    },release(destroy){this.destroyed=Boolean(destroy);}};
+    if(this.config.database==='template1')templateClient=client;
+    return client;
+   }
+   async end(){this.ended=true;}
+  }
+  await assert.rejects(createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool}),
+   error=>error.message==='Buyer admission unavailable'&&!error.message.includes('PRIVATE'));
+  assert.equal(instances.length,2);assert.equal(instances.every(instance=>instance.ended),true);
+  if(templateClient)assert.equal(templateClient.destroyed,true);
+ }
 });
 
 test('rejects missing, ambient, alternate-login and injectable connection configuration',async()=>{

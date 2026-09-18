@@ -5,7 +5,7 @@ import {readRootOwnedJsonSnapshot} from './protected-json.js';
 import {validateBuyerWriterGatewayServiceConfiguration} from './gateway-entry.js';
 import {TEMPLATE1_IDENTITY_SQL} from './postgres.js';
 import {ADMISSION_IDENTITY_SQL} from './admission-executor.js';
-import {BUYER_WRITER_ADMISSION_LOGIN,BUYER_WRITER_ADMISSION_ROLE} from './admission-postgres.js';
+import {ADMISSION_TEMPLATE1_IDENTITY_SQL,BUYER_WRITER_ADMISSION_LOGIN,BUYER_WRITER_ADMISSION_ROLE} from './admission-postgres.js';
 import {observeBuyerWriterProductionState} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
@@ -109,11 +109,15 @@ export async function authenticateBuyerWriterProductionIdentity({kind,credential
     try{await client?.end();}catch{failed=true;}
     if(failed)authenticationFail();
   };
-  if(admission)await prove('postgres',ADMISSION_IDENTITY_SQL,[expected,creatorOid],{setRole:true});
-  else await prove('postgres',`select current_user=$1 and session_user=$1 and current_database()='postgres'
-   and r.rolcanlogin and not r.rolinherit and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls) as safe
-   from pg_roles r where r.rolname=$1`,[expected]);
-  await prove('template1',TEMPLATE1_IDENTITY_SQL,[expected]);
+  if(admission){
+   await prove('postgres',ADMISSION_IDENTITY_SQL,[expected,creatorOid],{setRole:true});
+   await prove('template1',ADMISSION_TEMPLATE1_IDENTITY_SQL,[expected],{setRole:true});
+  }else{
+   await prove('postgres',`select current_user=$1 and session_user=$1 and current_database()='postgres'
+    and r.rolcanlogin and not r.rolinherit and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls) as safe
+    from pg_roles r where r.rolname=$1`,[expected]);
+   await prove('template1',TEMPLATE1_IDENTITY_SQL,[expected]);
+  }
 }
 
 function gatewayGroupId(lookup){

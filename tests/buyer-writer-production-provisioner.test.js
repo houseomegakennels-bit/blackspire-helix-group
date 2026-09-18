@@ -7,6 +7,7 @@ import {
  BUYER_WRITER_ROUTINES,BUYER_WRITER_RUNTIME_ROUTINES,
 } from '../packages/buyer-writer/production-verifier.js';
 import {authenticateBuyerWriterProductionIdentity,BUYER_WRITER_INSTALLER_SHA256,provisionBuyerWriterProduction} from '../packages/buyer-writer/production-provisioner.js';
+import {ADMISSION_TEMPLATE1_IDENTITY_SQL} from '../packages/buyer-writer/admission-postgres.js';
 import {TEMPLATE1_IDENTITY_SQL} from '../packages/buyer-writer/postgres.js';
 import {BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from '../packages/buyer-writer/routine-policy.js';
 
@@ -146,8 +147,9 @@ test('production authentication executes the shared attestation for both databas
   assert.equal(client.ended,true);assert.equal(client.config.ssl.rejectUnauthorized,true);
   assert.deepEqual(client.queries[0].values,client.config.user==='buyer_writer_admission_login'&&client.config.database==='postgres'
     ?['buyer_writer_admission_login',gateway.creatorOid]:[client.config.user]);
-  if(client.config.database==='template1')assert.equal(client.queries[0].text,TEMPLATE1_IDENTITY_SQL);
-  if(client.config.user==='buyer_writer_admission_login'&&client.config.database==='postgres')
+  if(client.config.database==='template1')assert.equal(client.queries[0].text,
+    client.config.user==='buyer_writer_admission_login'?ADMISSION_TEMPLATE1_IDENTITY_SQL:TEMPLATE1_IDENTITY_SQL);
+  if(client.config.user==='buyer_writer_admission_login')
     assert.match(client.config.options,/role=buyer_writer_admission/);
  }
  await assert.rejects(authenticateBuyerWriterProductionIdentity({
