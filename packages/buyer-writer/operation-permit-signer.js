@@ -45,7 +45,7 @@ export function validateOperationPermitSignerConfiguration(value,{expectedUid}={
       ||!canonicalPath(value.activePrivateKeyPath))throw denied();
     const verification=validateOperationPermitVerificationConfiguration(value.verification);
     const active=verification.keys.filter(entry=>entry.keyId===value.activeKeyId);
-    if(active.length!==1)throw denied();
+    if(active.length!==1||active[0].lifecycle!=='current')throw denied();
     activePrivateKey(value.activePrivateKeyPath,expectedUid,active[0].publicKeyPem);
     return Object.freeze({version:1,activeKeyId:value.activeKeyId,
       activePrivateKeyPath:value.activePrivateKeyPath,verification});
@@ -64,8 +64,8 @@ export function createOperationPermitSigner(configuration,{expectedUid}={}){
         if(!exact(input,['configuration','operation','requestId','jti','issuedAt','expiresAt','parameters'])
           ||typeof input.operation!=='string'||!Object.hasOwn(OPERATIONS,input.operation)
           ||!UUID.test(input.requestId)||!UUID.test(input.jti)||!Number.isSafeInteger(input.issuedAt)
-          ||!Number.isSafeInteger(input.expiresAt)||input.issuedAt<0||input.expiresAt<=input.issuedAt
-          ||input.expiresAt-input.issuedAt>60)throw denied();
+          ||!Number.isSafeInteger(input.expiresAt)||input.issuedAt<active.verifyNotBefore
+          ||input.expiresAt<=input.issuedAt||input.expiresAt-input.issuedAt>60)throw denied();
         validatePermitConfiguration(input.configuration,config.activeKeyId);
         if(input.parameters===null||typeof input.parameters!=='object'||Array.isArray(input.parameters))throw denied();
         const envelope={version:1,requestId:input.requestId,operation:input.operation,parameters:input.parameters,

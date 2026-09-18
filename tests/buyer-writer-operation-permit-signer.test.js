@@ -32,9 +32,12 @@ function keyFixture(name){
  return {privateKeyPem,publicKeyPem,privateKeyPath};
 }
 const oldKey=keyFixture('old'),newKey=keyFixture('new');
-const verification={version:1,keys:[
- {keyId:'old-2026-08',publicKeyPem:oldKey.publicKeyPem},
- {keyId:'active-2026-09',publicKeyPem:newKey.publicKeyPem},
+const keyEpoch=1_999_999_900;
+const verification={version:2,keys:[
+ {keyId:'old-2026-08',publicKeyPem:oldKey.publicKeyPem,lifecycle:'overlap',
+  verifyNotBefore:keyEpoch,verifyNotAfter:2_000_000_120},
+ {keyId:'active-2026-09',publicKeyPem:newKey.publicKeyPem,lifecycle:'current',
+  verifyNotBefore:keyEpoch,verifyNotAfter:null},
 ]};
 const protectedConfiguration={version:1,activeKeyId:'active-2026-09',
  activePrivateKeyPath:newKey.privateKeyPath,verification};
@@ -81,19 +84,25 @@ test('Ed25519 signing is deterministic and does not expose private material',()=
 });
 
 test('rotation changes the signing key while retaining bounded old-key verification overlap',()=>{
+ const oldVerification={version:2,keys:[{keyId:'old-2026-08',publicKeyPem:oldKey.publicKeyPem,
+  lifecycle:'current',verifyNotBefore:keyEpoch,verifyNotAfter:null}]};
  const oldProtected={version:1,activeKeyId:'old-2026-08',
-  activePrivateKeyPath:oldKey.privateKeyPath,verification};
+  activePrivateKeyPath:oldKey.privateKeyPath,verification:oldVerification};
  const oldPermit={...permitConfiguration,keyId:'old-2026-08'};
  const oldRequest=createOperationPermitSigner(oldProtected,{expectedUid:uid})
   .sign({...input,configuration:oldPermit});
  const newRequest=createOperationPermitSigner(protectedConfiguration,{expectedUid:uid}).sign(input);
  const keyring=createOperationPermitVerificationKeyring(verification);
- assert.equal(keyring.verify(signatureParts(oldRequest.token)),true);
- assert.equal(keyring.verify(signatureParts(newRequest.token)),true);
- const retired=createOperationPermitVerificationKeyring({version:1,
-  keys:[{keyId:'active-2026-09',publicKeyPem:newKey.publicKeyPem}]});
- assert.equal(retired.verify(signatureParts(oldRequest.token)),false);
- assert.equal(retired.verify(signatureParts(newRequest.token)),true);
+ assert.equal(keyring.verify({...signatureParts(oldRequest.token),at:2_000_000_001}),true);
+ assert.equal(keyring.verify({...signatureParts(newRequest.token),at:2_000_000_001}),true);
+ assert.equal(keyring.verify({...signatureParts(oldRequest.token),at:2_000_000_120}),false);
+ assert.equal(keyring.verify({...signatureParts(newRequest.token),keyId:'unknown',at:2_000_000_001}),false);
+ assert.equal(keyring.verify(signatureParts(newRequest.token)),false);
+ const retired=createOperationPermitVerificationKeyring({version:2,keys:[{
+  keyId:'active-2026-09',publicKeyPem:newKey.publicKeyPem,lifecycle:'current',
+  verifyNotBefore:keyEpoch,verifyNotAfter:null}]});
+ assert.equal(retired.verify({...signatureParts(oldRequest.token),at:2_000_000_001}),false);
+ assert.equal(retired.verify({...signatureParts(newRequest.token),at:2_000_000_001}),true);
 });
 test('private key custody rejects permissive mode, symlinks, wrong owner and public mismatch',()=>{
  const loose=keyFixture('loose');chmodSync(loose.privateKeyPath,0o640);
@@ -101,8 +110,9 @@ test('private key custody rejects permissive mode, symlinks, wrong owner and pub
  const cases=[
   {...protectedConfiguration,activePrivateKeyPath:loose.privateKeyPath},
   {...protectedConfiguration,activePrivateKeyPath:link},
-  {...protectedConfiguration,verification:{version:1,keys:[
-   {keyId:'active-2026-09',publicKeyPem:oldKey.publicKeyPem}]}},
+  {...protectedConfiguration,verification:{version:2,keys:[{
+   keyId:'active-2026-09',publicKeyPem:oldKey.publicKeyPem,lifecycle:'current',
+   verifyNotBefore:keyEpoch,verifyNotAfter:null}]}},
  ];
  for(const value of cases)assert.throws(
   ()=>createOperationPermitSigner(value,{expectedUid:uid}),/signer rejected/);
@@ -111,22 +121,50 @@ test('private key custody rejects permissive mode, symlinks, wrong owner and pub
 });
 
 test('keyring and signer configurations reject ambiguity and private keys fail closed',()=>{
- const privatePem=newKey.privateKeyPem;
+ const privatePem=newKey.privateKeyPem,current=verification.keys[1],overlap=verification.keys[0];
+ const tooMany=Array.from({length:9},(_,index)=>({keyId:'key-'+index,
+  publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}),
+  lifecycle:index===0?'current':'overlap',verifyNotBefore:keyEpoch,
+  verifyNotAfter:index===0?null:keyEpoch+10}));
  const badVerification=[
+  {version:2,keys:tooMany},
   {version:1,keys:[]},
-  {version:1,keys:[verification.keys[0],verification.keys[0]]},
-  {version:1,keys:[{keyId:'bad key',publicKeyPem:newKey.publicKeyPem}]},
-  {version:1,keys:[{keyId:'private',publicKeyPem:privatePem}]},
+  {version:2,keys:[]},
+  {version:2,keys:[current,{...overlap,keyId:current.keyId}]},
+  {version:2,keys:[current,{...overlap,publicKeyPem:current.publicKeyPem}]},
+  {version:2,keys:[{...current,keyId:'bad key'}]},
+  {version:2,keys:[{...current,lifecycle:'unknown'}]},
+  {version:2,keys:[current,{...overlap,lifecycle:'current',verifyNotAfter:null}]},
+  {version:2,keys:[{...current,lifecycle:'overlap',verifyNotAfter:keyEpoch+10}]},
+  {version:2,keys:[{...current,verifyNotAfter:keyEpoch+10}]},
+  {version:2,keys:[current,{...overlap,verifyNotAfter:keyEpoch+3601}]},
+  {version:2,keys:[{...current,keyId:'private',publicKeyPem:privatePem}]},
   {...verification,extra:true},
  ];
  for(const value of badVerification)assert.throws(
   ()=>validateOperationPermitVerificationConfiguration(value),/keyring rejected/);
  for(const value of [
   {...protectedConfiguration,activeKeyId:'missing'},
+  {...protectedConfiguration,activeKeyId:'old-2026-08',
+   activePrivateKeyPath:oldKey.privateKeyPath},
   {...protectedConfiguration,extra:true},
   {...protectedConfiguration,activePrivateKeyPath:'relative.pem'},
  ])assert.throws(()=>createOperationPermitSigner(value,{expectedUid:uid}),/signer rejected/);
  assert.throws(()=>createOperationPermitSigner(protectedConfiguration),/signer rejected/);
+});
+
+test('legacy single-key configuration requires explicit compatibility and normalizes closed',()=>{
+ const legacy={version:1,keys:[{keyId:'legacy',publicKeyPem:oldKey.publicKeyPem}]};
+ assert.throws(()=>validateOperationPermitVerificationConfiguration(legacy),/keyring rejected/);
+ const normalized=validateOperationPermitVerificationConfiguration(
+  legacy,{allowLegacyVersion1:true});
+ assert.equal(normalized.version,2);
+ assert.deepEqual(normalized.keys.map(({keyId,lifecycle,verifyNotBefore,verifyNotAfter})=>
+  ({keyId,lifecycle,verifyNotBefore,verifyNotAfter})),[
+  {keyId:'legacy',lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]);
+ assert.throws(()=>validateOperationPermitVerificationConfiguration({version:1,
+  keys:[legacy.keys[0],{keyId:'other',publicKeyPem:newKey.publicKeyPem}]},
+  {allowLegacyVersion1:true}),/keyring rejected/);
 });
 
 test('signing rejects wrong active kid, noncanonical authority and invalid lifetime generically',()=>{
