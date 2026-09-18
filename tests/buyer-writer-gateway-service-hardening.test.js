@@ -56,7 +56,7 @@ test('shutdown never removes a pathname that no longer names its socket',async()
   const f=fixture(),gateway=f.gateway();
   try{
     await gateway.listen();fs.unlinkSync(f.socketPath);fs.writeFileSync(f.socketPath,'replacement',{mode:0o600});
-    await gateway.close();
+    assert.equal(gateway.isReady(),false);await gateway.close();
     assert.equal(fs.readFileSync(f.socketPath,'utf8'),'replacement');
     assert.equal(fs.lstatSync(f.socketPath).isFile(),true);
     assert.deepEqual(fs.readdirSync(f.root),['gateway.sock']);
@@ -89,4 +89,65 @@ test('rejected frames cannot amplify untrusted identifiers into service journals
     assert.equal(Number.isSafeInteger(records[0].durationMs),true);
     assert.ok(JSON.stringify(records[0]).length<128);
   }finally{await gateway.close();f.cleanup();}
+});
+
+test('post-publication replacement fails readiness and preserves an unrelated sentinel',async()=>{
+  const f=fixture(),sentinel='do-not-delete';
+  const io={...fs,linkSync(source,target){
+    fs.linkSync(source,target);fs.unlinkSync(target);fs.writeFileSync(target,sentinel,{mode:0o600});
+  }};
+  const gateway=createBuyerWriterLocalGateway({socketPath:f.socketPath,capability,authority,gatewayIdentityVerified:true,io,
+    runtimeQuery:async()=>assert.fail('runtime query forbidden'),issuerQuery:async()=>assert.fail('issuer query forbidden')});
+  try{
+    await assert.rejects(gateway.listen(),/listen rejected/);assert.equal(gateway.isReady(),false);
+    assert.equal(fs.readFileSync(f.socketPath,'utf8'),sentinel);await gateway.close();
+    assert.equal(fs.readFileSync(f.socketPath,'utf8'),sentinel);
+    assert.deepEqual(fs.readdirSync(f.root),['gateway.sock']);
+  }finally{await gateway.close().catch(()=>{});f.cleanup();}
+});
+
+test('a replacement winner remains continuously connectable through candidate failure and close',async()=>{
+  const f=fixture(),marker=path.join(f.root,'winner-ready'),waitArray=new Int32Array(new SharedArrayBuffer(4));let winner;
+  const io={...fs,linkSync(source,target){
+    fs.linkSync(source,target);fs.unlinkSync(target);
+    const sourceCode="const fs=require('fs'),net=require('net');const s=net.createServer(c=>c.end('winner'));s.listen(process.argv[1],()=>fs.writeFileSync(process.argv[2],'ready'));process.on('SIGTERM',()=>s.close(()=>process.exit(0)));setInterval(()=>{},1000)";
+    winner=spawn(process.execPath,['-e',sourceCode,target,marker],{stdio:'ignore'});
+    for(let index=0;index<200&&!fs.existsSync(marker);index++)Atomics.wait(waitArray,0,0,5);
+    if(!fs.existsSync(marker))throw new Error('winner did not bind');
+  }};
+  const gateway=createBuyerWriterLocalGateway({socketPath:f.socketPath,capability,authority,gatewayIdentityVerified:true,io,
+    runtimeQuery:async()=>assert.fail('runtime query forbidden'),issuerQuery:async()=>assert.fail('issuer query forbidden')});
+  const readWinner=()=>new Promise((resolve,reject)=>{
+    const socket=net.createConnection({path:f.socketPath});let value='';socket.once('error',reject);
+    socket.on('data',chunk=>value+=chunk);socket.once('close',()=>resolve(value));
+  });
+  try{
+    await assert.rejects(gateway.listen(),/listen rejected/);assert.equal(await readWinner(),'winner');
+    await gateway.close();assert.equal(await readWinner(),'winner');
+  }finally{
+    if(winner?.exitCode===null){winner.kill('SIGTERM');await new Promise(resolve=>winner.once('exit',resolve));}
+    f.cleanup();
+  }
+});
+
+test('sentinel collisions cannot influence shutdown cleanup',async()=>{
+  const f=fixture(),gateway=f.gateway(),sentinel=path.join(f.root,'.buyer-writer-preserved-'+process.pid);
+  try{
+    fs.writeFileSync(sentinel,'sentinel',{mode:0o600});await gateway.listen();await gateway.close();
+    assert.equal(fs.readFileSync(sentinel,'utf8'),'sentinel');assert.equal(fs.existsSync(f.socketPath),false);
+    assert.deepEqual(fs.readdirSync(f.root),[path.basename(sentinel)]);
+  }finally{await gateway.close();f.cleanup();}
+});
+
+test('concurrent starters publish exactly one connectable winner and loser cleanup is isolated',async()=>{
+  const f=fixture(),first=f.gateway(),second=f.gateway();
+  try{
+    const outcomes=await Promise.allSettled([first.listen(),second.listen()]);
+    assert.equal(outcomes.filter(value=>value.status==='fulfilled').length,1);
+    assert.equal(outcomes.filter(value=>value.status==='rejected').length,1);
+    await connect(f.socketPath);
+    const loser=outcomes[0].status==='rejected'?first:second,winner=loser===first?second:first;
+    await loser.close();await connect(f.socketPath);assert.equal(winner.isReady(),true);
+    await winner.close();assert.equal(fs.existsSync(f.socketPath),false);
+  }finally{await Promise.allSettled([first.close(),second.close()]);f.cleanup();}
 });
