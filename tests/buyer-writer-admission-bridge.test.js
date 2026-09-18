@@ -15,6 +15,8 @@ const ids={
  jti:'00000000-0000-4000-8000-000000000005',
  jobId:'00000000-0000-4000-8000-000000000006',
  dispatchId:'00000000-0000-4000-8000-000000000007',
+ recoveryRequestId:'00000000-0000-4000-8000-000000000009',
+ recoveryJti:'00000000-0000-4000-8000-000000000010',
 };
 const configuration=JSON.stringify({
  issuer:'https://issuer.example',audience:'zola-buyer-writer',subject:ids.subject,
@@ -37,21 +39,28 @@ const routeParameters={
   p_expected_updated_at:'2026-09-17T20:00:00Z'},
  receipt:{p_digest:'b'.repeat(64),p_workspace:'isolated',p_job:ids.jobId,p_dispatch:ids.dispatchId,
   p_generation:1,p_operation:'start',p_index:0},
+ recover:{p_workspace:'isolated',p_owner:ids.subject,p_original_issuer:'https://issuer.example',
+  p_original_jti:ids.jti,p_original_request:ids.requestId,p_original_digest:'d'.repeat(64),p_route_operation:'apply'},
 };
 function encoded(value){return Buffer.from(JSON.stringify(value)).toString('base64url');}
 function fixture(overrides={}){
  const requestId=overrides.requestId??ids.requestId;
  const jti=overrides.jti??ids.jti;
  const operation=overrides.operation??'apply',routeParameters=overrides.parameters??parameters;
- const kind=overrides.kind??(['issue','cancel','reconcile'].includes(operation)?'issuer':'runtime');
+ const kind=overrides.kind??(operation==='recover'?'recovery':['issue','cancel','reconcile'].includes(operation)?'issuer':'runtime');
  const envelope={version:1,requestId,operation,parameters:routeParameters,
   releaseSha:'a'.repeat(40),operationId:ids.operationId,attemptId:ids.attemptId,workspace:'isolated'};
  const body=Buffer.from(JSON.stringify({envelope}));
  const header=encoded({alg:'Ed25519',typ:'zola-operation+jwt',kid:'test-key'});
+ const recoveryClaims=operation==='recover'?{
+  originalIssuer:routeParameters.p_original_issuer,originalJti:routeParameters.p_original_jti,
+  originalRequestId:routeParameters.p_original_request,originalBodyDigest:routeParameters.p_original_digest,
+  routeOperation:routeParameters.p_route_operation,
+ }:{};
  const claims=encoded({iss:'https://issuer.example',aud:'zola-buyer-writer',sub:ids.subject,jti,
   iat:now,nbf:now,exp:now+30,kind,operation,requestId,
   bodyDigest:createHash('sha256').update(body).digest('hex'),releaseSha:'a'.repeat(40),
-  operationId:ids.operationId,attemptId:ids.attemptId,workspace:'isolated'});
+  operationId:ids.operationId,attemptId:ids.attemptId,workspace:'isolated',...recoveryClaims});
  const token=`${header}.${claims}.${sign(null,Buffer.from(`${header}.${claims}`),privateKey).toString('base64url')}`;
  const rawHeaders=['Authorization',`Bearer ${token}`,'Content-Type','application/json',
   'Content-Length',String(body.length)];
@@ -189,6 +198,43 @@ test('lost apply acknowledgement correlates once and never replays apply',async(
  });
  assert.deepEqual(calls,[ADMISSION_SQL.reserve,ADMISSION_SQL.apply,ADMISSION_SQL.correlate]);
  assert.equal(calls.filter(x=>x===ADMISSION_SQL.apply).length,1);
+});
+
+test('fresh-process recovery uses a distinct signed permit and only the recovery statement',async()=>{
+ const calls=[];
+ const recovered={state:'succeeded',routeOperation:'apply',result:success,automaticRetry:false,requestCorrelated:true};
+ const output=await bridge(async(sql,params)=>{
+  calls.push({sql,params});
+  if(sql===ADMISSION_SQL.reserve)return reserveResult;
+  if(sql===ADMISSION_SQL.recover)return {rows:[{result:recovered}]};
+  assert.fail('fresh recovery must not execute a business wrapper');
+ })(fixture({operation:'recover',parameters:routeParameters.recover,
+  requestId:ids.recoveryRequestId,jti:ids.recoveryJti}));
+ assert.deepEqual(output,{status:200,body:{...success,recovered:true,automaticRetry:false}});
+ assert.deepEqual(calls.map(call=>call.sql),[ADMISSION_SQL.reserve,ADMISSION_SQL.recover]);
+ assert.equal(calls[1].params.length,14);
+ assert.deepEqual(calls[1].params.slice(9),['https://issuer.example',ids.jti,ids.requestId,'d'.repeat(64),'apply']);
+});
+
+test('replayed recovery permit and malformed recovered outcome fail closed without mutation',async()=>{
+ let calls=[];
+ const request=fixture({operation:'recover',parameters:routeParameters.recover,
+  requestId:ids.recoveryRequestId,jti:ids.recoveryJti});
+ const replay=await bridge(async sql=>{
+  calls.push(sql);if(sql===ADMISSION_SQL.reserve)return {rows:[{accepted:false}]};
+  assert.fail('replayed recovery must stop at reservation');
+ })(request);
+ assert.equal(replay.status,401);
+ assert.deepEqual(calls,[ADMISSION_SQL.reserve]);
+ calls=[];
+ const malformed=await bridge(async sql=>{
+  calls.push(sql);if(sql===ADMISSION_SQL.reserve)return reserveResult;
+  return {rows:[{result:{state:'succeeded',routeOperation:'issue',result:success,
+   automaticRetry:false,requestCorrelated:true}}]};
+ })(request);
+ assert.equal(malformed.status,503);
+ assert.equal(malformed.body.code,'ADMISSION_UNKNOWN');
+ assert.deepEqual(calls,[ADMISSION_SQL.reserve,ADMISSION_SQL.recover]);
 });
 
 test('reserved or inconsistent correlation remains unavailable without retry',async()=>{

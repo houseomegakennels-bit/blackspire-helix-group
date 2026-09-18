@@ -15,6 +15,7 @@ export const ADMISSION_SQL=Object.freeze({
  reconcile:'select buyer_writer.execute_admitted_reconcile($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10::uuid,$11::uuid,$12::timestamptz) as result',
  receipt:'select buyer_writer.execute_admitted_receipt($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10,$11::uuid,$12::uuid,$13::bigint,$14,$15::integer) as result',
  correlate:'select buyer_writer.correlate_admission($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9) as result',
+ recover:'select buyer_writer.recover_admission($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10,$11::uuid,$12::uuid,$13,$14) as result',
 });
 
 class AdmissionBridgeError extends Error {
@@ -87,6 +88,13 @@ function parsedParameters(operation,p,claims){
   validateBuyerJobRevision(p.p_expected_updated_at);
   return {value:p,sql:[p.p_job,p.p_request,p.p_expected_updated_at]};
  }
+ if(operation==='recover'){
+  if(typeof p.p_original_issuer!=='string'||p.p_original_issuer.length<1||p.p_original_issuer.length>200
+   ||!UUID.test(p.p_original_jti)||!UUID.test(p.p_original_request)||!DIGEST.test(p.p_original_digest)
+   ||!['apply','issue','cancel','reconcile','receipt'].includes(p.p_route_operation))reject();
+  return {value:p,routeOperation:p.p_route_operation,sql:[p.p_original_issuer,p.p_original_jti,
+   p.p_original_request,p.p_original_digest,p.p_route_operation]};
+ }
  if(operation==='receipt'){
   if(!DIGEST.test(p.p_digest))reject();
   const receipt=parseWriterReceipt({jobId:p.p_job,body:Buffer.from(JSON.stringify({
@@ -124,18 +132,35 @@ function resultKind(operation,value,parsed){
  }
  return null;
 }
+function recoveredResultKind(operation,value){
+ if(operation==='apply'){
+  if(plain(value,['ok','operation','chunkIndex'])&&value.ok===true&&typeof value.operation==='string'
+   &&value.operation.length>0&&value.operation.length<=32&&Number.isSafeInteger(value.chunkIndex)&&value.chunkIndex>=0)return 'succeeded';
+  if(plain(value,['ok','code'])&&value.ok===false&&value.code==='WRITE_FAILED')return 'business_failed';
+ }else if(operation==='issue'&&plain(value,['dispatchId','generation'])&&UUID.test(value.dispatchId)
+  &&Number.isSafeInteger(value.generation)&&value.generation>0)return 'succeeded';
+ else if(operation==='cancel'&&plain(value,['cancelled','jobId'])&&value.cancelled===true&&UUID.test(value.jobId))return 'succeeded';
+ else if(operation==='reconcile'&&plain(value,['dispatchId','generation','state'])&&UUID.test(value.dispatchId)
+  &&['absent','cancelled','completed','failed'].includes(value.state)
+  &&(value.state==='absent'?value.generation===null:Number.isSafeInteger(value.generation)&&value.generation>0))return 'succeeded';
+ else if(operation==='receipt'&&plain(value,['found','receipt'])&&typeof value.found==='boolean'){
+  if(!value.found&&value.receipt===null)return 'succeeded';
+  if(value.found&&recoveredResultKind('apply',value.receipt))return 'succeeded';
+ }
+ return null;
+}
 function admissionParameters(auth){
  return [auth.issuer,auth.jti,auth.requestId,auth.bodyDigest,auth.subject,
   auth.releaseSha,auth.operationId,auth.attemptId,auth.workspace];
 }
-function recoveryResponse(value,operation,parsed){
+function recoveryResponse(value,operation,parsed,{fresh=false}={}){
  if(!value||typeof value!=='object'||Array.isArray(value)||value.automaticRetry!==false)return response(503,'ADMISSION_UNKNOWN');
  if(value.state==='reserved'&&plain(value,['state','automaticRetry']))return response(503,'ADMISSION_RESERVED');
  if(value.state==='inconsistent'&&plain(value,['state','automaticRetry']))return response(503,'ADMISSION_INCONSISTENT');
  if(!['succeeded','business_failed'].includes(value.state)
   ||!plain(value,['state','routeOperation','result','automaticRetry','requestCorrelated'])
   ||value.routeOperation!==operation||value.requestCorrelated!==true)return response(503,'ADMISSION_UNKNOWN');
- const kind=resultKind(operation,value.result,parsed);
+ const kind=fresh?recoveredResultKind(operation,value.result):resultKind(operation,value.result,parsed);
  if(kind!==value.state)return response(503,'ADMISSION_INCONSISTENT');
  return kind==='succeeded'
   ?{status:200,body:{...value.result,recovered:true,automaticRetry:false}}
@@ -178,7 +203,7 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
  const verifier=createOperationPermitVerifier({
   mode:'isolated-prototype',configuration,publicKeyPem,consume:reserve,now,reserveTimeoutMs,
   validateParameters:(operation,parameters,claims)=>{
-   if(!['issue','cancel','reconcile','apply','receipt'].includes(operation))return false;
+   if(!['issue','cancel','reconcile','apply','receipt','recover'].includes(operation))return false;
    try{parsedParameters(operation,parameters,claims);return true;}catch{return false;}
   },
  });
@@ -190,6 +215,16 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
      try{auth=await verifier.authorize(readHttpRequest(request));}
      catch(error){if(store.unavailable)throw new AdmissionUnavailableError();throw error;}
      const parsed=parsedParameters(auth.operation,auth.parameters,auth),base=admissionParameters(auth);
+     if(auth.operation==='recover'){
+      try{
+       const value=one(await boundedOperation(admissionExecutor,'recover',[...base,...parsed.sql],correlateTimeoutMs),'result');
+       return {done:true,response:recoveryResponse(value,parsed.routeOperation,parsed,{fresh:true})};
+      }catch(error){
+       const status=sqlStatus.get(error?.code);
+       return {done:true,response:status?response(status,status===403?'ADMISSION_REJECTED':'ADMISSION_INVALID')
+        :response(503,'ADMISSION_UNKNOWN')};
+      }
+     }
      try{
       const result=await boundedOperation(admissionExecutor,auth.operation,[...base,...parsed.sql],executeTimeoutMs);
       const value=one(result,'result'),kind=resultKind(auth.operation,value,parsed);

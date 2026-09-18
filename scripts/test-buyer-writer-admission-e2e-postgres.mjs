@@ -59,23 +59,32 @@ const criteria={state:'NC',county:'Wake',property_type:'land',date_range_start:'
  date_range_end:'2026-12-31',min_purchases:1,cash_buyers_only:false,llc_buyers_only:false};
 const encoded=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
 function signedRequest(operation,parameters,{jti=randomUUID(),requestId=randomUUID()}={}){
- const kind=['issue','cancel','reconcile'].includes(operation)?'issuer':'runtime';
+ const kind=operation==='recover'?'recovery':['issue','cancel','reconcile'].includes(operation)?'issuer':'runtime';
  const envelope={version:1,requestId,operation,parameters,releaseSha,operationId,attemptId,workspace};
  const body=Buffer.from(JSON.stringify({envelope}));
  const now=Math.floor(Date.now()/1000);
  const header=encoded({alg:'Ed25519',typ:'zola-operation+jwt',kid:'test-key'});
+ const recoveryClaims=operation==='recover'?{
+  originalIssuer:parameters.p_original_issuer,originalJti:parameters.p_original_jti,
+  originalRequestId:parameters.p_original_request,originalBodyDigest:parameters.p_original_digest,
+  routeOperation:parameters.p_route_operation,
+ }:{};
  const claims=encoded({iss:issuer,aud:audience,sub:owner,jti,iat:now,nbf:now,exp:now+30,
-  kind,operation,requestId,bodyDigest:digest(body),releaseSha,operationId,attemptId,workspace});
+  kind,operation,requestId,bodyDigest:digest(body),releaseSha,operationId,attemptId,workspace,...recoveryClaims});
  const token=`${header}.${claims}.${sign(null,Buffer.from(`${header}.${claims}`),privateKey).toString('base64url')}`;
  return {origin,method:'POST',path:`/rest/v1/rpc/${operation}`,
   rawHeaders:['Authorization',`Bearer ${token}`,'Content-Type','application/json','Content-Length',String(body.length)],body};
 }
-let dropNextApplyAcknowledgement=false,applyExecutions=0;
+let dropNextApplyAcknowledgement=false,dropNextCorrelationAcknowledgement=false,applyExecutions=0;
 class FaultPool extends Pool{
  async connect(){
   const connection=await super.connect(),query=connection.query.bind(connection);
   connection.query=async config=>{
    const result=await query(config);
+   if(config?.text===ADMISSION_SQL.correlate&&dropNextCorrelationAcknowledgement){
+    dropNextCorrelationAcknowledgement=false;
+    throw Object.assign(new Error('synthetic correlation acknowledgement loss'),{code:'ECONNRESET'});
+   }
    if(config?.text===ADMISSION_SQL.apply){
     applyExecutions++;
     if(dropNextApplyAcknowledgement){
@@ -178,7 +187,7 @@ try{
   const graph=await identityClient.query(`select session_user as login,current_user as role,
    (select count(*)::int from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='buyer_writer' and has_function_privilege(current_user,p.oid,'EXECUTE')) as callable`);
-  assert.deepEqual(graph.rows,[{login:'buyer_writer_admission_login',role:'buyer_writer_admission',callable:8}],
+  assert.deepEqual(graph.rows,[{login:'buyer_writer_admission_login',role:'buyer_writer_admission',callable:9}],
    'same-session role graph exposed a mismatched callable surface');
  }finally{identityClient.release();await direct.end();}
  admission=await createBuyerWriterAdmissionPostgres({connection,expectedCreatorOid:creatorOid,Pool:FaultPool});
@@ -208,14 +217,56 @@ try{
  assert.deepEqual(issue.body,{dispatchId:operationId,generation:1,automaticRetry:false});
  const q={jobId,version:1,dispatchId:operationId,generation:1,operation:'start',
   chunkIndex:0,chunkCount:1,payload:{}};
+ const applyJti=randomUUID(),applyRequestId=randomUUID();
+ const applyRequest=signedRequest('apply',{p_digest:permitDigest,p_workspace:workspace,q},
+  {jti:applyJti,requestId:applyRequestId});
  dropNextApplyAcknowledgement=true;
- const apply=await client.admittedRequest(signedRequest('apply',{
-  p_digest:permitDigest,p_workspace:workspace,q,
- }));
- assert.equal(apply.status,200,JSON.stringify(apply));
- assert.deepEqual(apply.body,{ok:true,operation:'start',chunkIndex:0,recovered:true,automaticRetry:false});
+ dropNextCorrelationAcknowledgement=true;
+ const apply=await client.admittedRequest(applyRequest);
+ assert.deepEqual(apply,{status:503,body:{ok:false,code:'ADMISSION_UNKNOWN',automaticRetry:false}},
+  'double acknowledgement loss must require an explicit fresh recovery permit');
  assert.equal(applyExecutions,1,'lost acknowledgement replayed the admitted apply');
- const receipt=await client.admittedRequest(signedRequest('receipt',{
+ const originalDigest=digest(applyRequest.body);
+ await client.close();client=undefined;
+ await gateway.close();gateway=undefined;
+ await admission.close();admission=undefined;
+ const childRequest=request=>({
+  connection,expectedCreatorOid:creatorOid,configuration,publicKeyPem,
+  request:{...request,bodyBase64:request.body.toString('base64'),body:undefined},
+ });
+ const cold=request=>{
+  const child=spawnSync(process.execPath,['scripts/test-buyer-writer-admission-recovery-child.mjs'],{
+   cwd:process.cwd(),encoding:'utf8',timeout:30_000,input:JSON.stringify(childRequest(request)),
+  });
+  assert.equal(child.status,0,(child.stderr??'').slice(0,500));
+  return JSON.parse(child.stdout);
+ };
+ const recoveryParameters=overrides=>({
+  p_workspace:workspace,p_owner:owner,p_original_issuer:issuer,p_original_jti:applyJti,
+  p_original_request:applyRequestId,p_original_digest:originalDigest,p_route_operation:'apply',...overrides,
+ });
+ const wrongBinding=cold(signedRequest('recover',recoveryParameters({p_original_digest:'0'.repeat(64)})));
+ assert.deepEqual(wrongBinding,{status:403,body:{ok:false,code:'ADMISSION_REJECTED',automaticRetry:false}});
+ const crossRoute=cold(signedRequest('recover',recoveryParameters({p_route_operation:'issue'})));
+ assert.deepEqual(crossRoute,{status:403,body:{ok:false,code:'ADMISSION_REJECTED',automaticRetry:false}});
+ const reservedJti=randomUUID(),reservedRequest=randomUUID(),reservedDigest='1'.repeat(64);
+ await admin.query(`insert into buyer_writer.operation_admissions
+  (issuer,jti,request_id,raw_body_digest,expires_at) values($1,$2,$3,$4,clock_timestamp()+interval '1 minute')`,
+  [issuer,reservedJti,reservedRequest,reservedDigest]);
+ const incomplete=cold(signedRequest('recover',recoveryParameters({
+  p_original_jti:reservedJti,p_original_request:reservedRequest,p_original_digest:reservedDigest,
+ })));
+ assert.deepEqual(incomplete,{status:403,body:{ok:false,code:'ADMISSION_REJECTED',automaticRetry:false}});
+ const recoveryRequest=signedRequest('recover',recoveryParameters({}));
+ const recovered=cold(recoveryRequest);
+ assert.deepEqual(recovered,{status:200,body:{ok:true,operation:'start',chunkIndex:0,
+  recovered:true,automaticRetry:false}});
+ const replay=cold(recoveryRequest);
+ assert.deepEqual(replay,{status:401,body:{ok:false,code:'ADMISSION_REJECTED',automaticRetry:false}});
+ const receiptAdmission=await createBuyerWriterAdmissionPostgres({connection,expectedCreatorOid:creatorOid,Pool});
+ const receiptBridge=createAdmissionBridge({mode:'research-admission',configuration,publicKeyPem,
+  admissionExecutor:receiptAdmission.executor,now:()=>Math.floor(Date.now()/1000)});
+ const receipt=await receiptBridge(signedRequest('receipt',{
   p_digest:permitDigest,p_workspace:workspace,p_job:jobId,p_dispatch:operationId,
   p_generation:1,p_operation:'start',p_index:0,
  }));
@@ -224,19 +275,19 @@ try{
  assert.deepEqual(receipt.body.receipt,{ok:true,operation:'start',chunkIndex:0});
  assert.equal(receipt.body.automaticRetry,false);
  const absentDispatch=randomUUID();
- const reconcile=await client.admittedRequest(signedRequest('reconcile',{
+ const reconcile=await receiptBridge(signedRequest('reconcile',{
   p_job:jobId,p_owner:owner,p_workspace:workspace,p_request:absentDispatch,
   p_expected_updated_at:null,
  }));
  assert.equal(reconcile.status,200,JSON.stringify(reconcile));
  assert.deepEqual(reconcile.body,{dispatchId:absentDispatch,generation:null,state:'absent',automaticRetry:false});
- const cancel=await client.admittedRequest(signedRequest('cancel',{
+ const cancel=await receiptBridge(signedRequest('cancel',{
   p_job:cancelJob,p_owner:owner,p_workspace:workspace,
  }));
  assert.equal(cancel.status,200,JSON.stringify(cancel));
  assert.deepEqual(cancel.body,{cancelled:true,jobId:cancelJob,automaticRetry:false});
  const correlated=(await admin.query(`select state,route_operation,result from buyer_writer.operation_admissions
-  where job_id=$1 and route_operation='apply'`,[jobId])).rows;
+  where issuer=$1 and jti=$2`,[issuer,applyJti])).rows;
  assert.equal(correlated.length,1,'lost-ack apply admission was not persisted once');
  assert.equal(correlated[0].state,'succeeded');
  assert.equal(correlated[0].route_operation,'apply');
@@ -245,10 +296,12 @@ try{
   (select count(*)::int from buyer_writer.operation_admissions) as admissions,
   (select count(*)::int from buyer_writer.receipts where dispatch_id=$1 and operation='start' and chunk_index=0) as receipts`,
   [operationId])).rows[0];
- assert.deepEqual(counts,{admissions:5,receipts:1},'route admission or exactly-once receipt count mismatched');
+ assert.deepEqual(counts,{admissions:10,receipts:1},'recovery admissions or exactly-once receipt count mismatched');
+ await receiptAdmission.close();
  await admin.end();
  process.stdout.write(JSON.stringify({ok:true,postgres:'17.6',canonicalInstaller:true,
   dedicatedAdmissionLogin:true,sameSessionIdentity:true,admittedRoutes:['issue','apply','receipt','reconcile','cancel'],
-  lostAcknowledgementRecovered:true,applyExecutions,admissions:counts.admissions,receipts:counts.receipts,
+  lostAcknowledgementRecovered:true,freshProcessRecovered:true,recoveryAdversarial:true,
+  applyExecutions,admissions:counts.admissions,receipts:counts.receipts,
   productionTouched:false})+'\n');
 }finally{await cleanup();}

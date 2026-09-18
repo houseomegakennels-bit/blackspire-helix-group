@@ -97,7 +97,8 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
      'buyer_writer.apply(text,text,jsonb)','buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)',
      'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)',
      'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)',
-     'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'))
+     'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)',
+     'buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)'))
    or exists(select from pg_class where relnamespace=ns and relname not in(
      'dispatches','receipts','sales','sales_ordinal_seq','dispatches_pkey','dispatches_permit_digest_key',
      'dispatches_job_id_generation_key','receipts_pkey','sales_pkey','operation_admissions',
@@ -128,7 +129,8 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     ('buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','ae1fdc1c4baa85f264d43dc58a8e3db731b58c0811ea51cc6c3756979975a854','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','e6e4e51af093ae9f191c1f5d4569a1c044d2f364200fe72200634d44f3e0f32f','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','b6cf6d1de315b436687ab02ee32ceef221429973a00c76293ff602d8677c4a8b','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
-    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','9fbeb13300e17490f7a648a8e0171f03bc9da8cc6b5ad6dd675792342664398b','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer')
+    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','9fbeb13300e17490f7a648a8e0171f03bc9da8cc6b5ad6dd675792342664398b','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)','6b70b51835dd1739c7842c3f28e4c1e221c79ebe83f08ed5a05c9a5d3c7a0c9d','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer')
    ) expected(signature,digest,language,security_definer,config,volatility,owner_kind)
    left join pg_namespace pn on pn.nspname='buyer_writer'
    left join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
@@ -138,7 +140,8 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
       'buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)',
       'buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)',
       'buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)',
-      'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)')
+      'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)',
+      'buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)')
      or (to_regclass('buyer_writer.operation_admissions') is null and expected.signature in(
       'buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)',
       'buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)',
@@ -167,7 +170,8 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
       when 'buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_job']
       when 'buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_job','p_dispatch_request','p_expected_updated_at']
       when 'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_permit_digest','p_job','p_dispatch','p_generation','p_business_operation','p_chunk_index']
-      when 'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace'] end
+      when 'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace']
+      when 'buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)' then array['p_issuer','p_jti','p_request','p_raw_digest','p_subject','p_release','p_operation_id','p_attempt_id','p_workspace','p_original_issuer','p_original_jti','p_original_request','p_original_digest','p_route_operation'] end
     or p.prorettype::regtype::text is distinct from case when expected.signature='buyer_writer.cancel(uuid,uuid,text)' then 'void'
       when expected.signature in('buyer_writer.lock_public_scope()','buyer_writer.lock_scope()','buyer_writer.valid_context(jsonb)','buyer_writer.valid_sale(jsonb)','buyer_writer.eligible(jsonb,jsonb)','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)') then 'boolean'
       when expected.signature='buyer_writer.commit_buyers(buyer_writer.dispatches)' then 'integer' else 'jsonb' end
@@ -198,7 +202,8 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     ('buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)'),
     ('buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)'),
     ('buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)'),
-    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')) expected(signature)
+    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'),
+    ('buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)')) expected(signature)
     join pg_namespace pn on pn.nspname='buyer_writer'
     join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
     cross join lateral (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
@@ -208,7 +213,7 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
        or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
        or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
        or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')
-       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') and g.rolname='buyer_writer_admission'
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)') and g.rolname='buyer_writer_admission'
         and (expected.signature<>'buyer_writer.lock_scope()' or to_regclass('buyer_writer.operation_admissions') is not null))) reviewed(edges)
     where actual.edges is distinct from reviewed.edges) then
    raise exception 'Writer schema or routine ACL drift';
@@ -254,7 +259,8 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
         'buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)',
         'buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)',
         'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)',
-        'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')))))
+        'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)',
+        'buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)')))))
      or exists(select from pg_namespace n where n.nspname !~ '^pg_temp' and has_schema_privilege(r,n.oid,'CREATE'))
      or has_database_privilege(r,current_database(),'CREATE') then raise exception 'Unexpected writer role privileges';end if;
  end loop;
@@ -1034,6 +1040,76 @@ begin
   'result',a.result,'automaticRetry',false,'requestCorrelated',true);
 end$$;
 
+create or replace function buyer_writer.recover_admission(
+ p_issuer text,p_jti uuid,p_request uuid,p_raw_digest text,p_subject uuid,
+ p_release text,p_operation_id uuid,p_attempt_id uuid,p_workspace text,
+ p_original_issuer text,p_original_jti uuid,p_original_request uuid,
+ p_original_digest text,p_route_operation text
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog set lock_timeout='5s' as $$
+declare recovery buyer_writer.operation_admissions;
+ original buyer_writer.operation_admissions; correlation jsonb;
+begin
+ if p_issuer is null or length(p_issuer) not between 1 and 200 or p_jti is null
+  or p_request is null or p_subject is null or p_raw_digest !~ '^[a-f0-9]{64}$'
+  or p_release !~ '^[a-f0-9]{40}$' or p_operation_id is null or p_attempt_id is null
+  or p_workspace is null or length(p_workspace) not between 1 and 128
+  or p_original_issuer is null or length(p_original_issuer) not between 1 and 200
+  or p_original_jti is null or p_original_request is null
+  or p_original_digest !~ '^[a-f0-9]{64}$'
+  or p_route_operation not in('apply','issue','cancel','reconcile','receipt') then
+  raise exception using errcode='22023',message='Buyer writer admission rejected';
+ end if;
+ select * into recovery from buyer_writer.operation_admissions
+  where issuer=p_issuer and jti=p_jti;
+ if not found or recovery.state<>'reserved'
+  or recovery.request_id is distinct from p_request
+  or recovery.raw_body_digest is distinct from p_raw_digest
+  or recovery.subject is not null or recovery.expires_at<=clock_timestamp() then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ select * into original from buyer_writer.operation_admissions
+  where issuer=p_original_issuer and jti=p_original_jti;
+ if not found or original.request_id is distinct from p_original_request
+  or original.raw_body_digest is distinct from p_original_digest
+  or original.subject is distinct from p_subject
+  or original.release_sha is distinct from p_release
+  or original.operation_id is distinct from p_operation_id
+  or original.attempt_id is distinct from p_attempt_id
+  or original.workspace is distinct from p_workspace
+  or original.route_operation is distinct from p_route_operation
+  or original.state not in('succeeded','business_failed') then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ correlation:=buyer_writer.correlate_admission(
+  p_original_issuer,p_original_jti,p_original_request,p_original_digest,p_subject,
+  p_release,p_operation_id,p_attempt_id,p_workspace);
+ if correlation->>'state' not in('succeeded','business_failed')
+  or correlation->>'routeOperation' is distinct from p_route_operation
+  or correlation->'requestCorrelated' is distinct from 'true'::jsonb then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ select * into original from buyer_writer.operation_admissions
+  where issuer=p_original_issuer and jti=p_original_jti;
+ select * into recovery from buyer_writer.operation_admissions
+  where issuer=p_issuer and jti=p_jti for update;
+ if recovery.state<>'reserved' or recovery.request_id is distinct from p_request
+  or recovery.raw_body_digest is distinct from p_raw_digest
+  or recovery.subject is not null or recovery.expires_at<=clock_timestamp() then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ update buyer_writer.operation_admissions set
+  state=original.state,subject=p_subject,release_sha=p_release,
+  operation_id=p_operation_id,attempt_id=p_attempt_id,workspace=p_workspace,
+  route_operation=p_route_operation,job_id=original.job_id,
+  dispatch_id=original.dispatch_id,generation=original.generation,
+  business_operation=original.business_operation,chunk_index=original.chunk_index,
+  request_digest=original.request_digest,result=original.result,
+  completed_at=clock_timestamp()
+ where issuer=p_issuer and jti=p_jti;
+ return correlation;
+end$$;
+
 -- Runtime obtains an atomic DDL fence without receiving table privileges. The
 -- pinned creator and NOLOGIN owner each own one digest-bound SECURITY DEFINER
 -- routine; their bodies can only lock their exact reviewed relation subsets.
@@ -1081,7 +1157,8 @@ do $$declare t text; signature text; begin
   'buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)',
   'buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)',
   'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)',
-  'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'] loop
+  'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)',
+  'buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)'] loop
   execute format('alter function %s owner to buyer_writer_owner',signature);
   execute format('revoke all on function %s from public,anon,authenticated,buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission',signature);
  end loop;
@@ -1094,7 +1171,8 @@ grant execute on function buyer_writer.reserve_operation(text,uuid,uuid,text,tim
  buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid),
  buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone),
  buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer),
- buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) to buyer_writer_admission;
+ buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text),
+ buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text) to buyer_writer_admission;
 reset role;
 revoke references(id) on public."SearchJob" from buyer_writer_owner;
 set local role buyer_writer_owner;
@@ -1195,7 +1273,8 @@ do $$begin
     ('buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)'),
     ('buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)'),
     ('buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)'),
-    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')) expected(signature)
+    ('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'),
+    ('buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)')) expected(signature)
     join pg_namespace pn on pn.nspname='buyer_writer'
     join pg_proc p on p.pronamespace=pn.oid and p.oid::regprocedure::text=expected.signature
     cross join lateral (select array_agg(array[a.grantor::text,a.grantee::text,a.privilege_type,a.is_grantable::text] order by a.grantee,a.privilege_type,a.grantor,a.is_grantable)
@@ -1205,7 +1284,7 @@ do $$begin
        or (expected.signature='buyer_writer.lock_public_scope()' and g.rolname='buyer_writer_owner')
        or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.context(text,text,uuid,uuid,bigint)') and g.rolname='buyer_writer_runtime')
        or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.issue(uuid,uuid,text,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.cancel(uuid,uuid,text)','buyer_writer.reconcile(uuid,uuid,text,uuid,timestamp with time zone)') and g.rolname='buyer_writer_issuer')
-       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)') and g.rolname='buyer_writer_admission'
+       or (expected.signature in('buyer_writer.lock_scope()','buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)') and g.rolname='buyer_writer_admission'
         and (expected.signature<>'buyer_writer.lock_scope()' or to_regclass('buyer_writer.operation_admissions') is not null))) reviewed(edges)
     where actual.edges is distinct from reviewed.edges) then
   raise exception 'Writer schema or routine ACL drift';

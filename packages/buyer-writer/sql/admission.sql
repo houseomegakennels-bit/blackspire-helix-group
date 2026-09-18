@@ -291,6 +291,76 @@ begin
   'result',a.result,'automaticRetry',false,'requestCorrelated',true);
 end$$;
 
+create or replace function buyer_writer.recover_admission(
+ p_issuer text,p_jti uuid,p_request uuid,p_raw_digest text,p_subject uuid,
+ p_release text,p_operation_id uuid,p_attempt_id uuid,p_workspace text,
+ p_original_issuer text,p_original_jti uuid,p_original_request uuid,
+ p_original_digest text,p_route_operation text
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog set lock_timeout='5s' as $$
+declare recovery buyer_writer.operation_admissions;
+ original buyer_writer.operation_admissions; correlation jsonb;
+begin
+ if p_issuer is null or length(p_issuer) not between 1 and 200 or p_jti is null
+  or p_request is null or p_subject is null or p_raw_digest !~ '^[a-f0-9]{64}$'
+  or p_release !~ '^[a-f0-9]{40}$' or p_operation_id is null or p_attempt_id is null
+  or p_workspace is null or length(p_workspace) not between 1 and 128
+  or p_original_issuer is null or length(p_original_issuer) not between 1 and 200
+  or p_original_jti is null or p_original_request is null
+  or p_original_digest !~ '^[a-f0-9]{64}$'
+  or p_route_operation not in('apply','issue','cancel','reconcile','receipt') then
+  raise exception using errcode='22023',message='Buyer writer admission rejected';
+ end if;
+ select * into recovery from buyer_writer.operation_admissions
+  where issuer=p_issuer and jti=p_jti;
+ if not found or recovery.state<>'reserved'
+  or recovery.request_id is distinct from p_request
+  or recovery.raw_body_digest is distinct from p_raw_digest
+  or recovery.subject is not null or recovery.expires_at<=clock_timestamp() then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ select * into original from buyer_writer.operation_admissions
+  where issuer=p_original_issuer and jti=p_original_jti;
+ if not found or original.request_id is distinct from p_original_request
+  or original.raw_body_digest is distinct from p_original_digest
+  or original.subject is distinct from p_subject
+  or original.release_sha is distinct from p_release
+  or original.operation_id is distinct from p_operation_id
+  or original.attempt_id is distinct from p_attempt_id
+  or original.workspace is distinct from p_workspace
+  or original.route_operation is distinct from p_route_operation
+  or original.state not in('succeeded','business_failed') then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ correlation:=buyer_writer.correlate_admission(
+  p_original_issuer,p_original_jti,p_original_request,p_original_digest,p_subject,
+  p_release,p_operation_id,p_attempt_id,p_workspace);
+ if correlation->>'state' not in('succeeded','business_failed')
+  or correlation->>'routeOperation' is distinct from p_route_operation
+  or correlation->'requestCorrelated' is distinct from 'true'::jsonb then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ select * into original from buyer_writer.operation_admissions
+  where issuer=p_original_issuer and jti=p_original_jti;
+ select * into recovery from buyer_writer.operation_admissions
+  where issuer=p_issuer and jti=p_jti for update;
+ if recovery.state<>'reserved' or recovery.request_id is distinct from p_request
+  or recovery.raw_body_digest is distinct from p_raw_digest
+  or recovery.subject is not null or recovery.expires_at<=clock_timestamp() then
+  raise exception using errcode='42501',message='Buyer writer admission rejected';
+ end if;
+ update buyer_writer.operation_admissions set
+  state=original.state,subject=p_subject,release_sha=p_release,
+  operation_id=p_operation_id,attempt_id=p_attempt_id,workspace=p_workspace,
+  route_operation=p_route_operation,job_id=original.job_id,
+  dispatch_id=original.dispatch_id,generation=original.generation,
+  business_operation=original.business_operation,chunk_index=original.chunk_index,
+  request_digest=original.request_digest,result=original.result,
+  completed_at=clock_timestamp()
+ where issuer=p_issuer and jti=p_jti;
+ return correlation;
+end$$;
+
 revoke all on table buyer_writer.operation_admissions from public;
 revoke all on function buyer_writer.reserve_operation(text,uuid,uuid,text,timestamptz) from public,buyer_writer_runtime,buyer_writer_issuer;
 revoke all on function buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb) from public,buyer_writer_runtime,buyer_writer_issuer;
@@ -299,10 +369,12 @@ revoke all on function buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,
 revoke all on function buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamptz) from public,buyer_writer_runtime,buyer_writer_issuer;
 revoke all on function buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer) from public,buyer_writer_runtime,buyer_writer_issuer;
 revoke all on function buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) from public,buyer_writer_runtime,buyer_writer_issuer;
+revoke all on function buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text) from public,buyer_writer_runtime,buyer_writer_issuer;
 grant execute on function buyer_writer.reserve_operation(text,uuid,uuid,text,timestamptz),
  buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb),
  buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamptz,uuid),
  buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid),
  buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamptz),
  buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer),
- buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) to buyer_writer_admission;
+ buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text),
+ buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text) to buyer_writer_admission;

@@ -10,11 +10,13 @@ const FIELDS=Object.freeze({
  apply:['p_digest','p_workspace','q'],
  context:['p_digest','p_workspace','p_job','p_dispatch','p_generation'],
  receipt:['p_digest','p_workspace','p_job','p_dispatch','p_generation','p_operation','p_index'],
+ recover:['p_workspace','p_owner','p_original_issuer','p_original_jti','p_original_request','p_original_digest','p_route_operation'],
 });
-const KIND=Object.freeze({issue:'issuer',cancel:'issuer',reconcile:'issuer',apply:'runtime',context:'runtime',receipt:'runtime'});
+const KIND=Object.freeze({issue:'issuer',cancel:'issuer',reconcile:'issuer',apply:'runtime',context:'runtime',receipt:'runtime',recover:'recovery'});
 const BINDING=['releaseSha','operationId','attemptId','workspace'];
 const CONFIG=['issuer','audience','subject','keyId','origin',...BINDING];
 const CLAIMS=['iss','aud','sub','jti','iat','nbf','exp','kind','operation','requestId','bodyDigest',...BINDING];
+const RECOVERY_CLAIMS=['originalIssuer','originalJti','originalRequestId','originalBodyDigest','routeOperation'];
 const ENVELOPE=['version','requestId','operation','parameters',...BINDING];
 const denied=()=>new Error('Operation permit rejected');
 const exact=(v,keys)=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
@@ -72,8 +74,13 @@ export function createOperationPermitVerifier({mode,configuration,publicKeyPem,c
    const signature=decode(parts[2],64);if(signature.length!==64)throw denied();
    if(!verify(null,Buffer.from(parts[0]+'.'+parts[1]),key,signature))throw denied();
    const claims=parse(utf8(decode(parts[1],2048)),2048);
-   if(!exact(claims,CLAIMS)||claims.iss!==config.issuer||claims.aud!==config.audience||claims.sub!==config.subject||!UUID.test(claims.jti)||!UUID.test(claims.requestId)||!HEX.test(claims.bodyDigest))throw denied();
+   const claimFields=claims?.operation==='recover'?[...CLAIMS,...RECOVERY_CLAIMS]:CLAIMS;
+   if(!exact(claims,claimFields)||claims.iss!==config.issuer||claims.aud!==config.audience||claims.sub!==config.subject||!UUID.test(claims.jti)||!UUID.test(claims.requestId)||!HEX.test(claims.bodyDigest))throw denied();
    if(!Object.hasOwn(KIND,claims.operation)||KIND[claims.operation]!==claims.kind||path!=='/rest/v1/rpc/'+claims.operation)throw denied();
+   if(claims.operation==='recover'&&(
+    typeof claims.originalIssuer!=='string'||claims.originalIssuer.length<1||claims.originalIssuer.length>200
+    ||!UUID.test(claims.originalJti)||!UUID.test(claims.originalRequestId)||!HEX.test(claims.originalBodyDigest)
+    ||!['apply','issue','cancel','reconcile','receipt'].includes(claims.routeOperation)))throw denied();
    if(BINDING.some(k=>claims[k]!==config[k]))throw denied();
    if(![claims.iat,claims.nbf,claims.exp].every(Number.isSafeInteger)||claims.iat!==claims.nbf||claims.iat<0||claims.exp<=claims.iat||claims.exp-claims.iat>60)throw denied();
    const time=clock();if(claims.nbf>time||claims.exp<=time)throw denied();
@@ -83,6 +90,10 @@ export function createOperationPermitVerifier({mode,configuration,publicKeyPem,c
    if(!exact(envelope,ENVELOPE)||envelope.version!==1||envelope.requestId!==claims.requestId||envelope.operation!==claims.operation||BINDING.some(k=>envelope[k]!==config[k]))throw denied();
    const parameters=envelope.parameters;
    if(!exact(parameters,FIELDS[claims.operation])||parameters.p_workspace!==config.workspace||(Object.hasOwn(parameters,'p_owner')&&parameters.p_owner!==claims.sub))throw denied();
+   if(claims.operation==='recover'&&(
+    parameters.p_original_issuer!==claims.originalIssuer||parameters.p_original_jti!==claims.originalJti
+    ||parameters.p_original_request!==claims.originalRequestId||parameters.p_original_digest!==claims.originalBodyDigest
+    ||parameters.p_route_operation!==claims.routeOperation))throw denied();
    if(validateParameters(claims.operation,parameters,claims)!==true)throw denied();
    const reservationDeadline=performance.now()+reserveTimeoutMs;
    controller=new AbortController();

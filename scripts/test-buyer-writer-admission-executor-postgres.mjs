@@ -64,6 +64,9 @@ try{
   create function buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)
    returns jsonb language sql security definer set search_path=pg_catalog
    as 'select jsonb_build_object(''state'',''reserved'',''automaticRetry'',false)';
+  create function buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)
+   returns jsonb language sql security definer set search_path=pg_catalog
+   as 'select jsonb_build_object(''state'',''reserved'',''automaticRetry'',false)';
   revoke all on schema buyer_writer from public;
   grant usage on schema buyer_writer to buyer_writer_admission;
   revoke all on function buyer_writer.lock_scope() from public;
@@ -74,6 +77,7 @@ try{
   revoke all on function buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamptz) from public;
   revoke all on function buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer) from public;
   revoke all on function buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) from public;
+  revoke all on function buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text) from public;
   grant execute on function buyer_writer.lock_scope(),
    buyer_writer.reserve_operation(text,uuid,uuid,text,timestamptz),
    buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb),
@@ -81,7 +85,8 @@ try{
    buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid),
    buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamptz),
    buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer),
-   buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text) to buyer_writer_admission;
+   buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text),
+   buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text) to buyer_writer_admission;
  `,database);
  const query=async config=>{
   let statement=config.text;
@@ -91,7 +96,7 @@ try{
   const value=output.split('\n').filter(Boolean).at(-1);
   if(config.text===ADMISSION_IDENTITY_SQL)return {rows:[{safe:value==='t'}]};
   if(config.text.includes('reserve_operation'))return {rows:[{accepted:value==='t'}]};
-  if(config.text.includes('execute_admitted_')||config.text.includes('correlate_admission'))return {rows:[{result:JSON.parse(value)}]};
+  if(config.text.includes('execute_admitted_')||config.text.includes('correlate_admission')||config.text.includes('recover_admission'))return {rows:[{result:JSON.parse(value)}]};
   throw new Error('unexpected statement');
  };
  const creatorOid=Number(admin(`select oid from pg_roles where rolname='${creator}'`));
@@ -112,6 +117,7 @@ try{
  check((await executeAdmission(executor,'reconcile',[...base,uid(6),uid(7),'2026-09-17T20:00:00Z'])).rows[0].result.state==='absent','reconcile wrapper unavailable');
  check((await executeAdmission(executor,'receipt',[...base,'c'.repeat(64),uid(6),uid(7),1,'start',0])).rows[0].result.found===false,'receipt wrapper unavailable');
  check((await executeAdmission(executor,'correlate',base)).rows[0].result.state==='reserved','correlation wrapper unavailable');
+ check((await executeAdmission(executor,'recover',[...base,'https://issuer.example',uid(8),uid(9),'d'.repeat(64),'apply'])).rows[0].result.state==='reserved','recovery wrapper unavailable');
  const wrongCreator=createAttestedAdmissionExecutor({expectedLogin:login,expectedCreatorOid:10,connect:async()=>({query,release:()=>{}})});
  await assert.rejects(executeAdmission(wrongCreator,'reserve',args),/unavailable/);checks++;
  admin(`revoke buyer_writer_admission from ${login}; grant buyer_writer_admission to ${login} with admin false, inherit false, set true`);

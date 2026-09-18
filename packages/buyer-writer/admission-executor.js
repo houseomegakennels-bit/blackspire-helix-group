@@ -10,6 +10,7 @@ const statements=Object.freeze({
  reconcile:Object.freeze({text:'select buyer_writer.execute_admitted_reconcile($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10::uuid,$11::uuid,$12::timestamptz) as result',count:12}),
  receipt:Object.freeze({text:'select buyer_writer.execute_admitted_receipt($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10,$11::uuid,$12::uuid,$13::bigint,$14,$15::integer) as result',count:15}),
  correlate:Object.freeze({text:'select buyer_writer.correlate_admission($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9) as result',count:9}),
+ recover:Object.freeze({text:'select buyer_writer.recover_admission($1,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::uuid,$8::uuid,$9,$10,$11::uuid,$12::uuid,$13,$14) as result',count:14}),
 });
 
 export class AdmissionUnavailableError extends Error {
@@ -42,6 +43,7 @@ export const ADMISSION_IDENTITY_SQL=`select (
  and has_function_privilege(current_user,'buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','EXECUTE')
  and has_function_privilege(current_user,'buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','EXECUTE')
  and has_function_privilege(current_user,'buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)','EXECUTE')
+ and has_function_privilege(current_user,'buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)','EXECUTE')
  and not exists(select from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema'
   and has_schema_privilege(current_user,n.oid,'USAGE') and has_function_privilege(current_user,p.oid,'EXECUTE')
@@ -53,7 +55,8 @@ export const ADMISSION_IDENTITY_SQL=`select (
    to_regprocedure('buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)'),
    to_regprocedure('buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)'),
    to_regprocedure('buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)'),
-   to_regprocedure('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)')]))
+   to_regprocedure('buyer_writer.correlate_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text)'),
+   to_regprocedure('buyer_writer.recover_admission(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,text,text)')]))
  and not exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname !~ '^pg_(catalog|toast|temp)' and n.nspname<>'information_schema'
   and (has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
