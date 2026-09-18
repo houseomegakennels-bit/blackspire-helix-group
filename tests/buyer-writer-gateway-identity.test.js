@@ -27,7 +27,8 @@ test('gateway service is immutable, hardened, and excludes the broad application
   const rendered=renderGatewayUnit(unit,{sha:'a'.repeat(40)});
   const configuredPath=/^Environment=BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG=(.*)$/m.exec(rendered);
   assert.equal(configuredPath?.[1],BUYER_WRITER_GATEWAY_CONFIG);
-  assert.equal([...rendered.matchAll(/\/opt\/blackspire-command\/releases\/([a-f0-9]{40})(?=\/|\r?$)/gm)].length,3);
+  assert.equal([...rendered.matchAll(/\/opt\/blackspire-command\/releases\/([a-f0-9]{40})(?=\/|\r?$)/gm)].length,4);
+  assert.match(unit,/^ExecStartPre=\+.*\/releases\/@BLACKSPIRE_GATEWAY_RELEASE_SHA@\/packages\/buyer-writer\/gateway-socket-cleanup\.js$/m);
   assert.match(unit,/^ExecStart=.*\/releases\/@BLACKSPIRE_GATEWAY_RELEASE_SHA@\/packages\/buyer-writer\/gateway-entry\.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@$/m);
   assert.match(unit,/^ExecStartPost=.*\/releases\/@BLACKSPIRE_GATEWAY_RELEASE_SHA@\/packages\/buyer-writer\/gateway-readiness\.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@$/m);
   assert.doesNotMatch(unit,/\/current(?:\/|$)|\/HEAD(?:\/|$)|\/opt\/blackspire\/\.worktrees/);

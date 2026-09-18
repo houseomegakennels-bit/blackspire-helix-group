@@ -220,6 +220,7 @@ if (unit === null) {
     'WorkingDirectory=/opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@',
     'RuntimeDirectory=blackspire', 'RuntimeDirectoryMode=0750', 'UMask=0007',
     'Environment=BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG=@BLACKSPIRE_GATEWAY_CONFIG_PATH@',
+    'ExecStartPre=+/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-socket-cleanup.js',
     'ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-entry.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@',
     'ExecStartPost=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-readiness.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@',
     'Before=blackspire-command.service blackspire-command-worker.service',
@@ -243,7 +244,7 @@ if (unit === null) {
   const executableGateway=(gatewayUnit??'').split('\n').filter(line=>!line.trim().startsWith('#')).join('\n');
   const immutable = gatewayUnit !== null
     && !/\/current(?:\/|$)|\/HEAD(?:\/|$)|\/opt\/blackspire\/\.worktrees/.test(executableGateway)
-    && (executableGateway.match(/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/g) ?? []).length===3
+    && (executableGateway.match(/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/g) ?? []).length===4
     && (executableGateway.match(/@BLACKSPIRE_GATEWAY_CONFIG_PATH@/g) ?? []).length===3;
   const privateIdentity = gatewaySysusers !== null
     && gatewaySysusers.split('\n').map(line=>line.trim()).filter(line=>line&&!line.startsWith('#')).join('\n')

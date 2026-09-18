@@ -49,9 +49,11 @@ export function inspectGatewayArtifact({sha,releaseRoot='/opt/blackspire-command
     const commit=io.lstatSync(path.join(artifact,'COMMIT_SHA'));
     const entry=io.lstatSync(path.join(artifact,'packages/buyer-writer/gateway-entry.js'));
     const readiness=io.lstatSync(path.join(artifact,'packages/buyer-writer/gateway-readiness.js'));
+    const cleanup=io.lstatSync(path.join(artifact,'packages/buyer-writer/gateway-socket-cleanup.js'));
     const unit=io.lstatSync(path.join(artifact,'ops/runtime-ownership',GATEWAY_SERVICE));
     if(!safeRegular(marker,0o644)||!safeRegular(commit,0o644)||!safeRegular(entry,0o644)
-      ||!safeRegular(readiness,0o644)||!safeRegular(unit,0o644))fail('gateway artifact file contract rejected');
+      ||!safeRegular(readiness,0o644)||!safeRegular(cleanup,0o644)||!safeRegular(unit,0o644))
+      fail('gateway artifact file contract rejected');
     if(io.readFileSync(path.join(artifact,'COMMIT_SHA'),'utf8')!==`${sha}\n`)fail('gateway artifact SHA rejected');
     if(validateCompletedRelease(artifact,sha)!==true)fail('gateway artifact release evidence rejected');
     return Object.freeze({state:'VERIFIED',sha,artifact,entrypoint:path.join(artifact,'packages/buyer-writer/gateway-entry.js')});

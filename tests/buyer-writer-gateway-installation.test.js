@@ -26,7 +26,8 @@ test('artifact inspection rejects a mismatched packaged SHA and unsafe markers',
   fs.mkdirSync(path.join(artifact,'packages/buyer-writer'),{recursive:true});
   fs.mkdirSync(path.join(artifact,'ops/runtime-ownership'),{recursive:true});
   for(const [file,value] of [['.release-complete',''],['COMMIT_SHA',`${'b'.repeat(40)}\n`],['packages/buyer-writer/gateway-entry.js','export {};\n'],
-    ['packages/buyer-writer/gateway-readiness.js','export {};\n'],[`ops/runtime-ownership/${GATEWAY_SERVICE}`,template]]){
+    ['packages/buyer-writer/gateway-readiness.js','export {};\n'],['packages/buyer-writer/gateway-socket-cleanup.js','export {};\n'],
+    [`ops/runtime-ownership/${GATEWAY_SERVICE}`,template]]){
     fs.writeFileSync(path.join(artifact,file),value,{mode:0o644});
   }
   assert.throws(()=>inspectGatewayArtifact({sha,releaseRoot:root}),/artifact SHA rejected/);
@@ -39,7 +40,7 @@ test('artifact inspection rejects a missing immutable readiness executable',()=>
   const artifact=gatewayArtifactPath(sha,{releaseRoot:root});
   fs.mkdirSync(path.join(artifact,'packages/buyer-writer'),{recursive:true});
   fs.mkdirSync(path.join(artifact,'ops/runtime-ownership'),{recursive:true});
-  for(const [file,value] of [['.release-complete',''],['COMMIT_SHA',`${sha}\n`],['packages/buyer-writer/gateway-entry.js','export {};\n'],
+  for(const [file,value] of [['.release-complete',''],['COMMIT_SHA',`${sha}\n`],['packages/buyer-writer/gateway-entry.js','export {};\n'],['packages/buyer-writer/gateway-socket-cleanup.js','export {};\n'],
     [`ops/runtime-ownership/${GATEWAY_SERVICE}`,template]])fs.writeFileSync(path.join(artifact,file),value,{mode:0o644});
   assert.throws(()=>inspectGatewayArtifact({sha,releaseRoot:root}),/missing or unsafe/);
 });

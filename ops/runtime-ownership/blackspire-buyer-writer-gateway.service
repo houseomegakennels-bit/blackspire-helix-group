@@ -28,6 +28,10 @@ RuntimeDirectoryMode=0750
 UMask=0007
 Environment=PATH=/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
 Environment=BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG=@BLACKSPIRE_GATEWAY_CONFIG_PATH@
+# Only this fixed-input pre-start helper receives root authority. The gateway
+# process remains the unprivileged blackspire-writer identity and never unlinks
+# its public socket path.
+ExecStartPre=+/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-socket-cleanup.js
 ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-entry.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@
 ExecStartPost=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/releases/@BLACKSPIRE_GATEWAY_RELEASE_SHA@/packages/buyer-writer/gateway-readiness.js --configuration @BLACKSPIRE_GATEWAY_CONFIG_PATH@
 Restart=on-failure
