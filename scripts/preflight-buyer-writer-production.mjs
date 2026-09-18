@@ -19,16 +19,16 @@ try{
  if(args.length%2!==0)stop();
  for(let i=0;i<args.length;i+=2){if(!args[i].startsWith('--')||flags.has(args[i]))stop();flags.set(args[i],args[i+1]);}
  const required=['--mode','--release-manifest','--catalog-snapshot','--gateway-config','--management-config','--nonce-claim-dir'];
- if(required.some(key=>!flags.has(key))||[...flags.keys()].some(key=>![...required,'--restore-artifact','--output'].includes(key)))stop();
+ if(required.some(key=>!flags.has(key))||[...flags.keys()].some(key=>![...required,'--output'].includes(key)))stop();
  const report=validateBuyerWriterProductionPlan({
   mode:flags.get('--mode'),releaseManifestPath:flags.get('--release-manifest'),
   catalogSnapshotPath:flags.get('--catalog-snapshot'),gatewayConfigPath:flags.get('--gateway-config'),
   managementConfigPath:flags.get('--management-config'),nonceClaimDirectory:flags.get('--nonce-claim-dir'),
-  restoreArtifactPath:flags.get('--restore-artifact'),now:()=>new Date(),
+  now:()=>new Date(),
  });
  if(flags.has('--output'))output(flags.get('--output'),report);
  process.stdout.write(`${JSON.stringify(report)}\n`);
 }catch{
- process.stderr.write('Buyer writer production preflight stopped; no connection was attempted and no protected input was disclosed\n');
+ process.stderr.write('Buyer writer production preflight stopped; offline input validation did not establish production readiness\n');
  process.exitCode=1;
 }
