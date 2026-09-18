@@ -44,21 +44,22 @@ const gatewayFixture=()=>{
   const permit={issuer:'zola-control',audience:'buyer-writer',subject:randomUUID(),keyId:'fixture-key',origin:'https://zola.example',
     releaseSha:authority.releaseSha,operationId:authority.operationId,attemptId:authority.attemptId,workspace};
   const ca='-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n';
-  return {version:3,workspace,bindingFile:'/etc/blackspire/buyer-writer-binding.json',writerCredential:secret(),
+  return {version:4,workspace,bindingFile:'/etc/blackspire/buyer-writer-binding.json',writerCredential:secret(),
     issuerCredential:secret(),admissionCredential:secret(),gatewayCapability:secret(),creatorOid:16384,authority,
     runtime:{host:'db.example.test',port:5432,database:'postgres',password:secret(),ca},
     issuer:{host:'db.example.test',port:5432,database:'postgres',password:secret(),ca},
-    operationPermitConfiguration:JSON.stringify(permit),
-    operationPermitPublicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})};
+    operationPermitConfiguration:JSON.stringify(permit),operationPermitVerificationConfiguration:{version:2,keys:[{
+      keyId:'fixture-key',publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}),
+      lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]}};
 };
-test('gateway v3 provisioning accepts only pinned exact admission and public permit authority',()=>{
+test('gateway v4 provisioning accepts only pinned exact admission and public permit authority',()=>{
   const valid=gatewayFixture();
   assert.deepEqual(validateBuyerWriterGatewayProvisioningConfiguration(valid,{workspace:valid.workspace}),valid);
   for(const mutate of [
     v=>{v.admissionCredential=v.runtime.password;},v=>{v.runtime.connectionString='postgres://forbidden';},
     v=>{delete v.runtime.ca;},v=>{v.issuer.ca+='drift';},v=>{v.issuer.host='other.example.test';},
     v=>{v.operationPermitConfiguration=JSON.stringify({...JSON.parse(v.operationPermitConfiguration),workspace:'other'});},
-    v=>{v.operationPermitConfiguration+=' ';},v=>{v.operationPermitPublicKeyPem=generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'});},
+    v=>{v.operationPermitConfiguration+=' ';},v=>{v.operationPermitVerificationConfiguration.keys[0].publicKeyPem=generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'});},
     v=>{v.privateKey='forbidden';},
   ]){const value=gatewayFixture();mutate(value);
     assert.throws(()=>validateBuyerWriterGatewayProvisioningConfiguration(value,{workspace:value.workspace}),/^Error: Buyer writer gateway provisioning configuration rejected$/);

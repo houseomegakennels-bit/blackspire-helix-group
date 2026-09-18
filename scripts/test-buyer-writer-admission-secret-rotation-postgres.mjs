@@ -41,11 +41,13 @@ try{
   const issuer={...runtime,password:randomBytes(32).toString('base64url')};
   const permit=JSON.stringify({issuer:'issuer',audience:'buyer-writer',subject:randomUUID(),keyId:'fixture',
     origin:'https://writer.invalid',releaseSha,operationId,attemptId,workspace});
-  const oldConfiguration={version:3,mode:'research-admission',workspace,socketPath:'/run/blackspire/buyer-writer.sock',
+  const oldConfiguration={version:4,mode:'research-admission',workspace,socketPath:'/run/blackspire/buyer-writer.sock',
     gatewayCapability:randomBytes(32).toString('base64url'),creatorOid:10,authority,runtime,issuer,admission:{
       connection:{host:'127.0.0.1',port,database:'postgres',user:login,password:oldPassword,ca},
       operationPermitConfiguration:permit,
-      publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})}};
+      verificationConfiguration:{version:2,keys:[{keyId:'fixture',
+        publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}),
+        lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]}}};
   const newConfiguration=structuredClone(oldConfiguration);
   newConfiguration.admission.connection.password=newPassword;
   let published='old';const events=[];

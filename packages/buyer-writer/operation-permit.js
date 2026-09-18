@@ -1,6 +1,7 @@
 // Offline research only: verifies an operation permit; does not execute SQL or HTTP.
-import {createHash,createPublicKey,verify} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
+import {createOperationPermitVerificationKeyring} from './operation-permit-keyring.js';
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const HEX=/^[a-f0-9]{64}$/;
 const FIELDS=Object.freeze({
@@ -47,8 +48,9 @@ function decode(part,max){
 }
 const utf8=bytes=>new TextDecoder('utf-8',{fatal:true}).decode(bytes);
 const digest=text=>createHash('sha256').update(text).digest('hex');
-export function createOperationPermitVerifier({mode,configuration,publicKeyPem,consume,validateParameters,now=()=>Math.floor(Date.now()/1000),reserveTimeoutMs=1000}={}){
- let config,key;
+export function createOperationPermitVerifier({mode,configuration,verificationConfiguration,publicKeyPem,
+ allowLegacySingleKey=false,consume,validateParameters,now=()=>Math.floor(Date.now()/1000),reserveTimeoutMs=1000}={}){
+ let config,keyring;
  try{
   if(mode!=='isolated-prototype'||typeof consume!=='function'||typeof validateParameters!=='function'||typeof now!=='function'||!Number.isInteger(reserveTimeoutMs)||reserveTimeoutMs<10||reserveTimeoutMs>5000)throw denied();
   config=parse(configuration,4096);
@@ -56,9 +58,16 @@ export function createOperationPermitVerifier({mode,configuration,publicKeyPem,c
   if(!/^[a-f0-9]{40}$/.test(config.releaseSha)||!UUID.test(config.operationId)||!UUID.test(config.attemptId)||!UUID.test(config.subject)||!/^[A-Za-z0-9._:-]{1,128}$/.test(config.workspace)||!/^[A-Za-z0-9_-]{1,64}$/.test(config.keyId))throw denied();
   const origin=new URL(config.origin);
   if(origin.protocol!=='https:'||origin.origin!==config.origin||origin.username||origin.password||origin.pathname!=='/'||origin.search||origin.hash)throw denied();
-  if(typeof publicKeyPem!=='string'||publicKeyPem.length>1024||!publicKeyPem.startsWith('-----BEGIN PUBLIC KEY-----'))throw denied();
-  key=createPublicKey(publicKeyPem);
-  if(key.type!=='public'||key.asymmetricKeyType!=='ed25519')throw denied();
+  if(verificationConfiguration!==undefined){
+   if(publicKeyPem!==undefined||allowLegacySingleKey!==false)throw denied();
+   keyring=createOperationPermitVerificationKeyring(verificationConfiguration);
+  }else{
+   if(allowLegacySingleKey!==true||typeof publicKeyPem!=='string')throw denied();
+   keyring=createOperationPermitVerificationKeyring({version:1,
+    keys:[{keyId:config.keyId,publicKeyPem}]},{allowLegacyVersion1:true});
+  }
+  const current=keyring.configuration.keys.filter(entry=>entry.lifecycle==='current');
+  if(current.length!==1||current[0].keyId!==config.keyId)throw denied();
  }catch{throw denied();}
  let lastTime=-1;
  function clock(){const t=now();if(!Number.isSafeInteger(t)||t<0||t<lastTime)throw denied();lastTime=t;return t;}
@@ -70,9 +79,10 @@ export function createOperationPermitVerifier({mode,configuration,publicKeyPem,c
    if(origin!==config.origin||method!=='POST'||profile!=='buyer_writer_rpc'||typeof token!=='string'||token.length>4096)throw denied();
    const parts=token.split('.');if(parts.length!==3)throw denied();
    const header=parse(utf8(decode(parts[0],512)),512);
-   if(!exact(header,['alg','typ','kid'])||header.alg!=='Ed25519'||header.typ!=='zola-operation+jwt'||header.kid!==config.keyId)throw denied();
+   if(!exact(header,['alg','typ','kid'])||header.alg!=='Ed25519'||header.typ!=='zola-operation+jwt')throw denied();
    const signature=decode(parts[2],64);if(signature.length!==64)throw denied();
-   if(!verify(null,Buffer.from(parts[0]+'.'+parts[1]),key,signature))throw denied();
+   const time=clock();
+   if(!keyring.verify({keyId:header.kid,data:Buffer.from(parts[0]+'.'+parts[1]),signature,at:time}))throw denied();
    const claims=parse(utf8(decode(parts[1],2048)),2048);
    const claimFields=claims?.operation==='recover'?[...CLAIMS,...RECOVERY_CLAIMS]:CLAIMS;
    if(!exact(claims,claimFields)||claims.iss!==config.issuer||claims.aud!==config.audience||claims.sub!==config.subject||!UUID.test(claims.jti)||!UUID.test(claims.requestId)||!HEX.test(claims.bodyDigest))throw denied();
@@ -83,7 +93,7 @@ export function createOperationPermitVerifier({mode,configuration,publicKeyPem,c
     ||!['apply','issue','cancel','reconcile','receipt'].includes(claims.routeOperation)))throw denied();
    if(BINDING.some(k=>claims[k]!==config[k]))throw denied();
    if(![claims.iat,claims.nbf,claims.exp].every(Number.isSafeInteger)||claims.iat!==claims.nbf||claims.iat<0||claims.exp<=claims.iat||claims.exp-claims.iat>60)throw denied();
-   const time=clock();if(claims.nbf>time||claims.exp<=time)throw denied();
+   if(claims.nbf>time||claims.exp<=time)throw denied();
    if(typeof body!=='string'||body.length>65536||Buffer.byteLength(body)>65536||digest(body)!==claims.bodyDigest)throw denied();
    const wrapper=parse(body,65536);if(!exact(wrapper,['envelope']))throw denied();
    const envelope=wrapper.envelope;

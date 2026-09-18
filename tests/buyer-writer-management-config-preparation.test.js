@@ -20,12 +20,14 @@ const permit=JSON.stringify({issuer:'zola-control',audience:'buyer-writer',subje
  keyId:'fixture-key',origin:'https://zola.example',releaseSha:authority.releaseSha,operationId:authority.operationId,
  attemptId:authority.attemptId,workspace:authority.workspace});
 const publicKeyPem=generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'});
-const gateway={version:3,mode:'research-admission',workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',
+const gateway={version:4,mode:'research-admission',workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',
  gatewayCapability:'a'.repeat(43),creatorOid:16384,authority,
  runtime:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',password:runtimePassword,ca},
  issuer:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',password:issuerPassword,ca},
  admission:{connection:{host:BUYER_WRITER_MANAGEMENT_HOST,port:5432,database:'postgres',user:'buyer_writer_admission_login',
-  password:admissionPassword,ca},operationPermitConfiguration:permit,publicKeyPem}};
+  password:admissionPassword,ca},operationPermitConfiguration:permit,
+  verificationConfiguration:{version:2,keys:[{keyId:'fixture-key',publicKeyPem,
+    lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]}}};
 
 function fixture(t,{unsafeParent=false,existing=false,writeLimit=Infinity,uncertainLink=false}={}){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-writer-management-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

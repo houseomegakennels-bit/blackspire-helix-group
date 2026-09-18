@@ -132,7 +132,7 @@ function validateGatewaySnapshot(snapshot){
  try{
   const config=validateBuyerWriterGatewayServiceConfiguration(snapshot.value);
   const admission=config.admission?.connection;
-  if(snapshot.identity.uid!==0||(snapshot.identity.mode&0o7777)!==0o640||config.version!==3||config.mode!=='research-admission'
+  if(snapshot.identity.uid!==0||(snapshot.identity.mode&0o7777)!==0o640||config.version!==4||config.mode!=='research-admission'
     ||config.workspace!=='blackspire-command'||config.runtime?.host!==HOST||config.issuer?.host!==HOST||admission?.host!==HOST)fail();
   for(const value of [config.runtime,config.issuer]){
     if(!exact(value,['host','port','database','password','ca'])||value.port!==5432||value.database!=='postgres'

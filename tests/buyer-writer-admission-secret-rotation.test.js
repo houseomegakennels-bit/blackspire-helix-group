@@ -17,11 +17,13 @@ function configurations(){
   const issuer={...runtime,password:secret()};
   const permit=JSON.stringify({issuer:'issuer',audience:'buyer-writer',subject:randomUUID(),keyId:'key',
     origin:'https://writer.invalid',releaseSha,operationId,attemptId,workspace});
-  const oldConfiguration={version:3,mode:'research-admission',workspace,socketPath:'/run/blackspire/buyer-writer.sock',
+  const oldConfiguration={version:4,mode:'research-admission',workspace,socketPath:'/run/blackspire/buyer-writer.sock',
     gatewayCapability:secret(),creatorOid:16384,authority,runtime,issuer,admission:{
       connection:{host:runtime.host,port:runtime.port,database:runtime.database,user:'buyer_writer_admission_login',
         password:secret(),ca:runtime.ca},operationPermitConfiguration:permit,
-      publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})}};
+      verificationConfiguration:{version:2,keys:[{keyId:'key',
+        publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}),
+        lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]}}};
   const newConfiguration=structuredClone(oldConfiguration);
   newConfiguration.admission.connection.password=secret();
   return {oldConfiguration,newConfiguration,operationId:randomUUID()};

@@ -66,7 +66,7 @@ export function prepareBuyerWriterManagementConfig({password,writerGroupId,
     const gateway=validateBuyerWriterGatewayServiceConfiguration(snapshot.value);
     const admission=gateway.admission?.connection;
     if(snapshot.identity.uid!==0||snapshot.identity.gid!==writerGroupId||(snapshot.identity.mode&0o7777)!==0o640
-      ||gateway.version!==3||gateway.mode!=='research-admission'
+      ||gateway.version!==4||gateway.mode!=='research-admission'
       ||gateway.runtime?.host!==BUYER_WRITER_MANAGEMENT_HOST||gateway.issuer?.host!==BUYER_WRITER_MANAGEMENT_HOST
       ||gateway.runtime?.port!==5432||gateway.issuer?.port!==5432||gateway.runtime?.database!=='postgres'||gateway.issuer?.database!=='postgres'
       ||gateway.runtime?.ca!==gateway.issuer?.ca||typeof gateway.runtime.ca!=='string'||gateway.runtime.ca.length>16384

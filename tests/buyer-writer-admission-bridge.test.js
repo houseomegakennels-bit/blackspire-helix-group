@@ -6,6 +6,8 @@ import {ADMISSION_IDENTITY_SQL,createAttestedAdmissionExecutor,executeAdmission}
 
 const {publicKey,privateKey}=generateKeyPairSync('ed25519');
 const publicKeyPem=publicKey.export({type:'spki',format:'pem'});
+const verificationConfiguration={version:2,keys:[{keyId:'test-key',publicKeyPem,
+ lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]};
 const now=2_000_000_000;
 const ids={
  subject:'00000000-0000-4000-8000-000000000001',
@@ -73,7 +75,7 @@ function executor(query,{safe=true,releases=[]}={}){
  })});
 }
 function bridge(query,options={}){
- return createAdmissionBridge({mode:'research-admission',configuration,publicKeyPem,
+ return createAdmissionBridge({mode:'research-admission',configuration,verificationConfiguration,
   admissionExecutor:executor(query,options.executorOptions),now:()=>now,...options.bridgeOptions});
 }
 const success={ok:true,operation:'start',chunkIndex:0};
@@ -313,7 +315,7 @@ test('database detail and malformed results are never exposed',async()=>{
 test('forged executor capability never falls back to runtime',async()=>{
  let runtimeCalls=0;
  const handle=createAdmissionBridge({
-  mode:'research-admission',configuration,publicKeyPem,
+  mode:'research-admission',configuration,verificationConfiguration,
   admissionExecutor:{run:async()=>{}},runtimeQuery:async()=>{runtimeCalls++;},now:()=>now,
  });
  const result=await handle(fixture());

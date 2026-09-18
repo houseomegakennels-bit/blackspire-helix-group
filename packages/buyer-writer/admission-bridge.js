@@ -178,8 +178,9 @@ async function boundedOperation(executor,operation,values,timeoutMs){
 
 // The closed executor selects one of seven fixed admission statements and attests
 // every session. Production wiring must separately pin its connector and TLS endpoint.
-export function createAdmissionBridge({mode,configuration,publicKeyPem,admissionExecutor,now,
- reserveTimeoutMs=5000,executeTimeoutMs=5000,correlateTimeoutMs=3000}={}){
+export function createAdmissionBridge({mode,configuration,verificationConfiguration,publicKeyPem,
+ allowLegacySingleKey=false,admissionExecutor,now,reserveTimeoutMs=5000,executeTimeoutMs=5000,
+ correlateTimeoutMs=3000}={}){
  if(mode!=='research-admission'||!admissionExecutor||typeof admissionExecutor!=='object'
   ||![executeTimeoutMs,correlateTimeoutMs].every(value=>
    Number.isInteger(value)&&value>=10&&value<=10000))throw new TypeError('Buyer admission configuration unavailable');
@@ -201,7 +202,8 @@ export function createAdmissionBridge({mode,configuration,publicKeyPem,admission
   finally{signal.removeEventListener('abort',unavailable);}
  };
  const verifier=createOperationPermitVerifier({
-  mode:'isolated-prototype',configuration,publicKeyPem,consume:reserve,now,reserveTimeoutMs,
+  mode:'isolated-prototype',configuration,verificationConfiguration,publicKeyPem,
+  allowLegacySingleKey,consume:reserve,now,reserveTimeoutMs,
   validateParameters:(operation,parameters,claims)=>{
    if(!['issue','cancel','reconcile','apply','receipt','recover'].includes(operation))return false;
    try{parsedParameters(operation,parameters,claims);return true;}catch{return false;}

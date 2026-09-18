@@ -21,10 +21,11 @@ const ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca
 const credential=()=>randomBytes(32).toString('base64url');
 const runtime={host:'db.invalid',port:5432,database:'isolated',password:credential(),ca};
 const issuer={host:'db.invalid',port:5432,database:'isolated',password:credential(),ca};
+const publicKeyPem=generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'});
+const verificationConfiguration={version:2,keys:[{keyId:'key',publicKeyPem,lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]};
 const admission={connection:{host:'db.invalid',port:5432,database:'isolated',user:BUYER_WRITER_ADMISSION_LOGIN,
-  password:credential(),ca},operationPermitConfiguration:permitConfiguration,
-  publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})};
-const serviceConfig={version:3,mode:'research-admission',workspace,socketPath:BUYER_WRITER_DEFAULT_SOCKET,
+  password:credential(),ca},operationPermitConfiguration:permitConfiguration,verificationConfiguration};
+const serviceConfig={version:4,mode:'research-admission',workspace,socketPath:BUYER_WRITER_DEFAULT_SOCKET,
   gatewayCapability:capability,creatorOid:16384,authority,runtime,issuer,admission};
 
 test('research service configuration and startup wire only the attested admission executor into the bridge',async()=>{
@@ -34,7 +35,8 @@ test('research service configuration and startup wire only the attested admissio
     {...serviceConfig,admission:{...admission,connection:{...admission.connection,host:'other.invalid'}}},
     {...serviceConfig,admission:{...admission,connection:{...admission.connection,password:runtime.password}}},
     {...serviceConfig,admission:{...admission,operationPermitConfiguration:JSON.stringify({...JSON.parse(permitConfiguration),workspace:'other'})}},
-    {...serviceConfig,admission:{...admission,publicKeyPem:generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'})}}])
+    {...serviceConfig,admission:{...admission,verificationConfiguration:{...verificationConfiguration,keys:[{
+      ...verificationConfiguration.keys[0],publicKeyPem:generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'})}]}}}])
     assert.throws(()=>validateBuyerWriterGatewayServiceConfiguration(bad),/startup rejected/);
   const events=[],executor={},database={runtimeQuery(){},issuerQuery(){},close:async()=>events.push('database-close')};
   const admissionDatabase={executor,ready:async()=>{events.push('admission-ready');return {ok:true};},
@@ -45,7 +47,8 @@ test('research service configuration and startup wire only the attested admissio
     createPostgres:async options=>{assert.deepEqual(options,{runtime,issuer,creatorOid:16384});return database;},
     createAdmissionPostgres:async options=>{assert.deepEqual(options,{connection:admission.connection,expectedCreatorOid:16384});return admissionDatabase;},
     createBridge:options=>{assert.equal(options.mode,'research-admission');assert.equal(options.admissionExecutor,executor);
-      assert.equal(options.configuration,permitConfiguration);return async()=>({status:503,body:{ok:false}});},
+      assert.equal(options.configuration,permitConfiguration);assert.deepEqual(options.verificationConfiguration,verificationConfiguration);
+      assert.equal(options.publicKeyPem,undefined);return async()=>({status:503,body:{ok:false}});},
     createGateway:options=>{assert.equal(typeof options.admissionBridge,'function');return gateway;}});
   assert.equal(started.admissionDatabase,admissionDatabase);
   await started.close();

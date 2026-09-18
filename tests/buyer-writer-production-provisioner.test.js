@@ -22,13 +22,15 @@ const authority={releaseSha:'a'.repeat(40),operationId:'01234567-89ab-cdef-0123-
 const permit=JSON.stringify({issuer:'zola-control',audience:'buyer-writer',subject:'21234567-89ab-cdef-0123-456789abcdef',
  keyId:'fixture-key',origin:'https://zola.example',releaseSha:authority.releaseSha,operationId:authority.operationId,
  attemptId:authority.attemptId,workspace:authority.workspace});
-const gateway={version:3,mode:'research-admission',workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',
+const gateway={version:4,mode:'research-admission',workspace:'blackspire-command',socketPath:'/run/blackspire/buyer-writer.sock',
  gatewayCapability:Buffer.alloc(32,4).toString('base64url'),creatorOid:16388,authority,
  runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:runtimeSecret,ca},
  issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:issuerSecret,ca},
  admission:{connection:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',
   user:'buyer_writer_admission_login',password:admissionSecret,ca},operationPermitConfiguration:permit,
-  publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})}};
+  verificationConfiguration:{version:2,keys:[{keyId:'fixture-key',
+    publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}),
+    lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]}}};
 const management={host:gateway.runtime.host,password:managementSecret,ca};
 const ownerOid='16390';
 const acl=(grantee,privilege,grantable=false,grantor='buyer_writer_owner')=>({grantor,grantee,privilege,grantable});

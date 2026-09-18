@@ -60,7 +60,7 @@ test('protected signer emits canonical permits accepted by the existing verifier
  const request=signer.sign(input);
  const calls=[];
  const verifier=createOperationPermitVerifier({mode:'isolated-prototype',
-  configuration:JSON.stringify(permitConfiguration),publicKeyPem:newKey.publicKeyPem,
+  configuration:JSON.stringify(permitConfiguration),verificationConfiguration:verification,
   now:()=>2_000_000_001,validateParameters:()=>true,
   consume:record=>{calls.push(record);return true;}});
  const authorized=await verifier.authorize(request);
@@ -104,6 +104,34 @@ test('rotation changes the signing key while retaining bounded old-key verificat
  assert.equal(retired.verify({...signatureParts(oldRequest.token),at:2_000_000_001}),false);
  assert.equal(retired.verify({...signatureParts(newRequest.token),at:2_000_000_001}),true);
 });
+test('verifier selects exact kid and enforces overlap activation and retirement',async()=>{
+ const boundedVerification={version:2,keys:[
+  {...verification.keys[0],verifyNotBefore:2_000_000_110,verifyNotAfter:2_000_000_120},
+  verification.keys[1],
+ ]};
+ const oldPermit={...permitConfiguration,keyId:'old-2026-08'};
+ const oldProtected={version:1,activeKeyId:'old-2026-08',
+  activePrivateKeyPath:oldKey.privateKeyPath,verification:{
+   version:2,keys:[{...boundedVerification.keys[0],lifecycle:'current',verifyNotAfter:null}],
+  }};
+ const request=createOperationPermitSigner(oldProtected,{expectedUid:uid}).sign({
+  ...input,configuration:oldPermit,issuedAt:2_000_000_110,expiresAt:2_000_000_160,
+ });
+ const makeVerifier=time=>createOperationPermitVerifier({mode:'isolated-prototype',
+  configuration:JSON.stringify(permitConfiguration),verificationConfiguration:boundedVerification,
+  now:()=>time,validateParameters:()=>true,consume:()=>true});
+ assert.equal((await makeVerifier(2_000_000_119).authorize(request)).operation,'apply');
+ await assert.rejects(makeVerifier(2_000_000_109).authorize(request),/permit rejected/);
+ await assert.rejects(makeVerifier(2_000_000_120).authorize(request),/permit rejected/);
+ const [rawHeader,claims,signature]=request.token.split('.');
+ const wrongKid=encodedToken({...JSON.parse(Buffer.from(rawHeader,'base64url')),kid:'active-2026-09'},claims,signature);
+ await assert.rejects(makeVerifier(2_000_000_119).authorize({...request,token:wrongKid}),/permit rejected/);
+});
+
+function encodedToken(header,claims,signature){
+ return Buffer.from(JSON.stringify(header)).toString('base64url')+'.'+claims+'.'+signature;
+}
+
 test('private key custody rejects permissive mode, symlinks, wrong owner and public mismatch',()=>{
  const loose=keyFixture('loose');chmodSync(loose.privateKeyPath,0o640);
  const link=path.join(dir,'linked.pem');symlinkSync(newKey.privateKeyPath,link);

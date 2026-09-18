@@ -19,7 +19,7 @@ try{
  });
  const bridge=createAdmissionBridge({
   mode:'research-admission',configuration:input.configuration,
-  publicKeyPem:input.publicKeyPem,admissionExecutor:admission.executor,
+  verificationConfiguration:input.verificationConfiguration,admissionExecutor:admission.executor,
   now:()=>Math.floor(Date.now()/1000),
  });
  const response=await bridge(request);

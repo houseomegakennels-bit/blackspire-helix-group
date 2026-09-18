@@ -49,6 +49,8 @@ const capability=randomBytes(32).toString('base64url');
 const issuer='https://issuer.example',origin='https://writer.example',audience='zola-buyer-writer';
 const {publicKey,privateKey}=generateKeyPairSync('ed25519');
 const publicKeyPem=publicKey.export({type:'spki',format:'pem'});
+const verificationConfiguration={version:2,keys:[{keyId:'test-key',publicKeyPem,
+ lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]};
 const configuration=JSON.stringify({issuer,audience,subject:owner,keyId:'test-key',origin,
  releaseSha,operationId,attemptId,workspace});
 const sourceContext={version:1,mode:'county_fetch',sources:[{
@@ -191,7 +193,7 @@ try{
    'same-session role graph exposed a mismatched callable surface');
  }finally{identityClient.release();await direct.end();}
  admission=await createBuyerWriterAdmissionPostgres({connection,expectedCreatorOid:creatorOid,Pool:FaultPool});
- const bridge=createAdmissionBridge({mode:'research-admission',configuration,publicKeyPem,
+ const bridge=createAdmissionBridge({mode:'research-admission',configuration,verificationConfiguration,
   admissionExecutor:admission.executor,now:()=>Math.floor(Date.now()/1000)});
  const rejectedQuery=async()=>{throw new Error('legacy writer path was reachable');};
  gateway=createBuyerWriterLocalGateway({socketPath,capability,authority,gatewayIdentityVerified:true,
@@ -231,7 +233,7 @@ try{
  await gateway.close();gateway=undefined;
  await admission.close();admission=undefined;
  const childRequest=request=>({
-  connection,expectedCreatorOid:creatorOid,configuration,publicKeyPem,
+  connection,expectedCreatorOid:creatorOid,configuration,verificationConfiguration,
   request:{...request,bodyBase64:request.body.toString('base64'),body:undefined},
  });
  const cold=request=>{
@@ -264,7 +266,7 @@ try{
  const replay=cold(recoveryRequest);
  assert.deepEqual(replay,{status:401,body:{ok:false,code:'ADMISSION_REJECTED',automaticRetry:false}});
  const receiptAdmission=await createBuyerWriterAdmissionPostgres({connection,expectedCreatorOid:creatorOid,Pool});
- const receiptBridge=createAdmissionBridge({mode:'research-admission',configuration,publicKeyPem,
+ const receiptBridge=createAdmissionBridge({mode:'research-admission',configuration,verificationConfiguration,
   admissionExecutor:receiptAdmission.executor,now:()=>Math.floor(Date.now()/1000)});
  const receipt=await receiptBridge(signedRequest('receipt',{
   p_digest:permitDigest,p_workspace:workspace,p_job:jobId,p_dispatch:operationId,
