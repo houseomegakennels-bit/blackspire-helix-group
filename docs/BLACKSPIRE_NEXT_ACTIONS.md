@@ -2,8 +2,8 @@
 
 ## 2026-09-18 — review and seal the configuration-upgrade recovery path
 
-1. Commit the two independently identified P1 repairs, then obtain a fresh independent exact-head re-review. Preserve final-journal rollback recovery and explicit rejection of non-base POSIX ACLs alongside the sealed-artifact proof, exact invariant checks, host lock, three-service quiescence, secret-free state and all crash-window rollback behavior.
-2. Package exact-commit evidence and require the normal external gates before creating a sealed production artifact or protected admission candidate. Re-run read-only target inspection first; role absence and `NONCOMPLIANT` do not authorize mutation.
+1. **DONE locally:** commits `c7553b6ee23db4baf771a86900d0e7c74cb7eb45` and `ca95627e95aadffc9ee33452dd0d1b8cdfac8a9e` preserve final-journal rollback recovery and reject non-base POSIX ACLs; a fresh independent exact-commit re-review found no actionable issue.
+2. Package exact-final-head evidence and require the normal external gates before creating a sealed production artifact or protected admission candidate. Re-run read-only target inspection first; role absence and `NONCOMPLIANT` do not authorize mutation.
 3. If separately authorized for production, keep all three services stopped, run `--inspect` before `--upgrade`, verify the durable completed state, provision the database roles only through the reviewed protected management path, install/start only the exact-SHA gateway and retain the explicit `--rollback` command until acceptance is complete. Any artifact, state, quiescence, database or receipt uncertainty remains a hard stop; do not repin n8n, cut over API/worker, merge or OPEN in this tranche.
 
 ## 2026-09-17 — review repair validation remains required
