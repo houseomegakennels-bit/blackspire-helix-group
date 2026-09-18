@@ -102,10 +102,24 @@ export function validateBuyerWriterGatewayServiceConfiguration(value){
   return Object.freeze({...value,authority});
 }
 
+async function proveAdmissionReadiness(database,timeoutMs){
+  if(!database||typeof database.ready!=='function')fail();
+  const controller=new AbortController();let timer;
+  try{
+    const result=await Promise.race([
+      Promise.resolve().then(()=>database.ready({signal:controller.signal})),
+      new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error());},timeoutMs);}),
+    ]);
+    if(!exact(result,['ok'])||result.ok!==true||controller.signal.aborted)fail();
+  }catch{fail();}finally{clearTimeout(timer);}
+}
+
 export async function startBuyerWriterGateway({configurationFile,read=readBuyerWriterGatewayConfiguration,createPostgres=createBuyerWriterGatewayPostgres,
   createAdmissionPostgres=createBuyerWriterAdmissionPostgres,createBridge=createAdmissionBridge,
   createGateway=createBuyerWriterLocalGateway,resolveIdentity=resolveBuyerWriterGatewayIdentity,
+  admissionReadinessTimeoutMs=5000,
   log=record=>process.stdout.write(`${JSON.stringify(record)}\n`)}={}){
+  if(!Number.isInteger(admissionReadinessTimeoutMs)||admissionReadinessTimeoutMs<10||admissionReadinessTimeoutMs>10_000)fail();
   let database,admissionDatabase,gateway;
   try{
     const identity=resolveIdentity(),config=validateBuyerWriterGatewayServiceConfiguration(read(configurationFile,{identity}));
@@ -113,6 +127,7 @@ export async function startBuyerWriterGateway({configurationFile,read=readBuyerW
     let admissionBridge;
     if(config.mode==='research-admission'){
       admissionDatabase=await createAdmissionPostgres({connection:config.admission.connection,expectedCreatorOid:config.creatorOid});
+      await proveAdmissionReadiness(admissionDatabase,admissionReadinessTimeoutMs);
       admissionBridge=createBridge({mode:config.mode,configuration:config.admission.operationPermitConfiguration,
         publicKeyPem:config.admission.publicKeyPem,admissionExecutor:admissionDatabase.executor});
     }

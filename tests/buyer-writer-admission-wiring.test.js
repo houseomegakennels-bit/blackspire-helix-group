@@ -37,7 +37,8 @@ test('research service configuration and startup wire only the attested admissio
     {...serviceConfig,admission:{...admission,publicKeyPem:generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'})}}])
     assert.throws(()=>validateBuyerWriterGatewayServiceConfiguration(bad),/startup rejected/);
   const events=[],executor={},database={runtimeQuery(){},issuerQuery(){},close:async()=>events.push('database-close')};
-  const admissionDatabase={executor,close:async()=>events.push('admission-close')};
+  const admissionDatabase={executor,ready:async()=>{events.push('admission-ready');return {ok:true};},
+    close:async()=>events.push('admission-close')};
   const gateway={listen:async()=>events.push('listen'),close:async()=>events.push('gateway-close')};
   const started=await startBuyerWriterGateway({configurationFile:'/ignored',
     resolveIdentity:()=>({verified:true}),read:()=>serviceConfig,
@@ -48,14 +49,35 @@ test('research service configuration and startup wire only the attested admissio
     createGateway:options=>{assert.equal(typeof options.admissionBridge,'function');return gateway;}});
   assert.equal(started.admissionDatabase,admissionDatabase);
   await started.close();
-  assert.deepEqual(events,['listen','gateway-close','database-close','admission-close']);
+  assert.deepEqual(events,['admission-ready','listen','gateway-close','database-close','admission-close']);
+});
+
+test('unsafe or hung admission proof prevents bridge creation and socket listen',async()=>{
+  for(const kind of ['unsafe','extra','hung']){
+    const events=[];let observedSignal;
+    const database={runtimeQuery(){},issuerQuery(){},close:async()=>events.push('database-close')};
+    const admissionDatabase={executor:{},close:async()=>events.push('admission-close'),
+      ready:async({signal})=>{
+        observedSignal=signal;
+        if(kind==='hung')return new Promise(()=>{});
+        return kind==='extra'?{ok:true,detail:'unsafe'}:{ok:false};
+      }};
+    await assert.rejects(startBuyerWriterGateway({configurationFile:'/ignored',admissionReadinessTimeoutMs:10,
+      resolveIdentity:()=>({verified:true}),read:()=>serviceConfig,
+      createPostgres:async()=>database,createAdmissionPostgres:async()=>admissionDatabase,
+      createBridge:()=>assert.fail('bridge created before admission proof'),
+      createGateway:()=>assert.fail('socket gateway created before admission proof')}),/startup rejected/);
+    assert.ok(observedSignal instanceof AbortSignal);
+    if(kind==='hung')assert.equal(observedSignal.aborted,true);
+    assert.deepEqual(events,['admission-close','database-close']);
+  }
 });
 
 test('gateway shutdown drains local requests before either PostgreSQL pool closes',async()=>{
   const events=[];let releaseDrain;
   const drain=new Promise(resolve=>{releaseDrain=resolve;});
   const database={runtimeQuery(){},issuerQuery(){},close:async()=>events.push('database-close')};
-  const admissionDatabase={executor:{},close:async()=>events.push('admission-close')};
+  const admissionDatabase={executor:{},ready:async()=>({ok:true}),close:async()=>events.push('admission-close')};
   const gateway={listen:async()=>{},close:async()=>{events.push('gateway-draining');await drain;events.push('gateway-drained');}};
   const started=await startBuyerWriterGateway({configurationFile:'/ignored',
     resolveIdentity:()=>({verified:true}),read:()=>serviceConfig,
