@@ -218,3 +218,58 @@ test('close destroys a checked-out session and exposes no generic SQL surface',a
  await assert.rejects(pending,/unavailable/);
  assert.equal(database.query,undefined);
 });
+
+test('eager template attestation bounds query time, aborts it and closes both pools',async()=>{
+ const instances=[];let templateClient,querySignal;
+ class Pool extends EventEmitter{
+  constructor(config){super();this.config=config;this.ended=false;instances.push(this);}
+  async connect(){
+   const client={
+    query(config){querySignal=config.signal;return new Promise(()=>{});},
+    release(destroy){this.destroyed=Boolean(destroy);},
+   };
+   if(this.config.database==='template1')templateClient=client;
+   return client;
+  }
+  async end(){this.ended=true;}
+ }
+ const started=Date.now();
+ await assert.rejects(
+  createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool}),
+  error=>error.message==='Buyer admission unavailable'&&!String(error).includes('PRIVATE'));
+ const elapsed=Date.now()-started;
+ assert.ok(elapsed>=1900&&elapsed<3500,`unexpected eager query deadline: ${elapsed}ms`);
+ assert.equal(querySignal instanceof AbortSignal,true);
+ assert.equal(querySignal.aborted,true);
+ assert.equal(templateClient.destroyed,true);
+ assert.equal(instances.length,2);
+ assert.equal(instances.every(pool=>pool.ended),true);
+});
+
+test('eager template checkout deadline closes pools and destroys a late checkout',async()=>{
+ const instances=[];let resolveConnect,lateClient,queries=0;
+ class Pool extends EventEmitter{
+  constructor(config){super();this.config=config;this.ended=false;instances.push(this);}
+  connect(){
+   if(this.config.database!=='template1')throw new Error('unexpected current database checkout');
+   return new Promise(resolve=>{resolveConnect=resolve;});
+  }
+  async end(){this.ended=true;}
+ }
+ const pending=createBuyerWriterAdmissionPostgres({connection:connection(),expectedCreatorOid:16384,Pool});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(typeof resolveConnect,'function');
+ const started=Date.now();
+ await assert.rejects(pending,error=>error.message==='Buyer admission unavailable');
+ assert.ok(Date.now()-started>=1900);
+ assert.equal(instances.length,2);
+ assert.equal(instances.every(pool=>pool.ended),true);
+ lateClient={
+  query(){queries++;return {rows:[{safe:true}]};},
+  release(destroy){this.destroyed=Boolean(destroy);},
+ };
+ resolveConnect(lateClient);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(lateClient.destroyed,true);
+ assert.equal(queries,0);
+});

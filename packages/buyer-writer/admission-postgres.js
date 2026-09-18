@@ -98,19 +98,6 @@ export async function createBuyerWriterAdmissionPostgres({connection,expectedCre
   if(!templatePool||typeof templatePool.connect!=='function'||typeof templatePool.end!=='function'
    ||typeof templatePool.on!=='function')throw unavailable();
   templatePool.on('error',()=>{healthy=false;});
-  let templateClient;
-  try{
-   templateClient=await templatePool.connect();
-   if(!templateClient||typeof templateClient.query!=='function'||typeof templateClient.release!=='function')throw unavailable();
-   const result=await templateClient.query({text:ADMISSION_TEMPLATE1_IDENTITY_SQL,values:[BUYER_WRITER_ADMISSION_LOGIN]});
-   if(!result||!Array.isArray(result.rows)||result.rows.length!==1
-    ||!result.rows[0]||typeof result.rows[0]!=='object'||Array.isArray(result.rows[0])
-    ||Object.keys(result.rows[0]).length!==1||result.rows[0].safe!==true)throw unavailable();
-   templateClient.release(false);templateClient=undefined;
-  }catch{
-   try{templateClient?.release?.(true);}catch{}
-   throw unavailable();
-  }
   const connect=async()=>{
    if(closed||!healthy)throw unavailable();
    let client;
@@ -182,6 +169,7 @@ export async function createBuyerWriterAdmissionPostgres({connection,expectedCre
     destroy=false;return true;
    }finally{release(destroy);}
   };
+  await prove(templatePool,ADMISSION_TEMPLATE1_IDENTITY_SQL,[BUYER_WRITER_ADMISSION_LOGIN]);
   const ready=async({signal}={})=>{
    if(signal!==undefined&&!(signal instanceof AbortSignal))return NOT_READY;
    if(closed||!healthy||signal?.aborted)return NOT_READY;
