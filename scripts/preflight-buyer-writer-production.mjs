@@ -1,47 +1,32 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import {runBuyerWriterProductionPreflight} from './lib/buyer-writer-production-preflight.mjs';
+import {validateBuyerWriterProductionPlan} from './lib/buyer-writer-production-preflight.mjs';
 
-const stopped=()=>{throw new Error('Buyer writer production preflight stopped');};
-
-function readDescriptor(filename){
+const stop=()=>{throw new Error('Buyer writer production preflight stopped');};
+function output(filename,value){
  let fd;
  try{
-  if(!path.isAbsolute(filename)||path.resolve(filename)!==filename||filename==='/')stopped();
-  fd=fs.openSync(filename,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_CLOEXEC);
-  const stat=fs.fstatSync(fd);
-  if(!stat.isFile()||stat.size<2||stat.size>8192)stopped();
-  const bytes=Buffer.alloc(stat.size);
-  if(fs.readSync(fd,bytes,0,bytes.length,0)!==bytes.length)stopped();
-  return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
- }catch{stopped();}finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}}
-}
-
-function writeEvidence(filename,value){
- let fd;
- try{
-  if(!path.isAbsolute(filename)||path.resolve(filename)!==filename||filename==='/')stopped();
+  if(!path.isAbsolute(filename)||path.resolve(filename)!==filename||filename==='/')stop();
   const bytes=Buffer.from(`${JSON.stringify(value,null,2)}\n`);
   fd=fs.openSync(filename,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL
    |fs.constants.O_NOFOLLOW|fs.constants.O_CLOEXEC,0o600);
-  if(fs.writeSync(fd,bytes,0,bytes.length,0)!==bytes.length)stopped();
-  fs.fsyncSync(fd);
- }catch{stopped();}finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}}
+  if(fs.writeSync(fd,bytes)!==bytes.length)stop();fs.fsyncSync(fd);
+ }catch{stop();}finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}}
 }
-
 try{
- const args=process.argv.slice(2);
- if((args.length!==8&&args.length!==10)||args[0]!=='--mode'||args[2]!=='--target'
-  ||args[4]!=='--impact-manifest'||args[6]!=='--management-config'
-  ||(args.length===10&&args[8]!=='--output'))stopped();
- const managementConfigPath=args[7];
- if(!path.isAbsolute(managementConfigPath)||path.resolve(managementConfigPath)!==managementConfigPath
-  ||managementConfigPath==='/')stopped();
- const report=await runBuyerWriterProductionPreflight({
-  mode:args[1],target:readDescriptor(args[3]),impactManifest:readDescriptor(args[5]),managementConfigPath,
+ const args=process.argv.slice(2),flags=new Map();
+ if(args.length%2!==0)stop();
+ for(let i=0;i<args.length;i+=2){if(!args[i].startsWith('--')||flags.has(args[i]))stop();flags.set(args[i],args[i+1]);}
+ const required=['--mode','--release-manifest','--catalog-snapshot','--gateway-config','--management-config','--nonce-claim-dir'];
+ if(required.some(key=>!flags.has(key))||[...flags.keys()].some(key=>![...required,'--restore-artifact','--output'].includes(key)))stop();
+ const report=validateBuyerWriterProductionPlan({
+  mode:flags.get('--mode'),releaseManifestPath:flags.get('--release-manifest'),
+  catalogSnapshotPath:flags.get('--catalog-snapshot'),gatewayConfigPath:flags.get('--gateway-config'),
+  managementConfigPath:flags.get('--management-config'),nonceClaimDirectory:flags.get('--nonce-claim-dir'),
+  restoreArtifactPath:flags.get('--restore-artifact'),now:()=>new Date(),
  });
- if(args.length===10)writeEvidence(args[9],report);
+ if(flags.has('--output'))output(flags.get('--output'),report);
  process.stdout.write(`${JSON.stringify(report)}\n`);
 }catch{
  process.stderr.write('Buyer writer production preflight stopped; no connection was attempted and no protected input was disclosed\n');
