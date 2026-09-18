@@ -73,7 +73,7 @@ test('pins the admission login, TLS CA and fixed session limits',async()=>{
   assert.equal(client.calls[0].values[0],BUYER_WRITER_ADMISSION_LOGIN);
   assert.match(client.calls[1].text,/reserve_operation/);
   assert.equal(client.destroyed,false);
-  assert.deepEqual(Object.keys(database).sort(),['close','executor','isHealthy']);
+  assert.deepEqual(Object.keys(database).sort(),['close','executor','isHealthy','ready']);
  }finally{await database.close();}
  assert.equal(instances[0].ended,true);assert.equal(instances[1].ended,true);
 });

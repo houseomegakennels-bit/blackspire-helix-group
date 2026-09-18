@@ -1,5 +1,5 @@
 import {X509Certificate} from 'node:crypto';
-import {AdmissionUnavailableError,createAttestedAdmissionExecutor} from './admission-executor.js';
+import {ADMISSION_IDENTITY_SQL,AdmissionUnavailableError,createAttestedAdmissionExecutor} from './admission-executor.js';
 
 export const BUYER_WRITER_ADMISSION_LOGIN='buyer_writer_admission_login';
 export const BUYER_WRITER_ADMISSION_ROLE='buyer_writer_admission';
@@ -32,6 +32,9 @@ export const ADMISSION_TEMPLATE1_IDENTITY_SQL=`select (
 ) as safe from pg_database d cross join pg_roles login cross join pg_roles admission
 where d.datname=current_database() and login.rolname=$1 and admission.rolname='buyer_writer_admission'`;
 const unavailable=()=>new AdmissionUnavailableError();
+const READY=Object.freeze({ok:true});
+const NOT_READY=Object.freeze({ok:false});
+const PROBE_TIMEOUT_MS=2000;
 const allowedKeys=['host','port','database','user','password','ca'];
 
 function validCertificateBundle(value){
@@ -138,8 +141,60 @@ export async function createBuyerWriterAdmissionPostgres({connection,expectedCre
    expectedLogin:BUYER_WRITER_ADMISSION_LOGIN,expectedCreatorOid,connect,
    checkoutTimeoutMs:2000,identityTimeoutMs:2000,
   });
+  const prove=async(proofPool,text,values,signal)=>{
+   let client,released=false,destroy=true,checkoutSettled=false,checkoutTimer,abortCheckout,forceDestroy;
+   const release=force=>{
+    if(client&&!released){
+     released=true;if(forceDestroy)checkedOut.delete(forceDestroy);
+     try{client.release(Boolean(force));}catch{}
+    }
+   };
+   try{
+    client=await new Promise((resolve,reject)=>{
+     const finish=(error,value)=>{
+      if(checkoutSettled){if(value)try{value.release(true);}catch{}return;}
+      checkoutSettled=true;clearTimeout(checkoutTimer);
+      if(signal&&abortCheckout)signal.removeEventListener('abort',abortCheckout);
+      if(error)reject(unavailable());else resolve(value);
+     };
+     abortCheckout=()=>finish(unavailable());
+     if(signal?.aborted)return finish(unavailable());
+     signal?.addEventListener('abort',abortCheckout,{once:true});
+     checkoutTimer=setTimeout(()=>finish(unavailable()),PROBE_TIMEOUT_MS);
+     Promise.resolve().then(()=>proofPool.connect()).then(value=>finish(undefined,value),()=>finish(unavailable()));
+    });
+    if(!client||typeof client.query!=='function'||typeof client.release!=='function')throw unavailable();
+    forceDestroy=()=>release(true);checkedOut.add(forceDestroy);
+    if(closed||!healthy||signal?.aborted)throw unavailable();
+    const controller=new AbortController();let timer,abortQuery;
+    const result=await Promise.race([
+     Promise.resolve().then(()=>client.query({text,values,signal:controller.signal})),
+     new Promise((_,reject)=>{
+      abortQuery=()=>{controller.abort();reject(unavailable());};
+      if(signal?.aborted)return abortQuery();
+      signal?.addEventListener('abort',abortQuery,{once:true});
+      timer=setTimeout(abortQuery,PROBE_TIMEOUT_MS);
+     }),
+    ]).finally(()=>{clearTimeout(timer);if(signal&&abortQuery)signal.removeEventListener('abort',abortQuery);});
+    if(!result||!Array.isArray(result.rows)||result.rows.length!==1
+     ||!result.rows[0]||typeof result.rows[0]!=='object'||Array.isArray(result.rows[0])
+     ||Object.keys(result.rows[0]).length!==1||result.rows[0].safe!==true)throw unavailable();
+    destroy=false;return true;
+   }finally{release(destroy);}
+  };
+  const ready=async({signal}={})=>{
+   if(signal!==undefined&&!(signal instanceof AbortSignal))return NOT_READY;
+   if(closed||!healthy||signal?.aborted)return NOT_READY;
+   try{
+    await prove(pool,ADMISSION_IDENTITY_SQL,[BUYER_WRITER_ADMISSION_LOGIN,expectedCreatorOid],signal);
+    if(closed||!healthy||signal?.aborted)return NOT_READY;
+    await prove(templatePool,ADMISSION_TEMPLATE1_IDENTITY_SQL,[BUYER_WRITER_ADMISSION_LOGIN],signal);
+    if(closed||!healthy||signal?.aborted)return NOT_READY;
+    return READY;
+   }catch{return NOT_READY;}
+  };
   return Object.freeze({
-   executor,isHealthy:()=>!closed&&healthy,
+   executor,isHealthy:()=>!closed&&healthy,ready,
    close,
   });
  }catch{
