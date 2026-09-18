@@ -149,7 +149,7 @@ test('pre-publication failure restores prepared state and reports rollback-safe'
 });
 
 test('post-publication verification or finalization failure restores the exact old state',async()=>{
-  for(const failure of ['verifyReplacement','finalizeReplacement:commit']){
+  for(const failure of ['verifyReplacement','finalizeReplacement:commit','journal:completed']){
     const f=harness({failure});
     await assert.rejects(()=>upgradeBuyerWriterGatewayConfiguration(f),
       error=>error.message==='Buyer writer gateway configuration upgrade failed'

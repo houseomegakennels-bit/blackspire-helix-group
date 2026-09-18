@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash,generateKeyPairSync,randomBytes,randomUUID} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {createBuyerWriterGatewayConfigurationFileControls,
   rollbackBuyerWriterGatewayConfigurationFile} from
   '../packages/buyer-writer/gateway-configuration-upgrade-files.js';
@@ -212,4 +213,37 @@ test('a service start immediately before manual rollback preserves the new confi
   }));
   assert.deepEqual(read(f.configurationFile),f.values.newConfiguration);
   assert.equal(fs.existsSync(path.join(f.stateDirectory,'.'+f.operationId+'.manual-restore')),false);
+});
+
+
+test('completed-journal failure retains the plan and restores the exact old file',rootOnly,async t=>{
+  const f=fixture(t);
+  const appendJournal=async event=>{
+    f.events.push(event);
+    if(event.phase==='completed')throw new Error('PRIVATE journal failure');
+  };
+  await assert.rejects(()=>upgradeBuyerWriterGatewayConfiguration({...f.input,appendJournal}),
+    error=>error.rollbackSafe===true);
+  assert.deepEqual(read(f.configurationFile),f.values.oldConfiguration);
+  assert.equal(read(path.join(f.stateDirectory,f.operationId+'.state.json')).phase,'ROLLED_BACK');
+  assert.equal(f.events.at(-1).phase,'rolled-back');
+});
+
+test('extended and inherited ACLs are rejected before credential copies are created',rootOnly,async t=>{
+  const current=fixture(t);
+  execFileSync('/usr/bin/setfacl',['-m','u:65534:r--',current.configurationFile]);
+  fs.chmodSync(current.configurationFile,0o640);
+  await assert.rejects(()=>upgradeBuyerWriterGatewayConfiguration(current.input),
+    error=>error.rollbackSafe===false);
+  assert.deepEqual(fs.readdirSync(current.stateDirectory),[]);
+
+  const inherited=fixture(t);
+  execFileSync('/usr/bin/setfacl',['-m','d:u:65534:r-x',inherited.stateDirectory]);
+  fs.chmodSync(inherited.stateDirectory,0o700);
+  assert.throws(()=>createBuyerWriterGatewayConfigurationFileControls({
+    operationId:inherited.operationId,writerGroupId:inherited.writerGroupId,
+    configurationFile:inherited.configurationFile,stateDirectory:inherited.stateDirectory,
+    proveQuiesced:async()=>true,
+  }));
+  assert.deepEqual(fs.readdirSync(inherited.stateDirectory),[]);
 });
