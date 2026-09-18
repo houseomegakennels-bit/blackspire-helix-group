@@ -101,18 +101,14 @@ const descriptorOwnsPath=(descriptor,socketPath,io)=>{
   const inode=String(descriptorStat.ino),table=io.readFileSync('/proc/net/unix','utf8');
   return table.split('\n').some(line=>{const fields=line.trim().split(/\s+/);return fields[6]===inode&&fields.slice(7).join(' ')===socketPath;});
 };
-const existingSocketIsActive=socketPath=>new Promise((resolve,reject)=>{
-  const socket=net.createConnection({path:socketPath});let settled=false;
-  const finish=(error,active)=>{if(settled)return;settled=true;socket.destroy();error?reject(error):resolve(active);};
-  socket.unref();socket.setTimeout(500,()=>finish(new Error('Buyer writer gateway stale socket rejected')));
-  socket.once('connect',()=>finish(null,true));
-  socket.once('error',error=>error?.code==='ECONNREFUSED'||error?.code==='ENOENT'?finish(null,false):finish(new Error('Buyer writer gateway stale socket rejected')));
-});
+export const BUYER_WRITER_SOCKET_LIFECYCLE=Object.freeze({platform:'linux',descriptorProof:'/proc/net/unix',publication:'hard-link',
+  publicPathCleanup:'trusted-supervisor-only'});
 
 export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_SOCKET,capability,authority,gatewayIdentityVerified,runtimeQuery,issuerQuery,admissionBridge,
-  timeoutMs=BUYER_WRITER_LOCAL_TIMEOUT_MS,maxConnections=32,io=fs,uid=process.getuid?.()??-1,now=Date.now,log=()=>{}}) {
+  timeoutMs=BUYER_WRITER_LOCAL_TIMEOUT_MS,maxConnections=32,io=fs,uid=process.getuid?.()??-1,now=Date.now,log=()=>{},
+  descriptorOf=server=>server?._handle?.fd}={}) {
   if(typeof runtimeQuery!=='function'||typeof issuerQuery!=='function'||gatewayIdentityVerified!==true||!authority||typeof authority!=='object'
-    ||(admissionBridge!==undefined&&typeof admissionBridge!=='function')
+    ||(admissionBridge!==undefined&&typeof admissionBridge!=='function')||typeof descriptorOf!=='function'
     ||!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30_000)throw new Error('Buyer writer gateway configuration rejected');
   try{authority=validateBuyerWriterGatewayAuthority(authority);}catch{throw new Error('Buyer writer gateway configuration rejected');}
   verifySocketParent(socketPath,io,uid);
@@ -162,21 +158,11 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
   });
   server.maxConnections=maxConnections;
   const closeListener=()=>new Promise(resolve=>{if(!server.listening&&!server._handle)return resolve();server.close(()=>resolve());});
-  const removeOwnedPublication=()=>{
-    try{const current=io.lstatSync(socketPath);if(ownedSocket&&sameSocket(ownedSocket,current))io.unlinkSync(socketPath);}
-    catch(error){if(error?.code!=='ENOENT')log({outcome:'cleanup_failed'});}
-  };
   const listen=()=>{
     if(listenPromise||stopped)return Promise.reject(new Error('Buyer writer gateway listen rejected'));
     listenPromise=(async()=>{
-      let prior;
-      try{prior=io.lstatSync(socketPath);}catch(error){if(error?.code!=='ENOENT')throw new Error('Buyer writer gateway stale socket rejected');}
-      if(prior){
-        if(!prior.isSocket()||prior.uid!==uid||await existingSocketIsActive(socketPath))throw new Error('Buyer writer gateway stale socket rejected');
-        let current;try{current=io.lstatSync(socketPath);}catch(error){if(error?.code!=='ENOENT')throw new Error('Buyer writer gateway stale socket rejected');}
-        if(current&&!sameSocket(prior,current))throw new Error('Buyer writer gateway stale socket rejected');
-        if(current)io.unlinkSync(socketPath);
-      }
+      try{io.lstatSync(socketPath);throw new Error('Buyer writer gateway public socket exists; trusted supervisor cleanup required');}
+      catch(error){if(error?.code!=='ENOENT')throw error;}
       if(stopped)throw new Error('Buyer writer gateway listen rejected');
       backingPath=path.join(path.dirname(socketPath),`.bw-${randomBytes(12).toString('hex')}.sock`);
       try{
@@ -185,15 +171,14 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
           server.listen(backingPath,()=>{server.off('error',failed);resolve();});
         });
         io.chmodSync(backingPath,0o660);
-        const descriptor=server?._handle?.fd,backing=io.lstatSync(backingPath);
+        const descriptor=descriptorOf(server),backing=io.lstatSync(backingPath);
         if(!descriptorOwnsPath(descriptor,backingPath,io)||!backing.isSocket()||backing.uid!==uid||(backing.mode&0o777)!==0o660)throw new Error();
         ownedSocket=backing;io.linkSync(backingPath,socketPath);
         const published=io.lstatSync(socketPath);
         if(!sameSocket(ownedSocket,published)||published.uid!==uid||(published.mode&0o777)!==0o660)throw new Error();
         ready=true;
       }catch{
-        ready=false;
-        try{await closeListener();}finally{removeOwnedPublication();}
+        ready=false;await closeListener();
         throw new Error('Buyer writer gateway listen rejected');
       }
     })();
@@ -208,7 +193,7 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
       // Idle/partial clients have no accepted operation. Accepted responses retain
       // the existing bounded timeout/drain behavior rather than losing a reply.
       for(const [socket,hasCompleteFrame] of sockets)if(!hasCompleteFrame())socket.destroy();
-      try{await closeListener();}finally{await drained;drainWaiters.clear();removeOwnedPublication();}
+      try{await closeListener();}finally{await drained;drainWaiters.clear();}
     })();
     return closePromise;
   };

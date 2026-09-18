@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {randomBytes,randomUUID} from 'node:crypto';
-import {createBuyerWriterLocalGateway} from '../packages/buyer-writer/local-gateway-server.js';
+import {BUYER_WRITER_SOCKET_LIFECYCLE,createBuyerWriterLocalGateway} from '../packages/buyer-writer/local-gateway-server.js';
 
 const authority=Object.freeze({releaseSha:'a'.repeat(40),operationId:randomUUID(),attemptId:randomUUID(),
   workspace:'isolated',gatewayIdentity:'blackspire-writer'});
@@ -14,8 +14,8 @@ const capability=randomBytes(32).toString('base64url');
 const fixture=()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-writer-service-'));fs.chmodSync(root,0o700);
   const socketPath=path.join(root,'gateway.sock');
-  const gateway=()=>createBuyerWriterLocalGateway({socketPath,capability,authority,gatewayIdentityVerified:true,
-    runtimeQuery:async()=>assert.fail('runtime query forbidden'),issuerQuery:async()=>assert.fail('issuer query forbidden')});
+  const gateway=(extra={})=>createBuyerWriterLocalGateway({socketPath,capability,authority,gatewayIdentityVerified:true,
+    runtimeQuery:async()=>assert.fail('runtime query forbidden'),issuerQuery:async()=>assert.fail('issuer query forbidden'),...extra});
   return {root,socketPath,gateway,cleanup:()=>fs.rmSync(root,{recursive:true,force:true})};
 };
 const listen=server=>new Promise((resolve,reject)=>{
@@ -30,13 +30,13 @@ test('startup preserves an active same-owner listener and refuses split brain',a
   const f=fixture(),active=net.createServer(socket=>socket.end());active.__path=f.socketPath;
   try{
     await listen(active);const before=fs.lstatSync(f.socketPath),candidate=f.gateway();
-    await assert.rejects(candidate.listen(),/stale socket rejected/);
+    await assert.rejects(candidate.listen(),/public socket exists; trusted supervisor cleanup required/);
     const after=fs.lstatSync(f.socketPath);assert.equal(after.ino,before.ino);assert.equal(after.dev,before.dev);
     await connect(f.socketPath);assert.equal(active.listening,true);await candidate.close();
   }finally{await close(active);f.cleanup();}
 });
 
-test('startup reclaims a proven stale socket and shutdown supports a clean restart',async()=>{
+test('stale public sockets fail closed until trusted supervisor cleanup',async()=>{
   const f=fixture();
   const child=spawn(process.execPath,['-e',
     "const net=require('node:net');const s=net.createServer();s.listen(process.argv[1],()=>process.send('ready'));setInterval(()=>{},1000)",
@@ -44,12 +44,13 @@ test('startup reclaims a proven stale socket and shutdown supports a clean resta
   try{
     await new Promise((resolve,reject)=>{child.once('message',resolve);child.once('error',reject);});
     child.kill('SIGKILL');await new Promise(resolve=>child.once('exit',resolve));
+    const stale=fs.lstatSync(f.socketPath),blocked=f.gateway();
+    await assert.rejects(blocked.listen(),/public socket exists; trusted supervisor cleanup required/);
+    assert.equal(blocked.isReady(),false);assert.equal(fs.lstatSync(f.socketPath).ino,stale.ino);await blocked.close();
+    fs.unlinkSync(f.socketPath); // Explicit trusted-supervisor simulation; the gateway never does this.
+    const started=f.gateway();await started.listen();assert.equal(started.isReady(),true);await started.close();
     assert.equal(fs.lstatSync(f.socketPath).isSocket(),true);
-    const first=f.gateway();await first.listen();assert.equal(first.isReady(),true);
-    assert.equal(fs.lstatSync(f.socketPath).mode&0o777,0o660);
-    await assert.rejects(first.listen(),/listen rejected/);
-    await first.close();assert.equal(fs.existsSync(f.socketPath),false);
-    const second=f.gateway();await second.listen();assert.equal(second.isReady(),true);await second.close();
+    await assert.rejects(f.gateway().listen(),/public socket exists; trusted supervisor cleanup required/);
   }finally{if(child.exitCode===null)child.kill('SIGKILL');f.cleanup();}
 });
 test('shutdown never removes a pathname that no longer names its socket',async()=>{
@@ -63,12 +64,12 @@ test('shutdown never removes a pathname that no longer names its socket',async()
   }finally{await gateway.close().catch(()=>{});f.cleanup();}
 });
 
-test('a concurrent stop waits for startup and leaves no listener or socket',async()=>{
+test('a concurrent stop waits for startup and leaves a supervisor-owned stale artifact',async()=>{
   const f=fixture(),gateway=f.gateway();
   try{
     const starting=gateway.listen(),stopping=gateway.close();await Promise.all([starting,stopping]);
     assert.equal(gateway.isReady(),false);assert.equal(gateway.isDrained(),true);
-    assert.equal(fs.existsSync(f.socketPath),false);
+    assert.equal(fs.lstatSync(f.socketPath).isSocket(),true);
     await assert.rejects(gateway.listen(),/listen rejected/);
   }finally{await gateway.close();f.cleanup();}
 });
@@ -134,8 +135,8 @@ test('sentinel collisions cannot influence shutdown cleanup',async()=>{
   const f=fixture(),gateway=f.gateway(),sentinel=path.join(f.root,'.buyer-writer-preserved-'+process.pid);
   try{
     fs.writeFileSync(sentinel,'sentinel',{mode:0o600});await gateway.listen();await gateway.close();
-    assert.equal(fs.readFileSync(sentinel,'utf8'),'sentinel');assert.equal(fs.existsSync(f.socketPath),false);
-    assert.deepEqual(fs.readdirSync(f.root),[path.basename(sentinel)]);
+    assert.equal(fs.readFileSync(sentinel,'utf8'),'sentinel');assert.equal(fs.lstatSync(f.socketPath).isSocket(),true);
+    assert.deepEqual(fs.readdirSync(f.root).sort(),[path.basename(sentinel),'gateway.sock'].sort());
   }finally{await gateway.close();f.cleanup();}
 });
 
@@ -148,6 +149,70 @@ test('concurrent starters publish exactly one connectable winner and loser clean
     await connect(f.socketPath);
     const loser=outcomes[0].status==='rejected'?first:second,winner=loser===first?second:first;
     await loser.close();await connect(f.socketPath);assert.equal(winner.isReady(),true);
-    await winner.close();assert.equal(fs.existsSync(f.socketPath),false);
+    await winner.close();assert.equal(fs.lstatSync(f.socketPath).isSocket(),true);
   }finally{await Promise.allSettled([first.close(),second.close()]);f.cleanup();}
+});
+
+test('missing or malformed proc descriptor proof fails closed without publication',async()=>{
+  for(const mode of ['missing','malformed']){
+    const f=fixture(),io={...fs,readFileSync(filename,...args){
+      if(filename==='/proc/net/unix'){
+        if(mode==='missing'){const error=new Error('missing');error.code='ENOENT';throw error;}
+        return 'malformed';
+      }
+      return fs.readFileSync(filename,...args);
+    }},gateway=f.gateway({io});
+    try{
+      await assert.rejects(gateway.listen(),/listen rejected/);assert.equal(gateway.isReady(),false);
+      await gateway.close();assert.deepEqual(fs.readdirSync(f.root),[]);
+    }finally{await gateway.close().catch(()=>{});f.cleanup();}
+  }
+});
+
+test('absent listener descriptor and unsupported hard links fail closed',async()=>{
+  const absent=fixture(),noDescriptor=absent.gateway({descriptorOf:()=>undefined});
+  try{
+    await assert.rejects(noDescriptor.listen(),/listen rejected/);await noDescriptor.close();
+    assert.deepEqual(fs.readdirSync(absent.root),[]);
+  }finally{absent.cleanup();}
+  const unsupported=fixture(),io={...fs,linkSync(){const error=new Error('unsupported');error.code='ENOTSUP';throw error;}};
+  const noLink=unsupported.gateway({io});
+  try{
+    await assert.rejects(noLink.listen(),/listen rejected/);await noLink.close();
+    assert.deepEqual(fs.readdirSync(unsupported.root),[]);
+  }finally{unsupported.cleanup();}
+});
+
+test('startup never deletes a path created after its absence check',async()=>{
+  const f=fixture(),sentinel='startup-winner';let injected=false;
+  const io={...fs,lstatSync(filename){
+    try{return fs.lstatSync(filename);}catch(error){
+      if(filename===f.socketPath&&!injected){injected=true;fs.writeFileSync(filename,sentinel,{mode:0o600});}
+      throw error;
+    }
+  }},gateway=f.gateway({io});
+  try{
+    await assert.rejects(gateway.listen(),/listen rejected/);await gateway.close();
+    assert.equal(fs.readFileSync(f.socketPath,'utf8'),sentinel);
+  }finally{f.cleanup();}
+});
+
+test('close never deletes a replacement installed after a successful path observation',async()=>{
+  const f=fixture(),sentinel='close-winner';let armed=false;
+  const io={...fs,lstatSync(filename){
+    const observed=fs.lstatSync(filename);
+    if(armed&&filename===f.socketPath){armed=false;fs.unlinkSync(filename);fs.writeFileSync(filename,sentinel,{mode:0o600});}
+    return observed;
+  }},gateway=f.gateway({io});
+  try{
+    await gateway.listen();armed=true;
+    assert.equal(gateway.isReady(),true);await gateway.close();
+    assert.equal(fs.readFileSync(f.socketPath,'utf8'),sentinel);
+  }finally{f.cleanup();}
+});
+
+test('socket lifecycle exports its fail-closed Linux supervisor contract',()=>{
+  assert.deepEqual(BUYER_WRITER_SOCKET_LIFECYCLE,{platform:'linux',descriptorProof:'/proc/net/unix',
+    publication:'hard-link',publicPathCleanup:'trusted-supervisor-only'});
+  assert.equal(Object.isFrozen(BUYER_WRITER_SOCKET_LIFECYCLE),true);
 });

@@ -167,6 +167,10 @@ test('gateway restart preserves database mutation idempotence for the same bound
   request.auth.mac=signLocalGatewayRequest(request,capability);
   try{
     await start();assert.equal((await sendFrame(socketPath,request)).ok,true);await gateway.close();
+    const blocked=createBuyerWriterLocalGateway({socketPath,capability,authority,gatewayIdentityVerified:true,runtimeQuery,
+      issuerQuery:async()=>assert.fail('issuer must not run')});
+    await assert.rejects(blocked.listen(),/trusted supervisor cleanup required/);await blocked.close();
+    fs.unlinkSync(socketPath); // Explicit trusted-supervisor simulation; gateway code never unlinks the public path.
     await start();assert.equal((await sendFrame(socketPath,request)).ok,true);
     assert.equal(mutations,1);assert.equal(seen.size,1);
   }finally{await gateway?.close();fs.rmSync(root,{recursive:true,force:true});}
