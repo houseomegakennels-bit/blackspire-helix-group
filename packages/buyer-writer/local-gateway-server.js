@@ -101,6 +101,13 @@ const descriptorOwnsPath=(descriptor,socketPath,io)=>{
   const inode=String(descriptorStat.ino),table=io.readFileSync('/proc/net/unix','utf8');
   return table.split('\n').some(line=>{const fields=line.trim().split(/\s+/);return fields[6]===inode&&fields.slice(7).join(' ')===socketPath;});
 };
+const waitForDescriptorPath=async(descriptor,socketPath,io)=>{
+  for(let attempt=0;attempt<10;attempt++){
+    try{if(descriptorOwnsPath(descriptor,socketPath,io))return true;}catch{}
+    if(attempt<9)await new Promise(resolve=>setTimeout(resolve,2));
+  }
+  return false;
+};
 export const BUYER_WRITER_SOCKET_LIFECYCLE=Object.freeze({platform:'linux',descriptorProof:'/proc/net/unix',publication:'hard-link',
   publicPathCleanup:'trusted-supervisor-only'});
 
@@ -164,7 +171,7 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
       try{io.lstatSync(socketPath);throw new Error('Buyer writer gateway public socket exists; trusted supervisor cleanup required');}
       catch(error){if(error?.code!=='ENOENT')throw error;}
       if(stopped)throw new Error('Buyer writer gateway listen rejected');
-      backingPath=path.join(path.dirname(socketPath),`.bw-${randomBytes(12).toString('hex')}.sock`);
+      backingPath=path.join(path.dirname(socketPath),`.bw-${randomBytes(6).toString('hex')}`);
       try{
         await new Promise((resolve,reject)=>{
           const failed=error=>{server.off('error',failed);reject(error);};server.once('error',failed);
@@ -172,7 +179,7 @@ export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_S
         });
         io.chmodSync(backingPath,0o660);
         const descriptor=descriptorOf(server),backing=io.lstatSync(backingPath);
-        if(!descriptorOwnsPath(descriptor,backingPath,io)||!backing.isSocket()||backing.uid!==uid||(backing.mode&0o777)!==0o660)throw new Error();
+        if(!await waitForDescriptorPath(descriptor,backingPath,io)||!backing.isSocket()||backing.uid!==uid||(backing.mode&0o777)!==0o660)throw new Error();
         ownedSocket=backing;io.linkSync(backingPath,socketPath);
         const published=io.lstatSync(socketPath);
         if(!sameSocket(ownedSocket,published)||published.uid!==uid||(published.mode&0o777)!==0o660)throw new Error();

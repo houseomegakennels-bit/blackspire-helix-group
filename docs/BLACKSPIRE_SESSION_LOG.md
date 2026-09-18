@@ -1,6 +1,16 @@
 # Blackspire Canonical Session Log
 
-## 2026-09-18 — admission configuration upgrade and crash recovery implemented locally
+## 2026-09-18 — admission configuration, crash recovery and trusted caller implemented locally
+
+Continued from the sealed gateway-upgrade checkpoint without changing production. Added a fail-closed application-side adapter that maps the five mutating fixed statements to fresh 30-second Ed25519 permits and the gateway admitted route, while retaining only `context` on the restricted read-only path. Explicit recovery now mints a distinct permit bound to the original dispatch evidence and cannot replay the original mutation; no new HTTP route exposes it. Admission denial, malformed success, signer failure, unknown statements and transport failure are sanitized and cannot reach the legacy mutation dispatcher. Production runtime startup now requires a separate protected signer descriptor with exact release/operation/attempt/workspace/key binding.
+
+Extended the shared renderer and root configuration installer to publish root-owned API-private signer metadata, pin its path in the API drop-in and verify the referenced private key is an API-owned single-link mode-`0600` Ed25519 key matching the current verification key before publication. Repaired the exact pg_net source allowlist for four already-reviewed observer/test files. Full containment also exposed a real Unix-socket path defect: the private 33-character backing name exceeded Linux `sun_path` only beneath the long trusted-test `TMPDIR`. The private name is now a randomized 16-character no-replace path; near-limit, delayed `/proc/net/unix` observation and permanent-proof-failure regressions pass without relaxing socket identity.
+
+The final trusted suite passes 2,098 total / 2,033 passed / 65 explicit skips / zero failed across all 215 files, with drained output, zero test-tree mutation and zero surviving descendants. The seven protected-root preflight cases pass 7/7 separately under root and are explicitly skipped in the UID-65534 contained runner; focused admission/custody/preflight/socket validation passes 59/59. Lint, typecheck, build, secret scan, living-memory and whitespace gates pass. Production remains `NONCOMPLIANT` with all expected roles absent, and no protected production file, service, database, provider, n8n, deployment or release state changed.
+
+The exact protected candidate and signing key do not yet exist. Independent exact-commit review remains required before this source can become a live candidate.
+
+
 
 Recovered the clean gateway-supervisor checkpoint and preserved the prior read-only target evidence. Added a canonical shared version-4 configuration renderer and a root-only version-2-to-version-4 upgrade command that requires the exact sealed release artifact, protected input, an exclusive host lock and inactive API, worker and gateway services. The operation binds unchanged workspace/socket/capability/creator/runtime/issuer invariants, creates an exact root-only backup, journals only digests and phases, publishes atomically and rechecks quiescence immediately before every config rename. Explicit rollback now recovers intent-only, prepared, post-rename and completed states and refuses unknown config/state drift.
 

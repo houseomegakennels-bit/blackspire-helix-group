@@ -819,6 +819,7 @@ if (IS_ENTRY_POINT) {
       return createBuyerWriterRuntime({
         clientConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG,
         ingressConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG,
+        signerConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_SIGNER_CONFIG,
         workspace: process.env.BUYER_WRITER_WORKSPACE_ID,
         releaseSha: identity.build.value,
         apiGeneration: process.env.INVOCATION_ID,

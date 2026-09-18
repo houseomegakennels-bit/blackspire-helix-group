@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-09-18 — finish admitted caller evidence without crossing live authority
+
+1. **DONE locally:** the trusted contained suite passes 2,098 total / 2,033 passed / 65 explicit skips / zero failed across all 215 files; root-only preflight passes 7/7 separately and all static/security gates pass. Obtain an independent exact-commit review before treating this source milestone as approved.
+2. Build a root-only, non-overwriting preparer for the protected version-4 candidate and API-owned Ed25519 key. It must bind the exact sealed release, current operation/attempt/workspace and gateway verification key without exposing private material. Do not create either object in the protected production hierarchy without separate authority.
+3. Only under separate production authority: keep all services quiesced, inspect the candidate and upgrade plan, install exact protected configuration, provision roles through the reviewed management path, then start and accept the exact-SHA gateway/API composition. Any admission, receipt-correlation, recovery or custody uncertainty is a hard stop; do not call offline tests live acceptance.
+
 ## 2026-09-18 — review and seal the configuration-upgrade recovery path
 
 1. **DONE locally:** commits `c7553b6ee23db4baf771a86900d0e7c74cb7eb45` and `ca95627e95aadffc9ee33452dd0d1b8cdfac8a9e` preserve final-journal rollback recovery and reject non-base POSIX ACLs; a fresh independent exact-commit re-review found no actionable issue.

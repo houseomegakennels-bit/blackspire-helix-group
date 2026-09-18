@@ -43,14 +43,17 @@ const gatewayFixture=()=>{
   const authority={releaseSha:'a'.repeat(40),operationId:randomUUID(),attemptId:randomUUID(),workspace,gatewayIdentity:'blackspire-writer'};
   const permit={issuer:'zola-control',audience:'buyer-writer',subject:randomUUID(),keyId:'fixture-key',origin:'https://zola.example',
     releaseSha:authority.releaseSha,operationId:authority.operationId,attemptId:authority.attemptId,workspace};
+  const verification={version:2,keys:[{keyId:'fixture-key',
+    publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}),
+    lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]};
   const ca='-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n';
   return {version:4,workspace,bindingFile:'/etc/blackspire/buyer-writer-binding.json',writerCredential:secret(),
     issuerCredential:secret(),admissionCredential:secret(),gatewayCapability:secret(),creatorOid:16384,authority,
     runtime:{host:'db.example.test',port:5432,database:'postgres',password:secret(),ca},
     issuer:{host:'db.example.test',port:5432,database:'postgres',password:secret(),ca},
-    operationPermitConfiguration:JSON.stringify(permit),operationPermitVerificationConfiguration:{version:2,keys:[{
-      keyId:'fixture-key',publicKeyPem:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}),
-      lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]}};
+    operationPermitConfiguration:JSON.stringify(permit),operationPermitVerificationConfiguration:verification,
+    operationPermitSignerConfiguration:{version:1,activeKeyId:'fixture-key',
+      activePrivateKeyPath:'/etc/blackspire/buyer-writer-signing-key.pem',verification}};
 };
 test('gateway v4 provisioning accepts only pinned exact admission and public permit authority',()=>{
   const valid=gatewayFixture();

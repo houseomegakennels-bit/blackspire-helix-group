@@ -41,11 +41,23 @@ test('production composition loads only the local client transport and separate 
   const ingress={version:1,workspace:'isolated',bindingFile:f.config.bindingFile,writerCredential:f.config.writerCredential,issuerCredential:f.config.issuerCredential};
   delete f.options.configurationFile;delete f.options.createPostgres;f.options.environment='production';
   f.options.clientConfigurationFile='/etc/blackspire/client.json';f.options.ingressConfigurationFile='/etc/blackspire/ingress.json';
-  let input;
-  f.options.readConfiguration=name=>name===f.options.clientConfigurationFile?client:ingress;
-  f.options.createClient=value=>{input=value;return{runtimeQuery:async()=>({rows:[]}),issuerQuery:async()=>({rows:[]}),isHealthy:()=>true,close:async()=>{}};};
+  f.options.signerConfigurationFile='/etc/blackspire/signer.json';
+  const permit={issuer:'zola-control',audience:'buyer-writer',subject:randomUUID(),keyId:'active',
+    origin:'https://writer.example',releaseSha:authority.releaseSha,operationId:authority.operationId,
+    attemptId:authority.attemptId,workspace:'isolated'};
+  const signerConfig={version:1,operationPermitConfiguration:JSON.stringify(permit),signer:{protected:true}};
+  let input,admitted;
+  f.options.readConfiguration=name=>name===f.options.clientConfigurationFile?client
+    :name===f.options.ingressConfigurationFile?ingress:signerConfig;
+  const local={runtimeQuery:async()=>({rows:[]}),issuerQuery:async()=>({rows:[]}),
+    admittedRequest:async()=>({}),checkAvailability:async()=>true,isHealthy:()=>true,close:async()=>{}};
+  f.options.createClient=value=>{input=value;return local;};
+  f.options.createSigner=(value,options)=>{assert.deepEqual(value,signerConfig.signer);
+    assert.equal(options.expectedUid,994);return{activeKeyId:'active',sign:()=>({})};};
+  f.options.createAdmittedClient=value=>{admitted=value;return local;};
   const runtime=await createBuyerWriterRuntime(f.options);
   try{assert.deepEqual(input,{socketPath:client.socketPath,capability:client.gatewayCapability,authority});
+    assert.equal(admitted.client,local);assert.equal(admitted.configuration.operationId,authority.operationId);
     assert.equal(JSON.stringify(input).includes('password'),false);assert.equal(JSON.stringify(input).includes('database'),false);}
   finally{await runtime.close();}
 });

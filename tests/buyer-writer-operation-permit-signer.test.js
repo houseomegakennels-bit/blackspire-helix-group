@@ -205,3 +205,22 @@ test('signing rejects wrong active kid, noncanonical authority and invalid lifet
  ];
  for(const value of cases)assert.throws(()=>signer.sign(value),/^Error: Operation permit signer rejected$/);
 });
+
+test('signer mints verifier-compatible recovery permits and rejects read-only context',async()=>{
+ const signer=createOperationPermitSigner(protectedConfiguration,{expectedUid:uid});
+ const recovery={p_workspace:'isolated',p_owner:ids.subject,
+  p_original_issuer:'https://issuer.example',p_original_jti:ids.jti,
+  p_original_request:ids.requestId,p_original_digest:'d'.repeat(64),
+  p_route_operation:'apply'};
+ const request=signer.sign({...input,operation:'recover',parameters:recovery});
+ const verifier=createOperationPermitVerifier({mode:'isolated-prototype',
+  configuration:JSON.stringify(permitConfiguration),verificationConfiguration:verification,
+  now:()=>2_000_000_001,validateParameters:(operation,value)=>
+    operation==='recover'&&value.p_original_digest===recovery.p_original_digest,
+  consume:()=>true});
+ const authorized=await verifier.authorize(request);
+ assert.equal(authorized.operation,'recover');
+ assert.equal(authorized.kind,'recovery');
+ assert.deepEqual(authorized.parameters,recovery);
+ assert.throws(()=>signer.sign({...input,operation:'context'}),/signer rejected/);
+});

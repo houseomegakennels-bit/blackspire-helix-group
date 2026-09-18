@@ -15,6 +15,7 @@ const canonical=value=>Array.isArray(value)?`[${value.map(canonical).join(',')}]
 const write=(filename,value,mode=0o600)=>fs.writeFileSync(filename,
  typeof value==='string'?value:JSON.stringify(value),{mode});
 const edge={grantor:'buyer_writer_owner',grantee:'buyer_writer_runtime',privilege:'EXECUTE',grantable:false};
+const rootOnly=process.getuid?.()===0?{}:{skip:'requires root-owned protected fixture'};
 
 function projectedObservation(){
  return {
@@ -79,7 +80,7 @@ function fixture(modify=()=>{}){
 const reject=options=>assert.throws(()=>validateBuyerWriterProductionPlan(options),
  error=>error.message==='Buyer writer production preflight failed');
 
-test('validates offline inputs but explicitly establishes neither readiness nor reversibility',()=>{
+test('validates offline inputs but explicitly establishes neither readiness nor reversibility',rootOnly,()=>{
  const f=fixture();try{
   const result=validateBuyerWriterProductionPlan(f.options);
   assert.equal(result.status,'OFFLINE_INPUTS_VALIDATED');
@@ -92,7 +93,7 @@ test('validates offline inputs but explicitly establishes neither readiness nor 
   assert.equal(JSON.stringify(result).includes('protected'),false);
  }finally{f.cleanup();}
 });
-test('rejects omission or mutation across every complete observation field family',()=>{
+test('rejects omission or mutation across every complete observation field family',rootOnly,()=>{
  const mutations=[
   o=>delete o.roles[0].superuser,
   o=>delete o.memberships[0].grantorSuperuser,
@@ -125,7 +126,7 @@ test('rejects omission or mutation across every complete observation field famil
  }
 });
 
-test('rejects stale, future, invalid clock and every binding mismatch',()=>{
+test('rejects stale, future, invalid clock and every binding mismatch',rootOnly,()=>{
  const changes=[
   state=>{state.catalog.capturedAt='2026-09-18T01:54:59.000Z';},
   state=>{state.catalog.capturedAt='2026-09-18T02:00:31.000Z';},
@@ -141,7 +142,7 @@ test('rejects stale, future, invalid clock and every binding mismatch',()=>{
   const f=fixture();try{reject({...f.options,now});}finally{f.cleanup();}
  }
 });
-test('secure-open config digests reject content changes, mode drift and symlink swaps',()=>{
+test('secure-open config digests reject content changes, mode drift and symlink swaps',rootOnly,()=>{
  const cases=[
   state=>fs.appendFileSync(state.paths.gateway,'x'),
   state=>fs.appendFileSync(state.paths.management,'x'),
@@ -152,14 +153,14 @@ test('secure-open config digests reject content changes, mode drift and symlink 
  for(const change of cases){const f=fixture(change);try{reject(f.options);}finally{f.cleanup();}}
 });
 
-test('authenticates verifier bytes before use and rejects any artifact tamper',()=>{
+test('authenticates verifier bytes before use and rejects any artifact tamper',rootOnly,()=>{
  for(const name of ['installer','provisioner','verifier']){
   const f=fixture(state=>fs.appendFileSync(state.paths[name],'\n// tampered'));
   try{reject(f.options);}finally{f.cleanup();}
  }
 });
 
-test('rejects replay, fake executors and every restore/reversible claim',()=>{
+test('rejects replay, fake executors and every restore/reversible claim',rootOnly,()=>{
  const f=fixture();try{
   assert.equal(validateBuyerWriterProductionPlan(f.options).status,'OFFLINE_INPUTS_VALIDATED');
   reject(f.options);
@@ -169,7 +170,7 @@ test('rejects replay, fake executors and every restore/reversible claim',()=>{
  }
 });
 
-test('CLI emits redacted 0600 evidence and refuses executor, restore and connect switches',()=>{
+test('CLI emits redacted 0600 evidence and refuses executor, restore and connect switches',rootOnly,()=>{
  const f=fixture();const evidence=path.join(f.paths.directory,'evidence.json');
  try{
   f.state.catalog.capturedAt=new Date().toISOString();write(f.paths.catalog,f.state.catalog);

@@ -2,6 +2,8 @@ import {resolveBuyerWriterIdentity} from './runtime-identity.js';
 import {readRootOwnedJson} from './protected-json.js';
 import {validateBuyerWriterClientConfiguration,validateBuyerWriterConfiguration} from './configuration.js';
 import {createBuyerWriterLocalClient} from './local-gateway-client.js';
+import {createBuyerWriterAdmittedLocalClient} from './admitted-local-client.js';
+import {createOperationPermitSigner,validateOperationPermitSigningConfiguration} from './operation-permit-signer.js';
 import {createBuyerWriterBindingObserver} from './binding.js';
 import {createBuyerWriterRuntimeInspector} from './runtime-inspection.js';
 import {createBuyerWriterAvailability} from './availability.js';
@@ -10,12 +12,14 @@ import {validateBuyerWriterRehearsal} from './rehearsal.js';
 
 // Explicit API-only composition. A missing activation binding denies operations
 // but does not prevent API boot, so the worker can start before root approval.
-export async function createBuyerWriterRuntime({configurationFile,clientConfigurationFile,ingressConfigurationFile,workspace,releaseSha,apiGeneration,environment,startup,getHealth,getReadiness,
-  resolveIdentity=resolveBuyerWriterIdentity,readConfiguration=readRootOwnedJson,createPostgres,createClient=createBuyerWriterLocalClient,createBinding=createBuyerWriterBindingObserver}) {
+export async function createBuyerWriterRuntime({configurationFile,clientConfigurationFile,ingressConfigurationFile,signerConfigurationFile,workspace,releaseSha,apiGeneration,environment,startup,getHealth,getReadiness,
+  resolveIdentity=resolveBuyerWriterIdentity,readConfiguration=readRootOwnedJson,createPostgres,createClient=createBuyerWriterLocalClient,
+  createSigner=createOperationPermitSigner,createAdmittedClient=createBuyerWriterAdmittedLocalClient,createBinding=createBuyerWriterBindingObserver}) {
   let database;
   try {
     const legacyTestTransport=typeof createPostgres==='function';
-    if((legacyTestTransport?typeof configurationFile!=='string':typeof clientConfigurationFile!=='string'||typeof ingressConfigurationFile!=='string')
+    if((legacyTestTransport?typeof configurationFile!=='string':typeof clientConfigurationFile!=='string'||typeof ingressConfigurationFile!=='string'
+        ||typeof signerConfigurationFile!=='string')
       ||typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)
       ||!/^[a-f0-9]{40}$/.test(releaseSha??'')||!/^[a-f0-9]{32}$/.test(apiGeneration??'')
       ||!['production','staging','disposable-staging'].includes(environment)
@@ -47,7 +51,22 @@ export async function createBuyerWriterRuntime({configurationFile,clientConfigur
         ||value.version!==1||value.workspace!==workspace||typeof value.bindingFile!=='string'||!value.bindingFile.startsWith('/')
         ||!opaque(value.writerCredential)||!opaque(value.issuerCredential)||value.writerCredential===value.issuerCredential)throw new Error();
       ingress=Object.freeze({...value});
-      database=createClient({socketPath:config.socketPath,capability:config.gatewayCapability,authority:config.authority});
+      const signerInput=readConfiguration(signerConfigurationFile,{groupId:identity.credentialGroupId,maxBytes:16384});
+      const signerKeys=['version','operationPermitConfiguration','signer'];
+      if(!signerInput||typeof signerInput!=='object'||Array.isArray(signerInput)
+        ||Object.keys(signerInput).length!==signerKeys.length||signerKeys.some(key=>!Object.hasOwn(signerInput,key))
+        ||signerInput.version!==1||typeof signerInput.operationPermitConfiguration!=='string'
+        ||signerInput.operationPermitConfiguration.length<2||signerInput.operationPermitConfiguration.length>4096)throw new Error();
+      const permit=JSON.parse(signerInput.operationPermitConfiguration);
+      if(JSON.stringify(permit)!==signerInput.operationPermitConfiguration
+        ||permit.releaseSha!==config.authority.releaseSha||permit.operationId!==config.authority.operationId
+        ||permit.attemptId!==config.authority.attemptId||permit.workspace!==workspace)throw new Error();
+      const signer=createSigner(signerInput.signer,{expectedUid:identity.uid});
+      validateOperationPermitSigningConfiguration(permit,signer.activeKeyId);
+      if(signer.activeKeyId!==permit.keyId)throw new Error();
+      const client=createClient({socketPath:config.socketPath,capability:config.gatewayCapability,authority:config.authority});
+      database=client;
+      database=createAdmittedClient({client,signer,configuration:permit});
     }
     const units=legacyTestTransport&&config.units?{apiUnit:config.units.api,workerUnit:config.units.worker}:{};
     const bindingOptions={filename:ingress.bindingFile,credentialGroupId:identity.credentialGroupId,workspace,releaseSha,apiGeneration,

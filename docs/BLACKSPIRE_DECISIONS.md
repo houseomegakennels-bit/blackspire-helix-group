@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-09-18 — mutating Buyer Writer calls require API-held operation permits
+
+The local socket capability authenticates the API to the gateway but does not itself authorize a database mutation. Production `issue`, `cancel`, `reconcile`, `apply` and `receipt` calls must be converted into fresh, bounded Ed25519 permits by the API and sent through the admission bridge; a rejected or uncertain admission never falls back to a legacy mutation. Recovery is a separate signed operation bound to the original issuer, JTI, request, body digest and route operation; it may correlate an outcome but may never replay the original mutation. Read-only `context` may continue through the restricted runtime statement. The signing private key is owned by the API identity as a single-link mode-`0600` inode, while its root-owned descriptor is separately published to the API private group and bound to the exact gateway authority. Private socket publication must also keep its randomized backing pathname within Linux `sun_path` while retaining exact descriptor/inode/path proof and no-replace publication.
+
 ## 2026-09-17 — Template compliance is effective-authority complete and credential-bound
 
 The `template1` exception is safe only when each credentialed writer proves its own effective authority, not merely when management-session catalogs look acceptable. The object attestation therefore includes relation-level and column-level privileges inherited through PUBLIC or membership, `CREATE` on every non-temporary schema, sequences and executable routines. Production inspect remains read-only but may emit `COMPLIANT` only after separate runtime and issuer logins each complete the same `template1` attestation. Authentication or attestation failure is a sanitized `NONCOMPLIANT` observation, never a compliance claim and never a trigger to mutate LOGIN state.

@@ -4,6 +4,7 @@ import {validateBuyerWriterClientConfiguration,
 export function renderZolaGatewayConfigurations(value,{workspace='blackspire-command',
   environment='production'}={}){
   const config=validateBuyerWriterGatewayProvisioningConfiguration(value,{workspace});
+  if(!config.operationPermitSignerConfiguration)throw new Error('Zola gateway configuration render rejected');
   const socketPath='/run/blackspire/buyer-writer.sock';
   const gatewayConfig=Object.freeze({
     version:4,
@@ -42,5 +43,8 @@ export function renderZolaGatewayConfigurations(value,{workspace='blackspire-com
     writerCredential:config.writerCredential,
     issuerCredential:config.issuerCredential,
   });
-  return Object.freeze({config,gatewayConfig,clientConfig,ingressConfig});
+  const signerConfig=Object.freeze({version:1,
+    operationPermitConfiguration:config.operationPermitConfiguration,
+    signer:config.operationPermitSignerConfiguration});
+  return Object.freeze({config,gatewayConfig,clientConfig,ingressConfig,signerConfig});
 }

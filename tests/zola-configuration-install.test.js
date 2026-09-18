@@ -13,7 +13,10 @@ function fixture(){
   fs.chownSync(paths.gatewayConfigDirectory,0,982);fs.chmodSync(paths.gatewayConfigDirectory,0o750);
   const secret=()=>randomBytes(32).toString('base64url'),releaseSha='a'.repeat(40),ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
   const authority={releaseSha,operationId:randomUUID(),attemptId:randomUUID(),workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'};
-  const publicKey=generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'});
+  const keyPair=generateKeyPairSync('ed25519'),publicKey=keyPair.publicKey.export({type:'spki',format:'pem'});
+  const privateKeyPath=path.join(paths.configDirectory,'buyer-writer-signing-key-fixture-key.pem');
+  fs.writeFileSync(privateKeyPath,keyPair.privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});
+  fs.chownSync(privateKeyPath,994,984);
   const permit={issuer:'zola-control',audience:'buyer-writer',subject:randomUUID(),keyId:'fixture-key',origin:'https://zola.example',
     releaseSha,operationId:authority.operationId,attemptId:authority.attemptId,workspace:'blackspire-command'};
   const config={version:4,workspace:'blackspire-command',bindingFile:path.join(paths.configDirectory,'buyer-writer-binding.json'),
@@ -22,6 +25,8 @@ function fixture(){
     issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secret(),ca},
     operationPermitConfiguration:JSON.stringify(permit),operationPermitVerificationConfiguration:{version:2,keys:[{
       keyId:'fixture-key',publicKeyPem:publicKey,lifecycle:'current',verifyNotBefore:0,verifyNotAfter:null}]}};
+  config.operationPermitSignerConfiguration={version:1,activeKeyId:'fixture-key',activePrivateKeyPath:privateKeyPath,
+    verification:config.operationPermitVerificationConfiguration};
   const input={releaseSha,configurationFile:path.join(root,'input.json')};fs.writeFileSync(input.configurationFile,JSON.stringify(config),{mode:0o600});
   const calls=[],events=[];let running=false,closed=0;
   const options={paths,uid:0,identity:async()=>({uid:994,credentialGroupId:984,workerUid:993,gatewayUid:992,gatewayGid:982}),
@@ -33,7 +38,7 @@ function fixture(){
 const rootOnly={skip:process.getuid()!==0};
 test('actual protected files publish API-only after scoped checks; rerun preserves exact inodes and contains no secret output',rootOnly,async()=>{
   const f=fixture();try{
-    const p=await prepareZolaConfigurationInstall(f.input,f.options);assert.equal(fs.readdirSync(f.paths.configDirectory).length,0);
+    const p=await prepareZolaConfigurationInstall(f.input,f.options);assert.deepEqual(fs.readdirSync(f.paths.configDirectory),['buyer-writer-signing-key-fixture-key.pem']);
     const result=await installZolaConfiguration(p,f.execution);assert.equal(result.status,'INSTALLED_RELOAD_REQUIRED');assert.equal(f.closed(),1);
     assert.equal(fs.statSync(p.configPath).mode&0o777,0o640);assert.equal(fs.statSync(p.configPath).gid,984);assert.equal(fs.statSync(p.gatewayConfigPath).mode&0o777,0o640);assert.equal(fs.statSync(p.gatewayConfigPath).uid,0);assert.equal(fs.statSync(p.gatewayConfigPath).gid,982);assert.equal(fs.statSync(p.dropinPath).mode&0o777,0o644);
     assert.equal(p.gatewayConfigPath,path.join(f.paths.gatewayConfigDirectory,'gateway.json'));
@@ -78,7 +83,12 @@ test('partial config-only publication is reconciled; inherited ACL and foreign b
     const p=await prepareZolaConfigurationInstall(f.input,f.options);await installZolaConfiguration(p,f.execution);fs.unlinkSync(p.dropinPath);
     const before=fs.statSync(p.configPath).ino;await installZolaConfiguration(await prepareZolaConfigurationInstall(f.input,f.options),f.execution);assert.equal(fs.statSync(p.configPath).ino,before);
     await assert.rejects(prepareZolaConfigurationInstall(f.input,{...f.options,acl:()=>({status:0,stdout:'user:993:r--\n',stderr:''})}));
-    for(const kind of ['binding','ca']){const value=structuredClone(f.config);if(kind==='binding')value.bindingFile='/etc/foreign.json';else value.runtime.ca+='\n';fs.writeFileSync(f.input.configurationFile,JSON.stringify(value));await assert.rejects(prepareZolaConfigurationInstall(f.input,f.options));}
+    for(const kind of ['binding','ca','signer']){const value=structuredClone(f.config);
+      if(kind==='binding')value.bindingFile='/etc/foreign.json';
+      else if(kind==='ca')value.runtime.ca+='\n';
+      else value.operationPermitSignerConfiguration.activePrivateKeyPath='/tmp/foreign-key.pem';
+      fs.writeFileSync(f.input.configurationFile,JSON.stringify(value));
+      await assert.rejects(prepareZolaConfigurationInstall(f.input,f.options));}
   }finally{f.cleanup();}
 });
 test('unbranded approval objects cannot reach installation or database connections',async()=>{

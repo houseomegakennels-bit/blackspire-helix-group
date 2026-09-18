@@ -33,6 +33,7 @@ export const PG_NET_SOURCE_ALLOWLIST=Object.freeze([
  'packages/buyer-writer/local-gateway-protocol.js',
  'packages/buyer-writer/local-gateway-postgres.js',
  'packages/buyer-writer/postgres.js',
+ 'packages/buyer-writer/production-verifier.js',
  'scripts/test-buyer-migration-executor-postgres.mjs',
  'scripts/test-buyer-migration-executor-session.mjs',
  'scripts/test-buyer-writer-acl.mjs',
@@ -44,7 +45,10 @@ export const PG_NET_SOURCE_ALLOWLIST=Object.freeze([
  'docs/BLACKSPIRE_SOURCE_OF_TRUTH.md',
  'docs/ZOLA_PROVIDER_ACL_REQUEST.md',
  'tests/buyer-writer-local-gateway.test.js',
+ 'tests/buyer-writer-production-preflight.test.js',
+ 'tests/buyer-writer-production-provisioner.test.js',
  'tests/buyer-writer-production-verifier.test.js',
+ 'tests/zola-pg-net-host-observer.test.js',
  'tests/zola-pg-net-isolation.test.js',
 ]);
 

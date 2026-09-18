@@ -52,7 +52,7 @@ export function validateBuyerWriterGatewayProvisioningConfiguration(value,{works
   try {
     if(typeof workspace!=='string'||!/^[A-Za-z0-9._:-]{1,128}$/.test(workspace)
       ||!exact(value,['version','workspace','bindingFile','writerCredential','issuerCredential','admissionCredential','gatewayCapability',
-        'creatorOid','authority','runtime','issuer','operationPermitConfiguration','operationPermitVerificationConfiguration'])
+        'creatorOid','authority','runtime','issuer','operationPermitConfiguration','operationPermitVerificationConfiguration'],['operationPermitSignerConfiguration'])
       ||value.version!==4||value.workspace!==workspace||!canonicalPath(value.bindingFile)
       ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)throw new Error();
     for(const config of [value.runtime,value.issuer]){
@@ -70,8 +70,13 @@ export function validateBuyerWriterGatewayProvisioningConfiguration(value,{works
     const permit=JSON.parse(permitConfiguration(value.operationPermitConfiguration,authority,workspace));
     const verificationConfiguration=validateOperationPermitVerificationConfiguration(value.operationPermitVerificationConfiguration);
     const current=verificationConfiguration.keys.filter(entry=>entry.lifecycle==='current');
-    if(current.length!==1||current[0].keyId!==permit.keyId)throw new Error();
+    const signer=value.operationPermitSignerConfiguration;
+    if(current.length!==1||current[0].keyId!==permit.keyId
+      ||signer!==undefined&&(!exact(signer,['version','activeKeyId','activePrivateKeyPath','verification'])||signer.version!==1
+        ||signer.activeKeyId!==permit.keyId||!canonicalPath(signer.activePrivateKeyPath)
+        ||JSON.stringify(signer.verification)!==JSON.stringify(verificationConfiguration)))throw new Error();
     return Object.freeze({...value,authority,operationPermitVerificationConfiguration:verificationConfiguration,
+      ...(signer?{operationPermitSignerConfiguration:Object.freeze({...signer,verification:verificationConfiguration})}:{}),
       runtime:Object.freeze({...value.runtime}),issuer:Object.freeze({...value.issuer})});
   }catch{throw new Error('Buyer writer gateway provisioning configuration rejected');}
 }

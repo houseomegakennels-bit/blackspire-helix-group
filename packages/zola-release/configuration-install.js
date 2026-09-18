@@ -8,6 +8,7 @@ import {renderZolaGatewayConfigurations} from './gateway-configuration-render.js
 import {resolveBuyerWriterIdentity} from '../buyer-writer/runtime-identity.js';
 import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {createBuyerWriterGatewayPostgres} from '../buyer-writer/local-gateway-postgres.js';
+import {createOperationPermitSigner} from '../buyer-writer/operation-permit-signer.js';
 
 const execute=promisify(execFile),plans=new WeakMap();
 const reject=()=>{throw new Error('Zola configuration installation rejected');};
@@ -109,7 +110,11 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     const state=await hostState(run),ids=await identity(run);
     privateGatewayDirectory(io,paths.gatewayConfigDirectory,ids.gatewayGid);
     const snapshot=readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536});
-    const {config,gatewayConfig,clientConfig,ingressConfig}=renderZolaGatewayConfigurations(snapshot.value);
+    const {config,gatewayConfig,clientConfig,ingressConfig,signerConfig}=renderZolaGatewayConfigurations(snapshot.value);
+    const expectedPrivateKeyPath=path.join(paths.configDirectory,
+      'buyer-writer-signing-key-'+signerConfig.signer.activeKeyId+'.pem');
+    if(signerConfig.signer.activePrivateKeyPath!==expectedPrivateKeyPath)reject();
+    createOperationPermitSigner(signerConfig.signer,{expectedUid:ids.uid});
     if(config.authority.releaseSha!==releaseSha)reject();
     if(config.bindingFile!==path.join(paths.configDirectory,'buyer-writer-binding.json')||config.units||config.rehearsalFile)reject();
     for(const c of [config.runtime,config.issuer])if(c.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||c.port!==5432||c.database!=='postgres'
@@ -117,22 +122,24 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     const artifact=await inspectArtifact({artifactRoot:path.join(paths.releaseRoot,releaseSha),releaseSha,environment:'production'});
     if(artifact.releaseSha!==releaseSha||artifact.environment!=='production'||!(/^[a-f0-9]{64}$/).test(artifact.artifactDigest??''))reject();
     const gatewayBytes=Buffer.from(JSON.stringify(gatewayConfig)+'\n'),clientBytes=Buffer.from(JSON.stringify(clientConfig)+'\n'),
-      ingressBytes=Buffer.from(JSON.stringify(ingressConfig)+'\n');
+      ingressBytes=Buffer.from(JSON.stringify(ingressConfig)+'\n'),signerBytes=Buffer.from(JSON.stringify(signerConfig)+'\n');
     const gatewayConfigPath=path.join(paths.gatewayConfigDirectory,'gateway.json');
     const clientConfigPath=path.join(paths.configDirectory,'buyer-writer-client-'+hash(clientBytes)+'.json');
     const ingressConfigPath=path.join(paths.configDirectory,'buyer-writer-ingress-'+hash(ingressBytes)+'.json');
+    const signerConfigPath=path.join(paths.configDirectory,'buyer-writer-signer-'+hash(signerBytes)+'.json');
     const dropinDirectory=path.join(paths.unitDirectory,'blackspire-command.service.d'),dropinPath=path.join(dropinDirectory,'40-zola-writer.conf');
-    const dropin=Buffer.from('[Service]\nEnvironment=BUYER_WRITER_MODE=scoped\nEnvironment=BUYER_WRITER_WORKSPACE_ID=blackspire-command\nEnvironment=BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG='+clientConfigPath+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG='+ingressConfigPath+'\n');
+    const dropin=Buffer.from('[Service]\nEnvironment=BUYER_WRITER_MODE=scoped\nEnvironment=BUYER_WRITER_WORKSPACE_ID=blackspire-command\nEnvironment=BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG='+clientConfigPath+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG='+ingressConfigPath+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_SIGNER_CONFIG='+signerConfigPath+'\n');
     readExact(io,acl,gatewayConfigPath,gatewayBytes,ids.gatewayGid,0o640);
     readExact(io,acl,clientConfigPath,clientBytes,ids.credentialGroupId,0o640);
     readExact(io,acl,ingressConfigPath,ingressBytes,ids.credentialGroupId,0o640);
+    readExact(io,acl,signerConfigPath,signerBytes,ids.credentialGroupId,0o640);
     try{directory(io,dropinDirectory);readExact(io,acl,dropinPath,dropin,0,0o644);}catch(e){if(e.code!=='ENOENT')throw e;}
     if(!same(snapshot,readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536}))||!same(state,await hostState(run)))reject();
     const result=Object.freeze({version:2,kind:'zola-configuration-install',releaseSha,artifactDigest:artifact.artifactDigest,
-      configPath:clientConfigPath,clientConfigPath,ingressConfigPath,gatewayConfigPath,dropinPath,
+      configPath:clientConfigPath,clientConfigPath,ingressConfigPath,signerConfigPath,gatewayConfigPath,dropinPath,
       status:'PREPARED',servicesStarted:false,authorityActivated:false});
     plans.set(result,{io,acl,run,readSnapshot,identity,inspectArtifact,paths,input:{releaseSha,configurationFile},snapshot,ids,
-      gatewayBytes,clientBytes,ingressBytes,dropin,dropinDirectory});return result;
+      gatewayBytes,clientBytes,ingressBytes,signerBytes,dropin,dropinDirectory});return result;
   }catch{reject();}
 }
 
@@ -160,6 +167,7 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     publish(p.io,p.acl,plan.gatewayConfigPath,p.gatewayBytes,p.ids.gatewayGid,0o640);
     publish(p.io,p.acl,plan.clientConfigPath,p.clientBytes,p.ids.credentialGroupId,0o640);
     publish(p.io,p.acl,plan.ingressConfigPath,p.ingressBytes,p.ids.credentialGroupId,0o640);
+    publish(p.io,p.acl,plan.signerConfigPath,p.signerBytes,p.ids.credentialGroupId,0o640);
     try{p.io.mkdirSync(p.dropinDirectory,{mode:0o755});syncDirectory(p.io,path.dirname(p.dropinDirectory));}catch(e){if(e.code!=='EEXIST')throw e;}
     directory(p.io,p.dropinDirectory);await hostState(p.run);
     publish(p.io,p.acl,plan.dropinPath,p.dropin,0,0o644);

@@ -11,8 +11,8 @@ import {BUYER_WRITER_SOCKET_LIFECYCLE,createBuyerWriterLocalGateway} from '../pa
 const authority=Object.freeze({releaseSha:'a'.repeat(40),operationId:randomUUID(),attemptId:randomUUID(),
   workspace:'isolated',gatewayIdentity:'blackspire-writer'});
 const capability=randomBytes(32).toString('base64url');
-const fixture=()=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-writer-service-'));fs.chmodSync(root,0o700);
+const fixture=(prefix='buyer-writer-service-')=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));fs.chmodSync(root,0o700);
   const socketPath=path.join(root,'gateway.sock');
   const gateway=(extra={})=>createBuyerWriterLocalGateway({socketPath,capability,authority,gatewayIdentityVerified:true,
     runtimeQuery:async()=>assert.fail('runtime query forbidden'),issuerQuery:async()=>assert.fail('issuer query forbidden'),...extra});
@@ -151,6 +151,25 @@ test('concurrent starters publish exactly one connectable winner and loser clean
     await loser.close();await connect(f.socketPath);assert.equal(winner.isReady(),true);
     await winner.close();assert.equal(fs.lstatSync(f.socketPath).isSocket(),true);
   }finally{await Promise.allSettled([first.close(),second.close()]);f.cleanup();}
+});
+
+test('private backing socket remains within sun_path when the public path is near its limit',async()=>{
+  const prefix='x'.repeat(80-Buffer.byteLength(os.tmpdir())),f=fixture(prefix),gateway=f.gateway();
+  try{
+    assert.equal(Buffer.byteLength(f.socketPath),100);await gateway.listen();await connect(f.socketPath);
+    assert.equal(gateway.isReady(),true);
+  }finally{await gateway.close();f.cleanup();}
+});
+
+test('descriptor proof tolerates bounded proc observation lag without relaxing identity',async()=>{
+  const f=fixture();let reads=0;
+  const io={...fs,readFileSync(filename,...args){
+    if(filename==='/proc/net/unix'&&reads++<2)return '';
+    return fs.readFileSync(filename,...args);
+  }},gateway=f.gateway({io});
+  try{
+    await gateway.listen();assert.equal(gateway.isReady(),true);assert.equal(reads,3);
+  }finally{await gateway.close();f.cleanup();}
 });
 
 test('missing or malformed proc descriptor proof fails closed without publication',async()=>{
