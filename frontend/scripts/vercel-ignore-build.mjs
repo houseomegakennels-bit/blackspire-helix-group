@@ -14,7 +14,11 @@ function git(args, cwd) {
 export function shouldIgnoreFrontendBuild({
   cwd = process.cwd(),
   previousSha = process.env.VERCEL_GIT_PREVIOUS_SHA,
+  branch = process.env.VERCEL_GIT_COMMIT_REF,
 } = {}) {
+  // Release acceptance pairs frontend and VPS by exact commit, including backend-only changes.
+  if (branch === 'release/zola-production-live') return false;
+
   if (!COMMIT_SHA.test(previousSha ?? '')) {
     return false;
   }

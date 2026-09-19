@@ -1,3 +1,4 @@
+import { guardSignedInApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
@@ -10,6 +11,8 @@ import {
 } from "@/lib/buyer-engine-server";
 
 export async function GET(request: NextRequest) {
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const searchJobId = request.nextUrl.searchParams.get("searchJobId")?.trim() || undefined;
     const limitParam = Number(request.nextUrl.searchParams.get("limit") ?? "20");

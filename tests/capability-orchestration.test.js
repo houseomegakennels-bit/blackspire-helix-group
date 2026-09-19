@@ -22,6 +22,7 @@ const { defineCapability, validateCapabilityInput, validateCapabilityOutput } = 
 const { sellerOpportunityCapability } = await import('../packages/capabilities/seller-opportunities.js');
 const { selectCapabilityForTask } = await import('../packages/capabilities/execute.js');
 const { createDivisionAdapters } = await import('../packages/capabilities/http-adapters.js');
+const { transportAuthority } = await import('./helpers/receiver-authority-fixture.js');
 
 const now = Date.now();
 const permissions = ['seller.opportunities.read','task.create','task.execute','task.read','workspace.read'];
@@ -88,16 +89,30 @@ test('consumer refuses adapter rows beyond the request-scoped limit', async () =
   assert.doesNotMatch(taskRecords(created.id).providerAttempts[0].response_packet, /Limit Ave/);
 });
 
-test('Seller adapter cancels a streamed response as soon as its byte bound is exceeded', async () => {
-  let cancelled = false; let reads = 0;
+test('Seller adapter rejects missing receiver authority before HTTP dispatch', async () => {
+  let cancelled = false; let reads = 0; let calls = 0;
   const stream = new ReadableStream({
     pull(controller) { reads += 1; controller.enqueue(new Uint8Array(20 * 1024)); },
     cancel() { cancelled = true; },
   });
-  const adapters = createDivisionAdapters({ BLACKSPIRE_SELLER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_SELLER_CAPABILITY_TOKEN:'x'.repeat(32) }, async()=>new Response(stream, { status:200 }));
-  await assert.rejects(adapters.sellerOpportunities({ workspaceId:'seller-ws', limit:5 }), /response too large/);
+  const adapters = createDivisionAdapters({ BLACKSPIRE_SELLER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_SELLER_CAPABILITY_TOKEN:'x'.repeat(32) }, async()=>{calls++;return new Response(stream, { status:200 });});
+  await assert.rejects(adapters.sellerOpportunities({ workspaceId:'seller-ws', limit:5 }), /receiver authority is unavailable/);
+  assert.equal(cancelled, false);
+  assert.equal(calls, 0);
+});
+
+test('Seller adapter cancels an oversized response with valid receiver authority', async () => {
+  let cancelled = false; let reads = 0; let calls = 0;
+  const stream = new ReadableStream({
+    pull(controller) { reads += 1; controller.enqueue(new Uint8Array(20 * 1024)); },
+    cancel() { cancelled = true; },
+  });
+  const adapters = createDivisionAdapters({ BLACKSPIRE_SELLER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_SELLER_CAPABILITY_TOKEN:'x'.repeat(32) }, async()=>{calls++;return new Response(stream, { status:200 });});
+  const authority = transportAuthority('seller.opportunities.search', 'seller-ws', { limit:5 });
+  await assert.rejects(adapters.sellerOpportunities({ workspaceId:'seller-ws', limit:5, ...authority }), /response too large/);
   assert.equal(cancelled, true);
-  assert.ok(reads <= 3, 'the consumer stops without draining the unbounded stream');
+  assert.equal(calls, 1);
+  assert.ok(reads <= 3);
 });
 
 test('Jarvis to Seller Engine acceptance traverses durable task, Hermes registry, canonical data, evidence, and conversation', async () => {

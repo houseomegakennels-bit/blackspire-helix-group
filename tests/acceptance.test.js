@@ -12,6 +12,14 @@ process.env.PORT = '8892';
 process.env.HERMES_TEST_PROVIDER = 'mock';
 process.env.TELEGRAM_ALLOWED_USERS = '1001';
 
+// This fixture exercises production behavior with synthetic admission authority,
+// not a systemd production installation or generation-fencing proof.
+const { installDisposableReleaseAdmission } = await import('./helpers/disposable-release-admission.js');
+const closeAdmissionFixture = installDisposableReleaseAdmission();
+test.after(closeAdmissionFixture);
+const { withReleaseAdmission } = await import('../packages/shared/release-admission.js');
+
+
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
@@ -50,6 +58,20 @@ function repo() {
 
 let server;
 let workspaceRoot;
+
+test('synthetic release authority exercises real held denial and open admission',()=>{
+  const prior=process.env.BLACKSPIRE_RUNTIME_MODE;
+  try {
+    process.env.BLACKSPIRE_RUNTIME_MODE='production';
+    closeAdmissionFixture.setHeld(true);
+    assert.throws(()=>withReleaseAdmission(()=>assert.fail('held dispatch')),/Release admission held/);
+    closeAdmissionFixture.setHeld(false);
+    assert.equal(withReleaseAdmission(()=>17),17);
+  } finally {
+    closeAdmissionFixture.setHeld(false);
+    if(prior===undefined)delete process.env.BLACKSPIRE_RUNTIME_MODE;else process.env.BLACKSPIRE_RUNTIME_MODE=prior;
+  }
+});
 
 test('clean migration enables SQLite WAL mode', () => {
   execSql('PRAGMA wal_checkpoint;');

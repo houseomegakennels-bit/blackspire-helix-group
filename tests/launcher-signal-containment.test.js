@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import net from 'node:net';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -62,17 +63,52 @@ function baseEnv(dbPath, port) {
   };
 }
 
-test('API second signal accelerates shutdown and exits nonzero without leaving its listener', async () => {
+test('API second signal accelerates shutdown and exits nonzero without leaving its listener', async (t) => {
   const port = await freePort();
   const dbPath = path.join(root, 'api-second-signal.sqlite');
   prepareDisposableDatabase(dbPath);
   const child = spawn(process.execPath, ['apps/api/server.js'], { env: baseEnv(dbPath, port), stdio: ['ignore', 'pipe', 'pipe'] });
   const resultPromise = childResult(child);
+  let request;
+  t.after(async () => {
+    request?.destroy();
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await resultPromise;
+  });
   await waitForOutput(child, /"service":"api"/);
+
+  // An idle API can finish its first graceful shutdown before the second signal arrives.
+  // Hold a real request body open instead: 100 Continue proves the server accepted the
+  // request, and login must await its body while server.close() drains connections.
+  request = http.request({
+    host: '127.0.0.1', port, path: '/api/auth/login', method: 'POST',
+    headers: { Expect: '100-continue', 'Content-Length': '64', 'Content-Type': 'application/json' },
+  });
+  let requestError;
+  const requestClosed = new Promise((resolve) => {
+    request.on('error', (error) => { requestError = error; });
+    request.once('close', resolve);
+  });
+  const accepted = new Promise((resolve, reject) => {
+    request.once('continue', resolve);
+    request.once('error', reject);
+    request.once('close', () => reject(new Error('request closed before 100 Continue')));
+    request.once('response', (response) => {
+      response.resume();
+      reject(new Error(`request completed before shutdown: HTTP ${response.statusCode}`));
+    });
+  });
+  request.flushHeaders();
+  await accepted;
+  const draining = waitForOutput(child, /"lifecycle":"draining"/);
   child.kill('SIGTERM');
+  await draining;
   child.kill('SIGINT');
   const result = await resultPromise;
+  await requestClosed;
   assert.equal(result.code, 1, result.stderr);
+  assert.equal(requestError?.code, 'ECONNRESET', 'forced shutdown must close the active request');
+  assert.match(result.stdout, /"lifecycle":"draining"/);
   assert.doesNotMatch(result.stdout, /"service":"api".*"ready"/);
   const rebound = net.createServer();
   await new Promise((resolve, reject) => rebound.once('error', reject).listen(port, '127.0.0.1', resolve));
