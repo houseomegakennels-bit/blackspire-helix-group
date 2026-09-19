@@ -89,6 +89,14 @@ jobs:
           env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
             node scripts/test-buyer-writer-native.mjs 2>&1 | tee ci-logs/03-writer-native.log
 
+      - name: Verify admitted Buyer gateway on disposable PostgreSQL 17.6
+        timeout-minutes: 3
+        env:
+          BUYER_WRITER_TEST_IMAGE: postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        run: |
+          env -i PATH="$PATH" BUYER_WRITER_TEST_IMAGE="$BUYER_WRITER_TEST_IMAGE" \
+            node scripts/test-buyer-writer-admission-e2e-postgres.mjs 2>&1 | tee ci-logs/03-writer-admission-e2e.log
+
       - name: Verify guarded provider and application migration transactions
         timeout-minutes: 3
         env:

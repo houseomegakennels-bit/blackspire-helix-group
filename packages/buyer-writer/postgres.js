@@ -53,8 +53,12 @@ export const TEMPLATE1_IDENTITY_SQL=`select (
 
 // ACLs inherited from PUBLIC or another role count whenever their schema is
 // reachable. Unreachable provider-owned defaults do not become writer authority.
-export const WRITER_IDENTITY_SQL = `select (
- session_user=$1 and current_user=$1
+export function buyerWriterIdentitySql(mode){
+ const authority=mode==='direct'?'session_user=$1 and current_user=$1'
+  :mode==='admission'?"session_user=$1 and current_user='buyer_writer_admission'":null;
+ if(!authority)throw unavailable();
+ return `select (
+ ${authority}
  and r.rolcanlogin and not(r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls or r.rolinherit)
  and (select count(*) from pg_auth_members m join pg_roles role on role.oid=m.roleid
    where role.rolname in('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission'))=6
@@ -227,6 +231,8 @@ export const WRITER_IDENTITY_SQL = `select (
  and current_setting('statement_timeout')='10s' and current_setting('lock_timeout')='5s'
  and current_setting('search_path')='pg_catalog'
 ) as safe from pg_roles r where r.rolname=$1`;
+}
+export const WRITER_IDENTITY_SQL=buyerWriterIdentitySql('direct');
 
 const fenceSql=`with checked as materialized (${WRITER_IDENTITY_SQL})
 select checked.safe,case when checked.safe then buyer_writer.lock_scope() else false end as locked from checked`;

@@ -1,3 +1,6 @@
+import {buyerWriterIdentitySql} from './postgres.js';
+import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES} from './routine-policy.js';
+
 const executors=new WeakSet();
 const fail=()=>new AdmissionUnavailableError();
 const exact=(value,keys)=>value!==null&&typeof value==='object'&&!Array.isArray(value)
@@ -87,6 +90,25 @@ export const ADMISSION_IDENTITY_SQL=`select (
 from pg_roles login cross join pg_roles admission cross join pg_roles creator
 where login.rolname=session_user and admission.rolname='buyer_writer_admission' and creator.oid=$2::oid`;
 
+export const ADMISSION_WRITER_IDENTITY_SQL=buyerWriterIdentitySql('admission');
+const transactionAdmissionIdentitySql=ADMISSION_IDENTITY_SQL.replaceAll('$2','$4');
+const routinePolicy=JSON.stringify(BUYER_WRITER_ROUTINES);
+const combinedIdentity=`admission as materialized (${transactionAdmissionIdentitySql}),
+checked as materialized (${ADMISSION_WRITER_IDENTITY_SQL})`;
+export const ADMISSION_FENCE_SQL=`with ${combinedIdentity}
+select admission.safe and checked.safe as safe,
+ case when admission.safe and checked.safe then buyer_writer.lock_scope() else false end as locked
+from admission cross join checked`;
+const operationSql=statement=>{
+ const match=/^select (.+) as (accepted|result)$/.exec(statement.text);
+ if(!match)throw fail();
+ const expression=match[1].replaceAll(/\$(\d+)/g,(_,number)=>`$${Number(number)+4}`);
+ return Object.freeze({column:match[2],text:`with ${combinedIdentity}
+select admission.safe and checked.safe as safe,
+ case when admission.safe and checked.safe then ${expression} end as ${match[2]}
+from admission cross join checked`});
+};
+
 function deadline(task,timeoutMs,onExpire){
  let timer,expired=false;
  return Promise.race([
@@ -108,8 +130,10 @@ export async function executeAdmission(executor,operation,values,{signal}={}){
  const statement=statements[operation];
  if(!executors.has(executor)||!statement||!Array.isArray(values)||values.length!==statement.count
   ||(signal!==undefined&&!(signal instanceof AbortSignal)))throw fail();
- let client,released=false,destroy=false,checkoutExpired=false;
- const release=force=>{if(client&&!released){released=true;client.release(force);}};
+ let client,released=false,destroy=false,checkoutExpired=false,inTransaction=false,abort,primaryError;
+ const release=force=>{
+  if(client&&!released&&typeof client.release==='function'){released=true;client.release(force);}
+ };
  try{
   client=await deadline(async()=>{
    const value=await executor.connect();
@@ -117,20 +141,43 @@ export async function executeAdmission(executor,operation,values,{signal}={}){
    return value;
   },executor.checkoutTimeoutMs,()=>{checkoutExpired=true;});
   if(!client||typeof client.query!=='function'||typeof client.release!=='function')throw fail();
-  const controller=new AbortController();let identity;
-  try{
-   identity=await deadline(
-    ()=>client.query({text:ADMISSION_IDENTITY_SQL,values:[executor.expectedLogin,executor.expectedCreatorOid],signal:controller.signal}),
-    executor.identityTimeoutMs,()=>{destroy=true;controller.abort();});
-  }catch{destroy=true;throw fail();}
-  if(!identity||!Array.isArray(identity.rows)||identity.rows.length!==1
-   ||!exact(identity.rows[0],['safe'])||identity.rows[0].safe!==true){destroy=true;throw fail();}
   if(signal?.aborted){destroy=true;throw fail();}
-  signal?.addEventListener('abort',()=>{destroy=true;},{once:true});
-  try{return await client.query({text:statement.text,values,...(signal===undefined?{}:{signal})});}
-  catch(error){destroy=true;throw error;}
+  const controller=new AbortController();
+  abort=()=>{destroy=true;controller.abort();};
+  signal?.addEventListener('abort',abort,{once:true});
+  const bounded=task=>deadline(task,executor.identityTimeoutMs,abort);
+  const query=async config=>{
+   try{return await bounded(()=>client.query({...config,signal:controller.signal}));}
+   catch{destroy=true;throw fail();}
+  };
+  await query({text:'begin'});inTransaction=true;
+  const identityValues=[executor.expectedLogin,BUYER_WRITER_ENTRYPOINTS.admission,
+   routinePolicy,executor.expectedCreatorOid];
+  const fenced=await query({text:ADMISSION_FENCE_SQL,values:identityValues});
+  if(!fenced||!Array.isArray(fenced.rows)||fenced.rows.length!==1
+   ||!exact(fenced.rows[0],['safe','locked'])||fenced.rows[0].safe!==true
+   ||fenced.rows[0].locked!==true){destroy=true;throw fail();}
+  if(signal?.aborted){destroy=true;throw fail();}
+  const operationQuery=operationSql(statement);let written;
+  try{
+   written=await client.query({text:operationQuery.text,values:[...identityValues,...values],signal:controller.signal});
+  }catch(error){destroy=true;throw signal?.aborted?fail():error;}
+  if(signal?.aborted||!written||!Array.isArray(written.rows)||written.rows.length!==1
+   ||!exact(written.rows[0],['safe',operationQuery.column])||written.rows[0].safe!==true){destroy=true;throw fail();}
+  const result=written.rows[0][operationQuery.column];
+  await query({text:'commit'});inTransaction=false;
+  if(signal?.aborted){destroy=true;throw fail();}
+  return {...written,rows:[{[operationQuery.column]:result}],
+   ...(Array.isArray(written.fields)?{fields:written.fields.filter(field=>field?.name===operationQuery.column)}:{})};
  }catch(error){
-  if(error instanceof AdmissionUnavailableError)destroy=true;
+  primaryError=error;destroy=true;
+  if(inTransaction&&!released)try{
+   await deadline(()=>client.query({text:'rollback'}),executor.identityTimeoutMs,()=>{destroy=true;});
+   inTransaction=false;
+  }catch{}
   throw error;
- }finally{release(destroy);}
+ }finally{
+  if(signal&&abort)signal.removeEventListener('abort',abort);
+  try{release(destroy);}catch{if(!primaryError)throw fail();}
+ }
 }

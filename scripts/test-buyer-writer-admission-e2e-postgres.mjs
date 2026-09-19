@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import {execFileSync,spawnSync} from 'node:child_process';
+import {execFileSync,spawn,spawnSync} from 'node:child_process';
 import {createHash,generateKeyPairSync,randomBytes,randomUUID,sign} from 'node:crypto';
 import {chmodSync,mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import pg from 'pg';
-import {ADMISSION_SQL,createAdmissionBridge} from '../packages/buyer-writer/admission-bridge.js';
+import {createAdmissionBridge} from '../packages/buyer-writer/admission-bridge.js';
 import {ADMISSION_IDENTITY_SQL} from '../packages/buyer-writer/admission-executor.js';
 import {createBuyerWriterAdmissionPostgres} from '../packages/buyer-writer/admission-postgres.js';
 import {createBuyerWriterLocalClient} from '../packages/buyer-writer/local-gateway-client.js';
@@ -78,23 +78,30 @@ function signedRequest(operation,parameters,{jti=randomUUID(),requestId=randomUU
   rawHeaders:['Authorization',`Bearer ${token}`,'Content-Type','application/json','Content-Length',String(body.length)],body};
 }
 let dropNextApplyAcknowledgement=false,dropNextCorrelationAcknowledgement=false,applyExecutions=0;
+const faultConnections=new WeakSet();
 class FaultPool extends Pool{
  async connect(){
-  const connection=await super.connect(),query=connection.query.bind(connection);
+  const connection=await super.connect();
+  if(faultConnections.has(connection))return connection;
+  faultConnections.add(connection);
+  const query=connection.query.bind(connection);
+  let loseApplyCommit=false,loseCorrelationCommit=false;
   connection.query=async config=>{
-   const result=await query(config);
-   if(config?.text===ADMISSION_SQL.correlate&&dropNextCorrelationAcknowledgement){
-    dropNextCorrelationAcknowledgement=false;
-    throw Object.assign(new Error('synthetic correlation acknowledgement loss'),{code:'ECONNRESET'});
+   const result=await query(config),text=config?.text;
+   const operation=[...text.matchAll(/case when admission\.safe and checked\.safe then buyer_writer\.([a-z_]+)\(/g)].at(-1)?.[1];
+   if(result?.rows?.[0]?.safe===true&&operation==='correlate_admission'
+    &&dropNextCorrelationAcknowledgement){
+    dropNextCorrelationAcknowledgement=false;loseCorrelationCommit=true;
    }
-   if(config?.text===ADMISSION_SQL.apply){
+   if(result?.rows?.[0]?.safe===true&&operation==='execute_admitted_apply'){
     applyExecutions++;
-    if(dropNextApplyAcknowledgement){
-     dropNextApplyAcknowledgement=false;
-     const error=new Error('synthetic post-commit acknowledgement loss');
-     error.code='ECONNRESET';
-     throw error;
-    }
+    if(dropNextApplyAcknowledgement){dropNextApplyAcknowledgement=false;loseApplyCommit=true;}
+   }
+   if(text==='commit'&&(loseApplyCommit||loseCorrelationCommit)){
+    const message=loseApplyCommit?'synthetic post-commit acknowledgement loss'
+     :'synthetic correlation acknowledgement loss';
+    loseApplyCommit=false;loseCorrelationCommit=false;
+    throw Object.assign(new Error(message),{code:'ECONNRESET'});
    }
    return result;
   };
@@ -217,6 +224,75 @@ try{
  const issueEvidence=(await admin.query('select issuer,jti,request_id,state from buyer_writer.operation_admissions')).rows;
  assert.equal(issue.status,200,JSON.stringify({issue,issueEvidence}));
  assert.deepEqual(issue.body,{dispatchId:issueDispatch,generation:1,automaticRetry:false});
+
+ // Hold uncommitted trigger DDL across a real admitted apply. The executor must
+ // serialize at lock_scope, re-attest after the DDL commits, and reject before
+ // the hidden trigger can enter. A sequence is deliberately non-transactional,
+ // so is_called=false proves that even a rolled-back operation never ran it.
+ const raceJob=await createJob();
+ const raceBefore=(await admin.query('select to_jsonb(j) as value from public."SearchJob" j where id=$1',[raceJob])).rows[0].value;
+ const raceUpdatedAt=raceBefore.updated_at;
+ const racePermitDigest=randomBytes(32).toString('hex'),raceDispatch=randomUUID();
+ const raceIssue=await client.admittedRequest(signedRequest('issue',{
+  p_job:raceJob,p_owner:owner,p_workspace:workspace,p_digest:racePermitDigest,p_context:sourceContext,
+  p_expected_criteria:criteria,p_expected_updated_at:raceUpdatedAt,p_request:raceDispatch,
+ },{requestId:raceDispatch}));
+ assert.deepEqual(raceIssue,{status:200,body:{dispatchId:raceDispatch,generation:1,automaticRetry:false}});
+ const raceStable=(await admin.query('select to_jsonb(j) as value from public."SearchJob" j where id=$1',[raceJob])).rows[0].value;
+ await admin.query(`create sequence public.admission_nonentry_witness;
+  create function public.admission_hidden_trigger() returns trigger language plpgsql security definer
+   set search_path=pg_catalog as 'begin perform nextval(''public.admission_nonentry_witness''::regclass);return new;end';
+  revoke all on function public.admission_hidden_trigger() from public,buyer_writer_owner,
+   buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission`);
+ const raceDdl=spawn('docker',['exec','-i',name,'psql','-X','-qAt','-U','fixture_admin',
+  '-d','writer_test','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
+ let raceOutput='',raceBytes=0,raceReadyResolve,raceReadyReject,raceCommitted=false;
+ const raceReady=new Promise((resolve,reject)=>{raceReadyResolve=resolve;raceReadyReject=reject;});
+ const raceDeadline=setTimeout(()=>{raceDdl.kill('SIGKILL');raceReadyReject(new Error('trigger race timed out'));},15_000);
+ const raceDone=new Promise((resolve,reject)=>{
+  raceDdl.once('error',()=>{raceReadyReject(new Error('trigger race failed'));reject(new Error('trigger race failed'));});
+  raceDdl.once('close',code=>{
+   clearTimeout(raceDeadline);raceReadyReject(new Error('trigger race closed'));
+   if(code===0){raceCommitted=true;resolve();}else reject(new Error('trigger race failed'));
+  });
+ });
+ void raceDone.catch(()=>{});
+ for(const stream of [raceDdl.stdout,raceDdl.stderr])stream.on('data',chunk=>{
+  raceBytes+=chunk.length;if(raceBytes>8192)raceDdl.kill('SIGKILL');
+ });
+ raceDdl.stdout.on('data',chunk=>{
+  if(raceBytes<=8192){raceOutput+=chunk.toString('utf8');if(raceOutput.includes('trigger_attached'))raceReadyResolve();}
+ });
+ raceDdl.stdin.on('error',()=>{});
+ raceDdl.stdin.end(`begin;
+  create trigger admission_hidden_trigger before update on public."SearchJob"
+   for each row execute function public.admission_hidden_trigger();
+  select 'trigger_attached';select pg_sleep(1);commit;`);
+ await raceReady;
+ const executionsBeforeRace=applyExecutions;
+ const raceOperation={jobId:raceJob,version:1,dispatchId:raceDispatch,generation:1,
+  operation:'start',chunkIndex:0,chunkCount:1,payload:{}};
+ const raceRejected=await client.admittedRequest(signedRequest('apply',{
+  p_digest:racePermitDigest,p_workspace:workspace,q:raceOperation,
+ }));
+ assert.equal(raceCommitted,true,'admitted result settled before hidden-trigger DDL committed');
+ await raceDone;
+ assert.deepEqual(raceRejected,{status:503,body:{ok:false,code:'ADMISSION_UNAVAILABLE',automaticRetry:false}},
+  'hidden-trigger race did not fail closed');
+ assert.equal(applyExecutions,executionsBeforeRace,'unsafe admitted apply reached its fixed statement');
+ const witness=(await admin.query('select is_called from public.admission_nonentry_witness')).rows;
+ assert.deepEqual(witness,[{is_called:false}],'unsafe admitted apply entered the hidden trigger');
+ const raceAfter=(await admin.query('select to_jsonb(j) as value from public."SearchJob" j where id=$1',[raceJob])).rows[0].value;
+ assert.deepEqual(raceAfter,raceStable,'hidden-trigger race changed the job');
+ await admin.query(`drop trigger admission_hidden_trigger on public."SearchJob";
+  drop function public.admission_hidden_trigger();drop sequence public.admission_nonentry_witness`);
+ const recoveredRace=await client.admittedRequest(signedRequest('apply',{
+  p_digest:racePermitDigest,p_workspace:workspace,q:raceOperation,
+ }));
+ assert.deepEqual(recoveredRace,{status:200,body:{ok:true,operation:'start',chunkIndex:0,automaticRetry:false}},
+  'admitted apply did not recover after hidden-trigger cleanup');
+ assert.equal(applyExecutions,executionsBeforeRace+1,'recovered admitted apply did not execute exactly once');
+
  const q={jobId,version:1,dispatchId:issueDispatch,generation:1,operation:'start',
   chunkIndex:0,chunkCount:1,payload:{}};
  const applyJti=randomUUID(),applyRequestId=randomUUID();
@@ -227,7 +303,7 @@ try{
  const apply=await client.admittedRequest(applyRequest);
  assert.deepEqual(apply,{status:503,body:{ok:false,code:'ADMISSION_UNKNOWN',automaticRetry:false}},
   'double acknowledgement loss must require an explicit fresh recovery permit');
- assert.equal(applyExecutions,1,'lost acknowledgement replayed the admitted apply');
+ assert.equal(applyExecutions,executionsBeforeRace+2,'lost acknowledgement replayed the admitted apply');
  const originalDigest=digest(applyRequest.body);
  await client.close();client=undefined;
  await gateway.close();gateway=undefined;
@@ -298,12 +374,13 @@ try{
   (select count(*)::int from buyer_writer.operation_admissions) as admissions,
   (select count(*)::int from buyer_writer.receipts where dispatch_id=$1 and operation='start' and chunk_index=0) as receipts`,
   [issueDispatch])).rows[0];
- assert.deepEqual(counts,{admissions:10,receipts:1},'recovery admissions or exactly-once receipt count mismatched');
+ assert.deepEqual(counts,{admissions:12,receipts:1},'recovery admissions or exactly-once receipt count mismatched');
  await receiptAdmission.close();
  await admin.end();
  process.stdout.write(JSON.stringify({ok:true,postgres:'17.6',canonicalInstaller:true,
   dedicatedAdmissionLogin:true,sameSessionIdentity:true,admittedRoutes:['issue','apply','receipt','reconcile','cancel'],
   lostAcknowledgementRecovered:true,freshProcessRecovered:true,recoveryAdversarial:true,
+  hiddenTriggerRaceRejected:true,hiddenTriggerOperationEntered:false,admittedPathRecovered:true,
   applyExecutions,admissions:counts.admissions,receipts:counts.receipts,
   productionTouched:false})+'\n');
 }finally{await cleanup();}

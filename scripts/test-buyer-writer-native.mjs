@@ -7,8 +7,6 @@ import net from 'node:net';
 import path from 'node:path';
 import {Pool as PgPool} from 'pg';
 import {createBuyerWriterPostgres} from '../packages/buyer-writer/postgres.js';
-import {createBuyerWriterHttpServer} from '../packages/buyer-writer/http.js';
-import {planBuyerWrites} from '../packages/buyer-writer/plan.js';
 
 assert.equal(process.versions.node,'22.23.1');
 const image=process.env.BUYER_WRITER_TEST_IMAGE;
@@ -19,7 +17,7 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'zola-native-tls-'));
 let cleaning=false;
 const docker=(args,input)=>spawnSync('docker',args,{input,encoding:'utf8',timeout:cleaning?5000:30000,maxBuffer:1024*1024});
 const requireSuccess=result=>{assert.equal(result.status,0,'isolated native operation failed');return result.stdout.trim();};
-let networkId,containerId,networkAttempted=false,containerAttempted=false,pools,server,proxy;
+let networkId,containerId,networkAttempted=false,containerAttempted=false,pools,proxy;
 let operationWitnessArmed=false,operationWitnessReplacement='';
 class WitnessPool extends PgPool {
   constructor(config){super(config);this.witnessRuntime=config.user==='buyer_writer_runtime';}
@@ -28,7 +26,7 @@ class WitnessPool extends PgPool {
     if(this.witnessRuntime){
       const query=client.query.bind(client);
       client.query=async(text,...args)=>{
-        if(operationWitnessArmed&&typeof text==='string'&&text.includes('case when checked.safe then buyer_writer.apply(')){
+        if(operationWitnessArmed&&typeof text==='string'&&text.includes('case when checked.safe then buyer_writer.context(')){
           operationWitnessArmed=false;
           sql(operationWitnessReplacement);
         }
@@ -52,7 +50,6 @@ function cleanup() {
   return cleanupPromise??=(async()=>{
     cleaning=true;
     const errors=[];
-    try{if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));server=null;}}catch{errors.push('http');}
     try{if(pools){await pools.close();pools=null;}}catch{errors.push('pools');}
     try{for(const socket of proxySockets)socket.destroy();if(proxy)await new Promise(resolve=>proxy.close(resolve));}catch{errors.push('proxy');}
     try{if(containerAttempted){const record=discover('container',containerId??name);if(record)requireSuccess(docker(['rm','-f',record.Id]));containerAttempted=false;}}catch{errors.push('container');}
@@ -138,7 +135,12 @@ try {
   sql('begin;'+fs.readFileSync(new URL('../frontend/supabase/migrations/20260904223151_buyer_browser_security.sql',import.meta.url),'utf8')+'commit;');
   const creatorOid=Number(sql("select oid from pg_roles where rolname='postgres'"));
   sql('alter role postgres nosuperuser createrole');
-  sql(`set blackspire.buyer_writer_creator_oid=${literal(creatorOid)};`+fs.readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8'));
+  const installSql=fs.readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
+  sql(`set blackspire.buyer_writer_creator_oid=${literal(creatorOid)};`+installSql);
+  sql(`create role buyer_writer_admission_login login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    revoke all privileges on database writer_test from buyer_writer_admission_login;
+    grant buyer_writer_admission to buyer_writer_admission_login with admin false,inherit false,set true granted by postgres;`);
+  sql(`set blackspire.buyer_writer_creator_oid=${literal(creatorOid)};`+installSql);
   const runtimePassword=randomBytes(32).toString('base64url'),issuerPassword=randomBytes(32).toString('base64url');
   sql(`set password_encryption='scram-sha-256';alter role buyer_writer_runtime login password ${literal(runtimePassword)};alter role buyer_writer_issuer login password ${literal(issuerPassword)};`);
   copy('/var/lib/postgresql/data/pg_hba.conf','local all all trust\nhostssl writer_test,template1 buyer_writer_runtime,buyer_writer_issuer 0.0.0.0/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::0/0 reject\n');
@@ -151,98 +153,106 @@ try {
   await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,ca:undefined},issuer:{...config.issuer,ca:undefined}}),/unavailable/);
   await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,password:randomBytes(32).toString('base64url')}}),/unavailable/);
   checks.push('actual driver rejects untrusted TLS and wrong SCRAM credentials; both dedicated TLS identities accepted');
-  phase='operation-nonentry-witness';
-  const applyDefinition=sql("set role buyer_writer_owner;select pg_get_functiondef('buyer_writer.apply(text,text,jsonb)'::regprocedure)");
-  sql(`set role buyer_writer_owner;create sequence buyer_writer.operation_nonentry_witness;grant usage on sequence buyer_writer.operation_nonentry_witness to buyer_writer_owner;reset role`);
-  operationWitnessReplacement=`set role buyer_writer_owner;create or replace function buyer_writer.apply(p_digest text,p_workspace text,q jsonb) returns jsonb
-    language plpgsql security definer set search_path=pg_catalog set "TimeZone"='UTC' set lock_timeout='5s' as $$
-    begin perform nextval('buyer_writer.operation_nonentry_witness');return '{"ok":true}'::jsonb;end $$;reset role;`;
-  operationWitnessArmed=true;
-  await assert.rejects(pools.runtimeQuery('select buyer_writer.apply($1,$2,$3::jsonb) as result',['a'.repeat(64),'isolated','{}']),/unavailable/);
-  assert.equal(operationWitnessArmed,false,'operation witness drift was not injected after the fence');
-  assert.equal(sql('set role buyer_writer_owner;select is_called from buyer_writer.operation_nonentry_witness'),'f','unsafe writer operation entered despite fresh identity denial');
-  sql(`set role buyer_writer_owner;${applyDefinition};drop sequence buyer_writer.operation_nonentry_witness;reset role`);
-  checks.push('fresh unsafe identity prevents writer operation entry with a non-rollback sequence witness');
-  // The remaining fixture orchestration observes and perturbs catalogs as the
-  // separate bootstrap superuser; the application pools remain the two
-  // non-superuser writer identities and postgres remains their OID-pinned owner.
+  // Seed one valid current dispatch through the issuer, then exercise the
+  // runtime's only remaining operation: the scoped context read.
   sqlUser='fixture_admin';
-  const workload=randomBytes(32).toString('base64url'),issuerKey=randomBytes(32).toString('base64url');
-  phase='native-http-writes';
-  server=createBuyerWriterHttpServer({credential:workload,workspace:'isolated',query:pools.runtimeQuery,isAvailable:()=>pools.isHealthy(),issuer:{credential:issuerKey,query:pools.issuerQuery}});
-  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});});
   const jobId=randomUUID(),userId=randomUUID(),requestId=randomUUID();
-  sql(`insert into auth.users(id) values(${literal(userId)})`);
-  sql(`insert into public."SearchJob"(id,user_id,state,county,property_type,date_range_start,date_range_end) values(${literal(jobId)},${literal(userId)},'NC','Wake','land','2026-01-01','2026-12-31')`);
-  const captured=JSON.parse(sql(`select jsonb_build_object('criteria',buyer_writer.criteria(to_jsonb(j)),'updatedAt',j.updated_at) from public."SearchJob" j where id=${literal(jobId)}`));
-  const sale={buyer_name:'NATIVE TEST LLC',seller_name:'SYNTHETIC',property_address:'TEST ONLY',mailing_address:'TEST, NC',sale_price:120000,sale_date:'2026-08-01',property_type:'land',parcel_id:'TEST',deed_type:'TEST',lender_name:'UNKNOWN'};
-  const bytes=Buffer.from(JSON.stringify([sale]));
-  const sourceContext={version:1,mode:'frontend_payload',sources:[{sourceId:randomUUID(),sourceType:'arcgis',endpointId:'isolated',endpointConfigDigest:'b'.repeat(64),cashDisabled:false}],budgets:{maxRequests:1,maxRows:1,maxBytes:1048576},rawPayload:{digest:createHash('sha256').update(bytes).digest('hex'),byteCount:bytes.length,rowCount:1}};
-  const post=async(kind,body,permit)=>{
-    const headers={'content-type':'application/json',...(kind==='issuance'||kind==='reconciliation'?{'x-buyer-issuer-key':issuerKey}:{'x-buyer-writer-key':workload,'x-buyer-job-permit':permit})};
-    const response=await fetch(`http://127.0.0.1:${server.address().port}/api/internal/buyer-writer/v1/jobs/${jobId}/${kind}`,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(17000)});
-    assert.equal(response.status,200,'native HTTP operation rejected');return response.json();
-  };
-  const issued=await post('issuance',{version:1,ownerId:userId,requestId,...captured,sourceContext});
-  const envelope={version:1,dispatchId:issued.dispatchId,generation:issued.generation};
-  await post('operations',{...envelope,operation:'start',chunkIndex:0,chunkCount:1,payload:{}},issued.permit);
-  const syntheticLoss=new Error('Injected completion response loss');let lost=false;
-  try {
-    for(const operation of planBuyerWrites({jobId,...envelope,criteria:captured.criteria,raw:[sale],clean:[sale]})){
-      await post('operations',operation,issued.permit);
-      if(operation.operation==='complete')throw syntheticLoss;
-    }
-  }catch(error){assert.ok(error===syntheticLoss,'unexpected native write error');lost=true;}
-  assert.ok(lost,'unknown outcome was not injected');
-  // Explicit fault injection after database/HTTP completion, not a claim of
-  // physical network interruption. Recover the original attempt without replay.
-  const reconciled=await post('reconciliation',{version:1,ownerId:userId,requestId,updatedAt:captured.updatedAt});
-  assert.equal(reconciled.state,'completed');
-  assert.equal(sql(`select count(*) from buyer_writer.dispatches where id=${literal(requestId)}`),'1');
-  for(const table of ['RawSale','CleanSale','BuyerProfile','BuyerReport'])assert.equal(sql(`select count(*) from public."${table}"`),'1');
-  assert.equal(sql(`select status from public."SearchJob" where id=${literal(jobId)}`),'completed');
-  checks.push('actual driver and HTTP write all five tables; completed receipt survives response-loss fault injection without replay');
-  phase='privilege-drift';
-  const receiptSql='select buyer_writer.receipt($1,$2,$3,$4,$5,$6,$7) as result';
-  const receiptArgs=[createHash('sha256').update(issued.permit).digest('hex'),'isolated',jobId,issued.dispatchId,issued.generation,'complete',0];
-  assert.equal((await pools.runtimeQuery(receiptSql,receiptArgs)).rows[0].result.found,true);
-  sql('grant create on schema buyer_writer to buyer_writer_runtime');
-  await assert.rejects(pools.runtimeQuery(receiptSql,receiptArgs),/unavailable/);
-  sql('revoke create on schema buyer_writer from buyer_writer_runtime');
-  assert.equal((await pools.runtimeQuery(receiptSql,receiptArgs)).rows[0].result.found,true);
-  checks.push('privilege drift rejects on the next real checkout');
-  phase='native-trigger-race-setup';
-  const raceJob=randomUUID(),raceRequest=randomUUID(),racePermit=randomBytes(32).toString('base64url');
-  const raceDigest=createHash('sha256').update(racePermit).digest('hex');
-  sql(`insert into public."SearchJob"(id,user_id,state,county,property_type,date_range_start,date_range_end) values(${literal(raceJob)},${literal(userId)},'NC','Wake','land','2026-01-01','2026-12-31');
-    create table public.trigger_probe(hit integer);
-    create function public.hidden_trigger() returns trigger language plpgsql security definer as 'begin insert into public.trigger_probe values(1);return new;end';
-    revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,buyer_writer_runtime,buyer_writer_issuer;`);
-  const raceCaptured=JSON.parse(sql(`select jsonb_build_object('criteria',buyer_writer.criteria(to_jsonb(j)),'updatedAt',j.updated_at) from public."SearchJob" j where id=${literal(raceJob)}`));
+  sql(`insert into auth.users(id) values(${literal(userId)});
+    insert into public."SearchJob"(id,user_id,state,county,property_type,date_range_start,date_range_end)
+    values(${literal(jobId)},${literal(userId)},'NC','Wake','land','2026-01-01','2026-12-31')`);
+  const captured=JSON.parse(sql(`select jsonb_build_object('criteria',buyer_writer.criteria(to_jsonb(j)),'updatedAt',j.updated_at)
+    from public."SearchJob" j where id=${literal(jobId)}`));
+  const payload=Buffer.from('[]'),permitDigest=createHash('sha256').update(randomBytes(32)).digest('hex');
+  const sourceContext={version:1,mode:'frontend_payload',
+    sources:[{sourceId:randomUUID(),sourceType:'arcgis',endpointId:'isolated',
+      endpointConfigDigest:'b'.repeat(64),cashDisabled:false}],
+    budgets:{maxRequests:1,maxRows:1,maxBytes:1048576},
+    rawPayload:{digest:createHash('sha256').update(payload).digest('hex'),
+      byteCount:payload.length,rowCount:0}};
   const issueSql='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
-  const raceIssued=(await pools.issuerQuery(issueSql,[raceJob,userId,'isolated',raceDigest,sourceContext,raceCaptured.criteria,raceCaptured.updatedAt,raceRequest])).rows[0].result;
-  const raceOperation=planBuyerWrites({jobId:raceJob,dispatchId:raceIssued.dispatchId,generation:raceIssued.generation,criteria:raceCaptured.criteria,raw:[sale],clean:[sale]})[0];
-  const raceDdl=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
+  const issued=(await pools.issuerQuery(issueSql,[jobId,userId,'isolated',permitDigest,
+    sourceContext,captured.criteria,captured.updatedAt,requestId])).rows[0].result;
+  sql(`update buyer_writer.dispatches set state='processing' where id=${literal(issued.dispatchId)}`);
+  const contextSql='select buyer_writer.context($1,$2,$3,$4,$5) as result';
+  const contextArgs=[permitDigest,'isolated',jobId,issued.dispatchId,issued.generation];
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  phase='operation-nonentry-witness';
+  const contextDefinition=sql("set role buyer_writer_owner;select pg_get_functiondef('buyer_writer.context(text,text,uuid,uuid,bigint)'::regprocedure)");
+  sql(`set role buyer_writer_owner;create sequence buyer_writer.operation_nonentry_witness;
+    grant usage on sequence buyer_writer.operation_nonentry_witness to buyer_writer_owner;reset role`);
+  operationWitnessReplacement=`set role buyer_writer_owner;
+    create or replace function buyer_writer.context(p_digest text,p_workspace text,p_job uuid,p_dispatch uuid,p_generation bigint)
+    returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
+    begin perform nextval('buyer_writer.operation_nonentry_witness');return '{"unsafe":true}'::jsonb;end $$;reset role;`;
+  operationWitnessArmed=true;
+  await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
+  assert.equal(operationWitnessArmed,false,'operation witness drift was not injected after the fence');
+  assert.equal(sql('set role buyer_writer_owner;select is_called from buyer_writer.operation_nonentry_witness'),'f',
+    'unsafe runtime context entered despite fresh identity denial');
+  sql(`set role buyer_writer_owner;${contextDefinition};
+    drop sequence buyer_writer.operation_nonentry_witness;reset role`);
+  checks.push('fresh unsafe identity prevents runtime context entry with a non-rollback sequence witness');
+  sqlUser='fixture_admin';
+  phase='privilege-drift';
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  sql('grant create on schema buyer_writer to buyer_writer_runtime');
+  await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
+  sql('revoke create on schema buyer_writer from buyer_writer_runtime');
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  checks.push('privilege drift rejects the next real runtime context checkout');
+  phase='native-trigger-race-setup';
+  const jobBefore=sql(`select jsonb_build_object('status',status,'updatedAt',updated_at)
+    from public."SearchJob" where id=${literal(jobId)}`);
+  sql(`create table public.trigger_probe(hit integer);
+    create function public.hidden_trigger() returns trigger language plpgsql security definer
+      as 'begin insert into public.trigger_probe values(1);return new;end';
+    revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,
+      buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission`);
+  const raceDdl=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt',
+    '-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'],
+    {stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
   let raceOutput='',raceBytes=0,raceReadyResolve,raceReadyReject;
-  const raceReady=new Promise((resolve,reject)=>{raceReadyResolve=resolve;raceReadyReject=reject;});
-  const raceDeadline=setTimeout(()=>{raceDdl.kill('SIGKILL');raceReadyReject(new Error('trigger race fixture timed out'));},12000);
+  const raceReady=new Promise((resolve,reject)=>{
+    raceReadyResolve=resolve;raceReadyReject=reject;
+  });
+  const raceDeadline=setTimeout(()=>{
+    raceDdl.kill('SIGKILL');raceReadyReject(new Error('trigger race fixture timed out'));
+  },12000);
   const raceDone=new Promise((resolve,reject)=>{
-    raceDdl.once('error',()=>{raceReadyReject(new Error('trigger race fixture failed'));reject(new Error('trigger race fixture failed'));});
-    raceDdl.once('close',code=>{clearTimeout(raceDeadline);raceReadyReject(new Error('trigger race fixture closed'));code===0?resolve():reject(new Error('trigger race fixture failed'));});
+    raceDdl.once('error',()=>{
+      raceReadyReject(new Error('trigger race fixture failed'));
+      reject(new Error('trigger race fixture failed'));
+    });
+    raceDdl.once('close',code=>{
+      clearTimeout(raceDeadline);raceReadyReject(new Error('trigger race fixture closed'));
+      code===0?resolve():reject(new Error('trigger race fixture failed'));
+    });
   });
   void raceDone.catch(()=>{});
-  for(const stream of [raceDdl.stdout,raceDdl.stderr])stream.on('data',chunk=>{raceBytes+=chunk.length;if(raceBytes>8192)raceDdl.kill('SIGKILL');});
-  raceDdl.stdout.on('data',chunk=>{if(raceBytes<=8192){raceOutput+=chunk.toString('utf8');if(raceOutput.includes('trigger_attached'))raceReadyResolve();}});
-  raceDdl.stdin.end(`begin;create trigger hidden_trigger before update on public."SearchJob" for each row execute function public.hidden_trigger();select 'trigger_attached';select pg_sleep(1);commit;`);
+  for(const stream of [raceDdl.stdout,raceDdl.stderr])stream.on('data',chunk=>{
+    raceBytes+=chunk.length;if(raceBytes>8192)raceDdl.kill('SIGKILL');
+  });
+  raceDdl.stdout.on('data',chunk=>{
+    if(raceBytes<=8192){
+      raceOutput+=chunk.toString('utf8');
+      if(raceOutput.includes('trigger_attached'))raceReadyResolve();
+    }
+  });
+  raceDdl.stdin.on('error',()=>{});
+  raceDdl.stdin.end(`begin;
+    create trigger hidden_trigger before update on public."SearchJob"
+      for each row execute function public.hidden_trigger();
+    select 'trigger_attached';select pg_sleep(1);commit;`);
   await raceReady;
   phase='native-trigger-race-rejection';
-  await assert.rejects(pools.runtimeQuery('select buyer_writer.apply($1,$2,$3::jsonb) as result',[raceDigest,'isolated',raceOperation]),/unavailable/);
+  await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
   await raceDone;
-  assert.equal(sql(`select status from public."SearchJob" where id=${literal(raceJob)}`),'pending');
+  assert.equal(sql(`select jsonb_build_object('status',status,'updatedAt',updated_at)
+    from public."SearchJob" where id=${literal(jobId)}`),jobBefore);
   assert.equal(sql('select count(*) from public.trigger_probe'),'0');
   sql('drop trigger hidden_trigger on public."SearchJob";drop function public.hidden_trigger();drop table public.trigger_probe');
-  assert.equal((await pools.runtimeQuery(receiptSql,receiptArgs)).rows[0].result.found,true);
-  checks.push('concurrent hidden-trigger DDL serializes against the relation fence; fresh final identity rejects before the fixed write');
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  checks.push('concurrent hidden-trigger DDL serializes against the runtime fence; fresh identity rejects without operation entry');
   phase='native-lock-timeout';
   const oldPid=sql("select pid from pg_stat_activity where usename='buyer_writer_runtime' and datname='writer_test'");
   assert.match(oldPid,/^[0-9]+$/);
@@ -266,7 +276,7 @@ try {
     await locked;
     phase='native-lock-rejection';
     const started=performance.now();
-    await assert.rejects(pools.runtimeQuery(receiptSql,receiptArgs),/unavailable/);
+    await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
     phase='native-lock-duration';
     const elapsed=performance.now()-started;
     console.log(JSON.stringify({lockElapsedMs:Math.round(elapsed)}));
@@ -280,7 +290,7 @@ try {
     assert.ok(removed,'failed connection was retained');
   } finally {await blockerDone;}
   phase='native-lock-recovery';
-  assert.equal((await pools.runtimeQuery(receiptSql,receiptArgs)).rows[0].result.found,true);
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
   checks.push('real PostgreSQL lock timeout surfaces failure, destroys the failed connection and permits a fresh verified checkout');
 
 }catch{failed=true;console.error(JSON.stringify({error:'Native Buyer writer verification failed',phase}));}

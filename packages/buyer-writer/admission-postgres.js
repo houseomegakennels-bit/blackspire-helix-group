@@ -100,6 +100,8 @@ export async function createBuyerWriterAdmissionPostgres({connection,expectedCre
   templatePool.on('error',()=>{healthy=false;});
   const connect=async()=>{
    if(closed||!healthy)throw unavailable();
+   await prove(templatePool,ADMISSION_TEMPLATE1_IDENTITY_SQL,[BUYER_WRITER_ADMISSION_LOGIN]);
+   if(closed||!healthy)throw unavailable();
    let client;
    try{client=await pool.connect();}catch{throw unavailable();}
    if(!client||typeof client.query!=='function'||typeof client.release!=='function'){

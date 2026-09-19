@@ -7,7 +7,7 @@ import {
  ADMISSION_TEMPLATE1_IDENTITY_SQL,BUYER_WRITER_ADMISSION_LOGIN,BUYER_WRITER_ADMISSION_ROLE,createBuyerWriterAdmissionPostgres,
 } from '../packages/buyer-writer/admission-postgres.js';
 import {
- ADMISSION_IDENTITY_SQL,executeAdmission,
+ ADMISSION_FENCE_SQL,createAttestedAdmissionExecutor,executeAdmission,
 } from '../packages/buyer-writer/admission-executor.js';
 
 const ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
@@ -26,8 +26,10 @@ function pools(){
     calls:[],
     async query(config){
      this.calls.push(config);
-     if(config.text===ADMISSION_IDENTITY_SQL||config.text===ADMISSION_TEMPLATE1_IDENTITY_SQL)return {rows:[{safe:true}]};
-     return {rows:[{accepted:true}]};
+     if(config.text===ADMISSION_TEMPLATE1_IDENTITY_SQL)return {rows:[{safe:true}]};
+     if(config.text==='begin'||config.text==='commit'||config.text==='rollback')return {};
+     if(config.text===ADMISSION_FENCE_SQL)return {rows:[{safe:true,locked:true}]};
+     return {rows:[{safe:true,accepted:true}]};
     },
     release(destroy){this.destroyed=Boolean(destroy);},
    };
@@ -68,11 +70,19 @@ test('pins the admission login, TLS CA and fixed session limits',async()=>{
   ]);
   assert.deepEqual(result,{rows:[{accepted:true}]});
   const client=instances[0].clients[0];
-  assert.equal(client.calls.length,2);
-  assert.equal(client.calls[0].text,ADMISSION_IDENTITY_SQL);
-  assert.equal(client.calls[0].values[0],BUYER_WRITER_ADMISSION_LOGIN);
-  assert.match(client.calls[1].text,/reserve_operation/);
+  assert.equal(client.calls.length,4);
+  assert.equal(client.calls[0].text,'begin');
+  assert.equal(client.calls[1].text,ADMISSION_FENCE_SQL);
+  assert.equal(client.calls[1].values[0],BUYER_WRITER_ADMISSION_LOGIN);
+  assert.equal(client.calls[1].values.length,4);
+  assert.equal(client.calls[1].values[1].includes('buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)'),true);
+  assert.equal(typeof client.calls[1].values[2],'string');
+  assert.equal(client.calls[1].values[3],16384);
+  assert.match(client.calls[2].text,/reserve_operation/);
+  assert.equal(client.calls[3].text,'commit');
   assert.equal(client.destroyed,false);
+  assert.equal(instances[1].clients.length,2);
+  assert.equal(instances[1].clients[1].calls[0].text,ADMISSION_TEMPLATE1_IDENTITY_SQL);
   assert.deepEqual(Object.keys(database).sort(),['close','executor','isHealthy','ready']);
  }finally{await database.close();}
  assert.equal(instances[0].ended,true);assert.equal(instances[1].ended,true);
@@ -86,12 +96,13 @@ test('abort during identity prevents any late reserve statement',async()=>{
    client={
     async query(config){
      if(config.text===ADMISSION_TEMPLATE1_IDENTITY_SQL)return {rows:[{safe:true}]};
-     if(config.text===ADMISSION_IDENTITY_SQL){
+     if(config.text==='begin'||config.text==='rollback')return {};
+     if(config.text===ADMISSION_FENCE_SQL){
       await new Promise(resolve=>setTimeout(resolve,30));
-      return {rows:[{safe:true}]};
+      return {rows:[{safe:true,locked:true}]};
      }
      operationCalls++;
-     return {rows:[{accepted:true}]};
+     return {rows:[{safe:true,accepted:true}]};
     },
     release(destroy){this.destroyed=Boolean(destroy);},
    };
@@ -111,6 +122,32 @@ test('abort during identity prevents any late reserve statement',async()=>{
   assert.equal(operationCalls,0);
   assert.equal(client.destroyed,true);
  }finally{await database.close();}
+});
+
+test('transaction failures roll back and destroy, including lost commit acknowledgement',async()=>{
+ const values=['issuer','00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000002','a'.repeat(64),'2030-01-01T00:00:00Z'];
+ for(const failure of ['fence','operation','commit']){
+  const calls=[];let destroyed,committed=false;
+  const client={async query(config){
+   calls.push(config.text);
+   if(config.text==='begin'||config.text==='rollback')return {};
+   if(config.text===ADMISSION_FENCE_SQL)return failure==='fence'
+    ?{rows:[{safe:false,locked:false}]}:{rows:[{safe:true,locked:true}]};
+   if(config.text==='commit'){
+    committed=true;if(failure==='commit')throw new Error('lost commit acknowledgement');return {};
+   }
+   if(failure==='operation')return {rows:[{safe:false,accepted:null}]};
+   return {rows:[{safe:true,accepted:true}]};
+  },release(value){destroyed=value;}};
+  const executor=createAttestedAdmissionExecutor({expectedLogin:BUYER_WRITER_ADMISSION_LOGIN,
+   expectedCreatorOid:16384,connect:async()=>client});
+  await assert.rejects(executeAdmission(executor,'reserve',values),/unavailable|lost commit acknowledgement/);
+  assert.equal(destroyed,true);
+  assert.equal(calls.at(-1),'rollback');
+  assert.equal(calls.includes('commit'),failure==='commit');
+  assert.equal(committed,failure==='commit');
+ }
 });
 
 test('template1 admission-role startup proof is fixed and fails closed',async()=>{

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {ADMISSION_SQL,createAdmissionBridge} from '../packages/buyer-writer/admission-bridge.js';
-import {ADMISSION_IDENTITY_SQL,createAttestedAdmissionExecutor,executeAdmission} from '../packages/buyer-writer/admission-executor.js';
+import {ADMISSION_FENCE_SQL,ADMISSION_IDENTITY_SQL,createAttestedAdmissionExecutor,executeAdmission} from '../packages/buyer-writer/admission-executor.js';
 
 const {publicKey,privateKey}=generateKeyPairSync('ed25519');
 const publicKeyPem=publicKey.export({type:'spki',format:'pem'});
@@ -68,9 +68,21 @@ function fixture(overrides={}){
   'Content-Length',String(body.length)];
  return {origin:'https://writer.example',method:'POST',path:`/rest/v1/rpc/${operation}`,rawHeaders,body};
 }
+const routineOperations={reserve_operation:'reserve',execute_admitted_apply:'apply',
+ execute_admitted_issue:'issue',execute_admitted_cancel:'cancel',execute_admitted_reconcile:'reconcile',
+ execute_admitted_receipt:'receipt',correlate_admission:'correlate',recover_admission:'recover'};
 function executor(query,{safe=true,releases=[]}={}){
  return createAttestedAdmissionExecutor({expectedLogin:'buyer_writer_admission_login',expectedCreatorOid:16388,connect:async()=>({
-  query:async config=>config.text===ADMISSION_IDENTITY_SQL?{rows:[{safe}]}:query(config.text,config.values,{signal:config.signal}),
+  query:async config=>{
+   if(config.text==='begin'||config.text==='commit'||config.text==='rollback')return {};
+   if(config.text===ADMISSION_FENCE_SQL)return {rows:[{safe,locked:safe}]};
+   const routine=/case when admission\.safe and checked\.safe then buyer_writer\.([a-z_]+)\(/.exec(config.text)?.[1];
+   const operation=routineOperations[routine];
+   if(!operation)assert.fail('unexpected executor query');
+   const result=await query(ADMISSION_SQL[operation],config.values.slice(4),{signal:config.signal});
+   if(!result||!Array.isArray(result.rows)||result.rows.length!==1)return result;
+   return {...result,rows:[{safe,...result.rows[0]}]};
+  },
   release:destroy=>releases.push(destroy),
  })});
 }
@@ -394,6 +406,7 @@ test('execute and correlation deadlines abort and destroy their pinned sessions'
  assert.equal(executeAborted,true);
  assert.equal(correlateAborted,true);
  assert.deepEqual(calls,[ADMISSION_SQL.reserve,ADMISSION_SQL.apply,ADMISSION_SQL.correlate]);
+ await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(releases,[false,true,true]);
 });
 
