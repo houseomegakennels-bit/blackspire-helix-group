@@ -27,7 +27,7 @@ test('upgrade CLI pins exact authority, protected paths, and all quiesced servic
 });
 
 test('upgrade CLI rejects bad invocation without disclosing protected state',()=>{
-  const result=spawnSync('/opt/nodejs/node-v22.23.1-linux-x64/bin/node',[script,'--bad'],{
+  const result=spawnSync(process.execPath,[script,'--bad'],{
     encoding:'utf8',env:{PATH:'/usr/bin:/bin',LC_ALL:'C',LANG:'C'},timeout:20_000,
   });
   assert.equal(result.status,1);

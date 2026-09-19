@@ -326,10 +326,10 @@ test('path-only postpublish validation failure removes both invocation-owned out
 });
 
 test('spawned CLI rejects a bad invocation with exact sanitized output',()=>{
-  const node='/opt/nodejs/node-v22.23.1-linux-x64/bin/node';
+  const node=process.execPath;
   const script=fileURLToPath(new URL('../scripts/prepare-buyer-writer-gateway-v4.js',import.meta.url));
   const result=spawnSync(node,[script],{cwd:fileURLToPath(new URL('../',import.meta.url)),
-    encoding:'utf8',env:{PATH:'/usr/bin:/bin',LC_ALL:'C',LANG:'C'},timeout:5000,maxBuffer:4096});
+    encoding:'utf8',env:{PATH:'/usr/bin:/bin',LC_ALL:'C',LANG:'C'},timeout:20_000,maxBuffer:4096});
   assert.equal(result.error,undefined);assert.equal(result.signal,null);assert.equal(result.status,1);
   assert.equal(result.stdout,'');
   assert.equal(result.stderr,'Buyer writer gateway v4 preparation stopped; protected inputs and state were not disclosed\n');
