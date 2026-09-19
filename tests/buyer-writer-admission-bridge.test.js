@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
+import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {createOperationPermitSigner} from '../packages/buyer-writer/operation-permit-signer.js';
+import {createBuyerWriterAdmittedLocalClient} from '../packages/buyer-writer/admitted-local-client.js';
+import {BUYER_WRITER_LOCAL_STATEMENTS} from '../packages/buyer-writer/local-gateway-server.js';
 import {ADMISSION_SQL,createAdmissionBridge} from '../packages/buyer-writer/admission-bridge.js';
 import {
  ADMISSION_FENCE_SQL,ADMISSION_IDENTITY_SQL,ADMISSION_READINESS_SQL,ADMISSION_WRITER_IDENTITY_SQL,
@@ -234,10 +240,51 @@ test('fresh-process recovery uses a distinct signed permit and only the recovery
   assert.fail('fresh recovery must not execute a business wrapper');
  })(fixture({operation:'recover',parameters:routeParameters.recover,
   requestId:ids.recoveryRequestId,jti:ids.recoveryJti}));
- assert.deepEqual(output,{status:200,body:{...success,recovered:true,automaticRetry:false}});
+ assert.deepEqual(output,{status:200,body:{...success,recovered:true,automaticRetry:false,
+  admissionCorrelation:{issuer:'https://issuer.example',jti:ids.jti,requestId:ids.requestId,
+   bodyDigest:'d'.repeat(64),operation:'apply',requestCorrelated:true}}});
  assert.deepEqual(calls.map(call=>call.sql),[ADMISSION_SQL.reserve,ADMISSION_SQL.recover]);
  assert.equal(calls[1].params.length,14);
  assert.deepEqual(calls[1].params.slice(9),['https://issuer.example',ids.jti,ids.requestId,'d'.repeat(64),'apply']);
+});
+
+test('real signer and bridge recover a durable fresh-client handle after lost transport response',async()=>{
+ const directory=mkdtempSync(path.join(tmpdir(),'zola-durable-handle-'));
+ try{
+  const privateKeyPath=path.join(directory,'signer.pem');
+  writeFileSync(privateKeyPath,privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});
+  const makeSigner=()=>createOperationPermitSigner({version:1,activeKeyId:'test-key',
+   activePrivateKeyPath:privateKeyPath,verification:verificationConfiguration},{expectedUid:process.getuid()});
+  let saved,original;const calls=[];
+  const handle=bridge(async(sql,params)=>{
+   calls.push(sql);
+   if(sql===ADMISSION_SQL.reserve)return reserveResult;
+   if(sql===ADMISSION_SQL.apply){original=params.slice(0,9);return {rows:[{result:success}]};}
+   if(sql===ADMISSION_SQL.recover){
+    assert.deepEqual(params.slice(9),[original[0],original[1],original[2],original[3],'apply']);
+    assert.deepEqual(params.slice(4,9),original.slice(4,9));
+    return {rows:[{result:{state:'succeeded',routeOperation:'apply',result:success,
+     automaticRetry:false,requestCorrelated:true}}]};
+   }
+   assert.fail('unexpected business replay');
+  });
+  const transport=lost=>({admittedRequest:async request=>{
+    const result=await handle(request);if(lost)throw new Error('lost transport response');return result;
+   },runtimeQuery:async()=>assert.fail('legacy query'),checkAvailability:async()=>true,
+   isHealthy:()=>true,close:async()=>{}});
+  const makeClient=(lost,uuids)=>createBuyerWriterAdmittedLocalClient({client:transport(lost),
+   signer:makeSigner(),configuration:JSON.parse(configuration),now:()=>now*1000,uuid:()=>uuids.shift()});
+  const outerAttemptId='00000000-0000-4000-8000-000000000090';
+  const first=makeClient(true,[ids.requestId,ids.jti]);
+  await assert.rejects(first.runtimeQuery(BUYER_WRITER_LOCAL_STATEMENTS.apply,
+   [parameters.p_digest,parameters.p_workspace,JSON.stringify(q)],{outerAttemptId,
+    persistHandle:async(handle,digest)=>{saved=JSON.parse(JSON.stringify({handle,digest}));}}));
+  await first.close();
+  const fresh=makeClient(false,[ids.recoveryRequestId,ids.recoveryJti]);
+  const recovered=await fresh.recoverHandle(saved.handle,{outerAttemptId,expectedHandleDigest:saved.digest});
+  assert.deepEqual(recovered,{result:success,requestCorrelated:true,handleDigest:saved.digest});
+  assert.deepEqual(calls,[ADMISSION_SQL.reserve,ADMISSION_SQL.apply,ADMISSION_SQL.reserve,ADMISSION_SQL.recover]);
+ }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
 test('replayed recovery permit and malformed recovered outcome fail closed without mutation',async()=>{

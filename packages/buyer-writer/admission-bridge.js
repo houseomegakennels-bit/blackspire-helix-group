@@ -163,7 +163,13 @@ function recoveryResponse(value,operation,parsed,{fresh=false}={}){
  const kind=fresh?recoveredResultKind(operation,value.result):resultKind(operation,value.result,parsed);
  if(kind!==value.state)return response(503,'ADMISSION_INCONSISTENT');
  return kind==='succeeded'
-  ?{status:200,body:{...value.result,recovered:true,automaticRetry:false}}
+  ?{status:200,body:{...value.result,recovered:true,automaticRetry:false,...(fresh?{
+    // Emitted only after recover_admission validated the original durable row and
+    // correlate_admission returned requestCorrelated=true for that exact row.
+    admissionCorrelation:{issuer:parsed.value.p_original_issuer,jti:parsed.value.p_original_jti,
+      requestId:parsed.value.p_original_request,bodyDigest:parsed.value.p_original_digest,
+      operation,requestCorrelated:true},
+  }:{})}}
   :response(409,'WRITE_FAILED');
 }
 async function boundedOperation(executor,operation,values,timeoutMs){

@@ -36,12 +36,17 @@ test('upgrade CLI rejects bad invocation without disclosing protected state',()=
     'Buyer writer gateway configuration upgrade stopped; protected inputs and state were not disclosed\n');
 });
 
-test('upgrade CLI exposes only the three exact modes and strict argument shapes',()=>{
-  assert.match(source,/\['--inspect','--upgrade','--rollback'\]\.includes\(mode\)/);
+test('upgrade CLI exposes only the four exact modes and strict bound argument shape',()=>{
+  assert.match(source,/\['--inspect','--upgrade','--reconcile','--rollback'\]\.includes\(mode\)/);
   assert.match(source,/mode==='--rollback'/);
-  assert.match(source,/args\.length!==2/);
-  assert.match(source,/args\.length!==4/);
+  assert.match(source,/mode==='--reconcile'/);
+  assert.match(source,/args\.length!==7/);
   assert.match(source,/\^\[a-f0-9\]\{40\}\$/);
   assert.match(source,/path\.isAbsolute\(candidateFile\)/);
   assert.match(source,/config\.authority\.releaseSha!==releaseSha/);
+  assert.match(source,/artifact\.artifactDigest!==artifactDigest/);
+  assert.match(source,/observedCandidateDigest!==candidateDigest/);
+  assert.match(source,/journal\(operationId,\{resume:true\}\)/);
+  assert.match(source,/state\?\.phase!=='INTENT'/);
+  assert.match(source,/operationId\+'\.backup\.json'/);
 });

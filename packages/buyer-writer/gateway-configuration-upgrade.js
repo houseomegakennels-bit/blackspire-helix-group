@@ -2,6 +2,8 @@ import {createHash} from 'node:crypto';
 import {validateBuyerWriterGatewayServiceConfiguration} from './gateway-entry.js';
 
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
+const SHA=/^[a-f0-9]{40}$/;
+const DIGEST=/^[a-f0-9]{64}$/;
 const controlsRequired=[
   'assertQuiesced','prepareReplacement','publishReplacement',
   'verifyReplacement','restoreReplacement','finalizeReplacement',
@@ -14,9 +16,12 @@ const fail=(rollbackSafe=false)=>{
 const digest=value=>createHash('sha256').update(JSON.stringify(value)+'\n').digest('hex');
 const same=(left,right)=>JSON.stringify(left)===JSON.stringify(right);
 
-function upgradePlan({operationId,oldConfiguration,newConfiguration,controls,appendJournal,now}){
+function upgradePlan({releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+  oldConfiguration,newConfiguration,controls,appendJournal,now}){
   try{
-    if(!UUID.test(operationId??'')||!controls||typeof controls!=='object'
+    if(!SHA.test(releaseSha??'')||!UUID.test(operationId??'')||!UUID.test(attemptId??'')
+      ||operationId===attemptId||!DIGEST.test(artifactDigest??'')||!DIGEST.test(candidateDigest??'')
+      ||!controls||typeof controls!=='object'
       ||controlsRequired.some(name=>typeof controls[name]!=='function')
       ||typeof appendJournal!=='function'||typeof now!=='function')fail();
     const oldConfig=validateBuyerWriterGatewayServiceConfiguration(oldConfiguration);
@@ -25,11 +30,14 @@ function upgradePlan({operationId,oldConfiguration,newConfiguration,controls,app
     for(const key of ['workspace','socketPath','gatewayCapability','creatorOid'])
       if(oldConfig[key]!==newConfig[key])fail();
     for(const key of ['runtime','issuer'])if(!same(oldConfig[key],newConfig[key]))fail();
-    if(oldConfig.authority.releaseSha===newConfig.authority.releaseSha)fail();
+    if(oldConfig.authority.releaseSha===newConfig.authority.releaseSha
+      ||newConfig.authority.releaseSha!==releaseSha
+      ||newConfig.authority.operationId!==operationId
+      ||newConfig.authority.attemptId!==attemptId)fail();
     const oldConfigDigest=digest(oldConfig),newConfigDigest=digest(newConfig);
     if(oldConfigDigest===newConfigDigest)fail();
-    return Object.freeze({operationId,oldConfig,newConfig,oldConfigDigest,newConfigDigest,
-      controls,appendJournal,now});
+    return Object.freeze({releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+      oldConfig,newConfig,oldConfigDigest,newConfigDigest,controls,appendJournal,now});
   }catch(error){
     if(error?.message==='Buyer writer gateway configuration upgrade failed')throw error;
     fail();
@@ -40,7 +48,11 @@ async function record(state,phase,status='IN_PROGRESS'){
   await state.appendJournal({
     version:1,
     kind:'buyer_writer_gateway_configuration_upgrade',
+    releaseSha:state.releaseSha,
     operationId:state.operationId,
+    attemptId:state.attemptId,
+    artifactDigest:state.artifactDigest,
+    candidateDigest:state.candidateDigest,
     phase,
     status,
     oldConfigDigest:state.oldConfigDigest,
@@ -62,16 +74,22 @@ async function restoreOld(state,prepared){
 }
 
 export function inspectBuyerWriterGatewayConfigurationUpgrade({
-  operationId,oldConfiguration,newConfiguration,
+  releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+  oldConfiguration,newConfiguration,
 }={}){
   const noop=async()=>true;
   const controls=Object.fromEntries(controlsRequired.map(name=>[name,noop]));
   const state=upgradePlan({
-    operationId,oldConfiguration,newConfiguration,controls,appendJournal:noop,now:Date.now,
+    releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+    oldConfiguration,newConfiguration,controls,appendJournal:noop,now:Date.now,
   });
   return Object.freeze({
     status:'UPGRADE_PREPARED',
+    releaseSha:state.releaseSha,
     operationId:state.operationId,
+    attemptId:state.attemptId,
+    artifactDigest:state.artifactDigest,
+    candidateDigest:state.candidateDigest,
     oldConfigDigest:state.oldConfigDigest,
     newConfigDigest:state.newConfigDigest,
     requiresQuiescence:true,
@@ -97,7 +115,11 @@ export async function upgradeBuyerWriterGatewayConfiguration(input){
     await record(state,'completed','COMPLETED');
     return Object.freeze({
       status:'UPGRADED',
+      releaseSha:state.releaseSha,
       operationId:state.operationId,
+      attemptId:state.attemptId,
+      artifactDigest:state.artifactDigest,
+      candidateDigest:state.candidateDigest,
       oldConfigDigest:state.oldConfigDigest,
       newConfigDigest:state.newConfigDigest,
     });

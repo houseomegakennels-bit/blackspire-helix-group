@@ -1,11 +1,10 @@
-import {createHash,createHmac} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
+import {createBoundedWriterAdmissionJournal} from './bounded-writer-admission-journal.js';
 import {readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
-import {validateBuyerWriterConfiguration} from '../buyer-writer/configuration.js';
 import {validateBuyerWriterGatewayServiceConfiguration} from '../buyer-writer/gateway-entry.js';
-import {createBuyerWriterPostgres} from '../buyer-writer/postgres.js';
-import {createWriterGateway,createWriterReceiptGateway} from '../buyer-writer/gateway.js';
+import {BUYER_WRITER_LOCAL_STATEMENTS} from '../buyer-writer/local-gateway-server.js';
 import {captureBuyerJobVersion} from '../buyer-writer/criteria.js';
 import {APPLICATION_FUNCTION_PG_NET_SQL} from './pg-net-isolation.js';
 import {BUYER_WRITER_GATEWAY_CONFIG} from './pg-net-host-observer.js';
@@ -154,12 +153,14 @@ export function createProviderAclCheckOperation({query,isolationProof}){
 
 const WRITER_CAPABILITY='buyer.writer.acceptance';
 const WRITER_WORKSPACE='blackspire-command';
-const WRITER_HOST='db.kchtrvfcixnimvxxctkj.supabase.co';
 export const WRITER_ACCEPTANCE_TARGET_FILE='/var/lib/blackspire-operator/writer-acceptance.json';
-const ISSUE_SQL='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
-const RECONCILE_SQL='select buyer_writer.reconcile($1,$2,$3,$4,$5::timestamptz) as result';
+const ISSUE_SQL=BUYER_WRITER_LOCAL_STATEMENTS.issue;
+const RECONCILE_SQL=BUYER_WRITER_LOCAL_STATEMENTS.reconcile;
+const APPLY_SQL=BUYER_WRITER_LOCAL_STATEMENTS.apply;
+const RECEIPT_SQL=BUYER_WRITER_LOCAL_STATEMENTS.receipt;
 const inspectionKeys=['schema','kind','releaseSha','operationId','attemptId','workspace','principal','capability','mutationId',
  'state','businessRowsChanged','paidProviderCalls','receiptDigest','compensationComplete','outcomeUnknown'];
+const admittedReceiptKeys=['admittedGatewayReceiptWitness','admittedGatewayReceiptDigest','admittedGatewayReceiptAttemptId'];
 function mutationUuid(bound){
  const bytes=createHash('sha256').update(JSON.stringify(bound)).digest('hex');
  return `${bytes.slice(0,8)}-${bytes.slice(8,12)}-4${bytes.slice(13,16)}-8${bytes.slice(17,20)}-${bytes.slice(20,32)}`;
@@ -187,16 +188,10 @@ function acceptanceSource(bound){
   digest:createHash('sha256').update(empty).digest('hex'),rowCount:0,byteCount:empty.length,
  })});
 }
-function acceptanceInspection(bound,state,receiptDigest=null){
+function acceptanceInspection(bound,state){
+ if(state!=='PREPARED')reject();
  return Object.freeze({schema:1,kind:'zola_bounded_writer_acceptance',...bound,capability:WRITER_CAPABILITY,mutationId:mutationUuid(bound),state,
-  businessRowsChanged:0,paidProviderCalls:0,receiptDigest,compensationComplete:state==='COMPENSATED',outcomeUnknown:false});
-}
-function fixedConfiguration(configurationFile,groupId,readSnapshot=readRootOwnedJsonSnapshot){
- const snapshot=readSnapshot(configurationFile,{groupId,maxBytes:65536});
- const config=validateBuyerWriterConfiguration(snapshot.value,{workspace:WRITER_WORKSPACE,environment:'production'});
- if(config.runtime.host!==WRITER_HOST||config.issuer.host!==WRITER_HOST||config.runtime.port!==5432||config.issuer.port!==5432
-  ||config.runtime.database!=='postgres'||config.issuer.database!=='postgres')reject();
- return {snapshot,config};
+  businessRowsChanged:0,paidProviderCalls:0,receiptDigest:null,compensationComplete:false,outcomeUnknown:false});
 }
 function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJsonSnapshot){
  const snapshot=readSnapshot(file,{groupId,maxBytes:32768}),value=snapshot.value;
@@ -208,25 +203,23 @@ function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJson
  try{captured=captureBuyerJobVersion({...value.criteria,updated_at:value.updatedAt});}catch{reject();}
  return{snapshot,target:Object.freeze({jobId:value.jobId,ownerId:value.ownerId,criteria:captured.criteria,updatedAt:captured.updatedAt})};
 }
-async function withFixedWriter(configurationFile,bound,work,{groupId,readSnapshot=readRootOwnedJsonSnapshot,
- readAcceptanceSnapshot=readRootOwnedJsonSnapshot,acceptanceFile=WRITER_ACCEPTANCE_TARGET_FILE,openDatabase=createBuyerWriterPostgres}={}){
+async function withFixedWriter(bound,work,{groupId,readAcceptanceSnapshot=readRootOwnedJsonSnapshot,
+ acceptanceFile=WRITER_ACCEPTANCE_TARGET_FILE,openAdmittedClient}={}){
  let database;
  try{
-  if(typeof configurationFile!=='string'||typeof acceptanceFile!=='string'||acceptanceFile!==WRITER_ACCEPTANCE_TARGET_FILE||typeof work!=='function')reject();
-  const gid=groupId??apiGroupId(),before=fixedConfiguration(configurationFile,gid,readSnapshot);
-  const acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
-  database=await openDatabase({runtime:before.config.runtime,issuer:before.config.issuer,creatorOid:before.config.creatorOid});
+  if(typeof acceptanceFile!=='string'||acceptanceFile!==WRITER_ACCEPTANCE_TARGET_FILE||typeof work!=='function'
+   ||typeof openAdmittedClient!=='function')reject();
+  const gid=groupId??apiGroupId(),acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
+  database=await openAdmittedClient(bound);
   if(database?.isHealthy?.()!==true||typeof database.runtimeQuery!=='function'||typeof database.issuerQuery!=='function'||typeof database.close!=='function')reject();
-  const result=await work(before.config,database,acceptance.target);
-  const after=fixedConfiguration(configurationFile,gid,readSnapshot),acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
-  if(JSON.stringify(before.snapshot)!==JSON.stringify(after.snapshot)||JSON.stringify(acceptance.snapshot)!==JSON.stringify(acceptanceAfter.snapshot)
-   ||database.isHealthy()!==true)reject();
+  const result=await work(database,acceptance.target);
+  const acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
+  if(JSON.stringify(acceptance.snapshot)!==JSON.stringify(acceptanceAfter.snapshot)||database.isHealthy()!==true)reject();
   return result;
  }finally{try{await database?.close();}catch{}}
 }
-function fixedPermit(config,bound){
- return createHmac('sha256',Buffer.from(config.issuerCredential,'base64url'))
-  .update('zola-bounded-writer-acceptance\0').update(JSON.stringify(bound)).digest('base64url');
+function fixedPermitDigest(bound){
+ return createHash('sha256').update('zola-bounded-writer-acceptance\0').update(JSON.stringify(bound)).digest('hex');
 }
 function validateFixedRequest(request){
  const bound=request&&typeof request==='object'&&!Array.isArray(request)?Object.fromEntries(
@@ -238,22 +231,48 @@ function validateFixedRequest(request){
   ||request.failureCode!=='INVALID_SOURCE_DATA'||request.maximumBusinessRows!==0||request.paidProviderAllowed!==false)reject();
  return Object.freeze({...request});
 }
-async function compensate(config,database,bound,target){
+function durableWriter(database,bound,stream){
+ const journal=createBoundedWriterAdmissionJournal(stream,bound);
+ const recover=()=>journal.recoverAll(database);
+ const query=kind=>async(sql,values)=>{
+  const operation=Object.entries({issue:ISSUE_SQL,apply:APPLY_SQL,reconcile:RECONCILE_SQL,receipt:RECEIPT_SQL})
+   .find(([,statement])=>statement===sql)?.[0];
+  if(!operation)reject();
+  // Any earlier uncertain request must recover before a subsequent request.
+  const previous=await recover();
+  if(previous.has(operation))return {rows:[{result:previous.get(operation).result}]};
+  return database[kind](sql,values,journal.options(operation));
+ };
+ return {issuerQuery:query('issuerQuery'),runtimeQuery:query('runtimeQuery'),recover};
+}
+async function compensate(database,bound,target){
  const ids=acceptanceIdentity(bound,target),result=await database.issuerQuery(RECONCILE_SQL,
   [ids.jobId,ids.ownerId,WRITER_WORKSPACE,ids.dispatchId,target.updatedAt]);
  const value=result?.rows?.length===1?result.rows[0]?.result:null;
  if(!exact(value,['dispatchId','generation','state'])||value.dispatchId!==ids.dispatchId||!['absent','cancelled','failed'].includes(value.state)
   ||(value.state==='absent'?value.generation!==null:!Number.isSafeInteger(value.generation)||value.generation<1))reject();
  if(value.state==='absent')return null;
- let proof={dispatchId:ids.dispatchId,generation:value.generation,state:value.state};
  if(value.state==='failed'){
-  const permit=fixedPermit(config,bound),receipt=createWriterReceiptGateway({credential:config.writerCredential,workspace:WRITER_WORKSPACE,query:database.runtimeQuery});
-  const response=await receipt({rawHeaders:['x-buyer-writer-key',config.writerCredential,'x-buyer-job-permit',permit],jobId:ids.jobId,
-   body:Buffer.from(JSON.stringify({version:1,dispatchId:ids.dispatchId,generation:value.generation,operation:'fail',chunkIndex:0}))});
-  if(response?.status!==200||response.body?.found!==true||response.body?.receipt?.ok!==true||response.body.receipt.operation!=='fail')reject();
-  proof={...proof,receipt:response.body.receipt};
+  if(!(await database.recover()).has('apply'))return null;
+  const receipt=(await database.runtimeQuery(RECEIPT_SQL,[fixedPermitDigest(bound),WRITER_WORKSPACE,ids.jobId,ids.dispatchId,
+   value.generation,'fail',0]))?.rows?.[0]?.result;
+  if(!exact(receipt,['found','receipt'])||receipt.found!==true||!exact(receipt.receipt,['ok','operation','chunkIndex'])
+   ||receipt.receipt.ok!==true||receipt.receipt.operation!=='fail'||receipt.receipt.chunkIndex!==0)reject();
  }
- return acceptanceInspection(bound,'COMPENSATED',hash(proof));
+ if(value.state!=='failed')return null;
+ const recovered=await database.recover(),issue=recovered.get('issue'),apply=recovered.get('apply');
+ if(!issue||!apply||!recovered.has('reconcile')||!recovered.has('receipt')
+  ||!exact(issue.result,['dispatchId','generation'])||issue.result.dispatchId!==ids.dispatchId
+  ||issue.result.generation!==value.generation
+  ||!exact(apply.result,['ok','operation','chunkIndex'])||apply.result.ok!==true
+  ||apply.result.operation!=='fail'||apply.result.chunkIndex!==0)reject();
+ const witness=[...recovered].map(([operation,result])=>({operation,handleDigest:result.handleDigest,
+  requestCorrelated:result.requestCorrelated,result:result.result}));
+ return Object.freeze({schema:1,kind:'zola_bounded_writer_acceptance',...bound,capability:WRITER_CAPABILITY,
+  mutationId:mutationUuid(bound),state:'COMPENSATED',businessRowsChanged:0,paidProviderCalls:0,
+  receiptDigest:hash(recovered.get('receipt').result),compensationComplete:true,outcomeUnknown:false,
+  admittedGatewayReceiptWitness:true,admittedGatewayReceiptDigest:hash(witness),
+  admittedGatewayReceiptAttemptId:bound.attemptId});
 }
 
 // Fixed production host transport. The caller cannot supply a URL, SQL,
@@ -261,33 +280,34 @@ async function compensate(config,database,bound,target){
 // write is the writer's terminal INVALID_SOURCE_DATA path for a separately
 // provisioned deterministic acceptance job; reconciliation is absorbing and
 // never retries an unknown issuance/write outcome.
-export async function inspectFixedWriterAcceptance(binding,{configurationFile,...host}={}){
+export async function inspectFixedWriterAcceptance(binding,host={}){
  const bound=Object.freeze({...binding});
+ if(typeof host.openAdmittedClient!=='function'||bound.attemptId!==null&&!host.admissionJournal)return null;
  if(bound.attemptId===null){
   bindingShape(bound,false);
-  return withFixedWriter(configurationFile,bound,async()=>acceptanceInspection(bound,'PREPARED'),host);
+  return withFixedWriter(bound,async()=>acceptanceInspection(bound,'PREPARED'),host);
  }
  bindingShape(bound,true);
- return withFixedWriter(configurationFile,bound,(config,database,target)=>compensate(config,database,bound,target),host);
+ return withFixedWriter(bound,(database,target)=>compensate(durableWriter(database,bound,host.admissionJournal),bound,target),host);
 }
 
-export async function runFixedWriterAcceptance(value,{configurationFile,...host}={}){
+export async function runFixedWriterAcceptance(value,host={}){
  const request=validateFixedRequest(value),bound=Object.freeze(Object.fromEntries(
   ['releaseSha','operationId','workspace','principal','attemptId','inputDigest','checkOutputDigest'].map(key=>[key,request[key]])));
- return withFixedWriter(configurationFile,bound,async(config,database,target)=>{
-  const ids=acceptanceIdentity(bound,target),permit=fixedPermit(config,bound),source=acceptanceSource(bound);
+ return withFixedWriter(bound,async(client,target)=>{
+  const database=durableWriter(client,bound,host.admissionJournal);
+  const ids=acceptanceIdentity(bound,target),permitDigest=fixedPermitDigest(bound),source=acceptanceSource(bound);
   try{
-   const issued=await database.issuerQuery(ISSUE_SQL,[ids.jobId,ids.ownerId,WRITER_WORKSPACE,createHash('sha256').update(permit).digest('hex'),
+   const issued=await database.issuerQuery(ISSUE_SQL,[ids.jobId,ids.ownerId,WRITER_WORKSPACE,permitDigest,
     JSON.stringify(source),JSON.stringify(target.criteria),target.updatedAt,ids.dispatchId]);
    const result=issued?.rows?.length===1?issued.rows[0]?.result:null;
    if(!exact(result,['dispatchId','generation'])||result.dispatchId!==ids.dispatchId||!Number.isSafeInteger(result.generation)||result.generation<1)reject();
-   const writer=createWriterGateway({credential:config.writerCredential,workspace:WRITER_WORKSPACE,query:database.runtimeQuery});
-   const response=await writer({rawHeaders:['x-buyer-writer-key',config.writerCredential,'x-buyer-job-permit',permit],jobId:ids.jobId,
-    body:Buffer.from(JSON.stringify({version:1,dispatchId:ids.dispatchId,generation:result.generation,operation:'fail',chunkIndex:0,chunkCount:1,
-     payload:{code:'INVALID_SOURCE_DATA'}}))});
-   if(response?.status!==200||response.body?.ok!==true||response.body.operation!=='fail'||response.body.chunkIndex!==0)throw new Error('unknown');
+   const response=(await database.runtimeQuery(APPLY_SQL,[permitDigest,WRITER_WORKSPACE,JSON.stringify({
+    version:1,jobId:ids.jobId,dispatchId:ids.dispatchId,generation:result.generation,operation:'fail',chunkIndex:0,chunkCount:1,
+    payload:{code:'INVALID_SOURCE_DATA'}})]))?.rows?.[0]?.result;
+   if(!exact(response,['ok','operation','chunkIndex'])||response.ok!==true||response.operation!=='fail'||response.chunkIndex!==0)throw new Error('unknown');
   }catch{
-   const compensated=await compensate(config,database,bound,target);
+   const compensated=await compensate(database,bound,target);
    if(compensated===null)throw new Error('Bounded writer acceptance outcome unknown');
   }
  },host);
@@ -300,14 +320,17 @@ function bindingShape(value,attempt){
   (attempt?(!uuid(value.attemptId)||!digest(value.inputDigest)||!digest(value.checkOutputDigest)):value.attemptId!==null))reject();
 }
 function verifyInspection(value,bound,expectedState){
- const keys=bound.attemptId===null?inspectionKeys:[...inspectionKeys,'inputDigest','checkOutputDigest'];
+ const keys=[...inspectionKeys,...(bound.attemptId===null?[]:['inputDigest','checkOutputDigest']),
+  ...(expectedState==='COMPENSATED'?admittedReceiptKeys:[])];
  if(!exact(value,keys)||value.schema!==1||value.kind!=='zola_bounded_writer_acceptance'
   ||!Object.entries(bound).every(([key,item])=>value[key]===item)||value.capability!==WRITER_CAPABILITY
   ||value.mutationId!==mutationUuid(bound)||value.state!==expectedState
   ||value.businessRowsChanged!==0||value.paidProviderCalls!==0||typeof value.compensationComplete!=='boolean'
   ||typeof value.outcomeUnknown!=='boolean'||(value.receiptDigest!==null&&!digest(value.receiptDigest)))reject();
  if(expectedState==='PREPARED'&&(value.receiptDigest!==null||value.compensationComplete||value.outcomeUnknown))reject();
- if(expectedState==='COMPENSATED'&&(!digest(value.receiptDigest)||!value.compensationComplete||value.outcomeUnknown))reject();
+ if(expectedState==='COMPENSATED'&&(!digest(value.receiptDigest)||!value.compensationComplete||value.outcomeUnknown
+  ||value.admittedGatewayReceiptWitness!==true||!digest(value.admittedGatewayReceiptDigest)
+  ||value.admittedGatewayReceiptAttemptId!==bound.attemptId))reject();
  return value;
 }
 
@@ -342,7 +365,9 @@ export function createBoundedWriterE2eOperation({inspectAcceptance,runAcceptance
   if(observed===null||observed===undefined)return blocked();
   verifyInspection(observed,bound,'COMPENSATED');
   return Object.freeze({status:'PASS',evidence:Object.freeze({boundedWriterAcceptance:true,...bound,capability:WRITER_CAPABILITY,
-   mutationId:mutationUuid(bound),receiptDigest:observed.receiptDigest,businessRowsChanged:0,paidProviderCalls:0,compensationComplete:true})});
+   mutationId:mutationUuid(bound),receiptDigest:observed.receiptDigest,businessRowsChanged:0,paidProviderCalls:0,compensationComplete:true,
+   admittedGatewayReceiptWitness:true,admittedGatewayReceiptDigest:observed.admittedGatewayReceiptDigest,
+   admittedGatewayReceiptAttemptId:observed.admittedGatewayReceiptAttemptId})});
  };
  const observe=async args=>{
   const base=binding(args),bound={...base,attemptId:null};

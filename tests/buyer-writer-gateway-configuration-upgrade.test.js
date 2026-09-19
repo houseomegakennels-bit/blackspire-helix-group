@@ -69,7 +69,11 @@ function harness({failure=null}={}){
     },
     finalizeReplacement:(_prepared,mode)=>invoke('finalizeReplacement:'+mode),
   };
-  return {...config,operationId:randomUUID(),controls,events,calls,
+  const releaseSha=config.newConfiguration.authority.releaseSha;
+  const operationId=config.newConfiguration.authority.operationId;
+  const attemptId=config.newConfiguration.authority.attemptId;
+  return {...config,releaseSha,operationId,attemptId,
+    artifactDigest:'c'.repeat(64),candidateDigest:'d'.repeat(64),controls,events,calls,
     appendJournal:async event=>{
       calls.push('journal:'+event.phase);
       if(failure==='journal:'+event.phase)throw new Error('PRIVATE journal');

@@ -8,6 +8,9 @@ export const BUYER_WRITER_GATEWAY_UPGRADE_STATE='/var/lib/blackspire-operator/ga
 
 const plans=new WeakMap();
 const fail=()=>{throw new Error('Buyer writer gateway configuration file upgrade failed');};
+const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
+const SHA=/^[a-f0-9]{40}$/;
+const DIGEST=/^[a-f0-9]{64}$/;
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const same=(left,right)=>JSON.stringify(left)===JSON.stringify(right);
 
@@ -80,10 +83,11 @@ function atomicState(io,filename,value,aclTool=spawnSync){
   }
 }
 function stateValue(plan,phase){
-  return {version:1,kind:'buyer_writer_gateway_configuration_upgrade',
-    operationId:plan.operationId,phase,configurationFile:plan.configurationFile,
-    backupFile:plan.backupFile,oldConfigDigest:plan.oldConfigDigest,
-    newConfigDigest:plan.newConfigDigest};
+  return {version:2,kind:'buyer_writer_gateway_configuration_upgrade',
+    releaseSha:plan.releaseSha,operationId:plan.operationId,attemptId:plan.attemptId,
+    artifactDigest:plan.artifactDigest,candidateDigest:plan.candidateDigest,
+    phase,configurationFile:plan.configurationFile,backupFile:plan.backupFile,
+    oldConfigDigest:plan.oldConfigDigest,newConfigDigest:plan.newConfigDigest};
 }
 function currentMatches(plan,value){
   const found=snapshot(plan.io,plan.configurationFile,{uid:0,gid:plan.writerGroupId,mode:0o640,
@@ -92,10 +96,12 @@ function currentMatches(plan,value){
 }
 
 export function createBuyerWriterGatewayConfigurationFileControls({
-  operationId,writerGroupId,configurationFile=BUYER_WRITER_GATEWAY_CONFIG_FILE,
+  releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+  writerGroupId,configurationFile=BUYER_WRITER_GATEWAY_CONFIG_FILE,
   stateDirectory=BUYER_WRITER_GATEWAY_UPGRADE_STATE,io=fs,aclTool=spawnSync,proveQuiesced,
 }={}){
-  if(!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(operationId??'')
+  if(!SHA.test(releaseSha??'')||!UUID.test(operationId??'')||!UUID.test(attemptId??'')
+    ||operationId===attemptId||!DIGEST.test(artifactDigest??'')||!DIGEST.test(candidateDigest??'')
     ||!Number.isSafeInteger(writerGroupId)||writerGroupId<1||typeof aclTool!=='function'
     ||typeof proveQuiesced!=='function'
     ||!path.isAbsolute(configurationFile)||path.resolve(configurationFile)!==configurationFile
@@ -113,8 +119,9 @@ export function createBuyerWriterGatewayConfigurationFileControls({
       const current=snapshot(io,configurationFile,{uid:0,gid:writerGroupId,mode:0o640});
       if(!same(current.value,oldConfiguration))fail();
       const candidateBytes=Buffer.from(JSON.stringify(newConfiguration)+'\n');
-      const plan=Object.freeze({operationId,writerGroupId,configurationFile,stateDirectory,
-        backupFile,stateFile,candidateFile,restoreFile,oldConfiguration,newConfiguration,
+      const plan=Object.freeze({releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+        writerGroupId,configurationFile,stateDirectory,backupFile,stateFile,candidateFile,
+        restoreFile,oldConfiguration,newConfiguration,
         oldConfigDigest:hash(Buffer.from(JSON.stringify(oldConfiguration)+'\n')),
         newConfigDigest:hash(candidateBytes),candidateBytes,io,aclTool});
       atomicState(io,stateFile,stateValue(plan,'INTENT'));
@@ -170,12 +177,51 @@ export function createBuyerWriterGatewayConfigurationFileControls({
   return Object.freeze(controls);
 }
 
+function binding({releaseSha,operationId,attemptId,artifactDigest,candidateDigest}){
+  if(!SHA.test(releaseSha??'')||!UUID.test(operationId??'')||!UUID.test(attemptId??'')
+    ||operationId===attemptId||!DIGEST.test(artifactDigest??'')||!DIGEST.test(candidateDigest??''))fail();
+  return {releaseSha,operationId,attemptId,artifactDigest,candidateDigest};
+}
+function inspectJournal(events,bound,oldConfigDigest,newConfigDigest){
+  if(!Array.isArray(events)||events.length<1)fail();
+  const next={started:['quiesced','fail-closed'],
+    quiesced:['prepared','rolled-back','fail-closed'],
+    prepared:['configuration-published','rolled-back','fail-closed'],
+    'configuration-published':['configuration-verified','rolled-back','fail-closed'],
+    'configuration-verified':['completed','rolled-back','fail-closed'],
+    completed:[],'rolled-back':[],'fail-closed':[]};
+  let prior;
+  for(const row of events){
+    const keys=['version','kind','releaseSha','operationId','attemptId','artifactDigest',
+      'candidateDigest','phase','status','oldConfigDigest','newConfigDigest','updatedAt'];
+    if(!row||typeof row!=='object'||Array.isArray(row)
+      ||Object.keys(row).sort().join(',')!==keys.sort().join(',')
+      ||row.version!==1||row.kind!=='buyer_writer_gateway_configuration_upgrade'
+      ||Object.keys(bound).some(key=>row[key]!==bound[key])
+      ||row.oldConfigDigest!==oldConfigDigest||row.newConfigDigest!==newConfigDigest
+      ||!Object.hasOwn(next,row.phase)||!Number.isFinite(Date.parse(row.updatedAt))
+      ||(prior===undefined?row.phase!=='started':!next[prior].includes(row.phase)))fail();
+    const expected=row.phase==='completed'?'COMPLETED':row.phase==='rolled-back'?'ROLLED_BACK'
+      :row.phase==='fail-closed'?'FAIL_CLOSED':'IN_PROGRESS';
+    if(row.status!==expected)fail();prior=row.phase;
+  }
+  return prior;
+}
+function journalRow(bound,state,phase,now){
+  return {version:1,kind:'buyer_writer_gateway_configuration_upgrade',...bound,phase,
+    status:phase==='completed'?'COMPLETED':phase==='rolled-back'?'ROLLED_BACK':'IN_PROGRESS',
+    oldConfigDigest:state.oldConfigDigest,newConfigDigest:state.newConfigDigest,
+    updatedAt:new Date(now()).toISOString()};
+}
+
 export async function rollbackBuyerWriterGatewayConfigurationFile({
-  operationId,writerGroupId,configurationFile=BUYER_WRITER_GATEWAY_CONFIG_FILE,
+  releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+  writerGroupId,configurationFile=BUYER_WRITER_GATEWAY_CONFIG_FILE,
   stateDirectory=BUYER_WRITER_GATEWAY_UPGRADE_STATE,io=fs,aclTool=spawnSync,proveQuiesced,
 }={}){
   try{
-    if(!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(operationId??'')
+    if(!SHA.test(releaseSha??'')||!UUID.test(operationId??'')||!UUID.test(attemptId??'')
+      ||operationId===attemptId||!DIGEST.test(artifactDigest??'')||!DIGEST.test(candidateDigest??'')
       ||!Number.isSafeInteger(writerGroupId)||writerGroupId<1||typeof aclTool!=='function'
       ||typeof proveQuiesced!=='function'
       ||await proveQuiesced()!==true)fail();
@@ -185,9 +231,11 @@ export async function rollbackBuyerWriterGatewayConfigurationFile({
     const backupFile=path.join(stateDirectory,operationId+'.backup.json');
     const state=snapshot(io,stateFile,{uid:0,gid:0,mode:0o600,maxBytes:4096}).value;
     if(!state||typeof state!=='object'||Array.isArray(state)
-      ||Object.keys(state).sort().join(',')!=='backupFile,configurationFile,kind,newConfigDigest,oldConfigDigest,operationId,phase,version'
-      ||state.version!==1||state.kind!=='buyer_writer_gateway_configuration_upgrade'
-      ||state.operationId!==operationId||state.configurationFile!==configurationFile
+      ||Object.keys(state).sort().join(',')!=='artifactDigest,attemptId,backupFile,candidateDigest,configurationFile,kind,newConfigDigest,oldConfigDigest,operationId,phase,releaseSha,version'
+      ||state.version!==2||state.kind!=='buyer_writer_gateway_configuration_upgrade'
+      ||state.releaseSha!==releaseSha||state.operationId!==operationId||state.attemptId!==attemptId
+      ||state.artifactDigest!==artifactDigest||state.candidateDigest!==candidateDigest
+      ||state.configurationFile!==configurationFile
       ||state.backupFile!==backupFile
       ||!['INTENT','PREPARED','PUBLISHED','COMPLETED'].includes(state.phase)
       ||!['oldConfigDigest','newConfigDigest'].every(key=>/^[a-f0-9]{64}$/.test(state[key])))fail();
@@ -220,6 +268,81 @@ export async function rollbackBuyerWriterGatewayConfigurationFile({
       atomicState(io,stateFile,{...state,phase:'ROLLED_BACK'});
     }
     return Object.freeze({status:'ROLLED_BACK',operationId,
+      oldConfigDigest:state.oldConfigDigest,newConfigDigest:state.newConfigDigest});
+  }catch(error){
+    if(error?.message==='Buyer writer gateway configuration file upgrade failed')throw error;
+    fail();
+  }
+}
+
+export async function reconcileBuyerWriterGatewayConfigurationFile({
+  releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+  oldConfiguration,newConfiguration,journalEvents,appendJournal,now=Date.now,
+  writerGroupId,configurationFile=BUYER_WRITER_GATEWAY_CONFIG_FILE,
+  stateDirectory=BUYER_WRITER_GATEWAY_UPGRADE_STATE,io=fs,aclTool=spawnSync,proveQuiesced,
+}={}){
+  try{
+    const bound=binding({releaseSha,operationId,attemptId,artifactDigest,candidateDigest});
+    if(!Number.isSafeInteger(writerGroupId)||writerGroupId<1||typeof appendJournal!=='function'
+      ||typeof now!=='function'||typeof proveQuiesced!=='function'||await proveQuiesced()!==true)fail();
+    safeDirectory(io,path.dirname(configurationFile),{uid:0,gid:writerGroupId,mode:0o750,aclTool});
+    safeDirectory(io,stateDirectory,{uid:0,gid:0,mode:0o700,aclTool});
+    const stateFile=path.join(stateDirectory,operationId+'.state.json');
+    const backupFile=path.join(stateDirectory,operationId+'.backup.json');
+    const state=snapshot(io,stateFile,{uid:0,gid:0,mode:0o600,maxBytes:4096}).value;
+    const keys='artifactDigest,attemptId,backupFile,candidateDigest,configurationFile,kind,newConfigDigest,oldConfigDigest,operationId,phase,releaseSha,version';
+    if(!state||typeof state!=='object'||Array.isArray(state)
+      ||Object.keys(state).sort().join(',')!==keys||state.version!==2
+      ||state.kind!=='buyer_writer_gateway_configuration_upgrade'
+      ||Object.keys(bound).some(key=>state[key]!==bound[key])
+      ||state.configurationFile!==configurationFile||state.backupFile!==backupFile
+      ||!['INTENT','PREPARED','PUBLISHED','COMPLETED','ROLLED_BACK'].includes(state.phase)
+      ||!DIGEST.test(state.oldConfigDigest??'')||!DIGEST.test(state.newConfigDigest??''))fail();
+    const canonical=value=>hash(Buffer.from(JSON.stringify(value)+'\n'));
+    if(canonical(oldConfiguration)!==state.oldConfigDigest
+      ||canonical(newConfiguration)!==state.newConfigDigest)fail();
+    const prior=inspectJournal(journalEvents,bound,state.oldConfigDigest,state.newConfigDigest);
+    if(prior==='fail-closed')fail();
+    const current=snapshot(io,configurationFile,{uid:0,gid:writerGroupId,mode:0o640,aclTool});
+    const currentDigest=canonical(current.value);
+    if(![state.oldConfigDigest,state.newConfigDigest].includes(currentDigest))fail();
+    if(state.phase!=='INTENT'){
+      const backup=snapshot(io,backupFile,{uid:0,gid:0,mode:0o600,aclTool});
+      if(canonical(backup.value)!==state.oldConfigDigest)fail();
+    }
+    if(currentDigest===state.newConfigDigest){
+      if(['INTENT','ROLLED_BACK'].includes(state.phase)||prior==='rolled-back')fail();
+      if(prior==='completed'){
+        if(!['PUBLISHED','COMPLETED'].includes(state.phase))fail();
+        if(await proveQuiesced()!==true)fail();
+        if(state.phase==='PUBLISHED')
+          atomicState(io,stateFile,{...state,phase:'COMPLETED'},aclTool);
+        return Object.freeze({status:'UPGRADED',reconciled:true,...bound,
+          oldConfigDigest:state.oldConfigDigest,newConfigDigest:state.newConfigDigest});
+      }
+      const phases=['configuration-published','configuration-verified','completed'];
+      const indices={prepared:0,'configuration-published':1,'configuration-verified':2,completed:3};
+      if(indices[prior]===undefined)fail();
+      for(const phase of phases.slice(indices[prior])){
+        await appendJournal(journalRow(bound,state,phase,now));
+      }
+      if(await proveQuiesced()!==true)fail();
+      atomicState(io,stateFile,{...state,phase:'COMPLETED'},aclTool);
+      return Object.freeze({status:'UPGRADED',reconciled:true,...bound,
+        oldConfigDigest:state.oldConfigDigest,newConfigDigest:state.newConfigDigest});
+    }
+    if(prior==='completed'||state.phase==='COMPLETED')fail();
+    let rollbackPrior=prior;
+    if(state.phase==='PREPARED'&&rollbackPrior==='quiesced'){
+      await appendJournal(journalRow(bound,state,'prepared',now));
+      rollbackPrior='prepared';
+    }
+    if(rollbackPrior!=='rolled-back'){
+      await appendJournal(journalRow(bound,state,'rolled-back',now));
+    }
+    if(await proveQuiesced()!==true)fail();
+    atomicState(io,stateFile,{...state,phase:'ROLLED_BACK'},aclTool);
+    return Object.freeze({status:'ROLLED_BACK',reconciled:true,...bound,
       oldConfigDigest:state.oldConfigDigest,newConfigDigest:state.newConfigDigest});
   }catch(error){
     if(error?.message==='Buyer writer gateway configuration file upgrade failed')throw error;

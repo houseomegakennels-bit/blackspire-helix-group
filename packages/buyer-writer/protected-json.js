@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 
 // Explicit path only. Never discover or automatically load credentials. Errors
 // omit parser/I/O causes because those may contain private paths or JSON bytes.
@@ -12,13 +13,17 @@ export function readRootOwnedJsonSnapshot(filename,options={}) {
   return readSnapshot(filename,options,65536);
 }
 
+export function readRootOwnedJsonDigestSnapshot(filename,options={}) {
+  return readSnapshot(filename,options,65536,true);
+}
+
 // Offline catalog manifests are larger than credentials. Keep the credential
 // reader's existing ceiling unchanged; metadata has a separate fixed bound.
 export function readRootOwnedMetadataSnapshot(filename,{groupId,io=fs,aclTool=spawnSync}={}) {
   return readSnapshot(filename,{groupId,io,aclTool,maxBytes:2*1024*1024},2*1024*1024);
 }
 
-function readSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}={},ceiling) {
+function readSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}={},ceiling,includeDigest=false) {
   let fd,bytes;
   try {
     if(!Number.isInteger(groupId)||groupId<0||groupId>4294967294||typeof filename!=='string'||filename.length>4096||!path.isAbsolute(filename)
@@ -46,7 +51,8 @@ function readSnapshot(filename,{io=fs,groupId,maxBytes=16384,aclTool=spawnSync}=
     for(const key of ['uid','gid','mode','nlink','size','dev','ino','mtimeMs','ctimeMs'])if(before[key]!==after[key])throw new Error();
     const result=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,used)));
     if(!result||typeof result!=='object'||Array.isArray(result))throw new Error();
-    return Object.freeze({value:result,identity:Object.freeze(Object.fromEntries(['uid','gid','mode','nlink','size','dev','ino','mtimeMs','ctimeMs'].map(key=>[key,after[key]])))});
+    return Object.freeze({value:result,identity:Object.freeze(Object.fromEntries(['uid','gid','mode','nlink','size','dev','ino','mtimeMs','ctimeMs'].map(key=>[key,after[key]]))),
+      ...(includeDigest?{digest:createHash('sha256').update(bytes.subarray(0,used)).digest('hex')}:{})});
   }catch{throw new Error('Buyer writer protected configuration unavailable');}
   finally{
     // The parsed object necessarily retains its credential strings for the
