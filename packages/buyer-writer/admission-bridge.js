@@ -73,7 +73,7 @@ function parsedParameters(operation,p,claims){
  }
  if(operation==='issue'){
   if(!UUID.test(p.p_job)||!DIGEST.test(p.p_digest)||!UUID.test(p.p_request)
-   ||p.p_request!==claims.operationId)reject();
+   ||p.p_request!==claims.requestId)reject();
   captureBuyerJobVersion({...p.p_expected_criteria,updated_at:p.p_expected_updated_at});
   validateBuyerSourceContext(p.p_context);
   return {value:p,sql:[p.p_job,p.p_digest,JSON.stringify(p.p_context),JSON.stringify(p.p_expected_criteria),

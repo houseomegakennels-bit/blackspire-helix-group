@@ -17,7 +17,7 @@ const configuration={issuer:'zola-control',audience:'buyer-writer',subject:ids.o
   operationId:ids.operation,attemptId:'00000000-0000-4000-8000-000000000006',
   workspace:'isolated'};
 
-function fixture(){
+function fixture({uuids=[ids.request,ids.jti]}={}){
   const signed=[],admitted=[],contexts=[];let healthy=true,closed=0,response;
   const signer={sign:input=>{signed.push(input);return{origin:configuration.origin,
     method:'POST',path:'/rest/v1/rpc/'+input.operation,body:JSON.stringify({envelope:input}),
@@ -30,7 +30,7 @@ function fixture(){
     close:async()=>{closed++;healthy=false;}};
   let next=0;
   const adapter=createBuyerWriterAdmittedLocalClient({client,signer,configuration,
-    now:()=>2_000_000_001_999,uuid:()=>[ids.request,ids.jti][next++]});
+    now:()=>2_000_000_001_999,uuid:()=>uuids[next++]});
   return {adapter,signed,admitted,contexts,client,setResponse:value=>{response=value;},
     closed:()=>closed};
 }
@@ -52,17 +52,20 @@ test('runtime writes receive fresh signed permits and use only admitted transpor
   assert.equal(f.admitted[0].rawHeaders.at(-1),'Bearer signed-token');
 });
 
-test('issuer issue is bound to the approved operation id',async()=>{
-  const f=fixture();f.setResponse({status:200,body:{dispatchId:ids.operation,
+test('issuer issue preserves the caller dispatch id separately from release operation authority',async()=>{
+  const f=fixture({uuids:[ids.jti]});f.setResponse({status:200,body:{dispatchId:ids.request,
     generation:1,automaticRetry:false}});
   const values=[ids.job,ids.owner,'isolated','c'.repeat(64),
     JSON.stringify({version:1,mode:'frontend_payload',rawPayload:{byteCount:1}}),
-    JSON.stringify({state:'NC'}),'2026-09-18T00:00:00.000Z',ids.operation];
+    JSON.stringify({state:'NC'}),'2026-09-18T00:00:00.000Z',ids.request];
   const result=await f.adapter.issuerQuery(SQL.issue,values);
-  assert.deepEqual(result,{rows:[{result:{dispatchId:ids.operation,generation:1}}]});
-  assert.equal(f.signed[0].requestId,ids.operation);
-  assert.equal(f.signed[0].parameters.p_request,ids.operation);
-  await assert.rejects(f.adapter.issuerQuery(SQL.issue,[...values.slice(0,7),ids.request]),
+  assert.deepEqual(result,{rows:[{result:{dispatchId:ids.request,generation:1}}]});
+  assert.notEqual(ids.request,configuration.operationId);
+  assert.equal(f.signed[0].requestId,ids.request);
+  assert.equal(f.signed[0].jti,ids.jti);
+  assert.notEqual(f.signed[0].jti,f.signed[0].requestId);
+  assert.equal(f.signed[0].parameters.p_request,ids.request);
+  await assert.rejects(f.adapter.issuerQuery(SQL.issue,[...values.slice(0,7),'not-a-uuid']),
     /^Error: Buyer writer admitted client unavailable$/);
   assert.equal(f.admitted.length,1);
 });

@@ -2,13 +2,14 @@ import {randomUUID} from 'node:crypto';
 import {BUYER_WRITER_LOCAL_STATEMENTS} from './local-gateway-server.js';
 
 const denied=()=>new Error('Buyer writer admitted client unavailable');
+const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const exact=(value,keys)=>value!==null&&typeof value==='object'&&!Array.isArray(value)
   &&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 
-function operationInput(kind,text,values,configuration){
+function operationInput(kind,text,values){
   if(!Array.isArray(values))throw denied();
   if(kind==='issuer'&&text===BUYER_WRITER_LOCAL_STATEMENTS.issue&&values.length===8){
-    if(values[7]!==configuration.operationId)throw denied();
+    if(!UUID.test(values[7]))throw denied();
     return {operation:'issue',parameters:{p_job:values[0],p_owner:values[1],
       p_workspace:values[2],p_digest:values[3],p_context:JSON.parse(values[4]),
       p_expected_criteria:JSON.parse(values[5]),p_expected_updated_at:values[6],
@@ -61,7 +62,7 @@ export function createBuyerWriterAdmittedLocalClient({client,signer,configuratio
 
   const admit=async(input)=>{
     const issuedAt=Math.floor(now()/1000),requestId=input.operation==='issue'
-      ?configuration.operationId:uuid(),jti=uuid();
+      ?input.parameters.p_request:uuid(),jti=uuid();
     let request;
     try{request=signer.sign({configuration,operation:input.operation,requestId,jti,
       issuedAt,expiresAt:issuedAt+30,parameters:input.parameters});}catch{throw denied();}
@@ -78,7 +79,7 @@ export function createBuyerWriterAdmittedLocalClient({client,signer,configuratio
     if(kind==='runtime'&&text===BUYER_WRITER_LOCAL_STATEMENTS.context)
       return client.runtimeQuery(text,values);
     let input;
-    try{input=operationInput(kind,text,values,configuration);}catch{throw denied();}
+    try{input=operationInput(kind,text,values);}catch{throw denied();}
     return {rows:[{result:await admit(input)}]};
   };
   const recover=async parameters=>{

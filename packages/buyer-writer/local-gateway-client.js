@@ -70,7 +70,7 @@ export function createBuyerWriterLocalClient({socketPath=BUYER_WRITER_DEFAULT_SO
   };
   const admittedRequest=async(value)=>{
     if(!exact(value,['origin','method','path','rawHeaders','body'])||typeof value.origin!=='string'||value.method!=='POST'
-      ||!/^\/rest\/v1\/rpc\/(?:issue|cancel|reconcile|apply|receipt)$/.test(value.path)
+      ||!/^\/rest\/v1\/rpc\/(?:issue|cancel|reconcile|apply|receipt|recover)$/.test(value.path)
       ||!Array.isArray(value.rawHeaders)||!Buffer.isBuffer(value.body))throw unavailable();
     return request('admit',{origin:value.origin,method:value.method,path:value.path,
       rawHeaders:[...value.rawHeaders],body:value.body.toString('base64url')},

@@ -117,6 +117,16 @@ test('research local transport routes every signed mutation and closes all legac
     assert.equal(captured.length,1);assert.equal(captured[0].origin,'https://writer.invalid');
     assert.equal(captured[0].method,'POST');assert.equal(captured[0].path,'/rest/v1/rpc/issue');
     assert.deepEqual(captured[0].rawHeaders,rawHeaders);assert.equal(Buffer.compare(captured[0].body,body),0);
+    const recovered=await client.admittedRequest({origin:'https://writer.invalid',method:'POST',
+      path:'/rest/v1/rpc/recover',rawHeaders,body});
+    assert.deepEqual(recovered,{status:200,body:{ok:true,operation:'start',chunkIndex:0,automaticRetry:false}});
+    assert.equal(captured.length,2);assert.equal(captured[1].path,'/rest/v1/rpc/recover');
+    assert.equal(Buffer.compare(captured[1].body,body),0);
+    for(const nearMiss of ['/rest/v1/rpc/recover/','/rest/v1/rpc/recoverx']){
+      await assert.rejects(client.admittedRequest({origin:'https://writer.invalid',method:'POST',
+        path:nearMiss,rawHeaders,body}),/unavailable/);
+    }
+    assert.equal(captured.length,2);
 
     const jobId=id(),dispatchId=id(),permitDigest='d'.repeat(64);
     assert.deepEqual(await client.readiness(),{status:'ready',protocolVersion:1,releaseShaMatch:true,
@@ -136,6 +146,6 @@ test('research local transport routes every signed mutation and closes all legac
       [permitDigest,workspace,JSON.stringify(operation)]),/unavailable/);
     await assert.rejects(client.runtimeQuery(BUYER_WRITER_LOCAL_STATEMENTS.receipt,
       [permitDigest,workspace,jobId,dispatchId,1,'start',0]),/unavailable/);
-    assert.equal(runtimeCalls.length,1);assert.equal(issuerCalls.length,0);assert.equal(captured.length,1);
+    assert.equal(runtimeCalls.length,1);assert.equal(issuerCalls.length,0);assert.equal(captured.length,2);
   }finally{await gateway.close();await client.close();fs.rmSync(root,{recursive:true,force:true});}
 });

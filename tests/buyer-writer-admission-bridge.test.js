@@ -35,7 +35,7 @@ const sourceContext={version:1,mode:'county_fetch',sources:[{sourceId:'00000000-
  budgets:{maxRequests:10,maxRows:100,maxBytes:10000},rawPayload:null};
 const routeParameters={
  issue:{p_job:ids.jobId,p_owner:ids.subject,p_workspace:'isolated',p_digest:'b'.repeat(64),
-  p_context:sourceContext,p_expected_criteria:criteria,p_expected_updated_at:'2026-09-17T20:00:00Z',p_request:ids.operationId},
+  p_context:sourceContext,p_expected_criteria:criteria,p_expected_updated_at:'2026-09-17T20:00:00Z',p_request:ids.requestId},
  cancel:{p_job:ids.jobId,p_owner:ids.subject,p_workspace:'isolated'},
  reconcile:{p_job:ids.jobId,p_owner:ids.subject,p_workspace:'isolated',p_request:ids.dispatchId,
   p_expected_updated_at:'2026-09-17T20:00:00Z'},
@@ -152,7 +152,7 @@ test('late reserve completion is unavailable even before the abort timer runs',a
 
 test('typed issue, cancel, reconcile and receipt use only their exact admitted wrappers',async()=>{
  const cases=[
-  ['issue',{dispatchId:ids.operationId,generation:1},15],
+  ['issue',{dispatchId:ids.requestId,generation:1},15],
   ['cancel',{cancelled:true,jobId:ids.jobId},10],
   ['reconcile',{dispatchId:ids.dispatchId,generation:null,state:'absent'},12],
   ['receipt',{found:false,receipt:null},15],
@@ -171,8 +171,15 @@ test('typed issue, cancel, reconcile and receipt use only their exact admitted w
  }
 });
 
+test('issuance dispatch id must match the signed request id, not release operation id',async()=>{
+ const calls=[];
+ const result=await bridge(async sql=>{calls.push(sql);return reserveResult;})(fixture({operation:'issue',
+  parameters:{...routeParameters.issue,p_request:ids.operationId}}));
+ assert.equal(result.status,401);assert.deepEqual(calls,[]);
+});
+
 test('typed lost acknowledgement correlates by route and never replays',async()=>{
- const calls=[],result={dispatchId:ids.operationId,generation:1};
+ const calls=[],result={dispatchId:ids.requestId,generation:1};
  const output=await bridge(async sql=>{
   calls.push(sql);
   if(sql===ADMISSION_SQL.reserve)return reserveResult;
