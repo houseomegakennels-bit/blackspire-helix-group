@@ -208,16 +208,16 @@ try{
   values($1,$2,'NC','Wake','land','2026-01-01','2026-12-31')`,[jobId,owner]);return jobId;};
  const jobId=await createJob(),cancelJob=await createJob();
  const captured=(await admin.query(`select updated_at::text as updated_at from public."SearchJob" where id=$1`,[jobId])).rows[0];
- const permitDigest=randomBytes(32).toString('hex');
+ const permitDigest=randomBytes(32).toString('hex'),issueDispatch=randomUUID();
  const issueRequest=signedRequest('issue',{
   p_job:jobId,p_owner:owner,p_workspace:workspace,p_digest:permitDigest,p_context:sourceContext,
-  p_expected_criteria:criteria,p_expected_updated_at:captured.updated_at,p_request:operationId,
- });
+  p_expected_criteria:criteria,p_expected_updated_at:captured.updated_at,p_request:issueDispatch,
+ },{requestId:issueDispatch});
  const issue=await client.admittedRequest(issueRequest);
  const issueEvidence=(await admin.query('select issuer,jti,request_id,state from buyer_writer.operation_admissions')).rows;
  assert.equal(issue.status,200,JSON.stringify({issue,issueEvidence}));
- assert.deepEqual(issue.body,{dispatchId:operationId,generation:1,automaticRetry:false});
- const q={jobId,version:1,dispatchId:operationId,generation:1,operation:'start',
+ assert.deepEqual(issue.body,{dispatchId:issueDispatch,generation:1,automaticRetry:false});
+ const q={jobId,version:1,dispatchId:issueDispatch,generation:1,operation:'start',
   chunkIndex:0,chunkCount:1,payload:{}};
  const applyJti=randomUUID(),applyRequestId=randomUUID();
  const applyRequest=signedRequest('apply',{p_digest:permitDigest,p_workspace:workspace,q},
@@ -269,7 +269,7 @@ try{
  const receiptBridge=createAdmissionBridge({mode:'research-admission',configuration,verificationConfiguration,
   admissionExecutor:receiptAdmission.executor,now:()=>Math.floor(Date.now()/1000)});
  const receipt=await receiptBridge(signedRequest('receipt',{
-  p_digest:permitDigest,p_workspace:workspace,p_job:jobId,p_dispatch:operationId,
+  p_digest:permitDigest,p_workspace:workspace,p_job:jobId,p_dispatch:issueDispatch,
   p_generation:1,p_operation:'start',p_index:0,
  }));
  assert.equal(receipt.status,200,JSON.stringify(receipt));
@@ -297,7 +297,7 @@ try{
  const counts=(await admin.query(`select
   (select count(*)::int from buyer_writer.operation_admissions) as admissions,
   (select count(*)::int from buyer_writer.receipts where dispatch_id=$1 and operation='start' and chunk_index=0) as receipts`,
-  [operationId])).rows[0];
+  [issueDispatch])).rows[0];
  assert.deepEqual(counts,{admissions:10,receipts:1},'recovery admissions or exactly-once receipt count mismatched');
  await receiptAdmission.close();
  await admin.end();

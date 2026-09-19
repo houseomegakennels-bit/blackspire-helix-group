@@ -128,8 +128,7 @@ begin
   or p_request is null or p_subject is null or p_raw_digest !~ '^[a-f0-9]{64}$'
   or p_release !~ '^[a-f0-9]{40}$' or p_operation_id is null or p_attempt_id is null
   or p_workspace is null or length(p_workspace) not between 1 and 128 or p_job is null
-  or p_permit_digest !~ '^[a-f0-9]{64}$' or p_dispatch_request is null
-  or p_operation_id<>p_dispatch_request then
+  or p_permit_digest !~ '^[a-f0-9]{64}$' or p_dispatch_request is null then
   raise exception using errcode='22023',message='Buyer writer admission rejected';
  end if;
  select id,user_id into j from public."SearchJob" where id=p_job for update;

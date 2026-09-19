@@ -125,7 +125,7 @@ do $$declare ns oid; r text; expected oid:=current_setting('blackspire.buyer_wri
     ('buyer_writer.receipt(text,text,uuid,uuid,bigint,text,integer)','3a5f587c8b6ff018ab6d5e91b339fc60b479d0250ea0a74c7d06935035e593de','plpgsql',true,array['search_path=pg_catalog'],'v','writer'),
     ('buyer_writer.reserve_operation(text,uuid,uuid,text,timestamp with time zone)','a705d6a8fb84fd22ae424aaa6c19b36cc71692be54d7abdfe655ad379a1064ca','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)','947472a925825b1628f38a0d3b232da6ac62414727c653fe047dffc3dafeb6cc','plpgsql',true,array['search_path=pg_catalog','TimeZone=UTC','lock_timeout=5s'],'v','writer'),
-    ('buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','76701c67f63bd8ffc04ca012431994f3d4086707500369803039543e6f45f41d','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
+    ('buyer_writer.execute_admitted_issue(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,text,jsonb,jsonb,timestamp with time zone,uuid)','fc49ab22996a206974dd46d04a225e00e4d93ce616db945c8dba0917be9f2245','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.execute_admitted_cancel(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid)','ae1fdc1c4baa85f264d43dc58a8e3db731b58c0811ea51cc6c3756979975a854','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.execute_admitted_reconcile(text,uuid,uuid,text,uuid,text,uuid,uuid,text,uuid,uuid,timestamp with time zone)','e6e4e51af093ae9f191c1f5d4569a1c044d2f364200fe72200634d44f3e0f32f','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
     ('buyer_writer.execute_admitted_receipt(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,uuid,uuid,bigint,text,integer)','b6cf6d1de315b436687ab02ee32ceef221429973a00c76293ff602d8677c4a8b','plpgsql',true,array['search_path=pg_catalog','lock_timeout=5s'],'v','writer'),
@@ -877,8 +877,7 @@ begin
   or p_request is null or p_subject is null or p_raw_digest !~ '^[a-f0-9]{64}$'
   or p_release !~ '^[a-f0-9]{40}$' or p_operation_id is null or p_attempt_id is null
   or p_workspace is null or length(p_workspace) not between 1 and 128 or p_job is null
-  or p_permit_digest !~ '^[a-f0-9]{64}$' or p_dispatch_request is null
-  or p_operation_id<>p_dispatch_request then
+  or p_permit_digest !~ '^[a-f0-9]{64}$' or p_dispatch_request is null then
   raise exception using errcode='22023',message='Buyer writer admission rejected';
  end if;
  select id,user_id into j from public."SearchJob" where id=p_job for update;
