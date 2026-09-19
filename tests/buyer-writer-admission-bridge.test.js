@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {ADMISSION_SQL,createAdmissionBridge} from '../packages/buyer-writer/admission-bridge.js';
-import {ADMISSION_FENCE_SQL,ADMISSION_IDENTITY_SQL,createAttestedAdmissionExecutor,executeAdmission} from '../packages/buyer-writer/admission-executor.js';
+import {
+ ADMISSION_FENCE_SQL,ADMISSION_IDENTITY_SQL,ADMISSION_READINESS_SQL,ADMISSION_WRITER_IDENTITY_SQL,
+ admissionIdentityValues,createAttestedAdmissionExecutor,executeAdmission,
+} from '../packages/buyer-writer/admission-executor.js';
 
 const {publicKey,privateKey}=generateKeyPairSync('ed25519');
 const publicKeyPem=publicKey.export({type:'spki',format:'pem'});
@@ -356,6 +359,21 @@ test('database identity attestation failure is availability, not authentication'
  assert.match(ADMISSION_IDENTITY_SQL,/creator\.oid=\$2::oid/);
  assert.match(ADMISSION_IDENTITY_SQL,/buyer_writer\.execute_admitted_apply/);
  assert.match(ADMISSION_IDENTITY_SQL,/not exists\(select from pg_auth_members/);
+});
+
+test('readiness reuses the complete identity proof without taking the mutation lock',()=>{
+ assert.equal(ADMISSION_READINESS_SQL.includes(ADMISSION_IDENTITY_SQL.replaceAll('$2','$4')),true);
+ assert.equal(ADMISSION_READINESS_SQL.includes(ADMISSION_WRITER_IDENTITY_SQL),true);
+ assert.doesNotMatch(ADMISSION_READINESS_SQL,/then buyer_writer\.lock_scope\(\)/);
+ assert.doesNotMatch(ADMISSION_READINESS_SQL,/\bas locked\b/);
+ const values=admissionIdentityValues('buyer_writer_admission_login',16388);
+ assert.equal(values.length,4);
+ assert.equal(values[0],'buyer_writer_admission_login');
+ assert.equal(values[1].includes('buyer_writer.execute_admitted_apply(text,uuid,uuid,text,uuid,text,uuid,uuid,text,text,jsonb)'),true);
+ assert.equal(typeof values[2],'string');
+ assert.equal(values[3],16388);
+ assert.throws(()=>admissionIdentityValues('buyer_writer_admission',16388),/unavailable/);
+ assert.throws(()=>admissionIdentityValues('buyer_writer_admission_login',0),/unavailable/);
 });
 
 test('reservation outage is availability while a bad signature remains authentication',async()=>{

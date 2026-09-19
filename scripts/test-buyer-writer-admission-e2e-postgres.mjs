@@ -277,6 +277,8 @@ try{
  }));
  assert.equal(raceCommitted,true,'admitted result settled before hidden-trigger DDL committed');
  await raceDone;
+ assert.deepEqual(await admission.ready(),{ok:false},
+  'committed protected-trigger drift remained admission-ready');
  assert.deepEqual(raceRejected,{status:503,body:{ok:false,code:'ADMISSION_UNAVAILABLE',automaticRetry:false}},
   'hidden-trigger race did not fail closed');
  assert.equal(applyExecutions,executionsBeforeRace,'unsafe admitted apply reached its fixed statement');
@@ -286,6 +288,8 @@ try{
  assert.deepEqual(raceAfter,raceStable,'hidden-trigger race changed the job');
  await admin.query(`drop trigger admission_hidden_trigger on public."SearchJob";
   drop function public.admission_hidden_trigger();drop sequence public.admission_nonentry_witness`);
+ assert.deepEqual(await admission.ready(),{ok:true},
+  'admission readiness did not recover after protected-trigger cleanup');
  const recoveredRace=await client.admittedRequest(signedRequest('apply',{
   p_digest:racePermitDigest,p_workspace:workspace,q:raceOperation,
  }));

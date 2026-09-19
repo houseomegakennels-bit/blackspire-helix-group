@@ -93,8 +93,17 @@ where login.rolname=session_user and admission.rolname='buyer_writer_admission' 
 export const ADMISSION_WRITER_IDENTITY_SQL=buyerWriterIdentitySql('admission');
 const transactionAdmissionIdentitySql=ADMISSION_IDENTITY_SQL.replaceAll('$2','$4');
 const routinePolicy=JSON.stringify(BUYER_WRITER_ROUTINES);
+export function admissionIdentityValues(expectedLogin,expectedCreatorOid){
+ if(typeof expectedLogin!=='string'||!/^[a-z_][a-z0-9_]{0,62}$/.test(expectedLogin)
+  ||expectedLogin==='buyer_writer_admission'||!Number.isInteger(expectedCreatorOid)
+  ||expectedCreatorOid<1||expectedCreatorOid>4294967295)throw fail();
+ return [expectedLogin,BUYER_WRITER_ENTRYPOINTS.admission,routinePolicy,expectedCreatorOid];
+}
 const combinedIdentity=`admission as materialized (${transactionAdmissionIdentitySql}),
 checked as materialized (${ADMISSION_WRITER_IDENTITY_SQL})`;
+export const ADMISSION_READINESS_SQL=`with ${combinedIdentity}
+select admission.safe and checked.safe as safe
+from admission cross join checked`;
 export const ADMISSION_FENCE_SQL=`with ${combinedIdentity}
 select admission.safe and checked.safe as safe,
  case when admission.safe and checked.safe then buyer_writer.lock_scope() else false end as locked
@@ -118,9 +127,8 @@ function deadline(task,timeoutMs,onExpire){
 }
 
 export function createAttestedAdmissionExecutor({expectedLogin,expectedCreatorOid,connect,checkoutTimeoutMs=2000,identityTimeoutMs=2000}={}){
- if(typeof expectedLogin!=='string'||!/^[a-z_][a-z0-9_]{0,62}$/.test(expectedLogin)
-  ||expectedLogin==='buyer_writer_admission'||!Number.isInteger(expectedCreatorOid)
-  ||expectedCreatorOid<1||expectedCreatorOid>4294967295||typeof connect!=='function'
+ admissionIdentityValues(expectedLogin,expectedCreatorOid);
+ if(typeof connect!=='function'
   ||![checkoutTimeoutMs,identityTimeoutMs].every(value=>Number.isInteger(value)&&value>=10&&value<=5000))throw fail();
  const executor=Object.freeze({expectedLogin,expectedCreatorOid,connect,checkoutTimeoutMs,identityTimeoutMs});
  executors.add(executor);
@@ -151,8 +159,7 @@ export async function executeAdmission(executor,operation,values,{signal}={}){
    catch{destroy=true;throw fail();}
   };
   await query({text:'begin'});inTransaction=true;
-  const identityValues=[executor.expectedLogin,BUYER_WRITER_ENTRYPOINTS.admission,
-   routinePolicy,executor.expectedCreatorOid];
+  const identityValues=admissionIdentityValues(executor.expectedLogin,executor.expectedCreatorOid);
   const fenced=await query({text:ADMISSION_FENCE_SQL,values:identityValues});
   if(!fenced||!Array.isArray(fenced.rows)||fenced.rows.length!==1
    ||!exact(fenced.rows[0],['safe','locked'])||fenced.rows[0].safe!==true

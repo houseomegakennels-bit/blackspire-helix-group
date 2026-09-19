@@ -1,5 +1,7 @@
 import {X509Certificate} from 'node:crypto';
-import {ADMISSION_IDENTITY_SQL,AdmissionUnavailableError,createAttestedAdmissionExecutor} from './admission-executor.js';
+import {
+ ADMISSION_READINESS_SQL,AdmissionUnavailableError,admissionIdentityValues,createAttestedAdmissionExecutor,
+} from './admission-executor.js';
 
 export const BUYER_WRITER_ADMISSION_LOGIN='buyer_writer_admission_login';
 export const BUYER_WRITER_ADMISSION_ROLE='buyer_writer_admission';
@@ -176,9 +178,10 @@ export async function createBuyerWriterAdmissionPostgres({connection,expectedCre
    if(signal!==undefined&&!(signal instanceof AbortSignal))return NOT_READY;
    if(closed||!healthy||signal?.aborted)return NOT_READY;
    try{
-    await prove(pool,ADMISSION_IDENTITY_SQL,[BUYER_WRITER_ADMISSION_LOGIN,expectedCreatorOid],signal);
-    if(closed||!healthy||signal?.aborted)return NOT_READY;
     await prove(templatePool,ADMISSION_TEMPLATE1_IDENTITY_SQL,[BUYER_WRITER_ADMISSION_LOGIN],signal);
+    if(closed||!healthy||signal?.aborted)return NOT_READY;
+    await prove(pool,ADMISSION_READINESS_SQL,
+     admissionIdentityValues(BUYER_WRITER_ADMISSION_LOGIN,expectedCreatorOid),signal);
     if(closed||!healthy||signal?.aborted)return NOT_READY;
     return READY;
    }catch{return NOT_READY;}
