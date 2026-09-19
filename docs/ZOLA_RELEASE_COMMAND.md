@@ -14,6 +14,16 @@ The root-only output contains workflow, PUT and deactivation payloads, migration
 
 The output identifies a protected manifest binding release SHA, source device/inode, capture interval, size, schema integrity and snapshot digest. `bash scripts/with-node.sh scripts/zola-release-backup.js --verify RELEASE_SHA MANIFEST_FILE` verifies that proof, current canonical source identity and one-hour freshness. This proves a restorable schema-compatible backup; it does not establish full functional rollback or preservation of writes occurring after capture.
 
+## Production provisioning and release input
+
+The protected Buyer Writer provisioning candidate is a version-four object accepted by `validateBuyerWriterGatewayProvisioningConfiguration`. It is consumed by `scripts/zola-config-install.js` to prepare the gateway, application client, ingress and permit-signer configurations. Its `operationPermitSignerConfiguration` names the separately protected API-owned private key. Neither that version-four object nor any generated gateway/client/ingress/signer file is the production release command's `activationConfigurationFile`.
+
+`activationConfigurationFile` remains a distinct protected version-one runtime configuration accepted by `validateBuyerWriterConfiguration`. The release sequence uses it to observe the actual API and worker generations, binding file, database runtime and canonical writer. Substituting the version-four provisioning candidate fails closed; preparation must retain both artifacts under their separate schemas and purposes.
+
+The complete input for `bash scripts/with-node.sh scripts/zola-release-command.js --release INPUT_JSON` has exactly these fields: `schema`, `kind`, `releaseSha`, `previousMainSha`, `recoverySha`, `workspace`, `principal`, `preparationRoot`, `packageConfigurationFile`, `n8nBackupFile`, `diskConfigurationFile`, `backupManifestFile`, `migrationConfigurationFile`, and `activationConfigurationFile`. It requires `schema: 1`, `kind: "zola_production_release"`, `workspace: "zola-production"`, `principal: "blackspire-release-root"`, and `preparationRoot: "/var/lib/blackspire-operator/preparation"`. The three SHA fields are distinct lowercase full commit SHAs. Every referenced file is an absolute canonical path below `/var/lib/blackspire-operator`; the input itself is canonical one-line JSON with a trailing newline, root-owned, single-link, non-symlink mode `0600` below the fixed preparation root.
+
+Write that complete input atomically and exclusively **last**, only after the exact release artifact/disk envelope, n8n package and baseline, migration package, fresh protected database backup, separate version-one activation configuration, verified previous-main identity and independently selected recovery SHA all exist. A v4/key preparer may publish only the v4 candidate, its key and a non-authorizing readiness report before then; it must not fill missing release evidence with guessed paths or emit a complete-looking release input early. The `--preflight` input documented below is a different, smaller schema whose n8n baseline field is named `backupFile`; it must not be passed to `--release`.
+
 ## Executable preflight
 
 `bash scripts/with-node.sh scripts/zola-release-command.js --preflight INPUT_JSON` takes exactly:
