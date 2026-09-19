@@ -10,7 +10,7 @@ The first independent exact-commit review found two P1s: issuance bound the perm
 
 The final trusted suite passes 2,099 total / 2,034 passed / 65 explicit skips / zero failed across all 215 files, with drained output, zero test-tree mutation and zero surviving descendants. The complete Buyer Writer group passes 392/392 and the focused repair surface passes 49/49. The seven protected-root preflight cases pass 7/7 separately under root and are explicitly skipped in the UID-65534 contained runner. Lint, typecheck, build, secret scan and whitespace gates pass. Production remains `NONCOMPLIANT` with all expected roles absent, and no protected production file, service, database, provider, n8n, deployment or release state changed.
 
-The exact protected candidate and signing key do not yet exist. Fresh exact-head re-review remains required before this source can become a live candidate.
+The exact protected candidate and signing key do not yet exist. Fresh exact-commit re-review of `49dd69ac412817ddd8beecba4d2e4d9439fc8709` found no actionable correctness or security regression. The protected production candidate and signing key still do not exist, and this reviewed local source is not live acceptance.
 
 
 
