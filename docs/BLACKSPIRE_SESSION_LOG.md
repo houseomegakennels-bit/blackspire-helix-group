@@ -1329,3 +1329,12 @@ Exact-head review of `407630f3faf152f7c1085e46703edc9c0de43c32` reproduced a pro
 
 - Recovered the authoritative branch at `a26f93ddcf4a44f2e1a6e9490f2dc93adb34266e`, two commits ahead of `origin/main` `96a8db5616d0753319bf16e6ee6826a5c32e928e`, with a clean worktree. Focused Nexus, Buyer, Deal, and capability-orchestration suites passed and exited naturally; Deal analysis routing was verified corrected by restoring the existing `analysis` matcher. Lint, typecheck, build, secret scan, and high-severity npm audit passed.
 - The trusted repository runner could not initialize in this sandbox because its required user-namespace snapshot ownership step failed with `chown ... Invalid argument` before test execution. A direct uncontained full run is not accepted as trusted evidence because it lacks the runner's isolation contract. Existing production evidence classifies the live host as development-mode, with no durable production release root/current symlink or production service activation. No credentials, provider calls, outreach, database, host, production, push, merge, or deployment change occurred.
+
+## 2026-09-20 — Public website marketing polish
+
+- Scope: approved business-owner messaging, black/gold parent styling, simplified public navigation, labeled demo videos, and consistent Gmail/phone contact.
+- Frontend production build and TypeScript passed under Node 22.23.1; frontend lint passed.
+- Existing contact delivery remains email-client based, now explicitly explained with encoded draft text and direct contact fallback.
+- Removed unsupported homepage telemetry and demo revenue claims. No production secrets were loaded or backend routes changed.
+- Existing living-memory anchor check FAIL: main includes unrelated unreviewed implementation changes since its old recorded anchor. Preserved the anchor and check; not a marketing regression.
+- Production publication and visual browser acceptance: UNVERIFIED pending release checks.

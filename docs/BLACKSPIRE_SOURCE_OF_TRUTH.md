@@ -2,6 +2,10 @@
 
 - Last verified implementation commit: `96a8db5616d0753319bf16e6ee6826a5c32e928e`
 
+## Public marketing refresh (2026-09-20 UTC)
+
+A frontend-only refresh on `feat/blackspire-marketing-polish` replaces the parent homepage with customer benefits, the approved tagline, an existing labeled demonstration, and direct inquiry actions. Services, demos, navigation, footer, and contact now use plain language. Public contact is `Blackspirehelix@gmail.com` and `743-444-0586`. The contact form prepares an email in the visitor's mail app; it does not claim server delivery. Product/workspace routes and backend authorization are unchanged. Node 22.23.1 frontend build (including TypeScript) and lint passed locally. Production publication and browser acceptance are UNVERIFIED at this checkpoint. The living-memory checker reports a pre-existing stale implementation anchor on main; no anchor was advanced or check weakened by this marketing change.
+
 ## Nexus read-only capability validation (2026-09-04 UTC)
 
 Local branch `feature/nexus-read-capabilities` is at `a26f93ddcf4a44f2e1a6e9490f2dc93adb34266e`, two commits ahead of `origin/main` at `96a8db5616d0753319bf16e6ee6826a5c32e928e`. It adds the server-owned `nexus.enrichment.status` capability with `nexus.enrichment.read`, backed by persisted `nexus_contacts` status reads only; raw phone, raw email, provider payload, paid provider calls, enrichment triggers, and read-path database mutations are not exposed or performed. Focused Nexus, Buyer, Deal, and capability-orchestration tests pass and exit naturally. The prior Deal mixed-routing discrepancy is fixed by restoring the `analysis` keyword to the existing Deal analysis matcher. Root lint, typecheck, build, secret scan, and high-severity npm audit pass locally. The repository trusted runner is `UNVERIFIED` in this sandbox because its required user-namespace snapshot `chown` fails before test execution; a direct uncontained full run is not valid evidence because it lacks the runner's isolation contract. Nexus has not been pushed, reviewed, merged, or deployed.
