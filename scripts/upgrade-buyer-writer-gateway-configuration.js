@@ -110,30 +110,43 @@ try{
   lock=acquireLock();
   const groupId=writerGroupId();
   const [,releaseSha,operationId,attemptId,artifactDigest,candidateDigest,candidateFile]=args;
-  if(args.length!==7||!/^[a-f0-9]{40}$/.test(releaseSha??'')
+  if(!/^[a-f0-9]{40}$/.test(releaseSha??'')
     ||![operationId,attemptId].every(value=>/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value??''))
-    ||operationId===attemptId||![artifactDigest,candidateDigest].every(value=>/^[a-f0-9]{64}$/.test(value??''))
-    ||!path.isAbsolute(candidateFile)||path.resolve(candidateFile)!==candidateFile
-    ||candidateFile==='/')fail();
-  const artifact=await inspectSealedBuyerWriterArtifact({
-    artifactRoot:path.join(releaseRoot,releaseSha),releaseSha,environment:'production',
-  });
-  if(artifact.status!=='SEALED_ARTIFACT_VERIFIED'||artifact.deployed!==false
-    ||artifact.productionAccepted!==false||artifact.artifactDigest!==artifactDigest)fail();
-  const candidate=readRootOwnedJsonSnapshot(candidateFile,{groupId:0,maxBytes:65_536}).value;
-  const observedCandidateDigest=createHash('sha256')
-    .update(JSON.stringify(candidate)+'\n').digest('hex');
-  if(observedCandidateDigest!==candidateDigest)fail();
-  const rendered=renderZolaGatewayConfigurations(candidate),config=rendered.config;
-  const gatewayConfig=rendered.gatewayConfig;
-  if(config.authority.releaseSha!==releaseSha||config.authority.operationId!==operationId
-    ||config.authority.attemptId!==attemptId)fail();
-  const bound={releaseSha,operationId,attemptId,artifactDigest,candidateDigest};
+    ||operationId===attemptId)fail();
   if(mode==='--rollback'){
+    if(args.length!==4)fail();
+    const stateFile=path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,operationId+'.state.json');
+    const state=readRootOwnedJsonSnapshot(stateFile,{groupId:0,maxBytes:4096}).value;
+    if(state?.version!==2||state.kind!=='buyer_writer_gateway_configuration_upgrade'
+      ||state.releaseSha!==releaseSha||state.operationId!==operationId
+      ||state.attemptId!==attemptId
+      ||![state.artifactDigest,state.candidateDigest]
+        .every(value=>/^[a-f0-9]{64}$/.test(value??'')))fail();
+    const bound={releaseSha:state.releaseSha,operationId:state.operationId,
+      attemptId:state.attemptId,artifactDigest:state.artifactDigest,
+      candidateDigest:state.candidateDigest};
     const result=await rollbackBuyerWriterGatewayConfigurationFile({
       ...bound,writerGroupId:groupId,proveQuiesced});
     process.stdout.write(JSON.stringify(result)+'\n');
   }else{
+    if(args.length!==7
+      ||![artifactDigest,candidateDigest].every(value=>/^[a-f0-9]{64}$/.test(value??''))
+      ||!path.isAbsolute(candidateFile)||path.resolve(candidateFile)!==candidateFile
+      ||candidateFile==='/')fail();
+    const artifact=await inspectSealedBuyerWriterArtifact({
+      artifactRoot:path.join(releaseRoot,releaseSha),releaseSha,environment:'production',
+    });
+    if(artifact.status!=='SEALED_ARTIFACT_VERIFIED'||artifact.deployed!==false
+      ||artifact.productionAccepted!==false||artifact.artifactDigest!==artifactDigest)fail();
+    const candidate=readRootOwnedJsonSnapshot(candidateFile,{groupId:0,maxBytes:65_536}).value;
+    const observedCandidateDigest=createHash('sha256')
+      .update(JSON.stringify(candidate)+'\n').digest('hex');
+    if(observedCandidateDigest!==candidateDigest)fail();
+    const rendered=renderZolaGatewayConfigurations(candidate),config=rendered.config;
+    const gatewayConfig=rendered.gatewayConfig;
+    if(config.authority.releaseSha!==releaseSha||config.authority.operationId!==operationId
+      ||config.authority.attemptId!==attemptId)fail();
+    const bound={releaseSha,operationId,attemptId,artifactDigest,candidateDigest};
     let oldFile=BUYER_WRITER_GATEWAY_CONFIG_FILE;
     if(mode==='--reconcile'){
       const stateFile=path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,operationId+'.state.json');

@@ -41,6 +41,7 @@ test('upgrade CLI exposes only the four exact modes and strict bound argument sh
   assert.match(source,/mode==='--rollback'/);
   assert.match(source,/mode==='--reconcile'/);
   assert.match(source,/args\.length!==7/);
+  assert.match(source,/args\.length!==4/);
   assert.match(source,/\^\[a-f0-9\]\{40\}\$/);
   assert.match(source,/path\.isAbsolute\(candidateFile\)/);
   assert.match(source,/config\.authority\.releaseSha!==releaseSha/);
@@ -49,4 +50,9 @@ test('upgrade CLI exposes only the four exact modes and strict bound argument sh
   assert.match(source,/journal\(operationId,\{resume:true\}\)/);
   assert.match(source,/state\?\.phase!=='INTENT'/);
   assert.match(source,/operationId\+'\.backup\.json'/);
+  const rollback=source.match(/if\(mode==='--rollback'\)\{([\s\S]*?)\n  \}else\{/)[1];
+  assert.match(rollback,/readRootOwnedJsonSnapshot\(stateFile,\{groupId:0,maxBytes:4096\}\)/);
+  assert.match(rollback,/artifactDigest:state\.artifactDigest/);
+  assert.match(rollback,/candidateDigest:state\.candidateDigest/);
+  assert.doesNotMatch(rollback,/inspectSealedBuyerWriterArtifact|candidateFile|renderZolaGatewayConfigurations/);
 });
