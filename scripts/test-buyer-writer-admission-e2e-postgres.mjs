@@ -342,7 +342,8 @@ try{
  const recoveryRequest=signedRequest('recover',recoveryParameters({}));
  const recovered=cold(recoveryRequest);
  assert.deepEqual(recovered,{status:200,body:{ok:true,operation:'start',chunkIndex:0,
-  recovered:true,automaticRetry:false}});
+  recovered:true,automaticRetry:false,admissionCorrelation:{issuer,jti:applyJti,
+   requestId:applyRequestId,bodyDigest:originalDigest,operation:'apply',requestCorrelated:true}}});
  const replay=cold(recoveryRequest);
  assert.deepEqual(replay,{status:401,body:{ok:false,code:'ADMISSION_REJECTED',automaticRetry:false}});
  const receiptAdmission=await createBuyerWriterAdmissionPostgres({connection,expectedCreatorOid:creatorOid,Pool});
