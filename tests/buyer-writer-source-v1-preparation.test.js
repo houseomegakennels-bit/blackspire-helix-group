@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {
@@ -90,8 +91,9 @@ test('legacy source schema and credential uniqueness are exact and fail closed',
     /source v1 preparation failed/);
   }
 });
-test('attempt-stable publication is idempotent across a fresh preparation instance',async()=>{
-  const root=fs.mkdtempSync('/root/source-v1-recovery-');
+test('attempt-stable publication is idempotent across a fresh preparation instance',
+ {skip:process.getuid?.()!==0?'root ownership is unavailable in the contained non-root suite':false},async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'source-v1-recovery-'));
   const translate=name=>root+name;
   fs.mkdirSync(translate('/var/lib/blackspire-operator/preparation'),{recursive:true,mode:0o700});
   const io={
