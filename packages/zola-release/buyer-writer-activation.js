@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {hash} from './commander-journal.js';
 import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {BUYER_WRITER_PROVISIONING_JOURNAL_FILE} from '../buyer-writer/production-provisioning-journal.js';
 import {BUYER_WRITER_GATEWAY_UPGRADE_STATE} from '../buyer-writer/gateway-configuration-upgrade-files.js';
+import {buyerWriterGatewayV4IntentPath} from '../buyer-writer/gateway-v4-preparation.js';
 
 const ROOT=fileURLToPath(new URL('../../',import.meta.url));
 const SHA=/^[a-f0-9]{40}$/;
@@ -37,6 +38,13 @@ function defaultRun(script,args){
   env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',LANG:'C'}});
  const result=JSON.parse(stdout);
  if(!result||typeof result!=='object'||Array.isArray(result))reject();return result;
+}
+function defaultReloadSystemd(){
+ const result=spawnSync('/usr/bin/systemctl',['daemon-reload'],{encoding:'utf8',timeout:120000,
+  maxBuffer:65536,killSignal:'SIGKILL',stdio:['ignore','pipe','pipe'],
+  env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',LANG:'C'}});
+ if(result.status!==0||result.error||result.signal!==null||result.stdout!==''||result.stderr!=='')reject();
+ return Object.freeze({status:'SYSTEMD_RELOADED'});
 }
 function history(events,bound){
  const rows=events.filter(row=>row?.type==='buyer_writer_activation_intent'
@@ -71,12 +79,17 @@ async function sourcePhase(bound,run,paths){
   bound.operationId,bound.attemptId,paths.credentialSource,paths.management,paths.source]),
  ['BUYER_WRITER_SOURCE_V1_PREPARED']);
 }
-async function gatewayPhase(bound,run,paths){
+async function gatewayPhase(bound,run,paths,io){
  const args=[bound.releaseSha,bound.operationId,bound.attemptId,paths.source,paths.candidate];
- let result=await run('scripts/prepare-buyer-writer-gateway-v4.js',['--inspect',...args]);
- if(result.status==='ABSENT')
+ const intentPath=buyerWriterGatewayV4IntentPath(paths.candidate);let result;
+ try{io.lstatSync(intentPath);
+  result=await run('scripts/prepare-buyer-writer-gateway-v4.js',['--inspect',...args]);
+ }catch(error){
+  if(error?.code!=='ENOENT')throw error;
   result=await run('scripts/prepare-buyer-writer-gateway-v4.js',['--prepare',...args]);
- else if(result.status==='PARTIAL')result=await run('scripts/prepare-buyer-writer-gateway-v4.js',['--reconcile',...args]);
+ }
+ if(['ABSENT','PARTIAL'].includes(result.status))
+  result=await run('scripts/prepare-buyer-writer-gateway-v4.js',['--reconcile',...args]);
  return requireStatus(result,['BUYER_WRITER_GATEWAY_V4_PREPARED','COMPLETE']);
 }
 async function upgradePhase(bound,run,paths,io,inspectArtifact){
@@ -87,7 +100,7 @@ async function upgradePhase(bound,run,paths,io,inspectArtifact){
   ||artifact.productionAccepted!==false)reject();
  const state=path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,bound.operationId+'.state.json');
  let mode='--upgrade';try{io.lstatSync(state);mode='--reconcile';}catch(error){if(error?.code!=='ENOENT')throw error;}
- const gateway=await gatewayPhase(bound,run,paths);
+ const gateway=await gatewayPhase(bound,run,paths,io);
  const result=await run('scripts/upgrade-buyer-writer-gateway-configuration.js',[mode,bound.releaseSha,
   bound.operationId,bound.attemptId,artifact.artifactDigest,gateway.candidateDigest,paths.candidate]);
  return requireStatus(result,['UPGRADED']);
@@ -102,14 +115,17 @@ async function provisionPhase(bound,run,paths,io,readJson){
  return requireStatus(await run('scripts/provision-buyer-writer-production.js',[mode,...args]),
   ['PROVISIONED','ALREADY_COMPLIANT']);
 }
-async function configPhase(bound,run,paths){
- return requireStatus(await run('scripts/zola-config-install.js',['--install',bound.releaseSha,
+async function configPhase(bound,run,paths,reloadSystemd){
+ const installed=requireStatus(await run('scripts/zola-config-install.js',['--install',bound.releaseSha,
   paths.candidate,paths.configJournal]),['INSTALLED_RELOAD_REQUIRED']);
+ const reloaded=requireStatus(await reloadSystemd(),['SYSTEMD_RELOADED']);
+ return Object.freeze({status:'INSTALLED_AND_RELOADED',installEvidenceDigest:hash(installed),
+  reloadEvidenceDigest:hash(reloaded)});
 }
 
 export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRun,io=fs,
  inspectArtifact=inspectSealedBuyerWriterArtifact,readJson=readRootOwnedJson,
- paths:overrides={}}={}){
+ reloadSystemd=defaultReloadSystemd,paths:overrides={}}={}){
  const bound=binding(input);if(!journal?.stream)reject();
  const paths={...BUYER_WRITER_ACTIVATION_PATHS,...overrides};
  paths.candidate=typeof paths.candidate==='function'?paths.candidate(bound.releaseSha):paths.candidate;
@@ -120,10 +136,10 @@ export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRu
  if(!observed.intent)stream.append({schema:1,type:'buyer_writer_activation_intent',
   binding:bound,bindingDigest});
  const actions={source_v1:()=>sourcePhase(bound,run,paths),
-  gateway_v4:()=>gatewayPhase(bound,run,paths),
+  gateway_v4:()=>gatewayPhase(bound,run,paths,io),
   gateway_upgrade:()=>upgradePhase(bound,run,paths,io,inspectArtifact),
   database_provisioning:()=>provisionPhase(bound,run,paths,io,readJson),
-  configuration_install:()=>configPhase(bound,run,paths)};
+  configuration_install:()=>configPhase(bound,run,paths,reloadSystemd)};
  for(const phase of PHASES){
   if(observed.completed.has(phase))continue;
   const result=await actions[phase]();

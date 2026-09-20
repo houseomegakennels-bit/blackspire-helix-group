@@ -9,6 +9,7 @@ function fixture({loseUpgrade=false}={}){
  const events=[],calls=[],state={gateway:false,upgrade:false,compliant:false,lost:loseUpgrade};
  const journal={stream:()=>({events:()=>structuredClone(events),append:event=>events.push(structuredClone(event))})};
  const io={lstatSync(filename){
+  if(filename.endsWith('.intent.json')&&state.gateway)return {};
   if(filename.includes('gateway-configuration-upgrade')&&state.upgrade)return {};
   const error=new Error('absent');error.code='ENOENT';throw error;
  }};
@@ -33,10 +34,11 @@ function fixture({loseUpgrade=false}={}){
  };
  const inspectArtifact=async()=>({status:'SEALED_ARTIFACT_VERIFIED',releaseSha:bound.releaseSha,
   artifactDigest:'6'.repeat(64),deployed:false,productionAccepted:false});
- return {events,calls,state,journal,io,run,inspectArtifact};
+ const reloadSystemd=async()=>{calls.push('systemctl:daemon-reload');return {status:'SYSTEMD_RELOADED'};};
+ return {events,calls,state,journal,io,run,inspectArtifact,reloadSystemd};
 }
 const options=f=>({journal:f.journal,run:f.run,io:f.io,inspectArtifact:f.inspectArtifact,
- readJson(){throw new Error('unexpected journal');}});
+ reloadSystemd:f.reloadSystemd,readJson(){throw new Error('unexpected journal');}});
 
 test('pre-HELD activation durably orders every production prerequisite',async()=>{
  const f=fixture(),result=await activateBuyerWriterBeforeHeld(bound,options(f));
@@ -47,6 +49,10 @@ test('pre-HELD activation durably orders every production prerequisite',async()=
   <f.calls.indexOf('scripts/upgrade-buyer-writer-gateway-configuration.js:--upgrade'));
  assert.ok(f.calls.indexOf('scripts/provision-buyer-writer-production.js:--apply')
   <f.calls.indexOf('scripts/zola-config-install.js:--install'));
+ assert.equal(f.calls.find(row=>row.includes('gateway-v4')),
+  'scripts/prepare-buyer-writer-gateway-v4.js:--prepare');
+ assert.ok(f.calls.indexOf('scripts/zola-config-install.js:--install')
+  <f.calls.indexOf('systemctl:daemon-reload'));
 });
 
 test('lost upgrade acknowledgement reconciles the exact attempt without replaying completed phases',async()=>{
@@ -59,4 +65,12 @@ test('lost upgrade acknowledgement reconciles the exact attempt without replayin
  assert.equal(result.status,'BUYER_WRITER_PRE_HELD_READY');
  assert.equal(f.calls.filter(row=>row.includes('source-v1')).length,before);
  assert.ok(f.calls.includes('scripts/upgrade-buyer-writer-gateway-configuration.js:--reconcile'));
+});
+
+test('systemd reload failure keeps configuration activation incomplete',async()=>{
+ const f=fixture();f.reloadSystemd=async()=>{throw new Error('reload failed');};
+ await assert.rejects(()=>activateBuyerWriterBeforeHeld(bound,options(f)),/reload failed/);
+ assert.deepEqual(f.events.filter(row=>row.type==='buyer_writer_activation_result').map(row=>row.phase),
+  ['source_v1','gateway_v4','gateway_upgrade','database_provisioning']);
+ assert.ok(f.calls.includes('scripts/zola-config-install.js:--install'));
 });
