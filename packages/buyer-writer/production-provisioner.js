@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import {createHash,randomUUID} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {readRootOwnedJsonSnapshot} from './protected-json.js';
 import {validateBuyerWriterGatewayServiceConfiguration} from './gateway-entry.js';
@@ -250,9 +250,9 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     managementSnapshot=readSnapshot(managementConfigPath,{groupId:0,maxBytes:65536});
     management=validateManagementSnapshot(managementSnapshot,gateway);
   }catch{fail();}
-  const operationId=randomUUID();
+  const {releaseSha,operationId,attemptId}=gateway.authority;
   const journalMode=mode;
-  const journal=(phase,status)=>writeJournal({version:1,kind:'buyer_writer_production_provisioning',operationId,
+  const journal=(phase,status)=>writeJournal({version:2,kind:'buyer_writer_production_provisioning',releaseSha,operationId,attemptId,
     installerSha256:BUYER_WRITER_INSTALLER_SHA256,mode:journalMode,phase,status,updatedAt:new Date().toISOString()});
   if(mode==='rollback'){
     let journalFailed=false;

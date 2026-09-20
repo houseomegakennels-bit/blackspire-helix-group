@@ -199,6 +199,8 @@ test('absent roles install exact canonical SQL, bind only as parameters, verify,
  assert.equal(h.state.ownerLogin,false);
  assert.deepEqual(h.journals.map(row=>[row.phase,row.status]),[['started','IN_PROGRESS'],['roles-disabled','IN_PROGRESS'],
   ['installer-committed','IN_PROGRESS'],['credential-transaction-started','IN_PROGRESS'],['verified-committed','COMPLETED']]);
+ assert.ok(h.journals.every(row=>row.version===2&&row.releaseSha===authority.releaseSha
+  &&row.operationId===authority.operationId&&row.attemptId===authority.attemptId));
  const queryText=h.calls.filter(row=>row.text).map(row=>row.text).join('\n');
  for(const secret of [runtimeSecret,issuerSecret,admissionSecret,managementSecret])assert.equal(queryText.includes(secret),false);
  assert.match(queryText,/revoke create,temporary on database postgres from public;/);
