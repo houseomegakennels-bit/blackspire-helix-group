@@ -5,7 +5,7 @@ const numeric=value=>typeof value==='string'&&/^(0|[1-9][0-9]{0,9})$/.test(value
 
 // Resolve fixed operating-system identities, never a group selected by the file
 // being authorized. The API's primary group may be shared with the worker.
-export async function resolveBuyerWriterIdentity({uid=process.getuid(),euid=process.geteuid(),gid=process.getgid(),egid=process.getegid(),groups=process.getgroups(),lookup=execute}={}) {
+export async function lookupBuyerWriterIdentity({lookup=execute}={}) {
   try {
     const options={encoding:'utf8',timeout:1000,maxBuffer:4096,killSignal:'SIGKILL',env:{PATH:'/usr/bin:/bin'}};
     const started=performance.now();
@@ -23,11 +23,22 @@ export async function resolveBuyerWriterIdentity({uid=process.getuid(),euid=proc
     };
     const userFields=record(user,7),groupFields=record(group,4),workerFields=record(workerUser,7,'blackspire-worker');
     const apiUid=numeric(userFields[2]),privateGid=numeric(groupFields[2]),workerUid=numeric(workerFields[2]);
-    if(workerUid===null||workerUid===0||workerUid===apiUid||numeric(workerFields[3])===null||numeric(workerFields[3])===0||numeric(workerFields[3])===privateGid||apiUid===null||apiUid===0||privateGid===null||privateGid===0||numeric(userFields[3])!==privateGid||uid!==apiUid||euid!==apiUid||gid!==egid||gid===0)throw new Error();
-    if(!Array.isArray(groups)||!new Set([...groups,gid]).has(privateGid))throw new Error();
+    if(workerUid===null||workerUid===0||workerUid===apiUid||numeric(workerFields[3])===null
+      ||numeric(workerFields[3])===0||numeric(workerFields[3])===privateGid||apiUid===null
+      ||apiUid===0||privateGid===null||privateGid===0||numeric(userFields[3])!==privateGid)throw new Error();
     if(typeof worker?.stdout!=='string'||worker.stdout.length>4096)throw new Error();
     const workerGroups=worker.stdout.trim().split(/\s+/).map(numeric);
     if(!workerGroups.length||workerGroups.includes(null)||workerGroups.includes(privateGid))throw new Error();
     return Object.freeze({uid:apiUid,credentialGroupId:privateGid,workerUid});
+  }catch{throw new Error('Buyer writer process identity unavailable');}
+}
+
+export async function resolveBuyerWriterIdentity({uid=process.getuid(),euid=process.geteuid(),
+  gid=process.getgid(),egid=process.getegid(),groups=process.getgroups(),lookup=execute}={}) {
+  const identity=await lookupBuyerWriterIdentity({lookup});
+  try {
+    if(uid!==identity.uid||euid!==identity.uid||gid!==egid||gid===0
+      ||!Array.isArray(groups)||!new Set([...groups,gid]).has(identity.credentialGroupId))throw new Error();
+    return identity;
   }catch{throw new Error('Buyer writer process identity unavailable');}
 }

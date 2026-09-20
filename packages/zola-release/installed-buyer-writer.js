@@ -1,6 +1,6 @@
 import path from 'node:path';
 import {readRootOwnedJsonDigestSnapshot} from '../buyer-writer/protected-json.js';
-import {resolveBuyerWriterIdentity} from '../buyer-writer/runtime-identity.js';
+import {lookupBuyerWriterIdentity} from '../buyer-writer/runtime-identity.js';
 import {validateBuyerWriterClientConfiguration} from '../buyer-writer/configuration.js';
 import {createBuyerWriterLocalClient} from '../buyer-writer/local-gateway-client.js';
 import {createBuyerWriterAdmittedLocalClient} from '../buyer-writer/admitted-local-client.js';
@@ -56,7 +56,7 @@ function signerConfiguration(value,client,workspace,createSigner,expectedUid){
   if(signer.activeKeyId!==permit.keyId)reject();
   return {permit,signer};
 }export async function openInstalledBuyerWriterAdmittedClient({releaseSha,workspace,artifactDigest},{
-  configDirectory=CONFIG_DIRECTORY,resolveIdentity=resolveBuyerWriterIdentity,
+  configDirectory=CONFIG_DIRECTORY,resolveIdentity=lookupBuyerWriterIdentity,
   readSnapshot=readRootOwnedJsonDigestSnapshot,createClient=createBuyerWriterLocalClient,
   createSigner=createOperationPermitSigner,createAdmittedClient=createBuyerWriterAdmittedLocalClient
 }={}){

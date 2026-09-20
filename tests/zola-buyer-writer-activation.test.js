@@ -38,7 +38,15 @@ function fixture({loseUpgrade=false}={}){
  return {events,calls,state,journal,io,run,inspectArtifact,reloadSystemd};
 }
 const options=f=>({journal:f.journal,run:f.run,io:f.io,inspectArtifact:f.inspectArtifact,
- reloadSystemd:f.reloadSystemd,readJson(){throw new Error('unexpected journal');}});
+ reloadSystemd:f.reloadSystemd,readJson(filename){
+  if(!filename.includes('gateway-configuration-upgrade'))throw new Error('unexpected journal');
+  return {version:2,kind:'buyer_writer_gateway_configuration_upgrade',
+   releaseSha:bound.releaseSha,operationId:bound.operationId,attemptId:bound.attemptId,
+   artifactDigest:'6'.repeat(64),candidateDigest:'5'.repeat(64),phase:'PUBLISHED',
+   configurationFile:'/etc/blackspire-buyer-writer-gateway/gateway.json',
+   backupFile:'/var/lib/blackspire-operator/gateway-configuration-upgrade/'
+    +bound.operationId+'.backup.json',oldConfigDigest:'7'.repeat(64),newConfigDigest:'8'.repeat(64)};
+ }});
 
 test('pre-HELD activation durably orders every production prerequisite',async()=>{
  const f=fixture(),result=await activateBuyerWriterBeforeHeld(bound,options(f));
@@ -61,9 +69,12 @@ test('lost upgrade acknowledgement reconciles the exact attempt without replayin
  assert.deepEqual(f.events.filter(row=>row.type==='buyer_writer_activation_result').map(row=>row.phase),
   ['source_v1','gateway_v4']);
  const before=f.calls.filter(row=>row.includes('source-v1')).length;
+ const gatewayBefore=f.calls.filter(row=>row.includes('gateway-v4')).length;
  const result=await activateBuyerWriterBeforeHeld(bound,options(f));
  assert.equal(result.status,'BUYER_WRITER_PRE_HELD_READY');
  assert.equal(f.calls.filter(row=>row.includes('source-v1')).length,before);
+ assert.equal(f.calls.filter(row=>row.includes('gateway-v4')).length,gatewayBefore,
+  'reconcile must not inspect the replaced pre-upgrade gateway');
  assert.ok(f.calls.includes('scripts/upgrade-buyer-writer-gateway-configuration.js:--reconcile'));
 });
 

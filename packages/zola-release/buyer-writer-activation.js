@@ -6,7 +6,8 @@ import {hash} from './commander-journal.js';
 import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {BUYER_WRITER_PROVISIONING_JOURNAL_FILE} from '../buyer-writer/production-provisioning-journal.js';
-import {BUYER_WRITER_GATEWAY_UPGRADE_STATE} from '../buyer-writer/gateway-configuration-upgrade-files.js';
+import {BUYER_WRITER_GATEWAY_CONFIG_FILE,BUYER_WRITER_GATEWAY_UPGRADE_STATE}
+ from '../buyer-writer/gateway-configuration-upgrade-files.js';
 import {buyerWriterGatewayV4IntentPath} from '../buyer-writer/gateway-v4-preparation.js';
 
 const ROOT=fileURLToPath(new URL('../../',import.meta.url));
@@ -92,17 +93,37 @@ async function gatewayPhase(bound,run,paths,io){
   result=await run('scripts/prepare-buyer-writer-gateway-v4.js',['--reconcile',...args]);
  return requireStatus(result,['BUYER_WRITER_GATEWAY_V4_PREPARED','COMPLETE']);
 }
-async function upgradePhase(bound,run,paths,io,inspectArtifact){
+async function upgradePhase(bound,run,paths,io,inspectArtifact,readJson){
  const artifact=await inspectArtifact({artifactRoot:paths.artifactRoot,
   releaseSha:bound.releaseSha,environment:'production'});
  if(artifact?.status!=='SEALED_ARTIFACT_VERIFIED'||artifact.releaseSha!==bound.releaseSha
   ||!DIGEST.test(artifact.artifactDigest??'')||artifact.deployed!==false
   ||artifact.productionAccepted!==false)reject();
- const state=path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,bound.operationId+'.state.json');
- let mode='--upgrade';try{io.lstatSync(state);mode='--reconcile';}catch(error){if(error?.code!=='ENOENT')throw error;}
- const gateway=await gatewayPhase(bound,run,paths,io);
+ const stateFile=path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,bound.operationId+'.state.json');
+ let mode='--upgrade',candidateDigest;
+ try{
+  io.lstatSync(stateFile);mode='--reconcile';
+  const state=readJson(stateFile,{groupId:0,maxBytes:4096});
+  const keys=['version','kind','releaseSha','operationId','attemptId','artifactDigest',
+   'candidateDigest','phase','configurationFile','backupFile','oldConfigDigest','newConfigDigest'];
+  if(!exact(state,keys)||state.version!==2
+   ||state.kind!=='buyer_writer_gateway_configuration_upgrade'
+   ||state.releaseSha!==bound.releaseSha||state.operationId!==bound.operationId
+   ||state.attemptId!==bound.attemptId||state.artifactDigest!==artifact.artifactDigest
+   ||!DIGEST.test(state.candidateDigest??'')||!DIGEST.test(state.oldConfigDigest??'')
+   ||!DIGEST.test(state.newConfigDigest??'')
+   ||!['INTENT','PREPARED','PUBLISHED','COMPLETED','ROLLED_BACK'].includes(state.phase)
+   ||state.configurationFile!==BUYER_WRITER_GATEWAY_CONFIG_FILE
+   ||state.backupFile!==path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,
+    bound.operationId+'.backup.json'))reject();
+  candidateDigest=state.candidateDigest;
+ }catch(error){if(error?.code!=='ENOENT')throw error;}
+ if(mode==='--upgrade'){
+  const gateway=await gatewayPhase(bound,run,paths,io);
+  candidateDigest=gateway.candidateDigest;
+ }
  const result=await run('scripts/upgrade-buyer-writer-gateway-configuration.js',[mode,bound.releaseSha,
-  bound.operationId,bound.attemptId,artifact.artifactDigest,gateway.candidateDigest,paths.candidate]);
+  bound.operationId,bound.attemptId,artifact.artifactDigest,candidateDigest,paths.candidate]);
  return requireStatus(result,['UPGRADED']);
 }
 async function provisionPhase(bound,run,paths,io,readJson){
@@ -137,7 +158,7 @@ export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRu
   binding:bound,bindingDigest});
  const actions={source_v1:()=>sourcePhase(bound,run,paths),
   gateway_v4:()=>gatewayPhase(bound,run,paths,io),
-  gateway_upgrade:()=>upgradePhase(bound,run,paths,io,inspectArtifact),
+  gateway_upgrade:()=>upgradePhase(bound,run,paths,io,inspectArtifact,readJson),
   database_provisioning:()=>provisionPhase(bound,run,paths,io,readJson),
   configuration_install:()=>configPhase(bound,run,paths,reloadSystemd)};
  for(const phase of PHASES){
