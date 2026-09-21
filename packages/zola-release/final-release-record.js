@@ -1,3 +1,4 @@
+import {inspectReleaseSequenceHistory,RELEASE_REGISTRY_DIGEST} from './commander-sequence.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -79,4 +80,25 @@ export function inspectFinalReleaseRecord({releaseSha,root=FINAL_RELEASE_RECORD_
  try{open=validateOpen(readExact(filename(root,releaseSha,'open',owner),{owner}));}catch(error){if(error.code!=='ENOENT')throw error;}
  if(open&&(!accepted||open.newMainSha!==accepted.newMainSha||open.operationId!==accepted.operationId||open.acceptedRecordDigest!==hash(accepted)))reject();
  return Object.freeze({status:'PASS',phase:open?'OPEN':accepted?'ACCEPTED_HELD':'ABSENT',accepted:accepted?Object.freeze(accepted):null,open:open?Object.freeze(open):null});
+}
+
+export function inspectFinalReleaseRecordHistory(events){
+ let accepted=null,open=null;
+ for(let index=0;index<events.length;index++){
+  const row=events[index];if(!['final_release_record_intent','final_release_open_record_intent'].includes(row?.type))continue;
+  const isOpen=row.type==='final_release_open_record_intent',stage=isOpen?'guarded_held_to_open':'final_release_record';
+  if(!exact(row,['schema','type','record'])||row.schema!==1)reject();
+  const record=isOpen?validateOpen(row.record):validateAccepted(row.record);
+  const state=inspectReleaseSequenceHistory(events.slice(0,index)),pending=state.pending;
+  if(!pending||pending.stage!==stage||record.operationId!==state.context.operationId||record.releaseSha!==state.context.releaseSha
+   ||record.attemptId!==pending.attemptId||record.stageInputDigest!==pending.inputDigest||record.checkOutputDigest!==pending.checkOutputDigest
+   ||record.newMainSha!==state.outputs.capture_new_main_sha?.newMainSha)reject();
+  if(isOpen){
+   if(open||!accepted||record.acceptedRecordDigest!==hash(accepted))reject();open=record;
+  }else{
+   if(accepted||record.previousMainSha!==state.context.previousMainSha||record.sequenceInputDigest!==state.context.inputDigest
+    ||record.registryDigest!==RELEASE_REGISTRY_DIGEST||record.acceptedStagesDigest!==hash(state.outputs))reject();accepted=record;
+  }
+ }
+ return {accepted,open};
 }

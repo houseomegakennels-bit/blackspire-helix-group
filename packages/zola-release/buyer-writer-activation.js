@@ -1,3 +1,4 @@
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
@@ -62,6 +63,25 @@ function history(events,bound){
   completed.set(phase,row);cursor++;
  }
  return {intent,completed};
+}
+export function inspectBuyerWriterActivationHistory(events){
+ const rows=events.filter(row=>['buyer_writer_activation_intent','buyer_writer_activation_result'].includes(row?.type));
+ if(!rows.length)return {intent:null,completed:new Map()};
+ const bound=binding(rows[0].binding);
+ const observed=history(events,bound);
+ const statuses={source_v1:['BUYER_WRITER_SOURCE_V1_PREPARED'],gateway_v4:['BUYER_WRITER_GATEWAY_V4_PREPARED','COMPLETE'],
+  gateway_upgrade:['UPGRADED'],database_provisioning:['COMPLIANT','PROVISIONED','ALREADY_COMPLIANT'],configuration_install:['INSTALLED_AND_RELOADED']};
+ for(let index=0;index<events.length;index++){
+  const row=events[index];if(!rows.includes(row))continue;
+  if(!exact(row,row.type==='buyer_writer_activation_intent'?['schema','type','binding','bindingDigest']
+   :['schema','type','phase','bindingDigest','status','evidenceDigest']))reject();
+  if(row.type==='buyer_writer_activation_result'&&!statuses[row.phase]?.includes(row.status))reject();
+  const state=inspectReleaseSequenceHistory(events.slice(0,index)),pending=state.pending;
+  if(!pending||pending.stage!=='admission_lease'||state.context.releaseSha!==bound.releaseSha
+   ||state.context.operationId!==bound.operationId
+   ||['attemptId','inputDigest','checkOutputDigest'].some(key=>pending[key]!==bound[key]))reject();
+ }
+ return observed;
 }
 function requireStatus(result,allowed){
  if(!allowed.includes(result?.status))reject();return result;

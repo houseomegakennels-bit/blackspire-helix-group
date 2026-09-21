@@ -58,6 +58,32 @@ function history(context,stage,binding,ids){
  if(result.status==='PASS')safeProof(result.proof,stage,binding,ids);else if(Object.hasOwn(result,'proof'))reject();
  return result;
 }
+export function inspectRollbackProbeHistory(events){
+ const found=new Map();
+ for(let index=0;index<events.length;index++){
+  const row=events[index],stage=['rollback_acceptance','rollback_verification'].find(value=>
+   row?.type===`${value}_probe_intent`||row?.type===`${value}_probe_result`);
+  if(!stage)continue;
+  const state=inspectReleaseSequenceHistory(events.slice(0,index)),pending=state.pending;
+  if(!pending||pending.stage!==stage||row.operationId!==state.context.operationId||row.attemptId!==pending.attemptId)reject();
+  const binding={releaseSha:state.context.releaseSha,rollbackSha:state.context.recoverySha,workspace:state.context.workspace,principal:state.context.principal};
+  const intent=row.type===`${stage}_probe_intent`;
+  if(row.schema!==1||!exact(row,['schema','type','binding','operationId','attemptId',
+   ...(intent?[]:row.status==='PASS'?['status','proof']:['status'])])||!same(row.binding,binding))reject();
+  const prior=found.get(stage);
+  if(intent){if(prior)reject();found.set(stage,{intent:row,result:null});}
+  else{
+   if(!prior||prior.result||!['PASS','BLOCKED_EXTERNAL'].includes(row.status))reject();
+   if(row.status==='PASS'){
+    safeProof(row.proof,stage,binding,{operationId:row.operationId,attemptId:row.attemptId});
+    const {status,observationDigest,...core}=row.proof;
+    if(observationDigest!==hash(core))reject();
+   }
+   prior.result=row;
+  }
+ }
+ return found;
+}
 function append(context,event){context.journal.stream('release').append(event);}
 
 async function artifactAndBackup(context,binding){

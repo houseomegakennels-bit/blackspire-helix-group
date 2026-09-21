@@ -1,3 +1,9 @@
+import {inspectCandidateSixReadsHistory,inspectSequencedHeldAcceptanceHistory} from './production-stage-history.js';
+import {inspectBuyerWriterActivationHistory} from './buyer-writer-activation.js';
+import {inspectRollbackProbeHistory} from './production-rollback-operations.js';
+import {inspectFinalReleaseRecordHistory} from './final-release-record.js';
+import {inspectCandidateDeploymentHistory} from './candidate-deployment.js';
+import {inspectBoundedWriterAdmissionHistory} from './bounded-writer-admission-journal.js';
 import {verifyProtectedReleaseBackup} from './commander-backup.js';
 import {verifyReleaseArtifactDisk} from './commander-preconditions.js';
 import {verifyReleaseMigrationPackage,inspectReleaseMigrationHistory,inspectReleaseMigrationState} from './commander-migration.js';
@@ -43,6 +49,19 @@ const MIGRATION_PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','p
 function history(journal){
  const events=journal.stream('release').events();
  inspectReleaseSequenceHistory(events);
+ inspectCandidateSixReadsHistory(events);
+ inspectBuyerWriterActivationHistory(events);
+ inspectRollbackProbeHistory(events);
+ inspectFinalReleaseRecordHistory(events);
+ inspectSequencedHeldAcceptanceHistory(events);
+ inspectCandidateDeploymentHistory(events);
+ for(let index=0;index<events.length;index++){
+  const row=events[index];if(!String(row?.type??'').startsWith('candidate_deployment_'))continue;
+  const sequence=inspectReleaseSequenceHistory(events.slice(0,index));
+  if(sequence.pending?.stage!=='admission_lease'||row.operationId!==sequence.context.operationId
+   ||row.releaseSha!==sequence.context.releaseSha||row.recoverySha!==sequence.context.recoverySha)reject();
+ }
+ inspectBoundedWriterAdmissionHistory(events);
  inspectPostMergeAdmissionHistory(events);
  inspectVpsCutoverHistory(events);
  inspectReleaseMigrationHistory(events);
@@ -53,7 +72,16 @@ function history(journal){
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
-  if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')||String(row.type).startsWith('vps_')))continue;
+  if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')))continue;
+  if([3,4,5].includes(row?.schema)&&String(row.type).startsWith('vps_'))continue;
+  if(row?.schema===1&&['candidate_six_reads_intent','candidate_six_reads_result',
+   'buyer_writer_activation_intent','buyer_writer_activation_result',
+   'candidate_deployment_intent','candidate_deployment_step_intent','candidate_deployment_step_result','candidate_deployment_result',
+   'bounded_writer_admission_handle','rollback_acceptance_probe_intent','rollback_acceptance_probe_result',
+   'rollback_verification_probe_intent','rollback_verification_probe_result',
+   'final_release_record_intent','final_release_open_record_intent',
+   'held_acceptance_mint_intent','held_acceptance_minted','held_acceptance_consume_intent',
+   'held_acceptance_operation_intent','held_acceptance_operation_result','held_acceptance_consumed'].includes(row.type))continue;
   if(['release_migration_intent','release_migration_result','release_migration_recovery_intent','release_migration_recovery_result','release_hold_intent','release_hold_result','release_lifecycle_intent','release_lifecycle_result'].includes(row?.type))continue;
   if(![1,2].includes(row?.schema)||!['preflight_started','preflight_passed','preflight_stopped'].includes(row.type)
    ||!sha(row.releaseSha)||typeof row.runId!=='string'||!(/^[a-f0-9-]{36}$/).test(row.runId))reject();
@@ -79,8 +107,8 @@ function history(journal){
 export function inspectReleaseCommander(journal){
  const events=history(journal);
  const migration=inspectReleaseMigrationState(events);
- const lifecycle=inspectHeldLifecycleHistory(events);
- return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration.intent||lifecycle?null:false,
+ const lifecycle=inspectHeldLifecycleHistory(events),sequence=inspectReleaseSequenceHistory(events);
+ return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration.intent||lifecycle?null:sequence.mutationState,
   lifecycleReconciliationRequired:Boolean(lifecycle),
   migrationAttempted:Boolean(migration.intent),migrationStatus:migration.lastStatus,
   migrationReconciliationRequired:migration.reconciliationRequired,
@@ -103,7 +131,8 @@ export async function runReleasePreflight({input,journal},{
   releaseSha=input.releaseSha;if(!sha(releaseSha))reject();
   for(const field of ['packageConfigurationFile','backupFile','diskConfigurationFile','backupManifestFile'])if(typeof input[field]!=='string'||!input[field].startsWith('/'))reject();
   history(journal);
-  if(inspectReleaseMigrationHistory(journal.stream('release').events())||inspectHeldLifecycleHistory(journal.stream('release').events()))reject();
+  if(inspectReleaseMigrationHistory(journal.stream('release').events())||inspectHeldLifecycleHistory(journal.stream('release').events())
+   ||inspectReleaseSequenceHistory(journal.stream('release').events()).mutationState!==false)reject();
   runId=randomUUID();record('preflight_started');
   const passed=proof=>record('preflight_passed',{stage,proof});
   stage='source';verifySource(releaseSha);passed({releaseSha});
