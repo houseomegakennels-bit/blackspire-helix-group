@@ -114,3 +114,16 @@ test('owned activation binds its separate source and journal to the protected de
  assert.equal(calls.length,count);
  await assert.rejects(()=>activateBuyerWriterBeforeHeld(bound,options(f)),/activation rejected/);
 });
+
+test('owned operator upgrade state reconciles without re-preparing against replaced gateway',async()=>{
+ const {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest}=await import('../packages/buyer-writer/owned-postgres.js');
+ const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:16401,systemIdentifier:'123456789',caSha256:'d'.repeat(64)};
+ const input={...bound,backendProfile:'owned-postgres-v1',profileDigest:ownedPostgresProfileDigest(profile)},root='/var/lib/blackspire-operator/owned-gateway-transition';
+ const f=fixture({loseUpgrade:true}),original=options(f),stat=f.io.lstatSync;
+ const opts={...original,readProfile:()=>profile,paths:{upgradeStateDirectory:root},io:{lstatSync:p=>stat(p.replace(root,'/var/lib/blackspire-operator/gateway-configuration-upgrade'))},readJson:p=>({...original.readJson(p.replace(root,'/var/lib/blackspire-operator/gateway-configuration-upgrade')),backupFile:root+'/'+bound.operationId+'.backup.json'})};
+ await assert.rejects(activateBuyerWriterBeforeHeld(input,opts),/lost upgrade acknowledgement/);
+ const prepared=f.calls.filter(c=>c.includes('gateway-v4')).length;
+ await activateBuyerWriterBeforeHeld(input,opts);
+ assert.equal(f.calls.filter(c=>c.includes('gateway-v4')).length,prepared);
+ assert.ok(f.calls.includes('scripts/upgrade-buyer-writer-gateway-configuration.js:--reconcile'));
+});

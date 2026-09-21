@@ -1,3 +1,7 @@
+import {verifyOwnedBuyerMigrationQuiescence} from './owned-migration-host.js';
+import {readOwnedDatabaseProfile} from './database-profile.js';
+import {assertRetiredGatewaySnapshot} from './owned-gateway-transition.js';
+import {inspectOwnedBuyerWriterGatewayConfigurationUpgrade} from './gateway-configuration-upgrade.js';
 import {acceptanceTargetSelection,matchesAcceptanceTargetBackend,verifyAcceptanceTargetProfile} from './acceptance-target-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -228,7 +232,7 @@ function commitOwnedPreparation(io,prepared){
   try{closeHandle(io,publication.candidateHandle);}
   finally{closeHandle(io,publication.keyHandle);publications.delete(prepared);}
 }
-function validateInput(input){
+function validateInput(input,ownedTransition){
   const keys=['releaseSha','operationId','attemptId','workspace','origin','keyId',
     'preparationRoot','candidatePath','artifact','sourceConfiguration','currentGatewayConfiguration',
     'acceptanceTarget'];
@@ -243,10 +247,11 @@ function validateInput(input){
     {workspace:WORKSPACE,environment:'production'});
   const current=validateBuyerWriterGatewayServiceConfiguration(input.currentGatewayConfiguration);
   const target=acceptanceTarget(input.acceptanceTarget,input.releaseSha,source.runtime);
-  if(current.version!==2||source.units||source.rehearsalFile
+  if(!ownedTransition&&(current.version!==2||source.units||source.rehearsalFile
     ||source.workspace!==current.workspace||source.creatorOid!==current.creatorOid
     ||!same(source.runtime,current.runtime)||!same(source.issuer,current.issuer)
-    ||current.authority.releaseSha===input.releaseSha)fail();
+    ||current.authority.releaseSha===input.releaseSha))fail();
+  if(ownedTransition&&(source.units||source.rehearsalFile||source.workspace!==current.workspace||!same(source.runtime,ownedTransition.ownedSource.runtime)||!same(source.issuer,ownedTransition.ownedSource.issuer)||source.writerCredential!==ownedTransition.ownedSource.writerCredential||source.issuerCredential!==ownedTransition.ownedSource.issuerCredential))fail();
   return {source,current,target};
 }
 function keyMaterial(generate){
@@ -260,16 +265,16 @@ function keyMaterial(generate){
 }
 export function buildBuyerWriterGatewayV4Preparation(input,{
   now=Date.now,randomBytes:random=randomBytes,
-  generateKeyPairSync:generate=generateKeyPairSync,apiUid,credentialGroupId,
+  generateKeyPairSync:generate=generateKeyPairSync,apiUid,credentialGroupId,ownedTransition,
 }={}){
   try{
-    const {source,current,target}=validateInput(input);
+    const {source,current,target}=validateInput(input,ownedTransition);
     if(typeof now!=='function'||typeof random!=='function'
       ||typeof generate!=='function'||!Number.isInteger(apiUid)||apiUid<=0
       ||!Number.isInteger(credentialGroupId)||credentialGroupId<=0)fail();
     const admissionCredential=random(32).toString('base64url'),subject=target.ownerId;
     if(!UUID.test(subject)||!/^[A-Za-z0-9_-]{43}$/.test(admissionCredential)
-      ||new Set([source.writerCredential,source.issuerCredential,current.gatewayCapability,
+      ||new Set([source.writerCredential,source.issuerCredential,ownedTransition?.ownedSource.gatewayCapability??current.gatewayCapability,
         source.runtime.password,source.issuer.password,admissionCredential]).size!==6)fail();
     const {privateKey,publicKey}=keyMaterial(generate),keyPath=path.join(KEY_ROOT,
       'buyer-writer-signing-key-'+input.keyId+'.pem');
@@ -283,7 +288,7 @@ export function buildBuyerWriterGatewayV4Preparation(input,{
     const candidate=validateBuyerWriterGatewayProvisioningConfiguration({
       version:4,workspace:WORKSPACE,bindingFile:source.bindingFile,
       writerCredential:source.writerCredential,issuerCredential:source.issuerCredential,
-      admissionCredential,gatewayCapability:current.gatewayCapability,
+      admissionCredential,gatewayCapability:ownedTransition?.ownedSource.gatewayCapability??current.gatewayCapability,
       creatorOid:source.creatorOid,authority,runtime:source.runtime,issuer:source.issuer,
       operationPermitConfiguration:JSON.stringify(permit),
       operationPermitVerificationConfiguration:verification,
@@ -295,7 +300,7 @@ export function buildBuyerWriterGatewayV4Preparation(input,{
     const keyBytes=Buffer.from(privateKey);
     const digests={candidateDigest:digest(candidateBytes),
       publicKeyDigest:digest(Buffer.from(publicKey))};
-    inspectBuyerWriterGatewayConfigurationUpgrade({releaseSha:input.releaseSha,
+    (ownedTransition?inspectOwnedBuyerWriterGatewayConfigurationUpgrade:inspectBuyerWriterGatewayConfigurationUpgrade)({...ownedTransition,releaseSha:input.releaseSha,
       operationId:input.operationId,attemptId:input.attemptId,
       artifactDigest:input.artifact.artifactDigest,candidateDigest:digests.candidateDigest,
       oldConfiguration:current,newConfiguration:rendered.gatewayConfig});
@@ -689,7 +694,8 @@ async function prepareHigh(input,{
       ||!absentPath(io,input.candidatePath)
       ||!absentPath(io,path.join(KEY_ROOT,'buyer-writer-signing-key-zola-'
         +input.releaseSha.slice(0,16)+'.pem')))fail();
-    const plan=buildBuyerWriterGatewayV4Preparation(builtInput,{...deps,
+    const ownedTransition=deps.ownedTransitionFactory?await deps.ownedTransitionFactory(input,source,current):undefined;
+    const plan=buildBuyerWriterGatewayV4Preparation(builtInput,{...deps,ownedTransition,
       apiUid:identity.apiUid,credentialGroupId:identity.credentialGroupId});
     const freshSource=readSnapshot(input.sourceConfigurationFile,{groupId:0,
       maxBytes:65536,io,aclTool});
@@ -704,6 +710,7 @@ async function prepareHigh(input,{
       releaseSha:input.releaseSha,environment:'production'});
     if(!snapshotSame(source,freshSource)||!snapshotSame(current,freshCurrent)
       ||!snapshotSame(acceptance,freshAcceptance)||!same(observed,freshArtifact))fail();
+    if(ownedTransition&&!same(ownedTransition,await deps.ownedTransitionFactory(input,freshSource,freshCurrent)))fail();
     const publicationIdentity=await resolveIdentity();
     if(!same(identity,publicationIdentity))fail();
     const state=plans.get(plan);let keyStage,candidateStage,intentPublished=false;
@@ -805,4 +812,18 @@ export function prepareBuyerWriterGatewayV4(input,deps={}){
     return publishBuyerWriterGatewayV4Preparation(plan,{...deps,
       artifactProof:input.artifact});
   }catch{fail();}
+}
+
+// Separately reviewed operator path: genuine retired legacy v4 is retained;
+// ordinary v2 preparation above remains unchanged.
+export async function prepareOwnedBuyerWriterGatewayV4(input,deps={}){
+ return prepareHigh(input,{...deps,ownedTransitionFactory:async(bound,source,current)=>{
+  verifyOwnedBuyerMigrationQuiescence();
+  const read=deps.readSnapshot??readRootOwnedJsonSnapshot;
+  const ownedSnapshot=read('/var/lib/blackspire-operator/preparation/owned-gateway-provisioning.json',{groupId:0,maxBytes:65536}),owned=ownedSnapshot.value;
+  const state=read('/var/lib/blackspire-operator/gateway-configuration-upgrade/63017917-49de-4942-bc8f-2aab9463fb78.state.json',{groupId:0,maxBytes:4096}).value;
+  assertRetiredGatewaySnapshot({current:current.value,state});
+  if(owned.authority.releaseSha!==bound.releaseSha||owned.authority.operationId!==bound.operationId||owned.authority.attemptId!==bound.attemptId)fail();
+  return {ownedSource:owned,ownedProfile:readOwnedDatabaseProfile(),ownedSourceIdentity:ownedSnapshot.identity};
+ }});
 }
