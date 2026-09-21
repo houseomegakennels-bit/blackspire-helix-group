@@ -50,22 +50,25 @@ export function createOwnedSuccessorConfiguration({host,store}){
  const validate=plan=>{if(plan?.version!==1||plan.kind!=='owned-successor-configuration'||!plan.input||plan.input.previousReleaseSha!==OWNED_CONFIG_PREDECESSOR)fail();
   const sp=validateOwnedStoreTransitionPlan(plan.storePlan);if(sp.releaseSha!==plan.input.releaseSha||sp.previousSha!==plan.input.previousReleaseSha||sp.origin!==plan.input.frontendOrigin||sp.profileDigest!==plan.input.profileDigest)fail();
   const derived=buildOwnedSuccessorWriter({...plan.input,...plan.before});if(!same(derived,plan.candidate)||!same(plan.input.profileDigest,derived.profileDigest))fail();return plan;};
+ const barrier=releaseSha=>{if(host.readRecord(releaseSha,'restore-intent')!==null||host.readRecord(releaseSha,'restore-result')!==null)fail();};
+ const result=plan=>({status:'OWNED_SUCCESSOR_CONFIGURATION_PREPARED',releaseSha:plan.input.releaseSha,profileDigest:plan.input.profileDigest,planDigest:hash(plan),storePlan:plan.storePlan});
  return {
-  async prepare(input){const evidence=await checked(input);let plan=host.readPlan(input.releaseSha);
+  async observe(value){const plan=validate(value);barrier(plan.input.releaseSha);if(!same(host.readFinalPlan(plan.input.releaseSha),plan)||!same(host.readRecord(plan.input.releaseSha,'intent',{final:true}),{planDigest:hash(plan)})||!same(host.readRecord(plan.input.releaseSha,'result',{final:true}),{planDigest:hash(plan)}))fail();await host.observeWriter(plan);if(await store.observe(plan.storePlan)!==true)fail();await host.observeWriter(plan);barrier(plan.input.releaseSha);return result(plan);},
+  async prepare(input){barrier(input?.releaseSha);const evidence=await checked(input);let plan=host.readPlan(input.releaseSha);
    if(plan){validate(plan);if(!same(plan.input,input)||!same(plan.evidence,evidence))fail();host.retainPlan(plan);return plan;}
    const before=host.readWriterInputs(input.previousReleaseSha),candidate=buildOwnedSuccessorWriter({...input,...before});if(candidate.profileDigest!==input.profileDigest)fail();
    const storePlan=await store.prepare({previousSha:input.previousReleaseSha,releaseSha:input.releaseSha,origin:input.frontendOrigin,backendProfile:'owned-postgres-v1',profileDigest:input.profileDigest});
    plan=validate({version:1,kind:'owned-successor-configuration',input,evidence,before,candidate,storePlan});await checked(input);host.retainPlan(plan);return plan;
   },
-  async publish(value){const plan=validate(value);if(!same(host.readPlan(plan.input.releaseSha),plan)||!same(await checked(plan.input),plan.evidence))fail();
+  async publish(value){const plan=validate(value);barrier(plan.input.releaseSha);if(!same(host.readPlan(plan.input.releaseSha),plan)||!same(await checked(plan.input),plan.evidence))fail();
    host.record(plan,'intent',{planDigest:hash(plan)});host.assertSourceUnchanged(plan.before.source);
    host.publishCredentialSource(plan.before.credentialSource,plan.candidate.credentialSource);
    host.publishGatewayCandidate(plan.input.releaseSha,plan.candidate.gateway);
    host.publishLiveWriter(plan);const installed=await host.installWriter(plan);if(installed?.status!=='INSTALLED_RELOAD_REQUIRED'||installed.releaseSha!==plan.input.releaseSha)fail();
    await store.publish(plan.storePlan);host.assertSourceUnchanged(plan.before.source);await checked(plan.input);
-   host.record(plan,'result',{planDigest:hash(plan)});return {status:'OWNED_SUCCESSOR_CONFIGURATION_PREPARED',releaseSha:plan.input.releaseSha,profileDigest:plan.input.profileDigest,planDigest:hash(plan),storePlan:plan.storePlan};
+   host.record(plan,'result',{planDigest:hash(plan)});return result(plan);
   },
-  async restore(value){const plan=validate(value);if(!same(host.readPlan(plan.input.releaseSha),plan))fail();await host.assertStoppedHeld(plan.input);
+  async restore(value){const plan=validate(value);if(!same(host.readPlan(plan.input.releaseSha),plan)||!same(host.readRecord(plan.input.releaseSha,'intent'),{planDigest:hash(plan)}))fail();await host.assertStoppedHeld(plan.input);
    host.record(plan,'restore-intent',{planDigest:hash(plan)});await store.restore(plan.storePlan);host.restoreLiveWriter(plan);host.publishCredentialSource(plan.candidate.credentialSource,plan.before.credentialSource);host.assertSourceUnchanged(plan.before.source);await host.assertStoppedHeld(plan.input);
    host.record(plan,'restore-result',{planDigest:hash(plan)});return {status:'OWNED_SUCCESSOR_CONFIGURATION_RESTORED',releaseSha:plan.input.previousReleaseSha,dataRestored:false};
   },
