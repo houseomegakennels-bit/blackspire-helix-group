@@ -62,13 +62,9 @@ export async function guardAdminApi(): Promise<NextResponse | null> {
   return null;
 }
 
-/** For API route handlers — require any signed-in operator (beta or admin). */
+/** For API route handlers — require an admitted workspace operator (beta or admin). */
 export async function guardSignedInApi(): Promise<NextResponse | null> {
-  const { role } = await resolveRole();
-  if (role === "anonymous") {
-    return NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 });
-  }
-  return null;
+  return guardWorkspaceApi();
 }
 
 export async function guardWorkspaceApi(): Promise<NextResponse | null> {
@@ -87,10 +83,11 @@ export async function requireAdminPage(): Promise<void> {
   if (role !== "admin") redirect("/workspaces");
 }
 
-/** For server pages — require any signed-in operator; returns the role. */
+/** For server pages — require an admitted workspace operator; returns the role. */
 export async function requireSignedInPage(): Promise<{ role: OperatorRole }> {
   const { role } = await resolveRole();
   if (role === "anonymous") redirect("/auth");
+  if (role !== "admin" && role !== "beta_tester") redirect(role === "demo_viewer" ? "/demo" : "/");
   return { role };
 }
 
