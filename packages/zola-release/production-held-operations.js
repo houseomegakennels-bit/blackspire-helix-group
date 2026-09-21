@@ -111,7 +111,7 @@ export async function establishCandidateHeld(context,{root=RELEASE_ADMISSION_ROO
  groupId=fs.existsSync(root)?fs.statSync(root).gid:fs.statSync('/etc/blackspire').gid,
  engage=engageReleaseAdmissionHold,reconcile=reconcileReleaseAdmissionHold,successorHold=rolloverOwnedSuccessorHeld,
  prepare=prepareCandidateDeployment,lifecycle=runHeldLifecycle,sequence=inspectReleaseSequenceHistory,
- ownedStore=()=>import('./owned-store-transition.js').then(module=>module.createOwnedStoreTransition())}={}){
+ ownedStore=()=>import('./owned-runtime-store.js').then(module=>module.createOwnedRuntimeStoreTransition())}={}){
  const fullEvents=context.journal.stream('release').events(),events=partitionRetiredReleaseHistory(fullEvents).current;
  const confirmed=events.filter(e=>e.type==='release_hold_result').at(-1);
  if(context.release?.schema===3&&!confirmed){await successorHold({releaseSha:context.input.releaseSha,operationId:context.release.operationId,profileDigest:context.release.profileDigest,successorLineageFile:context.release.successorLineageFile,journal:context.journal});}
@@ -184,7 +184,9 @@ export function createHeldProductionOperations(context,overrides={}){
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
   publicRouting:input=>import('./public-command-routing-host.js').then(module=>module.publishPublicCommandRouting(input)),
   recordRoot:FINAL_RELEASE_RECORD_ROOT,candidate:runCandidateCollector,
-  activate:input=>activateBuyerWriterBeforeHeld({...input,...(context.release?.backendProfile==='owned-postgres-v1'?{backendProfile:context.release.backendProfile,profileDigest:context.release.profileDigest}:{})},{journal:context.journal}),
+  activate:input=>context.release?.schema===3
+   ?import('./owned-successor-activation.js').then(module=>module.activateOwnedSuccessorBeforeHeld({...input,profileDigest:context.release.profileDigest,successorLineageFile:context.release.successorLineageFile},{journal:context.journal}))
+   :activateBuyerWriterBeforeHeld({...input,...(context.release?.backendProfile==='owned-postgres-v1'?{backendProfile:context.release.backendProfile,profileDigest:context.release.profileDigest}:{})},{journal:context.journal}),
   establishHeld:()=>establishCandidateHeld(context),ensureWriterBinding:ensureHeldWriterBinding,...overrides};
  const journalResult=(kind,attemptId)=>context.journal.stream('release').events().find(row=>row?.schema===1&&row.type===`${kind}_result`&&row.attemptId===attemptId);
  const candidate={check(call){invocation(context,call,'candidate_six_reads');return pass({stage:'candidate_six_reads',fixedIsolatedCollector:true});},

@@ -1,4 +1,8 @@
 # Blackspire Canonical Source of Truth
+
+## 2026-09-21 — successor activation integrated
+
+The owned operator and default production admission operation now dispatch schema-three releases through the reviewed successor activation coordinator, preserving the current admission journal and exact operation/attempt binding. Candidate preparation reuses its retained store transition; runtime manifest publication verifies the deployed artifact at both inspection layers. Independent review approved the composed dispatch and existing 28 focused regressions. Final integrated suite and release publication remain pending; production remains HELD on candidate2636. No successor deployment or public opening occurred.
 ## 2026-09-21 — retained successor store plan in candidate preparation
 
 Candidate preparation now receives the schema-three release context and derives the exact pending admission attempt from the validated journal. It loads the protected completed successor activation store plan instead of preparing a same-release transition, checks its predecessor against the actual current pointer, and binds release, profile and preview origin before candidate intent. The original rollback identity is retained; a retired successor without its explicit context refuses. Twenty-four focused tests pass, including real protected admission files and candidate-host plan validation with modeled activation metadata. The native activation reader is a separate required integration dependency; production execution remains UNVERIFIED. No production changes occurred.

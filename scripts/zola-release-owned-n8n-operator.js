@@ -45,7 +45,7 @@ try{
  const {installedBuyerWriterManifestPath}=await load('packages/zola-release/installed-buyer-writer.js');
  const {createHeldWriterBindingHost,inspectHeldWriterBindingHistory}=await load('packages/zola-release/held-writer-binding.js');
  const input=loadProductionReleaseInput(inputFile),release=input.value;
- if(release.schema!==2||release.backendProfile!=='owned-postgres-v1')fail();
+ if(![2,3].includes(release.schema)||release.backendProfile!=='owned-postgres-v1')fail();
  verifyReleaseSource(release.releaseSha);journal=openReleaseJournal();
  const read=file=>readRootOwnedJsonSnapshot(file,{groupId:0,maxBytes:65536});
  const sourceFile='/var/lib/blackspire-operator/preparation/owned-gateway-provisioning.json';
@@ -128,7 +128,10 @@ try{
    if(inspectReleaseSequenceHistory(journal.stream('release').events()).pending?.stage!=='n8n_migration')return transport(...args);
    initializeSource();return request(...args);
   };
-  const activate=activation=>activateBuyerWriterBeforeHeld({...activation,backendProfile:release.backendProfile,profileDigest:release.profileDigest},{journal:scopedJournal,
+  const activate=async activation=>{
+   if(release.schema===3){const {activateOwnedSuccessorBeforeHeld}=await load('packages/zola-release/owned-successor-activation.js');
+    return activateOwnedSuccessorBeforeHeld({...activation,profileDigest:release.profileDigest,successorLineageFile:release.successorLineageFile},{journal:scopedJournal});}
+   return activateBuyerWriterBeforeHeld({...activation,backendProfile:release.backendProfile,profileDigest:release.profileDigest},{journal:scopedJournal,
    paths:{upgradeStateDirectory:'/var/lib/blackspire-operator/owned-gateway-transition'},
    run:(script,args)=>{
     verifyReleaseSource(release.releaseSha);
@@ -138,6 +141,7 @@ try{
     const stdout=execFileSync('/bin/bash',['scripts/with-node.sh',selected,...args],{cwd:canonical,encoding:'utf8',timeout:120000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',LANG:'C'}});
     verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();return JSON.parse(stdout);
    }});
+  };
   const providerQuery=async(sql,values)=>{verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
    const result=await queryFixedProviderAcl('/etc/blackspire-buyer-writer-gateway/gateway.json',sql,values,{Pool:createOwnedAclObserverPool(Pool,profile),verifyAcl:verifyOwnedOperatorAclResult});
    verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();return result;};

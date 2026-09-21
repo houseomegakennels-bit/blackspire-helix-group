@@ -2321,3 +2321,7 @@ Implemented a separate protected successor unit plan, intent and completion rece
 ## 2026-09-21 — Successor activation authority and retained handoff
 
 Implemented separate configuration/unit activation receipts under the exact pending admission authority, completed read-only replay, and a validated retained store-plan handoff. Focused journal, uncertain-outcome, evidence-drift, and damaged-receipt tests pass. Native configuration and gateway dependencies were integrated. Twenty-two focused tests pass, including actual protected gateway publication composed through stopped, rolled-over, partially deployed, and running replay checkpoints; no publication/reload repeats. Build, lint, syntax, memory, and secret checks pass. No production effects were executed by this implementation task; successor production activation remains UNVERIFIED.
+
+## 2026-09-21 — successor activation integration
+
+Integrated independently reviewed final-input recovery, shared artifact-phase classifier, activation coordinator and retained candidate store handoff. Wired schema-three operator/default activation to its exact journal and runtime store manifest publication to deployed verification. Independent review and 28 focused tests pass; full integration gates and production execution remain pending. Production unchanged and HELD.
