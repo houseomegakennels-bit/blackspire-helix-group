@@ -1,3 +1,6 @@
+import {createBuyerStoreProtectedFiles} from './protected-files.js';
+import {openReleaseJournal} from '../zola-release/commander-journal.js';
+import {verifyOwnedBuyerMigrationQuiescence} from '../buyer-writer/owned-migration-host.js';
 import {prepareBuyerStoreNamespace} from './namespace.js';
 import {databaseTlsOptions} from '../buyer-writer/database-profile.js';
 import {provisionBuyerStorePasswords} from './password-provision.js';
@@ -5,7 +8,7 @@ import {observeFreshOwnedRepositoryCredentials} from '../buyer-writer/owned-post
 import fs from 'node:fs';
 import {randomBytes,createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
+import {readRootOwnedJson,readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
 import {readOwnedDatabaseProfile,validateManagementCredential,verifyOwnedDatabaseIdentity,OWNED_DATABASE_MANAGEMENT} from '../buyer-writer/database-profile.js';
 import {ownedPostgresProfileDigest} from '../buyer-writer/owned-postgres.js';
 import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
@@ -15,19 +18,10 @@ const ROOT='/var/lib/blackspire-operator/buyer-store';
 const PLAN=ROOT+'/plan.json',INTENT=ROOT+'/password-intent.json',DONE=ROOT+'/password-result.json';
 const roles=['buyer_repository_login','buyer_capability_login'];
 const bytes=v=>Buffer.from(JSON.stringify(v)+'\n');
-function publish(filename,value,gid=0,mode=0o600){
- const data=bytes(value);let fd;
- try{fd=fs.openSync(filename,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,mode);fs.writeFileSync(fd,data);fs.fchownSync(fd,0,gid);fs.fchmodSync(fd,mode);fs.fsyncSync(fd);}
- catch(error){if(error.code!=='EEXIST')fail();const actual=readRootOwnedJson(filename,{groupId:gid,maxBytes:32768});if(!bytes(actual).equals(data))fail();}
- finally{if(fd!==undefined)fs.closeSync(fd);}
- const stat=fs.lstatSync(filename);if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.gid!==gid||stat.nlink!==1||(stat.mode&0o7777)!==mode)fail();
- const dir=fs.openSync(filename.slice(0,filename.lastIndexOf('/')),fs.constants.O_RDONLY);try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}
-}
+const protectedFiles=createBuyerStoreProtectedFiles();
+const publish=(filename,value,gid=0,mode=0o600)=>protectedFiles.publish(filename,bytes(value),{gid,mode});
 function existing(filename){try{fs.lstatSync(filename);return true;}catch(error){if(error.code==='ENOENT')return false;fail();}}
-function directory(filename){
- if(!existing(filename))fs.mkdirSync(filename,{mode:0o700});
- const s=fs.lstatSync(filename);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||(s.mode&0o022)!==0)fail();
-}
+const directory=filename=>protectedFiles.directory(filename,{create:true});
 function group(name){
  const line=execFileSync('/usr/bin/getent',['group',name],{encoding:'utf8',timeout:1000,maxBuffer:4096}).trim().split(':');
  if(line.length!==4||line[0]!==name||!/^\d+$/.test(line[2])||Number(line[2])===0)fail();return Number(line[2]);
@@ -35,18 +29,24 @@ function group(name){
 const digest=v=>createHash('sha256').update(bytes(v)).digest('hex');
 // Fixed protected input contains only public verifier configuration; no implicit
 // discovery or env fallbacks. Root must prepare users/groups and role DDL first.
-export async function provisionBuyerStore(releaseSha,{Client}={}){
+export async function provisionBuyerStore(releaseSha,{Client,prepareHost=async()=>{},openGlobal=openReleaseJournal,stopped=verifyOwnedBuyerMigrationQuiescence}={}){
  if(process.getuid()!==0||!/^[a-f0-9]{40}$/.test(releaseSha))fail();
+ const global=openGlobal();try{return await provisionLocked(releaseSha,{Client,prepareHost,stopped});}finally{global.close();}
+}
+async function provisionLocked(releaseSha,{Client,prepareHost,stopped}){
+ if(process.getuid()!==0||!/^[a-f0-9]{40}$/.test(releaseSha))fail();
+ stopped();
  const Driver=Client??(await import('pg')).Client;
- const profile=readOwnedDatabaseProfile(),credential=validateManagementCredential(readRootOwnedJson(OWNED_DATABASE_MANAGEMENT,{groupId:0}),{ownedProfile:profile});
+ const profile=readOwnedDatabaseProfile(),credentialSnapshot=readRootOwnedJsonSnapshot(OWNED_DATABASE_MANAGEMENT,{groupId:0}),credential=validateManagementCredential(credentialSnapshot.value,{ownedProfile:profile});let verifierSnapshot;
  const artifact=await inspectSealedBuyerWriterArtifact({artifactRoot:'/opt/blackspire-command/releases/'+releaseSha,releaseSha,environment:'production'});
+ const fence=async()=>{stopped();if(JSON.stringify(readOwnedDatabaseProfile())!==JSON.stringify(profile)||JSON.stringify(readRootOwnedJsonSnapshot(OWNED_DATABASE_MANAGEMENT,{groupId:0}))!==JSON.stringify(credentialSnapshot)||verifierSnapshot&&JSON.stringify(readRootOwnedJsonSnapshot('/var/lib/blackspire-operator/preparation/buyer-store-verifier.json',{groupId:0}))!==JSON.stringify(verifierSnapshot))fail();};
+ await prepareHost({releaseSha,profile,credential,artifact,fence});await fence();
  const gid=group('blackspire-buyer-store'),apiGid=group('blackspire-api'),ipcGroupId=group('blackspire-buyer-store-client');
  if(new Set([gid,apiGid,ipcGroupId]).size!==3)fail();
- const verifier=readRootOwnedJson('/var/lib/blackspire-operator/preparation/buyer-store-verifier.json',{groupId:0});
+ verifierSnapshot=readRootOwnedJsonSnapshot('/var/lib/blackspire-operator/preparation/buyer-store-verifier.json',{groupId:0});const verifier=verifierSnapshot.value;
  if(Object.keys(verifier).sort().join(',')!=='operatorOwnerId,publicKey')fail();
- directory(ROOT);let lock;
- try{
-  lock=fs.openSync(ROOT+'/lock',fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW,0o600);
+ directory(ROOT);if(existing(ROOT+'/lock'))fail();
+ {
   let plan;
   if(existing(PLAN))plan=readRootOwnedJson(PLAN,{groupId:0,maxBytes:32768});
   else{
@@ -69,18 +69,18 @@ export async function provisionBuyerStore(releaseSha,{Client}={}){
   const management=new Driver(options(credential.user,credential.password));
   try{
    await management.connect();
-   await provisionBuyerStorePasswords({management,verifyIdentity:()=>verifyOwnedDatabaseIdentity(management,profile),
+   await provisionBuyerStorePasswords({management,verifyIdentity:()=>verifyOwnedDatabaseIdentity(management,profile),fence,
     observeFresh:async()=>{const result=await observeFreshOwnedRepositoryCredentials();return result.fresh===true;},
     passwords:[config.repositoryPassword,config.capabilityPassword],verifyPasswords:verify,
     journal:{hasIntent:()=>existing(INTENT),writeIntent:()=>publish(INTENT,intent),
      verifyIntent:()=>{if(JSON.stringify(readRootOwnedJson(INTENT,{groupId:0}))!==JSON.stringify(intent))fail();},
      writeResult:()=>publish(DONE,{version:1,planDigest:digest(plan),status:'VERIFIED'})}});
   }finally{await management.end().catch(()=>{});}
-  directory('/etc/blackspire-buyer-store');
-  fs.chownSync('/etc/blackspire-buyer-store',0,gid);fs.chmodSync('/etc/blackspire-buyer-store',0o750);
+  await fence();protectedFiles.directory('/etc/blackspire-buyer-store',{create:true,gid,mode:0o750});
   publish(BUYER_STORE_CONFIGURATION,config,gid,0o640);
   publish(BUYER_STORE_CLIENT_CONFIGURATION,config.client,apiGid,0o640);
-  await prepareBuyerStoreNamespace(releaseSha);
+  await fence();await prepareBuyerStoreNamespace(releaseSha);await fence();
+  execFileSync('/usr/bin/systemctl',['daemon-reload'],{encoding:'utf8',timeout:10000,maxBuffer:4096});await fence();
   return {status:'BUYER_STORE_CREDENTIALS_PREPARED',releaseSha,artifactDigest:artifact.artifactDigest};
- }finally{if(lock!==undefined){fs.closeSync(lock);fs.unlinkSync(ROOT+'/lock');}}
+ }
 }
