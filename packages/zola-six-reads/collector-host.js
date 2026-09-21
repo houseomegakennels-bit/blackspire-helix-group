@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import {validateVpsHeldHttp} from '../zola-release/vps-held-http.js';
+import {verifySealedBuyerWriterArtifact} from '../buyer-writer/artifact.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -8,7 +10,7 @@ import { readRootOwnedJson } from '../buyer-writer/protected-json.js';
 import { createProductionConnectedDatabaseObserver } from './database-connected-host.js';
 import { createProductionDatabaseObserver } from './database-host.js';
 import { digest, readCases, refuse } from './collector.js';
-import {RELEASE_ADMISSION_ROOT,validateHeldAcceptanceClaims} from '../shared/release-admission.js';
+import {RELEASE_ADMISSION_ROOT,validateHeldAcceptanceClaims,validatePremergeReadClaims} from '../shared/release-admission.js';
 
 // Called in production by root; tests may use a private directory owned by the
 // current test uid. Production CLI fixes owner=0 and rejects writable ancestors.
@@ -74,6 +76,23 @@ export async function boundedRequest(config, pathname, { method = 'GET', headers
   let data; try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { refuse('HTTP_JSON_REJECTED'); }
   return { status: response.status, data };
 }
+// Both probes use the same bounded loopback transport as task admission.
+export async function observeCollectorHttpGeneration(config,workerGeneration){
+  const health=await boundedRequest(config,'/health'),ready=await boundedRequest(config,'/ready');
+  if([4,5].includes(config.version)){
+    try{validateVpsHeldHttp({health:{status:health.status,value:health.data},ready:{status:ready.status,value:ready.data}},
+      {releaseSha:config.releaseSha,workerExpected:true,workerGeneration});}catch{refuse('RUNTIME_HEALTH_PAIRING_MISMATCH');}
+    return;
+  }
+  for(const [endpoint,{status,data}] of [['/health',health],['/ready',ready]]){
+    if(status!==200||data.ok!==true||data.lifecycle!=='ready'||data.deploymentIdentity?.state!=='VERIFIED'
+      ||data.deploymentIdentity.build?.value!==config.releaseSha||data.deploymentIdentity.environment?.value!=='production'
+      ||data.dependencies?.worker?.generationId!==workerGeneration||data.dependencies.worker.ok!==true
+      ||!['idle','working'].includes(data.dependencies.worker.state)||!Number.isFinite(data.dependencies.worker.heartbeatAgeMs)
+      ||data.dependencies.worker.heartbeatAgeMs<0||data.dependencies.worker.heartbeatAgeMs>30000
+      ||endpoint==='/health'&&data.emergencyStop!==false)refuse('RUNTIME_HEALTH_PAIRING_MISMATCH');
+  }
+}
 function assertListener(config) {
   const output = execFileSync('/usr/bin/ss', ['-H','-ltnp',`sport = :${config.port}`], { encoding: 'utf8', timeout: 1000, maxBuffer: 8192, env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }, stdio: ['ignore','pipe','pipe'] }).trim();
   const lines = output.split('\n'), pids = [...output.matchAll(/\bpid=(\d+),fd=/g)].map(m => Number(m[1]));
@@ -105,29 +124,33 @@ function assertWorkerFrontend(config) {
   return workerId;
 }
 export function createProductionCollectorHost(config,{readAcceptanceSecret=()=>{
-  const filename=path.join(RELEASE_ADMISSION_ROOT,'acceptance-secret.json'),stat=fs.lstatSync(filename);
+  const filename=path.join(RELEASE_ADMISSION_ROOT,config.version===4?'premerge-reads-secret.json':'acceptance-secret.json'),stat=fs.lstatSync(filename);
   if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.nlink!==1||(stat.mode&0o7777)!==0o600)refuse('CREDENTIAL_CONTRACT_REJECTED');
   return readRootOwnedJson(filename,{groupId:stat.gid,maxBytes:1024});
 } }={}) {
   if (process.getuid() !== 0) refuse('ROOT_REQUIRED');
-  const gitOptions = { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8', timeout: 2000, maxBuffer: 65536, env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', GIT_NO_REPLACE_OBJECTS: '1' }, stdio: ['ignore','pipe','pipe'] };
-  if (execFileSync('/usr/bin/git', ['rev-parse','--verify','HEAD'], gitOptions).trim() !== config.releaseSha ||
-      execFileSync('/usr/bin/git', ['status','--porcelain=v1','--untracked-files=all'], gitOptions).trim()) refuse('COLLECTOR_SOURCE_SHA_OR_DIRTY_TREE');
+  const sourceRoot=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,'');
+  if(sourceRoot===`/opt/blackspire-command/releases/${config.releaseSha}`){
+    verifySealedBuyerWriterArtifact({artifactRoot:sourceRoot,releaseSha:config.releaseSha,environment:'production'});
+  }else{
+    const gitOptions={cwd:sourceRoot,encoding:'utf8',timeout:2000,maxBuffer:65536,env:{PATH:'/usr/bin:/bin',LC_ALL:'C',GIT_NO_REPLACE_OBJECTS:'1'},stdio:['ignore','pipe','pipe']};
+    if(execFileSync('/usr/bin/git',['rev-parse','--verify','HEAD'],gitOptions).trim()!==config.releaseSha||execFileSync('/usr/bin/git',['status','--porcelain=v1','--untracked-files=all'],gitOptions).trim())refuse('COLLECTOR_SOURCE_SHA_OR_DIRTY_TREE');
+  }
   let credentials = readRootOwnedJson(config.credentialPath, { groupId: 0 }),acceptanceSecret=null;
   const denialReceipt = [4,5].includes(config.version) ? readRootOwnedJson(config.denialReceiptPath, { groupId: 0 }) : null;
   if ([4,5].includes(config.version)) {
     if (Object.keys(credentials).sort().join(',') !== 'bearer') refuse('CREDENTIAL_CONTRACT_REJECTED');
     credentials={...credentials,deniedCookie:denialReceipt.deniedCookie};
-    if(config.version===5){acceptanceSecret=readAcceptanceSecret();
+    if([4,5].includes(config.version)){acceptanceSecret=readAcceptanceSecret();
       if(!acceptanceSecret||Object.keys(acceptanceSecret).sort().join(',')!=='permitId,schema,token'||acceptanceSecret.schema!==1
         ||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(acceptanceSecret.permitId??'')||typeof acceptanceSecret.token!=='string'||acceptanceSecret.token.length!==43)refuse('CREDENTIAL_CONTRACT_REJECTED');
       credentials.heldAcceptanceToken=acceptanceSecret.token;
     }
   }
-  if (Object.keys(credentials).sort().join(',') !== (config.version===5?'bearer,deniedCookie,heldAcceptanceToken':'bearer,deniedCookie') ||
+  if (Object.keys(credentials).sort().join(',') !== ([4,5].includes(config.version)?'bearer,deniedCookie,heldAcceptanceToken':'bearer,deniedCookie') ||
       typeof credentials.bearer !== 'string' || credentials.bearer.length < 24 || credentials.bearer.length > 4096 || /[\r\n]/.test(credentials.bearer) ||
       typeof credentials.deniedCookie !== 'string' || credentials.deniedCookie.length < 10 || credentials.deniedCookie.length > 8192 || /[\r\n]/.test(credentials.deniedCookie) ||
-      (config.version===5&&(typeof credentials.heldAcceptanceToken!=='string'||credentials.heldAcceptanceToken.length!==43))) refuse('CREDENTIAL_CONTRACT_REJECTED');
+      ([4,5].includes(config.version)&&(typeof credentials.heldAcceptanceToken!=='string'||credentials.heldAcceptanceToken.length!==43))) refuse('CREDENTIAL_CONTRACT_REJECTED');
   const reader = openCollectorDatabaseReader(config);
   let httpBoundary, inspect;
   try {
@@ -137,10 +160,11 @@ export function createProductionCollectorHost(config,{readAcceptanceSecret=()=>{
   } catch (error) { reader.close(); throw error; }
   return {
     async acceptance(generation){
-      const claims=validateHeldAcceptanceClaims(readRootOwnedJson(path.join(RELEASE_ADMISSION_ROOT,'acceptance.json'),{groupId:fs.statSync(path.join(RELEASE_ADMISSION_ROOT,'acceptance.json')).gid,maxBytes:16384}));
+      const claimsPath=path.join(RELEASE_ADMISSION_ROOT,config.version===4?'premerge-reads.json':'acceptance.json');
+      const claims=(config.version===4?validatePremergeReadClaims:validateHeldAcceptanceClaims)(readRootOwnedJson(claimsPath,{groupId:fs.statSync(claimsPath).gid,maxBytes:16384}));
       const tokenDigest=digest(credentials.heldAcceptanceToken),cases=readCases(config.dealId);
-      if(acceptanceSecret?.permitId!==claims.permitId||claims.tokenDigest!==tokenDigest||claims.mergeMainSha!==config.releaseSha||claims.expectedDeploymentSha!==config.releaseSha
-        ||claims.epochRunId!==config.releaseRunId||claims.workspace!==config.workspace||claims.principal!==config.principal
+      if(acceptanceSecret?.permitId!==claims.permitId||claims.tokenDigest!==tokenDigest||(config.version===4?claims.candidateSha:claims.mergeMainSha)!==config.releaseSha||claims.expectedDeploymentSha!==config.releaseSha
+        ||claims.epochRunId!==(config.version===4?config.runId:config.releaseRunId)||claims.workspace!==config.workspace||claims.principal!==config.principal
         ||claims.apiGeneration!==generation.apiGeneration||claims.workerGeneration!==generation.workerGeneration
         ||claims.reads.some((row,index)=>row.capability!==cases[index].capability||row.permission!==cases[index].permissions[0]
           ||row.request!==cases[index].text||row.idempotencyKey!==`zola-six:${claims.epochRunId}:${index}`
@@ -151,20 +175,13 @@ export function createProductionCollectorHost(config,{readAcceptanceSecret=()=>{
       assertListener(config);
       const apiEnvironment = processEnvironment(config.apiPid);
       const workerEnvironment = processEnvironment(config.workerPid);
-      if(config.version===5&&(apiEnvironment.get('BLACKSPIRE_RELEASE_RUN_ID')!==config.releaseRunId||workerEnvironment.get('BLACKSPIRE_RELEASE_RUN_ID')!==config.releaseRunId))refuse('RELEASE_RUN_PAIRING_MISMATCH');
+      if([4,5].includes(config.version)&&(apiEnvironment.get('BLACKSPIRE_RELEASE_RUN_ID')!==(config.version===4?config.runId:config.releaseRunId)||workerEnvironment.get('BLACKSPIRE_RELEASE_RUN_ID')!==(config.version===4?config.runId:config.releaseRunId)))refuse('RELEASE_RUN_PAIRING_MISMATCH');
       if ((apiEnvironment.get('BLACKSPIRE_OPERATOR_PRINCIPAL_ID') || apiEnvironment.get('BLACKSPIRE_EVALUATION_ADMIN_PRINCIPAL_ID')) !== config.principal ||
           apiEnvironment.get('COMMAND_ADMIN_TOKEN') !== credentials.bearer || apiEnvironment.get('ALLOW_BEARER_AUTH') !== 'true') refuse('API_PRINCIPAL_OR_CREDENTIAL_MISMATCH');
       const runtime = await inspect(); const worker = readBuyerWriterProcess(config.workerPid);
       if (worker.parentPid !== runtime.worker.pid || worker.controlGroup !== runtime.worker.controlGroup) refuse('WORKER_PROCESS_MISMATCH');
       reader.assertIdentity(); assertProcessDatabase(config.apiPid, config.databasePath); assertProcessDatabase(config.workerPid, config.databasePath); const workerId = assertWorkerFrontend(config);
-      for (const endpoint of ['/health','/ready']) {
-        const { status, data } = await boundedRequest(config, endpoint);
-        if (status !== 200 || data.ok !== true || data.lifecycle !== 'ready' || data.deploymentIdentity?.state !== 'VERIFIED' ||
-            data.deploymentIdentity.build?.value !== config.releaseSha || data.deploymentIdentity.environment?.value !== 'production' ||
-            data.dependencies?.worker?.generationId !== runtime.worker.invocationId || data.dependencies.worker.ok !== true ||
-            !['idle','working'].includes(data.dependencies.worker.state) || data.dependencies.worker.heartbeatAgeMs > 30000 ||
-            (endpoint === '/health' && data.emergencyStop !== false)) refuse('RUNTIME_HEALTH_PAIRING_MISMATCH');
-      }
+      await observeCollectorHttpGeneration(config,runtime.worker.invocationId);
       assertListener(config); const after = await inspect();
       if (JSON.stringify(runtime) !== JSON.stringify(after) || worker.startTime !== readBuyerWriterProcess(config.workerPid).startTime) refuse('RUNTIME_CHANGED_DURING_INSPECTION');
       return { apiGeneration: runtime.api.invocationId, apiPid: config.apiPid, apiStartTime: runtime.api.startTime,
@@ -258,14 +275,14 @@ export function createCollectorHttpBoundary(config, credentials) {
       const session=await deniedSession();
       if(!/^[a-f0-9]{48}$/.test(session.csrfToken??''))refuse('DENIAL_CSRF_UNAVAILABLE');
       const response=await boundedRequest(config,'/api/unified-input',{method:'POST',headers:{...denied,'x-csrf-token':session.csrfToken,
-        ...(credentials.heldAcceptanceToken?{'x-blackspire-held-acceptance':credentials.heldAcceptanceToken}:{})},body});
+        ...(credentials.heldAcceptanceToken?{[config.version===4?'x-blackspire-held-premerge':'x-blackspire-held-acceptance']:credentials.heldAcceptanceToken}:{})},body});
       if(response.status!==404||JSON.stringify(response.data)!=='{"error":"not found"}')refuse('AUTHENTICATED_ADMISSION_DENIAL_FAILED');
       await this.deniedIdentity();
       return{authorityDenied:true,status:404};
     },
     async admit(body) {
       const heldToken=credentials.heldAcceptanceToken;
-      const { status, data } = await boundedRequest(config, '/api/unified-input', { method: 'POST', headers: {...bearer,...(heldToken?{'x-blackspire-held-acceptance':heldToken}:{})}, body });
+      const { status, data } = await boundedRequest(config, '/api/unified-input', { method: 'POST', headers: {...bearer,...(heldToken?{[config.version===4?'x-blackspire-held-premerge':'x-blackspire-held-acceptance']:heldToken}:{})}, body });
       if (status !== 202 || data.denied || data.error) refuse('ADMISSION_NOT_ACCEPTED');
       return data;
     },

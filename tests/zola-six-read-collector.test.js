@@ -238,6 +238,7 @@ for (const version of [3,4]) test(`v${version} connected queries durably bracket
   const { DIVISION_TABLES } = await import('../packages/zola-six-reads/database-observer.js');
   const v3 = validateCollectorConfig({ ...config, version, observerDatabaseConfigPath:'/explicit/protected/management-token.json', ...(version===4?{denialReceiptPath:'/explicit/protected/denial-receipt.json'}:{}) });
   const f = await fixture();let queries=0;
+  if(version===4)f.host.acceptance=async()=>({permitId:'candidate-permit',claimsDigest:'a'.repeat(64)});
   f.host.observeDatabase=createJournaledConnectedObserver(v3,async query=>{
     queries++;
     const phase=query.includes("'phase','before'")?'before':'after';
@@ -250,6 +251,7 @@ for (const version of [3,4]) test(`v${version} connected queries durably bracket
   });
   const report=await collectSixReads(v3,f.host,f.store);
   assert.equal(report.livePass,false);assert.equal(report.results.length,6);assert.equal(report.databaseEvidence.netMutationDelta,0);
+  if(version===4){assert.equal(report.premergeAcceptance.permitId,'candidate-permit');assert.equal(report.heldAcceptance,undefined);}
   assert.equal(queries,4);assert.equal(f.posts(),6);
   const baseline=f.events.find(e=>e.type==='database_before');
   const queryResults=f.events.filter(e=>e.type==='database_query_result');assert.equal(queryResults.length,4);

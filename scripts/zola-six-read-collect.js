@@ -15,7 +15,7 @@ try {
     process.stdout.write(`${JSON.stringify(report)}\n`);
     process.stderr.write('Candidate collector passed actual API/SQLite integration in an isolated network. Production acceptance remains unverified.\n');
   } else {
-    if (!['--dry-run','--production','--observer-sql-before','--observer-sql-after'].includes(mode) || !configPath || extra.length) throw new Error('ARGUMENTS_REJECTED');
+    if (!['--dry-run','--production','--premerge-held','--observer-sql-before','--observer-sql-after'].includes(mode) || !configPath || extra.length) throw new Error('ARGUMENTS_REJECTED');
     const config = validateCollectorConfig(readRootOwnedJson(configPath, { groupId: 0 }));
     if (mode.startsWith('--observer-sql-')) {
       const { divisionSnapshotSQL, ownerWitnessSQL, DIVISION_TABLES } = await import('../packages/zola-six-reads/database-observer.js');
@@ -32,14 +32,17 @@ try {
         livePass: false, remainingGates: ['Authoritative division mutation delta', 'Process-wide egress observation', 'Supabase row-owner denial'] })}\n`);
       process.stderr.write('Six-read plan validated; no network, credentials, database, or journal opened. Live acceptance remains unverified.\n');
     } else {
-      requireProductionCollectorConfig(config);
+      if(mode==='--premerge-held'){if(config.version!==4)throw new Error('PREMERGE_CONFIGURATION_REQUIRED');}
+      else requireProductionCollectorConfig(config);
       const { openCollectorJournal, createProductionCollectorHost } = await import('../packages/zola-six-reads/collector-host.js');
       journal = openCollectorJournal(config.journalDirectory, config.runId);
       host = createProductionCollectorHost(config);
-      const report = requireProductionCollectorReport(await collectSixReads(config, host, journal));
+      const report = await collectSixReads(config, host, journal);
+      if(mode==='--premerge-held'){if(!report.premergeAcceptance||report.livePass!==false||report.results?.length!==6||!report.databaseEvidence)throw new Error('PREMERGE_COLLECTION_REJECTED');}
+      else requireProductionCollectorReport(report);
       process.stdout.write(`${JSON.stringify(report)}\n`);
       process.stderr.write(`Collected ${report.results.length}/6 observed reads. Full production acceptance remains unverified; release gate refused.\n`);
-      process.exitCode = report.livePass ? 0 : 2;
+      process.exitCode = report.livePass || mode==='--premerge-held' ? 0 : 2;
     }
   }
 } catch (error) {
