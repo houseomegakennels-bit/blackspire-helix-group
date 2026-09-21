@@ -4,6 +4,7 @@ import {Readable} from 'node:stream';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {createBuyerStoreApiClient} from '../packages/buyer-store/api-client.js';
 import {createBuyerDealContextClient} from '../packages/buyer-store/deal-context-client.js';
 import {signBuyerDealContextResponse} from '../packages/buyer-store/deal-context-contract.js';
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-store-api-'));
@@ -49,4 +50,14 @@ test('user HTTP boundary delegates bearer verification and rejects alternate pat
  for(const change of [{url:'/api/internal/buyer-store/v1/jobs-list?owner=other'},{method:'GET'},{authorization:''},{body:'[]'},{body:'x'.repeat(32769)}])assert.equal((await userRequest({...change,store})).status,404);
  assert.equal(calls.length,1);
  assert.equal((await userRequest({store:{userRequest:async()=>{throw new Error('credential error');}}})).status,404);
+});
+
+test('owned API client exposes the verified nonsecret runtime selectors',()=>{
+ const clientConfiguration={version:1,releaseSha:sha,profileDigest:bindingDigest,key};
+ const client=createBuyerStoreApiClient({clientConfiguration,dealConfiguration:configuration,
+   localClient:{},lookupDeal:async()=>{}});
+ assert.equal(client.backendProfile,'owned-postgres-v1');
+ assert.equal(client.profileDigest,bindingDigest);
+ assert.equal(Object.hasOwn(client,'key'),false);
+ assert.throws(()=>createBuyerStoreApiClient({clientConfiguration:{...clientConfiguration,profileDigest:'invalid'},dealConfiguration:configuration,localClient:{}}));
 });

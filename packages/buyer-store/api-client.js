@@ -16,7 +16,7 @@ export function createBuyerStoreApiClient({clientConfiguration,dealConfiguration
  const lookup=lookupDeal??createBuyerDealContextClient({configuration:deal});
  const verify=()=>{const active=context();if(active.role!=='api'||active.releaseSha!==clientConfiguration.releaseSha)fail();};
  return Object.freeze({
-  backendProfile:clientConfiguration.backendProfile,profileDigest:clientConfiguration.profileDigest,
+  backendProfile:'owned-postgres-v1',profileDigest:clientConfiguration.profileDigest,
   async userRequest(value){verify();const result=await client.userRequest(value);verify();return result;},
   async readConsumedBuyerData(value){verify();const result=await readConsumedBuyerData(value,{repository:client,lookupDeal:lookup});verify();return result;},
   async checkAvailability(){verify();if(typeof client.checkAvailability!=='function')fail();const result=await client.checkAvailability();verify();return result;},
