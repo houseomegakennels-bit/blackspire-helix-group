@@ -2232,3 +2232,7 @@ The repository setup receipt now binds the auth namespace owner/ACL and every au
 ## 2026-09-21 — complete owned database installation-order rehearsal
 
 Composed native source freeze/receipt, locked copy/receipt/reconcile, target hardening, writer and repository installation with real identity and owner-scope queries. Found and reproduced the inherited exports auth.uid permission gap; the exact narrow repository-role repair now passes in the final native rehearsal without test-only grants. Production connections and mutations: none.
+
+## 2026-09-21 — copied export repository operations composed
+
+Extended the native full-order rehearsal through repository.execute exports-list and export-create. Copied owner export returned; foreign list empty; owner creation/retry succeeded exactly once; foreign job reference and reused ID refused. Actual writer identity and retained hardening checks still pass after repository mutations. Only synthetic disposable data changed.

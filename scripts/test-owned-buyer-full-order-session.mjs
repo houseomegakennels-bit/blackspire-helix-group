@@ -1,3 +1,4 @@
+import {createBuyerStoreRepository} from '../packages/buyer-store/repository.js';
 import {prepareOwnedTargetHardening,executeOwnedTargetHardening} from '../packages/buyer-writer/owned-target-hardening.js';
 import {databaseProfileDigest,verifyOwnedDatabaseIdentity} from '../packages/buyer-writer/database-profile.js';
 import * as security from '../packages/buyer-writer/owned-source-security.js';
@@ -112,6 +113,17 @@ try{
  assert.equal((await verify.query("SELECT has_function_privilege('buyer_capability_reader','auth.uid()','EXECUTE') OR has_function_privilege('buyer_writer_runtime','auth.uid()','EXECUTE') AS allowed")).rows[0].allowed,false);
 
  assert.deepEqual(await snapshot(),afterAcceptance);
+ const storeRepository=createBuyerStoreRepository({connect:()=>connect('owned_fixture','buyer_repository_login'),connectCapability:()=>connect('owned_fixture','buyer_capability_login')});
+ const listed=await storeRepository.execute('exports-list',{searchJobId:job,limit:50},owner);
+ assert.equal(listed.length,1);assert.equal(listed[0].file_name,'fixture.csv');assert.equal(listed[0].storage_path,'synthetic/path');assert.equal(listed[0].user_id,owner);assert.equal(listed[0].search_job_id,job);
+ assert.deepEqual(await storeRepository.execute('exports-list',{searchJobId:job,limit:50},buyer),[]);
+ const exportRequest={id:'00000000-0000-4000-8000-000000000097',searchJobId:job,fileName:'created.csv',rowCount:3};
+ const created=await storeRepository.execute('export-create',exportRequest,owner,'admin');assert.equal(created.user_id,owner);assert.equal(created.row_count,3);
+ assert.deepEqual(await storeRepository.execute('export-create',exportRequest,owner,'admin'),created);
+ await assert.rejects(storeRepository.execute('export-create',{...exportRequest,id:'00000000-0000-4000-8000-000000000096'},buyer,'admin'));
+ await assert.rejects(storeRepository.execute('export-create',exportRequest,buyer,'admin'));
+ assert.equal((await storeRepository.execute('exports-list',{searchJobId:job,limit:50},owner)).length,2);
+ await identity('runtime');await identity('issuer');
  assert.equal((await executeOwnedTargetHardening({...hardeningArgs,mode:'reconcile'})).status,'OWNED_TARGET_HARDENING_VERIFIED');
  assert.equal((await verify.query("SELECT to_regclass('auth.users') AS relation")).rows[0].relation,null);
  console.log('PASS: real source security receipt/freeze, strict source snapshot, six-table native copy+receipt/reconcile, target-only browser hardening, canonical writer and repository install order with runtime/issuer verification and preserved rows plus a later dedicated job. Host profile files/systemd/credential transport modeled; no production connections.');
