@@ -1,4 +1,4 @@
-import { createJournaledConnectedObserver } from '../packages/zola-six-reads/database-connected.js';
+import { createJournaledConnectedObserver, CONNECTED_NATIVE_OBSERVER_ENDPOINT } from '../packages/zola-six-reads/database-connected.js';
 import { digest } from '../packages/zola-six-reads/collector.js';
 import {randomBytes} from 'node:crypto';
 import { readFileSync,readlinkSync } from 'node:fs';
@@ -77,7 +77,7 @@ try {
     CREATE POLICY own_read ON public."SearchJob" FOR SELECT TO authenticated USING(user_id=auth.uid());`);
   const demote=run(['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','postgres','-v','ON_ERROR_STOP=1'],'ALTER ROLE postgres NOSUPERUSER BYPASSRLS;');
   assert.equal(demote.status,0);
-  const config={releaseSha:'a'.repeat(40),runId:'postgres-observer-fixture'};
+  const config={version:4,releaseSha:'a'.repeat(40),runId:'postgres-observer-fixture'};
   const observe=phase=>validateDivisionSnapshot(JSON.parse(sql(divisionSnapshotSQL(config,phase)).split('\n').at(-1)),config,phase);
   const witness=()=>JSON.parse(sql(ownerWitnessSQL(config,'before')).split('\n').at(-1));
   const before=observe('before');assert.equal(validateOwnerWitness(witness(),config,'before').foreignVisible,0);
@@ -88,6 +88,7 @@ try {
   const connected=createJournaledConnectedObserver(config,async query=>{connectedQueries++;return JSON.parse(sql(query).split('\n').at(-1));});
   const connectedBefore=await connected('before',{store,generation});
   assert.equal(connectedBefore.owner.foreignVisible,0);
+  assert.equal(journalEvents[1].binding.endpoint,CONNECTED_NATIVE_OBSERVER_ENDPOINT);
   assert.deepEqual(await connected('before',{store,generation}),connectedBefore);assert.equal(connectedQueries,2);
   for(let index=0;index<6;index++){store.append({type:'intent',index});store.append({type:'collected',index});}
   const connectedAfter=await connected('after',{store,generation});assert.equal(connectedQueries,4);

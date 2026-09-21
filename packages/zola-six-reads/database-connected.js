@@ -1,4 +1,4 @@
-// Durable protocol for the concrete Management API host. This module has no
+// Durable protocol for the fixed HTTPS or native TLS production host. This module has no
 // credential or snapshot-import path. Its injected executor is a host boundary,
 // not an assertion of authentication; only database-connected-host supplies it
 // in production. Tests supply an isolated executor and never claim livePass.
@@ -7,6 +7,8 @@ import { digest, refuse } from './collector.js';
 import { divisionSnapshotSQL, ownerWitnessSQL, validateDivisionSnapshot, validateOwnerWitness } from './database-observer.js';
 
 export const CONNECTED_OBSERVER_ENDPOINT = 'https://api.supabase.com/v1/projects/kchtrvfcixnimvxxctkj/database/query';
+export const CONNECTED_NATIVE_OBSERVER_ENDPOINT = 'postgresql://db.kchtrvfcixnimvxxctkj.supabase.co:5432/postgres';
+const endpointFor = config => [4,5].includes(config.version) ? CONNECTED_NATIVE_OBSERVER_ENDPOINT : CONNECTED_OBSERVER_ENDPOINT;
 const validators = { snapshot: validateDivisionSnapshot, owner: validateOwnerWitness };
 const generators = { snapshot: divisionSnapshotSQL, owner: ownerWitnessSQL };
 const equal = (a,b) => digest(a) === digest(b);
@@ -44,7 +46,7 @@ export function createJournaledConnectedObserver(config, execute) {
       } else {
         if (phase==='before' && events.some(e=>e.type==='intent')) refuse('CONNECTED_OBSERVER_BASELINE_MISSING');
         const binding = { version:1, releaseSha:config.releaseSha,runId:config.runId,configDigest,generationDigest,phase,kind,
-          endpoint:CONNECTED_OBSERVER_ENDPOINT,nonce:randomBytes(32).toString('hex'),sequence:events.length,previousDigest:digest(events) };
+          endpoint:endpointFor(config),nonce:randomBytes(32).toString('hex'),sequence:events.length,previousDigest:digest(events) };
         intent = { type:'database_query_intent',binding,queryDigest:digest(queryFor(config,phase,kind,binding)),startedAt:Date.now() };
         intentIndex = events.length;
         store.append(intent); // Production store fsyncs before any request leaves.
@@ -52,7 +54,7 @@ export function createJournaledConnectedObserver(config, execute) {
       if (phase==='after' && store.events().slice(intentIndex+1).some(e=>e.type==='collected'||e.type==='intent')) refuse('CONNECTED_OBSERVER_INTERVAL_CLOSED');
       const b = intent.binding;
       if (!exact(intent,'type,binding,queryDigest,startedAt') || !exact(b,'version,releaseSha,runId,configDigest,generationDigest,phase,kind,endpoint,nonce,sequence,previousDigest') ||
-        b.version!==1 || b.releaseSha!==config.releaseSha || b.runId!==config.runId || b.configDigest!==configDigest || b.generationDigest!==generationDigest || b.endpoint!==CONNECTED_OBSERVER_ENDPOINT ||
+        b.version!==1 || b.releaseSha!==config.releaseSha || b.runId!==config.runId || b.configDigest!==configDigest || b.generationDigest!==generationDigest || b.endpoint!==endpointFor(config) ||
         !/^[a-f0-9]{64}$/.test(b.nonce??'') || b.sequence!==intentIndex || b.previousDigest!==digest(store.events().slice(0,intentIndex)) || intent.queryDigest!==digest(queryFor(config,phase,kind,b))) refuse('CONNECTED_OBSERVER_INTENT_BINDING');
       const results = store.events().map((event,index)=>({event,index})).filter(({event})=>event.type==='database_query_result'&&event.intentDigest===digest(intent));
       if (results.length>1) refuse('CONNECTED_OBSERVER_DUPLICATE');

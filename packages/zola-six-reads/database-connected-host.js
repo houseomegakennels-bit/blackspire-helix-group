@@ -1,3 +1,5 @@
+import {createFixedNativeObserverClient} from './database-host.js';
+import {queryObservation} from './database-observer.js';
 import https from 'node:https';
 import { readRootOwnedJson } from '../buyer-writer/protected-json.js';
 import { refuse } from './collector.js';
@@ -8,6 +10,20 @@ import { createJournaledConnectedObserver, CONNECTED_OBSERVER_ENDPOINT } from '.
 // observer's postgres bypass-RLS and SET ROLE authenticated witness contract.
 // No ambient token, MCP JSON import, alternate endpoint, SQL input or TLS bypass.
 export function createProductionConnectedDatabaseObserver(config) {
+  if ([4,5].includes(config.version)) return createJournaledConnectedObserver(config, async query => {
+    let client;
+    try {
+      client=createFixedNativeObserverClient(config);
+      client.on('error',()=>{});
+      await client.connect();
+      // The exact journaled SQL supplies the repeatable-read, read-only transaction,
+      // statement/lock limits, postgres snapshot and authenticated owner witness.
+      const value=await queryObservation(client,query);
+      if(Buffer.byteLength(JSON.stringify(value))>65536)refuse('CONNECTED_OBSERVER_BOUND');
+      return value;
+    } catch { refuse('CONNECTED_OBSERVER_FAILED'); }
+    finally { if(client)await client.end().catch(()=>{}); }
+  });
   return createJournaledConnectedObserver(config, async query => {
     let credential;
     try {
