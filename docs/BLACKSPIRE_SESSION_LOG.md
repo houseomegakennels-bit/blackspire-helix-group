@@ -2228,3 +2228,7 @@ Recorded the passing contained 2,395-test suite and credential-free frontend bui
 ### 2026-09-21 — Repository receipt authentication dependency pinned
 
 The repository setup receipt now binds the auth namespace owner/ACL and every auth.uid overload’s identity, owner, grants, security mode, configuration, return type and function-body digest. Native PostgreSQL 17.6 tests against the exact reviewed auth.uid grant SQL prove that changing either function EXECUTE or schema USAGE grants makes reconciliation fail without repeating DDL. Synthetic fixture setup supplies a minimal auth.uid function for the reviewed repository grant; the production schema remains owned by its separate reviewed commit. No production change was performed.
+
+## 2026-09-21 — complete owned database installation-order rehearsal
+
+Composed native source freeze/receipt, locked copy/receipt/reconcile, target hardening, writer and repository installation with real identity and owner-scope queries. Found and reproduced the inherited exports auth.uid permission gap; the exact narrow repository-role repair now passes in the final native rehearsal without test-only grants. Production connections and mutations: none.
