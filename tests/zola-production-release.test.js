@@ -42,3 +42,23 @@ test('runner passes only normalized sequence input and the composed map',async()
 });
 
 function hashSequenceInput(input){const {inputDigest:_,...identity}=input;return createHash('sha256').update(JSON.stringify(identity)).digest('hex');}
+
+
+test('owned composition retains protected selector and proof paths without changing sequence identity',()=>{
+ const owned={...value,schema:2,backendProfile:'owned-postgres-v1',profileDigest:'e'.repeat(64),
+  sourceSecurityConfigurationFile:'/var/lib/blackspire-operator/owned-source-security/operation/configuration.json',
+  ownedMigrationConfigurationFile:'/var/lib/blackspire-operator/owned-buyer-migration/operation/manifest.json'};
+ const seen=[];buildProductionAdapters({loadedInput:{...loadedInput,value:owned},journal},{operations:operations(seen)});
+ assert.equal(seen[0].release,owned);assert.equal(seen[0].input.protectedInputDigest,protectedDigest);
+ for(const key of ['profileDigest','sourceSecurityConfigurationFile','ownedMigrationConfigurationFile']){
+  const invalid={...owned};delete invalid[key];
+  assert.throws(()=>buildProductionAdapters({loadedInput:{...loadedInput,value:invalid},journal},{operations:operations([])}));
+ }
+});
+
+test('retirement history is validated before constructing any production operations or starting a sequence',async()=>{
+ let constructed=0,started=0;
+ const malformed={stream:()=>({events:()=>[{type:'sequence_retired'}]})};
+ const result=await runProductionRelease({loadedInput,journal:malformed},{operations:()=>{constructed++;},sequence:()=>{started++;}});
+ assert.equal(result.reason,'PRODUCTION_COMPOSITION_REJECTED');assert.equal(constructed,0);assert.equal(started,0);
+});
