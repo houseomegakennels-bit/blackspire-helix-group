@@ -14,3 +14,16 @@ export async function verifyOwnedN8nProtectedAsyncFence({snapshot,verifyAsync}){
  const before=snapshot();await verifyAsync();const after=snapshot();
  if(JSON.stringify(before)!==JSON.stringify(after))fail();
 }
+
+// Admission creates this protected source. Never read it before the fixed
+// migration gate; once captured, any replacement or different attempt rejects.
+export function createOwnedN8nLazySource({binding,read,validate}){
+ let retained,authority;
+ return ()=>{
+  const current=binding(),snapshot=read();validate(snapshot,current);
+  if(JSON.stringify(current)!==JSON.stringify(binding())||JSON.stringify(snapshot)!==JSON.stringify(read()))fail();
+  if(retained&&(JSON.stringify(retained)!==JSON.stringify(snapshot)||JSON.stringify(authority)!==JSON.stringify(current)))fail();
+  if(!retained){retained=structuredClone(snapshot);authority=structuredClone(current);}
+  return structuredClone(retained);
+ };
+}

@@ -4,7 +4,7 @@
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {assertOwnedN8nInstalledIngress,verifyOwnedN8nProtectedAsyncFence} from '../packages/zola-release/owned-n8n-installed-fence.js';
+import {assertOwnedN8nInstalledIngress,verifyOwnedN8nProtectedAsyncFence,createOwnedN8nLazySource} from '../packages/zola-release/owned-n8n-installed-fence.js';
 import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
 import {synchronizeOwnedN8nWriter,createOwnedN8nCredentialTransport} from '../packages/zola-release/owned-n8n-credential.js';
 const canonical='/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-release-20260921/';
@@ -38,13 +38,10 @@ try{
  verifyReleaseSource(release.releaseSha);journal=openReleaseJournal();
  const read=file=>readRootOwnedJsonSnapshot(file,{groupId:0,maxBytes:65536});
  const sourceFile='/var/lib/blackspire-operator/preparation/owned-gateway-provisioning.json';
- const source=read(sourceFile),configuration=read(release.packageConfigurationFile),backup=readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024),profile=readOwnedDatabaseProfile();
- const keyFile='/var/lib/blackspire-operator/n8n-api-key',key=readReleaseProtectedBytes(keyFile,16384).trim(),v=source.value;
- if(!same(Object.keys(v).sort(),['authority','bindingFile','creatorOid','gatewayCapability','issuer','issuerCredential','runtime','version','workspace','writerCredential'])||v.version!==3||v.workspace!=='blackspire-command'||v.authority?.releaseSha!==release.releaseSha||v.runtime?.backendProfile!=='owned-postgres-v1'||v.issuer?.backendProfile!=='owned-postgres-v1'||databaseProfileDigest(profile)!==release.profileDigest)fail();
- validateBuyerWriterGatewayAuthority(v.authority,{workspace:v.workspace});
- validateBuyerWriterConfiguration({version:1,workspace:v.workspace,bindingFile:v.bindingFile,writerCredential:v.writerCredential,issuerCredential:v.issuerCredential,creatorOid:v.creatorOid,runtime:v.runtime,issuer:v.issuer},{workspace:v.workspace,environment:'production'});
- validateDatabaseTarget(v.runtime,{ownedProfile:profile});validateDatabaseTarget(v.issuer,{ownedProfile:profile});
- if(new Set([v.writerCredential,v.issuerCredential,v.gatewayCapability,v.runtime.password,v.issuer.password]).size!==5)fail();
+ let source,v;
+ const configuration=read(release.packageConfigurationFile),backup=readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024),profile=readOwnedDatabaseProfile();
+ const keyFile='/var/lib/blackspire-operator/n8n-api-key',key=readReleaseProtectedBytes(keyFile,16384).trim();
+ if(databaseProfileDigest(profile)!==release.profileDigest)fail();
  const plan=prepareN8nTransition({configuration:configuration.value,backupBytes:backup});if(plan.releaseSha!==release.releaseSha)fail();
  const files=createBuyerStoreProtectedFiles(),root='/var/lib/blackspire-operator/preparation/owned-n8n-held-writer';files.directory(root,{create:true});
  const currentBinding=()=>{
@@ -60,6 +57,16 @@ try{
   const record=inspectHeldWriterBindingHistory(journal.stream('release').events()).get('admission_lease');
   if(!record?.result||record.plan.releaseSha!==b.releaseSha||record.plan.operationId!==b.operationId)fail();return record;
  };
+ const captureSource=createOwnedN8nLazySource({binding:currentBinding,read:()=>read(sourceFile),validate:(snapshot,b)=>{
+  const v=snapshot.value,record=heldRecord(b);
+ if(!same(Object.keys(v).sort(),['authority','bindingFile','creatorOid','gatewayCapability','issuer','issuerCredential','runtime','version','workspace','writerCredential'])||v.version!==3||v.workspace!=='blackspire-command'||v.authority?.releaseSha!==release.releaseSha||v.runtime?.backendProfile!=='owned-postgres-v1'||v.issuer?.backendProfile!=='owned-postgres-v1'||databaseProfileDigest(profile)!==release.profileDigest)fail();
+ validateBuyerWriterGatewayAuthority(v.authority,{workspace:v.workspace});
+ validateBuyerWriterConfiguration({version:1,workspace:v.workspace,bindingFile:v.bindingFile,writerCredential:v.writerCredential,issuerCredential:v.issuerCredential,creatorOid:v.creatorOid,runtime:v.runtime,issuer:v.issuer},{workspace:v.workspace,environment:'production'});
+ validateDatabaseTarget(v.runtime,{ownedProfile:profile});validateDatabaseTarget(v.issuer,{ownedProfile:profile});
+ if(new Set([v.writerCredential,v.issuerCredential,v.gatewayCapability,v.runtime.password,v.issuer.password]).size!==5)fail();
+  if(v.authority.operationId!==b.operationId||v.authority.attemptId!==record.plan.attemptId)fail();
+ }});
+ const initializeSource=()=>{source=captureSource();v=source.value;};
  const retained=b=>({version:1,operatorSha,...b,profileDigest:release.profileDigest,sourceDigest:hash(source),held:heldRecord(b)});
  const protectedSnapshot=(b,record,identity)=>{
   verifyReleaseSource(release.releaseSha);
@@ -105,7 +112,10 @@ try{
   const request=createOwnedN8nRequestGate({request:transport,events:()=>journal.stream('n8n').events(),binding:currentBinding,synchronize,assertConfigured,workflowId:WORKFLOW_ID});
   // Other n8n stages inspect before the migration attempt exists. Only route
   // through the gate during the exact pending migration; all others stay native.
-  const routed=(...args)=>inspectReleaseSequenceHistory(journal.stream('release').events()).pending?.stage==='n8n_migration'?request(...args):transport(...args);
+  const routed=(...args)=>{
+   if(inspectReleaseSequenceHistory(journal.stream('release').events()).pending?.stage!=='n8n_migration')return transport(...args);
+   initializeSource();return request(...args);
+  };
   return createFixedProductionOperations(context,{n8nMigration:{n8n:{request:routed}}});
  };
  const result=await runProductionRelease({loadedInput:input,journal},{operations});
