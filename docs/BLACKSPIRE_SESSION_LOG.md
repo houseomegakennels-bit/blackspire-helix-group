@@ -2267,3 +2267,7 @@ Added distinct predecessor-bound successor plan and observer, preserving origina
 ## 2026-09-21 — Confined store runtime attestation successor
 
 Read-only diagnosis confirmed that the deployed store could not use root-only sealed artifact inspection or systemctl discovery inside its service namespace. The successor adds an explicitly nonroot deployed artifact reader with the same complete ownership, evidence and content checks, a fixed read-only system bus generation observer, and exact null-or-stamped HELD generation handling. Root publication verifiers and namespace privileges remain unchanged. A disposable test passed with the actual nonroot confined daemon, authenticated readiness IPC, real PostgreSQL SCRAM/TLS, deployed artifact verification and generation/tamper rejection. Synthetic resources only were changed. This implementation is not deployed; production readiness remains UNVERIFIED.
+
+## 2026-09-21 — partial2636 retirement implementation
+
+Prepared a fixed, append-only partial-candidate retirement helper with retained stop intent/result and exact successor lineage. Five core fault tests pass using the actual retained116/9-event fixtures and chained parser. Read-only production inspection confirmed pending writer publication has no binding/commit/staged files. No production stop, retirement, database write or successor deployment was executed by this work. Final independent review and native operational execution remain separate gates.
