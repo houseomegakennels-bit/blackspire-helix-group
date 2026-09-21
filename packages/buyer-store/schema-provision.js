@@ -11,6 +11,8 @@ export const BUYER_STORE_SCHEMA_CATALOG_SQL=`SELECT jsonb_build_object(
  'memberships',(SELECT jsonb_agg(jsonb_build_array(r.rolname,m.rolname,g.rolname,a.admin_option,a.inherit_option,a.set_option) ORDER BY r.rolname,m.rolname,g.rolname) FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid JOIN pg_roles m ON m.oid=a.member JOIN pg_roles g ON g.oid=a.grantor WHERE r.rolname=ANY($1::text[]) OR m.rolname=ANY($1::text[])),
  'tables',(SELECT jsonb_agg(jsonb_build_array(c.relname,c.relowner,c.relrowsecurity,c.relforcerowsecurity,c.relacl::text) ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN('SearchJob','BuyerReport','BuyerProfile','exports')),
  'policies',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.tablename,p.policyname) FROM pg_policies p WHERE p.schemaname='public' AND p.tablename IN('SearchJob','BuyerReport','BuyerProfile','exports')),
+ 'authNamespace',(SELECT jsonb_build_array(oid,nspowner,nspacl::text) FROM pg_namespace WHERE nspname='auth'),
+ 'authUid',(SELECT jsonb_agg(jsonb_build_array(p.oid,p.proowner,p.proacl::text,p.prosecdef,p.proconfig,p.provolatile,p.proleakproof,p.prorettype,pg_get_function_identity_arguments(p.oid),md5(pg_get_functiondef(p.oid))) ORDER BY p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='auth' AND p.proname='uid'),
  'publicAcl',(SELECT nspacl::text FROM pg_namespace WHERE nspname='public'),
  'databaseAcl',(SELECT datacl::text FROM pg_database WHERE datname=current_database())
 ) AS catalog`;

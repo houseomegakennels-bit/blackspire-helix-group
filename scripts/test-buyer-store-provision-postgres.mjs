@@ -22,12 +22,15 @@ try{
  await observer.query("CREATE ROLE postgres LOGIN NOSUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS PASSWORD '"+adminPassword+"';ALTER DATABASE postgres OWNER TO postgres;ALTER SCHEMA public OWNER TO postgres");
  admin=await connect('postgres',adminPassword);
  await admin.query('CREATE TABLE public."SearchJob"(id uuid PRIMARY KEY,user_id uuid);CREATE TABLE public."BuyerReport"(search_job_id uuid);CREATE TABLE public."BuyerProfile"(id uuid);CREATE TABLE public.exports(user_id uuid,search_job_id uuid)');
+ await admin.query("CREATE SCHEMA auth AUTHORIZATION postgres;REVOKE ALL ON SCHEMA auth FROM PUBLIC;CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT nullif(current_setting(''request.jwt.claim.sub'',true),'''')::uuid';REVOKE ALL ON FUNCTION auth.uid() FROM PUBLIC");
  const schemaBinding={releaseSha:'a'.repeat(40),operationId:'11111111-1111-4111-8111-111111111111',profileDigest:'b'.repeat(64),artifactDigest:'c'.repeat(64),schemaDigest:BUYER_STORE_SCHEMA_SHA256};let schemaIntent=null,schemaResult=null,schemaDispatch=0,loseSchemaCommit=true;
  const schemaClient={query:async(...args)=>{if(args[0].includes('CREATE ROLE buyer_repository_user'))schemaDispatch++;const r=await admin.query(...args);if(args[0]==='COMMIT'&&loseSchemaCommit){loseSchemaCommit=false;throw new Error('synthetic lost schema commit');}return r;}};
  const prepareSchema=()=>provisionBuyerStoreSchema({client:schemaClient,binding:schemaBinding,verifyIdentity:async()=>{},fence:async()=>{},journal:{intent:()=>schemaIntent,writeIntent:v=>{schemaIntent=v;},result:v=>{schemaResult=v;}}});
  await assert.rejects(prepareSchema());assert.equal(schemaDispatch,1);assert.equal(schemaResult,null);
  await prepareSchema();await prepareSchema();assert.equal(schemaDispatch,1);assert.ok(schemaResult);
  await admin.query('ALTER ROLE buyer_repository_login CREATEDB');await assert.rejects(prepareSchema());assert.equal(schemaDispatch,1);await admin.query('ALTER ROLE buyer_repository_login NOCREATEDB');
+ await admin.query('GRANT EXECUTE ON FUNCTION auth.uid() TO buyer_capability_reader');await assert.rejects(prepareSchema());assert.equal(schemaDispatch,1);await admin.query('REVOKE EXECUTE ON FUNCTION auth.uid() FROM buyer_capability_reader');await prepareSchema();
+ await admin.query('GRANT USAGE ON SCHEMA auth TO buyer_capability_reader');await assert.rejects(prepareSchema());assert.equal(schemaDispatch,1);await admin.query('REVOKE USAGE ON SCHEMA auth FROM buyer_capability_reader');await prepareSchema();
  console.log('PASS: real fixed repository DDL, atomic receipt, unknown commit reconciliation, drift refusal, no DDL repeat');
  const passwords=[randomBytes(32).toString('base64url'),randomBytes(32).toString('base64url')];
  const fresh=async()=>{const r=await observer.query('SELECT count(*)=2 AND bool_and(rolpassword IS NULL) as fresh FROM pg_authid WHERE rolname=ANY($1::text[])',[roles]);return r.rows[0].fresh;};

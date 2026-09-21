@@ -2224,3 +2224,7 @@ Added only the repository user execution grant needed by imported auth.uid owner
 ## 2026-09-21 — integrated validation, credential renewal and repository readiness
 
 Recorded the passing contained 2,395-test suite and credential-free frontend build/contracts. Repaired API base readiness to await independent store health and forward the validated protected backend/profile to writer initialization; nine focused tests and static gates pass. Matching writer availability integration and final-source gates remain pending. Existing deployment refresh authorization and the reviewed protected token replacement succeeded, with retained recovery records; public verifier input and original-owner fallback were independently verified. No production database, service, pointer or deployment change occurred.
+
+### 2026-09-21 — Repository receipt authentication dependency pinned
+
+The repository setup receipt now binds the auth namespace owner/ACL and every auth.uid overload’s identity, owner, grants, security mode, configuration, return type and function-body digest. Native PostgreSQL 17.6 tests against the exact reviewed auth.uid grant SQL prove that changing either function EXECUTE or schema USAGE grants makes reconciliation fail without repeating DDL. Synthetic fixture setup supplies a minimal auth.uid function for the reviewed repository grant; the production schema remains owned by its separate reviewed commit. No production change was performed.
