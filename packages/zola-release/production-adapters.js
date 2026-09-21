@@ -141,7 +141,7 @@ export function createFixedProductionOperations(context,dependencies={}){
  const verifyRuntimeIsolation=dependencies.verifyRuntimeIsolation??(()=>observeBuyerWriterRuntimeIsolation({releaseSha:context.input.releaseSha,
   gatewayConfigurationFile:BUYER_WRITER_GATEWAY_CONFIG}));
  const isolationProof=dependencies.isolationProof??createPgNetIsolationProof({query:providerQuery,verifyRuntimeIsolation});
- operations.provider_acl_check=createProviderAclCheckOperation({query:providerQuery,isolationProof});
+ operations.provider_acl_check=createProviderAclCheckOperation({query:providerQuery,isolationProof,backendProfile:context.release.backendProfile,profileDigest:context.release.profileDigest});
  const writerHost={openAdmittedClient:bound=>openInstalledBuyerWriterAdmittedClient({
   releaseSha:bound.releaseSha,workspace:bound.workspace}),...(dependencies.writerHost??{}),
   admissionJournal:context.journal.stream('release')};

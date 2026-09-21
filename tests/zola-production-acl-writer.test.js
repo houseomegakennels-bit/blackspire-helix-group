@@ -80,7 +80,8 @@ test('fixed production composition uses installed opener and refuses legacy data
   protectedInputDigest:d('protected'),inputDigest:d('sequence')};
  const context={input,release:{releaseSha:a,activationConfigurationFile:'/fixed/activation.json'},
   journal:{stream:()=>({events:()=>[],append(){throw Error('unexpected journal write');}})}};
- const writerHost={openDatabase:async()=>{opened++;throw Error('legacy transport reached');}};
+ const writerHost={groupId:12345,readAcceptanceSnapshot:()=>{throw Object.assign(new Error('disposable target absent'),{code:'ENOENT'});},
+  openDatabase:async()=>{opened++;throw Error('legacy transport reached');}};
  const operation=createFixedProductionOperations(context,{writerHost}).bounded_writer_e2e;
  const call={...attempt,input};
  assert.deepEqual(await operation.check(call),{status:'BLOCKED_EXTERNAL'});
