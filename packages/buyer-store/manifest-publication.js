@@ -33,7 +33,12 @@ export async function publishBuyerStoreInstalledManifest(binding,{restore=false,
  directory(paths.root);const operation=paths.root+'/'+hash(binding);directory(operation);
  let lock;try{
   lock=io.openSync(paths.root+'/lock',io.constants.O_CREAT|io.constants.O_EXCL|io.constants.O_WRONLY|io.constants.O_NOFOLLOW,0o600);
-  const current=()=>exists(paths.manifest)?readProtected(paths.manifest,{groupId:gid,maxBytes:16384}):null;
+  const current=()=>{
+   if(!exists(paths.manifest))return null;
+   const value=readProtected(paths.manifest,{groupId:gid,maxBytes:16384}),stat=io.lstatSync(paths.manifest);
+   if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.gid!==gid||stat.nlink!==1||(stat.mode&0o7777)!==0o640||!io.readFileSync(paths.manifest).equals(bytes(value)))fail();
+   return value;
+  };
   const planFile=operation+'/plan.json';
   let plan;
   if(exists(planFile))plan=readProtected(planFile,{groupId:0,maxBytes:32768});
