@@ -14,20 +14,20 @@ try{
  run(['start',container]);let ready=false;
  for(let i=0;i<60;i++){const r=spawnSync('docker',['exec',container,'sh','-c','test "$(cat /proc/1/comm)" = postgres && pg_isready -U postgres'],{encoding:'utf8'});if(r.status===0){ready=true;break;}await new Promise(r=>setTimeout(r,250));}assert.ok(ready);
  const fixture=readFileSync('tests/fixtures/buyer-writer/schema.sql','utf8');
- run(['exec','-i',container,'psql','-X','-q','-U','postgres','-v','ON_ERROR_STOP=1'],fixture+'\nCREATE TABLE public.exports(id uuid PRIMARY KEY,user_id uuid NOT NULL,search_job_id uuid REFERENCES public."SearchJob"(id),file_name text NOT NULL,storage_path text NOT NULL,row_count integer,created_at timestamptz);\n'+readFileSync('packages/buyer-store/repository-schema.sql','utf8'));
+ run(['exec','-i',container,'psql','-X','-q','-U','postgres','-v','ON_ERROR_STOP=1'],fixture+'\nCREATE POLICY legacy_public_jobs ON public."SearchJob" TO PUBLIC USING(true) WITH CHECK(true); CREATE POLICY legacy_public_reports ON public."BuyerReport" FOR SELECT TO PUBLIC USING(true);\nCREATE TABLE public.exports(id uuid PRIMARY KEY,user_id uuid NOT NULL,search_job_id uuid REFERENCES public."SearchJob"(id),file_name text NOT NULL,storage_path text NOT NULL,row_count integer,created_at timestamptz);\n'+readFileSync('packages/buyer-store/repository-schema.sql','utf8'));
  const connect=async user=>{const client=new pg.Client({host:socket,user,database:'postgres'});await client.connect();return client;};
  const repository=createBuyerStoreRepository({connect:()=>connect('buyer_repository_login'),connectCapability:()=>connect('buyer_capability_login')});
  const owner='00000000-0000-4000-8000-000000000001',foreign='00000000-0000-4000-8000-000000000002';
  const job={id:randomUUID(),state:'NC',county:'Wake',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-01-02',min_purchases:1,cash_buyers_only:false,llc_buyers_only:false};
- const created=await repository.execute('job-create',job,owner);assert.equal(created.user_id,owner);
+ const created=await repository.execute('job-create',job,owner);assert.equal(created.user_id,owner);assert.equal(created.date_range_start,job.date_range_start);assert.match(created.updated_at,/\.\d{6}Z$/);
  assert.equal((await repository.execute('job-create',job,owner)).id,job.id);
  await assert.rejects(repository.execute('job-create',{...job,county:'changed'},owner));
  assert.equal(await repository.execute('job-get',{id:job.id},foreign),null);
  assert.equal((await repository.execute('jobs-list',{ids:[],limit:10},owner)).length,1);
  assert.equal((await repository.execute('jobs-list',{ids:[],limit:10},foreign)).length,0);
- const exp={id:randomUUID(),searchJobId:job.id,fileName:'fixture.csv',storagePath:'fixture/fixture.csv',rowCount:0};
+ const exp={id:randomUUID(),searchJobId:job.id,fileName:'fixture.csv',rowCount:0};
  await assert.rejects(repository.execute('export-create',exp,foreign));
- await repository.execute('export-create',exp,owner);assert.equal((await repository.execute('counts',{},owner)).exportCount,1);
+ assert.equal((await repository.execute('export-create',exp,owner)).storage_path,`client-downloads/${owner}/${exp.id}/fixture.csv`);assert.equal((await repository.execute('counts',{},owner)).exportCount,1);
  assert.deepEqual((await repository.execute('reports-list',{searchJobId:null,limit:5,offset:0},foreign)).reports,[]);
  const profiles=await repository.readCapabilityProfiles({county:null,state:null,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:5});assert.equal(profiles.observation.requests,2);
  const cap=await connect('buyer_capability_login');try{await cap.query('SET ROLE buyer_capability_reader');await assert.rejects(cap.query('SELECT * FROM public."SearchJob"'));await assert.rejects(cap.query('INSERT INTO public."BuyerProfile"(buyer_name) VALUES(\'forbidden\')'));}finally{await cap.end();}

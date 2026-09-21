@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeInternalCapability } from "@/lib/internal-capability-auth";
 import { readBoundedRequestBody } from "@/lib/bounded-request-body";
-import { listBuyerProfilesForCapability, matchBuyersForProperty } from "@/lib/buyer-engine-server";
+import { listBuyerProfilesForCapability, matchBuyersForProperty, type BuyerProfileRow } from "@/lib/buyer-engine-server";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +44,7 @@ async function handleRead(request: NextRequest) {
   }
 
   let scope;
-  try { scope = productionCapabilityReadScope(authority.bindingDigest); }
+  try { scope = productionCapabilityReadScope(authority.bindingDigest,authority.buyerData?.observation??null); }
   catch { return NextResponse.json({ ok: false, error: "Capability unavailable" }, { status: 503 }); }
   const sourceSnapshotAt = new Date().toISOString();
   if (input.matchesOnly === true) {
@@ -53,7 +53,7 @@ async function handleRead(request: NextRequest) {
     if (!opportunityId) return NextResponse.json({ ok: false, error: "invalid request" }, { status: 400 });
     const supabase = scope.client;
     if (!supabase) return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
-    const { data, error } = await supabase
+    const { data, error } = authority.buyerData ? {data:authority.buyerData.deal,error:null} : await supabase
       .from("deal_leads")
       .select("property_address,county,city,property_type")
       .eq("id", opportunityId.toUpperCase())
@@ -64,7 +64,7 @@ async function handleRead(request: NextRequest) {
     let result;
     try {
       const deal = data as DealLookupRow;
-      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true, readClient: scope.client });
+      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true, readClient: scope.client, ...(authority.buyerData?{ownedProfiles:{rows:authority.buyerData.profiles as BuyerProfileRow[],count:authority.buyerData.count}}:{}) });
     } catch {
       return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
     }
@@ -82,7 +82,7 @@ async function handleRead(request: NextRequest) {
 
   let rows;
   try {
-    rows = await listBuyerProfilesForCapability({
+    rows = authority.buyerData ? authority.buyerData.profiles as BuyerProfileRow[] : await listBuyerProfilesForCapability({
       buyerName: typeof input.buyerName === "string" ? input.buyerName.trim() || null : null,
       state: typeof input.state === "string" ? input.state.trim() || null : null,
       county: typeof input.county === "string" ? input.county.trim() || null : null,

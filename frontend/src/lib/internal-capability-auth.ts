@@ -1,3 +1,4 @@
+import type { OwnedBuyerObservation } from "@/lib/capability-read-client";
 import "server-only";
 
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -21,7 +22,8 @@ const keys=["version","releaseSha","releaseRunId","apiGeneration","workerGenerat
 const safeId=(value:unknown)=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,256}$/.test(value);
 const equal=(left:string,right:string)=>{const a=Buffer.from(left),b=Buffer.from(right);return a.length===b.length&&timingSafeEqual(a,b);};
 
-export type ReceiverAuthority={bindingDigest:string};
+export type OwnedBuyerData={version:1;capabilityId:string;bindingDigest:string;profiles:unknown[];count:number;observation:OwnedBuyerObservation;deal:null|{city:string|null;county:string|null;property_address:string|null;property_type:string|null}};
+export type ReceiverAuthority={bindingDigest:string;buyerData?:OwnedBuyerData};
 
 // Public headers are only candidate material. Authority exists only after the
 // Command API atomically consumes the opaque permit against current durable
@@ -55,17 +57,26 @@ export async function authorizeInternalCapability(request:Request,bodyBytes:stri
   const base=process.env.BLACKSPIRE_AUTHORITY_CONSUMER_URL?.trim()??"",token=process.env.BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN?.trim()??"";
   const endpoint=new URL("/api/internal/capability-authority/consume",base);
   if(token.length<32||(endpoint.protocol!=="https:"&&!(endpoint.protocol==="http:"&&["127.0.0.1","localhost","::1"].includes(endpoint.hostname))))return null;
-  const response=await fetch(endpoint,{method:"POST",redirect:"error",signal:AbortSignal.timeout(3000),
-    headers:{"content-type":"application/json",authorization:`Bearer ${token}`},body:JSON.stringify({authority})});
+  if(process.env.BLACKSPIRE_BUYER_STORE_MODE && !["supabase","owned-postgres-v1"].includes(process.env.BLACKSPIRE_BUYER_STORE_MODE))return null;
+  const owned=process.env.BLACKSPIRE_BUYER_STORE_MODE==="owned-postgres-v1"&&["buyer.profiles.search","buyer.matches.search"].includes(capabilityId);
+  const response=await fetch(endpoint,{method:"POST",redirect:"error",signal:AbortSignal.timeout(owned?11000:3000),
+    headers:{"content-type":"application/json",authorization:`Bearer ${token}`},body:JSON.stringify(owned?{authority,request:JSON.parse(bodyBytes)}:{authority})});
   if(!response.body)return null;const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
-  try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>4096){await reader.cancel();return null;}chunks.push(part.value);}}
+  try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>(owned?256*1024:4096)){await reader.cancel();return null;}chunks.push(part.value);}}
   finally{reader.releaseLock();}
   const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}if(!response.ok)return null;
   const result=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));
-  if(!result||Array.isArray(result)||Object.keys(result).sort().join(",")!=="bindingDigest,ok"||result.ok!==true||!/^[a-f0-9]{64}$/.test(result.bindingDigest))return null;
+  if(!result||Array.isArray(result)||Object.keys(result).sort().join(",")!==(owned?"bindingDigest,buyerData,ok":"bindingDigest,ok")||result.ok!==true||!/^[a-f0-9]{64}$/.test(result.bindingDigest))return null;
   const {proof: _proof,...claims}=authority;
   const proofDigest=createHash("sha256").update(String(authority.proof)).digest("hex");
   if(!equal(result.bindingDigest,createHash("sha256").update(JSON.stringify({...claims,proofDigest})).digest("hex")))return null;
+  if(owned){
+   const data=result.buyerData;
+   if(!data||Object.keys(data).sort().join(',')!=='bindingDigest,capabilityId,count,deal,observation,profiles,version'||data.version!==1||data.capabilityId!==capabilityId||data.bindingDigest!==result.bindingDigest||!Array.isArray(data.profiles)||data.profiles.length>200||!Number.isSafeInteger(data.count)||data.count<data.profiles.length)return null;
+   if(data.observation?.releaseSha!==authority.releaseSha)return null;
+   if(data.deal!==null&&(!data.deal||Object.keys(data.deal).sort().join(',')!=='city,county,property_address,property_type'||Object.values(data.deal).some(v=>v!==null&&(typeof v!=='string'||v.length>1024))))return null;
+   return Object.freeze({bindingDigest:result.bindingDigest,buyerData:data as OwnedBuyerData});
+  }
   return Object.freeze({bindingDigest:result.bindingDigest});
  }catch{return null;}
 }

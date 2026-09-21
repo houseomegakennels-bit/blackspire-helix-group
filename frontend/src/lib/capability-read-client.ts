@@ -17,14 +17,16 @@ const columns: Record<string, string[]> = {
   nexus_contacts: ["seller_lead_id", "owner_name", "property_address", "updated_at", "id"],
 };
 const embeds: Record<string, string[]> = { seller_leads: ["owners", "properties", "properties.data_sources"], deal_leads: ["deal_analysis", "seller_conversations", "buyer_matches"] };
+export type OwnedBuyerObservation={version:2;releaseSha:string;transport:"bounded owned PostgreSQL SELECT and Supabase GET/HEAD";requests:number;responseBytes:number;forbiddenAttempts:0;latencyMs:number;scope:"authority-bound Buyer read only"};
 type Result = { data: unknown; count: number | null; error: null };
 
-export function createCapabilityReadScope({ origin, key, releaseSha = null, receiverAuthorityDigest = null, fetchImpl = fetch }: {
-  origin: string; key: string; releaseSha?: string | null; receiverAuthorityDigest?: string | null; fetchImpl?: typeof fetch;
+export function createCapabilityReadScope({ origin, key, releaseSha = null, receiverAuthorityDigest = null, ownedObservation = null, fetchImpl = fetch }: {
+  origin: string; key: string; releaseSha?: string | null; receiverAuthorityDigest?: string | null; fetchImpl?: typeof fetch; ownedObservation?: OwnedBuyerObservation | null;
 }) {
   const parsed = new URL(origin);
   if (parsed.origin !== origin || parsed.protocol !== "https:" || !/^[a-z0-9]{20}\.supabase\.co$/.test(parsed.hostname) || !key || key.length > 8192) throw new Error("READ_CONFIGURATION_REJECTED");
-  const started = performance.now(); let closed = false; let failures = 0; let requests = 0; let responseBytes = 0; let pending = 0;
+  if(ownedObservation && (Object.keys(ownedObservation).sort().join(',')!=='forbiddenAttempts,latencyMs,releaseSha,requests,responseBytes,scope,transport,version'||ownedObservation.version!==2||ownedObservation.releaseSha!==releaseSha||ownedObservation.transport!=='bounded owned PostgreSQL SELECT and Supabase GET/HEAD'||ownedObservation.scope!=='authority-bound Buyer read only'||ownedObservation.forbiddenAttempts!==0||!Number.isSafeInteger(ownedObservation.requests)||ownedObservation.requests<1||ownedObservation.requests>12||!Number.isSafeInteger(ownedObservation.responseBytes)||ownedObservation.responseBytes<0||ownedObservation.responseBytes>2*1024*1024||!Number.isSafeInteger(ownedObservation.latencyMs)||ownedObservation.latencyMs<0||ownedObservation.latencyMs>11000||!/^[a-f0-9]{64}$/.test(receiverAuthorityDigest??'')))throw new Error('READ_CONFIGURATION_REJECTED');
+  const started = performance.now(); let closed = false; let failures = 0; let requests = ownedObservation?.requests??0; let responseBytes = ownedObservation?.responseBytes??0; let pending = 0;
   const abort = new AbortController();
   const reject = (): never => { failures++; abort.abort(); throw new Error("CAPABILITY_READ_REJECTED"); };
   const active = () => { if (closed || failures || performance.now() - started > 10000) reject(); };
@@ -33,7 +35,7 @@ export function createCapabilityReadScope({ origin, key, releaseSha = null, rece
     return options as Record<string, unknown>;
   };
   function from(table: string) {
-    active(); if (typeof table !== "string" || !Object.hasOwn(projections, table)) return reject();
+    active(); if(ownedObservation && table!=="buyer_group_registry")return reject(); if (typeof table !== "string" || !Object.hasOwn(projections, table)) return reject();
     const query = new URLSearchParams(); let head = false; let single = false; let execution: Promise<Result> | null = null;
     const mutate = () => { active(); if (execution) reject(); };
     const fields = (field: unknown) => { if (typeof field !== "string" || !columns[table].includes(field)) reject(); return String(field); };
@@ -128,10 +130,10 @@ export function createCapabilityReadScope({ origin, key, releaseSha = null, rece
     if (name !== "from") return reject(); return target.from;
   } }) as unknown as SupabaseClient;
   function observation() {
-    active(); if (pending || !requests) return reject();
-    return Object.freeze({ version: 1, releaseSha: /^[a-f0-9]{40}$/.test(releaseSha ?? "") ? releaseSha : null,
-      transport: "bounded PostgREST GET/HEAD", requests, responseBytes, forbiddenAttempts: failures,
-      latencyMs: Math.ceil(performance.now() - started), scope: "supplied read client only" });
+    active(); if ((ownedObservation?.latencyMs??0)+performance.now()-started>11000)return reject(); if (pending || !requests) return reject();
+    return Object.freeze({ version: ownedObservation?2:1, releaseSha: /^[a-f0-9]{40}$/.test(releaseSha ?? "") ? releaseSha : null,
+      transport: ownedObservation?"bounded owned PostgreSQL SELECT and Supabase GET/HEAD":"bounded PostgREST GET/HEAD", requests, responseBytes, forbiddenAttempts: failures,
+      latencyMs: Math.ceil(performance.now() - started)+(ownedObservation?.latencyMs??0), scope: ownedObservation?"authority-bound Buyer read only":"supplied read client only" });
   }
   function respond(body: unknown) {
     const evidence = observation(); closed = true; abort.abort();
@@ -142,7 +144,7 @@ export function createCapabilityReadScope({ origin, key, releaseSha = null, rece
   return Object.freeze({ client, observation, respond });
 }
 
-export function productionCapabilityReadScope(receiverAuthorityDigest: string) {
+export function productionCapabilityReadScope(receiverAuthorityDigest: string, ownedObservation: OwnedBuyerObservation | null = null) {
   return createCapabilityReadScope({ origin: process.env.SUPABASE_URL?.trim() ?? "", key: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "",
-    releaseSha: process.env.VERCEL_GIT_COMMIT_SHA?.trim() ?? null, receiverAuthorityDigest });
+    releaseSha: process.env.VERCEL_GIT_COMMIT_SHA?.trim() ?? null, receiverAuthorityDigest, ownedObservation });
 }

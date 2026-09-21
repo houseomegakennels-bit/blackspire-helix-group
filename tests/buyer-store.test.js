@@ -21,7 +21,7 @@ test('operation schemas reject foreign owner SQL input and bound all lists',asyn
  let calls=0;const handler=createBuyerStoreHandler({verifyUser:async()=>({ownerId:owner,role:'admin'}),repository:{execute:async(op,input,id)=>{calls++;assert.equal(id,owner);return [];}}});
  assert.deepEqual(await handler({operation:'jobs-list',accessToken:token,input:{ids:[],limit:12}}),{ok:true,data:[]});
  for(const input of [{ids:[],limit:201},{ids:[],limit:12,ownerId:owner},{ids:['bad'],limit:12}])await assert.rejects(handler({operation:'jobs-list',accessToken:token,input}));
- assert.equal(calls,1);assert.throws(()=>validateBuyerStoreInput('sql',{query:'DELETE FROM anything'}));
+ assert.equal(calls,1);assert.throws(()=>validateBuyerStoreInput('export-create',{id:owner,searchJobId:null,fileName:'file.csv',rowCount:0,storagePath:'foreign/file.csv'}));assert.throws(()=>validateBuyerStoreInput('export-create',{id:owner,searchJobId:null,fileName:'../foreign.csv',rowCount:0}));assert.throws(()=>validateBuyerStoreInput('sql',{query:'DELETE FROM anything'}));
 });
 test('capability helper binds original body and uses trusted deal lookup',async()=>{
  const request={workspaceId:'blackspire-command',opportunityId:'DE-0001',limit:5,matchesOnly:true};

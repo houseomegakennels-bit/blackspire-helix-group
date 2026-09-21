@@ -1,5 +1,5 @@
 import {validateBuyerStoreInput,refuse} from './service.js';
-const JOB='id,user_id,state,county,property_type,date_range_start,date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,total_buyers_found,total_sales_analyzed,error_message,created_at,updated_at';
+const JOB=`id,user_id,state,county,property_type,to_char(date_range_start,'YYYY-MM-DD') AS date_range_start,to_char(date_range_end,'YYYY-MM-DD') AS date_range_end,min_purchases,cash_buyers_only,llc_buyers_only,status,total_buyers_found,total_sales_analyzed,error_message,to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at`;
 const PROFILE='p.id,p.buyer_name,p.county,p.state,p.is_llc,p.is_cash_buyer,p.purchase_count,p.total_spend,p.last_purchase_date,p.property_types,p.score';
 const REPORT='r.id,r.search_job_id,r.buyer_profile_id,r.buyer_name_snapshot,r.mailing_address_snapshot,r.score,r.purchase_count,r.total_spend,r.is_llc,r.is_cash_buyer,r.created_at,jsonb_build_object(\'score_breakdown\',p.score_breakdown) AS "BuyerProfile"';
 const EXPORT='id,user_id,search_job_id,file_name,storage_path,row_count,created_at';
@@ -36,7 +36,7 @@ export function createBuyerStoreRepository({connect,connectCapability}){
    }
    if(operation==='exports-list')data=await q(`SELECT ${EXPORT} FROM public.exports WHERE user_id=$1::uuid AND ($2::uuid IS NULL OR search_job_id=$2::uuid) ORDER BY created_at DESC,id LIMIT $3`,[ownerId,input.searchJobId,input.limit]);
    if(operation==='export-create'){
-    const args=[input.id,ownerId,input.searchJobId,input.fileName,input.storagePath,input.rowCount];
+    const args=[input.id,ownerId,input.searchJobId,input.fileName,`client-downloads/${ownerId}/${input.id}/${input.fileName}`,input.rowCount];
     await q('INSERT INTO public.exports(id,user_id,search_job_id,file_name,storage_path,row_count,created_at) SELECT $1::uuid,$2::uuid,$3::uuid,$4,$5,$6,clock_timestamp() WHERE $3::uuid IS NULL OR EXISTS(SELECT 1 FROM public."SearchJob" WHERE id=$3::uuid AND user_id=$2::uuid) ON CONFLICT(id) DO NOTHING',args);
     data=(await q(`SELECT ${EXPORT} FROM public.exports WHERE id=$1::uuid AND user_id=$2::uuid AND search_job_id IS NOT DISTINCT FROM $3::uuid AND file_name=$4 AND storage_path=$5 AND row_count=$6`,args))[0];if(!data)refuse();
    }

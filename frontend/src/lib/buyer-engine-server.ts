@@ -1,4 +1,6 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
+import { buyerStoreRequest, ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
 import { dispatchScopedBuyer, scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
 import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
 
@@ -376,6 +378,7 @@ export function getBuyerEngineEnvStatus() {
 }
 
 export function getBuyerEngineRealtimeClientEnv(): BuyerEngineRealtimeClientEnv {
+  if (ownedBuyerStoreEnabled()) return {enabled:false,url:null,anonKey:null};
   return {
     enabled: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY),
     url: process.env.SUPABASE_URL?.trim() || null,
@@ -447,6 +450,7 @@ function summarizeTopValues(entries: string[], limit = 5) {
 }
 
 export async function getBetaTesterSnapshot() {
+  if(ownedBuyerStoreEnabled()) throw new Error("Cross-user Buyer analytics is unavailable for owned storage.");
   const env = getEnvState();
   if (!env.enabled) {
     return {
@@ -579,6 +583,7 @@ export async function getBetaTesterSnapshot() {
 }
 
 export async function listSearchJobs(limit = 12): Promise<SearchJobRecord[]> {
+  if (ownedBuyerStoreEnabled()) return buyerStoreRequest("jobs-list", {limit,ids:[]});
   const env = getEnvState();
   if (!env.enabled) return [];
 
@@ -603,6 +608,7 @@ export async function listSearchJobs(limit = 12): Promise<SearchJobRecord[]> {
 }
 
 export async function getSearchJobById(searchJobId: string, authority?: BuyerDispatchAuthority | null): Promise<SearchJobRecord | null> {
+  if (ownedBuyerStoreEnabled()) { const job=authority ? await authority.requestOwnedBuyerStore?.<SearchJobRecord|null>("job-get",{id:searchJobId}) : await buyerStoreRequest<SearchJobRecord|null>("job-get",{id:searchJobId}); if(job===undefined) throw new Error("Buyer dispatch authorization unavailable."); if(job && authority) await authority.assertCurrentOwner(job); return job; }
   const env = getEnvState();
   if (!env.enabled) return null;
 
@@ -627,6 +633,7 @@ export async function getSearchJobById(searchJobId: string, authority?: BuyerDis
 }
 
 export async function listSearchJobsByIds(searchJobIds: string[]): Promise<SearchJobRecord[]> {
+  if (ownedBuyerStoreEnabled()) return searchJobIds.length ? buyerStoreRequest("jobs-list",{limit:200,ids:[...new Set(searchJobIds)]}) : [];
   const env = getEnvState();
   if (!env.enabled || searchJobIds.length === 0) return [];
 
@@ -650,6 +657,12 @@ export async function listSearchJobsByIds(searchJobIds: string[]): Promise<Searc
 }
 
 export async function createSearchJob(input: CreateSearchJobInput, authority?: BuyerDispatchAuthority | null) {
+  if (ownedBuyerStoreEnabled()) {
+    if(!authority) throw new Error("Buyer dispatch authorization unavailable.");
+    await authority.assertCurrentOwner({user_id:authority.operatorId});
+    if(!authority.requestOwnedBuyerStore) throw new Error("Buyer dispatch authorization unavailable.");
+    return authority.requestOwnedBuyerStore<SearchJobRecord>("job-create",{id:randomUUID(),state:input.state.trim().toUpperCase(),county:input.county.trim(),property_type:input.propertyType,date_range_start:toIsoDate(input.dateRangeStart),date_range_end:toIsoDate(input.dateRangeEnd),min_purchases:input.minPurchases,cash_buyers_only:false,llc_buyers_only:false});
+  }
   const env = getEnvState();
   if (!env.enabled) {
     throw new Error(`Missing Supabase env: ${env.missing.join(", ")}`);
@@ -688,6 +701,7 @@ export async function createSearchJob(input: CreateSearchJobInput, authority?: B
 }
 
 export async function listBuyerReports(searchJobId: string, limit = 8): Promise<BuyerReportRecord[]> {
+  if (ownedBuyerStoreEnabled()) return (await buyerStoreRequest<BuyerReportPage>("reports-list",{searchJobId,limit,offset:0})).reports;
   const env = getEnvState();
   if (!env.enabled) return [];
   const operator = await getAuthenticatedOperator();
@@ -718,6 +732,7 @@ export async function listAllBuyerReports({
   offset?: number;
   searchJobId?: string;
 } = {}): Promise<BuyerReportPage> {
+  if (ownedBuyerStoreEnabled()) return buyerStoreRequest("reports-list",{limit,offset,searchJobId:searchJobId??null});
   const env = getEnvState();
   const operator = env.enabled ? await getAuthenticatedOperator() : null;
   if (!operator?.id) {
@@ -765,6 +780,7 @@ export async function listExports({
   limit?: number;
   searchJobId?: string;
 } = {}): Promise<ExportRecord[]> {
+  if (ownedBuyerStoreEnabled()) return buyerStoreRequest("exports-list",{limit,searchJobId:searchJobId??null});
   const env = getEnvState();
   if (!env.enabled) return [];
 
@@ -792,6 +808,7 @@ export async function listExports({
 }
 
 export async function createExportRecord(input: CreateExportInput): Promise<ExportRecord> {
+  if (ownedBuyerStoreEnabled()) return buyerStoreRequest("export-create",{id:randomUUID(),searchJobId:input.searchJobId??null,fileName:input.fileName.trim(),rowCount:input.rowCount});
   const env = getEnvState();
   if (!env.enabled) {
     throw new Error(`Missing Supabase env: ${env.missing.join(", ")}`);
@@ -1346,9 +1363,9 @@ function scoreBuyerProfile(row: BuyerProfileRow, bucket: "land" | "residential")
   return { score: Math.min(99, score), reasons };
 }
 
-export async function matchBuyersForProperty(input: BuyerForPropertyInput, { readOnly = false, readClient }: { readOnly?: boolean; readClient?: SupabaseClient } = {}): Promise<BuyerForPropertyResult> {
-  if (readOnly && !readClient) throw new Error("Observed read client required");
-  const supabase = readClient ?? getSupabaseAdmin();
+export async function matchBuyersForProperty(input: BuyerForPropertyInput, { readOnly = false, readClient, ownedProfiles }: { readOnly?: boolean; readClient?: SupabaseClient; ownedProfiles?: {rows: BuyerProfileRow[];count:number} } = {}): Promise<BuyerForPropertyResult> {
+  if (readOnly && !readClient && !ownedProfiles) throw new Error("Observed read client required");
+  const supabase = ownedProfiles || ownedBuyerStoreEnabled() ? null : readClient ?? getSupabaseAdmin();
   const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(input.county, input.city);
   const bucket = resolvePropertyTypeBucket(input);
   const limit = input.limit ?? 10;
@@ -1359,14 +1376,15 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
 
   // Real buyers from the BuyerProfile universe (the source of truth). Fetch the
   // top-200 by volume for scoring, and a true county-wide count for validation.
-  const [{ data: profileRows, error: profileError }, { count: countyBuyerCount, error: countError }] = await Promise.all([
-    supabase
+  const owned = ownedProfiles ?? (ownedBuyerStoreEnabled() ? await buyerStoreRequest<{rows:BuyerProfileRow[];count:number}>("profiles-list",{county:countyCore,state:null,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:200}) : null);
+  const [{ data: profileRows, error: profileError }, { count: countyBuyerCount, error: countError }] = owned ? [{data:owned.rows,error:null},{count:owned.count,error:null}] : await Promise.all([
+    supabase!
       .from("BuyerProfile")
       .select("id, buyer_name, county, state, is_llc, is_cash_buyer, purchase_count, total_spend, last_purchase_date, property_types, score")
       .ilike("county", `%${countyCore}%`)
       .order("purchase_count", { ascending: false, nullsFirst: false })
       .limit(200),
-    supabase
+    supabase!
       .from("BuyerProfile")
       .select("id", { count: "exact", head: true })
       .ilike("county", `%${countyCore}%`),
@@ -1398,7 +1416,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
 
   // Institutional groups remain a secondary lane (no longer the only source).
   const registry = readOnly
-    ? await listBuyerGroupRegistry(false, { readOnly: true, readClient: supabase })
+    ? await listBuyerGroupRegistry(false, { readOnly: true, readClient: readClient ?? supabase ?? undefined })
     : await listBuyerGroupRegistry(false).catch(() => []);
   const institutionalMatches: BuyerForPropertyMatch[] = registry
     .filter((group) => (group.counties ?? []).some((c) => normalizeCountyName(c) === countyCore))
@@ -1597,6 +1615,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       outreachDraftCount: 0,
     };
   }
+
+  if(ownedBuyerStoreEnabled()) return {operatorId,...await buyerStoreRequest<Omit<DashboardSnapshot,"operatorId"|"outreachDraftCount">>("counts",{}),outreachDraftCount:await countOutreachDraftRecords().catch(()=>0)};
 
   let jobQuery = supabase.from("SearchJob").select("status", { count: "exact" });
   const reportQuery = supabase.from("BuyerReport").select("id", { count: "exact", head: true });
