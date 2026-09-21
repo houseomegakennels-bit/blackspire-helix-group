@@ -1,10 +1,11 @@
+import {verifyHeldCanonicalWriter} from './held-writer-binding.js';
 import {createHash} from 'node:crypto';
 import pg from 'pg';
 import {readRootOwnedJson,readRootOwnedMetadataSnapshot} from '../buyer-writer/protected-json.js';
 import {hash} from './commander-journal.js';
 import {prepareN8nTransition,createN8nTransport,executeN8nTransition} from './commander-n8n.js';
 import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,inspectReleaseMigrationState} from './commander-migration.js';
-import {readReleaseProtectedBytes,verifyCanonicalWriter} from './commander-host.js';
+import {readReleaseProtectedBytes} from './commander-host.js';
 
 const N8N_KEY_FILE='/var/lib/blackspire-operator/n8n-api-key';
 const DATABASE_HOST='db.kchtrvfcixnimvxxctkj.supabase.co';
@@ -36,7 +37,7 @@ function fixedN8n(context,dependencies={}){
   return prepareN8nTransition({configuration,backupBytes:readBytes(context.release.n8nBackupFile,2*1024*1024)});
  };
  const getRequest=()=>dependencies.request??createN8nTransport(readBytes(N8N_KEY_FILE,16384).trim());
- const writer=()=>dependencies.verifyWriter?dependencies.verifyWriter():verifyCanonicalWriter(context.input.releaseSha,context.release.activationConfigurationFile);
+ const writer=()=>dependencies.verifyWriter?dependencies.verifyWriter():verifyHeldCanonicalWriter({releaseSha:context.input.releaseSha,journal:context.journal});
  const inspect=async(args,{attempt=false}={})=>{
   const bound=binding(context,args,{attempt}),plan=getPlan();
   const result=await executeN8nTransition({plan,mode:'inspect',request:getRequest(),journal:context.journal.stream('n8n')});

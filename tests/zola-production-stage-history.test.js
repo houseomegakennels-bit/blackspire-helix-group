@@ -25,6 +25,7 @@ function fixture(){
    inspectArtifact:async()=>({status:'SEALED_ARTIFACT_VERIFIED',releaseSha:input.releaseSha,artifactDigest:'f'.repeat(64),deployed:false,productionAccepted:false}),
    reloadSystemd:async()=>({status:'SYSTEMD_RELOADED'}),
   }),
+  ensureWriterBinding:async input=>({status:'HELD_WRITER_BINDING_VERIFIED',releaseSha:input.releaseSha}),
   establishHeld:async()=>{
    assert.equal(inspectReleaseCommander(journal).status,'OBSERVED');
    return {status:'HELD_LIFECYCLE_OBSERVED',releaseSha:input.releaseSha,runId:'22222222-2222-4222-8222-222222222222',

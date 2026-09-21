@@ -1,3 +1,4 @@
+import {inspectHeldWriterBindingHistory} from './held-writer-binding.js';
 import {inspectCandidateSixReadsHistory,inspectSequencedHeldAcceptanceHistory} from './production-stage-history.js';
 import {inspectBuyerWriterActivationHistory} from './buyer-writer-activation.js';
 import {inspectRollbackProbeHistory} from './production-rollback-operations.js';
@@ -61,6 +62,7 @@ function history(journal){
   if(sequence.pending?.stage!=='admission_lease'||row.operationId!==sequence.context.operationId
    ||row.releaseSha!==sequence.context.releaseSha||row.recoverySha!==sequence.context.recoverySha)reject();
  }
+ inspectHeldWriterBindingHistory(events);
  inspectBoundedWriterAdmissionHistory(events);
  inspectPostMergeAdmissionHistory(events);
  inspectVpsCutoverHistory(events);
@@ -77,6 +79,7 @@ function history(journal){
   if(row?.schema===1&&['candidate_six_reads_intent','candidate_six_reads_result',
    'buyer_writer_activation_intent','buyer_writer_activation_result',
    'candidate_deployment_intent','candidate_deployment_step_intent','candidate_deployment_step_result','candidate_deployment_result',
+   'held_writer_binding_intent','held_writer_binding_step_intent','held_writer_binding_step_result','held_writer_binding_result',
    'bounded_writer_admission_handle','rollback_acceptance_probe_intent','rollback_acceptance_probe_result',
    'rollback_verification_probe_intent','rollback_verification_probe_result',
    'final_release_record_intent','final_release_open_record_intent',

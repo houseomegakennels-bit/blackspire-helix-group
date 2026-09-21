@@ -1,3 +1,4 @@
+import {ensureHeldWriterBinding} from './held-writer-binding.js';
 import {isProductionAcceptanceIdentity,PRODUCTION_ACCEPTANCE_WORKSPACE,PRODUCTION_ACCEPTANCE_PRINCIPAL} from './production-runtime-identity.js';
 
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
@@ -157,7 +158,7 @@ export function createHeldProductionOperations(context,overrides={}){
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
   recordRoot:FINAL_RELEASE_RECORD_ROOT,candidate:runCandidateCollector,
   activate:input=>activateBuyerWriterBeforeHeld(input,{journal:context.journal}),
-  establishHeld:()=>establishCandidateHeld(context),...overrides};
+  establishHeld:()=>establishCandidateHeld(context),ensureWriterBinding:ensureHeldWriterBinding,...overrides};
  const journalResult=(kind,attemptId)=>context.journal.stream('release').events().find(row=>row?.schema===1&&row.type===`${kind}_result`&&row.attemptId===attemptId);
  const candidate={check(call){invocation(context,call,'candidate_six_reads');return pass({stage:'candidate_six_reads',fixedIsolatedCollector:true});},
   execute(call){invocation(context,call,'candidate_six_reads',{attempt:true});const stream=context.journal.stream('release');stream.append({schema:1,type:'candidate_six_reads_intent',attemptId:call.attemptId,releaseSha:context.input.releaseSha});
@@ -165,12 +166,15 @@ export function createHeldProductionOperations(context,overrides={}){
     status:report?'PASS':'BLOCKED_EXTERNAL',...(report?{reportDigest:hash(report)}:{})});},
   reconcile(call){invocation(context,call,'candidate_six_reads',{attempt:true});const row=journalResult('candidate_six_reads',call.attemptId);if(!row)reject();
    return row.status==='BLOCKED_EXTERNAL'?blocked():pass({stage:'candidate_six_reads',candidatePass:true,livePass:false,reportDigest:row.reportDigest});},observe(){reject();}};
+ const writerBinding=async call=>{const ids=invocation(context,call,'admission_lease',{attempt:true});
+  const proof=await deps.ensureWriterBinding({journal:context.journal,stage:'admission_lease',releaseSha:context.input.releaseSha,operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
+  if(proof?.status!=='HELD_WRITER_BINDING_VERIFIED'||proof.releaseSha!==context.input.releaseSha)reject();return proof;};
  const admission={check(call){invocation(context,call,'admission_lease');return pass({stage:'admission_lease',fixedAdmissionRoot:RELEASE_ADMISSION_ROOT,intakeOpen:false});},
   async execute(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await deps.activate({releaseSha:context.input.releaseSha,
-   operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});await deps.establishHeld();},
+   operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});await deps.establishHeld();await writerBinding(call);},
   async reconcile(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await deps.activate({releaseSha:context.input.releaseSha,
    operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
-   const result=await deps.establishHeld();if(result.status!=='HELD_LIFECYCLE_OBSERVED'||result.releaseSha!==context.input.releaseSha)reject();return pass({stage:'admission_lease',releaseSha:result.releaseSha,
+   const result=await deps.establishHeld();await writerBinding(call);if(result.status!=='HELD_LIFECYCLE_OBSERVED'||result.releaseSha!==context.input.releaseSha)reject();return pass({stage:'admission_lease',releaseSha:result.releaseSha,
     epochRunId:result.runId,artifactDigest:result.proof.artifactDigest,apiGeneration:result.proof.api.generation,workerGeneration:result.proof.worker.generation,intakeOpen:false});},observe(){reject();}};
  const revalidation={async check(call){invocation(context,call,'generation_revalidation');const prior=call.state.outputs.admission_lease;if(!prior||!uuid(prior.epochRunId))reject();
    const proof=await deps.lifecycle({releaseSha:context.input.releaseSha,runId:prior.epochRunId});if(proof.api.generation!==prior.apiGeneration||proof.worker.generation!==prior.workerGeneration||proof.artifactDigest!==prior.artifactDigest)reject();

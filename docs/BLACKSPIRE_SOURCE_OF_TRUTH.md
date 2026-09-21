@@ -10,6 +10,12 @@ The issuer-authenticated writer preparation endpoint can now observe a provision
 
 Thirty focused tests pass, including authenticated HTTP behavior, actual shared-flock exclusion, strict base-readiness failure cases, callback drift and asynchronous context expiry. Build, lint and syntax/typecheck pass. Root binding publication integration, independent review and live production verification remain pending. No production action, push or deployment occurred.
 
+## 2026-09-21 — explicit HELD writer binding publication
+
+A dedicated root composition now resolves the exact installed manifest and protected client, ingress, signer and gateway configuration for each release, retains a shared admission lease and verifies live artifact, epoch and API/worker generations before and after writer binding publication. Public readiness remains closed; a separate authenticated HELD preparation observation requires every other readiness check. Candidate binding publication is journaled after lifecycle startup and before admission-stage confirmation. Postmerge publication preserves only the exact previously journal-confirmed binding and commit as retained files, then publishes the new generation binding. Unknown outcomes reconcile by observation without repeating effects; malformed, foreign or late events fail closed. The fixed n8n transition uses this HELD continuity proof rather than requiring OPEN readiness. Ordinary writer availability and admission remain OPEN-only.
+
+Focused state-machine, real protected-file retirement and loopback HTTP regressions pass locally. The API HELD preparation guard and postmerge hook are separately developed dependencies and require integrated validation and independent review. Production activation remains UNVERIFIED; no production file, journal, service or database was changed.
+
 ## 2026-09-21 — composed activation repairs reviewed; production preparation retained
 
 Independent review approves candidate deployment `7d1e28f8dd510bf3f2e4869bde173ea68e29fcda`, collector-resume correction `89a6192155c5e4f8baf344edc11544432d3d1904`, commander history integration through `0073ea6`, and gateway unit preparation `cd199fc007803c46e99507324771f1cc0608d138`. The combined activation/history lane passes 29/29; gateway/activation/history integration passes 18/18. Independent whole-history inspection validates the real 51-row release and three-row n8n chains without changing bytes; old observations yield zero current outputs. The bounded compatibility path is now validated against actual preserved history, not deployed.

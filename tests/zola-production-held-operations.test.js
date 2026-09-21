@@ -64,6 +64,7 @@ test('admission activates the exact buyer writer attempt before any HELD service
  const call={input,state,ordinal:1,attemptId,inputDigest:'4'.repeat(64),checkOutputDigest:'5'.repeat(64)};
  const order=[];
  const operations=createHeldProductionOperations(context,{
+  async ensureWriterBinding(bound){order.push('binding');assert.equal(bound.stage,'admission_lease');assert.equal(bound.attemptId,attemptId);return {status:'HELD_WRITER_BINDING_VERIFIED',releaseSha:candidate};},
   async activate(binding){order.push('activate');assert.deepEqual(binding,{releaseSha:candidate,
    operationId,attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
    return {status:'BUYER_WRITER_PRE_HELD_READY'};},
@@ -71,7 +72,7 @@ test('admission activates the exact buyer writer attempt before any HELD service
    runId:epochRunId,proof:{artifactDigest:'6'.repeat(64),api:{generation:apiGeneration},worker:{generation:workerGeneration}}};},
  });
  await operations.admission_lease.execute(call);
- assert.deepEqual(order,['activate','held']);
+ assert.deepEqual(order,['activate','held','binding']);
 });
 
 
