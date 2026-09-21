@@ -5,6 +5,11 @@
 The approved separate-cluster implementation adds a dedicated asynchronous receiver-read lease for Buyer profile/match reads while preserving the synchronous legacy consumer contract. The new optional callback request must hash to the original issued authority before consumption. Consumed authority is revalidated before and after bounded reads against the current task, grant, worker, generation, expiry and started attempt; responses after revocation are refused. The asynchronous scope retains the shared release lease and tombstones its context on settlement, without granting ordinary task or writer admission.
 
 Focused admission, durable authority and HTTP boundary tests pass 21/21, including expiry, replay, request drift, absent storage and post-read revocation. The owned repository runtime is not yet connected; the new path refuses when unavailable. Separate cluster materialization, data migration, user/capability adapters, independent review and full release acceptance remain pending. No production changes occurred in this milestone.
+## 2026-09-21 — isolated owned PostgreSQL bootstrap framework
+
+An explicit owned-postgres-v1 descriptor binds a separate loopback TLS endpoint to its observed creator OID, cluster system identifier, CA digest and pinned cached PostgreSQL 17.6 image. Preparation emits exclusive synchronized SQL/configuration/container/systemd files without executing them. Data belongs on the build volume; the container plan requires a dedicated internal network, bounded resources and loopback publication. Runtime/catalog checks remain unchanged; application/auth schema migration, credential provisioning, durable host materialization and cutover remain separate requirements.
+
+Two profile/plan tests and eight actual disposable PostgreSQL checks pass. The real management-session read-only boundary validator accepts the fresh cluster; the unchanged writer installer applies and reapplies, rejects injected PUBLIC sequence authority, and accepts only after that synthetic exposure is removed. Management-only cluster metadata access and writer CREATE/TEMP denial are verified. The fixture is canonical-shaped and does not prove production schema/auth migration, TLS, service operation or data durability. No production connection or mutation occurred.
 
 ## 2026-09-21 — integrated authenticated callback review complete
 
