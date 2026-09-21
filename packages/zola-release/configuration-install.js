@@ -1,3 +1,6 @@
+import {verifyOwnedBuyerMigrationQuiescence} from '../buyer-writer/owned-migration-host.js';
+import {validateDatabaseTarget} from '../buyer-writer/database-profile.js';
+import {validateOwnedPostgresProfile,OWNED_POSTGRES_PROFILE_PATH} from '../buyer-writer/owned-postgres.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -135,11 +138,17 @@ async function hostIdentity(run){
 
 // No connections and no filesystem mutations while preparing a plan. Production
 // CLI does not expose the injectable dependencies used by disposable tests.
-export async function prepareZolaConfigurationInstall({releaseSha,configurationFile},{io=fs,acl=spawnSync,run=execute,
-  readSnapshot=readRootOwnedJsonSnapshot,inspectArtifact=inspectSealedBuyerWriterArtifact,identity=hostIdentity,paths=defaults,uid=process.getuid()}={}){
+export function prepareZolaConfigurationInstall(input,deps){return prepareConfigurationInstall(input,deps,false);}
+export function prepareOwnedZolaConfigurationInstall(input,deps){return prepareConfigurationInstall(input,deps,true);}
+async function prepareConfigurationInstall({releaseSha,configurationFile},{io=fs,acl=spawnSync,run=execute,
+  quiesce=verifyOwnedBuyerMigrationQuiescence,readSnapshot=readRootOwnedJsonSnapshot,inspectArtifact=inspectSealedBuyerWriterArtifact,identity=hostIdentity,paths=defaults,uid=process.getuid()}={},owned=false){
   try{
     if(uid!==0||!(/^[a-f0-9]{40}$/).test(releaseSha??''))reject();
     directory(io,paths.configDirectory);directory(io,paths.unitDirectory);
+    if(owned)await quiesce();
+    const profileSnapshot=owned?readSnapshot(OWNED_POSTGRES_PROFILE_PATH,{groupId:0,maxBytes:65536}):null;
+    if(owned&&(profileSnapshot.identity.uid!==0||profileSnapshot.identity.gid!==0||(profileSnapshot.identity.mode&0o7777)!==0o600))reject();
+    const profile=owned?validateOwnedPostgresProfile(profileSnapshot.value):null;
     const state=await hostState(run),ids=await identity(run);
     privateGatewayDirectory(io,paths.gatewayConfigDirectory,ids.gatewayGid);
     const snapshot=readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536});
@@ -150,8 +159,11 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     createOperationPermitSigner(signerConfig.signer,{expectedUid:ids.uid});
     if(config.authority.releaseSha!==releaseSha)reject();
     if(config.bindingFile!==path.join(paths.configDirectory,'buyer-writer-binding.json')||config.units||config.rehearsalFile)reject();
-    for(const c of [config.runtime,config.issuer])if(c.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||c.port!==5432||c.database!=='postgres'
-      ||hash(c.ca??'')!=='700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7')reject();
+    for(const c of [config.runtime,config.issuer]){
+      if(owned){if(c.backendProfile!=='owned-postgres-v1'||config.creatorOid!==profile.creatorOid)reject();validateDatabaseTarget(c,{ownedProfile:profile});}
+      else if(c.backendProfile!==undefined||c.profileDigest!==undefined||c.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||c.port!==5432||c.database!=='postgres'
+        ||hash(c.ca??'')!=='700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7')reject();
+    }
     const artifact=await inspectArtifact({artifactRoot:path.join(paths.releaseRoot,releaseSha),releaseSha,environment:'production'});
     if(!sealedArtifactProof(artifact,releaseSha))reject();
     const gatewayBytes=Buffer.from(JSON.stringify(gatewayConfig)+'\n'),clientBytes=Buffer.from(JSON.stringify(clientConfig)+'\n'),
@@ -174,11 +186,13 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     publicationState(io,acl,signerConfigPath,signerBytes,ids.credentialGroupId,0o640);
     publicationState(io,acl,manifestPath,manifestBytes,0,0o600);
     try{directory(io,dropinDirectory);publicationState(io,acl,dropinPath,dropin,0,0o644);}catch(e){if(e.code!=='ENOENT')throw e;}
+    if(owned)await quiesce();
+    if(owned&&!same(profileSnapshot,readSnapshot(OWNED_POSTGRES_PROFILE_PATH,{groupId:0,maxBytes:65536})))reject();
     if(!same(snapshot,readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536}))||!same(state,await hostState(run)))reject();
     const result=Object.freeze({version:2,kind:'zola-configuration-install',releaseSha,artifactDigest:artifact.artifactDigest,
       configPath:clientConfigPath,clientConfigPath,ingressConfigPath,signerConfigPath,gatewayConfigPath,dropinPath,manifestPath,
       status:'PREPARED',servicesStarted:false,authorityActivated:false});
-    plans.set(result,{io,acl,run,readSnapshot,identity,inspectArtifact,paths,input:{releaseSha,configurationFile},snapshot,ids,
+    plans.set(result,{io,acl,run,quiesce,readSnapshot,identity,inspectArtifact,paths,owned,profileSnapshot,input:{releaseSha,configurationFile},snapshot,ids,
       gatewayBytes,clientBytes,ingressBytes,signerBytes,dropin,dropinDirectory,manifestBytes});return result;
   }catch{reject();}
 }
@@ -187,8 +201,8 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
   let database;
   try{
     const p=plans.get(plan);if(!p||typeof record!=='function')reject();
-    const fresh=await prepareZolaConfigurationInstall(p.input,{...p,uid:process.getuid()});
-    const f=plans.get(fresh);if(!same(plan,fresh)||!same(p.snapshot,f.snapshot)||!same(p.ids,f.ids))reject();
+    const fresh=await prepareConfigurationInstall(p.input,{...p,uid:process.getuid()},p.owned);
+    const f=plans.get(fresh);if(!same(plan,fresh)||!same(p.snapshot,f.snapshot)||!same(p.ids,f.ids)||!same(p.profileSnapshot,f.profileSnapshot))reject();
     // Reject inherited named ACLs for both trust zones before writing any
     // credential-bearing inode. Per-file checks remain mandatory as a second
     // fence against a directory ACL change during publication.
@@ -202,6 +216,9 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     if(!same(p.ids,await p.identity(p.run))||!same(p.snapshot,p.readSnapshot(p.input.configurationFile,{groupId:p.ids.credentialGroupId,maxBytes:65536})))reject();
     const artifact=await p.inspectArtifact({artifactRoot:path.join(p.paths.releaseRoot,plan.releaseSha),releaseSha:plan.releaseSha,environment:'production'});
     if(!sealedArtifactProof(artifact,plan.releaseSha)||artifact.artifactDigest!==plan.artifactDigest)reject();
+    if(p.owned)await p.quiesce();
+    if(p.owned&&!same(p.profileSnapshot,p.readSnapshot(OWNED_POSTGRES_PROFILE_PATH,{groupId:0,maxBytes:65536})))reject();
+    if(!same(p.snapshot,p.readSnapshot(p.input.configurationFile,{groupId:p.ids.credentialGroupId,maxBytes:65536})))reject();
     record({event:'configuration_install_intent',releaseSha:plan.releaseSha,artifactDigest:plan.artifactDigest});
     privateGatewayDirectory(p.io,p.paths.gatewayConfigDirectory,p.ids.gatewayGid);
     publish(p.io,p.acl,plan.gatewayConfigPath,p.gatewayBytes,p.ids.gatewayGid,0o640);
@@ -212,6 +229,9 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     directory(p.io,p.dropinDirectory);await hostState(p.run);
     publish(p.io,p.acl,plan.dropinPath,p.dropin,0,0o644);
     publish(p.io,p.acl,plan.manifestPath,p.manifestBytes,0,0o600);
+    if(p.owned)await p.quiesce();
+    if(p.owned&&!same(p.profileSnapshot,p.readSnapshot(OWNED_POSTGRES_PROFILE_PATH,{groupId:0,maxBytes:65536})))reject();
+    if(!same(p.snapshot,p.readSnapshot(p.input.configurationFile,{groupId:p.ids.credentialGroupId,maxBytes:65536})))reject();
     record({event:'configuration_install_verified',releaseSha:plan.releaseSha,
       manifestPath:plan.manifestPath,manifestDigest:hash(p.manifestBytes)});
     return {...plan,status:'INSTALLED_RELOAD_REQUIRED'};

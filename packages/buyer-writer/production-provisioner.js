@@ -8,7 +8,7 @@ import {validateBuyerWriterGatewayServiceConfiguration} from './gateway-entry.js
 import {TEMPLATE1_IDENTITY_SQL} from './postgres.js';
 import {ADMISSION_IDENTITY_SQL} from './admission-executor.js';
 import {ADMISSION_TEMPLATE1_IDENTITY_SQL,BUYER_WRITER_ADMISSION_LOGIN,BUYER_WRITER_ADMISSION_ROLE} from './admission-postgres.js';
-import {observeBuyerWriterProductionState} from './production-verifier.js';
+import {observeBuyerWriterProductionState,observeOwnedBuyerWriterProductionState,observeOwnedBuyerWriterDisabledLayout} from './production-verifier.js';
 import {writeBuyerWriterProvisioningJournal} from './production-provisioning-journal.js';
 
 export const BUYER_WRITER_GATEWAY_CONFIGURATION='/etc/blackspire-buyer-writer-gateway/gateway.json';
@@ -82,6 +82,7 @@ const BIND_ADMISSION_LOGIN_SQL=`revoke create,temporary on database postgres fro
  revoke buyer_writer_admission from buyer_writer_admission_login;
  grant buyer_writer_admission to buyer_writer_admission_login with admin false,inherit false,set true granted by postgres;
  alter role buyer_writer_admission_login login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls`;
+const ENABLE_LOGINS_SQL="alter role buyer_writer_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null; alter role buyer_writer_runtime login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls; alter role buyer_writer_issuer login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls";
 const LOGGING_SAFETY_SQL=`select current_setting('log_statement')='none'
  and current_setting('log_duration')='off'
  and current_setting('log_min_duration_statement')='-1'
@@ -210,8 +211,20 @@ async function ownedBoundary(client,profile){
   await client.query('rollback');began=false;
  }finally{if(began)try{await client.query('rollback');}catch{}}
 }
-async function verified(client,creatorOid){
-  return observeBuyerWriterProductionState((text,values)=>client.query(text,values),creatorOid);
+async function verified(client,creatorOid,owned=false,profile,disabled=false){
+  if(!owned)return observeBuyerWriterProductionState((text,values)=>client.query(text,values),creatorOid);
+  const actor=async(expected)=>{const result=await client.query('select session_user::text as session_actor,current_user::text as current_actor',[]);
+    if(result.rows?.length!==1||!exact(result.rows[0],['session_actor','current_actor'])
+      ||result.rows[0].session_actor!=='postgres'||result.rows[0].current_actor!==expected)fail();};
+  await actor('postgres');
+  await client.query('set role buyer_writer_owner',[]);
+  try{
+    await actor('buyer_writer_owner');
+    return await (disabled?observeOwnedBuyerWriterDisabledLayout:observeOwnedBuyerWriterProductionState)((text,values)=>client.query(text,values),profile);
+  }finally{
+    try{await client.query('reset role',[]);await actor('postgres');}
+    catch{const error=new Error('Owned catalog actor restoration failed');error.actorRestorationFailed=true;throw error;}
+  }
 }
 
 async function closeClient(client){
@@ -219,14 +232,14 @@ async function closeClient(client){
   try{await client?.end();}catch{}
 }
 
-async function disableLogins({connect,management,creatorOid,onLocked,onDisabled,ownedProfile}){
+async function disableLogins({connect,management,creatorOid,onLocked,onDisabled,ownedProfile,ownedRoleAlter=false}){
   for(let attempt=0;attempt<2;attempt++){
     let client,began=false,commitSent=false;
     try{
       client=await connect(management);if(ownedProfile)await verifyOwnedDatabaseIdentity(client,ownedProfile);await identityAndLock(client,creatorOid);onLocked?.();
       await client.query('begin');began=true;
       await client.query("set local search_path=pg_catalog; set local lock_timeout='5s'; set local statement_timeout='15s'");
-      await client.query(FAIL_CLOSED_SQL,[]);
+      await roleDdl(client,FAIL_CLOSED_SQL,ownedRoleAlter);
       commitSent=true;await client.query('commit');began=false;
       const observed=await client.query(LOGIN_DISABLED_SQL,[]);
       if(observed.rows?.length!==1||observed.rows[0]?.count!==0)fail();
@@ -250,7 +263,7 @@ function sanitizedInspection(roles,evidence){
 // connect receives already validated management material and must return a
 // dedicated pg Client. The command wrapper supplies the only production
 // implementation; injection exists for deterministic, credential-free tests.
-export async function provisionBuyerWriterProduction({mode,managementConfigPath,
+async function provisionProduction({mode,managementConfigPath,ownedRoleAlter=false,
   gatewayConfigPath=BUYER_WRITER_GATEWAY_CONFIGURATION,readSnapshot=readRootOwnedJsonSnapshot,
   lookupWriterGroup,connect,authenticate,writeJournal=writeBuyerWriterProvisioningJournal,io=fs,readProfile=readOwnedDatabaseProfile}={}){
   if(!['inspect','apply','reconcile','verify','rollback'].includes(mode)||typeof connect!=='function'||typeof authenticate!=='function'
@@ -266,6 +279,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     managementSnapshot=readSnapshot(managementConfigPath,{groupId:0,maxBytes:65536});
     management=validateManagementSnapshot(managementSnapshot,gateway,ownedProfile);
   }catch{fail();}
+  if(ownedRoleAlter&&!ownedProfile)fail();
   const {releaseSha,operationId,attemptId}=gateway.authority;
   const journalMode=mode;
   const journal=(phase,status)=>writeJournal({version:ownedProfile?3:2,...(ownedProfile?{backendProfile:'owned-postgres-v1',profileDigest:databaseProfileDigest(ownedProfile)}:{}),kind:'buyer_writer_production_provisioning',releaseSha,operationId,attemptId,
@@ -273,7 +287,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
   if(mode==='rollback'){
     let journalFailed=false;
     const safeJournal=(phase,status)=>{try{journal(phase,status);}catch{journalFailed=true;}};
-    const result=await disableLogins({connect,management,ownedProfile,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
+    const result=await disableLogins({connect,management,ownedProfile,ownedRoleAlter,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
       onDisabled:()=>safeJournal('roles-disabled','IN_PROGRESS')});
     safeJournal('rollback-complete','COMPLETED');
     if(journalFailed){const error=new Error('Buyer writer production rollback completed without durable journal');error.rollbackSafe=true;throw error;}
@@ -294,7 +308,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     };
     const roles=await readiness(client);
     let evidence=null;
-    try{evidence=await verified(client,gateway.creatorOid);}catch{}
+    try{evidence=await verified(client,gateway.creatorOid,ownedRoleAlter,ownedProfile);}catch(error){if(error.actorRestorationFailed)throw error;}
     if(mode==='inspect'){
       if(evidence)try{
         await authenticate('runtime',gateway.runtime,gateway.creatorOid);await authenticate('issuer',gateway.issuer,gateway.creatorOid);
@@ -327,17 +341,21 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     if(mode==='apply'&&roles.some(role=>role.exists))fail();
     await client.query('begin');
     await client.query("set local search_path=pg_catalog; set local lock_timeout='5s'; set local statement_timeout='15s'");
-    await client.query(FAIL_CLOSED_SQL,[]);
+    await roleDdl(client,FAIL_CLOSED_SQL,ownedRoleAlter);
     await client.query('commit');
     journal('roles-disabled','IN_PROGRESS');
 
     // The canonical installer owns this transaction byte-for-byte. It leaves
     // every created role NOLOGIN, so the explicit phase boundary is fail-closed.
     await client.query("select set_config('blackspire.buyer_writer_creator_oid',$1,false)",[String(gateway.creatorOid)]);
-    await client.query(installerBytes(io));
-    journal('installer-committed','IN_PROGRESS');
+    const retainedOwnedLayout=ownedRoleAlter&&roles.some(role=>role.name===BUYER_WRITER_ADMISSION_LOGIN&&role.exists);
+    if(retainedOwnedLayout){
+      const layout=await verified(client,gateway.creatorOid,true,ownedProfile,true);
+      if(layout.compliant!==false||layout.status!=='OWNED_LAYOUT_LOGIN_DISABLED')fail();
+      recheckSnapshots();
+    }else{await client.query(installerBytes(io));journal('installer-committed','IN_PROGRESS');}
     const installed=await readiness(client);
-    if(installed.some(role=>role.name===BUYER_WRITER_ADMISSION_LOGIN?role.exists:!role.exists||role.login))fail();
+    if(installed.some(role=>role.name===BUYER_WRITER_ADMISSION_LOGIN?(retainedOwnedLayout?!role.exists||role.login:role.exists):!role.exists||role.login))fail();
 
     let began=false,commitSent=false;
     try{
@@ -350,13 +368,13 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
       await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',['buyer_writer_runtime',gateway.runtime.password]);
       await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',['buyer_writer_issuer',gateway.issuer.password]);
       await client.query('select pg_temp.blackspire_bind_buyer_writer_password($1::name,$2::text)',[BUYER_WRITER_ADMISSION_LOGIN,gateway.admission.connection.password]);
-      await client.query(BIND_ADMISSION_LOGIN_SQL,[]);
-      await client.query("alter role buyer_writer_owner nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls password null; alter role buyer_writer_runtime login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls; alter role buyer_writer_issuer login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls");
-      const finalEvidence=await verified(client,gateway.creatorOid);
+      await roleDdl(client,BIND_ADMISSION_LOGIN_SQL,ownedRoleAlter);
+      await roleDdl(client,ENABLE_LOGINS_SQL,ownedRoleAlter);
+      const finalEvidence=await verified(client,gateway.creatorOid,ownedRoleAlter,ownedProfile);
       recheckSnapshots();
       commitSent=true;await client.query('commit');began=false;
       await client.query('begin read only');
-      const committedEvidence=await verified(client,gateway.creatorOid);
+      const committedEvidence=await verified(client,gateway.creatorOid,ownedRoleAlter,ownedProfile);
       await client.query('rollback');
       await authenticate('runtime',gateway.runtime,gateway.creatorOid);await authenticate('issuer',gateway.issuer,gateway.creatorOid);
         await authenticate('admission',gateway.admission.connection,gateway.creatorOid);
@@ -372,11 +390,37 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     await closeClient(client);client=null;
     if(mutationStarted){
       const safeJournal=(phase,status)=>{try{journal(phase,status);}catch{}};
-      try{await disableLogins({connect,management,ownedProfile,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
+      try{await disableLogins({connect,management,ownedProfile,ownedRoleAlter,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
         onDisabled:()=>safeJournal('roles-disabled','IN_PROGRESS')});}
       catch(error){safeJournal('failed','FAILED');throw error;}
       safeJournal('fail-closed','FAIL_CLOSED');
     }
     fail();
   }finally{await closeClient(client);}
+}
+
+const OWNED_ROLE_FLAGS_SQL=`select rolname,rolsuper from pg_roles where rolname in ('buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login') order by rolname`;
+async function assertOwnedRoleFlags(client){
+ const result=await client.query(OWNED_ROLE_FLAGS_SQL,[]);
+ const allowed=new Set(['buyer_writer_owner','buyer_writer_runtime','buyer_writer_issuer','buyer_writer_admission','buyer_writer_admission_login']);
+ if(!Array.isArray(result.rows)||result.rows.length>5||new Set(result.rows.map(r=>r.rolname)).size!==result.rows.length
+  ||result.rows.some(r=>!exact(r,['rolname','rolsuper'])||!allowed.has(r.rolname)||r.rolsuper!==false))fail();
+}
+// The fixed manager cannot ALTER NOSUPERUSER even on an already bounded role.
+// It can never demote a superuser: reject that state before and after the exact
+// named-role DDL while the native provisioning advisory lock remains held.
+async function roleDdl(client,sql,owned){
+ if(!owned)return client.query(sql,[]);
+ if(![FAIL_CLOSED_SQL,BIND_ADMISSION_LOGIN_SQL,ENABLE_LOGINS_SQL].includes(sql))fail();
+ await assertOwnedRoleFlags(client);
+ if(sql===BIND_ADMISSION_LOGIN_SQL)await client.query('grant connect on database postgres to public',[]);
+ const result=await client.query(sql.replaceAll(' noinherit nosuperuser',' noinherit'),[]);
+ await assertOwnedRoleFlags(client);return result;
+}
+export async function provisionBuyerWriterProduction(input){
+ if(input?.ownedRoleAlter!==undefined)fail();return provisionProduction(input);
+}
+export async function provisionOwnedBuyerWriterProduction(input){
+ if(input?.ownedRoleAlter!==undefined||input?.managementConfigPath!=='/etc/blackspire/owned-postgres/management.json')fail();
+ return provisionProduction({...input,ownedRoleAlter:true});
 }

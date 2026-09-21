@@ -24,7 +24,8 @@ const descriptor=bundle=>({schema:1,binding:bundle.binding,dependencies:bundle.d
 // Called only while the enclosing VPS transaction owns the admission lock.
 // The public snapshot contains hashes; credentials remain in a private root-only backup.
 export function createPostmergeAuthorityRebind(plan,{paths=defaults,inspectArtifact=inspectSealedBuyerWriterArtifact,
- assertStopped,resolveIdentity=lookupBuyerWriterIdentity,aclTool=spawnSync,io=fs}={}){
+ assertStopped,resolveIdentity=lookupBuyerWriterIdentity,aclTool=spawnSync,io=fs,
+ successorReceipt=async input=>(await import('../buyer-writer/owned-successor-gateway-unit.js')).readOwnedSuccessorGatewayUnitReceipt(input)}={}){
  if(process.getuid()!==0||typeof assertStopped!=='function'||!['candidateSha','newMainSha'].every(k=>/^[a-f0-9]{40}$/.test(plan[k]??''))
   ||plan.candidateSha===plan.newMainSha||!['operationId','commanderRunId','epochRunId'].every(k=>/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(plan[k]??''))
   ||!['candidateArtifactDigest','artifactDigest'].every(k=>/^[a-f0-9]{64}$/.test(plan[k]??'')))reject();
@@ -81,8 +82,26 @@ export function createPostmergeAuthorityRebind(plan,{paths=defaults,inspectArtif
   const keyPath=path.join(paths.config,'buyer-writer-signing-key-'+oldSigner.signer.activeKeyId+'.pem');
   if(oldSigner.signer.activePrivateKeyPath!==keyPath)reject();
   const key=read(keyPath,{uid:identity.uid,gid:identity.credentialGroupId,mode:0o600});
-  const candidateState=read(paths.candidateState,{gid:0,mode:0o600});if(parse(candidateState.bytes).sha!==plan.candidateSha)reject();
-  const dependencies=[{filename:paths.candidateState,uid:0,gid:0,mode:0o600,digest:hash(candidateState.bytes)},{filename:ingress.filename,uid:0,gid:ingress.gid,mode:ingress.mode,digest:hash(ingress.bytes)},
+  const candidateState=read(paths.candidateState,{gid:0,mode:0o600}),installation=parse(candidateState.bytes);
+  let successorDependencies=[];
+  if(installation.sha!==plan.candidateSha){
+   if(installation.version!==4||installation.sha!=='2636a1e75cd0f422aff036dfee8a93a81cd5008b'
+    ||plan.backendProfile!=='owned-postgres-v1'||plan.profileDigest!=='2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505'
+    ||oldGateway.authority.operationId!==plan.commanderRunId)reject();
+   const receipt=await successorReceipt({releaseSha:plan.candidateSha,operationId:oldGateway.authority.operationId,artifactDigest:plan.candidateArtifactDigest});
+   if(receipt?.status!=='OWNED_SUCCESSOR_GATEWAY_UNIT_RECEIPT_VERIFIED'||receipt.sha!==plan.candidateSha
+    ||receipt.operationId!==plan.commanderRunId||receipt.attemptId!==oldGateway.authority.attemptId||receipt.profileDigest!==plan.profileDigest
+    ||receipt.artifactDigest!==plan.candidateArtifactDigest||receipt.installedUnitSha256!==hash(unit.bytes)
+    ||!Array.isArray(receipt.dependencies)||receipt.dependencies.length!==5)reject();
+   if(!receipt.dependencies.some(row=>row.filename===paths.candidateState&&row.digest===hash(candidateState.bytes)))reject();
+   for(const row of receipt.dependencies){
+    if(Object.keys(row).sort().join(',')!=='digest,filename,gid,mode,uid'||row.uid!==0||row.gid!==0||row.mode!==0o600
+     ||!/^[a-f0-9]{64}$/.test(row.digest??'')||hash(read(row.filename,row).bytes)!==row.digest)reject();
+   }
+   if(new Set(receipt.dependencies.map(row=>row.filename)).size!==5)reject();
+   successorDependencies=receipt.dependencies.filter(row=>row.filename!==paths.candidateState);
+  }
+  const dependencies=[{filename:paths.candidateState,uid:0,gid:0,mode:0o600,digest:hash(candidateState.bytes)},...successorDependencies,{filename:ingress.filename,uid:0,gid:ingress.gid,mode:ingress.mode,digest:hash(ingress.bytes)},
    {filename:keyPath,uid:key.uid,gid:key.gid,mode:key.mode,digest:hash(key.bytes)},
    {filename:path.join(paths.config,'zola-installed-'+plan.candidateSha+'.json'),uid:0,gid:0,mode:0o600,digest:hash(oldManifest.bytes)},
    ...[client,signer].map(row=>({filename:row.filename,uid:0,gid:row.gid,mode:row.mode,digest:hash(row.bytes)}))];

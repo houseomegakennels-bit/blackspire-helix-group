@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {validateVpsHeldHttp} from '../zola-release/vps-held-http.js';
-import {verifySealedBuyerWriterArtifact} from '../buyer-writer/artifact.js';
+import {verifyBuyerWriterArtifact} from '../buyer-writer/artifact.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -123,19 +123,21 @@ function assertWorkerFrontend(config) {
   if (!/^[A-Za-z0-9._:-]{1,128}$/.test(workerId)) refuse('WORKER_ID_REJECTED');
   return workerId;
 }
+export function assertProductionCollectorSource(releaseSha,{sourceRoot=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,''),verifyArtifact=verifyBuyerWriterArtifact}={}){
+  if(sourceRoot===`/opt/blackspire-command/releases/${releaseSha}`){
+    verifyArtifact({artifactRoot:sourceRoot,releaseSha:releaseSha,environment:'production'});
+  }else{
+    const gitOptions={cwd:sourceRoot,encoding:'utf8',timeout:2000,maxBuffer:65536,env:{PATH:'/usr/bin:/bin',LC_ALL:'C',GIT_NO_REPLACE_OBJECTS:'1'},stdio:['ignore','pipe','pipe']};
+    if(execFileSync('/usr/bin/git',['rev-parse','--verify','HEAD'],gitOptions).trim()!==releaseSha||execFileSync('/usr/bin/git',['status','--porcelain=v1','--untracked-files=all'],gitOptions).trim())refuse('COLLECTOR_SOURCE_SHA_OR_DIRTY_TREE');
+  }
+}
 export function createProductionCollectorHost(config,{readAcceptanceSecret=()=>{
   const filename=path.join(RELEASE_ADMISSION_ROOT,[4,6].includes(config.version)?'premerge-reads-secret.json':'acceptance-secret.json'),stat=fs.lstatSync(filename);
   if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.nlink!==1||(stat.mode&0o7777)!==0o600)refuse('CREDENTIAL_CONTRACT_REJECTED');
   return readRootOwnedJson(filename,{groupId:stat.gid,maxBytes:1024});
 } }={}) {
   if (process.getuid() !== 0) refuse('ROOT_REQUIRED');
-  const sourceRoot=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,'');
-  if(sourceRoot===`/opt/blackspire-command/releases/${config.releaseSha}`){
-    verifySealedBuyerWriterArtifact({artifactRoot:sourceRoot,releaseSha:config.releaseSha,environment:'production'});
-  }else{
-    const gitOptions={cwd:sourceRoot,encoding:'utf8',timeout:2000,maxBuffer:65536,env:{PATH:'/usr/bin:/bin',LC_ALL:'C',GIT_NO_REPLACE_OBJECTS:'1'},stdio:['ignore','pipe','pipe']};
-    if(execFileSync('/usr/bin/git',['rev-parse','--verify','HEAD'],gitOptions).trim()!==config.releaseSha||execFileSync('/usr/bin/git',['status','--porcelain=v1','--untracked-files=all'],gitOptions).trim())refuse('COLLECTOR_SOURCE_SHA_OR_DIRTY_TREE');
-  }
+  assertProductionCollectorSource(config.releaseSha);
   let credentials = readRootOwnedJson(config.credentialPath, { groupId: 0 }),acceptanceSecret=null;
   const denialReceipt = [4,5,6,7].includes(config.version) ? readRootOwnedJson(config.denialReceiptPath, { groupId: 0 }) : null;
   if ([4,5,6,7].includes(config.version)) {

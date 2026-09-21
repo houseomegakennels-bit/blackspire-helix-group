@@ -1,0 +1,4 @@
+import {openReleaseJournal} from '../packages/zola-release/commander-journal.js';
+import {prepareOwnedSuccessorFinalInputs} from '../packages/zola-release/owned-successor-final-inputs.js';
+import {createOwnedSuccessorFinalInputHost} from '../packages/zola-release/owned-successor-final-inputs-host.js';
+let journal;try{const[mode,releaseSha,...extra]=process.argv.slice(2);if(extra.length||!['--prepare','--inspect'].includes(mode)||process.versions.node!=='22.23.1'||process.getuid?.()!==0)throw Error();journal=openReleaseJournal();const inspect=mode==='--inspect',host=createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect});console.log(JSON.stringify(await prepareOwnedSuccessorFinalInputs({releaseSha,inspect},{host})));}catch{console.error('Successor final input preparation refused; retained records require reconciliation.');process.exitCode=1;}finally{journal?.close();}

@@ -1,3 +1,4 @@
+import {assertOwnedGatewayConfigurationTransition} from './owned-gateway-transition.js';
 import {createHash} from 'node:crypto';
 import {validateBuyerWriterGatewayServiceConfiguration} from './gateway-entry.js';
 
@@ -17,7 +18,7 @@ const digest=value=>createHash('sha256').update(JSON.stringify(value)+'\n').dige
 const same=(left,right)=>JSON.stringify(left)===JSON.stringify(right);
 
 function upgradePlan({releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
-  oldConfiguration,newConfiguration,controls,appendJournal,now}){
+  oldConfiguration,newConfiguration,controls,appendJournal,now,ownedProfile,ownedSource}){
   try{
     if(!SHA.test(releaseSha??'')||!UUID.test(operationId??'')||!UUID.test(attemptId??'')
       ||operationId===attemptId||!DIGEST.test(artifactDigest??'')||!DIGEST.test(candidateDigest??'')
@@ -26,10 +27,13 @@ function upgradePlan({releaseSha,operationId,attemptId,artifactDigest,candidateD
       ||typeof appendJournal!=='function'||typeof now!=='function')fail();
     const oldConfig=validateBuyerWriterGatewayServiceConfiguration(oldConfiguration);
     const newConfig=validateBuyerWriterGatewayServiceConfiguration(newConfiguration);
+    if(ownedProfile)assertOwnedGatewayConfigurationTransition({oldConfiguration:oldConfig,newConfiguration:newConfig,ownedProfile,ownedSource,releaseSha,operationId,attemptId});
+    else {
     if(oldConfig.version!==2||newConfig.version!==4||newConfig.mode!=='research-admission')fail();
     for(const key of ['workspace','socketPath','gatewayCapability','creatorOid'])
       if(oldConfig[key]!==newConfig[key])fail();
     for(const key of ['runtime','issuer'])if(!same(oldConfig[key],newConfig[key]))fail();
+    }
     if(oldConfig.authority.releaseSha===newConfig.authority.releaseSha
       ||newConfig.authority.releaseSha!==releaseSha
       ||newConfig.authority.operationId!==operationId
@@ -96,7 +100,7 @@ export function inspectBuyerWriterGatewayConfigurationUpgrade({
     mutationEnabled:false,
   });
 }
-export async function upgradeBuyerWriterGatewayConfiguration(input){
+async function executeUpgrade(input){
   const state=upgradePlan(input);
   let prepared,published=false;
   try{
@@ -144,4 +148,17 @@ export async function upgradeBuyerWriterGatewayConfiguration(input){
     try{await record(state,'fail-closed','FAIL_CLOSED');}catch{}
     fail(false);
   }
+}
+
+export async function upgradeBuyerWriterGatewayConfiguration(input){
+ if(input?.ownedProfile!==undefined||input?.ownedSource!==undefined)fail();return executeUpgrade(input);
+}
+export function inspectOwnedBuyerWriterGatewayConfigurationUpgrade(input){
+ if(!input?.ownedProfile||!input?.ownedSource)fail();
+ const noop=async()=>true,controls=Object.fromEntries(controlsRequired.map(name=>[name,noop]));
+ const state=upgradePlan({...input,controls,appendJournal:noop,now:Date.now});
+ return Object.freeze({status:'UPGRADE_PREPARED',releaseSha:state.releaseSha,operationId:state.operationId,attemptId:state.attemptId,artifactDigest:state.artifactDigest,candidateDigest:state.candidateDigest,oldConfigDigest:state.oldConfigDigest,newConfigDigest:state.newConfigDigest,requiresQuiescence:true,mutationEnabled:false});
+}
+export async function upgradeOwnedBuyerWriterGatewayConfiguration(input){
+ if(!input?.ownedProfile||!input?.ownedSource)fail();return executeUpgrade(input);
 }

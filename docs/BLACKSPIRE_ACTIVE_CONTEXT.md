@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-21 — current successor continuation
+
+The user grants standing authority for all Zola release changes, merges and deployments, including production; earlier entries retain historical approval state. Commander is connected. Zola remains HELD on candidate2636 with four application services running and its writer binding incomplete. Successor code and acceptance fixes are reviewed, and draft PR154 is open. Concurrent main3019785 and docs-onlyf3ac are reconciled locally; their restrictive source demo policy requires a separate current-security compatibility proof before successor lineage preparation. Original migration, copy and hardening receipts and all journals remain untouched. No successor retirement or production switch has executed.
+
 ## 2026-09-21 — release integration and preparation continuation
 
 Final integration validation passes 2,183 tests: 2,106 passed, 77 intended skips and zero failures across all 222 files, with no test-tree mutation or remaining descendants. All 35 focused authorization tests pass. Independent source review approves the repaired integration. Frontend Webpack compilation, TypeScript and targeted lint pass; the default Turbopack attempt failed in its PostCSS subprocess, so no Turbopack success is claimed. Root build/lint/syntax typecheck, secret scan and whitespace checks pass. Two superseded contained runs were stopped with zero descendants after the final guard repair and correction of an overlong temporary socket-path setting; only the completed default-path run is passing evidence. The living-memory check still fails because newer main implementation changes exceed its historical verified anchor; neither anchor nor checker was weakened. The isolated main-only Studio guard repair is published separately as draft PR149, with production approval still required before its merge/deployment.

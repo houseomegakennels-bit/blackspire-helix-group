@@ -9,14 +9,18 @@ const identity=stat=>fields.map(key=>stat[key]);
 // module or script from the inspected artifact is executed by this verifier.
 export function verifyBuyerWriterArtifact(options){return verifyArtifact(options,false);}
 
+// Read-only runtime lane: the same root-controlled tree and deployed digest
+// checks run under the confined service identity. Root publication stays separate.
+export function verifyRuntimeBuyerWriterArtifact(options){return verifyArtifact(options,false,true);}
+
 // Preparation has no deployment authority. Require the deployment record to
 // be absent and return a distinct proof that runtime callers cannot accept.
 export function verifySealedBuyerWriterArtifact(options){return verifyArtifact(options,true);}
 
-function verifyArtifact({artifactRoot,releaseSha,environment,uid=process.getuid(),io=fs,verifyEvidence=verifyReleaseEvidence},sealed){
+function verifyArtifact({artifactRoot,releaseSha,environment,uid=process.getuid(),io=fs,verifyEvidence=verifyReleaseEvidence},sealed,runtime=false){
   try{
     const started=performance.now();
-    if(uid!==0||typeof artifactRoot!=='string'||artifactRoot.length>4096||!/^\/[A-Za-z0-9_./-]+$/.test(artifactRoot)
+    if((runtime?(!Number.isSafeInteger(uid)||uid<=0||process.geteuid()!==uid):uid!==0)||typeof artifactRoot!=='string'||artifactRoot.length>4096||!/^\/[A-Za-z0-9_./-]+$/.test(artifactRoot)
       ||path.resolve(artifactRoot)!==artifactRoot||!/^[a-f0-9]{40}$/.test(releaseSha??'')
       ||path.basename(artifactRoot)!==releaseSha||path.basename(path.dirname(artifactRoot))!=='releases'
       ||!['production','staging','disposable-staging'].includes(environment))throw new Error();

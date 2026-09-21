@@ -161,7 +161,7 @@ test('owned premerge collector requires its distinct version and immutable datab
 
 test('owned admission proves current source freeze and target hardening before activation on apply and reconcile',async()=>{
  const events=[],journal={stream:()=>({events:()=>events,append:e=>events.push(e)})};
- const release={backendProfile:'owned-postgres-v1',profileDigest:'a'.repeat(64),sourceSecurityConfigurationFile:'/fixed/source',ownedMigrationConfigurationFile:'/fixed/copy'};
+ const release={schema:2,releaseSha:candidate,backendProfile:'owned-postgres-v1',profileDigest:'a'.repeat(64),sourceSecurityConfigurationFile:'/fixed/source',ownedMigrationConfigurationFile:'/fixed/copy'};
  const context={input,release,journal},attemptId='33333333-3333-4333-8333-333333333333';
  const call={input,state:{context:{operationId,releaseSha:candidate,workspace:input.workspace,principal:input.principal},outputs:{},pending:{stage:'admission_lease',attemptId}},ordinal:5,attemptId,inputDigest:'4'.repeat(64),checkOutputDigest:'5'.repeat(64)};
  const order=[];let frozen=true;

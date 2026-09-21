@@ -37,3 +37,12 @@ test('HELD rejects user writes before handler but allows bound read-only lane',a
  const wrong=createBuyerStoreAdmissionFence({groupId:1,attestation:{binding:()=>binding},readState:()=>({version:1,mode:'open',...binding,runId:'00000000-0000-0000-0000-000000000002'}),acquire:()=>({assertIdentity(){},close(){}})});
  await assert.rejects(wrong.run('user',async()=>{called++;}));assert.equal(called,1);
 });
+
+test('stamped live HELD permits exact read-only generation pair but denies mixed or drifted bindings',async()=>{
+ for(const [apiGeneration,workerGeneration,allowed]of [[binding.apiGeneration,binding.workerGeneration,true],[null,null,true],[null,binding.workerGeneration,false],[binding.apiGeneration,null,false],['d'.repeat(32),binding.workerGeneration,false]]){
+  let entered=false;
+  const fence=createBuyerStoreAdmissionFence({groupId:1,attestation:{binding:()=>binding},readState:()=>({version:1,mode:'held',...binding,apiGeneration,workerGeneration}),acquire:()=>({assertIdentity(){},close(){}})});
+  const run=()=>fence.run('profiles-read',async()=>{entered=true;});if(allowed)await run();else await assert.rejects(run());
+  assert.equal(entered,allowed);await assert.rejects(fence.run('user',async()=>assert.fail()));
+ }
+});

@@ -81,7 +81,7 @@ export function inspectBuyerWriterActivationHistory(events){
  const partition=partitionRetiredReleaseHistory(events);
  if(partition.retired){
   const prior=inspectBuyerWriterActivationHistory(partition.prefix);
-  if(prior.completed.size!==3)reject();
+  if(prior.completed.size!==(partition.retired.schema===5?6:3))reject();
   const active=partition.current.find(row=>row?.type==='buyer_writer_activation_intent');
   if(active)assertRetiredReleaseSuccessor(events,active.binding);
   return inspectBuyerWriterActivationHistory(partition.current);
@@ -141,7 +141,9 @@ async function upgradePhase(bound,run,paths,io,inspectArtifact,readJson){
  if(artifact?.status!=='SEALED_ARTIFACT_VERIFIED'||artifact.releaseSha!==bound.releaseSha
   ||!DIGEST.test(artifact.artifactDigest??'')||artifact.deployed!==false
   ||artifact.productionAccepted!==false)reject();
- const stateFile=path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,bound.operationId+'.state.json');
+ const upgradeRoot=paths.upgradeStateDirectory??BUYER_WRITER_GATEWAY_UPGRADE_STATE;
+ if(paths.upgradeStateDirectory&&(bound.backendProfile!=='owned-postgres-v1'||upgradeRoot!=='/var/lib/blackspire-operator/owned-gateway-transition'))reject();
+ const stateFile=path.join(upgradeRoot,bound.operationId+'.state.json');
  let mode='--upgrade',candidateDigest;
  try{
   io.lstatSync(stateFile);mode='--reconcile';
@@ -156,7 +158,7 @@ async function upgradePhase(bound,run,paths,io,inspectArtifact,readJson){
    ||!DIGEST.test(state.newConfigDigest??'')
    ||!['INTENT','PREPARED','PUBLISHED','COMPLETED','ROLLED_BACK'].includes(state.phase)
    ||state.configurationFile!==BUYER_WRITER_GATEWAY_CONFIG_FILE
-   ||state.backupFile!==path.join(BUYER_WRITER_GATEWAY_UPGRADE_STATE,
+   ||state.backupFile!==path.join(upgradeRoot,
     bound.operationId+'.backup.json'))reject();
   candidateDigest=state.candidateDigest;
  }catch(error){if(error?.code!=='ENOENT')throw error;}

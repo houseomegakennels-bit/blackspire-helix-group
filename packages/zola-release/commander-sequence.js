@@ -167,7 +167,7 @@ export async function runReleaseSequence({input,journal,adapters,requestedOperat
   if(requestedOperationId!==undefined&&((state.started&&state.context.operationId!==requestedOperationId)||(!state.started&&stream.events().some(row=>row?.type==='sequence_started'&&row.operationId===requestedOperationId))))reject();
   wasStarted=state.started;
   if(!state.started){
-   if(state.retired&&(input.releaseSha!==state.retired.successorReleaseSha
+   if(state.retired&&(input.releaseSha!==state.retired.successorReleaseSha||state.retired.successorOperationId&&requestedOperationId!==state.retired.successorOperationId
     ||input.previousMainSha!=='2775fd5043ad422418a4177f686671961e9a9738'
     ||input.recoverySha!=='2c0b600c268faa0571f08322e16d7f81f37789be'))reject();
    const start={schema:4,type:'sequence_started',operationId:requestedOperationId??randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequenceHistory(stream.events());

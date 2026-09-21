@@ -1,3 +1,4 @@
+import {PARTIAL_RELEASE,validatePartialReleasePrefix,validatePartialRetirementEvent} from './partial-retirement-history.js';
 import {hash} from './commander-journal.js';
 export const BLOCKED_RELEASE=Object.freeze({
  releaseSha:'7bd0323e09a221a21db92ba6853a4fe33bb36732',operationId:'63017917-49de-4942-bc8f-2aab9463fb78',
@@ -19,6 +20,12 @@ export function validateBlockedReleasePrefix(events){
 export function partitionRetiredReleaseHistory(events){
  const indices=events.flatMap((row,index)=>row?.type==='sequence_retired'?[index]:[]);
  if(!indices.length)return {current:events,retired:null,prefix:null};
+ if(indices.length===2){
+  const index=indices[1],prefix=events.slice(0,index),event=events[index];validatePartialReleasePrefix(prefix);validatePartialRetirementEvent(event);
+  const previous=partitionRetiredReleaseHistory(prefix);if(previous.retired.schema!==4||previous.retired.successorReleaseSha!==PARTIAL_RELEASE.releaseSha||previous.retired.profileDigest!==PARTIAL_RELEASE.profileDigest)fail();
+  const current=events.slice(index+1);for(const start of current.filter(row=>row?.type==='sequence_started'))if(start.releaseSha!==event.successorReleaseSha||start.operationId!==event.successorOperationId||start.previousMainSha!==BLOCKED_RELEASE.previousMainSha||start.recoverySha!==BLOCKED_RELEASE.recoverySha)fail();
+  return {current,prefix,retired:Object.freeze({...structuredClone(event),historicalMutationState:true,status:'RETIRED_WITH_RETAINED_EFFECTS'})};
+ }
  if(indices.length!==1)fail();
  const index=indices[0],event=events[index],prefix=events.slice(0,index);
  validateBlockedReleasePrefix(prefix);
@@ -41,6 +48,6 @@ export function partitionRetiredReleaseHistory(events){
 // Called by the production composition before constructing any stage adapters.
 export function assertRetiredReleaseSuccessor(events,release){
  const {retired}=partitionRetiredReleaseHistory(events);
- if(retired&&(release?.releaseSha!==retired.successorReleaseSha||release?.backendProfile!==retired.backendProfile||release?.profileDigest!==retired.profileDigest))fail();
+ if(retired&&(release?.releaseSha!==retired.successorReleaseSha||release?.backendProfile!==retired.backendProfile||release?.profileDigest!==retired.profileDigest||retired.schema===5&&Object.hasOwn(release??{},'operationId')&&release.operationId!==retired.successorOperationId))fail();
  return true;
 }

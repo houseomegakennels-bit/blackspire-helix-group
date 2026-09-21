@@ -16,8 +16,10 @@ if(process.argv[2]==='--inside'){
   run(['--bind',source,target]);run(['-o','remount,bind,ro',target]);
  }
  fs.mkdirSync(root+'/run/systemd/system',{recursive:true});
- const attestation=spawnSync('/usr/sbin/chroot',[root,'/usr/bin/setpriv','--reuid=65534','--regid=65534','--groups=1000,65534','--no-new-privs','/usr/bin/systemctl','show','--property=InvocationID','--value','blackspire-command.service','blackspire-command-worker.service'],{encoding:'utf8',timeout:5000,env:{PATH:'/usr/bin:/bin',SYSTEMD_IGNORE_CHROOT:'1'}});
- assert.equal(attestation.status,0,attestation.stderr);assert.match(attestation.stdout,/^[a-f0-9\n]*$/);
+ for(const unit of ['blackspire_2dcommand_2eservice','blackspire_2dcommand_2dworker_2eservice']){
+  const attestation=spawnSync('/usr/sbin/chroot',[root,'/usr/bin/setpriv','--reuid=65534','--regid=65534','--groups=1000,65534','--no-new-privs','/usr/bin/busctl','--address=unix:path=/run/dbus/system_bus_socket','--json=short','get-property','org.freedesktop.systemd1','/org/freedesktop/systemd1/unit/'+unit,'org.freedesktop.systemd1.Unit','InvocationID'],{encoding:'utf8',timeout:5000,env:{PATH:'/usr/bin:/bin'}});
+  assert.equal(attestation.status,0,attestation.stderr);const value=JSON.parse(attestation.stdout);assert.equal(value.type,'ay');assert.equal(value.data.length,16);assert(value.data.every(n=>Number.isInteger(n)&&n>=0&&n<=255));
+ }
  console.log('PASS: actual systemd generation observation through read-only bus socket');
  const code=`const fs=require('fs');const assert=require('assert');assert.equal(process.getuid(),65534);assert(process.getgroups().includes(1000));for(const file of ${JSON.stringify(denied)})assert.throws(()=>fs.readFileSync(file));assert.equal(fs.readFileSync('/etc/blackspire-buyer-store/runtime.json','utf8'),'synthetic-store');assert.equal(fs.readFileSync('/etc/blackspire/release-admission/state.json','utf8'),'synthetic-admission');for(const p of ['/etc/blackspire-buyer-store/runtime.json','/etc/blackspire/release-admission/state.json'])assert.throws(()=>fs.writeFileSync(p,'mutated'));console.log('PASS: isolated namespace denies credential/data reads and protected writes despite shared group membership');`;
  const r=spawnSync('/usr/sbin/chroot',[root,'/usr/bin/setpriv','--reuid=65534','--regid=65534','--groups=1000,65534','--no-new-privs',node,'-e',code],{encoding:'utf8',timeout:5000});

@@ -2250,3 +2250,106 @@ Added exact retained receipt catalog and bounded manager checks before reads, wi
 ## 2026-09-21 — final owned preparation integration and first remote CI
 
 Published draft PR152 at e5f95e7 without changing the shared push guard. Frontend preview passed; remote and local full suites exposed only the missing exact synthetic fixture source-audit entry, now repaired with the focused audit passing. Integrated reviewed schema2/config6/7 operation binding, target cutover retention, public routing recovery/identity and async emergency-stop readiness. Root combined focused lanes and static/security gates pass; native copy-host guard repair is independently approved with seventeen focused tests and actual full-order PostgreSQL verification. Final exact-source CI, release merge and all database/service/cutover/live acceptance actions remain pending.
+
+## 2026-09-21 — owned n8n writer credential synchronization preparation
+
+Confirmed the owned source generates fresh writer ingress material while packages retain the approved n8n IDs. No existing n8n value-sync helper was found; the consumer synchronizer serves a separate authority. Official n8n source supports credential PATCH, and fresh metadata-only production GETs confirmed the exact writer ID/type/name and header schema. Added a narrow protected root command with inactive/drained workflow and stopped-service fences, durable intent/result, fixed writer-only domain restriction and no uncertain retry. Five focused tests pass. No production PATCH, workflow invocation or activation was performed; actual update access and end-to-end acceptance remain UNVERIFIED.
+
+## 2026-09-21 — successor release input binding
+
+Prepared schema-three operation and lineage bindings with original migration receipt paths preserved. Thirty-six focused tests pass. Runtime repair and successor host integration remain pending; no production mutation or OPEN occurred.
+## 2026-09-21 — chained partial retirement parser and current history views
+
+Prepared exact schema-five second retirement over the pinned 116-event production prefix, preserving the earlier schema-four retirement unchanged. Successor SHA/profile/operation binding and strict family parsing prevent old candidate, activation, lifecycle or writer-binding records becoming current authority. The nine-row n8n boundary remains read-only baseline history. Twelve focused tests pass, including altered-prefix/third-retirement refusals and a composed synthetic successor operation. No production journal, service, database or source state changed. Native retirement and successor execution remain UNVERIFIED.
+## 2026-09-21 — owned migration successor lineage
+
+Added distinct predecessor-bound successor plan and observer, preserving original migration receipts and requiring current source freeze/target security. Verified protected original metadata digests read-only and seven focused modeled tests. No production writes or database sessions were performed. Actual successor execution remains UNVERIFIED.
+## 2026-09-21 — Confined store runtime attestation successor
+
+Read-only diagnosis confirmed that the deployed store could not use root-only sealed artifact inspection or systemctl discovery inside its service namespace. The successor adds an explicitly nonroot deployed artifact reader with the same complete ownership, evidence and content checks, a fixed read-only system bus generation observer, and exact null-or-stamped HELD generation handling. Root publication verifiers and namespace privileges remain unchanged. A disposable test passed with the actual nonroot confined daemon, authenticated readiness IPC, real PostgreSQL SCRAM/TLS, deployed artifact verification and generation/tamper rejection. Synthetic resources only were changed. This implementation is not deployed; production readiness remains UNVERIFIED.
+
+## 2026-09-21 — partial2636 retirement implementation
+
+Prepared a fixed, append-only partial-candidate retirement helper with retained stop intent/result and exact successor lineage. Five core fault tests pass using the actual retained116/9-event fixtures and chained parser. Read-only production inspection confirmed pending writer publication has no binding/commit/staged files. No production stop, retirement, database write or successor deployment was executed by this work. Final independent review and native operational execution remain separate gates.
+
+## 2026-09-21 — reconnect and successor runtime verification
+
+Verified unchanged production candidate/processes and independently passed the integrated confined runtime with actual disposable PostgreSQL TLS readiness. Strengthened schema-three production and n8n history tests; focused checks pass. No production stop, deployment or OPEN occurred.
+## 2026-09-21 — retained successor configuration
+
+Added explicit successor writer/store configuration preparation from the retired candidate. Only release/operation/attempt authority fields change; source-v1 bytes, passwords, signing keys, repository/deal secrets, profile and acceptance job identity are retained. Publication reconciles exact before/candidate bytes; stopped rollback restores configuration only. Frontend inheritance binds unchanged prior provider metadata rather than rewriting settings. Three focused tests cover preservation, interrupted publication/restore and frontend drift. Native successor execution remains UNVERIFIED; no production mutations occurred.
+
+Successor installation follow-up: exact retained live gateway and API writer drop-in are replaced before invoking the native owned configuration installer. The native installer rechecks scoped database identities and emits new content-addressed files/manifest. An actual root-owned file fixture verifies partial gateway/drop-in ordering, lost final acknowledgement, retained signing-key bytes/inode and exact stopped restore; database health transport is modeled in that fixture. Eight focused tests pass, no production changes.
+
+## 2026-09-21 — successor running replay and restoration barrier
+
+Successor configuration now exposes a read-only running observer requiring final retained publication records, exact protected writer files and native installed manifest, plus the published store transition. It performs no service or publication effects. Any pending/completed restore blocks normal prepare, publish and observe; restoration requires its original publication intent. Nine focused tests pass, including interrupted restore, running replay and every installed-byte drift, with actual protected installer recovery covered separately. Native successor execution remains UNVERIFIED; no production changes.
+
+## 2026-09-21 — successor preview operator prepared
+
+Added a separate exact-SHA successor preview workflow using unchanged inherited frontend settings and per-release durable records. It preserves prior credentials, refuses ambiguous redeployment, restores the retained project-ignore setting and validates READY origin before publication. Ten focused regressions pass. Production execution and independent review remain pending; no remote settings or deployment were changed by this implementation.
+## 2026-09-21 — Successor gateway unit transition
+
+Implemented a separate protected successor unit plan, intent and completion receipt while retaining the original gateway installation state. Exact retired-release lineage, owned profile, HELD state and four stopped services bind preparation and replacement. Only the rendered unit and daemon reload change; no identity provisioning, credential rotation, enable or start occurs. Lost replacement or reload acknowledgements recover from exact retained bytes. Running observation performs no publication, and postmerge reads the distinct completed receipt with all predecessor dependencies. Six disposable protected-file tests cover recovery, authority drift, foreign units/dropins and running observation. Native production installation remains UNVERIFIED; no production action was taken.
+## 2026-09-21 — controlled successor HELD handoff
+
+Added explicit retirement-bound HELD rollover and current-segment candidate establishment. Retained predecessor files, one fresh run and exact interrupted publication are tested with protected files and flock; the composed establishment test verifies rollover precedes candidate/lifecycle/manifest. Existing retirement and HELD regressions pass. Native service/provider observations remain modeled and production execution UNVERIFIED. No production changes occurred.
+
+## 2026-09-21 — postmerge successor unit lineage
+
+Added exact successor unit receipt dependencies to postmerge authority publication, preserving the original installation record. Eight postmerge tests pass; production execution remains pending.
+
+## 2026-09-21 — successor final-input tooling
+
+Prepared the separate schema-three final-input operator with one retained operation UUID, unchanged original migration lineage, fresh candidate package/backup/disk bindings and predecessor HELD fences. Workflow observations are GET-only and never append to the global event streams. Six focused orchestration tests pass; native successor execution remains unverified. No production effects occurred, and activation/lineage are explicitly not claimed by preparation or inspection.
+
+## 2026-09-21 — deterministic successor output reconciliation
+
+Added observation-only adoption of complete exact bundle/input outputs after lost acknowledgment, including file/directory synchronization before recording success. Partial output and unknown random-path backup outcomes remain blocked without repeated effects. Nine focused tests, including actual file synchronization and partial/foreign output refusal, pass; no production execution occurred.
+
+## 2026-09-21 — successor reconciliation prerequisite durability
+
+Independent review identified that a staged intent could be observed without promotion before the adopted output result. Reconciliation now synchronizes/promotes that exact intent before recording its result. Ten focused regressions pass, including explicit staged-intent ordering. No production effects occurred.
+
+## 2026-09-21 — successor candidate store plan reuse
+
+Bound native candidate preparation to the completed successor activation plan and current admission attempt, preserving the actual predecessor rollback target and refusing missing or foreign successor context. Twenty-four focused tests pass; activation metadata/service observations are modeled and the native reader remains an integration dependency. No production mutation or deployment occurred.
+Implemented a separate protected successor unit plan, intent and completion receipt while retaining the original gateway installation state. Exact retired-release lineage, owned profile, HELD state and four stopped services bind preparation and replacement. Only the rendered unit and daemon reload change; no identity provisioning, credential rotation, enable or start occurs. Lost replacement or reload acknowledgements recover from exact retained bytes. Running observation performs no publication, and postmerge reads the distinct completed receipt with all predecessor dependencies. Seven disposable protected-file tests cover recovery, authority drift, foreign units/dropins and phase-specific observation. Completed observation permits sealed evidence only while the protected current pointer remains the exact stopped predecessor with its original HELD run; after the pointer switches, deployed evidence is mandatory with no sealed fallback. Native production installation remains UNVERIFIED; no production action was taken.
+Implemented a separate protected successor unit plan, intent and completion receipt while retaining the original gateway installation state. Exact retired-release lineage, owned profile, HELD state and four stopped services bind preparation and replacement. Only the rendered unit and daemon reload change; no identity provisioning, credential rotation, enable or start occurs. Lost replacement or reload acknowledgements recover from exact retained bytes. Running observation performs no publication, and postmerge reads the distinct completed receipt with all predecessor dependencies. Ten disposable protected-file tests cover recovery, authority drift, foreign units/dropins and phase-specific observation. A shared classifier binds protected pointer and deployment-record snapshots to the exact HELD and native candidate journal. It supports stopped successor rollover before the pointer, including the journaled deployment-record-before-pointer interruption; record presence always requires deployed verification. The classifier authorizes observation only and does not repeat an unknown candidate pointer mutation. Native production installation remains UNVERIFIED; no production action was taken.
+Implemented a separate protected successor unit plan, intent and completion receipt while retaining the original gateway installation state. Exact retired-release lineage, owned profile, HELD state and four stopped services bind preparation and replacement. Only the rendered unit and daemon reload change; no identity provisioning, credential rotation, enable or start occurs. Lost replacement or reload acknowledgements recover from exact retained bytes. Running observation performs no publication, and postmerge reads the distinct completed receipt with all predecessor dependencies. Seven disposable protected-file tests cover recovery, authority drift, foreign units/dropins and phase-specific observation. Completed observation permits sealed evidence only while the protected current pointer remains the exact stopped predecessor with its original HELD run; after the pointer switches, deployed evidence is mandatory with no sealed fallback. Native production installation remains UNVERIFIED; no production action was taken.
+
+## 2026-09-21 — Successor activation authority and retained handoff
+
+Implemented separate configuration/unit activation receipts under the exact pending admission authority, completed read-only replay, and a validated retained store-plan handoff. Focused journal, uncertain-outcome, evidence-drift, and damaged-receipt tests pass. Native configuration and gateway dependencies were integrated. Twenty-two focused tests pass, including actual protected gateway publication composed through stopped, rolled-over, partially deployed, and running replay checkpoints; no publication/reload repeats. Build, lint, syntax, memory, and secret checks pass. No production effects were executed by this implementation task; successor production activation remains UNVERIFIED.
+
+## 2026-09-21 — successor activation integration
+
+Integrated independently reviewed final-input recovery, shared artifact-phase classifier, activation coordinator and retained candidate store handoff. Wired schema-three operator/default activation to its exact journal and runtime store manifest publication to deployed verification. Independent review and 28 focused tests pass; full integration gates and production execution remain pending. Production unchanged and HELD.
+
+## 2026-09-21 — deployed acceptance artifact authority
+
+Running six-read collection and denial issuance now require deployed artifact evidence, resolving the contradiction where they previously demanded an absent deployment record before reading installed runtime evidence. Preparation still requires sealed artifacts. Seventeen focused tests pass, including real digest/tree/deployment-record verification composed with running denial and collector source authority, rejecting undeployed or tampered artifacts. Production execution remains UNVERIFIED; no production changes.
+## 2026-09-21 — isolated interactive invitation workspace
+
+User chose a separate workspace after review identified shared live data in the initial draft. Demo operators now use per-user practice records, calculations, stages and follow-up tasks, with a separate read-only live snapshot. Production real-estate APIs and generic signed-in tools deny demo roles. Invalid/missing expiry fails closed. The demo_workspaces migration is applied with RLS and no direct browser-role privileges. Eight focused tests, frontend lint and production build pass on Node 22.23.1; security scan and diff checks pass. The historical memory check remains blocked by UNTRUSTED_ORIGIN_FETCH_REFSPEC; no checker or trust anchor was weakened. Deployment and live acceptance subsequently passed; see the release result below. No production workflow parity, external dispatch or paid integrations are claimed.
+
+First-user admin compatibility also honors explicit demo roles, and Social OS rejects demo accounts even when they are the oldest registered user. The focused legacy-authority regression passes locally.
+
+Database acceptance identified existing authenticated-all policies. Applied restrictive demo-role denial across the 62 current public RLS tables and storage.objects, preserving pre-existing policy behavior for other roles. A transaction under authenticated/demo_operator returned zero Harvester/Sentinel records and zero affected live updates. Advisors report only existing function/search-path/password-protection warnings; no new demo-table finding. Future public tables must retain this demo denial when granting browser access.
+
+## 2026-09-21 — Concurrent demo isolation integration rehearsal
+
+Rehearsed main 3019785f108f3da78720da265bb5ccc6e17ae2d4 into the successor release source. Resolved 58 conflicts while retaining strict admin gates, owned Buyer routing, retired direct Nexus trace, and claim-before-promotion invitation safety. Isolated demo operator invitations now activate their selected role only after the one-time claim. Fifty-five focused frontend and dispatch tests, frontend TypeScript checking, and the normal Next.js Turbopack production build pass. Source migration compatibility and the new main release anchor require their separate reviewed changes before release. The living-memory check correctly refuses the new implementation on main until that reviewed anchor is updated; secret and whitespace checks pass. This rehearsal made no production changes.
+PR #153 merged as 3019785f108f3da78720da265bb5ccc6e17ae2d4 after exact-head CI 35636420317 passed. Production Vercel deployment dpl_B3g4GC7WJ843QQ8rRyooVfDCx8Qj is READY and serves the existing site aliases. Live acceptance passed with two disposable accounts: invitation claim and sign-in, persisted per-user edits, practice pipeline, cross-account isolation, stale-save 409, production endpoint 403s, demo page 200, and expired-account 403. Test users, sessions and invitations were removed. Peggy’s existing seven-day invitation remains unclaimed; a corrected hands-on-access email was sent from Blackspire. No outreach/provider actions were triggered by testing.
+
+## 2026-09-21 — successor historical/current main separation
+
+Prepared explicit current-mainf3ac3d3 binding without rewriting predecessor2775 input or migration lineage. Fixed remote and ancestry checks reject stale/foreign main before protected preparation stages; focused tests preserve immutable old input. Source integration and production execution remain pending.
+
+## 2026-09-21 — reconcile concurrent main and reviewed anchor
+
+Reviewed the main3019785 demo delta and integrated it with preserved release authorization, owned routing and invitation CAS behavior; documentation-onlyf3ac is also retained. Fifty-five focused tests and frontend TypeScript/normal production build pass. Updated the implementation anchor to reviewed3019785 without changing the checker; successor output independently pins currentf3ac while historical input remains2775. Source demo-policy compatibility proof and final exact-source validation remain pending. Production remains HELD and unchanged by this milestone.
+
+## 2026-09-21 — Successor current source security extension
+
+The independently applied demo migration added restrictive authenticated policies without weakening the existing source freeze. The original observer correctly rejects its additional SearchJob policy. A separate successor-only read-only observer now retains the original migration body, receipt, source/copy/target proofs and strict native semantics; it independently verifies the complete seven-table current policy catalog, pinned auth.jwt dependency, effective denials and the exact applied SQL digest matching reviewed main3019785. Successor preparation publishes a separate current-source-security receipt instead of rewriting historical lineage results. Eighteen focused tests cover policy/function/receipt drift, historical consistency and no repeated SQL. A bounded actual original-source TLS read-only run passed using the original retained plan and receipt; no SQL or production-file mutation occurred. Release deployment remains UNVERIFIED.

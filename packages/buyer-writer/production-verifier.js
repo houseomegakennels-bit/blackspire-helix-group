@@ -1,3 +1,4 @@
+import {validateOwnedPostgresProfile} from './owned-postgres.js';
 import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES as ROUTINE_POLICY} from './routine-policy.js';
 
 // Fixed, read-only production catalog observation. This statement never reads
@@ -252,7 +253,11 @@ const sameSet=(values,expected)=>values.length===expected.length&&new Set(values
 
 // Validates only bounded, non-secret catalog evidence. Unknown keys, missing
 // catalog rows, duplicate identities and unexpected ACL edges all fail closed.
-export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
+export function verifyBuyerWriterProductionEvidence(raw,creatorOid){return verifyProductionEvidence(raw,creatorOid,false);}
+export function verifyOwnedBuyerWriterProductionEvidence(raw,profile){
+ const validated=validateOwnedPostgresProfile(profile);return verifyProductionEvidence(raw,validated.creatorOid,true);
+}
+function verifyProductionEvidence(raw,creatorOid,owned,disabled=false){
  try{
   if(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295||Buffer.byteLength(JSON.stringify(raw))>1024*1024
    ||!exact(raw,['roles','memberships','schema','routines','targetRelations','targetPublicRelations','targetPublicColumns','directRelations','directSequences','schemaCreate','externalRoutines','databaseCreate','databaseTemporary','pgNet','bootstrapSuperuser','creatorOid','relationPolicySafe','routinePolicySafe','ownerPolicySafe','crossDatabaseConnect'])
@@ -268,27 +273,29 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
     ||!/^\d{1,10}$/.test(role.oid)||seenRoleOids.has(role.oid)
     ||![role.login,role.inherit,role.superuser,role.createDb,role.createRole,role.replication,role.bypassRls].every(bool))fail();
    roleOids.set(role.name,role.oid);seenRoleOids.add(role.oid);
-   const login=role.name==='buyer_writer_runtime'||role.name==='buyer_writer_issuer'||role.name==='buyer_writer_admission_login';
+   const login=!disabled&&(role.name==='buyer_writer_runtime'||role.name==='buyer_writer_issuer'||role.name==='buyer_writer_admission_login');
    if(role.login!==login||role.inherit||role.superuser||role.createDb||role.createRole||role.replication||role.bypassRls)fail();
   }
-  if(raw.memberships.length!==6)fail();
+  if(raw.memberships.length!==(owned?7:6))fail();
   const adminRoles=new Set();let ownerSetCount=0,admissionSetCount=0;
   for(const edge of raw.memberships){
    if(!exact(edge,['role','roleOid','member','memberOid','grantor','grantorOid','memberLogin','grantorSuperuser','admin','inherit','set'])
     ||![edge.role,edge.member,edge.grantor].every(value=>string(value,63))||![edge.roleOid,edge.memberOid,edge.grantorOid].every(value=>/^\d{1,10}$/.test(value))
     ||![edge.memberLogin,edge.grantorSuperuser,edge.admin,edge.inherit,edge.set].every(bool)
     ||roleOids.get(edge.role)!==edge.roleOid||(roleOids.has(edge.member)&&roleOids.get(edge.member)!==edge.memberOid))fail();
-   const managerAdmin=managedRoleNames.includes(edge.role)&&edge.member==='postgres'&&edge.memberOid===String(creatorOid)
+   const ownedAdmissionAdmin=owned&&edge.role==='buyer_writer_admission_login'&&edge.grantor==='blackspire_cluster_admin'
+    &&edge.grantorOid==='10'&&edge.memberLogin;
+   const managerAdmin=(managedRoleNames.includes(edge.role)||ownedAdmissionAdmin)&&edge.member==='postgres'&&edge.memberOid===String(creatorOid)
     &&edge.grantorSuperuser&&edge.admin&&!edge.inherit&&!edge.set;
    const ownerSet=edge.role==='buyer_writer_owner'&&edge.member==='postgres'
     &&edge.memberOid===String(creatorOid)&&edge.grantorOid===String(creatorOid)&&!edge.admin&&!edge.inherit&&edge.set;
    const admissionSet=edge.role==='buyer_writer_admission'&&edge.member==='buyer_writer_admission_login'
-    &&edge.memberLogin&&edge.grantorOid===String(creatorOid)&&!edge.admin&&!edge.inherit&&edge.set;
+    &&edge.memberLogin===!disabled&&edge.grantorOid===String(creatorOid)&&!edge.admin&&!edge.inherit&&edge.set;
    if(!managerAdmin&&!ownerSet&&!admissionSet)fail();
    if(managerAdmin){if(adminRoles.has(edge.role))fail();adminRoles.add(edge.role);}
    else if(ownerSet)ownerSetCount++;else admissionSetCount++;
   }
-  if(adminRoles.size!==4||ownerSetCount!==1||admissionSetCount!==1)fail();
+  if(adminRoles.size!==(owned?5:4)||ownerSetCount!==1||admissionSetCount!==1)fail();
   if(!exact(raw.schema,['name','owner','edges'])||raw.schema.name!=='buyer_writer'||raw.schema.owner!=='buyer_writer_owner'
    ||!Array.isArray(raw.schema.edges))fail();
   const schemaEdges=[
@@ -334,8 +341,10 @@ export function verifyBuyerWriterProductionEvidence(raw,creatorOid){
   }
   const publicExecuteCount=raw.pgNet.filter(row=>row.publicExecute).length;
   const evidence=structuredClone(raw);
-  evidence.compliant=true;
+  evidence.compliant=!disabled;
+  if(disabled)evidence.status='OWNED_LAYOUT_LOGIN_DISABLED';
   evidence.unexpectedMembershipCount=0;
+  if(owned)evidence.ownedManagementMembershipCount=5;
   evidence.targetRelationCount=5;
   evidence.targetTablePublicPrivilegeCount=0;
   evidence.targetColumnPublicPrivilegeCount=0;
@@ -371,4 +380,18 @@ export async function observeBuyerWriterProductionState(query,creatorOid){
   if(!result||!Array.isArray(result.rows)||result.rows.length!==1||!exact(result.rows[0],['evidence']))fail();
   return verifyBuyerWriterProductionEvidence(result.rows[0].evidence,creatorOid);
  }catch(error){if(error?.message==='Buyer writer production verification failed')throw error;fail();}
+}
+
+export async function observeOwnedBuyerWriterProductionState(query,profile){
+ const validated=validateOwnedPostgresProfile(profile);
+ const result=await query(BUYER_WRITER_PRODUCTION_VERIFY_SQL,[validated.creatorOid,JSON.stringify(ROUTINE_POLICY)]);
+ if(!result||!Array.isArray(result.rows)||result.rows.length!==1||!exact(result.rows[0],['evidence']))fail();
+ return verifyOwnedBuyerWriterProductionEvidence(result.rows[0].evidence,validated);
+}
+
+export async function observeOwnedBuyerWriterDisabledLayout(query,profile){
+ const validated=validateOwnedPostgresProfile(profile);
+ const result=await query(BUYER_WRITER_PRODUCTION_VERIFY_SQL,[validated.creatorOid,JSON.stringify(ROUTINE_POLICY)]);
+ if(!result||!Array.isArray(result.rows)||result.rows.length!==1||!exact(result.rows[0],['evidence']))fail();
+ return verifyProductionEvidence(result.rows[0].evidence,validated.creatorOid,true,true);
 }
