@@ -2284,3 +2284,7 @@ Successor installation follow-up: exact retained live gateway and API writer dro
 ## 2026-09-21 — successor running replay and restoration barrier
 
 Successor configuration now exposes a read-only running observer requiring final retained publication records, exact protected writer files and native installed manifest, plus the published store transition. It performs no service or publication effects. Any pending/completed restore blocks normal prepare, publish and observe; restoration requires its original publication intent. Nine focused tests pass, including interrupted restore, running replay and every installed-byte drift, with actual protected installer recovery covered separately. Native successor execution remains UNVERIFIED; no production changes.
+
+## 2026-09-21 — successor preview operator prepared
+
+Added a separate exact-SHA successor preview workflow using unchanged inherited frontend settings and per-release durable records. It preserves prior credentials, refuses ambiguous redeployment, restores the retained project-ignore setting and validates READY origin before publication. Ten focused regressions pass. Production execution and independent review remain pending; no remote settings or deployment were changed by this implementation.

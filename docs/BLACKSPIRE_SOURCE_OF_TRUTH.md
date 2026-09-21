@@ -3,6 +3,11 @@
 ## 2026-09-21 — successor runtime independently verified after reconnect
 
 Commander reconnection confirmed the same four production service processes and candidate2636 pointer; no production stop or successor deployment had occurred. The integrated successor runtime passed an independent actual non-root mount/network namespace test with the native repository daemon, authenticated IPC readiness, real PostgreSQL SCRAM over verified TLS, complete deployed artifact verification and fixed read-only systemd bus observations. Generation drift and fresh-process artifact tampering refuse. No fixture processes or containers remained before the rerun. Twenty composed lineage/retirement/operation checks and twelve production/chained-history checks pass, including actual schema-three original-receipt/new-operation separation. Configuration restoration/running observation, gateway unit publication, HELD rollover and successor preparation remain under implementation/review; Zola remains held.
+## 2026-09-21 — successor preview inheritance prepared
+
+A dedicated successor preview operator now consumes the retained inherited-frontend proof and re-observes all six original environment rows against their exact predecessor results. It preserves the original plan and credentials, stores deployment/publication records separately by new release SHA, and requires the new production-sealed artifact plus four stopped application services. Preview creation pins the exact Git release SHA and branch; a lost create acknowledgment never dispatches another deployment. The existing reviewed temporary project build-ignore override is restored to its retained prior value with explicit intent and read-only reconciliation.
+
+READY deployment verification and repeated inherited-setting checks precede receiver-origin publication and successful completion. Ten focused tests cover source/branch and proof drift, retained IDs, ambiguous creates, staged records and lost restoration acknowledgments. Production successor preview creation and receiver publication remain UNVERIFIED; this implementation made no remote or production changes.
 
 ## 2026-09-21 — explicit successor release identity prepared
 
