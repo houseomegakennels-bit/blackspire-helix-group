@@ -13,7 +13,7 @@ import {verifyOwnedBuyerMigrationQuiescence} from './owned-migration-host.js';
 import {inspectBuyerWriterArtifact,inspectSealedBuyerWriterArtifact} from './artifact-inspection.js';
 import {renderGatewayUnit,decodeGatewayInstallState,GATEWAY_SERVICE} from './gateway-installation.js';
 const P=PARTIAL_RELEASE,ROOT='/var/lib/blackspire-operator/owned-successor-gateway-units';
-const defaults=Object.freeze({root:ROOT,releases:'/opt/blackspire-command/releases',unit:'/etc/systemd/system/'+GATEWAY_SERVICE,
+const defaults=Object.freeze({current:'/opt/blackspire-command/current',root:ROOT,releases:'/opt/blackspire-command/releases',unit:'/etc/systemd/system/'+GATEWAY_SERVICE,
  oldState:'/var/lib/blackspire-operator/gateway-installation/state.json',retirement:'/var/lib/blackspire-operator/release-retirements/partial-2636/retirement.json',profile:'/etc/blackspire/owned-postgres/profile.json',admission:'/etc/blackspire/release-admission/state.json'});
 const hash=v=>createHash('sha256').update(v).digest('hex'),json=v=>JSON.stringify(v)+'\n',same=(a,b)=>json(a)===json(b);
 const fail=()=>{throw new Error('Owned successor gateway unit rejected; retain evidence');};
@@ -35,6 +35,7 @@ function host(input,deps){
   if(proof.releaseSha!==sha||proof.environment!=='production'||!digest(proof.artifactDigest)||sealed&&(proof.status!=='SEALED_ARTIFACT_VERIFIED'||proof.deployed!==false||proof.productionAccepted!==false))fail();return proof;};
  const template=sha=>{const value=read(path.join(paths.releases,sha,'ops/runtime-ownership',GATEWAY_SERVICE),{gid:deps.artifactGid??fs.statSync(path.join(paths.releases,sha,'ops/runtime-ownership',GATEWAY_SERVICE)).gid,mode:0o644});if(value===null)fail();return value;};
  const stopped=deps.stopped??verifyOwnedBuyerMigrationQuiescence;
+ function phase(){files.directory(path.dirname(paths.current));const st=fs.lstatSync(paths.current);if(!st.isSymbolicLink()||st.uid!==0||st.nlink!==1)fail();const target=fs.realpathSync(paths.current),releaseSha=path.basename(target);if(![P.releaseSha,input.releaseSha].includes(releaseSha)||target!==path.join(paths.releases,releaseSha))fail();return {releaseSha,target,link:fs.readlinkSync(paths.current),identity:Object.fromEntries(['dev','ino','uid','gid','nlink','mode','mtimeMs','ctimeMs'].map(k=>[k,st[k]]))};}
  async function evidence(sealed){const before=stable();if(sealed)await stopped();
   const retirement=await deps.verifyRetirement(input);validatePartialRetirementEvent(retirement);
   if(!same(rootValue(paths.retirement),retirement)||retirement.successorReleaseSha!==input.releaseSha||retirement.successorOperationId!==input.operationId||retirement.profileDigest!==input.profileDigest)fail();
@@ -56,7 +57,7 @@ function host(input,deps){
  function unchanged(plan){if(hash(json(stable().profile))!==plan.dependencies.profileSnapshotDigest||hash(read(paths.oldState))!==plan.dependencies.oldStateDigest||hash(json(rootValue(paths.retirement)))!==plan.dependencies.retirementDigest||renderGatewayUnit(template(P.releaseSha),{sha:P.releaseSha})!==plan.beforeUnit||renderGatewayUnit(template(input.releaseSha),{sha:input.releaseSha})!==plan.afterUnit)fail();}
  const intent=plan=>({version:1,planDigest:hash(json(plan)),beforeDigest:hash(plan.beforeUnit),afterDigest:hash(plan.afterUnit)});
  function checkResult(plan,result){if(!same(result,{version:1,status:'OWNED_SUCCESSOR_GATEWAY_UNIT_VERIFIED',planDigest:hash(json(plan)),releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,unitDigest:hash(plan.afterUnit),daemonReloaded:true}))fail();return result;}
- return {paths,files,directory,record,evidence,loaded,unchanged,retained,retain,checkPlan,unit,intent,checkResult,stopped,stable,publish,run};
+ return {paths,files,directory,record,evidence,phase,loaded,unchanged,retained,retain,checkPlan,unit,intent,checkResult,stopped,stable,publish,run};
 }
 // The enclosing commander owns its global lock. This adapter never provisions
 // identities, starts/enables units, rewrites the predecessor journal or rotates keys.
@@ -82,8 +83,10 @@ export async function installOwnedSuccessorGatewayUnit(plan){
  h.retain('result',result);h.loaded();h.stable();if(h.unit()!==plan.afterUnit)fail();return Object.freeze(result);
 }
 export async function observeOwnedSuccessorGatewayUnit(raw,deps={}){
- const input=validate(raw),h=host(input,deps),e=await h.evidence(false),plan=h.retained('plan');h.checkPlan(plan,e);
- if(!same(h.retained('intent'),h.intent(plan))||h.unit()!==plan.afterUnit)fail();const result=h.checkResult(plan,h.retained('result'));h.loaded();if(h.unit()!==plan.afterUnit)fail();return Object.freeze(result);
+ const input=validate(raw),h=host(input,deps),before=h.phase(),sealed=before.releaseSha===P.releaseSha;
+ const oldHeld=()=>{const state=h.stable().state;if(state.releaseSha!==P.releaseSha||state.runId!==P.runId||state.apiGeneration!==null||state.workerGeneration!==null)fail();};
+ if(sealed)oldHeld();const e=await h.evidence(sealed),plan=h.retained('plan');h.checkPlan(plan,e);
+ if(sealed)oldHeld();if(!same(h.phase(),before)||!same(h.retained('intent'),h.intent(plan))||h.unit()!==plan.afterUnit)fail();const result=h.checkResult(plan,h.retained('result'));h.loaded();if(!same(h.phase(),before)||h.unit()!==plan.afterUnit)fail();return Object.freeze(result);
 }
 // Postmerge reads this distinct completed receipt by the candidate gateway's
 // operation authority. It never reinterprets the original installation state.
