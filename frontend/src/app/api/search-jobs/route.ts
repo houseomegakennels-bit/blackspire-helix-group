@@ -11,9 +11,12 @@ import {
   triggerBuyerEngineWorkflow,
 } from "@/lib/buyer-engine-server";
 import { guardBetaAction } from "@/lib/beta-server";
+import { guardWorkspaceApi } from "@/lib/operator-access";
 
 export async function GET(request: Request) {
   try {
+    const denied = await guardWorkspaceApi();
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     const highlight = searchParams.get("highlight");
     const [jobs, highlightedReports, buyerGroupRegistry] = await Promise.all([

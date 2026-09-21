@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SellerEngineDashboard } from "@/components/seller-engine-dashboard";
 import { SellerEngineShell } from "@/components/seller-engine-shell";
 import { listSellerAlerts, listSellerLeads, listSellerSources } from "@/lib/seller-engine-server";
+import { requireWorkspacePage } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -11,6 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function SellerEnginePage() {
+  await requireWorkspacePage();
   const [leads, alerts, sources] = await Promise.all([
     listSellerLeads().catch(() => []),
     listSellerAlerts().catch(() => []),
@@ -19,4 +21,3 @@ export default async function SellerEnginePage() {
 
   return <SellerEngineShell><SellerEngineDashboard initialLeads={leads} alerts={alerts as never[]} sources={sources as never[]} /></SellerEngineShell>;
 }
-

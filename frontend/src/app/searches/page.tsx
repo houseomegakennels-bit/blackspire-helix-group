@@ -10,12 +10,14 @@ import {
   listBuyerReports,
   listSearchJobs,
 } from "@/lib/buyer-engine-server";
+import { requireWorkspacePage } from "@/lib/operator-access";
 
 export default async function SearchJobsPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireWorkspacePage();
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const highlightedJobId =
     typeof resolvedSearchParams?.highlight === "string"

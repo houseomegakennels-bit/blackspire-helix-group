@@ -8,21 +8,39 @@ import { getAuthenticatedOperator, listAuthUsers } from "@/lib/buyer-engine-auth
 /**
  * Server-side access control for the Blackspire operator surfaces.
  *
- * Role model (v1): the FIRST Supabase auth user is the admin/operator; every
- * later public signup is a beta tester. These helpers enforce that boundary so
- * beta testers cannot view or trigger admin protocols (registry mutations,
- * integrations, analytics, bootstrap) — UI hiding is not enough, since a tester
- * could call the API or page route directly.
+ * Roles are stored in app_metadata, which can only be written by the server.
+ * The first-user admin fallback preserves access for the original operator while
+ * existing accounts are migrated to explicit roles.
  */
 
-export type OperatorRole = "admin" | "beta_tester" | "anonymous";
+export type OperatorRole = "admin" | "beta_tester" | "demo_viewer" | "client_only" | "anonymous";
 
-async function resolveRole(): Promise<{ role: OperatorRole; operatorId: string | null }> {
+export type OperatorContext = {
+  role: OperatorRole;
+  operatorId: string | null;
+  expiresAt: string | null;
+  expired: boolean;
+};
+
+async function resolveRole(): Promise<OperatorContext> {
   const operator = await getAuthenticatedOperator();
-  if (!operator?.id) return { role: "anonymous", operatorId: null };
+  if (!operator?.id) return { role: "anonymous", operatorId: null, expiresAt: null, expired: false };
+  const appRole = operator.app_metadata?.blackspire_role;
+  const explicitRole = typeof appRole === "string" && ["admin", "beta_tester", "demo_viewer", "client_only"].includes(appRole)
+    ? appRole as Exclude<OperatorRole, "anonymous">
+    : null;
+  const expiresAt = typeof operator.app_metadata?.demo_expires_at === "string"
+    ? operator.app_metadata.demo_expires_at
+    : null;
+  const expired = explicitRole === "demo_viewer" && Boolean(expiresAt && Date.parse(expiresAt) <= Date.now());
+  if (explicitRole) return { role: explicitRole, operatorId: operator.id, expiresAt, expired };
   const users = await listAuthUsers().catch(() => []);
   const isAdmin = users.length > 0 && users[0]?.id === operator.id;
-  return { role: isAdmin ? "admin" : "beta_tester", operatorId: operator.id };
+  return { role: isAdmin ? "admin" : "client_only", operatorId: operator.id, expiresAt: null, expired: false };
+}
+
+export async function getOperatorContext(): Promise<OperatorContext> {
+  return resolveRole();
 }
 
 export async function getOperatorRole(): Promise<OperatorRole> {
@@ -53,6 +71,15 @@ export async function guardSignedInApi(): Promise<NextResponse | null> {
   return null;
 }
 
+export async function guardWorkspaceApi(): Promise<NextResponse | null> {
+  const { role } = await resolveRole();
+  if (role === "anonymous") return NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 });
+  if (role !== "admin" && role !== "beta_tester") {
+    return NextResponse.json({ ok: false, error: "Workspace access is required." }, { status: 403 });
+  }
+  return null;
+}
+
 /** For server pages/layouts — redirect non-admins away from admin surfaces. */
 export async function requireAdminPage(): Promise<void> {
   const { role } = await resolveRole();
@@ -65,4 +92,19 @@ export async function requireSignedInPage(): Promise<{ role: OperatorRole }> {
   const { role } = await resolveRole();
   if (role === "anonymous") redirect("/auth");
   return { role };
+}
+
+export async function requireWorkspacePage(): Promise<void> {
+  const { role } = await resolveRole();
+  if (role === "anonymous") redirect("/auth");
+  if (role !== "admin" && role !== "beta_tester") redirect(role === "demo_viewer" ? "/demo" : "/");
+}
+
+export async function requireDemoViewerPage(): Promise<OperatorContext> {
+  const context = await resolveRole();
+  if (context.role === "anonymous") redirect("/demo/login");
+  if (context.role === "admin") return context;
+  if (context.role !== "demo_viewer") redirect("/");
+  if (context.expired) redirect("/demo-expired");
+  return context;
 }

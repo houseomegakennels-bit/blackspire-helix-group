@@ -91,9 +91,16 @@ export function AuthPanel() {
     try {
       const response = await fetch("/api/auth/role", { cache: "no-store" });
       const payload = (await response.json()) as { role?: string };
-      router.push(payload.role === "admin" ? "/workspaces" : "/beta");
+      const destination = payload.role === "admin"
+        ? "/workspaces"
+        : payload.role === "beta_tester"
+          ? "/beta"
+          : payload.role === "demo_viewer"
+            ? "/demo"
+            : "/";
+      router.push(destination);
     } catch {
-      router.push("/beta");
+      router.push("/");
     }
   }
 
