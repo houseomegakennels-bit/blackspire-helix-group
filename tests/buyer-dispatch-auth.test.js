@@ -6,16 +6,16 @@ import { stripTypeScriptTypes } from 'node:module';
 
 function fixture() {
   let operatorId='owner-a', users=[{id:'owner-a'}], token='synthetic-request-token', authError=null;
-  let cookieReads=0, authReads=0;
+  let cookieReads=0, authReads=0, appMetadata={};
   const source=fs.readFileSync(new URL('../frontend/src/lib/buyer-dispatch-authority.ts',import.meta.url),'utf8')
     .replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,'');
   const capture=vm.runInNewContext(`${stripTypeScriptTypes(source)}\ncaptureBuyerDispatchAuthority`,{
     AbortController,setTimeout,clearTimeout,performance,
     getAuthTokensFromCookies:async()=>{cookieReads++;return{accessToken:token};},
-    createPublicSupabaseAuthClient:()=>({auth:{getUser:async supplied=>{authReads++;assert.equal(supplied,'synthetic-request-token');return{data:{user:operatorId?{id:operatorId}:null},error:authError};}}}),
+    createPublicSupabaseAuthClient:()=>({auth:{getUser:async supplied=>{authReads++;assert.equal(supplied,'synthetic-request-token');return{data:{user:operatorId?{id:operatorId,app_metadata:appMetadata}:null},error:authError};}}}),
     listAuthUsers:async()=>{if(users instanceof Error)throw users;return users;},
   });
-  return{capture,setUser:v=>operatorId=v,setUsers:v=>users=v,setToken:v=>token=v,setError:v=>authError=v,counts:()=>({cookieReads,authReads})};
+  return{capture,setMetadata:v=>appMetadata=v,setUser:v=>operatorId=v,setUsers:v=>users=v,setToken:v=>token=v,setError:v=>authError=v,counts:()=>({cookieReads,authReads})};
 }
 test('dispatch authority retains only the guarded principal and privately revalidates the original token',async()=>{
   const f=fixture(),gate={operatorId:'owner-a',role:'admin'};
@@ -42,7 +42,7 @@ test('capture rejects missing tokens and mismatched or unsupported route guard c
   const f=fixture();f.setToken(null);await assert.rejects(()=>f.capture({operatorId:'owner-a',role:'admin'}),/authorization unavailable/);
 });
 test('beta capture preserves the admitted role without a second action reservation',async()=>{
-  const f=fixture();f.setUsers([{id:'admin'},{id:'owner-a'}]);
+  const f=fixture();f.setUsers([{id:'admin'},{id:'owner-a'}]);f.setMetadata({blackspire_role:'beta_tester'});
   const authority=await f.capture({operatorId:'owner-a',role:'beta_tester'});
   await authority.assertCurrentOwner({user_id:'owner-a'});
   assert.equal(authority.role,'beta_tester');assert.deepEqual(f.counts(),{cookieReads:1,authReads:2});
@@ -101,4 +101,22 @@ test('unscoped automated Deal callers cannot obtain Buyer authority in scoped mo
     scopedBuyerWriterEnabled:()=>true,getSupabaseAdmin:()=>{reads++;throw new Error('unscoped read forbidden');},
   });
   const result=await launch({dealId:'existing-deal'});assert.equal(result.ok,false);assert.match(result.error,/authority is required/);assert.equal(reads,0);
+});
+
+
+test('dispatch revalidation honors explicit roles and refuses demo/client downgrades',async()=>{
+  for(const initialRole of ['admin','beta_tester']) {
+    const f=fixture();f.setUsers([{id:'original-admin'},{id:'owner-a'}]);
+    f.setMetadata({blackspire_role:initialRole});
+    const authority=await f.capture({operatorId:'owner-a',role:initialRole});
+    await authority.assertCurrentOwner({user_id:'owner-a'});
+    for(const role of ['demo_viewer','client_only',undefined,'unrecognized']) {
+      f.setMetadata({blackspire_role:role});
+      await assert.rejects(()=>authority.assertCurrentOwner({user_id:'owner-a'}),/authorization unavailable/);
+    }
+  }
+  const first=fixture();first.setMetadata({blackspire_role:'demo_viewer'});
+  await assert.rejects(()=>first.capture({operatorId:'owner-a',role:'admin'}),/authorization unavailable/);
+  const legacy=fixture();legacy.setUsers([{id:'original-admin'},{id:'owner-a'}]);
+  await assert.rejects(()=>legacy.capture({operatorId:'owner-a',role:'beta_tester'}),/authorization unavailable/);
 });

@@ -12,6 +12,7 @@ export type AuthAdminUserRecord = {
   created_at?: string | null;
   last_sign_in_at?: string | null;
   user_metadata?: Record<string, unknown> | null;
+  app_metadata?: Record<string, unknown> | null;
 };
 
 function getSupabaseUrl() {
@@ -19,7 +20,7 @@ function getSupabaseUrl() {
 }
 
 function getSupabaseAnonKey() {
-  return process.env.SUPABASE_ANON_KEY?.trim() || "";
+  return process.env.SUPABASE_ANON_KEY?.trim() || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || "";
 }
 
 function getSupabaseServiceRoleKey() {

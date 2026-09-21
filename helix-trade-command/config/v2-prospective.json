@@ -1,0 +1,16 @@
+{
+  "hypothesis": "LONDON-V2",
+  "instrument": "M6E1!",
+  "timeframe_minutes": 5,
+  "timezone": "America/New_York",
+  "validation_start": "2026-09-12",
+  "daily_capture_time_et": "10:25",
+  "gate": {
+    "minimum_trades": 30,
+    "minimum_expectancy_r": 0.10,
+    "minimum_mean_r_lower95": 0.0,
+    "minimum_profit_factor": 1.25
+  },
+  "live_trading": false,
+  "broker_execution_authorized": false
+}

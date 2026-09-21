@@ -9,11 +9,14 @@ import {
   getSearchJobById,
   listSearchJobsByIds,
 } from "@/lib/buyer-engine-server";
+import { guardWorkspaceApi } from "@/lib/operator-access";
 
 export async function GET(request: NextRequest) {
   const denied = await guardSignedInApi();
   if (denied) return denied;
   try {
+    const denied = await guardWorkspaceApi();
+    if (denied) return denied;
     const searchJobId = request.nextUrl.searchParams.get("searchJobId")?.trim() || undefined;
     const limitParam = Number(request.nextUrl.searchParams.get("limit") ?? "20");
     const offsetParam = Number(request.nextUrl.searchParams.get("offset") ?? "0");

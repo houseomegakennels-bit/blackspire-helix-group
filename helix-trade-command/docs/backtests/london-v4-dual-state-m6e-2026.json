@@ -1,0 +1,89 @@
+{
+  "data_first_utc": "2026-01-20T14:45:00+00:00",
+  "data_last_utc": "2026-04-15T23:25:00+00:00",
+  "cycles": 61,
+  "combined": {
+    "trades": 6,
+    "wins": 2,
+    "win_rate_pct": 33.333333333333336,
+    "net_pnl": -286.500000000091,
+    "return_pct": -0.5730000000001789,
+    "expectancy_r": -0.2899755799757813,
+    "profit_factor": 0.3391003460207131,
+    "max_drawdown_dollars": 433.50000000010186,
+    "max_drawdown_pct": 0.8670000000002037,
+    "longest_losing_streak": 4,
+    "exit_counts": {
+      "stop": 4,
+      "target": 2,
+      "time": 0
+    },
+    "positive_years": 0,
+    "active_years": 1,
+    "positive_year_pct": 0.0
+  },
+  "branches": {
+    "REJECTION": {
+      "trades": 1,
+      "wins": 0,
+      "win_rate_pct": 0.0,
+      "net_pnl": -91.50000000002422,
+      "return_pct": -0.18300000000004424,
+      "expectancy_r": -1.2200000000001863,
+      "profit_factor": 0.0,
+      "max_drawdown_dollars": 91.50000000002183,
+      "max_drawdown_pct": 0.18300000000004366,
+      "longest_losing_streak": 1,
+      "exit_counts": {
+        "stop": 1,
+        "target": 0,
+        "time": 0
+      }
+    },
+    "ACCEPTANCE": {
+      "trades": 5,
+      "wins": 2,
+      "win_rate_pct": 40.0,
+      "net_pnl": -195.0000000000668,
+      "return_pct": -0.3900000000001347,
+      "expectancy_r": -0.10397069597090028,
+      "profit_factor": 0.42982456140345005,
+      "max_drawdown_dollars": 342.00000000008004,
+      "max_drawdown_pct": 0.68400000000016,
+      "longest_losing_streak": 3,
+      "exit_counts": {
+        "stop": 3,
+        "target": 2,
+        "time": 0
+      }
+    }
+  },
+  "yearly": {
+    "2026": {
+      "trades": 6,
+      "wins": 2,
+      "win_rate_pct": 33.333333333333336,
+      "net_pnl": -286.500000000091,
+      "return_pct": -0.5730000000001789,
+      "expectancy_r": -0.2899755799757813,
+      "profit_factor": 0.3391003460207131,
+      "max_drawdown_dollars": 433.50000000010186,
+      "max_drawdown_pct": 0.8670000000002037,
+      "longest_losing_streak": 4,
+      "exit_counts": {
+        "stop": 4,
+        "target": 2,
+        "time": 0
+      }
+    }
+  },
+  "skips": {
+    "short_session": 30,
+    "double_break": 4,
+    "acceptance_no_entry": 11,
+    "invalid_stop": 2,
+    "no_break": 3,
+    "rejection_no_entry": 5
+  },
+  "advancement_gate": "FAIL"
+}

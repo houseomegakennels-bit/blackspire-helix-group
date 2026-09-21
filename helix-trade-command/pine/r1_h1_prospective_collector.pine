@@ -30,6 +30,7 @@ bool lonJustEnded = not inLondon and inLondon[1]
 bool newNY = inNY and not inNY[1]
 bool nyJustEnded = not inNY and inNY[1]
 bool fiveMinute = timeframe.isminutes and timeframe.multiplier == 5
+float medianBody20 = ta.median(math.abs(close - open)[1], 20)
 
 var int cycleStart = na
 var float asiaHi = na
@@ -132,10 +133,9 @@ if inNY
             nyMssBar := bar_index
         else if sweptSide == 1 and close > mssLevel
             nyMssBar := bar_index
-    float median20 = ta.median(math.abs(close - open)[1], 20)
     float body = math.abs(close - open)
-    bool bearDisp = close < open and not na(median20) and body >= displacementMult * median20
-    bool bullDisp = close > open and not na(median20) and body >= displacementMult * median20
+    bool bearDisp = close < open and not na(medianBody20) and body >= displacementMult * medianBody20
+    bool bullDisp = close > open and not na(medianBody20) and body >= displacementMult * medianBody20
     if not na(nyMssBar) and na(nyDispBar) and bar_index >= nyMssBar
         if sweptSide == -1 and bearDisp
             nyDispBar := bar_index
