@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdtempSync,chmodSync,readFileSync,rmSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
+import pg from 'pg';
+import {createBuyerStoreRepository} from '../packages/buyer-store/repository.js';
+assert.equal(process.versions.node,'22.23.1');
+const image='postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94';
+const socket=mkdtempSync('/tmp/zola-store-socket-');chmodSync(socket,0o777);
+const label=randomUUID();let container;
+const run=(args,input)=>{const r=spawnSync('docker',args,{input,encoding:'utf8',timeout:60000,maxBuffer:1024*1024});assert.equal(r.status,0,(r.stderr??'').slice(0,500));return r.stdout.trim();};
+try{
+ container=run(['create','--network','none','--read-only','--memory','256m','--pids-limit','128','--label',`blackspire.test-owner=${label}`,'--tmpfs','/var/lib/postgresql/data:rw,size=128m','--tmpfs','/tmp:rw,size=16m','--mount',`type=bind,source=${socket},target=/var/run/postgresql`,'-e','POSTGRES_HOST_AUTH_METHOD=trust',image]);
+ run(['start',container]);let ready=false;
+ for(let i=0;i<60;i++){const r=spawnSync('docker',['exec',container,'sh','-c','test "$(cat /proc/1/comm)" = postgres && pg_isready -U postgres'],{encoding:'utf8'});if(r.status===0){ready=true;break;}await new Promise(r=>setTimeout(r,250));}assert.ok(ready);
+ const fixture=readFileSync('tests/fixtures/buyer-writer/schema.sql','utf8');
+ run(['exec','-i',container,'psql','-X','-q','-U','postgres','-v','ON_ERROR_STOP=1'],fixture+'\nCREATE TABLE public.exports(id uuid PRIMARY KEY,user_id uuid NOT NULL,search_job_id uuid REFERENCES public."SearchJob"(id),file_name text NOT NULL,storage_path text NOT NULL,row_count integer,created_at timestamptz);\n'+readFileSync('packages/buyer-store/repository-schema.sql','utf8'));
+ const connect=async user=>{const client=new pg.Client({host:socket,user,database:'postgres'});await client.connect();return client;};
+ const repository=createBuyerStoreRepository({connect:()=>connect('buyer_repository_login'),connectCapability:()=>connect('buyer_capability_login')});
+ const owner='00000000-0000-4000-8000-000000000001',foreign='00000000-0000-4000-8000-000000000002';
+ const job={id:randomUUID(),state:'NC',county:'Wake',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-01-02',min_purchases:1,cash_buyers_only:false,llc_buyers_only:false};
+ const created=await repository.execute('job-create',job,owner);assert.equal(created.user_id,owner);
+ assert.equal((await repository.execute('job-create',job,owner)).id,job.id);
+ await assert.rejects(repository.execute('job-create',{...job,county:'changed'},owner));
+ assert.equal(await repository.execute('job-get',{id:job.id},foreign),null);
+ assert.equal((await repository.execute('jobs-list',{ids:[],limit:10},owner)).length,1);
+ assert.equal((await repository.execute('jobs-list',{ids:[],limit:10},foreign)).length,0);
+ const exp={id:randomUUID(),searchJobId:job.id,fileName:'fixture.csv',storagePath:'fixture/fixture.csv',rowCount:0};
+ await assert.rejects(repository.execute('export-create',exp,foreign));
+ await repository.execute('export-create',exp,owner);assert.equal((await repository.execute('counts',{},owner)).exportCount,1);
+ assert.deepEqual((await repository.execute('reports-list',{searchJobId:null,limit:5,offset:0},foreign)).reports,[]);
+ const profiles=await repository.readCapabilityProfiles({county:null,state:null,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:5});assert.equal(profiles.observation.requests,2);
+ const cap=await connect('buyer_capability_login');try{await cap.query('SET ROLE buyer_capability_reader');await assert.rejects(cap.query('SELECT * FROM public."SearchJob"'));await assert.rejects(cap.query('INSERT INTO public."BuyerProfile"(buyer_name) VALUES(\'forbidden\')'));}finally{await cap.end();}
+ const actor=await connect('buyer_repository_login');try{await actor.query('SET ROLE buyer_repository_user');await assert.rejects(actor.query('DELETE FROM public."SearchJob"'));await assert.rejects(actor.query('SET ROLE buyer_capability_reader'));}finally{await actor.end();}
+ console.log('PASS: actual native repository ownership, stable IDs, foreign export denial, read-only capability role and separate role grants');
+}finally{if(container){const info=JSON.parse(run(['inspect',container]))[0];assert.equal(info.Config.Labels['blackspire.test-owner'],label);run(['rm','-f',container]);}rmSync(socket,{recursive:true,force:true});}
