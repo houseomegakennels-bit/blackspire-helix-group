@@ -2,7 +2,7 @@
 
 ## 2026-09-21 — explicit successor current-main binding
 
-Successor final-input preparation now preserves the immutable predecessor main2775 binding while separately requiring reviewed current main3019785. The new input and retained snapshot bind that exact current main after fixed-URL remote observation and both historical-to-current and current-to-candidate ancestry checks. Foreign or stale main refuses; predecessor input, source/copy/hardening receipts and recovery pins remain unchanged. Focused binding and refusal tests pass. Main-feature integration and production successor execution remain separate gates; this change performs no production actions.
+Successor final-input preparation now preserves the immutable predecessor main2775 binding while separately requiring reviewed feature main3019785 and its documentation-only current mainf3ac3d3. The new input and retained snapshot bind that exact current main after fixed-URL remote observation and explicit historical-to-feature-to-current-to-candidate ancestry checks. Foreign or stale main refuses; predecessor input, source/copy/hardening receipts and recovery pins remain unchanged. Focused binding and refusal tests pass. Main-feature integration and production successor execution remain separate gates; this change performs no production actions.
 
 ## 2026-09-21 — deployed acceptance artifact authority
 

@@ -2344,4 +2344,4 @@ PR #153 merged as 3019785f108f3da78720da265bb5ccc6e17ae2d4 after exact-head CI 3
 
 ## 2026-09-21 — successor historical/current main separation
 
-Prepared explicit current-main3019785 binding without rewriting predecessor2775 input or migration lineage. Fixed remote and ancestry checks reject stale/foreign main before protected preparation stages; focused tests preserve immutable old input. Source integration and production execution remain pending.
+Prepared explicit current-mainf3ac3d3 binding without rewriting predecessor2775 input or migration lineage. Fixed remote and ancestry checks reject stale/foreign main before protected preparation stages; focused tests preserve immutable old input. Source integration and production execution remain pending.
