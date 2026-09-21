@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import {get,run,transaction} from '../task-engine/db.js';
 import {getFlag} from '../task-engine/tasks.js';
 import {activeGrant,hasCurrentWorkspacePermission,resolveAdminBearer} from '../shared/authorization.js';
-import {currentReleaseAdmissionContext} from '../shared/release-admission.js';
+import {currentReleaseAdmissionContext,heldReceiverContext} from '../shared/release-admission.js';
 import {workerRuntimeStatus} from '../task-engine/runtime-status.js';
 
 export const RECEIVER_AUTHORITY_HEADER='x-blackspire-receiver-authority';
@@ -98,6 +98,13 @@ export function consumeReceiverAuthority(value,{context=currentReleaseAdmissionC
    if(!worker.ok||worker.generationId!==authority.workerGeneration||worker.state!=='working'||worker.activeTask!==true)fail();
    const task=get('SELECT * FROM tasks WHERE id=?',[authority.taskId]);
    const attempt=get('SELECT * FROM provider_attempts WHERE id=?',[authority.attemptId]);
+   const held=heldReceiverContext();
+   if(held){
+    const row=held.reads.find(read=>read.capability===authority.capabilityId&&read.permission===authority.permission);
+    if(!row||held.workspace!==authority.workspaceId||held.principal!==authority.principalId
+      ||task?.idempotency_key!==`unified:jarvis:${row.idempotencyKey}`||task.request!==row.request
+      ||task.source_channel!=='jarvis'||task.execution_intent!=='read_only')fail();
+   }
    const principal=resolveAdminBearer(authority.principalId),grant=activeGrant(authority.principalId,authority.workspaceId);
    let packet;try{packet=JSON.parse(attempt?.request_packet||'null');}catch{fail();}
    const {proof,...claims}=authority,persisted={...claims,proofDigest:hash(proof)};

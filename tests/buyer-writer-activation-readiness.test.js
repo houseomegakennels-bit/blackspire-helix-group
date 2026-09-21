@@ -45,3 +45,17 @@ test('provisional preparation requires exact authenticated proof while public re
   await assert.rejects(checkBuyerWriterActivationReadiness({...options,preparationCredential:undefined}));
   await assert.rejects(checkBuyerWriterActivationReadiness({...options,requireWriterReady:true}));
 }));
+
+test('HELD readiness requires exact closed intake, authenticated preparation and retained lease without weakening OPEN checker',async()=>fixture(async f=>{
+ const {checkBuyerWriterHeldReadiness}=await import('../packages/buyer-writer/activation-readiness.js');
+ for(const value of [f.health,f.ready])value.deploymentIdentity.environment.value='production';
+ f.ready.checks.releaseAdmission=false;let checks=0;
+ const options={...f.options,environment:'production',requirePreparation:true,preparationCredential:'h'.repeat(43),verifyHeld:()=>{checks++;}};
+ assert.equal((await checkBuyerWriterHeldReadiness(options)).verified,true);assert.equal(checks,2);
+ await assert.rejects(checkBuyerWriterActivationReadiness({...options,requirePreparation:false,requireWriterReady:true}));
+ for(const key of Object.keys(f.ready.checks)){const old=f.ready.checks[key];f.ready.checks[key]=!old;await assert.rejects(checkBuyerWriterHeldReadiness(options));f.ready.checks[key]=old;}
+ f.preparation.prepared=false;await assert.rejects(checkBuyerWriterHeldReadiness(options));f.preparation.prepared=true;
+ await assert.rejects(checkBuyerWriterHeldReadiness({...options,verifyHeld:()=>{throw new Error('epoch drift');}}));
+ let calls=0;await assert.rejects(checkBuyerWriterHeldReadiness({...options,verifyHeld:()=>{if(++calls===2)throw new Error('generation drift');}}));
+ assert.equal(calls,2);
+}));

@@ -12,11 +12,11 @@ const commanderRunId='11111111-1111-4111-8111-111111111111',epochRunId='22222222
 const permitId='33333333-3333-4333-8333-333333333333';
 const permissions=['seller.opportunities.read','buyer.profiles.read','buyer.matches.read','deal.records.read','deal.analysis.read','nexus.enrichment.read'];
 const claims={schema:1,kind:'held-epoch-acceptance',permitId,commanderRunId,mergeMainSha:releaseSha,expectedDeploymentSha:releaseSha,
- epochRunId,workspace:'workspace-one',principal:'principal-one',apiGeneration,workerGeneration,issuedAt:1,expiresAt:1000,
+ epochRunId,workspace:'blackspire-command',principal:'blackspire-operator',apiGeneration,workerGeneration,issuedAt:1,expiresAt:1000,
  operations:[...HELD_ACCEPTANCE_OPERATIONS],reads:HELD_ACCEPTANCE_CAPABILITIES.map((capability,index)=>{
   const idempotencyKey=`zola-six:${epochRunId}:${index}`,request=`read ${index}`;
   return{index,idempotencyKey,capability,permission:permissions[index],request,
-   requestDigest:hash({channel:'jarvis',workspaceId:'workspace-one',text:request,idempotencyKey,executionIntent:'read_only'})};
+   requestDigest:hash({channel:'jarvis',workspaceId:'blackspire-command',text:request,idempotencyKey,executionIntent:'read_only'})};
  }),tokenDigest:'d'.repeat(64)};
 
 function evidence(operation,extra={}){
@@ -75,8 +75,9 @@ test('health and smoke fail closed for stale SHA, worker, collector or caller bi
  assert.throws(()=>createHealthSmokeProductionOperations(api.context).api_health.execute({...api.call,attemptId:'wrong'}),/rejected/);
 });
 
-function transport(responseSpec){
+function transport(responseSpec,observeOptions=()=>{}){
  return{request(options,onResponse){
+  observeOptions(options);
   const request=new EventEmitter();request.end=()=>queueMicrotask(()=>{
    if(responseSpec==='timeout'){request.emit('timeout');return;}
    const response=Readable.from([Buffer.from(responseSpec.body??'')]);response.statusCode=responseSpec.status;response.headers=responseSpec.headers;
@@ -86,9 +87,27 @@ function transport(responseSpec){
 }
 
 test('fixed health transport accepts bounded JSON and rejects redirects and timeout',async()=>{
- const good=transport({status:200,headers:{'content-type':'application/json'},body:JSON.stringify(health())});
+ let observed;
+ const good=transport({status:200,headers:{'content-type':'application/json'},body:JSON.stringify(health())},options=>{observed=options;});
  assert.deepEqual(await requestFixedProductionHealth({timeoutMs:100,transport:good}),health());
+ assert.equal(observed.hostname,'127.0.0.1');assert.equal(observed.port,8789);
+ assert.equal(observed.path,'/health');assert.equal(observed.method,'GET');
+ assert.equal(PRODUCTION_HEALTH_URL,'http://127.0.0.1:8789/health');
  const redirect=transport({status:302,headers:{location:'http://example.invalid/','content-type':'application/json'}});
  await assert.rejects(()=>requestFixedProductionHealth({timeoutMs:100,transport:redirect}),/REJECTED/);
  await assert.rejects(()=>requestFixedProductionHealth({timeoutMs:25,transport:transport('timeout')}),/TIMEOUT/);
+});
+
+
+test('health rejects internally consistent permits for a different runtime identity before transport',async()=>{
+ for(const field of ['workspace','principal']){
+  const f=fixture('api_health'),rows=f.context.journal.stream().events();
+  const minted=rows.find(row=>row.type==='held_acceptance_mint_intent');
+  minted.claims=structuredClone(minted.claims);minted.claims[field]=f.context.input[field];
+  if(field==='workspace')for(const read of minted.claims.reads)read.requestDigest=hash({channel:'jarvis',workspaceId:minted.claims.workspace,text:read.request,idempotencyKey:read.idempotencyKey,executionIntent:'read_only'});
+  const digest=hash(minted.claims);for(const row of rows)if(Object.hasOwn(row,'claimsDigest'))row.claimsDigest=digest;
+  let reads=0;
+  await assert.rejects(()=>createHealthSmokeProductionOperations(f.context,{requestHealth:async()=>{reads++;return health();}}).api_health.reconcile(f.call),/rejected/);
+  assert.equal(reads,0);
+ }
 });

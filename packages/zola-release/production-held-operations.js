@@ -1,3 +1,9 @@
+import {ensureHeldWriterBinding} from './held-writer-binding.js';
+import {runPremergeReadPermit} from './premerge-read-permit.js';
+import {isProductionAcceptanceIdentity,PRODUCTION_ACCEPTANCE_WORKSPACE,PRODUCTION_ACCEPTANCE_PRINCIPAL} from './production-runtime-identity.js';
+
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
+import {prepareCandidateDeployment,verifyCandidateDeploymentForStart} from './candidate-deployment.js';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -13,8 +19,8 @@ import {prepareGuardedOpen,publishGuardedOpen} from './postmerge-admission.js';
 import {FINAL_RELEASE_RECORD_ROOT,inspectFinalReleaseRecord,writeAcceptedHeldReleaseRecord,writeOpenReleaseRecord} from './final-release-record.js';
 import {RELEASE_ADMISSION_ROOT} from '../shared/release-admission.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
-import {collectSixReads,readCases,requireProductionCollectorReport,validateCollectorConfig} from '../zola-six-reads/collector.js';
-import {createProductionCollectorHost,openCollectorJournal} from '../zola-six-reads/collector-host.js';
+import {readCases,requireProductionCollectorReport,validateCollectorConfig} from '../zola-six-reads/collector.js';
+import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {activateBuyerWriterBeforeHeld} from './buyer-writer-activation.js';
 
 export const FIXED_PREMERGE_SIX_READ_CONFIGURATION='/var/lib/blackspire-operator/preparation/six-read-premerge-config.json';
@@ -41,7 +47,7 @@ function heldBinding(context,call){
  const ids=invocation(context,call,call.state.pending?.stage??'mint_acceptance_permit',{attempt:Boolean(call.attemptId)}),history=inspectHeldAcceptanceHistory(context.journal.stream('release').events());
  const claims=history.claims,newMainSha=merged(call);
  if(!claims||claims.commanderRunId!==ids.operationId||claims.mergeMainSha!==newMainSha||claims.expectedDeploymentSha!==newMainSha
-  ||claims.workspace!==context.input.workspace||claims.principal!==context.input.principal||!uuid(claims.epochRunId))reject();
+  ||!isProductionAcceptanceIdentity(claims)||!uuid(claims.epochRunId))reject();
  return{mergeMainSha:newMainSha,expectedDeploymentSha:newMainSha,epochRunId:claims.epochRunId,workspace:claims.workspace,
   apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration};
 }
@@ -54,12 +60,25 @@ function admissionOptions(context,root=RELEASE_ADMISSION_ROOT){
   return{apiGeneration:current.apiGeneration,workerGeneration:current.workerGeneration};
  }};
 }
+function matchesCollectorBinding(config,{version,releaseSha,epochRunId}){
+ return config?.version===version&&config.releaseSha===releaseSha&&isProductionAcceptanceIdentity(config)
+  &&(version===4?uuid(epochRunId)&&config.runId===epochRunId:version!==5||config.releaseRunId===epochRunId);
+}
 function protectedConfig(filename){return validateCollectorConfig(readRootOwnedJson(filename,{groupId:0,maxBytes:16384}));}
 async function collectFixed(config){
- let host,journal;try{journal=openCollectorJournal(config.journalDirectory,config.runId);host=createProductionCollectorHost(config);
-  return await collectSixReads(config,host,journal);
- }finally{try{host?.close();}catch{}try{journal?.close();}catch{}}
+ if(![4,5].includes(config.version))reject();
+ const configPath=config.version===4?FIXED_PREMERGE_SIX_READ_CONFIGURATION:FIXED_LIVE_SIX_READ_CONFIGURATION;
+ if(hash(protectedConfig(configPath))!==hash(config))reject();
+ const artifactRoot=`/opt/blackspire-command/releases/${config.releaseSha}`;
+ await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:config.releaseSha,environment:'production'});
+ const bytes=execFileSync('/opt/nodejs/node-v22.23.1-linux-x64/bin/node',[`${artifactRoot}/scripts/zola-six-read-collect.js`,config.version===4?'--premerge-held':'--production',configPath],
+  {cwd:artifactRoot,encoding:'utf8',timeout:180000,maxBuffer:1024*1024,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'},stdio:['ignore','pipe','pipe']});
+ if(hash(protectedConfig(configPath))!==hash(config))reject();
+ const report=JSON.parse(bytes);
+ if(config.version===4&&(!report.premergeAcceptance||report.livePass!==false||!report.databaseEvidence))reject();
+ return report;
 }
+
 function safeCollector(report,live,releaseSha){
  if(!report||report.releaseSha!==releaseSha||report.results?.length!==6||live&&(requireProductionCollectorReport(report),report.livePass!==true))reject();
  const crossOwnerDenials=report.results.filter(row=>row.crossOwnerDenial?.startsWith('PASS:')).length;
@@ -76,16 +95,27 @@ function runCandidateCollector(){
    ||report.paidProviderCalls!==0||report.observedFixtureMutationAttempts!==0)reject();return report;
  }catch(error){if(error?.message==='Fixed production HELD operation rejected')throw error;return null;}
 }
-function startCandidateServices(){
+async function startCandidateServices(context,binding){
+ await verifyCandidateDeploymentForStart({...binding,journal:context.journal});
  const result=execFileSync('/usr/bin/systemctl',['start','--','blackspire-command.target'],{encoding:'utf8',timeout:30000,maxBuffer:4096,
   stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});if(result!=='')reject();
 }
-async function establishCandidateHeld(context){
- const root=RELEASE_ADMISSION_ROOT,groupId=fs.existsSync(root)?fs.statSync(root).gid:fs.statSync('/etc/blackspire').gid,events=context.journal.stream('release').events();
- if(inspectAdmissionHoldHistory(events))reconcileReleaseAdmissionHold({journal:context.journal},{root,groupId});
- else engageReleaseAdmissionHold({releaseSha:context.input.releaseSha,journal:context.journal},{root,groupId});
+export async function establishCandidateHeld(context,{root=RELEASE_ADMISSION_ROOT,
+ groupId=fs.existsSync(root)?fs.statSync(root).gid:fs.statSync('/etc/blackspire').gid,
+ engage=engageReleaseAdmissionHold,reconcile=reconcileReleaseAdmissionHold,
+ prepare=prepareCandidateDeployment,lifecycle=runHeldLifecycle,sequence=inspectReleaseSequenceHistory}={}){
+ const events=context.journal.stream('release').events();
+ const confirmed=events.filter(e=>e.type==='release_hold_result').at(-1);
+ if(inspectAdmissionHoldHistory(events))reconcile({journal:context.journal},{root,groupId});
+ else if(!confirmed)engage({releaseSha:context.input.releaseSha,journal:context.journal},{root,groupId});
+ else if(confirmed.releaseSha!==context.input.releaseSha)reject();
+ // Exact retained HELD state is revalidated under the candidate and lifecycle
+ // locks. A confirmed running lifecycle is observed without re-engaging a stop-only hold.
+ const state=sequence(context.journal.stream('release').events());
+ await prepare({operationId:state.context.operationId,releaseSha:context.input.releaseSha,recoverySha:context.input.recoverySha},{journal:context.journal});
  const pending=inspectHeldLifecycleHistory(context.journal.stream('release').events());
- return runHeldLifecycle({releaseSha:context.input.releaseSha,journal:context.journal,reconcile:Boolean(pending)},{root,groupId,start:startCandidateServices});
+ return lifecycle({releaseSha:context.input.releaseSha,journal:context.journal,reconcile:Boolean(pending)},
+  {root,groupId,start:binding=>startCandidateServices(context,binding)});
 }
 
 function authorityEvidence(operation,authorization,binding,evidence){
@@ -132,13 +162,13 @@ export function wrapHeldAcceptanceOperations(context,operations,overrides={}){
 }
 
 export function createHeldProductionOperations(context,overrides={}){
- const deps={observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
+ const deps={premergeReadPermit:runPremergeReadPermit,ensureWriterBinding:input=>import('./held-writer-binding.js').then(module=>module.ensureHeldWriterBinding(input)),observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
   options:()=>admissionOptions(context),premergeConfig:()=>protectedConfig(FIXED_PREMERGE_SIX_READ_CONFIGURATION),
   liveConfig:()=>protectedConfig(FIXED_LIVE_SIX_READ_CONFIGURATION),collect:collectFixed,now:()=>new Date().toISOString(),inspectRecord:inspectFinalReleaseRecord,
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
   recordRoot:FINAL_RELEASE_RECORD_ROOT,candidate:runCandidateCollector,
   activate:input=>activateBuyerWriterBeforeHeld(input,{journal:context.journal}),
-  establishHeld:()=>establishCandidateHeld(context),...overrides};
+  establishHeld:()=>establishCandidateHeld(context),ensureWriterBinding:ensureHeldWriterBinding,...overrides};
  const journalResult=(kind,attemptId)=>context.journal.stream('release').events().find(row=>row?.schema===1&&row.type===`${kind}_result`&&row.attemptId===attemptId);
  const candidate={check(call){invocation(context,call,'candidate_six_reads');return pass({stage:'candidate_six_reads',fixedIsolatedCollector:true});},
   execute(call){invocation(context,call,'candidate_six_reads',{attempt:true});const stream=context.journal.stream('release');stream.append({schema:1,type:'candidate_six_reads_intent',attemptId:call.attemptId,releaseSha:context.input.releaseSha});
@@ -146,34 +176,51 @@ export function createHeldProductionOperations(context,overrides={}){
     status:report?'PASS':'BLOCKED_EXTERNAL',...(report?{reportDigest:hash(report)}:{})});},
   reconcile(call){invocation(context,call,'candidate_six_reads',{attempt:true});const row=journalResult('candidate_six_reads',call.attemptId);if(!row)reject();
    return row.status==='BLOCKED_EXTERNAL'?blocked():pass({stage:'candidate_six_reads',candidatePass:true,livePass:false,reportDigest:row.reportDigest});},observe(){reject();}};
+ const writerBinding=async call=>{const ids=invocation(context,call,'admission_lease',{attempt:true});
+  const proof=await deps.ensureWriterBinding({journal:context.journal,stage:'admission_lease',releaseSha:context.input.releaseSha,operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
+  if(proof?.status!=='HELD_WRITER_BINDING_VERIFIED'||proof.releaseSha!==context.input.releaseSha)reject();return proof;};
  const admission={check(call){invocation(context,call,'admission_lease');return pass({stage:'admission_lease',fixedAdmissionRoot:RELEASE_ADMISSION_ROOT,intakeOpen:false});},
   async execute(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await deps.activate({releaseSha:context.input.releaseSha,
-   operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});await deps.establishHeld();},
+   operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});await deps.establishHeld();await writerBinding(call);},
   async reconcile(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await deps.activate({releaseSha:context.input.releaseSha,
    operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
-   const result=await deps.establishHeld();if(result.status!=='HELD_LIFECYCLE_OBSERVED'||result.releaseSha!==context.input.releaseSha)reject();return pass({stage:'admission_lease',releaseSha:result.releaseSha,
+   const result=await deps.establishHeld();await writerBinding(call);if(result.status!=='HELD_LIFECYCLE_OBSERVED'||result.releaseSha!==context.input.releaseSha)reject();return pass({stage:'admission_lease',releaseSha:result.releaseSha,
     epochRunId:result.runId,artifactDigest:result.proof.artifactDigest,apiGeneration:result.proof.api.generation,workerGeneration:result.proof.worker.generation,intakeOpen:false});},observe(){reject();}};
  const revalidation={async check(call){invocation(context,call,'generation_revalidation');const prior=call.state.outputs.admission_lease;if(!prior||!uuid(prior.epochRunId))reject();
    const proof=await deps.lifecycle({releaseSha:context.input.releaseSha,runId:prior.epochRunId});if(proof.api.generation!==prior.apiGeneration||proof.worker.generation!==prior.workerGeneration||proof.artifactDigest!==prior.artifactDigest)reject();
    return pass({stage:'generation_revalidation',releaseSha:context.input.releaseSha,epochRunId:prior.epochRunId,apiGeneration:prior.apiGeneration,workerGeneration:prior.workerGeneration,
     artifactDigest:prior.artifactDigest,generationCurrent:true});},async observe(call){return revalidation.check(call);}};
  const premergeReads={check(call){invocation(context,call,'six_reads');let config;try{config=deps.premergeConfig();}catch{return blocked();}
-   if(config.version!==4||config.releaseSha!==context.input.releaseSha||config.workspace!==context.input.workspace||config.principal!==context.input.principal)return blocked();
+   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha,epochRunId:call.state.outputs.admission_lease?.epochRunId}))return blocked();
    return pass({stage:'six_reads',fixedCollector:true});},execute(call){invocation(context,call,'six_reads',{attempt:true});},
-  async reconcile(call){invocation(context,call,'six_reads',{attempt:true});let report;try{report=await deps.collect(deps.premergeConfig());}catch{return blocked();}
-   const evidence=safeCollector(report,false,context.input.releaseSha);return pass({stage:'six_reads',...evidence});},observe(){reject();}};
- const postmerge={check:call=>deps.observePostMerge(context,call),execute:call=>{deps.observePostMerge(context,call);},
-  reconcile:call=>deps.observePostMerge(context,call),observe:call=>deps.observePostMerge(context,call)};
+  async reconcile(call){invocation(context,call,'six_reads',{attempt:true});let report;try{const config=deps.premergeConfig();
+   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha,epochRunId:call.state.outputs.admission_lease?.epochRunId}))return blocked();
+   report=await deps.premergeReadPermit({context,call,config,collect:async()=>safeCollector(await deps.collect(config),false,context.input.releaseSha)});}catch{return blocked();}
+   return pass({stage:'six_reads',...report});},observe(){reject();}};
+ const bindPostmerge=async call=>{
+  const ids=invocation(context,call,'post_merge_held_epoch',{attempt:true}),held=deps.observePostMerge(context,call);
+  if(held.status!=='PASS'||held.evidence.newMainSha!==merged(call)||!uuid(held.evidence.epochRunId))reject();
+  const lifecycle=await deps.lifecycle({releaseSha:merged(call),runId:held.evidence.epochRunId});
+  const proof=await deps.ensureWriterBinding({releaseSha:merged(call),journal:context.journal,stage:'post_merge_held_epoch',
+   operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
+  if(proof.status!=='HELD_WRITER_BINDING_VERIFIED'||proof.releaseSha!==merged(call)||proof.runId!==held.evidence.epochRunId
+   ||proof.apiGeneration!==lifecycle.api.generation||proof.workerGeneration!==lifecycle.worker.generation
+   ||!digest(proof.bindingDigest)||!digest(proof.commitDigest))reject();
+  return pass({...held.evidence,writerBindingDigest:proof.bindingDigest,writerCommitDigest:proof.commitDigest});
+ };
+ const postmerge={check:call=>deps.observePostMerge(context,call),execute:bindPostmerge,
+  reconcile:bindPostmerge,observe:call=>deps.observePostMerge(context,call)};
  const mint={
   async check(call){invocation(context,call,'mint_acceptance_permit');const held=deps.observePostMerge(context,call);if(held.status!=='PASS')reject();let config;
-   try{config=deps.liveConfig();}catch{return blocked();}if(config.workspace!==context.input.workspace||config.principal!==context.input.principal)reject();
+   try{config=deps.liveConfig();}catch{return blocked();}if(!isProductionAcceptanceIdentity(config))reject();
    const proof=await deps.lifecycle({releaseSha:merged(call),runId:held.evidence.epochRunId});return pass({stage:'mint_acceptance_permit',newMainSha:merged(call),epochRunId:held.evidence.epochRunId,
     apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation,collectorConfigured:true});},
   async execute(call){invocation(context,call,'mint_acceptance_permit',{attempt:true});const held=deps.observePostMerge(context,call),proof=await deps.lifecycle({releaseSha:merged(call),runId:held.evidence.epochRunId});
-   const config=deps.liveConfig(),cases=readCases(config.dealId),reads=cases.map((row,index)=>{const idempotencyKey=`zola-six:${held.evidence.epochRunId}:${index}`;
-    return{index,idempotencyKey,capability:row.capability,permission:row.permissions[0],request:row.text,requestDigest:hash({channel:'jarvis',workspaceId:context.input.workspace,text:row.text,idempotencyKey,executionIntent:'read_only'})};});
+   const config=deps.liveConfig();if(!isProductionAcceptanceIdentity(config))reject();
+   const cases=readCases(config.dealId),reads=cases.map((row,index)=>{const idempotencyKey=`zola-six:${held.evidence.epochRunId}:${index}`;
+    return{index,idempotencyKey,capability:row.capability,permission:row.permissions[0],request:row.text,requestDigest:hash({channel:'jarvis',workspaceId:PRODUCTION_ACCEPTANCE_WORKSPACE,text:row.text,idempotencyKey,executionIntent:'read_only'})};});
    deps.mint({commanderRunId:call.state.context.operationId,mergeMainSha:merged(call),expectedDeploymentSha:merged(call),epochRunId:held.evidence.epochRunId,
-    workspace:context.input.workspace,principal:context.input.principal,apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation,reads,journal:context.journal,
+    workspace:PRODUCTION_ACCEPTANCE_WORKSPACE,principal:PRODUCTION_ACCEPTANCE_PRINCIPAL,apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation,reads,journal:context.journal,
     verifyGenerations:()=>({apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation})},deps.options());},
   reconcile(call){invocation(context,call,'mint_acceptance_permit',{attempt:true});const history=inspectHeldAcceptanceHistory(context.journal.stream('release').events());
    if(!['MINTED','CONSUMING'].includes(history.status))reject();return pass({stage:'mint_acceptance_permit',permitId:history.claims.permitId,permitDigest:hash(history.claims),
@@ -186,9 +233,11 @@ export function createHeldProductionOperations(context,overrides={}){
    const core={stage:name,newMainSha:binding.mergeMainSha,epochRunId:binding.epochRunId,apiGeneration:binding.apiGeneration,workerGeneration:binding.workerGeneration,
     artifactDigest:first.artifactDigest,workerReady:true,generationCurrent:true};return pass({...core,observationDigest:hash(core)});},observe(){reject();}});
  const liveReads=Object.freeze({check(call){invocation(context,call,'six_live_reads');let config;try{config=deps.liveConfig();}catch{return blocked();}
-   const binding=heldBinding(context,{...call,attemptId:null});if(config.version!==5||config.releaseSha!==binding.mergeMainSha||config.releaseRunId!==binding.epochRunId)return blocked();return pass({stage:'six_live_reads',fixedCollector:true});},
+   const binding=heldBinding(context,{...call,attemptId:null});if(!matchesCollectorBinding(config,{version:5,releaseSha:binding.mergeMainSha,epochRunId:binding.epochRunId}))return blocked();return pass({stage:'six_live_reads',fixedCollector:true});},
   execute(call){invocation(context,call,'six_live_reads',{attempt:true});},async reconcile(call){invocation(context,call,'six_live_reads',{attempt:true});let report;
-   try{report=await deps.collect(deps.liveConfig());}catch{return blocked();}return pass({stage:'six_live_reads',...safeCollector(report,true,merged(call))});},observe(){reject();}});
+   const binding=heldBinding(context,call);
+   try{const config=deps.liveConfig();if(!matchesCollectorBinding(config,{version:5,releaseSha:binding.mergeMainSha,epochRunId:binding.epochRunId}))return blocked();
+    report=await deps.collect(config);}catch{return blocked();}return pass({stage:'six_live_reads',...safeCollector(report,true,merged(call))});},observe(){reject();}});
 
  function openEvidence(call){
   const o=call.state.outputs,h=inspectHeldAcceptanceHistory(context.journal.stream('release').events()),main=merged(call),vps=o.journaled_vps_cutover;
@@ -204,7 +253,7 @@ export function createHeldProductionOperations(context,overrides={}){
     previousMainSha:context.input.previousMainSha,newMainSha:e.newMainSha,operationId:e.commanderRunId,attemptId:call.attemptId,stageInputDigest:call.inputDigest,
     checkOutputDigest:call.checkOutputDigest,sequenceInputDigest:context.input.inputDigest,registryDigest:RELEASE_REGISTRY_DIGEST,
     acceptedStagesDigest:hash(call.state.outputs),epochRunId:e.epochRunId,permitId:e.permitId,permitDigest:hash(inspectHeldAcceptanceHistory(context.journal.stream('release').events()).claims),
-    apiGeneration:e.apiGeneration,workerGeneration:e.workerGeneration,rollbackAcceptanceDigest:e.rollbackDigest,acceptedAt:deps.now()};
+    apiGeneration:e.apiGeneration,workerGeneration:e.workerGeneration,rollbackAcceptanceDigest:e.rollbackDigest,rollbackMode:'stopped-held',businessRecoveryVerified:false,acceptedAt:deps.now()};
    context.journal.stream('release').append({schema:1,type:'final_release_record_intent',record});deps.writeAccepted({record,root:deps.recordRoot,owner:0});},
   reconcile(call){invocation(context,call,'final_release_record',{attempt:true});const intent=context.journal.stream('release').events().find(row=>row?.type==='final_release_record_intent'&&row.record?.attemptId===call.attemptId);
    if(!intent)reject();deps.writeAccepted({record:intent.record,root:deps.recordRoot,owner:0});const found=deps.inspectRecord({releaseSha:context.input.releaseSha,root:deps.recordRoot,owner:0});

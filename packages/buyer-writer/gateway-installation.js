@@ -135,11 +135,35 @@ export function encodeGatewayInstallState({sha,unitBackup,previousUnit,installed
 
 export function decodeGatewayInstallState(bytes){
   let value;try{value=JSON.parse(bytes);}catch{fail('gateway installation state rejected');}
-  if(!exact(value,['version','sha','unitBackup','previousUnitSha256','installedUnitSha256','previousEnabled','previousActive'])||value.version!==3||!SHA.test(value.sha??'')
+  const base=['version','sha','unitBackup','previousUnitSha256','installedUnitSha256','previousEnabled','previousActive'];
+  const prepared=value?.version===4;
+  if(prepared&&(!/^[a-f0-9]{64}$/.test(value.artifactDigest??'')||!/^[a-f0-9]{64}$/.test(value.configurationSha256??'')||value.mode!=='prepare'||value.previousActive!==false))fail('gateway preparation state rejected');
+  if(!exact(value,prepared?[...base,'mode','artifactDigest','configurationSha256']:base)||![3,4].includes(value.version)||!SHA.test(value.sha??'')
     ||value.unitBackup!==null&&(typeof value.unitBackup!=='string'||!path.isAbsolute(value.unitBackup))
     ||value.previousUnitSha256!==null&&!/^[a-f0-9]{64}$/.test(value.previousUnitSha256??'')
     ||!/^[a-f0-9]{64}$/.test(value.installedUnitSha256??'')||typeof value.previousEnabled!=='boolean'||typeof value.previousActive!=='boolean')fail('gateway installation state rejected');
   if((value.unitBackup===null)!==(value.previousUnitSha256===null)
     ||value.previousUnitSha256===null&&(value.previousEnabled||value.previousActive))fail('gateway installation state rejected');
   return Object.freeze(value);
+}
+
+export function encodeGatewayPreparedState(input){
+ const {artifactDigest,configurationSha256,...base}=input;
+ const state={...JSON.parse(encodeGatewayInstallState(base)),version:4,mode:'prepare',artifactDigest,configurationSha256};
+ const bytes=JSON.stringify(state)+'\n';decodeGatewayInstallState(bytes);return bytes;
+}
+export function validateGatewayPreparedObservation(state,{sha,artifactDigest,configurationSha256,installedUnit,backupUnit,enabled,servicesStopped,daemonReloaded}){
+ const checked=decodeGatewayInstallState(JSON.stringify(state));
+ if(checked.version!==4||checked.sha!==sha||checked.artifactDigest!==artifactDigest||checked.configurationSha256!==configurationSha256
+  ||digest(installedUnit)!==checked.installedUnitSha256||enabled!==checked.previousEnabled||servicesStopped!==true||daemonReloaded!==true
+  ||(backupUnit===null?null:digest(backupUnit))!==checked.previousUnitSha256)fail('gateway prepared observation rejected');
+ return Object.freeze({status:'UNIT_PREPARED',sha,artifactDigest,installedUnitSha256:checked.installedUnitSha256,stateDigest:digest(JSON.stringify(checked)),service:GATEWAY_SERVICE,intakeOpen:false});
+}
+
+// The durable rollback state is published before unit replacement. A caller that
+// finds that state must select reconciliation, which never sends a second write.
+export async function runGatewayUnitPreparation({reconcile=false},{host}){
+ if(typeof reconcile!=='boolean'||!host)fail('gateway preparation transaction rejected');
+ if(!reconcile){const prepared=await host.prepare();await host.persist(prepared);await host.publish(prepared);await host.reload();}
+ return host.inspect();
 }

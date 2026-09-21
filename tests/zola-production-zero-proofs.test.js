@@ -12,11 +12,11 @@ const stageAttemptId='33333333-3333-4333-8333-333333333333',permitId='44444444-4
 const input={releaseSha,previousMainSha,recoverySha,protectedInputDigest:'1'.repeat(64),workspace:'zola-production',principal:'blackspire-release-root',inputDigest:'2'.repeat(64)};
 const permissions=['seller.opportunities.read','buyer.profiles.read','buyer.matches.read','deal.records.read','deal.analysis.read','nexus.enrichment.read'];
 const claims={schema:1,kind:'held-epoch-acceptance',permitId,commanderRunId:operationId,mergeMainSha:releaseSha,expectedDeploymentSha:releaseSha,
- epochRunId,workspace:input.workspace,principal:input.principal,apiGeneration:'d'.repeat(32),workerGeneration:'e'.repeat(32),issuedAt:1,expiresAt:1000,
+ epochRunId,workspace:'blackspire-command',principal:'blackspire-operator',apiGeneration:'d'.repeat(32),workerGeneration:'e'.repeat(32),issuedAt:1,expiresAt:1000,
  operations:[...HELD_ACCEPTANCE_OPERATIONS],reads:HELD_ACCEPTANCE_CAPABILITIES.map((capability,index)=>{
   const idempotencyKey=`zola-six:${epochRunId}:${index}`,request=`read ${index}`;
   return{index,idempotencyKey,capability,permission:permissions[index],request,
-   requestDigest:hash({channel:'jarvis',workspaceId:input.workspace,text:request,idempotencyKey,executionIntent:'read_only'})};
+   requestDigest:hash({channel:'jarvis',workspaceId:'blackspire-command',text:request,idempotencyKey,executionIntent:'read_only'})};
  }),tokenDigest:'f'.repeat(64)};
 const collectorHash='9'.repeat(64);
 
@@ -69,7 +69,7 @@ function collectorSource({changed=false,tupleChanged=false}={}){
   {type:'report',digest:collectorHash,status:'PASS_LIVE_ACCEPTANCE'}]};
 }
 function commandEvidence({paid=false,extraAttempt=false}={}){
- const tasks=HELD_ACCEPTANCE_CAPABILITIES.map((_,index)=>({id:`task-${index}`,workspace_id:input.workspace,actor_id:input.principal,status:'completed',idempotency_key:`unified:jarvis:zola-six:${epochRunId}:${index}`}));
+ const tasks=HELD_ACCEPTANCE_CAPABILITIES.map((_,index)=>({id:`task-${index}`,workspace_id:claims.workspace,actor_id:claims.principal,status:'completed',idempotency_key:`unified:jarvis:zola-six:${epochRunId}:${index}`}));
  const attempts=HELD_ACCEPTANCE_CAPABILITIES.map((mode,index)=>({id:`attempt-${index}`,task_id:`task-${index}`,provider:'blackspire-capability',mode,status:'completed'}));
  if(extraAttempt)attempts.push({id:'extra',task_id:'task-0',provider:'paid',mode:'x',status:'completed'});
  return{tasks,attempts,usage:attempts.slice(0,6).map((row,index)=>({attempt_id:row.id,task_id:row.task_id,provider:'blackspire-capability',cost_cents:paid&&index===5?1:0,monetary_cost_state:'settled'})),databaseIdentity:{device:1,inode:2}};
@@ -86,7 +86,7 @@ test('zero paid Nexus reconciles exact acceptance tasks against authoritative us
  assert.equal((await operation.check({...call,attemptId:undefined,inputDigest:undefined,checkOutputDigest:undefined})).status,'PASS');
  operation.execute(call);const result=await operation.reconcile(call);
  assert.equal(result.status,'PASS');assert.equal(result.evidence.paidProviderCalls,0);assert.equal(result.evidence.operationId,operationId);
- assert.equal(result.evidence.stageAttemptId,stageAttemptId);assert.equal(result.evidence.workspace,input.workspace);
+ assert.equal(result.evidence.stageAttemptId,stageAttemptId);assert.equal(result.evidence.workspace,claims.workspace);
  assert.match(result.evidence.usageDigest,/^[a-f0-9]{64}$/);
 });
 

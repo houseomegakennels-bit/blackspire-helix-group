@@ -1,12 +1,14 @@
+import {createPostmergeAuthorityRebind} from './postmerge-authority-rebind.js';
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
+import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {RECOVERY_ARTIFACT,RECOVERY_SHA} from '../zola-rollback/intake.js';
 import {validateIntegratedRecoveryReport} from '../zola-rollback/integrated-report.js';
 import {hash} from './commander-journal.js';
 import {verifyProtectedReleaseBackup} from './commander-backup.js';
-import {inspectReleaseSequence} from './commander-sequence.js';
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {inspectVpsCutoverHistory} from './commander-vps.js';
 import {inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 import {observeHeldLifecycle} from './held-lifecycle.js';
@@ -40,12 +42,12 @@ function safeProof(value,stage,binding,ids){
   ||value.attemptId!==ids.attemptId||!digest(value.observationDigest))reject();
  const common=['status','stage','binding','operationId','attemptId','observationDigest','artifactDigest','backupManifestDigest','backupSnapshotDigest','backupProofDigest'];
  const keys=stage==='rollback_acceptance'?[...common,'runtimeProofDigest','apiRecoveryCompatible','workerRecoveryCompatible','admissionCompatible','runtimeCompatible','journalResumable']
-  :[...common,'rollbackJournalDigest','previousStateDigest','apiGeneration','workerGeneration','previousPointerRecoverable','rollbackExecutable','noAttemptMixing','noStaleGeneration'];
+  :[...common,'rollbackJournalDigest','previousStateDigest','apiGeneration','workerGeneration','recoveryPointerAvailable','rollbackContainmentExecutable','rollbackMode','businessRecoveryVerified','noAttemptMixing','noStaleGeneration'];
  if(!exact(value,keys)||!['artifactDigest','backupManifestDigest','backupSnapshotDigest','backupProofDigest'].every(key=>digest(value[key])))reject();
  if(stage==='rollback_acceptance'&&(!digest(value.runtimeProofDigest)||['apiRecoveryCompatible','workerRecoveryCompatible','admissionCompatible','runtimeCompatible','journalResumable'].some(key=>value[key]!==true)))reject();
  if(stage==='rollback_verification'&&(!digest(value.rollbackJournalDigest)||!digest(value.previousStateDigest)
   ||![value.apiGeneration,value.workerGeneration].every(item=>typeof item==='string'&&/^[a-f0-9]{32}$/.test(item))
-  ||value.apiGeneration===value.workerGeneration||['previousPointerRecoverable','rollbackExecutable','noAttemptMixing','noStaleGeneration'].some(key=>value[key]!==true)))reject();
+  ||value.apiGeneration===value.workerGeneration||(['recoveryPointerAvailable','rollbackContainmentExecutable','noAttemptMixing','noStaleGeneration'].some(key=>value[key]!==true)||value.rollbackMode!=='stopped-held'||value.businessRecoveryVerified!==false)))reject();
  return structuredClone(value);
 }
 function rows(context,stage){return context.journal.stream('release').events().filter(row=>row?.type===`${stage}_probe_intent`||row?.type===`${stage}_probe_result`);}
@@ -57,18 +59,45 @@ function history(context,stage,binding,ids){
  if(result.status==='PASS')safeProof(result.proof,stage,binding,ids);else if(Object.hasOwn(result,'proof'))reject();
  return result;
 }
+export function inspectRollbackProbeHistory(events){
+ const found=new Map();
+ for(let index=0;index<events.length;index++){
+  const row=events[index],stage=['rollback_acceptance','rollback_verification'].find(value=>
+   row?.type===`${value}_probe_intent`||row?.type===`${value}_probe_result`);
+  if(!stage)continue;
+  const state=inspectReleaseSequenceHistory(events.slice(0,index)),pending=state.pending;
+  if(!pending||pending.stage!==stage||row.operationId!==state.context.operationId||row.attemptId!==pending.attemptId)reject();
+  const binding={releaseSha:state.context.releaseSha,rollbackSha:state.context.recoverySha,workspace:state.context.workspace,principal:state.context.principal};
+  const intent=row.type===`${stage}_probe_intent`;
+  if(row.schema!==1||!exact(row,['schema','type','binding','operationId','attemptId',
+   ...(intent?[]:row.status==='PASS'?['status','proof']:['status'])])||!same(row.binding,binding))reject();
+  const prior=found.get(stage);
+  if(intent){if(prior)reject();found.set(stage,{intent:row,result:null});}
+  else{
+   if(!prior||prior.result||!['PASS','BLOCKED_EXTERNAL'].includes(row.status))reject();
+   if(row.status==='PASS'){
+    safeProof(row.proof,stage,binding,{operationId:row.operationId,attemptId:row.attemptId});
+    const {status,observationDigest,...core}=row.proof;
+    if(observationDigest!==hash(core))reject();
+   }
+   prior.result=row;
+  }
+ }
+ return found;
+}
 function append(context,event){context.journal.stream('release').append(event);}
 
 async function artifactAndBackup(context,binding){
  const artifactRoot=path.join(RELEASE_ROOT,binding.rollbackSha);
  if(!fs.existsSync(artifactRoot)||!fs.existsSync(context.release.backupManifestFile))return{status:'BLOCKED_EXTERNAL'};
- const artifact=await inspectBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
+ // Recoverability verifies the immutable package; live generations are observed separately.
+ const artifact=await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
  if(artifact.releaseSha!==binding.rollbackSha||artifact.environment!=='production'||!digest(artifact.artifactDigest)
   ||binding.rollbackSha!==RECOVERY_SHA||artifact.artifactDigest!==RECOVERY_ARTIFACT)reject();
  const backup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:context.release.backupManifestFile});
  if(backup.status!=='PROTECTED_BACKUP_VERIFIED'||backup.releaseSha!==binding.releaseSha
   ||!digest(backup.snapshotSha256)||!digest(backup.manifestSha256)||backup.sourceIdentityBound!==true)reject();
- const secondArtifact=await inspectBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
+ const secondArtifact=await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
  const secondBackup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:context.release.backupManifestFile});
  if(!same(artifact,secondArtifact)||!same(backup,secondBackup))reject();
  return{status:'PASS',artifactDigest:artifact.artifactDigest,backupManifestDigest:backup.manifestSha256,
@@ -85,7 +114,7 @@ function recoveryProbe(){
   admissionCompatible:true,runtimeCompatible:true};
 }
 function acceptanceJournal(context,ids,{pending}){
- const state=inspectReleaseSequence(context.journal.stream('release').events());
+ const state=inspectReleaseSequenceHistory(context.journal.stream('release').events());
  if(!state.started||state.completed||state.context.operationId!==ids.operationId||state.context.releaseSha!==context.input.releaseSha
   ||state.context.recoverySha!==context.input.recoverySha||state.nextOrdinal!==14
   ||pending&&(state.pending?.stage!=='rollback_acceptance'||state.pending.attemptId!==ids.attemptId)
@@ -103,8 +132,7 @@ function defaultVerificationPrecheck(context,binding,ids){
  if(accepted?.status!=='PASS'||accepted.operationId!==ids.operationId||accepted.proof?.binding?.rollbackSha!==binding.rollbackSha)reject();
  const cutover=inspectVpsCutoverHistory(events),held=inspectHeldAcceptanceHistory(events);
  if(!cutover.completed||cutover.rollingBack||cutover.rollbackComplete||cutover.intent.commanderRunId!==ids.operationId
-  ||held.status!=='CONSUMING'||held.claims.commanderRunId!==ids.operationId||held.claims.workspace!==binding.workspace
-  ||held.claims.principal!==binding.principal||held.pending)reject();
+  ||held.status!=='CONSUMING'||held.claims.commanderRunId!==ids.operationId||!isProductionAcceptanceIdentity(held.claims)||held.pending)reject();
  return{status:'PASS',rollbackArtifactRetained:true,cutoverJournalComplete:true,heldGenerationsCurrent:true};
 }
 async function defaultAcceptance(context,binding,ids){
@@ -129,18 +157,19 @@ async function defaultVerification(context,binding,ids,acceptanceProof){
  if(!cutoverStage||cutoverStage.attemptId!==cutover.intent.operationId)reject();
  const held=inspectHeldAcceptanceHistory(events);
  if(held.status!=='CONSUMING'||held.claims.commanderRunId!==ids.operationId||held.claims.mergeMainSha!==cutover.intent.newMainSha
-  ||held.claims.workspace!==binding.workspace||held.claims.principal!==binding.principal
+  ||!isProductionAcceptanceIdentity(held.claims)
   ||held.completed.join(',')!=='api_health,worker_readiness,generation_fence,six_live_reads,production_smoke,zero_paid_nexus,zero_unintended_mutation'
   ||held.pending&&held.pending.operation!=='rollback_verification')reject();
  const lifecycle=await observeHeldLifecycle({releaseSha:held.claims.mergeMainSha,runId:held.claims.epochRunId});
- if(lifecycle.proof.api.generation!==held.claims.apiGeneration||lifecycle.proof.worker.generation!==held.claims.workerGeneration
-  ||lifecycle.proof.artifactDigest!==cutover.intent.artifactDigest)reject();
+ if(lifecycle.api.generation!==held.claims.apiGeneration||lifecycle.worker.generation!==held.claims.workerGeneration
+  ||lifecycle.artifactDigest!==cutover.intent.artifactDigest)reject();
  const snapshot=cutover.intent.snapshot;
- if(snapshot.current!==path.join(RELEASE_ROOT,binding.rollbackSha)||hash(snapshot)!==cutover.intent.snapshotDigest
-  ||!snapshot.state||typeof snapshot.state!=='object'||!snapshot.api||!snapshot.worker)reject();
+ if(snapshot.current!==path.join(RELEASE_ROOT,cutover.intent.candidateSha)||cutover.intent.candidateSha!==binding.releaseSha||hash(snapshot)!==cutover.intent.snapshotDigest
+  ||!snapshot.state||typeof snapshot.state!=='object'||!snapshot.api||!snapshot.worker||snapshot.rollbackMode!=='stopped-held'
+  ||!createPostmergeAuthorityRebind(cutover.intent,{assertStopped:()=>{reject();}}).recoverable(snapshot.authorityRebind))reject();
  return{status:'PASS',...integrity,rollbackJournalDigest:hash(cutover.intent),previousStateDigest:hash(snapshot.state),
-  apiGeneration:held.claims.apiGeneration,workerGeneration:held.claims.workerGeneration,previousPointerRecoverable:true,
-  rollbackExecutable:true,noAttemptMixing:true,noStaleGeneration:true};
+  apiGeneration:held.claims.apiGeneration,workerGeneration:held.claims.workerGeneration,recoveryPointerAvailable:true,
+  rollbackContainmentExecutable:true,rollbackMode:'stopped-held',businessRecoveryVerified:false,noAttemptMixing:true,noStaleGeneration:true};
 }
 
 function operation(context,stage,precheck,collector,integrity){

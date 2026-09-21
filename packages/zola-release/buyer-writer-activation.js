@@ -1,3 +1,4 @@
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
@@ -14,11 +15,12 @@ const ROOT=fileURLToPath(new URL('../../',import.meta.url));
 const SHA=/^[a-f0-9]{40}$/;
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const DIGEST=/^[a-f0-9]{64}$/;
-const PHASES=['source_v1','gateway_v4','gateway_upgrade','database_provisioning','configuration_install'];
+const PHASES=['source_v1','gateway_v4','gateway_upgrade','database_provisioning','configuration_install','gateway_unit'];
 const PREPARATION='/var/lib/blackspire-operator/preparation';
 export const BUYER_WRITER_ACTIVATION_PATHS=Object.freeze({
  credentialSource:`${PREPARATION}/zola-gateway-6f7e0c2-provisioning.json`,source:`${PREPARATION}/source-v1.json`,
  candidate:releaseSha=>`${PREPARATION}/buyer-writer-v4-${releaseSha}.json`,
+ gatewayInstallationState:'/var/lib/blackspire-operator/gateway-installation/state.json',
  management:'/etc/blackspire-buyer-writer-gateway/management.json',
  configJournal:operationId=>`${PREPARATION}/zola-config-${operationId}.journal.jsonl`,
  artifactRoot:releaseSha=>`/opt/blackspire-command/releases/${releaseSha}`,
@@ -62,6 +64,25 @@ function history(events,bound){
   completed.set(phase,row);cursor++;
  }
  return {intent,completed};
+}
+export function inspectBuyerWriterActivationHistory(events){
+ const rows=events.filter(row=>['buyer_writer_activation_intent','buyer_writer_activation_result'].includes(row?.type));
+ if(!rows.length)return {intent:null,completed:new Map()};
+ const bound=binding(rows[0].binding);
+ const observed=history(events,bound);
+ const statuses={source_v1:['BUYER_WRITER_SOURCE_V1_PREPARED'],gateway_v4:['BUYER_WRITER_GATEWAY_V4_PREPARED','COMPLETE'],
+  gateway_upgrade:['UPGRADED'],database_provisioning:['COMPLIANT','PROVISIONED','ALREADY_COMPLIANT'],configuration_install:['INSTALLED_AND_RELOADED'],gateway_unit:['UNIT_PREPARED']};
+ for(let index=0;index<events.length;index++){
+  const row=events[index];if(!rows.includes(row))continue;
+  if(!exact(row,row.type==='buyer_writer_activation_intent'?['schema','type','binding','bindingDigest']
+   :['schema','type','phase','bindingDigest','status','evidenceDigest']))reject();
+  if(row.type==='buyer_writer_activation_result'&&!statuses[row.phase]?.includes(row.status))reject();
+  const state=inspectReleaseSequenceHistory(events.slice(0,index)),pending=state.pending;
+  if(!pending||pending.stage!=='admission_lease'||state.context.releaseSha!==bound.releaseSha
+   ||state.context.operationId!==bound.operationId
+   ||['attemptId','inputDigest','checkOutputDigest'].some(key=>pending[key]!==bound[key]))reject();
+ }
+ return observed;
 }
 function requireStatus(result,allowed){
  if(!allowed.includes(result?.status))reject();return result;
@@ -144,6 +165,11 @@ async function configPhase(bound,run,paths,reloadSystemd){
   reloadEvidenceDigest:hash(reloaded)});
 }
 
+async function gatewayUnitPhase(bound,run,paths,io){
+ let mode='--prepare';try{io.lstatSync(paths.gatewayInstallationState);mode='--reconcile-prepared';}catch(error){if(error.code!=='ENOENT')throw error;}
+ return requireStatus(await run('scripts/buyer-writer-gateway-install.js',[mode,bound.releaseSha]),['UNIT_PREPARED']);
+}
+
 export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRun,io=fs,
  inspectArtifact=inspectSealedBuyerWriterArtifact,readJson=readRootOwnedJson,
  reloadSystemd=defaultReloadSystemd,paths:overrides={}}={}){
@@ -160,7 +186,7 @@ export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRu
   gateway_v4:()=>gatewayPhase(bound,run,paths,io),
   gateway_upgrade:()=>upgradePhase(bound,run,paths,io,inspectArtifact,readJson),
   database_provisioning:()=>provisionPhase(bound,run,paths,io,readJson),
-  configuration_install:()=>configPhase(bound,run,paths,reloadSystemd)};
+  configuration_install:()=>configPhase(bound,run,paths,reloadSystemd),gateway_unit:()=>gatewayUnitPhase(bound,run,paths,io)};
  for(const phase of PHASES){
   if(observed.completed.has(phase))continue;
   const result=await actions[phase]();

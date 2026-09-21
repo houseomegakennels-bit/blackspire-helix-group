@@ -1,3 +1,4 @@
+import {candidateHistory} from './helpers/candidate-deployment-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hash} from '../packages/zola-release/commander-journal.js';
@@ -6,7 +7,8 @@ import {createDeploymentProductionOperations,materializeFixedNewMainArtifact} fr
 const releaseSha='a'.repeat(40),previousMainSha='b'.repeat(40),recoverySha='c'.repeat(40),newMainSha='d'.repeat(40);
 const operationId='11111111-1111-4111-8111-111111111111',attemptId='22222222-2222-4222-8222-222222222222';
 const ci={ciMergeSha:'e'.repeat(40),ciTreeSha:'f'.repeat(40)};
-function journal(){const events=[];return{events,stream:()=>({events:()=>structuredClone(events),append:value=>events.push(structuredClone(value))})};}
+const candidate=candidateHistory({operationId,releaseSha,recoverySha,artifactDigest:'1'.repeat(64),recoveryArtifactDigest:'3'.repeat(64)});
+function journal(){const events=structuredClone(candidate.events);return{events,stream:()=>({events:()=>structuredClone(events),append:value=>events.push(structuredClone(value))})};}
 function fixture(overrides={},options={}){
  const j=journal(),input={releaseSha,previousMainSha,recoverySha,protectedInputDigest:'1'.repeat(64),workspace:'zola-production',principal:'blackspire-release-root',inputDigest:'2'.repeat(64)};
  const context={input,release:{releaseSha,backupManifestFile:'/protected/backup.json'},journal:j};
@@ -28,7 +30,7 @@ function fixture(overrides={},options={}){
 test('merge consumes the authoritative confirmed ci_security stage output without legacy preflight history',()=>{
  const f=fixture({}, {useDefaultCi:true}),proof=f.operations.expected_head_merge.check(f.args(17));
  assert.equal(proof.evidence.runId,undefined);assert.equal(proof.evidence.ciMergeSha,ci.ciMergeSha);assert.equal(proof.evidence.ciTreeSha,ci.ciTreeSha);
- assert.equal(f.journal.events.length,0);
+ assert.equal(f.journal.events.length,candidate.events.length);
 });
 
 test('new-main artifact binding fixed-fetches an absent verified commit then creates and inspects its exact release',async()=>{
@@ -80,13 +82,13 @@ test('completed VPS outer reconciliation replays without re-entering the HELD mu
  const epochRunId='33333333-3333-4333-8333-333333333333',rollbackEpochRunId='44444444-4444-4444-8444-444444444444';
  const hold={schema:3,type:'release_postmerge_hold_intent',commanderRunId:operationId,candidateSha:releaseSha,newMainSha,epochRunId,marker:{fixed:true}};
  f.journal.events.push(hold,{...hold,type:'release_postmerge_hold_result'});
- const snapshot={fixed:true},base={operationId:attemptId,commanderRunId:operationId,epochRunId,rollbackEpochRunId,newMainSha,rollbackSha:recoverySha,
+ const snapshot={fixed:true},base={operationId:attemptId,commanderRunId:operationId,epochRunId,rollbackEpochRunId,newMainSha,candidateSha:releaseSha,candidateArtifactDigest:candidate.plan.artifactDigest,candidateDeploymentDigest:candidate.digest,rollbackSha:recoverySha,
   artifactDigest:'7'.repeat(64),rollbackArtifactDigest:'3'.repeat(64),backupDigest:'4'.repeat(64),backupManifestFile:'/protected/backup.json',
   admissionDigest:'9'.repeat(64),snapshotDigest:hash(snapshot)};
- f.journal.events.push({schema:4,type:'vps_cutover_intent',...base,snapshot});
+ f.journal.events.push({schema:5,type:'vps_cutover_intent',...base,snapshot});
  for(const step of ['backup','artifact','state_pointer','api_start','health','stopped_worker_rejection','worker_start','readiness','generation_fence','enable'])
-  f.journal.events.push({schema:4,type:'vps_step_intent',...base,step},{schema:4,type:'vps_step_result',...base,step});
- f.journal.events.push({schema:4,type:'vps_cutover_result',...base});
+  f.journal.events.push({schema:5,type:'vps_step_intent',...base,step},{schema:5,type:'vps_step_result',...base,step});
+ f.journal.events.push({schema:5,type:'vps_cutover_result',...base});
  const proof=await f.operations.journaled_vps_cutover.reconcile(f.args(21,{attempt:true}));
  assert.equal(heldCalls,0);assert.equal(preparedCalls,0);assert.equal(runInput.reconcile,true);assert.equal(proof.evidence.replayed,true);
 });

@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {hash} from '../packages/zola-release/commander-journal.js';
 import {RELEASE_STAGES,MUTATING_STAGES,RELEASE_REGISTRY_DIGEST} from '../packages/zola-release/commander-sequence.js';
-import {createBoundedWriterAdmissionJournal} from '../packages/zola-release/bounded-writer-admission-journal.js';
+import {createBoundedWriterAdmissionJournal,inspectBoundedWriterAdmissionHistory} from '../packages/zola-release/bounded-writer-admission-journal.js';
 import {createBuyerWriterAdmittedLocalClient} from '../packages/buyer-writer/admitted-local-client.js';
 import {createBoundedWriterE2eOperation,inspectFixedWriterAcceptance,runFixedWriterAcceptance} from '../packages/zola-release/production-acl-writer.js';
 
 function fixture(){
  const input={releaseSha:'a'.repeat(40),previousMainSha:'b'.repeat(40),recoverySha:'c'.repeat(40),
-  protectedInputDigest:hash('protected'),workspace:'blackspire-command',principal:'zola-release',inputDigest:hash('input')};
+  protectedInputDigest:hash('protected'),workspace:'zola-production',principal:'blackspire-release-root',inputDigest:hash('input')};
  const operationId=randomUUID(),attemptId=randomUUID(),checkOutputDigest=hash('check');
  const start={schema:4,type:'sequence_started',operationId,...input,registryDigest:RELEASE_REGISTRY_DIGEST},events=[start];
  for(let ordinal=0;ordinal<9;ordinal++){
@@ -23,14 +23,15 @@ function fixture(){
  events.push({schema:4,type:'sequence_stage_intent',operationId,ordinal:9,stage:'bounded_writer_e2e',attemptId,inputDigest,checkOutputDigest});
  const bound={releaseSha:input.releaseSha,operationId,workspace:input.workspace,principal:input.principal,attemptId,inputDigest,checkOutputDigest};
  const stream={events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))};
- const target={schema:1,kind:'zola_bounded_writer_acceptance_target',releaseSha:input.releaseSha,workspace:input.workspace,
+ const target={schema:1,kind:'zola_bounded_writer_acceptance_target',releaseSha:input.releaseSha,workspace:'blackspire-command',
   principal:input.principal,capability:'buyer.writer.acceptance',jobId:randomUUID(),ownerId:randomUUID(),
   criteria:{state:'GA',county:'Fulton',property_type:'all',date_range_start:'2000-01-01',date_range_end:'2000-01-01',
    min_purchases:1,cash_buyers_only:false,llc_buyers_only:false},updatedAt:'2026-09-11T12:34:56.123456Z'};
  const configuration={issuer:'zola-control',audience:'buyer-writer',subject:target.ownerId,keyId:'active',
-  origin:'https://writer.example',releaseSha:input.releaseSha,operationId:randomUUID(),attemptId:randomUUID(),workspace:input.workspace};
+  origin:'https://writer.example',releaseSha:input.releaseSha,operationId:randomUUID(),attemptId:randomUUID(),workspace:'blackspire-command'};
  const originals=[],receipts=new Map();let lost=null,denyRecovery=false,dispatchId;
- const open=async()=>createBuyerWriterAdmittedLocalClient({configuration,
+ const open=async binding=>{assert.equal(binding.workspace,'blackspire-command');assert.equal(binding.releaseSha,input.releaseSha);
+  assert.equal(binding.operationId,operationId);assert.equal(binding.principal,input.principal);return createBuyerWriterAdmittedLocalClient({configuration,
   signer:{sign:envelope=>({origin:configuration.origin,method:'POST',path:'/rest/v1/rpc/'+envelope.operation,
    body:JSON.stringify(envelope),token:'fixture-signature'})},
   client:{isHealthy:()=>true,close:async()=>{},checkAvailability:async()=>true,runtimeQuery:async()=>{throw Error('legacy');},
@@ -56,13 +57,13 @@ function fixture(){
     receipts.set(envelope.jti,{result,operation:envelope.operation,requestId:envelope.requestId,bodyDigest:hash(request.body.toString())});
     if(lost===envelope.operation){denyRecovery=true;throw Error('lost ack');}
     return {status:200,body:{...result,automaticRetry:false}};
-   }}});
+   }}});};
  const host={groupId:0,admissionJournal:stream,readAcceptanceSnapshot:()=>({value:target,identity:{}}),openAdmittedClient:open};
  const operation=()=>createBoundedWriterE2eOperation({inspectAcceptance:b=>inspectFixedWriterAcceptance(b,host),
   runAcceptance:r=>runFixedWriterAcceptance(r,host)});
  const call={input,state:{context:{operationId,releaseSha:input.releaseSha,workspace:input.workspace,principal:input.principal}},
   attemptId,inputDigest,checkOutputDigest};
- return {events,stream,bound,operation,call,originals,host,lose:value=>{lost=value;},restore:()=>{denyRecovery=false;}};
+ return {events,stream,bound,target,operation,call,originals,host,lose:value=>{lost=value;},restore:()=>{denyRecovery=false;}};
 }
 
 test('bounded writer persists actual client handles then recovers correlated original receipt chain',async()=>{
@@ -127,4 +128,33 @@ test('absent installed admitted opener blocks check before transport or mutation
  const f=fixture();delete f.host.openAdmittedClient;
  assert.deepEqual(await f.operation().check(f.call),{status:'BLOCKED_EXTERNAL'});
  assert.deepEqual(f.originals,[]);
+});
+
+test('writer target namespace stays distinct from release journal and rejects authority drift',async()=>{
+ const f=fixture();await f.operation().execute(f.call);
+ const handles=f.events.filter(row=>row.type==='bounded_writer_admission_handle');
+ assert.ok(handles.length>0);
+ for(const row of handles){assert.equal(row.workspace,'zola-production');assert.equal(row.handle.authority.workspace,'blackspire-command');}
+ for(const [key,value] of [['workspace','zola-production'],['principal','another-principal'],['releaseSha','f'.repeat(40)]]){
+  const denied=fixture();denied.target[key]=value;
+  await assert.rejects(()=>denied.operation().execute(denied.call));
+  assert.deepEqual(denied.originals,[]);
+ }
+});
+
+
+test('read-only handle inspector preserves validation after outer stage confirmation',async()=>{
+ assert.deepEqual(inspectBoundedWriterAdmissionHistory([]),[]);
+ const f=fixture();await f.operation().execute(f.call);await f.operation().reconcile(f.call);
+ const before=JSON.stringify(f.events),count=inspectBoundedWriterAdmissionHistory(f.events).length;
+ assert.equal(count,4);assert.equal(JSON.stringify(f.events),before);
+ const output={accepted:true},pending=f.events.find(row=>row.type==='sequence_stage_intent'&&row.stage==='bounded_writer_e2e');
+ f.events.push({...pending,type:'sequence_stage_confirmed',output,outputDigest:hash(JSON.stringify(output))});
+ assert.equal(inspectBoundedWriterAdmissionHistory(f.events).length,count);
+ const stopped={schema:4,type:'sequence_stopped',operationId:f.bound.operationId,ordinal:10,stage:RELEASE_STAGES[10],releaseState:'BLOCKED_EXTERNAL',reason:'EXTERNAL_GATE'};
+ f.events.push(stopped);assert.equal(inspectBoundedWriterAdmissionHistory(f.events).length,count);
+ const late=structuredClone(f.events);late.push(late.find(row=>row.type==='bounded_writer_admission_handle'));
+ assert.throws(()=>inspectBoundedWriterAdmissionHistory(late));
+ const tampered=structuredClone(f.events);tampered.find(row=>row.type==='bounded_writer_admission_handle').handleDigest='0'.repeat(64);
+ assert.throws(()=>inspectBoundedWriterAdmissionHistory(tampered));
 });

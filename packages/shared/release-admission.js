@@ -84,11 +84,35 @@ export function validateHeldAcceptanceActive(value,claims){
   return structuredClone(value);
 }
 
+export function validatePremergeReadClaims(value){
+ if(!value||value.kind!=='held-premerge-reads'||Object.hasOwn(value,'mergeMainSha')
+  ||!Object.hasOwn(value,'candidateSha')||JSON.stringify(value.operations)!=='["six_reads"]')refuse();
+ const {candidateSha,...rest}=value;
+ validateHeldAcceptanceClaims({...rest,kind:'held-epoch-acceptance',mergeMainSha:candidateSha,operations:[...HELD_OPERATIONS]});
+ return structuredClone(value);
+}
+export function validatePremergeReadActive(value,claims){
+ if(!value||Object.keys(value).sort().join(',')!=='attemptId,claimsDigest,expiresAt,kind,operation,permitId,schema'
+  ||value.schema!==1||value.kind!=='held-premerge-reads-active'||value.operation!=='six_reads'
+  ||value.permitId!==claims.permitId||value.claimsDigest!==heldDigest(claims)||value.expiresAt!==claims.expiresAt
+  ||!(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/).test(value.attemptId??''))refuse();
+ return structuredClone(value);
+}
+export function withHeldAcceptanceAdmission({role,token=null},fn,options){return withScopedReadAdmission({role,token,premerge:false},fn,options);}
+export function withPremergeReadAdmission({role,token=null},fn,options){return withScopedReadAdmission({role,token,premerge:true},fn,options);}
+const heldReceiverStorage=new AsyncLocalStorage();
+export const heldReceiverContext=()=>{const value=heldReceiverStorage.getStore();return value?.active===true?value.scope:null;};
+// The authenticated consumer endpoint alone uses this scope. It is deliberately
+// separate from task/public admission and confers no generic HELD authorization.
+export function withHeldReceiverAdmission(authority,fn,options){
+ return withScopedReadAdmission({role:'api',receiverAuthority:authority},fn,options);
+}
+
 // Narrow post-merge acceptance admission. It never changes the global HELD
 // state. The API must prove the opaque permit token; the worker can process
 // only the six exact task keys from the protected claims file. A shared lease
 // spans the entire async operation and therefore blocks OPEN publication.
-export function withHeldAcceptanceAdmission({role,token=null},fn,{root=RELEASE_ADMISSION_ROOT,now=Date.now,
+function withScopedReadAdmission({role,token=null,premerge,receiverAuthority=null},fn,{root=RELEASE_ADMISSION_ROOT,now=Date.now,
   required=releaseAdmissionRequired,acquire=acquireReleaseAdmissionLock,context=currentReleaseAdmissionContext,read=file=>{
     const stat=fs.lstatSync(file);return readRootOwnedJson(file,{groupId:stat.gid,maxBytes:16384});
   }}={}){
@@ -98,24 +122,79 @@ export function withHeldAcceptanceAdmission({role,token=null},fn,{root=RELEASE_A
     const binding=context();if(binding.role!==role)refuse();
     const stateFile=path.join(root,'state.json'),stateStat=fs.lstatSync(stateFile);
     lease=acquire({root,exclusive:false,allowPending:true,owner:0,groupId:stateStat.gid});lease.assertIdentity();
-    const state=validateReleaseAdmissionState(read(stateFile)),claims=validateHeldAcceptanceClaims(read(path.join(root,'acceptance.json')));
-    const active=validateHeldAcceptanceActive(read(path.join(root,HELD_ACCEPTANCE_ACTIVE_FILE)),claims);
-    if(state.mode!=='held'||state.releaseSha!==claims.mergeMainSha||state.runId!==claims.epochRunId
-      ||state.apiGeneration!==claims.apiGeneration||state.workerGeneration!==claims.workerGeneration
-      ||binding.releaseSha!==claims.mergeMainSha||binding.runId!==claims.epochRunId
+    const state=validateReleaseAdmissionState(read(stateFile));
+    if(receiverAuthority)premerge=state.apiGeneration===null&&state.workerGeneration===null;
+    const claims=(premerge?validatePremergeReadClaims:validateHeldAcceptanceClaims)(read(path.join(root,premerge?'premerge-reads.json':'acceptance.json')));
+    const active=(premerge?validatePremergeReadActive:validateHeldAcceptanceActive)(read(path.join(root,premerge?'premerge-reads-active.json':HELD_ACCEPTANCE_ACTIVE_FILE)),claims);
+    const releaseSha=premerge?claims.candidateSha:claims.mergeMainSha;
+    if(state.mode!=='held'||state.releaseSha!==releaseSha||state.runId!==claims.epochRunId
+      ||(premerge?(state.apiGeneration!==null||state.workerGeneration!==null):(state.apiGeneration!==claims.apiGeneration||state.workerGeneration!==claims.workerGeneration))
+      ||binding.releaseSha!==releaseSha||binding.runId!==claims.epochRunId
       ||binding.apiGeneration!==claims.apiGeneration||binding.workerGeneration!==claims.workerGeneration||now()>=claims.expiresAt||now()>=active.expiresAt)refuse();
-    if(role==='api'){
+    if(receiverAuthority){
+      const a=receiverAuthority;
+      if(a.releaseSha!==releaseSha||a.releaseRunId!==claims.epochRunId||a.apiGeneration!==claims.apiGeneration||a.workerGeneration!==claims.workerGeneration
+        ||a.workspaceId!==claims.workspace||a.principalId!==claims.principal||!claims.reads.some(row=>row.capability===a.capabilityId&&row.permission===a.permission))refuse();
+    }else if(role==='api'){
       const supplied=Buffer.from(heldDigest(String(token??'')),'hex'),expected=Buffer.from(claims.tokenDigest,'hex');
       if(typeof token!=='string'||token.length!==43||!timingSafeEqual(supplied,expected))refuse();
     }
     const scoped=Object.freeze({role,permitId:claims.permitId,attemptId:active.attemptId,operation:active.operation,workspace:claims.workspace,principal:claims.principal,
       taskKeys:Object.freeze(claims.reads.map(row=>`unified:jarvis:${row.idempotencyKey}`)),reads:Object.freeze(claims.reads)});
+    if(receiverAuthority){
+      const receiver={active:true,scope:scoped};
+      const verify=()=>{lease.assertIdentity();const current=context();
+        if(!['role','releaseSha','runId','apiGeneration','workerGeneration'].every(key=>current[key]===binding[key])||now()>=claims.expiresAt||now()>=active.expiresAt)refuse();};
+      try{verify();const result=heldReceiverStorage.run(receiver,fn);
+        // Consumption is a synchronous database transaction. Never let a callback
+        // lease escape into an asynchronous continuation with authority attached.
+        if(result&&typeof result.then==='function')refuse();verify();return result;
+      }finally{receiver.active=false;lease.close();}
+    }
     const result=heldAcceptanceStorage.run(scoped,fn);
     if(result&&typeof result.then==='function')return Promise.resolve(result).finally(()=>lease.close());
     lease.close();return result;
   }catch{lease?.close();refuse();}
 }
 export const heldAcceptanceContext=()=>heldAcceptanceStorage.getStore()??null;
+
+// This scope permits only the authenticated API writer-preparation observer.
+// It is deliberately not consulted by ordinary admission or public readiness.
+const heldWriterPreparationStorage=new AsyncLocalStorage();
+export const heldWriterPreparationContext=()=>{
+  const scoped=heldWriterPreparationStorage.getStore();
+  return scoped?.active===true?scoped.binding:null;
+};
+export function withHeldWriterPreparation(fn,{required=releaseAdmissionRequired,
+  acquire=acquireReleaseAdmissionLock,context=currentReleaseAdmissionContext,
+  readState=()=>readRootOwnedJson(path.join(RELEASE_ADMISSION_ROOT,'state.json'),
+    {groupId:process.getgid(),maxBytes:2048})}={}){
+  let lease,scoped;
+  const close=()=>{if(scoped)scoped.active=false;lease?.close();};
+  try{
+    if(typeof fn!=='function')refuse();
+    if(!required())return fn();
+    lease=acquire({exclusive:false,allowPending:true});
+    const binding=structuredClone(context()),state=validateReleaseAdmissionState(readState());
+    const verify=()=>{
+      lease.assertIdentity();
+      const current=context(),observed=validateReleaseAdmissionState(readState());
+      if(binding.role!=='api'||binding.generation!==binding.apiGeneration
+        ||![binding.apiGeneration,binding.workerGeneration].every(v=>/^[a-f0-9]{32}$/.test(v??''))
+        ||binding.apiGeneration===binding.workerGeneration||state.mode!=='held'
+        ||state.releaseSha!==binding.releaseSha||state.runId!==binding.runId
+        ||!(state.apiGeneration===null&&state.workerGeneration===null
+          ||state.apiGeneration===binding.apiGeneration&&state.workerGeneration===binding.workerGeneration)
+        ||!['role','releaseSha','generation','runId','apiGeneration','workerGeneration'].every(k=>current[k]===binding[k])
+        ||!['version','mode','releaseSha','runId','apiGeneration','workerGeneration'].every(k=>observed[k]===state[k]))refuse();
+    };
+    verify();scoped={active:true,binding:Object.freeze(binding)};
+    const result=heldWriterPreparationStorage.run(scoped,fn);
+    if(result&&typeof result.then==='function')return Promise.resolve(result)
+      .then(value=>{verify();return value;}).finally(close);
+    verify();close();return result;
+  }catch{close();refuse();}
+}
 
 export function releaseAdmissionRequired(env=process.env) {
   return env.NODE_ENV==='production'||env.BLACKSPIRE_RUNTIME_MODE==='production'||env.BLACKSPIRE_STATE_OWNER==='vps-production'||env.BLACKSPIRE_RELEASE_RUN_ID!==undefined;

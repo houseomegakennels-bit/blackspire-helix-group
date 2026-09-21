@@ -1,8 +1,9 @@
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {hash} from './commander-journal.js';
-import {inspectReleaseSequence} from './commander-sequence.js';
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {HELD_ACCEPTANCE_CAPABILITIES,inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 import {compareDivisionSnapshots,validateOwnerWitness} from '../zola-six-reads/database-observer.js';
 import {digest as collectorDigest} from '../zola-six-reads/collector.js';
@@ -26,9 +27,9 @@ function invocation(context,call,operation,{attempt=true}={}){
  const merged=state?.outputs?.capture_new_main_sha?.newMainSha;
  if(!sha(merged)||held.status!=='CONSUMING'||held.pending?.operation!==operation||!claims||claims.commanderRunId!==operationId
   ||claims.mergeMainSha!==merged||claims.expectedDeploymentSha!==merged
-  ||claims.workspace!==input.workspace||claims.principal!==input.principal||!uuid(claims.epochRunId))reject();
- return{releaseSha:merged,operationId,stageAttemptId:attempt?call.attemptId:null,workspace:input.workspace,
-  principal:input.principal,epochRunId:claims.epochRunId,apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration,held,events};
+  ||!isProductionAcceptanceIdentity(claims)||!uuid(claims.epochRunId))reject();
+ return{releaseSha:merged,operationId,stageAttemptId:attempt?call.attemptId:null,workspace:claims.workspace,
+  principal:claims.principal,epochRunId:claims.epochRunId,apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration,held,events};
 }
 
 function secureFile(filename,root){
@@ -147,7 +148,7 @@ function mutationEvidence(context,binding,source){
  if(compared.netMutationDelta!==0||compared.tupleVersionDelta!==0||!after[0].evidence
   ||Object.entries(compared).some(([key,value])=>JSON.stringify(after[0].evidence[key])!==JSON.stringify(value))
   ||typeof after[0].evidence.ownerDenial!=='string'||typeof after[0].evidence.ownerScope!=='string')reject();
- const sequence=inspectReleaseSequence(context.journal.stream('release').events()),writer=sequence.outputs.bounded_writer_e2e;
+ const sequence=inspectReleaseSequenceHistory(context.journal.stream('release').events()),writer=sequence.outputs.bounded_writer_e2e;
  if(sequence.context.operationId!==binding.operationId||writer?.boundedWriterAcceptance!==true||writer.businessRowsChanged!==0
   ||writer.compensationComplete!==true||!digest(writer.receiptDigest)||!sequence.outputs.production_migrations||!sequence.outputs.migration_postconditions)reject();
  const allowedChanges={migrationDigest:hash({apply:sequence.outputs.production_migrations,postconditions:sequence.outputs.migration_postconditions}),

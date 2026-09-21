@@ -30,13 +30,54 @@ const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const reject=()=>{throw new Error('Release sequence rejected; retain journal and reconcile');};
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 
+// Frozen historical registry: accepted only as stopped, observation-only history.
+// Never derive old ordinals from the current registry or caller-controlled input.
+const HISTORICAL_STAGES=Object.freeze([
+ 'exact_sha_verification','receiver_audit','vercel_exact_head_preview','provider_acl_check','n8n_backup_check',
+ 'candidate_six_reads','admission_lease','generation_revalidation','n8n_migration','bounded_writer_e2e',
+ 'migration_preflight','production_migrations','migration_postconditions','six_reads','rollback_acceptance',
+ 'ci_security','final_diff','expected_head_merge','capture_new_main_sha','verify_main','verify_vercel_production_sha',
+ 'journaled_vps_cutover','post_merge_held_epoch','mint_acceptance_permit','api_health','worker_readiness',
+ 'generation_fence','six_live_reads','production_smoke','zero_paid_nexus','zero_unintended_mutation',
+ 'rollback_verification','final_release_record','guarded_held_to_open',
+]);
+const HISTORICAL_REGISTRY_DIGEST='9120f95adee2011d44979c4eab4b83f4ab7f35295cc2a2c86871c736da313916';
+
 export function inspectReleaseSequence(events){
+ return inspectSequenceRegistry(events,RELEASE_STAGES,RELEASE_REGISTRY_DIGEST);
+}
+
+// Explicit compatibility boundary. Validate every historical row with its own
+// original registry, then discard its observations from executable current state.
+// The original on-disk rows and hash chain remain untouched.
+export function inspectReleaseSequenceHistory(events){
+ const rows=events.filter(row=>String(row?.type??'').startsWith('sequence_'));
+ if(!rows.length||rows[0]?.registryDigest===RELEASE_REGISTRY_DIGEST)return inspectReleaseSequence(events);
+ if(rows.length>4096||hash(HISTORICAL_STAGES.map((stage,ordinal)=>({ordinal,stage,mutating:MUTATING_STAGES.has(stage)})))!==HISTORICAL_REGISTRY_DIGEST)reject();
+ const next=rows.findIndex(row=>row.type==='sequence_started'&&row.registryDigest===RELEASE_REGISTRY_DIGEST);
+ const historical=next<0?rows:rows.slice(0,next),current=next<0?[]:rows.slice(next);
+ const identities=new Set();
+ for(const row of historical){
+  if(row.type==='sequence_started'){
+   if(identities.has(row.operationId)||row.inputDigest!==hash({releaseSha:row.releaseSha,previousMainSha:row.previousMainSha,
+    recoverySha:row.recoverySha,protectedInputDigest:row.protectedInputDigest,workspace:row.workspace,principal:row.principal}))reject();
+   identities.add(row.operationId);
+  }else if(!['sequence_stage_confirmed','sequence_stopped'].includes(row.type)||row.type==='sequence_stage_confirmed'&&MUTATING_STAGES.has(row.stage))reject();
+ }
+ const old=inspectSequenceRegistry(historical,HISTORICAL_STAGES,HISTORICAL_REGISTRY_DIGEST);
+ if(!old.started||old.completed||old.pending||old.mutationState!==false||historical.at(-1)?.type!=='sequence_stopped')reject();
+ if(current.some(row=>row.type==='sequence_started'&&identities.has(row.operationId)))reject();
+ // Empty current history forces a fresh start, even for identical input identity.
+ return inspectReleaseSequence(current);
+}
+
+function inspectSequenceRegistry(events,stages,registryDigest){
  const rows=events.filter(row=>String(row?.type??'').startsWith('sequence_'));
  if(!rows.length)return Object.freeze({started:false,completed:false,nextOrdinal:0,pending:null,mutationState:false,context:null,outputs:Object.freeze({})});
  const validateStart=start=>{
   if(!exact(start,['schema','type','operationId','releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest','registryDigest'])||start.schema!==4||start.type!=='sequence_started'
    ||!uuid(start.operationId)||![start.releaseSha,start.previousMainSha,start.recoverySha].every(sha)||!digest(start.protectedInputDigest)||!digest(start.inputDigest)
-   ||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.workspace)||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.principal)||start.registryDigest!==RELEASE_REGISTRY_DIGEST)reject();
+   ||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.workspace)||!(/^[a-z][a-z0-9-]{2,63}$/).test(start.principal)||start.registryDigest!==registryDigest)reject();
  };
  let start=rows[0];validateStart(start);
  let ordinal=0,pending=null,completed=false,newMainSha=null,outputs={},lastType='sequence_started',mutationSeen=false;
@@ -49,14 +90,14 @@ export function inspectReleaseSequence(events){
   }
   if(row.operationId!==start.operationId)reject();
   if(row.type==='sequence_stage_intent'){
-   if(row.schema!==4||pending||ordinal>=RELEASE_STAGES.length||!MUTATING_STAGES.has(RELEASE_STAGES[ordinal])
+   if(row.schema!==4||pending||ordinal>=stages.length||!MUTATING_STAGES.has(stages[ordinal])
     ||!exact(row,['schema','type','operationId','ordinal','stage','attemptId','inputDigest','checkOutputDigest'])||row.ordinal!==ordinal
-    ||row.stage!==RELEASE_STAGES[ordinal]||!uuid(row.attemptId)||!digest(row.inputDigest)||!digest(row.checkOutputDigest)
+    ||row.stage!==stages[ordinal]||!uuid(row.attemptId)||!digest(row.inputDigest)||!digest(row.checkOutputDigest)
     ||row.inputDigest!==hash({sequence:start.inputDigest,stage:row.stage,ordinal:row.ordinal,check:row.checkOutputDigest}))reject();
    pending=row;mutationSeen=true;
   }else if(row.type==='sequence_stage_confirmed'){
-   if(row.schema!==4||ordinal>=RELEASE_STAGES.length||!exact(row,['schema','type','operationId','ordinal','stage','attemptId','inputDigest','checkOutputDigest','outputDigest','output'])
-    ||row.ordinal!==ordinal||row.stage!==RELEASE_STAGES[ordinal]||!digest(row.inputDigest)||!digest(row.checkOutputDigest)||!digest(row.outputDigest)
+   if(row.schema!==4||ordinal>=stages.length||!exact(row,['schema','type','operationId','ordinal','stage','attemptId','inputDigest','checkOutputDigest','outputDigest','output'])
+    ||row.ordinal!==ordinal||row.stage!==stages[ordinal]||!digest(row.inputDigest)||!digest(row.checkOutputDigest)||!digest(row.outputDigest)
     ||row.inputDigest!==hash({sequence:start.inputDigest,stage:row.stage,ordinal:row.ordinal,check:row.checkOutputDigest}))reject();
    if(MUTATING_STAGES.has(row.stage)){
     if(!pending||row.attemptId!==pending.attemptId||row.inputDigest!==pending.inputDigest||row.checkOutputDigest!==pending.checkOutputDigest)reject();pending=null;
@@ -65,16 +106,16 @@ export function inspectReleaseSequence(events){
    outputs[row.stage]=structuredClone(row.output);ordinal++;
   }else if(row.type==='sequence_stopped'){
    if(row.schema!==4||!exact(row,['schema','type','operationId','ordinal','stage','releaseState','reason'])
-    ||row.ordinal!==ordinal||row.stage!==RELEASE_STAGES[ordinal]
+    ||row.ordinal!==ordinal||row.stage!==stages[ordinal]
     ||!['FAIL_CLOSED','BLOCKED_EXTERNAL'].includes(row.releaseState)
     ||typeof row.reason!=='string'||!(/^[A-Z][A-Z0-9_]{2,80}$/).test(row.reason))reject();
   }else if(row.type==='sequence_completed'){
-   if(row.schema!==4||pending||ordinal!==RELEASE_STAGES.length||completed
+   if(row.schema!==4||pending||ordinal!==stages.length||completed
     ||!exact(row,['schema','type','operationId','releaseSha','newMainSha','resultDigest'])
     ||row.releaseSha!==start.releaseSha||!sha(row.newMainSha)||!digest(row.resultDigest))reject();
    const captured=outputs.capture_new_main_sha,opened=outputs.guarded_held_to_open;
    if(captured?.newMainSha!==row.newMainSha||opened?.open!==true||opened?.newMainSha!==row.newMainSha
-    ||row.resultDigest!==hash({inputDigest:start.inputDigest,newMainSha:row.newMainSha,stages:RELEASE_STAGES}))reject();
+    ||row.resultDigest!==hash({inputDigest:start.inputDigest,newMainSha:row.newMainSha,stages:stages}))reject();
    completed=true;newMainSha=row.newMainSha;
   }else reject();
   lastType=row.type;
@@ -113,15 +154,15 @@ export async function runReleaseSequence({input,journal,adapters}){
    ||!digest(input.protectedInputDigest)||!(/^[a-z][a-z0-9-]{2,63}$/).test(input.workspace)||!(/^[a-z][a-z0-9-]{2,63}$/).test(input.principal)
    ||input.inputDigest!==hash({releaseSha:input.releaseSha,previousMainSha:input.previousMainSha,recoverySha:input.recoverySha,protectedInputDigest:input.protectedInputDigest,workspace:input.workspace,principal:input.principal})||!adapters||typeof adapters!=='object'
    ||Object.keys(adapters).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))reject();
-  state=inspectReleaseSequence(stream.events());
+  state=inspectReleaseSequenceHistory(stream.events());
   wasStarted=state.started;
   if(!state.started){
-   const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequence(stream.events());
+   const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequenceHistory(stream.events());
   }else if(!['releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest'].every(key=>state.context[key]===input[key])){
    const sequenceRows=stream.events().filter(row=>String(row?.type??'').startsWith('sequence_')),last=sequenceRows.at(-1);
    if(state.pending||state.mutationState!==false||last?.type!=='sequence_stopped'
     ||last.operationId!==state.context.operationId)reject();
-   const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequence(stream.events());
+   const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequenceHistory(stream.events());
   }
   if(state.completed)return{status:'COMPLETE',releaseState:'PASS',releaseSha:input.releaseSha,newMainSha:state.context.newMainSha,resumed:true};
   for(let ordinal=state.nextOrdinal;ordinal<RELEASE_STAGES.length;ordinal++){
@@ -139,7 +180,7 @@ export async function runReleaseSequence({input,journal,adapters}){
     if(!attempt){
      const inputDigest=hash({sequence:input.inputDigest,stage,ordinal,check:checkedProof.outputDigest}),attemptId=randomUUID();
      attempt={schema:4,type:'sequence_stage_intent',operationId:state.context.operationId,ordinal,stage,attemptId,inputDigest,checkOutputDigest:checkedProof.outputDigest};stream.append(attempt);
-     state=inspectReleaseSequence(stream.events());
+     state=inspectReleaseSequenceHistory(stream.events());
      try{await adapter.execute({input,state,ordinal,attemptId,inputDigest,checkOutputDigest:attempt.checkOutputDigest});}
      catch{return stopped('FAIL_CLOSED','MUTATION_OUTCOME_UNKNOWN',stage,null);}
     }
@@ -151,7 +192,7 @@ export async function runReleaseSequence({input,journal,adapters}){
    const observedProof=proof(observed);
    stream.append({schema:4,type:'sequence_stage_confirmed',operationId:state.context.operationId,ordinal,stage,
     attemptId:attempt?.attemptId??null,inputDigest,checkOutputDigest,...observedProof});
-   state=inspectReleaseSequence(stream.events());
+   state=inspectReleaseSequenceHistory(stream.events());
   }
   const newMainSha=state.outputs.capture_new_main_sha?.newMainSha;
   if(!sha(newMainSha)||state.outputs.guarded_held_to_open?.open!==true||state.outputs.guarded_held_to_open?.newMainSha!==newMainSha)reject();

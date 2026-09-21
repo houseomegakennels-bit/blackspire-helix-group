@@ -1,3 +1,4 @@
+import pg from 'pg';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ import https from 'node:https';
 import { EventEmitter } from 'node:events';
 import { digest, validateCollectorConfig, collectSixReads } from '../packages/zola-six-reads/collector.js';
 import { DIVISION_TABLES } from '../packages/zola-six-reads/database-observer.js';
-import { createJournaledConnectedObserver, CONNECTED_OBSERVER_ENDPOINT } from '../packages/zola-six-reads/database-connected.js';
+import { createJournaledConnectedObserver, CONNECTED_OBSERVER_ENDPOINT, CONNECTED_NATIVE_OBSERVER_ENDPOINT } from '../packages/zola-six-reads/database-connected.js';
 import { createProductionConnectedDatabaseObserver } from '../packages/zola-six-reads/database-connected-host.js';
 import { openCollectorJournal } from '../packages/zola-six-reads/collector-host.js';
 const config={version:3,releaseSha:'a'.repeat(40),runId:'connected-fixture',frontendOrigin:'https://example.test',workspace:'workspace',principal:'owner',deniedPrincipal:'other',dealId:'DE-0001',apiPid:10,workerPid:11,port:1234,databasePath:'/protected/db',credentialPath:'/protected/credential',journalDirectory:'/protected/journal',observerDatabaseConfigPath:'/protected/observer'};
@@ -100,5 +101,30 @@ for(const scenario of ['success','redirect','oversize','error','malformed','wron
   const observe=createProductionConnectedDatabaseObserver(c);
   if(scenario==='success'){assert.equal((await observe('before',context(store))).snapshot.role,'postgres');assert.equal(calls,2);assert.ok(!JSON.stringify(store.events()).includes('isolated-test-token'));}
   else {await assert.rejects(observe('before',context(store)),/^Error: CONNECTED_OBSERVER_FAILED$/);await assert.rejects(observe('before',context(store)),/OUTCOME_UNKNOWN/);assert.equal(calls,1);}
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const scenario of ['success','success-v5','query-error','oversize','wrong-host','wrong-ca','extra-credential'])test(`native connected fixed TLS host ${scenario}`,{skip:process.getuid()!==0},async t=>{
+ const dir=fs.mkdtempSync('/root/zola-native-connected-test-');fs.chmodSync(dir,0o700);
+ const credential=path.join(dir,'credential.json');
+ const value={host:'db.kchtrvfcixnimvxxctkj.supabase.co',password:'synthetic-native-password-no-authority',ca:fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8')};
+ if(scenario==='wrong-host')value.host='other.invalid';if(scenario==='wrong-ca')value.ca+='tampered';if(scenario==='extra-credential')value.ssl=false;
+ fs.writeFileSync(credential,JSON.stringify(value),{mode:0o600});
+ const c={...config,version:scenario==='success-v5'?5:4,observerDatabaseConfigPath:credential},store=memory();store.raw[0].binding=digest(c);let calls=0,closed=0;
+ const originalClient=pg.Client;t.after(()=>{pg.Client=originalClient;});pg.Client=class extends EventEmitter{
+  constructor(options){super();assert.equal(options.host,'db.kchtrvfcixnimvxxctkj.supabase.co');assert.equal(options.user,'postgres');assert.equal(options.database,'postgres');assert.equal(options.port,5432);
+   assert.deepEqual(options.ssl,{rejectUnauthorized:true,ca:value.ca});assert.equal(options.options,'-c default_transaction_read_only=on');assert.equal(options.query_timeout,20000);assert.equal(options.connectionTimeoutMillis,5000);assert.equal(options.connectionString,undefined);}
+  async connect(){}
+  async query(query){if(query==='ROLLBACK')return{rows:[]};calls++;assert.equal(store.events().at(-1).queryDigest,digest(query));assert.match(query,/BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/);assert.ok(query.endsWith('ROLLBACK;'));
+   if(scenario==='query-error')throw Error('private database failure');const observed=response(query);if(scenario==='oversize')observed.private='x'.repeat(65537);
+   return[{rows:[]},{rows:[{observation:observed}]},{rows:[]}];}
+  async end(){closed++;}
+ };
+ try{
+  const observe=createProductionConnectedDatabaseObserver(c);
+  if(scenario.startsWith('success')){const first=await observe('before',context(store));assert.equal(first.owner.foreignVisible,0);assert.equal(calls,2);assert.equal(closed,2);assert.equal(store.events()[1].binding.endpoint,CONNECTED_NATIVE_OBSERVER_ENDPOINT);
+   assert.deepEqual(await observe('before',context(store)),first);assert.equal(calls,2);assert.ok(!JSON.stringify(store.events()).includes(value.password));
+   store.raw[1].binding.endpoint=CONNECTED_OBSERVER_ENDPOINT;await assert.rejects(observe('before',context(store)),/INTENT_BINDING/);
+  }else{await assert.rejects(observe('before',context(store)),/^Error: CONNECTED_OBSERVER_FAILED$/);await assert.rejects(observe('before',context(store)),/OUTCOME_UNKNOWN/);assert.equal(calls,['query-error','oversize'].includes(scenario)?1:0);}
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

@@ -1,4 +1,4 @@
-import { withReleaseAdmission } from '../shared/release-admission.js';
+import { withReleaseAdmission,withHeldWriterPreparation } from '../shared/release-admission.js';
 import http from 'node:http';
 import { authenticateWriterRequest, createWriterGateway, createWriterReceiptGateway, createWriterContextGateway } from './gateway.js';
 import { WriterProtocolError } from './protocol.js';
@@ -7,7 +7,7 @@ import { authenticateBuyerIssuer, createBuyerIssuer, createBuyerReconciler } fro
 // Explicit composition only: the caller owns the dedicated database connection,
 // listener binding, TLS ingress and authoritative availability/stop observation.
 // No production configuration or credential file is loaded by this module.
-export function createBuyerWriterRequestHandler({credential,workspace,query,isAvailable,isPrepared,issuer},{admit=withReleaseAdmission}={}) {
+export function createBuyerWriterRequestHandler({credential,workspace,query,isAvailable,isPrepared,issuer},{admit=withReleaseAdmission,prepareAdmit=withHeldWriterPreparation}={}) {
   if(typeof isAvailable!=='function') throw new TypeError('Buyer writer availability check required');
   const operations=createWriterGateway({credential,workspace,query});
   const receipts=createWriterReceiptGateway({credential,workspace,query});
@@ -60,7 +60,7 @@ export function createBuyerWriterRequestHandler({credential,workspace,query,isAv
         if(preparation){
           // Preparation grants no write authority and never calls a database
           // routine. Commitment remains mandatory for every operation below.
-          if(stopped||await isPrepared()!==true||stopped)return deny(503);
+          if(stopped||await prepareAdmit(()=>isPrepared())!==true||stopped)return deny(503);
           if(!disconnected)reply(200,{ok:true,prepared:true});
           return;
         }

@@ -1,9 +1,13 @@
+import {migrationProviderFixture} from './helpers/migration-provider-fixture.js';
+import {prepareBuyerWriterExtensionAcl} from '../packages/buyer-writer/extension-acl.js';
+import {prepareBuyerMigrationPackage} from '../packages/buyer-writer/migration-package.js';
+import {prepareBuyerMigrationExecution} from '../packages/buyer-writer/migration-executor.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {hash} from '../packages/zola-release/commander-journal.js';
 import {WORKFLOW_ID} from '../packages/zola-release/commander-n8n.js';
-import {createN8nMigrationProductionOperations} from '../packages/zola-release/production-n8n-migration.js';
+import {createN8nMigrationProductionOperations,prepareProductionMigrationInput} from '../packages/zola-release/production-n8n-migration.js';
 
 const releaseSha='a'.repeat(40);
 function fixture(){
@@ -68,9 +72,13 @@ test('fixed n8n reconciliation retains the same stage attempt and never retries 
 
 test('fixed native migration apply and unknown-outcome reconciliation use durable release history',async()=>{
  const f=fixture(),calls=[];
- const migrationInput={releaseSha,databaseConfigPath:'/fixed/db.json'};
- const verified={releaseSha,status:'PACKAGE_VERIFIED_EXECUTION_GATED',manifestSha256:'2'.repeat(64),bodySha256:'3'.repeat(64),nativeSqlSha256:'4'.repeat(64),connectedQuerySha256:'5'.repeat(64),projectId:'fixed'};
- const execute=async({mode,journal})=>{
+ const migrationInput={releaseSha,creatorOid:10,providerManifest:prepareBuyerWriterExtensionAcl(migrationProviderFixture()).manifest};
+ const prepared=prepareBuyerMigrationPackage(migrationInput);
+ const files={'migration-manifest.json':prepared.manifestBytes,'application-body.sql':prepared.body,'application.sql':prepared.sql};
+ const verified={bodySha256:hash(prepared.body),manifestSha256:hash(prepared.manifestBytes)};
+ const execute=async({input,mode,journal})=>{
+  assert.equal(prepareBuyerMigrationExecution(input).bodySha256,verified.bodySha256);
+  assert.equal(Object.hasOwn(input,'databaseConfigPath'),false);
   calls.push(mode);const stream=journal.stream('release');
   if(mode==='apply'){
    const intent={schema:1,type:'release_migration_intent',operationId:randomUUID(),releaseSha,migrationVersion:'20260911000000',bodySha256:verified.bodySha256,manifestSha256:verified.manifestSha256};
@@ -78,7 +86,7 @@ test('fixed native migration apply and unknown-outcome reconciliation use durabl
   }
   const intent=stream.events().find(row=>row.type==='release_migration_intent');stream.append({...intent,type:'release_migration_result',status:'committed-history-verified'});return{status:'committed-history-verified'};
  };
- const operations=createN8nMigrationProductionOperations(f.context,{n8n:{},migration:{readMetadata:()=>migrationInput,verifyPackage:()=>verified,connect:async()=>({end:async()=>{}}),execute}});
+ const operations=createN8nMigrationProductionOperations(f.context,{n8n:{},migration:{readMetadata:()=>migrationInput,readBytes:file=>files[file.split('/').at(-1)],now:()=>new Date('2026-09-11T00:00:00Z'),connect:async()=>({end:async()=>{}}),execute}});
  const initial=await operations.production_migrations.check({...f.args,attemptId:undefined,inputDigest:undefined,checkOutputDigest:undefined});
  assert.equal(initial.evidence.migrationCommitted,false);
  await assert.rejects(operations.production_migrations.execute(f.args));
@@ -87,4 +95,36 @@ test('fixed native migration apply and unknown-outcome reconciliation use durabl
  assert.equal(proof.evidence.stageAttemptId,f.args.attemptId);
  const post=await operations.migration_postconditions.check({...f.args,attemptId:undefined,inputDigest:undefined,checkOutputDigest:undefined,ordinal:12});
  assert.equal(post.evidence.migrationStatus,'committed-history-verified');assert.deepEqual(calls,['apply','reconcile']);
+});
+
+
+test('native input accepts exact metadata only, binds package bytes, and reuses retained migration version',()=>{
+ const configuration={releaseSha,creatorOid:10,providerManifest:prepareBuyerWriterExtensionAcl(migrationProviderFixture()).manifest};
+ const prepared=prepareBuyerMigrationPackage(configuration),files={'migration-manifest.json':prepared.manifestBytes,'application-body.sql':prepared.body,'application.sql':prepared.sql};
+ const args={releaseSha,configurationFile:'/bundle/migration-input.json',mode:'apply',events:[]};
+ const deps={readMetadata:()=>configuration,readBytes:file=>files[file.split('/').at(-1)],now:()=>new Date('2026-09-21T12:34:56Z')};
+ const first=prepareProductionMigrationInput(args,deps),plan=prepareBuyerMigrationExecution(first);
+ assert.equal(first.migrationVersion,'20260921123456');assert.equal(Object.hasOwn(first,'databaseConfigPath'),false);
+ const intent={schema:1,type:'release_migration_intent',operationId:randomUUID(),...plan};
+ const resumed=prepareProductionMigrationInput({...args,mode:'reconcile',events:[intent]},{...deps,now:()=>new Date('2030-01-01T00:00:00Z')});
+ assert.equal(resumed.migrationVersion,first.migrationVersion);
+ assert.throws(()=>prepareProductionMigrationInput({...args,events:[intent]},deps));
+ assert.throws(()=>prepareProductionMigrationInput({...args,mode:'reconcile'},deps));
+ assert.throws(()=>prepareProductionMigrationInput(args,{...deps,readMetadata:()=>({...configuration,databaseConfigPath:'/attacker/credential.json'})}));
+ assert.throws(()=>prepareProductionMigrationInput({...args,mode:'reconcile',events:[{...intent,bodySha256:'0'.repeat(64)}]},deps));
+ const original=files['application-body.sql'];files['application-body.sql']+=' ';
+ assert.throws(()=>prepareProductionMigrationInput(args,deps));files['application-body.sql']=original;
+ let reads=0;
+ assert.throws(()=>prepareProductionMigrationInput(args,{...deps,readMetadata:()=>++reads>2?{...configuration,creatorOid:11}:configuration}));
+});
+
+test('package metadata contradiction or drift refuses before opening a management connection',async()=>{
+ const f=fixture();let connections=0;
+ const configuration={releaseSha,creatorOid:10,providerManifest:prepareBuyerWriterExtensionAcl(migrationProviderFixture()).manifest};
+ const prepared=prepareBuyerMigrationPackage(configuration),files={'migration-manifest.json':prepared.manifestBytes,'application-body.sql':prepared.body,'application.sql':prepared.sql};
+ for(const value of [{...configuration,databaseConfigPath:'/arbitrary'}, {...configuration,releaseSha:'b'.repeat(40)}]){
+  const operations=createN8nMigrationProductionOperations(f.context,{migration:{readMetadata:()=>value,readBytes:file=>files[file.split('/').at(-1)],connect:async()=>{connections++;throw new Error();}}});
+  await assert.rejects(operations.production_migrations.execute(f.args));
+ }
+ assert.equal(connections,0);
 });

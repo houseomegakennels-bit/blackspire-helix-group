@@ -1,8 +1,9 @@
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import http from 'node:http';
 import {hash} from './commander-journal.js';
 import {inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 
-export const PRODUCTION_HEALTH_URL='http://127.0.0.1:8787/health';
+export const PRODUCTION_HEALTH_URL='http://127.0.0.1:8789/health';
 const HEALTH_TIMEOUT_MS=2000;
 const HEALTH_MAX_BYTES=16384;
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
@@ -19,7 +20,7 @@ export function requestFixedProductionHealth({timeoutMs=HEALTH_TIMEOUT_MS,transp
  return new Promise((resolve,rejectRequest)=>{
   let bytes=0,settled=false;
   const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);error?rejectRequest(error):resolve(value);};
-  const request=transport.request({protocol:'http:',hostname:'127.0.0.1',port:8787,path:'/health',method:'GET',
+  const request=transport.request({protocol:'http:',hostname:'127.0.0.1',port:8789,path:'/health',method:'GET',
    timeout:timeoutMs,setHost:false,headers:{accept:'application/json','user-agent':'blackspire-zola-health/1'}},response=>{
    if(response.statusCode!==200||response.headers.location||!String(response.headers['content-type']??'').toLowerCase().startsWith('application/json')){
     response.resume();finish(new Error('HEALTH_RESPONSE_REJECTED'));return;
@@ -41,7 +42,7 @@ function claimsFor(context,state,operation){
  const merged=state?.outputs?.capture_new_main_sha?.newMainSha;
  if(!sha(merged)||history.status!=='CONSUMING'||history.pending?.operation!==operation||!claims
   ||claims.mergeMainSha!==merged||claims.expectedDeploymentSha!==merged
-  ||claims.commanderRunId!==state.context.operationId||claims.workspace!==context.input.workspace||claims.principal!==context.input.principal
+  ||claims.commanderRunId!==state.context.operationId||!isProductionAcceptanceIdentity(claims)
   ||!uuid(claims.epochRunId)||!generation(claims.apiGeneration)||!generation(claims.workerGeneration))reject();
  return{history,claims};
 }

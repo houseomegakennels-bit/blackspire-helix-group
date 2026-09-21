@@ -11,24 +11,7 @@ import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,recoverRelea
 import {inspectReleaseCommander} from '../packages/zola-release/commander.js';
 import {openReleaseJournal} from '../packages/zola-release/commander-journal.js';
 import {claimBuyerMigrationIntent,verifyOrCreateBuyerMigrationClaim} from '../packages/buyer-writer/migration-journal.js';
-const functions=['_await_response','_encode_url_with_params_array','_http_collect_response','_urlencode_string','check_worker_is_up','http_collect_response','http_delete','http_get','http_post','wait_until_running','wake','worker_restart'];
-function fixture(){
- const roles=['postgres','supabase_admin','consumer'].map((name,i)=>({name,oid:String(i+10),superuser:false,inherit:true,login:false,createRole:false,createDb:false,replication:false,bypassRls:false}));
- const objects=[...functions.map(name=>({schema:'net',name,kind:'function',arguments:'',definitionDigest:'a'.repeat(32),securityDefiner:false})),
- ...['_http_response','http_request_queue'].map(name=>({schema:'net',name,kind:'r',arguments:null,definitionDigest:null,securityDefiner:null})),
- {schema:'net',name:'http_request_queue_id_seq',kind:'S',arguments:null,definitionDigest:null,securityDefiner:null},
- ...['pg_stat_statements','pg_stat_statements_info'].map(name=>({schema:'extensions',name,kind:'v',arguments:null,definitionDigest:null,securityDefiner:null}))];
- const privileges=o=>o.kind==='function'?['EXECUTE']:o.kind==='S'?['SELECT','UPDATE','USAGE']:['DELETE','INSERT','MAINTAIN','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE'];
- for(const [i,o] of objects.entries()){
-  o.oid=String(i+100);o.owner=o.schema==='net'?'supabase_admin':'postgres';
-  const publicPrivileges=o.kind==='v'?['SELECT']:privileges(o);
-  o.edges=[...privileges(o).map(privilege=>({grantor:o.owner,grantee:o.owner,privilege,grantable:true})),...publicPrivileges.map(privilege=>({grantor:o.owner,grantee:'PUBLIC',privilege,grantable:false}))];
- }
- const columns=objects.filter(o=>['r','v'].includes(o.kind)).map(o=>({schema:o.schema,table:o.name,number:1,name:'synthetic',aclIsNull:true,edges:[]}));
- const inventory={serverVersion:'17.6',database:'fixture',roles,memberships:[],extensions:[],schemas:[],objects};
- const effective=roles.flatMap(r=>objects.flatMap(o=>privileges(o).map(p=>[r.name,o.schema,o.name,o.kind,o.arguments,p,true,r.name===o.owner])));
- return{inventory,columns:{columns},effective:{effective,schemaEffective:roles.flatMap(r=>['extensions','net'].map(s=>[r.name,s,true,false]))}};
-}
+import {migrationProviderFixture as fixture} from './helpers/migration-provider-fixture.js';
 
 const providerManifest=prepareBuyerWriterExtensionAcl(fixture()).manifest;
 const releaseSha='a'.repeat(40),migrationVersion='20260908000000',creatorOid=10;
@@ -330,4 +313,26 @@ test('protected connected history requires an object envelope and unwraps rows f
  const observation=read({rows});assert.deepEqual(Object.keys(observation),['rows']);
  assert.throws(()=>reconcileConnectedBuyerMigration(p,observation),/rejected/);
  assert.equal(reconcileConnectedBuyerMigration(p,observation.rows).status,'not-recorded-retry-not-authorized');
+});
+
+
+test('repeat native reconciliation rechecks database and fences without extending terminal history',async()=>{
+ const events=completedLifecycle(),journal={stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})};
+ const options={...authorityDeps,claim:()=>{}},initial=session();
+ assert.equal((await executeReleaseNativeMigration({input:args,client:initial,journal,mode:'apply'},options)).status,'committed');
+ assert.equal((await executeReleaseNativeMigration({input:args,client:session({prior:[initial.history]}),journal,mode:'reconcile'},options)).status,'committed-history-verified');
+ const retained=JSON.stringify(events);
+ for(const failure of ['none','missing','busy','query','fence','close']){
+  const client=session({prior:failure==='missing'?[]:[initial.history],locked:failure!=='busy',fail:failure==='query'?'BEGIN READ ONLY':''});
+  let fences=0,closes=0;
+  const acquireAuthority=async()=>({assertCurrent:async()=>{fences++;if(failure==='fence'&&fences===3)throw new Error('PRIVATE');},close(){closes++;if(failure==='close')throw new Error('PRIVATE');}});
+  const result=await executeReleaseNativeMigration({input:args,client,journal,mode:'reconcile'},{...options,acquireAuthority});
+  assert.equal(result.status,failure==='none'?'committed-history-verified':'STOPPED');
+  assert.equal(JSON.stringify(result).includes('PRIVATE'),false);assert.equal(closes,1);
+  assert.equal(client.calls[0].sql,'BEGIN READ ONLY');
+  assert.ok(!client.calls.some(row=>row.sql===prepared.body||row.sql.startsWith('INSERT INTO')));
+  assert.equal(JSON.stringify(events),retained);assert.equal(inspectReleaseMigrationState(events).lastStatus,'committed-history-verified');
+  assert.equal(inspectReleaseCommander(journal).migrationStatus,'committed-history-verified');
+  if(failure==='none')assert.ok(fences>=4);
+ }
 });

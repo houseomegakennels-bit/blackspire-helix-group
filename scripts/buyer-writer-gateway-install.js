@@ -6,19 +6,19 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {
   GATEWAY_CONFIG_PATH,GATEWAY_NODE,GATEWAY_SERVICE,assertGatewayOnlyEffects,decodeGatewayInstallState,
-  encodeGatewayInstallState,gatewayActivationActions,gatewayInstallEffects,gatewayRollbackActions,inspectGatewayArtifact,
+  encodeGatewayInstallState,encodeGatewayPreparedState,validateGatewayPreparedObservation,runGatewayUnitPreparation,gatewayActivationActions,gatewayInstallEffects,gatewayRollbackActions,inspectGatewayArtifact,
   renderGatewayUnit,validateGatewayReleaseSha,validateGatewayRestoredServiceState,validateGatewayRuntimeObservation,
 } from '../packages/buyer-writer/gateway-installation.js';
 import {inspectSealedBuyerWriterArtifact} from '../packages/buyer-writer/artifact-inspection.js';
 import {validateBuyerWriterGatewayServiceConfiguration} from '../packages/buyer-writer/gateway-entry.js';
 
 const args=process.argv.slice(2);
-const validModes=new Set(['--inspect','--install','--rollback']);
+const validModes=new Set(['--inspect','--install','--rollback','--prepare','--reconcile-prepared']);
 const fail=message=>{throw new Error(message);};
 const explicitMode=args[0]?.startsWith('--');
 const mode=explicitMode?args[0]:'--inspect';
 const sha=explicitMode?args[1]:args[0];
-if(!validModes.has(mode)||args.length!==(explicitMode?2:1))fail('usage: buyer-writer-gateway-install.js [--inspect|--install|--rollback] <full-sha>');
+if(!validModes.has(mode)||args.length!==(explicitMode?2:1))fail('usage: buyer-writer-gateway-install.js [--inspect|--install|--rollback|--prepare|--reconcile-prepared] <full-sha>');
 validateGatewayReleaseSha(sha);
 
 const releaseRoot='/opt/blackspire-command';
@@ -68,8 +68,9 @@ function acquireInstallLock(){
 }
 async function validateArtifact(){
   const proof=await inspectSealedBuyerWriterArtifact({artifactRoot:artifact,releaseSha:sha,environment:'production'});
-  return inspectGatewayArtifact({sha,releaseRoot,validateCompletedRelease:()=>proof.releaseSha===sha
+  const checked=inspectGatewayArtifact({sha,releaseRoot,validateCompletedRelease:()=>proof.releaseSha===sha
     &&proof.status==='SEALED_ARTIFACT_VERIFIED'&&proof.deployed===false&&proof.productionAccepted===false});
+  return {...checked,artifactDigest:proof.artifactDigest};
 }
 function assertRoot(){if(process.getuid?.()!==0)fail('gateway installation requires root');}
 function assertExactCleanSource(){
@@ -125,6 +126,7 @@ function validateSecretAuthority(){
     const value=validateBuyerWriterGatewayServiceConfiguration(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)));
     if(value.authority.releaseSha!==sha||value.authority.workspace!==value.workspace
       ||value.authority.gatewayIdentity!=='blackspire-writer')fail('gateway secret configuration authority rejected');
+    return createHash('sha256').update(bytes).digest('hex');
   }catch(error){if(error?.message?.startsWith('gateway secret'))throw error;fail('gateway secret configuration authority rejected');}
   finally{if(fd!==undefined)fs.closeSync(fd);}
 }
@@ -200,6 +202,55 @@ async function install(){
   atomicRootFile(unitDestination,rendered,0o644);
   run('/usr/bin/systemctl',['daemon-reload']);for(const action of gatewayActivationActions())run('/usr/bin/systemctl',action);await inspect();
 }
+function stoppedPreparationServices(){
+ for(const unit of [GATEWAY_SERVICE,'blackspire-command.service','blackspire-command-worker.service']){
+  const rows=Object.fromEntries(run('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,SubState,MainPID','--',unit]).trim().split('\n').map(s=>s.split('=')));
+  if(Object.keys(rows).length!==3||rows.ActiveState!=='inactive'||rows.SubState!=='dead'||rows.MainPID!=='0')fail('gateway preparation requires stopped services');
+ }
+ return true;
+}
+function readPreparationState(){
+ safeDirectory(stateDirectory,{mode:0o700});safeDirectory(backupDirectory,{mode:0o700});safeDestination(stateFile);
+ const stat=fs.lstatSync(stateFile);if(stat.gid!==0||stat.nlink!==1||(stat.mode&0o777)!==0o600||stat.size>8192)fail('gateway preparation state metadata rejected');
+ const state=decodeGatewayInstallState(fs.readFileSync(stateFile,'utf8'));
+ if(state.version!==4||state.sha!==sha||state.unitBackup!==null&&path.dirname(state.unitBackup)!==backupDirectory)fail('gateway preparation state binding rejected');
+ return state;
+}
+async function inspectPrepared(){
+ const state=readPreparationState(),verified=await validateArtifact();validateSecretMetadata();const configurationSha256=validateSecretAuthority();
+ safeDestination(unitDestination);const unitStat=fs.lstatSync(unitDestination);if(unitStat.gid!==0||unitStat.nlink!==1||(unitStat.mode&0o777)!==0o644)fail('gateway prepared unit metadata rejected');
+ const installedUnit=fs.readFileSync(unitDestination,'utf8');
+ if(installedUnit!==renderGatewayUnit(fs.readFileSync(unitSource,'utf8'),{sha}))fail('gateway prepared template drift');
+ let backupUnit=null;if(state.unitBackup!==null){safeDestination(state.unitBackup);const stat=fs.lstatSync(state.unitBackup);
+  if(stat.gid!==0||stat.nlink!==1||(stat.mode&0o777)!==0o600)fail('gateway preparation backup metadata rejected');backupUnit=fs.readFileSync(state.unitBackup);}
+ const daemonReloaded=run('/usr/bin/systemctl',['show','--no-pager','--property=NeedDaemonReload','--value','--',GATEWAY_SERVICE]).trim()==='no';
+ return validateGatewayPreparedObservation(state,{sha,artifactDigest:verified.artifactDigest,configurationSha256,installedUnit,backupUnit,
+  enabled:enabledState(),servicesStopped:stoppedPreparationServices(),daemonReloaded});
+}
+async function prepareUnitPlan(){
+ // Artifact and credentials already exist. Preparation never provisions identity,
+ // builds a release, changes enablement, or starts any service.
+ assertRoot();stoppedPreparationServices();const verified=await validateArtifact();validateSecretMetadata();
+ const configurationSha256=validateSecretAuthority();ensurePrivateDirectory(stateDirectory);ensurePrivateDirectory(backupDirectory);requireAbsent(stateFile);safeDestination(unitDestination);
+ let previous=null,backup=null;const previousEnabled=enabledState({allowMissing:true});
+ if(fs.existsSync(unitDestination)){previous=fs.readFileSync(unitDestination);backup=path.join(backupDirectory,`${sha}-${Date.now()}.service`);requireAbsent(backup);atomicRootFile(backup,previous,0o600);}
+ const rendered=renderGatewayUnit(fs.readFileSync(unitSource,'utf8'),{sha});
+ const state=encodeGatewayPreparedState({sha,unitBackup:backup,previousUnit:previous,installedUnit:rendered,previousEnabled,previousActive:false,
+  artifactDigest:verified.artifactDigest,configurationSha256});
+ stoppedPreparationServices();if(validateSecretAuthority()!==configurationSha256||(await validateArtifact()).artifactDigest!==verified.artifactDigest)fail('gateway preparation input drift');
+ return {state,rendered,configurationSha256,previous,previousEnabled};
+}
+
+function preparedUnitHost(){return {
+ prepare:prepareUnitPlan,
+ persist(plan){requireAbsent(stateFile);atomicRootFile(stateFile,plan.state,0o600);},
+ publish(plan){stoppedPreparationServices();if(validateSecretAuthority()!==plan.configurationSha256||enabledState({allowMissing:true})!==plan.previousEnabled)fail('gateway preparation configuration drift');
+  safeDestination(unitDestination);const previous=fs.existsSync(unitDestination)?fs.readFileSync(unitDestination):null;
+  if((previous===null)!==(plan.previous===null)||previous!==null&&!previous.equals(plan.previous))fail('gateway preparation previous unit drift');
+  atomicRootFile(unitDestination,plan.rendered,0o644);},
+ reload(){run('/usr/bin/systemctl',['daemon-reload']);},inspect:inspectPrepared,
+};}
+
 function rollback(){
   assertRoot();safeDestination(stateFile);const stateStat=fs.lstatSync(stateFile);
   if(stateStat.uid!==0||stateStat.gid!==0||(stateStat.mode&0o777)!==0o600||stateStat.nlink!==1)fail('gateway installation state metadata rejected');
@@ -229,5 +280,7 @@ function rollback(){
 let lock;
 try{
   if(mode==='--inspect')await inspect();
-  else{assertRoot();lock=acquireInstallLock();if(mode==='--install')await install();else rollback();}
+  else{assertRoot();lock=acquireInstallLock();if(mode==='--install')await install();
+   else if(mode==='--prepare'||mode==='--reconcile-prepared'){const proof=await runGatewayUnitPreparation({reconcile:mode==='--reconcile-prepared'},{host:preparedUnitHost()});process.stdout.write(JSON.stringify(proof)+'\n');}
+   else rollback();}
 }finally{if(lock!==undefined)fs.closeSync(lock);}
