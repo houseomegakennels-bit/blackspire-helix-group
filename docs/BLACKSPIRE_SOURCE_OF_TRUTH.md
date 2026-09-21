@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — bounded administrative n8n credential reassertion
+
+The original writer credential synchronization has an unresolved intent and remains UNKNOWN. A separate reviewed operator mode prepares one new administrative replacement of the same credential ID and exact retained source value, under the existing HELD lease and global guard. It requires two complete owner, project, workflow and execution inventories. Separate protected records retain the request intent, received HTTP status, bounded response completeness/digest, acknowledgment and result. A second ambiguity never dispatches again. Provider hook, audit and dependency side effects remain UNVERIFIED. No test executes a production PATCH.
+
+Release continuation consumes the distinct acknowledged proof without rewriting the original authority or result. It preserves the original operator SHA and independently checks current code, source and installed ingress. Phase-aware consumer checks permit only the journal-bound Buyer candidate graph while preserving every other workflow definition. Production reassertion and release acceptance remain pending independent review and execution.
+
 ## 2026-09-21 — successor provider input binding
 
 The external successor operator now binds the protected owned profile into only the provider ACL adapter. It verifies the unchanged seven-field sequence input, operation, ordinal and observation digest, and rechecks the protected release, canonical source, descriptor and operator identity across awaited observation. Native sequence and journal digests remain unchanged. Five focused tests reproduce the original pre-query rejection and cover scoped normalization and drift denial. Actual read-only owned catalog, zero application routine references and native runtime isolation observations pass. Execution of the repaired release stage remains pending independent review.

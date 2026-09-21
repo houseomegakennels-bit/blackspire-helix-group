@@ -2362,3 +2362,7 @@ Prepared a separately reviewed root operator for the exact retained schema-five 
 ## 2026-09-21 — successor provider adapter repair
 
 Confirmed the seven-field native sequence input omitted protected backend selectors before the provider check. Added a scoped external adapter with exact input/context/digest checks and protected before/after fences, preserving canonical application artifacts and journal grammar. Five focused tests pass. Actual fixed TLS read-only catalog, application routine and runtime isolation probes all pass; no SQL writes, journal appends or service changes occurred. Repaired production execution remains pending independent review.
+
+## 2026-09-21 — administrative n8n reassertion operator
+
+Prepared an isolated operator successor to the retained provider fix. The original credential intent remains UNKNOWN; new request/response evidence and continuation authorization use separate protected records. Focused tests cover no replay after ambiguous responses, acknowledgment adoption, consumer closure, preserved authority and metadata drift. Runtime artifact and canonical release source are unchanged. No production credential request was dispatched during implementation; provider ancillary effects remain UNVERIFIED.
