@@ -314,3 +314,25 @@ test('protected connected history requires an object envelope and unwraps rows f
  assert.throws(()=>reconcileConnectedBuyerMigration(p,observation),/rejected/);
  assert.equal(reconcileConnectedBuyerMigration(p,observation.rows).status,'not-recorded-retry-not-authorized');
 });
+
+
+test('repeat native reconciliation rechecks database and fences without extending terminal history',async()=>{
+ const events=completedLifecycle(),journal={stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})};
+ const options={...authorityDeps,claim:()=>{}},initial=session();
+ assert.equal((await executeReleaseNativeMigration({input:args,client:initial,journal,mode:'apply'},options)).status,'committed');
+ assert.equal((await executeReleaseNativeMigration({input:args,client:session({prior:[initial.history]}),journal,mode:'reconcile'},options)).status,'committed-history-verified');
+ const retained=JSON.stringify(events);
+ for(const failure of ['none','missing','busy','query','fence','close']){
+  const client=session({prior:failure==='missing'?[]:[initial.history],locked:failure!=='busy',fail:failure==='query'?'BEGIN READ ONLY':''});
+  let fences=0,closes=0;
+  const acquireAuthority=async()=>({assertCurrent:async()=>{fences++;if(failure==='fence'&&fences===3)throw new Error('PRIVATE');},close(){closes++;if(failure==='close')throw new Error('PRIVATE');}});
+  const result=await executeReleaseNativeMigration({input:args,client,journal,mode:'reconcile'},{...options,acquireAuthority});
+  assert.equal(result.status,failure==='none'?'committed-history-verified':'STOPPED');
+  assert.equal(JSON.stringify(result).includes('PRIVATE'),false);assert.equal(closes,1);
+  assert.equal(client.calls[0].sql,'BEGIN READ ONLY');
+  assert.ok(!client.calls.some(row=>row.sql===prepared.body||row.sql.startsWith('INSERT INTO')));
+  assert.equal(JSON.stringify(events),retained);assert.equal(inspectReleaseMigrationState(events).lastStatus,'committed-history-verified');
+  assert.equal(inspectReleaseCommander(journal).migrationStatus,'committed-history-verified');
+  if(failure==='none')assert.ok(fences>=4);
+ }
+});

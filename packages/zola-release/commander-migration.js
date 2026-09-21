@@ -137,6 +137,16 @@ export async function executeReleaseNativeMigration({input,client,journal,mode},
     return finish({status:'STOPPED',reason:'MIGRATION_CLAIM_UNAVAILABLE',productionAcceptance:false,mutationSent:false});
    }
   }else if(!prior||!['releaseSha','migrationVersion','bodySha256','manifestSha256'].every(k=>prior[k]===plan[k]))reject();
+  // Re-observe a retained successful reconciliation without extending its
+  // terminal history. A lost enclosing acknowledgement must not create a third
+  // result; failed fresh observation also leaves the completed history intact.
+  if(mode==='reconcile'&&inspectReleaseMigrationState(events).lastStatus==='committed-history-verified'){
+   await authority.assertCurrent();
+   const observed=await executeBuyerMigration({client,plan,mode:'reconcile',fence:authority.assertCurrent});
+   await authority.assertCurrent();
+   if(observed.status!=='committed-history-verified')reject();
+   return finish({...observed,mutationSent:false,reconcileOnly:true});
+  }
   let result;
   try{
    await authority.assertCurrent();
