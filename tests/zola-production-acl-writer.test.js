@@ -23,6 +23,8 @@ test('provider ACL operation performs one fixed read-only exact-twelve catalog c
  },isolationProof});
  const result=await operation.check(base);
  assert.equal(result.status,'PASS');assert.equal(result.evidence.functionCount,12);assert.equal(result.evidence.operationId,operationId);
+ assert.equal(result.evidence.applicationDatabaseIsolationVerified,true);
+ assert.equal(Object.hasOwn(result.evidence,'applicationDbCredentialsAbsent'),false);
  assert.match(result.evidence.catalogDigest,/^[a-f0-9]{64}$/);assert.equal(calls,1);
 });
 
@@ -30,6 +32,13 @@ test('provider ACL operation blocks on unavailable provider state or missing iso
  assert.deepEqual(await createProviderAclCheckOperation({query:async()=>{throw new Error('offline');},isolationProof}).observe(base),{status:'BLOCKED_EXTERNAL'});
  const publicRows=aclRows();publicRows[0].publicExecute=true;
  assert.deepEqual(await createProviderAclCheckOperation({query:async()=>({rows:publicRows})}).check(base),{status:'BLOCKED_EXTERNAL'});
+ for(const value of [false,'true',undefined]){
+  const invalidIsolation=await isolationProof();
+  invalidIsolation.evidence.applicationDbCredentialsAbsent=value;
+  assert.deepEqual(await createProviderAclCheckOperation({
+   query:async()=>({rows:aclRows()}),isolationProof:async()=>invalidIsolation,
+  }).check(base),{status:'BLOCKED_EXTERNAL'});
+ }
  const lost=aclRows();lost[0].serviceRoleExecute=false;
  await assert.rejects(()=>createProviderAclCheckOperation({query:async()=>({rows:lost}),isolationProof}).check(base),/operation rejected/);
  const duplicate=aclRows();duplicate[1].functionName=duplicate[0].functionName;

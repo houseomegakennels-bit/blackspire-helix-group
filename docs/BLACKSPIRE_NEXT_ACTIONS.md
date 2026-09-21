@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-09-21 — integrated cold-start release continuation
+
+1. DONE locally: 33/33 focused checks, 2,180 total / 2,103 passed / 77 intended skips / zero failures in the contained suite, static/security/memory gates and independent source re-review. All production fences and old journal history remain preserved.
+2. Commit the reviewed repair, then publish only with a fresh explicit push authorization and require CI for that exact new commit. ea39f00 CI does not cover this repair.
+3. After review and CI, obtain explicit release-branch merge authority before sealing/installing the candidate. Recheck the production disk envelope (about 1.5 GB free at this inspection), protected inputs and journal compatibility. Production activation remains a separate controlled step.
+
 ## 2026-09-21 — current release sequence
 
 1. DONE locally: journal-only upgrade recovery passes 32/32 direct tests and the contained suite passes 2,176 total / 2,099 passed / 77 intended skips / zero failures. Build, lint, syntax/typecheck, canonical-memory, security and whitespace gates pass.

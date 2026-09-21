@@ -2,8 +2,8 @@ import {randomUUID} from 'node:crypto';
 import {hash} from './commander-journal.js';
 
 export const RELEASE_STAGES=Object.freeze([
- 'exact_sha_verification','receiver_audit','vercel_exact_head_preview','provider_acl_check','n8n_backup_check',
- 'candidate_six_reads','admission_lease','generation_revalidation','n8n_migration','bounded_writer_e2e',
+ 'exact_sha_verification','receiver_audit','vercel_exact_head_preview','n8n_backup_check',
+ 'candidate_six_reads','admission_lease','generation_revalidation','provider_acl_check','n8n_migration','bounded_writer_e2e',
  'migration_preflight','production_migrations','migration_postconditions','six_reads','rollback_acceptance',
  'ci_security','final_diff','expected_head_merge','capture_new_main_sha','verify_main','verify_vercel_production_sha',
  'journaled_vps_cutover','post_merge_held_epoch','mint_acceptance_permit','api_health','worker_readiness',
@@ -147,7 +147,7 @@ export async function runReleaseSequence({input,journal,adapters}){
    const inputDigest=attempt?.inputDigest??hash({sequence:input.inputDigest,stage,ordinal,check:checkedProof.outputDigest});
    const checkOutputDigest=attempt?.checkOutputDigest??checkedProof.outputDigest;
    const observed=await (attempt?adapter.reconcile:adapter.observe)({input,state,ordinal,attemptId:attempt?.attemptId??null,inputDigest,checkOutputDigest});
-   if(observed?.status==='BLOCKED_EXTERNAL')return stopped('BLOCKED_EXTERNAL','EXTERNAL_GATE',stage,attempt?null:false);
+   if(observed?.status==='BLOCKED_EXTERNAL')return stopped('BLOCKED_EXTERNAL','EXTERNAL_GATE',stage);
    const observedProof=proof(observed);
    stream.append({schema:4,type:'sequence_stage_confirmed',operationId:state.context.operationId,ordinal,stage,
     attemptId:attempt?.attemptId??null,inputDigest,checkOutputDigest,...observedProof});

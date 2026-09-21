@@ -141,7 +141,9 @@ export function createProviderAclCheckOperation({query,isolationProof}){
    if(provider===null||typeof isolationProof!=='function')return blocked();
    const isolation=await isolationProof();
    if(isolation?.status!=='PASS'||!completeIsolationEvidence(isolation.evidence))return blocked();
-   return Object.freeze({status:'PASS',evidence:Object.freeze({...provider,...isolation.evidence,
+   const {applicationDbCredentialsAbsent,...isolationEvidence}=isolation.evidence;
+   return Object.freeze({status:'PASS',evidence:Object.freeze({...provider,...isolationEvidence,
+    applicationDatabaseIsolationVerified:applicationDbCredentialsAbsent,
     providerAcl:provider.publicExecuteCount===0,providerRiskRecorded:provider.publicExecuteCount>0})});
   }catch(error){
    if(error?.message==='Fixed production ACL/writer operation rejected')throw error;

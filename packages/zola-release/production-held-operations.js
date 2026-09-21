@@ -156,7 +156,7 @@ export function createHeldProductionOperations(context,overrides={}){
  const revalidation={async check(call){invocation(context,call,'generation_revalidation');const prior=call.state.outputs.admission_lease;if(!prior||!uuid(prior.epochRunId))reject();
    const proof=await deps.lifecycle({releaseSha:context.input.releaseSha,runId:prior.epochRunId});if(proof.api.generation!==prior.apiGeneration||proof.worker.generation!==prior.workerGeneration||proof.artifactDigest!==prior.artifactDigest)reject();
    return pass({stage:'generation_revalidation',releaseSha:context.input.releaseSha,epochRunId:prior.epochRunId,apiGeneration:prior.apiGeneration,workerGeneration:prior.workerGeneration,
-    artifactDigest:prior.artifactDigest,generationCurrent:true});},async observe(call){return this.check(call);}};
+    artifactDigest:prior.artifactDigest,generationCurrent:true});},async observe(call){return revalidation.check(call);}};
  const premergeReads={check(call){invocation(context,call,'six_reads');let config;try{config=deps.premergeConfig();}catch{return blocked();}
    if(config.version!==4||config.releaseSha!==context.input.releaseSha||config.workspace!==context.input.workspace||config.principal!==context.input.principal)return blocked();
    return pass({stage:'six_reads',fixedCollector:true});},execute(call){invocation(context,call,'six_reads',{attempt:true});},

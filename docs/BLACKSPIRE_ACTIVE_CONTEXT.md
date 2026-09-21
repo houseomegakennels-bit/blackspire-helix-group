@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-21 — integrated cold-start release continuation
+
+Published ea39f00 is CI-green and independently reviewed. Local continuation repairs the integrated cold-start provider-gate ordering, detached generation observer, evidence-field naming and cumulative mutation-status reporting. Focused checks pass 33/33; final contained validation passes 2,180 total / 2,103 passed / 77 intended skips / zero failures across 221 files with clean containment. Independent source re-review found no remaining actionable issue. The full existing provider proof remains mandatory after HELD startup and before n8n/business effects. Old registry histories fail closed; no automatic migration or deletion is allowed. Production remains offline and unchanged.
+
 ## 2026-09-21 — current continuation checkpoint
 
 Current research base is `eedda6977ffcf127648d3a11d219a7b530890764`, also the open PR #146 head with successful CI. A new local journal-only crash recovery repair is verified by 32 focused tests; the contained suite passes 2,176 total / 2,099 passed / 77 intended skips / zero failures across all 221 files, with clean containment. Root-only recovery regressions passed in the separate direct run. Production inspection confirms all three services stopped, current release `6f7e0c2`, and all four Buyer Writer roles absent. Production is not accepted. The September 18 sections below are historical milestones; candidate preparation and ordered pre-HELD activation have since been implemented, as recorded in the source of truth.
