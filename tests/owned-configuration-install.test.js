@@ -1,3 +1,7 @@
+import {renderOwnedSuccessorLiveWriter} from '../packages/zola-release/owned-successor-configuration.js';
+import {publishOwnedSuccessorLiveWriter} from '../packages/zola-release/owned-successor-configuration-host.js';
+import {publishOwnedConfigurationBytes} from '../packages/zola-release/owned-buyer-configuration-host.js';
+import {renderZolaGatewayConfigurations} from '../packages/zola-release/gateway-configuration-render.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -85,5 +89,25 @@ test('owned actual post-link lost acknowledgement reconciles retained files with
   const before=fs.statSync(plan.ingressConfigPath).ino;
   await installZolaConfiguration(await prepareOwnedZolaConfigurationInstall(f.input,f.options),f.execution);
   assert.equal(fs.statSync(plan.ingressConfigPath).ino,before);assert.equal(fs.statSync(plan.ingressConfigPath).nlink,1);assert.equal(fs.existsSync(plan.manifestPath),true);
+ }finally{f.cleanup();}
+});
+
+test('actual protected successor gateway/dropin replacement precedes native installer and lost ACK reuses files',rootOnly,async()=>{
+ const f=fixture();try{
+  const oldPlan=await prepareOwnedZolaConfigurationInstall(f.input,f.options);await installZolaConfiguration(oldPlan,f.execution);
+  const before={gateway:fs.readFileSync(oldPlan.gatewayConfigPath,'utf8'),dropin:fs.readFileSync(oldPlan.dropinPath,'utf8')},keyPath=f.config.operationPermitSignerConfiguration.activePrivateKeyPath,keyBefore=fs.readFileSync(keyPath),keyInode=fs.statSync(keyPath).ino;
+  const nextSha='c'.repeat(40),authority={...f.config.authority,releaseSha:nextSha,attemptId:randomUUID()},next={...f.config,authority,operationPermitConfiguration:JSON.stringify({...JSON.parse(f.config.operationPermitConfiguration),releaseSha:nextSha,attemptId:authority.attemptId})};
+  f.input.releaseSha=nextSha;f.artifactProof.releaseSha=nextSha;fs.writeFileSync(f.input.configurationFile,JSON.stringify(next));
+  await assert.rejects(prepareOwnedZolaConfigurationInstall(f.input,f.options));
+  const after=renderOwnedSuccessorLiveWriter(renderZolaGatewayConfigurations(next),{configDirectory:f.paths.configDirectory}),transition={before,after,gatewayGid:982,paths:{gateway:oldPlan.gatewayConfigPath,dropin:oldPlan.dropinPath}};let writes=0;
+  assert.throws(()=>publishOwnedSuccessorLiveWriter(transition,{publish:(...args)=>{publishOwnedConfigurationBytes(...args);if(++writes===1)throw Error('lost gateway ACK');}}));
+  assert.equal(fs.readFileSync(oldPlan.gatewayConfigPath,'utf8'),after.gateway);assert.equal(fs.readFileSync(oldPlan.dropinPath,'utf8'),before.dropin);
+  await assert.rejects(prepareOwnedZolaConfigurationInstall(f.input,f.options));publishOwnedSuccessorLiveWriter(transition);
+  const prepared=await prepareOwnedZolaConfigurationInstall(f.input,f.options);let disconnected=false;
+  await assert.rejects(installZolaConfiguration(prepared,{...f.execution,record:event=>{if(event.event==='configuration_install_verified'&&!disconnected){disconnected=true;throw Error('lost final ACK');}}}));
+  const files=[prepared.clientConfigPath,prepared.ingressConfigPath,prepared.signerConfigPath,prepared.manifestPath],inodes=files.map(p=>fs.statSync(p).ino);
+  const result=await installZolaConfiguration(await prepareOwnedZolaConfigurationInstall(f.input,f.options),f.execution);assert.equal(result.status,'INSTALLED_RELOAD_REQUIRED');assert.deepEqual(files.map(p=>fs.statSync(p).ino),inodes);assert.ok(f.closed()>=3);
+  assert.deepEqual(fs.readFileSync(keyPath),keyBefore);assert.equal(fs.statSync(keyPath).ino,keyInode);
+  publishOwnedSuccessorLiveWriter({...transition,before:after,after:before});assert.equal(fs.readFileSync(oldPlan.gatewayConfigPath,'utf8'),before.gateway);assert.equal(fs.readFileSync(oldPlan.dropinPath,'utf8'),before.dropin);
  }finally{f.cleanup();}
 });

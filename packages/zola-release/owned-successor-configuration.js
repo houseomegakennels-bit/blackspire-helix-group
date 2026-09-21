@@ -7,6 +7,11 @@ const fail=()=>{throw new Error('Owned successor configuration refused; retain s
 export const OWNED_CONFIG_PREDECESSOR='2636a1e75cd0f422aff036dfee8a93a81cd5008b';
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex'),same=(a,b)=>hash(a)===hash(b);
 const sha=v=>/^[a-f0-9]{40}$/.test(v??''),uuid=v=>/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v??''),hex=v=>/^[a-f0-9]{64}$/.test(v??'');
+export function renderOwnedSuccessorLiveWriter(rendered,{configDirectory='/etc/blackspire'}={}){
+ const encode=v=>JSON.stringify(v)+'\n',digest=v=>createHash('sha256').update(encode(v)).digest('hex');
+ const client=configDirectory+'/buyer-writer-client-'+digest(rendered.clientConfig)+'.json',ingress=configDirectory+'/buyer-writer-ingress-'+digest(rendered.ingressConfig)+'.json',signer=configDirectory+'/buyer-writer-signer-'+digest(rendered.signerConfig)+'.json';
+ return {gateway:encode(rendered.gatewayConfig),dropin:'[Service]\nEnvironment=BUYER_WRITER_MODE=scoped\nEnvironment=BUYER_WRITER_WORKSPACE_ID=blackspire-command\nEnvironment=BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG='+client+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG='+ingress+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_SIGNER_CONFIG='+signer+'\n'};
+}
 export function buildOwnedSuccessorWriter({previousReleaseSha,releaseSha,operationId,attemptId,profile,credentialSource,source,gateway}){
  if(previousReleaseSha!==OWNED_CONFIG_PREDECESSOR||!sha(releaseSha)||releaseSha===previousReleaseSha||!uuid(operationId)||!uuid(attemptId)||operationId===attemptId)fail();
  profile=validateOwnedDatabaseProfile(profile);const profileDigest=databaseProfileDigest(profile);
@@ -56,11 +61,12 @@ export function createOwnedSuccessorConfiguration({host,store}){
    host.record(plan,'intent',{planDigest:hash(plan)});host.assertSourceUnchanged(plan.before.source);
    host.publishCredentialSource(plan.before.credentialSource,plan.candidate.credentialSource);
    host.publishGatewayCandidate(plan.input.releaseSha,plan.candidate.gateway);
+   host.publishLiveWriter(plan);const installed=await host.installWriter(plan);if(installed?.status!=='INSTALLED_RELOAD_REQUIRED'||installed.releaseSha!==plan.input.releaseSha)fail();
    await store.publish(plan.storePlan);host.assertSourceUnchanged(plan.before.source);await checked(plan.input);
    host.record(plan,'result',{planDigest:hash(plan)});return {status:'OWNED_SUCCESSOR_CONFIGURATION_PREPARED',releaseSha:plan.input.releaseSha,profileDigest:plan.input.profileDigest,planDigest:hash(plan),storePlan:plan.storePlan};
   },
   async restore(value){const plan=validate(value);if(!same(host.readPlan(plan.input.releaseSha),plan))fail();await host.assertStoppedHeld(plan.input);
-   host.record(plan,'restore-intent',{planDigest:hash(plan)});await store.restore(plan.storePlan);host.publishCredentialSource(plan.candidate.credentialSource,plan.before.credentialSource);host.assertSourceUnchanged(plan.before.source);await host.assertStoppedHeld(plan.input);
+   host.record(plan,'restore-intent',{planDigest:hash(plan)});await store.restore(plan.storePlan);host.restoreLiveWriter(plan);host.publishCredentialSource(plan.candidate.credentialSource,plan.before.credentialSource);host.assertSourceUnchanged(plan.before.source);await host.assertStoppedHeld(plan.input);
    host.record(plan,'restore-result',{planDigest:hash(plan)});return {status:'OWNED_SUCCESSOR_CONFIGURATION_RESTORED',releaseSha:plan.input.previousReleaseSha,dataRestored:false};
   },
  };

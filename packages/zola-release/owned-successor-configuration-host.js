@@ -10,8 +10,10 @@ import {validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {observeReceiverDeployment} from './receiver-origin-transition.js';
 import {readOwnedConfigurationBytes,publishOwnedConfigurationBytes} from './owned-buyer-configuration-host.js';
 import {renderZolaGatewayConfigurations} from './gateway-configuration-render.js';
-import {OWNED_CONFIG_PREDECESSOR,buildInheritedOwnedFrontend} from './owned-successor-configuration.js';
+import {prepareOwnedZolaConfigurationInstall,installZolaConfiguration} from './configuration-install.js';
+import {OWNED_CONFIG_PREDECESSOR,buildInheritedOwnedFrontend,renderOwnedSuccessorLiveWriter} from './owned-successor-configuration.js';
 const PREP='/var/lib/blackspire-operator/preparation',ROOT='/var/lib/blackspire-operator/owned-successor-configuration';
+const liveGateway='/etc/blackspire-buyer-writer-gateway/gateway.json',liveDropin='/etc/systemd/system/blackspire-command.service.d/40-zola-writer.conf';
 const credential=PREP+'/owned-gateway-provisioning.json',source=PREP+'/owned-source-v1.json';
 const fail=()=>{throw new Error('Owned successor host refused');};
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex'),same=(a,b)=>hash(a)===hash(b),bytes=v=>JSON.stringify(v)+'\n';
@@ -20,6 +22,9 @@ const rootRead=file=>{const value=readOwnedConfigurationBytes(file);return value
 function directory(){try{fs.mkdirSync(ROOT,{mode:0o700});}catch(e){if(e.code!=='EEXIST')throw e;}for(let p=ROOT;;p=path.dirname(p)){const s=fs.lstatSync(p);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||(s.mode&0o022)||run('/usr/bin/getfacl',['--numeric','--omit-header','--skip-base','--logical','--',p])!=='')fail();if(p===ROOT&&(s.gid!==0||(s.mode&0o7777)!==0o700))fail();const fd=fs.openSync(p,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}if(p==='/')break;}}
 function retained(file){const a=rootRead(file),b=rootRead(file+'.owned-buyer-stage');if(a!==null&&b!==null)fail();return a??b;}
 const file=sha=>{if(!/^[a-f0-9]{40}$/.test(sha??''))fail();return ROOT+'/'+sha+'.json';};
+export function publishOwnedSuccessorLiveWriter({before,after,gatewayGid,paths={gateway:liveGateway,dropin:liveDropin}},{publish=publishOwnedConfigurationBytes}={}){
+ if(!before||!after||!Number.isSafeInteger(gatewayGid)||gatewayGid<1)fail();publish(paths.gateway,before.gateway,after.gateway,{gid:gatewayGid,mode:0o640});publish(paths.dropin,before.dropin,after.dropin,{mode:0o644});
+}
 // Caller must hold the global commander lock across prepare/publication. No SQL
 // writes, credential generation, service starts or initial provisioning occur here.
 export function createOwnedSuccessorConfigurationHost({verifyRetirement,verifyLineage}){
@@ -37,10 +42,14 @@ export function createOwnedSuccessorConfigurationHost({verifyRetirement,verifyLi
   readWriterInputs(previous){if(previous!==OWNED_CONFIG_PREDECESSOR)fail();const gateway=rootRead(PREP+'/owned-buyer-writer-v4-'+previous+'.json'),rendered=renderZolaGatewayConfigurations(gateway);
    const group=run('/usr/bin/getent',['group','blackspire-writer']).split(':');if(group.length!==4||group[0]!=='blackspire-writer'||!Number.isSafeInteger(Number(group[2])))fail();
    const installed=readRootOwnedJsonSnapshot('/etc/blackspire-buyer-writer-gateway/gateway.json',{groupId:Number(group[2])}).value;if(!same(installed,rendered.gatewayConfig))fail();
-   return{profile:readOwnedDatabaseProfile(),credentialSource:rootRead(credential),source:rootRead(source),gateway};},
+   const live=renderOwnedSuccessorLiveWriter(rendered),actualGateway=readOwnedConfigurationBytes(liveGateway,{gid:Number(group[2]),mode:0o640}),actualDropin=readOwnedConfigurationBytes(liveDropin,{mode:0o644});if(actualGateway!==live.gateway||actualDropin!==live.dropin)fail();
+   return{profile:readOwnedDatabaseProfile(),credentialSource:rootRead(credential),source:rootRead(source),gateway,live:{...live,gatewayGid:Number(group[2])}};},
   assertSourceUnchanged:value=>{if(!same(rootRead(source),value))fail();},
   publishCredentialSource:(before,after)=>publishOwnedConfigurationBytes(credential,bytes(before),bytes(after)),
   publishGatewayCandidate:(sha,value)=>{file(sha);publishOwnedConfigurationBytes(PREP+'/owned-buyer-writer-v4-'+sha+'.json',null,bytes(value));},
+  publishLiveWriter(plan){assertStoppedHeld(plan.input);const next=renderOwnedSuccessorLiveWriter(plan.candidate.rendered),before=plan.before.live;if(!before)fail();publishOwnedSuccessorLiveWriter({before,after:next,gatewayGid:before.gatewayGid});assertStoppedHeld(plan.input);},
+  restoreLiveWriter(plan){assertStoppedHeld(plan.input);const next=renderOwnedSuccessorLiveWriter(plan.candidate.rendered),before=plan.before.live;publishOwnedSuccessorLiveWriter({before:next,after:before,gatewayGid:before.gatewayGid});assertStoppedHeld(plan.input);},
+  async installWriter(plan){assertStoppedHeld(plan.input);const install=await prepareOwnedZolaConfigurationInstall({releaseSha:plan.input.releaseSha,configurationFile:PREP+'/owned-buyer-writer-v4-'+plan.input.releaseSha+'.json'});const result=await installZolaConfiguration(install,{record:event=>{if(!['configuration_install_intent','configuration_install_verified'].includes(event.event)||event.releaseSha!==plan.input.releaseSha)fail();publishOwnedConfigurationBytes(file(plan.input.releaseSha)+'.'+event.event+'.json',null,bytes(event));}});assertStoppedHeld(plan.input);return result;},
   record(plan,suffix,value){if(!['intent','result','restore-intent','restore-result'].includes(suffix))fail();directory();publishOwnedConfigurationBytes(file(plan.input.releaseSha)+'.'+suffix+'.json',null,bytes(value));},
  };
 }
