@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — imported export owner policy remains executable
+
+The isolated repository user now receives EXECUTE on the fixed invoker auth.uid function required by the imported exports owner policy. The grant is limited to buyer_repository_user; PUBLIC and the capability reader gain nothing, and no legacy role membership is introduced. Actual disposable PostgreSQL verifies own export reads, foreign-row denial and absent capability execution privilege with PUBLIC execution revoked. Existing repository ownership, budgets and role checks also pass. No production changes occurred.
+
 ## 2026-09-21 — integrated owned lifecycle and regression repair
 
 Candidate HELD startup now passes the explicit owned backend/profile into its distinct deployment plan, publishes the repository manifest only after real API and worker generations are observed, and then starts the isolated store. The owned collectors require their distinct versions 6 and 7 with the same profile; legacy evidence cannot substitute. Reviewed owned documentation and isolated provider-denial fixtures are listed individually in the existing source audit. Legacy VM fixtures explicitly disable the new owned adapter.

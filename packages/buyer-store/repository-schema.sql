@@ -8,6 +8,8 @@ GRANT buyer_repository_user TO buyer_repository_login WITH INHERIT FALSE, SET TR
 GRANT buyer_capability_reader TO buyer_capability_login WITH INHERIT FALSE, SET TRUE;
 GRANT CONNECT ON DATABASE postgres TO buyer_repository_login,buyer_capability_login;
 GRANT USAGE ON SCHEMA public TO buyer_repository_user,buyer_capability_reader;
+-- The imported exports owner policy uses this fixed invoker identity function.
+GRANT EXECUTE ON FUNCTION auth.uid() TO buyer_repository_user;
 GRANT SELECT,INSERT ON public."SearchJob",public.exports TO buyer_repository_user;
 GRANT SELECT ON public."BuyerReport",public."BuyerProfile" TO buyer_repository_user;
 GRANT SELECT ON public."BuyerProfile" TO buyer_capability_reader;
