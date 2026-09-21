@@ -1,3 +1,5 @@
+import {createOwnedRuntimeVpsHost} from '../packages/zola-release/commander-vps.js';
+import {createOwnedRuntimeStoreTransition} from '../packages/zola-release/owned-runtime-store.js';
 import {queryFixedProviderAcl,createProviderAclCheckOperation} from '../packages/zola-release/production-acl-writer.js';
 import {createPgNetIsolationProof} from '../packages/zola-release/pg-net-isolation.js';
 import {createOwnedAclObserverPool,verifyOwnedOperatorAclResult} from '../packages/zola-release/owned-acl-operator-observer.js';
@@ -27,6 +29,8 @@ try{
  const {loadProductionReleaseInput}=await load('packages/zola-release/production-release-input.js');
  const {runProductionRelease}=await load('packages/zola-release/production-release.js');
  const {createFixedProductionOperations}=await load('packages/zola-release/production-adapters.js');
+ const {establishCandidateHeld}=await load('packages/zola-release/production-held-operations.js');
+ const {prepareVpsCutoverPlan,runVpsCutover}=await load('packages/zola-release/commander-vps.js');
  const {Pool}=await import('pg');
  const {observeBuyerWriterRuntimeIsolation}=await load('packages/zola-release/pg-net-host-observer.js');
  const {readReleaseProtectedBytes,verifyReleaseSource}=await load('packages/zola-release/commander-host.js');
@@ -137,7 +141,8 @@ try{
   const providerQuery=async(sql,values)=>{verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
    const result=await queryFixedProviderAcl('/etc/blackspire-buyer-writer-gateway/gateway.json',sql,values,{Pool:createOwnedAclObserverPool(Pool,profile),verifyAcl:verifyOwnedOperatorAclResult});
    verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();return result;};
-  const fixed=createFixedProductionOperations({...context,journal:scopedJournal},{providerQuery,n8nMigration:{n8n:{request:routed}},held:{activate}});
+  const deployment={prepareVps:input=>prepareVpsCutoverPlan(input,{host:createOwnedRuntimeVpsHost()}),runVps:(input,options)=>runVpsCutover(input,{...options,host:createOwnedRuntimeVpsHost()})};
+  const fixed=createFixedProductionOperations({...context,journal:scopedJournal},{providerQuery,deployment,n8nMigration:{n8n:{request:routed}},held:{activate,establishHeld:()=>establishCandidateHeld({...context,journal:scopedJournal},{ownedStore:()=>createOwnedRuntimeStoreTransition()})}});
   const isolationProof=createPgNetIsolationProof({query:providerQuery,verifyRuntimeIsolation:()=>observeBuyerWriterRuntimeIsolation({releaseSha:release.releaseSha,gatewayConfigurationFile:'/etc/blackspire-buyer-writer-gateway/gateway.json'})});
   return {...fixed,provider_acl_check:createProviderAclCheckOperation({query:providerQuery,isolationProof,backendProfile:release.backendProfile,profileDigest:release.profileDigest,verifyAcl:verifyOwnedOperatorAclResult})};
  };

@@ -13,3 +13,7 @@ Validation: isolated PostgreSQL full-order source freeze/copy/hardening/provisio
 ## Owned configuration installation
 
 The fixed operator entry also selects an explicit owned configuration preparation CLI. It validates the protected root0600 owned descriptor, creator OID, TLS target and profile digest, retaining complete profile and source snapshots across asynchronous health/artifact checks. Strict four-service quiescence is checked before planning and publication. The native connection health check, no-replace file publication, and two-event configuration journal remain unchanged. The original Supabase preparation entry retains its pinned target checks. The actual failed native attempt had no configuration journal or fixed service drop-in, so this repair introduces no replacement or history reset.
+
+## Runtime store manifest publication
+
+After deployment, runtime store manifest publication must inspect the deployed artifact. The fixed operator store factory supplies that inspector to both outer transition receipt creation and inner retained manifest publication, preserving current-pointer, generation, protected configuration and journal checks. Candidate preparation still uses its sealed-artifact check. The same factory is wired into candidate HELD establishment and the postmerge VPS host; the latter keeps the fixed canonical release-worktree path and native VPS methods. No services are restarted by this repair itself.

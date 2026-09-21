@@ -1,3 +1,4 @@
+import {createOwnedRuntimeStoreTransition} from './owned-runtime-store.js';
 import {createOwnedStoreTransition,ownedBackendFields,BUYER_STORE_UNIT} from './owned-store-transition.js';
 import {createReceiverOriginTransition} from './receiver-origin-transition.js';
 import {observeVpsHeldHttp} from './vps-held-http.js';
@@ -67,12 +68,13 @@ function command(file,args,env={}){const result=spawnSync(file,args,{encoding:'u
 export async function verifyVpsRetainedBackup(plan,{verify=verifyProtectedReleaseBackup}={}){
  const proof=await verify({releaseSha:plan.candidateSha,manifestFile:plan.backupManifestFile});return hash(proof)===plan.backupDigest;
 }
-function productionHost(){
- const repository=fileURLToPath(new URL('../../',import.meta.url));
+export function createOwnedRuntimeVpsHost(){
+ return productionHost({repository:'/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-release-20260921/',store:createOwnedRuntimeStoreTransition()});
+}
+function productionHost({repository=fileURLToPath(new URL('../../',import.meta.url)),store=createOwnedStoreTransition()}={}){
  const state=()=>validateReleaseAdmissionState(readRootOwnedJson(path.join(ADMISSION,'state.json'),{groupId:fs.statSync(path.join(ADMISSION,'state.json')).gid,maxBytes:2048}));
  const active=unit=>{const output=command('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,SubState,MainPID,InvocationID','--',unit]);return Object.fromEntries(output.split('\n').map(line=>line.split('=')));};
  const stopped=()=>{if([API,WORKER,GATEWAY].some(unit=>{const value=active(unit);return value.ActiveState!=='inactive'||value.SubState!=='dead'||value.MainPID!=='0';}))reject();};
- const store=createOwnedStoreTransition();
  const receivers=createReceiverOriginTransition({assertStopped:stopped});
  const authority=plan=>createPostmergeAuthorityRebind(plan,{assertStopped:stopped});
  const waitHeldHttp=async(plan,workerExpected)=>{for(let attempt=0;attempt<10;attempt++){try{
