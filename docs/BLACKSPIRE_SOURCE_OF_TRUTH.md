@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — actual owned Buyer HTTP, IPC and SQL composition
+
+A disposable PostgreSQL 17.6 composition now exercises the actual API route, authenticated Unix IPC, owner-scoped SQL/RLS and real SQLite receiver-authority consumption. Owner job creation and foreign-owner read denial pass; invalid user authority and an incorrect IPC MAC produce no repository SQL. The consumed matches callback uses the signed Deal context HTTP contract before native profile reads. Protected HELD reads pass while ordinary writes remain refused; changed request bodies, signed-response tampering, replay and post-read grant revocation refuse. A disconnected HTTP caller cannot release the daemon admission flock until native connection drain completes.
+
+External Auth and Deal records, deployment/systemd identity observations and the disposable database endpoint are fixture inputs. The API/IPC/SQL/authority/admission implementations are real; production TLS, installed namespace/service execution and full deployment acceptance remain UNVERIFIED. No production credentials or data were loaded and no production changes occurred.
+
 ## 2026-09-21 — stopped store namespace inventory enforced
 
 Independent review found that the rootfs preparer accepted unrelated retained files despite its empty namespace contract. Preparation now inventories the stopped root before and after publication, accepting only exact empty mountpoint scaffolding, zero-byte fixed file placeholders and the release-bound current symlink. Foreign files, directories, symlinks, ownership or writable modes refuse. Lifecycle rebinding can reuse this validator while the store is stopped.

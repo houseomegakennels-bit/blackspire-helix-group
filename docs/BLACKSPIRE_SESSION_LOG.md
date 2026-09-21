@@ -2173,3 +2173,7 @@ Fixed the independently observed namespace inventory gap. Exact empty mount scaf
 ## 2026-09-21 — owned migration quiescence review repair
 
 Corrected the API unit identity, added strict four-service quiescence and absent-store process proof, and held the global release guard across native migration. Three focused regressions pass; acceptance fixtures also pass with the corrected guard. Production execution remains pending independent review.
+
+## 2026-09-21 — verify owned Buyer HTTP to native database composition
+
+Added a disposable actual HTTP/Unix IPC/PostgreSQL/SQLite-authority composition. Owner isolation, signed Deal callback, HELD refusal/permission, tamper/replay/revocation denial and disconnect drain pass. External records and host identity are modeled; production deployment remains unverified. No production credentials, data or mutations.
