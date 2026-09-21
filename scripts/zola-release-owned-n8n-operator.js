@@ -1,3 +1,4 @@
+import {bindOwnedProviderInput} from '../packages/zola-release/owned-provider-input.js';
 import {createOwnedRuntimeVpsHost} from '../packages/zola-release/commander-vps.js';
 import {createOwnedRuntimeStoreTransition} from '../packages/zola-release/owned-runtime-store.js';
 import {queryFixedProviderAcl,createProviderAclCheckOperation} from '../packages/zola-release/production-acl-writer.js';
@@ -149,7 +150,13 @@ try{
   const deployment={prepareVps:input=>prepareVpsCutoverPlan(input,{host:createOwnedRuntimeVpsHost()}),runVps:(input,options)=>runVpsCutover(input,{...options,host:createOwnedRuntimeVpsHost()})};
   const fixed=createFixedProductionOperations({...context,journal:scopedJournal},{providerQuery,deployment,n8nMigration:{n8n:{request:routed}},held:{activate,establishHeld:()=>establishCandidateHeld({...context,journal:scopedJournal},{ownedStore:()=>createOwnedRuntimeStoreTransition()})}});
   const isolationProof=createPgNetIsolationProof({query:providerQuery,verifyRuntimeIsolation:()=>observeBuyerWriterRuntimeIsolation({releaseSha:release.releaseSha,gatewayConfigurationFile:'/etc/blackspire-buyer-writer-gateway/gateway.json'})});
-  return {...fixed,provider_acl_check:createProviderAclCheckOperation({query:providerQuery,isolationProof,backendProfile:release.backendProfile,profileDigest:release.profileDigest,verifyAcl:verifyOwnedOperatorAclResult})};
+  const providerOperation=createProviderAclCheckOperation({query:providerQuery,isolationProof,backendProfile:release.backendProfile,profileDigest:release.profileDigest,verifyAcl:verifyOwnedOperatorAclResult});
+  const providerAdapter=release.schema===3?bindOwnedProviderInput({operation:providerOperation,input:context.input,release,protectedInputDigest:input.inputDigest,fence:()=>{
+   const fresh=loadProductionReleaseInput(inputFile);
+   if(!same(fresh,input)||databaseProfileDigest(readOwnedDatabaseProfile())!==release.profileDigest||git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
+   return {input:fresh,operatorSha,profileDigest:release.profileDigest};
+  }}):providerOperation;
+  return {...fixed,provider_acl_check:providerAdapter};
  };
  const result=await runProductionRelease({loadedInput:input,journal},{operations});
  process.stdout.write(JSON.stringify(result)+'\n');if(!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;

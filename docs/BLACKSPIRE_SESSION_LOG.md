@@ -2357,3 +2357,8 @@ The independently applied demo migration added restrictive authenticated policie
 ## 2026-09-21 — a8e successor coordinator guard compatibility
 
 Prepared a separately reviewed root operator for the exact retained schema-five retirement and current mainf3ac. Two original-hash-verified coordinator module transformations preserve historical constraints and all stage/journal semantics; no canonical artifact or production journal edits occurred. Actual loader and existing chained/production regressions pass. Native production invocation remains pending independent review.
+
+
+## 2026-09-21 — successor provider adapter repair
+
+Confirmed the seven-field native sequence input omitted protected backend selectors before the provider check. Added a scoped external adapter with exact input/context/digest checks and protected before/after fences, preserving canonical application artifacts and journal grammar. Five focused tests pass. Actual fixed TLS read-only catalog, application routine and runtime isolation probes all pass; no SQL writes, journal appends or service changes occurred. Repaired production execution remains pending independent review.

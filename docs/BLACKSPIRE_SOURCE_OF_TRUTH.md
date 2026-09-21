@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — successor provider input binding
+
+The external successor operator now binds the protected owned profile into only the provider ACL adapter. It verifies the unchanged seven-field sequence input, operation, ordinal and observation digest, and rechecks the protected release, canonical source, descriptor and operator identity across awaited observation. Native sequence and journal digests remain unchanged. Five focused tests reproduce the original pre-query rejection and cover scoped normalization and drift denial. Actual read-only owned catalog, zero application routine references and native runtime isolation observations pass. Execution of the repaired release stage remains pending independent review.
+
 ## 2026-09-21 — fixed successor coordinator compatibility operator
 
 The retained schema-five retirement binds candidate a8e05ef and operation c8b00904. Its first execution stopped before a new sequence append because two canonical coordinator guards still required historical main2775. A separate clean root operator now verifies the original hashes of exactly two coordinator modules and applies a narrow in-memory compatibility rule for that exact retirement proof, candidate, operation and reviewed mainf3ac. Historical schema-four and other retirement identities retain their original main constraint. Canonical source, sealed artifacts, existing journal rows and registry are not rewritten.
