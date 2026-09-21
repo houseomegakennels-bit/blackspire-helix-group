@@ -7,8 +7,9 @@ import {holdOwnedBuyerSourceSnapshot,inspectOwnedBuyerDataSnapshot,transferOwned
 import {OWNED_BUYER_COPY_ORDER} from '../packages/buyer-writer/owned-data-migration.js';
 assert.equal(process.env.ZOLA_DISPOSABLE_EXECUTOR,'1');assert.equal(process.versions.node,'22.23.1');
 const ports=JSON.parse(fs.readFileSync(0,'utf8'));assert.ok([ports.source,ports.target].every(p=>/^172\.[0-9]+\.[0-9]+\.[0-9]+$/.test(p)));assert.notEqual(ports.source,ports.target);
-const clients=[];const connect=async database=>{const c=new pg.Client({host:database==='owned_fixture'?ports.target:ports.source,port:5432,user:'postgres',database:'postgres',connectionTimeoutMillis:2000,query_timeout:35000});await c.connect();clients.push(c);return c;};
+const clients=[];const connect=async (database,user='postgres')=>{const c=new pg.Client({host:database==='owned_fixture'?ports.target:ports.source,port:5432,user,database:'postgres',connectionTimeoutMillis:2000,query_timeout:35000});await c.connect();clients.push(c);return c;};
 try{
+ for(const database of ['postgres','owned_fixture']){const boot=await connect(database,'blackspire_cluster_admin');await boot.query('CREATE ROLE postgres LOGIN NOSUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS;ALTER DATABASE postgres OWNER TO postgres;GRANT EXECUTE ON FUNCTION pg_control_system() TO postgres;GRANT ALL ON SCHEMA public TO postgres');await boot.end();}
  const source=await connect('postgres');
  const body=prepareOwnedBuyerSchema(JSON.parse(fs.readFileSync(new URL('../packages/buyer-writer/owned-source-schema.json',import.meta.url)))).body;
  await source.query(body);

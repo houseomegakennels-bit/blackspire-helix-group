@@ -13,7 +13,7 @@ try{
  for(const name of names){
   const id=requireSuccess(run(['create','--name',name,'--label',`blackspire.test-owner=${owner}`,'--network',network,
    '--read-only','--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/var/lib/postgresql/data:rw,size=192m','--tmpfs','/var/run/postgresql:rw,size=8m','--tmpfs','/tmp:rw,size=16m',
-   '-e','POSTGRES_USER=postgres','-e','POSTGRES_HOST_AUTH_METHOD=trust','-e','POSTGRES_DB=postgres',image]));ids.push(id);assert.match(id,/^[a-f0-9]{64}$/);requireSuccess(run(['start',id]));
+   '-e','POSTGRES_USER=blackspire_cluster_admin','-e','POSTGRES_HOST_AUTH_METHOD=trust','-e','POSTGRES_DB=postgres',image]));ids.push(id);assert.match(id,/^[a-f0-9]{64}$/);requireSuccess(run(['start',id]));
   const state=JSON.parse(requireSuccess(run(['inspect',id])))[0];assert.equal(state.Config.Labels['blackspire.test-owner'],owner);assert.equal(state.Mounts.some(m=>m.Type==='bind'||m.Type==='volume'),false);
   assert.equal(state.HostConfig.PortBindings===null||Object.keys(state.HostConfig.PortBindings).length===0,true);const peers=Object.values(state.NetworkSettings.Networks);assert.equal(peers.length,1);assert.equal(peers[0].NetworkID,network);assert.match(peers[0].IPAddress,/^172\.[0-9]+\.[0-9]+\.[0-9]+$/);ports.push(peers[0].IPAddress);
   let ready=false;for(let n=0;n<40;n++){if(run(['exec',id,'pg_isready','-h','127.0.0.1','-U','postgres','-d','postgres']).status===0){ready=true;break;}await new Promise(resolve=>setTimeout(resolve,250));}assert.ok(ready,'disposable PostgreSQL readiness timed out');

@@ -1,3 +1,4 @@
+import {OWNED_RECEIPT_STORAGE_SQL} from './owned-receipt-storage.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -18,6 +19,10 @@ const sourceStructure=catalog=>({relations:catalog.relations.map(({acl,policies,
 const sourceStructureDigest=digest(sourceStructure(baseline));
 const targetStructure=catalog=>catalog.relations;
 const targetStructureDigest=digest(targetStructure(baseline));
+export const OWNED_COPY_MANAGER_SQL=`SELECT session_user='postgres' AND current_user=session_user
+ AND EXISTS(SELECT FROM pg_roles WHERE rolname=current_user AND NOT rolsuper AND rolcreatedb AND rolcreaterole AND rolreplication AND rolbypassrls)
+ AND (SELECT datdba FROM pg_database WHERE datname=current_database())=(SELECT oid FROM pg_roles WHERE rolname=current_user) AS safe`;
+async function manager(client){const r=await client.query(OWNED_COPY_MANAGER_SQL);if(r.rows?.length!==1||Object.keys(r.rows[0]).join(',')!=='safe'||r.rows[0].safe!==true)reject();}
 export const OWNED_COPY_RECEIPT_SQL=`SELECT receipt FROM owned_buyer_migration.copy_receipts WHERE operation_id=$1`;
 export function readOwnedMigrationRootRecord(filename){
  const credential=['/etc/blackspire-buyer-writer-gateway/management.json','/etc/blackspire/owned-postgres/management.json'].includes(filename);
@@ -100,13 +105,16 @@ async function runOwnedBuyerMigrationLocked({releaseSha,operationId,mode},deps={
  const configuration=read(configPath),{migrationVersion,...sourceInput}=configuration;
  if(!/^\d{14}$/.test(migrationVersion??'')||sourceInput.releaseSha!==releaseSha||sourceInput.operationId!==operationId||sourceInput.profileDigest!==profileDigest)reject();
  const sourcePlan=security.prepareOwnedSourceSecurityPackage(sourceInput).plan;
- const sourceCredential=db.validateManagementCredential(read(db.LEGACY_DATABASE_MANAGEMENT),{pinLegacyCa:true});
- const targetCredential=db.validateManagementCredential(read(db.OWNED_DATABASE_MANAGEMENT),{ownedProfile:profile});
+ const sourceCredentialRecord=read(db.LEGACY_DATABASE_MANAGEMENT),targetCredentialRecord=read(db.OWNED_DATABASE_MANAGEMENT);
+ const sourceCredential=db.validateManagementCredential(sourceCredentialRecord,{pinLegacyCa:true});
+ const targetCredential=db.validateManagementCredential(targetCredentialRecord,{ownedProfile:profile});
+ const protectedSnapshots=deps.read?null:[db.LEGACY_DATABASE_MANAGEMENT,db.OWNED_DATABASE_MANAGEMENT,configPath,'/etc/blackspire/owned-postgres/profile.json'].map(filename=>({filename,snapshot:filename===configPath?readRootOwnedMetadataSnapshot(filename,{groupId:0}):readRootOwnedJsonSnapshot(filename,{groupId:0})}));
+ const stable=()=>{if(protectedSnapshots)for(const {filename,snapshot} of protectedSnapshots){const current=filename===configPath?readRootOwnedMetadataSnapshot(filename,{groupId:0}):readRootOwnedJsonSnapshot(filename,{groupId:0});if(digest(current)!==digest(snapshot))reject();}verifySource(releaseSha);stopped();if(digest(read(configPath))!==digest(configuration)||digest(db.readOwnedDatabaseProfile())!==digest(profile)||digest(read(db.LEGACY_DATABASE_MANAGEMENT))!==digest(sourceCredentialRecord)||digest(read(db.OWNED_DATABASE_MANAGEMENT))!==digest(targetCredentialRecord))reject();};
  const work=`${OWNED_MIGRATION_ROOT}/${operationId}`;makeDir(work);
  let source,target,sourceHeld=false;
  try{
-  source=await connect(sourceCredential);target=await connect(targetCredential);
-  await db.verifyOwnedDatabaseIdentity(target,profile);
+  stable();source=await connect(sourceCredential);target=await connect(targetCredential);stable();
+  await db.verifyOwnedDatabaseIdentity(target,profile);await manager(target);
   const system=await source.query('SELECT (pg_control_system()).system_identifier::text AS id');
   if(system.rows?.length!==1||system.rows[0].id!==sourceInput.sourceSystemIdentifier||system.rows[0].id===profile.systemIdentifier)reject();
   const lock=await target.query('SELECT pg_try_advisory_lock(206994,130) AS acquired');if(lock.rows?.[0]?.acquired!==true)reject();
@@ -134,19 +142,25 @@ async function runOwnedBuyerMigrationLocked({releaseSha,operationId,mode},deps={
   }
   const plan=prepareOwnedBuyerMigrationExecution(input);
   const host={
-   async acquireFence(){stopped();await db.verifyOwnedDatabaseIdentity(target,profile);await assertTargetInert(target);},
+   async acquireFence(){stable();await db.verifyOwnedDatabaseIdentity(target,profile);await manager(target);await assertTargetInert(target);},
    async releaseFence(){},
-   async observe(){stopped();if(!sourceHeld)reject();await db.verifyOwnedDatabaseIdentity(target,profile);await assertTargetInert(target);
+   async observe(){stable();if(!sourceHeld)reject();await db.verifyOwnedDatabaseIdentity(target,profile);await manager(target);await assertTargetInert(target);
     const proof=sourceProof(await security.validateOwnedSourceSecurityInTransaction(source,sourcePlan,migrationVersion),{releaseSha,operationId,profileDigest});
     if(digest(proof)!==input.source.quiescenceDigest||digest(sourceStructure(await catalog(source)))!==sourceStructureDigest)reject();
     if(digest(read(configPath))!==digest(configuration)||db.databaseProfileDigest(db.readOwnedDatabaseProfile())!==profileDigest)reject();
     const {releaseSha:ignored,...rest}=input;return{...rest,soleWriter:'NONE',sourceWritesDisabled:true,destinationWritesDisabled:true};},
    async readIntent(){return get(`${work}/intent.json`);},async writeIntent(value){put(`${work}/intent.json`,value);},
-   async readReceipt(){const exists=await target.query("SELECT to_regclass('owned_buyer_migration.copy_receipts') IS NOT NULL AS exists");if(!exists.rows[0].exists)return null;
-    const value=await target.query(OWNED_COPY_RECEIPT_SQL,[operationId]);if(value.rows.length>1)reject();return value.rows[0]?.receipt??null;},
+   async readReceipt(){stable();await target.query('BEGIN READ ONLY');
+    try{await manager(target);const exists=await target.query("SELECT to_regclass('owned_buyer_migration.copy_receipts') IS NOT NULL AS exists");
+     if(exists.rows?.length!==1||typeof exists.rows[0].exists!=='boolean')reject();if(!exists.rows[0].exists)return null;
+     await target.query('LOCK TABLE owned_buyer_migration.copy_receipts IN ACCESS SHARE MODE');
+     const storage=await target.query(OWNED_RECEIPT_STORAGE_SQL,['copy_receipts']);if(storage.rows?.length!==1||Object.keys(storage.rows[0]).join(',')!=='safe'||storage.rows[0].safe!==true)reject();
+     const value=await target.query(OWNED_COPY_RECEIPT_SQL,[operationId]);if(value.rows.length>1)reject();return value.rows[0]?.receipt??null;
+    }finally{await target.query('ROLLBACK');stable();}},
    async begin(){await target.query("BEGIN;SET LOCAL timezone='UTC';SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='30s'");},
    async copyRelation(relation){const columns=baseline.relations.find(r=>r.name===relation.name).columns.map(c=>({name:c.name,type:c.type,required:c.notNull,generated:c.generated,identity:c.identity}));await transferOwnedBuyerRelation({source,target,name:relation.name,expected:relation,columns});},
    async verifyTarget(expected,{empty=false,committed=false}={}){
+    stable();await db.verifyOwnedDatabaseIdentity(target,profile);await manager(target);
     if(committed)await target.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     try{
     if(empty){const value=await target.query("SELECT NOT EXISTS(SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public') AND NOT EXISTS(SELECT FROM pg_namespace WHERE nspname IN('auth','owned_buyer_migration')) AS empty");if(value.rows[0]?.empty!==true)reject();
@@ -155,12 +169,13 @@ async function runOwnedBuyerMigrationLocked({releaseSha,operationId,mode},deps={
     if(digest(targetStructure(await catalog(target)))!==targetStructureDigest)reject();
     const values=await inspectOwnedBuyerDataSnapshot(target);
     if(!expected.relations.every(row=>{const value=values.find(v=>v.name===row.name);return value&&value.rowCount===row.rowCount&&value.dataDigest===row.dataDigest;}))reject();
-    }finally{if(committed)await target.query('ROLLBACK');}
+    }finally{if(committed)await target.query('ROLLBACK');stable();}
    },
    async writeReceipt(value){const inserted=await target.query('INSERT INTO owned_buyer_migration.copy_receipts(operation_id,receipt) VALUES($1,$2::jsonb)',[operationId,JSON.stringify(value)]);if(inserted.rowCount!==1)reject();},
    async commit(){await target.query('COMMIT');},async rollback(){await target.query('ROLLBACK');},
   };
   const result=await executeOwnedBuyerMigration({plan,host,mode});
+  stable();await manager(target);
   // Retained native receipt remains authoritative if this final local write has
   // an unknown outcome. No target/source writer is enabled by this result.
   if(result.status!=='OWNED_BUYER_DATA_OUTCOME_UNKNOWN'&&!get(`${work}/result.json`))put(`${work}/result.json`,result);

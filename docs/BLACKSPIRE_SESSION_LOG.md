@@ -2243,3 +2243,6 @@ Prepared a separate exact-byte maintenance-to-API transition for the canonical c
 ## 2026-09-21 — public routing recovery review corrections
 
 Independent review identified retained-result durability repair and interrupted-restoration barriers; both now refuse invalid prefixes and preserve exact protected evidence. Eighteen focused tests pass, including real staged-file promotion/re-synchronization, accepted HELD generation states and composed routing-failure/reconcile ordering before OPEN. Fresh gateway isolation and signed store readiness are required under the exclusive lease; the command accepts the explicit owned profile digest. Build, lint, syntax, security, memory and whitespace validation are recorded with the follow-up. Production public routing and authenticated smoke remain UNVERIFIED; no production action occurred.
+## 2026-09-21 — native copy host guards
+
+Added exact retained receipt catalog and bounded manager checks before reads, with protected input stability across apply and reconciliation. Shared receipt SQL preserves hardening guards. Seventeen focused tests, native copy-host and full installation PostgreSQL fixtures pass; production execution remains UNVERIFIED. No production changes.

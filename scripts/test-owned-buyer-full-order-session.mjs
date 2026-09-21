@@ -81,6 +81,25 @@ try{
  security,connect:async config=>connect(config.fixture==='target'?'owned_fixture':'postgres')};
  assert.equal((await runOwnedBuyerMigration({releaseSha,operationId,mode:'apply'},deps)).status,'OWNED_BUYER_DATA_COMMITTED');
  assert.equal((await runOwnedBuyerMigration({releaseSha,operationId,mode:'reconcile'},deps)).status,'OWNED_BUYER_DATA_RECONCILED');
+ // Native pre-read rejection: unexpected receipt DDL and manager drift must never reach the receipt SELECT.
+ const originalConnect=deps.connect;let receiptReads=0;
+ deps.connect=async config=>{const c=await originalConnect(config),query=c.query.bind(c);c.query=async(text,...args)=>{if(text==='SELECT receipt FROM owned_buyer_migration.copy_receipts WHERE operation_id=$1')receiptReads++;return query(text,...args);};return c;};
+ const mutate=async(sql)=>{const c=await connect('owned_fixture','blackspire_cluster_admin');try{await c.query(sql);}finally{await c.end();}};
+ for(const [bad,restore] of [
+  ['ALTER TABLE owned_buyer_migration.copy_receipts ENABLE ROW LEVEL SECURITY','ALTER TABLE owned_buyer_migration.copy_receipts DISABLE ROW LEVEL SECURITY'],
+  ['ALTER TABLE owned_buyer_migration.copy_receipts ADD CHECK (true)','ALTER TABLE owned_buyer_migration.copy_receipts DROP CONSTRAINT copy_receipts_check'],
+  ['ALTER ROLE postgres NOBYPASSRLS','ALTER ROLE postgres BYPASSRLS'],
+ ]){await mutate(bad);receiptReads=0;await assert.rejects(runOwnedBuyerMigration({releaseSha,operationId,mode:'reconcile'},deps));assert.equal(receiptReads,0);await mutate(restore);}
+ const originalRead=deps.read;
+ for(const filename of ['source-management','target-management','configuration.json']){
+  let reads=0;deps.read=p=>{const value=originalRead(p);if(p.endsWith(filename)&&++reads>1)return {...value,drift:true};return value;};
+  receiptReads=0;await assert.rejects(runOwnedBuyerMigration({releaseSha,operationId,mode:'reconcile'},deps));assert.equal(receiptReads,0);deps.read=originalRead;
+ }
+ // A credential change after receipt SELECT is caught before a successful reconciliation result.
+ let drift=false;deps.read=p=>p==='source-management'&&drift?{...originalRead(p),drift:true}:originalRead(p);
+ deps.connect=async config=>{const c=await originalConnect(config),query=c.query.bind(c);c.query=async(text,...args)=>{const r=await query(text,...args);if(text==='SELECT receipt FROM owned_buyer_migration.copy_receipts WHERE operation_id=$1')drift=true;return r;};return c;};
+ await assert.rejects(runOwnedBuyerMigration({releaseSha,operationId,mode:'reconcile'},deps));deps.read=originalRead;deps.connect=originalConnect;
+ assert.equal((await runOwnedBuyerMigration({releaseSha,operationId,mode:'reconcile'},deps)).status,'OWNED_BUYER_DATA_RECONCILED');
  const verify=await connect('owned_fixture');assert.equal((await verify.query('SELECT count(*)::int AS n FROM owned_buyer_migration.copy_receipts')).rows[0].n,1);
  assert.equal((await verify.query('SELECT count(*)::int AS n FROM public."SearchJob"')).rows[0].n,1);
 

@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — native copy host pre-read guards
+
+The owned migration host now validates the bounded current manager and exact retained receipt storage before reading receipt data, sharing the reviewed storage catalog guard with target hardening. Protected credentials, source configuration and owned profile are fenced before connections, before copy/reconciliation reads and before successful return. Native disposable tests cover receipt RLS/check drift, manager BYPASSRLS drift, credential/configuration changes and successful full installation order. Production execution remains UNVERIFIED; no production changes occurred.
+
 ## 2026-09-21 — integration validation and deployment access restored
 
 The contained suite at 86166e3 completed all 264 intended files: 2,395 tests, 2,261 passed, 134 intentional skips and zero failures. Output drained and no descendants survived. The frontend at 3784839 passed its owned-mode production build, standalone TypeScript and 25 focused contracts without production credentials. Later preparation changes still require a final integrated exact-source gate.
