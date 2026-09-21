@@ -2274,12 +2274,8 @@ Prepared a fixed, append-only partial-candidate retirement helper with retained 
 
 ## 2026-09-21 — successor final-input tooling
 
-Prepared the separate schema-three final-input operator with one retained operation UUID, unchanged original migration lineage, fresh candidate package/backup/disk bindings and predecessor HELD fences. Workflow observations are GET-only and never append to the global event streams. Six focused orchestration tests pass; native successor execution remains unverified. No production effects occurred, and activation/lineage are explicitly not claimed by preparation or inspection.
+Added explicit retirement-bound HELD rollover and current-segment candidate establishment. Retained predecessor files, one fresh run and exact interrupted publication are tested with protected files and flock; the composed establishment test verifies rollover precedes candidate/lifecycle/manifest. Existing retirement and HELD regressions pass. Native service/provider observations remain modeled and production execution UNVERIFIED. No production changes occurred.
 
-## 2026-09-21 — deterministic successor output reconciliation
+## 2026-09-21 — successor candidate store plan reuse
 
-Added observation-only adoption of complete exact bundle/input outputs after lost acknowledgment, including file/directory synchronization before recording success. Partial output and unknown random-path backup outcomes remain blocked without repeated effects. Nine focused tests, including actual file synchronization and partial/foreign output refusal, pass; no production execution occurred.
-
-## 2026-09-21 — successor reconciliation prerequisite durability
-
-Independent review identified that a staged intent could be observed without promotion before the adopted output result. Reconciliation now synchronizes/promotes that exact intent before recording its result. Ten focused regressions pass, including explicit staged-intent ordering. No production effects occurred.
+Bound native candidate preparation to the completed successor activation plan and current admission attempt, preserving the actual predecessor rollback target and refusing missing or foreign successor context. Twenty-four focused tests pass; activation metadata/service observations are modeled and the native reader remains an integration dependency. No production mutation or deployment occurred.

@@ -1,3 +1,4 @@
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {createOwnedStoreTransition,ownedBackendFields,validateOwnedStoreTransitionPlan} from './owned-store-transition.js';
 import {createReceiverOriginTransition,validateReceiverOriginPlan} from './receiver-origin-transition.js';
@@ -40,6 +41,7 @@ function command(file,args,env={}){const r=spawnSync(file,args,{encoding:'utf8',
 function sync(dir){const fd=fs.openSync(dir,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
 export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run=command,
  inspectSealed=inspectSealedBuyerWriterArtifact,inspectDeployed=inspectBuyerWriterArtifact,
+ journal,release,readSuccessorStore=async input=>(await import('./owned-successor-activation.js')).readOwnedSuccessorActivationStorePlan(input),
  stopped=verifyAdmissionServicesStopped,acquire=acquireReleaseAdmissionLock,receiver=createReceiverOriginTransition({assertStopped:stopped}),ownedStore=createOwnedStoreTransition()}={}){
  const ROOT=root,ADMISSION=admission;
  const repository=fileURLToPath(new URL('../../',import.meta.url));
@@ -54,7 +56,16 @@ export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run
    const previousSha=current();if(previousSha===input.releaseSha)reject();
    const [candidate,recovery,previous]=await Promise.all([artifact(input.releaseSha,true),artifact(input.recoverySha,true),artifact(previousSha,false)]);
    const receiverOrigin=await receiver.prepare({releaseSha:input.releaseSha,mode:'preview'});
-   const owned=input.backendProfile?{ownedStore:await ownedStore.prepare({releaseSha:input.releaseSha,origin:receiverOrigin.origin,...ownedBackendFields(input)})}:{};
+   let storePlan;
+   const retired=journal?partitionRetiredReleaseHistory(journal.stream('release').events()).retired:null;
+   if(release?.schema===3||retired?.schema===5){
+    if(release?.schema!==3||!input.backendProfile||release.releaseSha!==input.releaseSha||release.operationId!==input.operationId||release.profileDigest!==input.profileDigest)reject();
+    const sequence=inspectReleaseSequenceHistory(journal.stream('release').events()),pending=sequence.pending;
+    if(sequence.context?.operationId!==input.operationId||sequence.context.releaseSha!==input.releaseSha||pending?.stage!=='admission_lease')reject();
+    storePlan=validateOwnedStoreTransitionPlan(await readSuccessorStore({releaseSha:input.releaseSha,operationId:input.operationId,attemptId:pending.attemptId,inputDigest:pending.inputDigest,checkOutputDigest:pending.checkOutputDigest,profileDigest:input.profileDigest,successorLineageFile:release.successorLineageFile,journal}));
+    if(storePlan.previousSha!==previousSha||storePlan.releaseSha!==input.releaseSha||storePlan.profileDigest!==input.profileDigest||storePlan.origin!==receiverOrigin.origin)reject();
+   }else if(input.backendProfile)storePlan=await ownedStore.prepare({releaseSha:input.releaseSha,origin:receiverOrigin.origin,...ownedBackendFields(input)});
+   const owned=input.backendProfile?{ownedStore:storePlan}:{};
    return valid({...input,...owned,runId:state.runId,artifactDigest:candidate.artifactDigest,recoveryArtifactDigest:recovery.artifactDigest,previousSha,previousArtifactDigest:previous.artifactDigest,stateDigest:hash(state),receiverOrigin});},
   async execute(step,p){check(p);stopped();
    if(step==='pointer'){if(current()!==p.previousSha||(await artifact(p.previousSha,false)).artifactDigest!==p.previousArtifactDigest||(await artifact(p.releaseSha,true)).artifactDigest!==p.artifactDigest)reject();
@@ -83,7 +94,7 @@ export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run
    }return true;
   }};
 }
-export async function prepareCandidateDeployment(input,{journal,host=createCandidateDeploymentHost()}={}){
+export async function prepareCandidateDeployment(input,{journal,release,host=createCandidateDeploymentHost({journal,release})}={}){
  if(!exact(input,['operationId','releaseSha','recoverySha',...Object.keys(ownedBackendFields(input))])||!uuid(input.operationId)||!sha(input.releaseSha)||!sha(input.recoverySha)||input.releaseSha===input.recoverySha)reject();
  const stream=journal.stream('release');let state=inspectCandidateDeploymentHistory(stream.events()),lease;
  try{lease=host.lease();lease.assertIdentity();

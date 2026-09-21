@@ -121,7 +121,7 @@ export async function establishCandidateHeld(context,{root=RELEASE_ADMISSION_ROO
  // Exact retained HELD state is revalidated under the candidate and lifecycle
  // locks. A confirmed running lifecycle is observed without re-engaging a stop-only hold.
  const state=sequence(context.journal.stream('release').events());
- await prepare({operationId:state.context.operationId,releaseSha:context.input.releaseSha,recoverySha:context.input.recoverySha,...collectorBackend(context)},{journal:context.journal});
+ await prepare({operationId:state.context.operationId,releaseSha:context.input.releaseSha,recoverySha:context.input.recoverySha,...collectorBackend(context)},{journal:context.journal,release:context.release});
  const pending=inspectHeldLifecycleHistory(context.journal.stream('release').events());
  const result=await lifecycle({releaseSha:context.input.releaseSha,journal:context.journal,reconcile:Boolean(pending)},
   {root,groupId,start:binding=>startCandidateServices(context,binding)});
