@@ -2206,3 +2206,7 @@ Implemented separately staged frontend/API configuration and exact eight-operati
 ## 2026-09-21 — source-security CLI and retained host configuration
 
 Added fixed-path source-security preparation, apply and reconcile wrapper with global exclusion, protected retained configuration/version and dedicated hash journal. Ten focused tests and four existing actual PostgreSQL SQL checks pass; build/lint/syntax pass. Full native host composition and production execution remain UNVERIFIED. No production actions.
+
+## 2026-09-21 — source configuration replay durability repair
+
+Independent review identified missing replay synchronization after an uncertain directory sync. Existing configuration and directory paths now synchronize before successful return; seven host tests pass including the exact rename/sync interruption. No production effects.
