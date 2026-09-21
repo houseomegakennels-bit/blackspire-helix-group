@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildOwnedN8nCloudWorkflow,cloudProofDigest,prepareOwnedN8nCloudWorkflow,completeOwnedN8nCloudWorkflow,validateOwnedN8nCloudExecution,validateOwnedN8nCloudWorkflowProof} from '../packages/zola-release/owned-n8n-cloud-workflow.js';
+import {normalizeOwnedN8nCloudWorkflow,adoptOwnedN8nCloudWorkflow,validateOwnedN8nCloudWorkflowAdoption,buildOwnedN8nCloudWorkflow,cloudProofDigest,prepareOwnedN8nCloudWorkflow,completeOwnedN8nCloudWorkflow,validateOwnedN8nCloudExecution,validateOwnedN8nCloudWorkflowProof} from '../packages/zola-release/owned-n8n-cloud-workflow.js';
 const copy=v=>structuredClone(v);
 function fixture(){
  const plan={version:1,kind:'owned-n8n-cloud-proof-plan',releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137',operatorSha:'b'.repeat(40),credentialId:'RzOyDmXYmx58yZHi',challenge:'c'.repeat(64),receiptId:'11111111-1111-4111-8111-111111111111',origin:'https://jarvis.blackspirehelix.com',path:'/__zola_credential_proof/'+'c'.repeat(64),createdAt:'2026-09-21T20:00:00.000Z',expiresAt:'2026-09-21T20:15:00.000Z'};
@@ -66,4 +66,36 @@ test('retained proof tamper fails before cleanup, exact result replay stays read
  assert.equal(f.calls.filter(c=>c.method!=='GET').length,before);
  f.records.get('execution-observed').data.resultData.runData['Verify stored credential'][0].data.main[0][0].json.challenge='wrong';
  await assert.rejects(completeOwnedN8nCloudWorkflow({...f,executionId:f.execution.id},f));
+});
+
+const reversed=value=>Array.isArray(value)?value.map(reversed):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).reverse().map(([k,v])=>[k,reversed(v)])):value;
+test('cloud JSON object key order normalizes without changing digests or allowing array changes',()=>{
+ const f=fixture();const raw=reversed(f.workflow);
+ assert.deepEqual(normalizeOwnedN8nCloudWorkflow(f.plan,raw),f.workflow);
+ const execution=reversed(f.execution);assert.doesNotThrow(()=>validateOwnedN8nCloudExecution({...f,execution}));
+ raw.nodes.reverse();assert.throws(()=>normalizeOwnedN8nCloudWorkflow(f.plan,raw));
+});
+test('unknown create is adopted through unique paginated GETs only with separate repair provenance',async()=>{
+ const f=fixture();f.setUnknownCreate();await assert.rejects(prepareOwnedN8nCloudWorkflow(f.plan,f));
+ const calls=[],raw={...reversed(f.workflow),createdAt:f.plan.createdAt,sourceWorkflowId:null};
+ const request=async(method,path)=>{calls.push({method,path});assert.equal(method,'GET');return path.includes('?limit=')?{status:200,body:{data:[raw],nextCursor:null}}:{status:200,body:raw};};
+ const repairOperatorSha='e'.repeat(40);
+ const created=await adoptOwnedN8nCloudWorkflow(f.plan,{repairOperatorSha,workflowId:f.workflow.id},{...f,request});
+ assert.deepEqual(created.workflow,f.workflow);
+ assert.equal(validateOwnedN8nCloudWorkflowAdoption(f.plan,created,f.records.get('workflow-adoption'),repairOperatorSha).postRepeated,false);
+ assert.deepEqual(await adoptOwnedN8nCloudWorkflow(f.plan,{repairOperatorSha,workflowId:f.workflow.id},{...f,request}),created);
+ assert.equal(f.calls.filter(c=>c.method==='POST').length,1);assert.ok(calls.every(c=>c.method==='GET'));
+ assert.equal(f.records.get('workflow-intent').planDigest,cloudProofDigest(f.plan));
+});
+test('adoption refuses duplicate planned name, changed graph, source copy and stale time without recording created',async()=>{
+ for(const bad of ['duplicate','value','source','time']){
+  const f=fixture();f.setUnknownCreate();await assert.rejects(prepareOwnedN8nCloudWorkflow(f.plan,f));
+  const raw={...copy(f.workflow),createdAt:f.plan.createdAt,sourceWorkflowId:null};
+  if(bad==='value')raw.nodes[1].parameters.options.timeout=50000;
+  if(bad==='source')raw.sourceWorkflowId='Other';
+  if(bad==='time')raw.createdAt='2026-09-21T19:00:00Z';
+  const request=async(method,path)=>{assert.equal(method,'GET');return path.includes('?limit=')?{status:200,body:{data:bad==='duplicate'?[raw,{...raw,id:'Other'}]:[raw]}}:{status:200,body:raw};};
+  await assert.rejects(adoptOwnedN8nCloudWorkflow(f.plan,{repairOperatorSha:'e'.repeat(40),workflowId:f.workflow.id},{...f,request}));
+  assert.equal(f.records.has('workflow-created'),false);
+ }
 });

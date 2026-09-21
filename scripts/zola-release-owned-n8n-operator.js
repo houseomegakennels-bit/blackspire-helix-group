@@ -1,4 +1,4 @@
-import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
+import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
 import {retainOwnedN8nResponse} from '../packages/zola-release/owned-n8n-response-receipt.js';
 import {assertOwnedN8nRecoveryAuthority,createOwnedN8nRecoveryContinuation} from '../packages/zola-release/owned-n8n-recovery-authority.js';
 import {reassertOwnedN8nWriter,validateOwnedN8nReassertionProof} from '../packages/zola-release/owned-n8n-credential-reassertion.js';
@@ -121,7 +121,8 @@ try{
   const store=recoveryStore(b),history=validateOwnedN8nCloudHistory({authority:retained(b),originalIntent:records(b).value('intent',true),originalResult:records(b).value('result',true),source:v,plan:complete.plan,
    reassertion:{intent:store.value('intent',true),httpAck:store.value('http-ack',true),result:store.value('result',true),headers:store.value('transport-headers',true),body:store.value('transport-body',true)}});
   const identity=await lookupBuyerWriterIdentity(),snapshot=protectedSnapshot(b,heldRecord(b),identity);
-  if(complete.plan.operatorSha!==operatorSha||complete.plan.ingressDigest!==snapshot.ingress.digest||!same(complete.initialClosure,history.initialClosure))fail();
+  assertOwnedN8nCloudContinuationOperator({plan:complete.plan,workflowCreated:complete.workflowCreated,adoption:complete.adoption,currentOperatorSha:operatorSha});
+  if(complete.plan.ingressDigest!==snapshot.ingress.digest||!same(complete.initialClosure,history.initialClosure))fail();
   return {after:complete.credentialMetadata,initialClosure:complete.initialClosure,history,receiptDigest:complete.receiptDigest,plan:complete.plan};
  };
  const metadata=()=>createOwnedN8nCredentialTransport(key)('GET','/api/v1/credentials/RzOyDmXYmx58yZHi');

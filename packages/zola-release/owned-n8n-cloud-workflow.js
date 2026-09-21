@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import {createHash} from 'node:crypto';
 import {N8N_REASSERTION} from './owned-n8n-credential-reassertion.js';
 export const cloudProofDigest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -21,7 +22,7 @@ export function buildOwnedN8nCloudWorkflow(plan){
 export function normalizeOwnedN8nCloudWorkflow(plan,raw){
  const expected=buildOwnedN8nCloudWorkflow(plan);
  if(!id(raw?.id)||!id(raw.versionId)||raw.active!==false||raw.activeVersionId!=null||raw.pinData&&Object.keys(raw.pinData).length||raw.staticData!=null||raw.isArchived===true)fail();
- for(const key of ['name','nodes','connections','settings'])if(!same(raw[key],expected[key]))fail();
+ for(const key of ['name','nodes','connections','settings'])if(!isDeepStrictEqual(raw[key],expected[key]))fail();
  return {id:raw.id,versionId:raw.versionId,...expected,active:false};
 }
 export function validateOwnedN8nCloudWorkflowCreated(plan,created){
@@ -67,7 +68,7 @@ export function validateOwnedN8nCloudExecution({plan,workflow,execution,serverRe
  const output=run['Verify stored credential'][0].data;
  if(!exact(output,'main')||!Array.isArray(output.main)||output.main.length!==1||!Array.isArray(output.main[0])||output.main[0].length!==1)fail();
  const item=output.main[0][0],expected={version:1,status:'CREDENTIAL_POSSESSION_VERIFIED',challenge:plan.challenge,receiptId:plan.receiptId};
- if(!same(item.json,expected)||item.binary!==undefined)fail();
+ if(!isDeepStrictEqual(item.json,expected)||item.binary!==undefined)fail();
  return {version:1,kind:'owned-n8n-cloud-execution-proof',planDigest:cloudProofDigest(plan),workflowId:w.id,workflowVersionId:w.versionId,workflowDigest:cloudProofDigest(w),executionId:e.id,executionDigest:cloudProofDigest(e),serverReceiptDigest:cloudProofDigest(r),challenge:plan.challenge,receiptId:plan.receiptId,credentialId:plan.credentialId};
 }
 export function validateOwnedN8nCloudWorkflowProof({plan,workflowCreated,execution,serverReceipt,workflowProof}){
@@ -106,4 +107,35 @@ export async function completeOwnedN8nCloudWorkflow({plan,executionId,serverRece
  store.record('workflow-delete-intent',intent);store.record('workflow-deleted',cleanup);
  const result={...proof,kind:'owned-n8n-cloud-workflow-proof',workflowDeleted:true,originalOutcome:'UNKNOWN',administrativeReassertionStatus:405};
  store.record('workflow-proof',result);await fence();return result;
+}
+
+export function validateOwnedN8nCloudWorkflowAdoption(plan,created,adoption,repairOperatorSha){
+ const workflow=validateOwnedN8nCloudWorkflowCreated(plan,created);
+ if(!/^[a-f0-9]{40}$/.test(repairOperatorSha??'')||repairOperatorSha===plan.operatorSha)fail();
+ const expected={version:1,kind:'owned-n8n-cloud-workflow-adoption',planDigest:cloudProofDigest(plan),originOperatorSha:plan.operatorSha,repairOperatorSha,workflowDigest:cloudProofDigest(workflow),workflowId:workflow.id,workflowVersionId:workflow.versionId,creationOutcome:'OBSERVED_EXISTING',postRepeated:false};
+ if(!same(adoption,expected))fail();return expected;
+}
+export async function adoptOwnedN8nCloudWorkflow(plan,{repairOperatorSha,workflowId},{request,store,fence,now=()=>Date.now()}){
+ validateOwnedN8nCloudPlan(plan);await fence();
+ if(!id(workflowId)||!/^[a-f0-9]{40}$/.test(repairOperatorSha??'')||repairOperatorSha===plan.operatorSha||now()<Date.parse(plan.createdAt)||now()>=Date.parse(plan.expiresAt))fail();
+ const expectedIntent={version:1,planDigest:cloudProofDigest(plan),workflow:buildOwnedN8nCloudWorkflow(plan)};
+ if(!same(store.value('workflow-intent',true),expectedIntent)||store.value('serve-intent',true)||store.value('workflow-delete-intent',true))fail();
+ const matches=[],ids=new Set(),cursors=new Set();let cursor=null;
+ for(let page=0;page<100;page++){
+  const r=await request('GET','/api/v1/workflows?limit=100'+(cursor?'&cursor='+encodeURIComponent(cursor):''));
+  if(r?.status!==200||!Array.isArray(r.body?.data)||r.body.data.length>100)fail();
+  for(const row of r.body.data){if(!id(row?.id)||ids.has(row.id))fail();ids.add(row.id);if(row.name===expectedIntent.workflow.name)matches.push(row);}
+  const next=r.body.nextCursor;
+  if(next==null||next===''){cursor=null;break;}
+  if(typeof next!=='string'||next.length>2048||cursors.has(next))fail();cursors.add(next);cursor=next;
+ }
+ if(cursor||matches.length!==1||matches[0].id!==workflowId)fail();
+ const observe=async()=>{const r=await request('GET','/api/v1/workflows/'+workflowId);if(r?.status!==200)fail();const at=Date.parse(r.body.createdAt);if(!Number.isFinite(at)||at<Date.parse(plan.createdAt)||at>=Date.parse(plan.expiresAt)||r.body.sourceWorkflowId!=null)fail();return normalizeOwnedN8nCloudWorkflow(plan,r.body);};
+ const workflow=await observe();await fence();if(!same(workflow,await observe()))fail();await fence();
+ const created={version:1,planDigest:cloudProofDigest(plan),workflow};
+ const prior=store.value('workflow-created',true),adoption=store.value('workflow-adoption',true);
+ if(prior&&!same(prior,created))fail();
+ const proof={version:1,kind:'owned-n8n-cloud-workflow-adoption',planDigest:cloudProofDigest(plan),originOperatorSha:plan.operatorSha,repairOperatorSha,workflowDigest:cloudProofDigest(workflow),workflowId,workflowVersionId:workflow.versionId,creationOutcome:'OBSERVED_EXISTING',postRepeated:false};
+ if(adoption&&!same(adoption,proof))fail();validateOwnedN8nCloudWorkflowAdoption(plan,created,proof,repairOperatorSha);
+ store.record('workflow-intent',expectedIntent);store.record('workflow-adoption',proof);store.record('workflow-created',created);await fence();return created;
 }

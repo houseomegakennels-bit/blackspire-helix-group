@@ -2370,3 +2370,7 @@ Prepared an isolated operator successor to the retained provider fix. The origin
 ## 2026-09-21 — isolated cloud credential proof preparation
 
 Implemented one-use loopback verifier, exact nginx publication/restoration, saved inactive diagnostic workflow and authenticated execution receipt validation, plus a distinct release continuation mode. Tests cover wrong/duplicate credentials, concurrency, expiry, cleanup uncertainty, foreign proxy bytes and missing final receipts. Required gates run before freezing the operator. No production proof endpoint, workflow or execution was created during implementation.
+
+## 2026-09-21 — GET-only diagnostic workflow adoption repair
+
+Prepared structural normalization and fixed workflow adoption after the provider returned semantically identical JSON in another property order. The separate repair preserves the original timed plan and records its own code identity. No workflow POST, edit or execution was performed during implementation. Focused tests cover reordered graph data, foreign workflow rejection and preserved original-versus-repair provenance.

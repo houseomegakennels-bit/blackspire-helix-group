@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — observed diagnostic workflow adoption
+
+The original cloud proof operator created exactly one inactive diagnostic workflow, but strict serialized JSON comparison rejected the provider response because property order differed. Authenticated GET observations found the exact intended graph and settings unchanged. A separate repair compares structures without changing expected canonical bytes and adopts only that fixed observed workflow using GET requests. It preserves the original plan operator SHA and expiry, records distinct repair provenance, and cannot POST another workflow. Server, finalization and continuation require that adoption proof; no original plan or creation intent is rewritten. Actual key-possession execution remains pending.
+
 ## 2026-09-21 — bounded cloud credential possession proof
 
 A separate operator can prepare a fifteen-minute exact nonce route on the existing Jarvis TLS origin, backed by an isolated loopback verifier. It compares the existing writer credential in constant time, records one authenticated receipt before replying, and restores the exact prior nginx bytes after response, expiry or handled termination. Unknown process or reload outcomes require explicit protected cleanup; a retained serve intent cannot restart the one-use endpoint. No sealed application source or business route is changed.

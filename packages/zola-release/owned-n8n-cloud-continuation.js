@@ -1,3 +1,4 @@
+import {validateOwnedN8nCloudWorkflowAdoption} from './owned-n8n-cloud-workflow.js';
 import {n8nReassertionDigest as hash,ownedN8nReassertionBody} from './owned-n8n-credential-reassertion.js';
 const fixed={releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137'};
 const originalSha='5c7cc20350025db8339d8210a496a78cb51f6af4',reassertionSha='567b7acbdf16b4e784d235e97709e4fec2adb157';
@@ -34,4 +35,14 @@ export function createOwnedN8nCloudContinuation({withFence,proof,metadata,closur
   await fence();const after=await proof(binding);if(!same(before,after))fail();await fence();
  });
  return Object.freeze({assertConfigured:observe,synchronize:observe});
+}
+
+// The retained plan belongs to the original operator. A separate, exact GET
+// adoption receipt authorizes this reader without rewriting that provenance.
+export function assertOwnedN8nCloudContinuationOperator({plan,workflowCreated,adoption,currentOperatorSha}){
+ if(!/^[a-f0-9]{40}$/.test(currentOperatorSha??''))fail();
+ if(plan?.operatorSha===currentOperatorSha){if(adoption!==null&&adoption!==undefined)fail();return true;}
+ if(plan?.operatorSha!=='4a1a329a35e10691af2eadbf4088c8bb306d505f'||workflowCreated?.workflow?.id!=='JjlvgzqIgFQSWOM7'
+  ||Object.entries(fixed).some(([k,v])=>plan[k]!==v))fail();
+ validateOwnedN8nCloudWorkflowAdoption(plan,workflowCreated,adoption,currentOperatorSha);return true;
 }
