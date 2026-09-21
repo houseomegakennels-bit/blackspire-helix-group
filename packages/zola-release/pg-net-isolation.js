@@ -40,6 +40,7 @@ export const PG_NET_SOURCE_ALLOWLIST=Object.freeze([
  // Reviewed owned-cluster documentation and isolated provider-denial fixtures.
  'packages/buyer-writer/OWNED_POSTGRES.md',
  'scripts/test-owned-source-security-postgres.mjs',
+ 'scripts/test-owned-buyer-full-order-session.mjs',
  'tests/buyer-writer-owned-database-evidence.test.js',
  'scripts/test-buyer-writer-postgres.mjs',
  'docs/BLACKSPIRE_ACTIVE_CONTEXT.md',
