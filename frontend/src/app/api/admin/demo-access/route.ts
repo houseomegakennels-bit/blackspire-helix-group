@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
   const days = Number.isFinite(requestedDays) ? Math.min(30, Math.max(1, Math.round(requestedDays))) : 7;
   const requestedHours = Number(body.linkHours || 48);
   const linkHours = Number.isFinite(requestedHours) ? Math.min(168, Math.max(1, Math.round(requestedHours))) : 48;
+  const accessLevel = body.accessLevel === "real_estate_operator" ? "real_estate_operator" : "read_only";
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + linkHours * 3_600_000).toISOString();
   const admin = createAdminSupabaseAuthClient();
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
     token_hash: hashToken(token),
     label: label || null,
     access_days: days,
+    access_level: accessLevel,
     expires_at: expiresAt,
     created_by: operator?.id ?? null,
   });
@@ -37,5 +39,5 @@ export async function POST(request: NextRequest) {
   }
 
   const inviteUrl = new URL(`/demo/invite/${token}`, request.nextUrl.origin).toString();
-  return NextResponse.json({ ok: true, inviteUrl, linkExpiresAt: expiresAt, accessDays: days });
+  return NextResponse.json({ ok: true, inviteUrl, linkExpiresAt: expiresAt, accessDays: days, accessLevel });
 }

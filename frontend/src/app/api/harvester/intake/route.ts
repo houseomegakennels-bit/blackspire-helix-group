@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -10,6 +11,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const intakes = await listHarvesterIntakes();
     return NextResponse.json({ ok: true, intakes });
@@ -22,6 +26,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const body = (await request.json()) as {
       sourceType?: HarvesterSourceType;
@@ -69,6 +76,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const { searchParams } = new URL(request.url);
     let intakeId = searchParams.get("id") ?? undefined;

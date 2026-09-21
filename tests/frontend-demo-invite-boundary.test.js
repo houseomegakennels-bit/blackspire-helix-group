@@ -7,9 +7,9 @@ import {stripTypeScriptTypes} from 'node:module';
 const executable=file=>stripTypeScriptTypes(fs.readFileSync(new URL(`../frontend/src/${file}`,import.meta.url),'utf8')
  .replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,''));
 const response={json:(body,options={})=>({body,status:options.status??200,cookies:{set(){}}})};
-function fixture({lost=false,expiredDuringCreate=false,activationError=false,signInThrows=false}={}){
+function fixture({lost=false,expiredDuringCreate=false,activationError=false,signInThrows=false,accessLevel='read_only'}={}){
  const events=[],users=new Map();let clock=Date.parse('2026-09-21T00:00:00Z');
- const invite={id:'invite',access_days:7,expires_at:new Date(clock+1000).toISOString(),claimed_at:null};
+ const invite={id:'invite',access_level:accessLevel,access_days:7,expires_at:new Date(clock+1000).toISOString(),claimed_at:null};
  const auth={async createUser(input){events.push('create');users.set('new',{...input});if(expiredDuringCreate)clock+=2000;
   return {data:{user:{id:'new'}},error:null};},
   async deleteUser(){events.push('delete');return {error:new Error('deletion unavailable')};},
@@ -56,4 +56,9 @@ test('demo expiry missing, malformed, or past fails closed; valid future expiry 
   if(expiry?.startsWith('2999'))assert.equal((await guard()).expired,false);
   else await assert.rejects(guard,/demo-expired/);
  }
+});
+
+test('isolated operator invitation grants its selected role only after the exclusive claim',async()=>{
+ const valid=fixture({accessLevel:'real_estate_operator'});assert.equal((await valid.run()).status,200);assert.equal(valid.users.get('new').app_metadata.blackspire_role,'demo_operator');assert.deepEqual(valid.events,['create','claim','promote','signin']);
+ for(const options of [{lost:true},{expiredDuringCreate:true},{activationError:true}]){const f=fixture({...options,accessLevel:'real_estate_operator'});await f.run();assert.equal(f.users.get('new').app_metadata.blackspire_role,'client_only');assert.equal(f.events.includes('signin'),false);}
 });

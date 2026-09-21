@@ -4,7 +4,7 @@ import {
   workflows,
 } from "@/lib/buyer-engine-data";
 import { getLiveCountyCapabilities, getOperatorShellStatus } from "@/lib/buyer-engine-server";
-import { requireWorkspacePage } from "@/lib/operator-access";
+import { requireSignedInPage } from "@/lib/operator-access";
 
 const workflowTone = {
   "production-ready": "active",
@@ -14,7 +14,7 @@ const workflowTone = {
 } as const;
 
 export default async function WorkflowsPage() {
-  await requireWorkspacePage();
+  await requireSignedInPage();
   const [counties, operatorStatus] = await Promise.all([
     getLiveCountyCapabilities(true),
     getOperatorShellStatus().catch(() => null),

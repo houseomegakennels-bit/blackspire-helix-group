@@ -18,7 +18,7 @@ export function DemoLoginForm() {
     if (!response.ok) { setBusy(false); return setError(payload.error ?? "Sign-in failed."); }
     const roleResponse = await fetch("/api/auth/role", { cache: "no-store" });
     const rolePayload = await roleResponse.json();
-    if (rolePayload.role !== "demo_viewer" && rolePayload.role !== "admin") { setBusy(false); return setError("This login does not have demo access."); }
+    if (rolePayload.role !== "demo_viewer" && rolePayload.role !== "demo_operator" && rolePayload.role !== "admin") { setBusy(false); return setError("This login does not have demo access."); }
     router.push("/demo");
     router.refresh();
   }

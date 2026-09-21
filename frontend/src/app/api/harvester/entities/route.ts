@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createOrUpdateMarketplaceEntity, getHarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
@@ -6,6 +7,9 @@ import { guardWorkspaceApi } from "@/lib/operator-access";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;
@@ -20,6 +24,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;
