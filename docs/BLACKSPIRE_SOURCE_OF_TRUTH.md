@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — postmerge successor unit receipt binding
+
+The postmerge authority transition can now verify the distinct completed successor unit receipt while retaining the original2636 installation state. It requires the exact owned profile, successor operation and admission attempt, candidate artifact and installed unit digest, and all five protected receipt dependencies. Those dependencies remain fenced throughout publication and observation. Legacy candidate installation handling is unchanged. Eight actual-file postmerge tests pass, including unchanged original receipts, rejection of foreign bindings and later dependency drift. The successor receipt provider and artifact/systemd observations are modeled in these postmerge tests; native unit receipt tests cover that provider separately. No production transition occurred.
+
 ## 2026-09-21 — successor runtime independently verified after reconnect
 
 Commander reconnection confirmed the same four production service processes and candidate2636 pointer; no production stop or successor deployment had occurred. The integrated successor runtime passed an independent actual non-root mount/network namespace test with the native repository daemon, authenticated IPC readiness, real PostgreSQL SCRAM over verified TLS, complete deployed artifact verification and fixed read-only systemd bus observations. Generation drift and fresh-process artifact tampering refuse. No fixture processes or containers remained before the rerun. Twenty composed lineage/retirement/operation checks and twelve production/chained-history checks pass, including actual schema-three original-receipt/new-operation separation. Configuration restoration/running observation, gateway unit publication, HELD rollover and successor preparation remain under implementation/review; Zola remains held.

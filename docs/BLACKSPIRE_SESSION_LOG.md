@@ -2294,3 +2294,7 @@ Implemented a separate protected successor unit plan, intent and completion rece
 ## 2026-09-21 — controlled successor HELD handoff
 
 Added explicit retirement-bound HELD rollover and current-segment candidate establishment. Retained predecessor files, one fresh run and exact interrupted publication are tested with protected files and flock; the composed establishment test verifies rollover precedes candidate/lifecycle/manifest. Existing retirement and HELD regressions pass. Native service/provider observations remain modeled and production execution UNVERIFIED. No production changes occurred.
+
+## 2026-09-21 — postmerge successor unit lineage
+
+Added exact successor unit receipt dependencies to postmerge authority publication, preserving the original installation record. Eight postmerge tests pass; production execution remains pending.

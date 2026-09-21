@@ -130,3 +130,27 @@ test('real runtime refuses candidate authority for new main and boots only the r
  const runtime=await createBuyerWriterRuntime(options(after));try{assert.equal(clients,1);assert.equal(runtime.isHealthy(),true);assert.equal(await runtime.checkAvailability(),false);}
  finally{await runtime.close();}
 });
+
+async function successorReceiptFixture(t){
+ const f=await rebindFixture(t);f.plan.backendProfile='owned-postgres-v1';f.plan.profileDigest='2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505';f.plan.commanderRunId=f.config.authority.operationId;
+ fs.writeFileSync(f.paths.candidateState,JSON.stringify({version:4,sha:'2636a1e75cd0f422aff036dfee8a93a81cd5008b'})+'\n',{mode:0o600});
+ const digest=value=>createHash('sha256').update(value).digest('hex'),dependencies=[];
+ for(const name of ['plan','intent','result','retirement']){const filename=path.join(f.root,'successor-'+name+'.json');fs.writeFileSync(filename,JSON.stringify({modeled:name})+'\n',{mode:0o600});dependencies.push({filename,uid:0,gid:0,mode:0o600,digest:digest(fs.readFileSync(filename))});}
+ dependencies.push({filename:f.paths.candidateState,uid:0,gid:0,mode:0o600,digest:digest(fs.readFileSync(f.paths.candidateState))});
+ const receipt={status:'OWNED_SUCCESSOR_GATEWAY_UNIT_RECEIPT_VERIFIED',sha:f.plan.candidateSha,operationId:f.plan.commanderRunId,attemptId:f.config.authority.attemptId,artifactDigest:f.plan.candidateArtifactDigest,profileDigest:f.plan.profileDigest,installedUnitSha256:digest(fs.readFileSync(f.paths.unit)),dependencies};
+ const successorReceipt=async input=>{assert.deepEqual(input,{releaseSha:f.plan.candidateSha,operationId:f.plan.commanderRunId,artifactDigest:f.plan.candidateArtifactDigest});return structuredClone(receipt);};
+ return {...f,receipt,successorReceipt};
+}
+test('owned postmerge retains distinct successor unit receipts and original installation state',rootOnly,async t=>{
+ const f=await successorReceiptFixture(t),host=f.open({successorReceipt:f.successorReceipt}),original=fs.readFileSync(f.paths.candidateState),proof=await host.prepare();
+ for(const row of f.receipt.dependencies)assert.ok(proof.dependencies.some(p=>p.filename===row.filename&&p.digest===row.digest));
+ await host.publish(proof);assert.equal(host.observe(proof),true);assert.deepEqual(fs.readFileSync(f.paths.candidateState),original);
+ fs.appendFileSync(f.receipt.dependencies[0].filename,' ');assert.equal(host.observe(proof),false);
+});
+test('foreign successor receipt binding refuses postmerge before publication',rootOnly,async t=>{
+ const f=await successorReceiptFixture(t);
+ for(const patch of [{attemptId:randomUUID()},{operationId:randomUUID()},{profileDigest:'e'.repeat(64)},{artifactDigest:'e'.repeat(64)},{installedUnitSha256:'e'.repeat(64)},{dependencies:f.receipt.dependencies.slice(1)}]){
+  await assert.rejects(f.open({successorReceipt:async()=>({...f.receipt,...patch})}).prepare());assert.equal(fs.existsSync(f.paths.state),false);
+ }
+ f.plan.backendProfile=undefined;let called=false;await assert.rejects(f.open({successorReceipt:async()=>{called=true;return f.receipt;}}).prepare());assert.equal(called,false);
+});
