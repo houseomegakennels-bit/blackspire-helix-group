@@ -37,7 +37,7 @@ function acl(run,args,stdio=['ignore','pipe','pipe']){
 function syncParent(io,name){const fd=io.openSync(path.dirname(name),fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{io.fsyncSync(fd);}finally{io.closeSync(fd);}}
 export function createConsumerCredentialStore({io=fs,run=spawnSync}={}){
  const allowed=name=>name===P.auth||name===P.consumer||name===P.vercel||name===P.consumer+'.stage'||name===P.vercel+'.stage'||name.startsWith(P.root+'/')&&path.dirname(name)===P.root;
- const read=name=>{
+ const read=(name,synchronize=false)=>{
   if(!allowed(name)||path.resolve(name)!==name)fail();parents(name,io);let fd,bytes;
   try{
    fd=io.openSync(name,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
@@ -46,6 +46,7 @@ export function createConsumerCredentialStore({io=fs,run=spawnSync}={}){
    acl(run,['--numeric','--omit-header','--skip-base','--logical','--','/proc/self/fd/3'],['ignore','pipe','pipe',fd]);
    bytes=Buffer.alloc(before.size+1);let used=0;while(used<bytes.length){const n=io.readSync(fd,bytes,used,bytes.length-used,null);if(n===0)break;used+=n;}
    if(used!==before.size||!statSame(before,io.fstatSync(fd))||!statSame(before,io.lstatSync(name)))fail();
+   if(synchronize)io.fsyncSync(fd);
    return new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,used));
   }finally{bytes?.fill(0);if(fd!==undefined)io.closeSync(fd);}
  };
@@ -53,8 +54,8 @@ export function createConsumerCredentialStore({io=fs,run=spawnSync}={}){
   if(!allowed(name)||name===P.auth||typeof bytes!=='string'||Buffer.byteLength(bytes)>65536)fail();
   const stage=name+'.stage';parents(name,io);
   acl(run,['--numeric','--omit-header','--skip-base','--default','--logical','--',path.dirname(name)]);
-  const readStage=()=>read(stage);
-  if(exists(io,name)){if(exists(io,stage)||read(name)!==bytes)fail();return;}
+  const readStage=()=>read(stage,true);
+  if(exists(io,name)){if(exists(io,stage)||read(name,true)!==bytes)fail();syncParent(io,name);return;}
   if(exists(io,stage)){if(readStage()!==bytes)fail();}
   else{
    let fd;try{

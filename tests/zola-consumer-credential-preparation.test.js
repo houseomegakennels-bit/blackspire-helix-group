@@ -120,3 +120,23 @@ test('production missing branch and PATCH omitted scope fields are accepted only
  const verified=await f.transport.observe(token);assert.equal(verified.preview.gitBranch,T.branch);
  f.envs[0].target=['production'];await assert.rejects(f.transport.observe(token));
 });
+
+test('recovered stage and interrupted rename are resynchronized before durable publication',{skip:process.getuid?.()!==0},t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'consumer-durable-'));fs.chmodSync(root,0o700);t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const map=v=>typeof v==='string'&&v.startsWith('/')?path.join(root,v):v;
+ fs.mkdirSync(map(path.dirname(P.root)),{recursive:true,mode:0o700});
+ const io={...fs},synced=[];
+ for(const key of ['lstatSync','openSync','mkdirSync'])io[key]=(...args)=>fs[key](map(args[0]),...args.slice(1));
+ io.fsyncSync=fd=>{synced.push(fs.fstatSync(fd).isDirectory()?'directory':'file');fs.fsyncSync(fd);};
+ let interrupted=true;
+ io.renameSync=(from,to)=>{fs.renameSync(map(from),map(to));if(interrupted){interrupted=false;throw new Error('interrupted after rename');}};
+ const run=(cmd,args,options)=>spawnSync(cmd,args.map(v=>typeof v==='string'&&v.startsWith('/')&&!v.startsWith('/proc/')?map(v):v),options);
+ const store=createConsumerCredentialStore({io,run}),lease=store.acquire();
+ try{
+  fs.writeFileSync(map(P.consumer+'.stage'),secret+'\n',{mode:0o600});
+  assert.throws(()=>store.publish(P.consumer,secret+'\n'));
+  assert.ok(synced.includes('file'),'retained stage must be fsynced before rename');
+  synced.length=0;store.publish(P.consumer,secret+'\n');assert.deepEqual(synced,['file','directory']);
+  assert.equal(store.read(P.consumer),secret+'\n');
+ }finally{lease.close();}
+});

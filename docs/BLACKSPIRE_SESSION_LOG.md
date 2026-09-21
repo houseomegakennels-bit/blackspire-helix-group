@@ -2039,3 +2039,7 @@ Thirty-two focused tests pass, including real API HTTP and worker claim paths, c
 ## 2026-09-21 — consumer credential synchronization helper
 
 Implemented a fixed-scope root-only helper with a retained secret plan, per-destination intent/acknowledgement files, protected Vercel token copy, same-value-only uncertain-outcome reconciliation and no deployment action. Fresh operations refuse existing credentials or partial state; resumed operations reject source/auth/identity/scope drift. Nine focused tests pass with mocked remote services and a real private filesystem/flock test; build/lint/syntax checks pass. Official Vercel PATCH documentation confirms value-only updates and optional scope fields in responses; strict fresh metadata observations retain scope validation. Live writes and independent review remain UNVERIFIED. No production secret, remote environment, service or deployment changed.
+
+## 2026-09-21 — interrupted credential publication durability checked
+
+Self-review tightened interrupted publication: existing exact files are synchronized together with their parent directory before any remote effect, and a retained complete stage is fsynced before promotion. A real filesystem fault regression interrupts after rename and verifies recovery synchronizes both file and directory. All ten credential tests and required static, memory, secret and whitespace gates pass. No production credential or remote configuration was changed.
