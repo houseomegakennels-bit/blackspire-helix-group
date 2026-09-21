@@ -73,7 +73,7 @@ test('final record histories bind completed-stage evidence and reject tampered r
    registryDigest:RELEASE_REGISTRY_DIGEST,acceptedStagesDigest:hash(call.state.outputs),
    epochRunId:'33333333-3333-4333-8333-333333333333',permitId:'44444444-4444-4444-8444-444444444444',
    permitDigest:'f'.repeat(64),apiGeneration:'1'.repeat(32),workerGeneration:'2'.repeat(32),
-   rollbackAcceptanceDigest:'e'.repeat(64),acceptedAt:'2026-09-21T00:00:00.000Z'};
+   rollbackAcceptanceDigest:'e'.repeat(64),rollbackMode:'stopped-held',businessRecoveryVerified:false,acceptedAt:'2026-09-21T00:00:00.000Z'};
   events.push({schema:1,type:'final_release_record_intent',record});
  };
  assert.equal((await runReleaseSequence({input,journal,adapters})).stage,'guarded_held_to_open');

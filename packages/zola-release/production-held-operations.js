@@ -151,7 +151,7 @@ export function wrapHeldAcceptanceOperations(context,operations,overrides={}){
 }
 
 export function createHeldProductionOperations(context,overrides={}){
- const deps={observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
+ const deps={ensureWriterBinding:input=>import('./held-writer-binding.js').then(module=>module.ensureHeldWriterBinding(input)),observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
   options:()=>admissionOptions(context),premergeConfig:()=>protectedConfig(FIXED_PREMERGE_SIX_READ_CONFIGURATION),
   liveConfig:()=>protectedConfig(FIXED_LIVE_SIX_READ_CONFIGURATION),collect:collectFixed,now:()=>new Date().toISOString(),inspectRecord:inspectFinalReleaseRecord,
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
@@ -183,8 +183,19 @@ export function createHeldProductionOperations(context,overrides={}){
    if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha}))return blocked();
    report=await deps.collect(config);}catch{return blocked();}
    const evidence=safeCollector(report,false,context.input.releaseSha);return pass({stage:'six_reads',...evidence});},observe(){reject();}};
- const postmerge={check:call=>deps.observePostMerge(context,call),execute:call=>{deps.observePostMerge(context,call);},
-  reconcile:call=>deps.observePostMerge(context,call),observe:call=>deps.observePostMerge(context,call)};
+ const bindPostmerge=async call=>{
+  const ids=invocation(context,call,'post_merge_held_epoch',{attempt:true}),held=deps.observePostMerge(context,call);
+  if(held.status!=='PASS'||held.evidence.newMainSha!==merged(call)||!uuid(held.evidence.epochRunId))reject();
+  const lifecycle=await deps.lifecycle({releaseSha:merged(call),runId:held.evidence.epochRunId});
+  const proof=await deps.ensureWriterBinding({releaseSha:merged(call),journal:context.journal,stage:'post_merge_held_epoch',
+   operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
+  if(proof.status!=='HELD_WRITER_BINDING_VERIFIED'||proof.releaseSha!==merged(call)||proof.runId!==held.evidence.epochRunId
+   ||proof.apiGeneration!==lifecycle.api.generation||proof.workerGeneration!==lifecycle.worker.generation
+   ||!digest(proof.bindingDigest)||!digest(proof.commitDigest))reject();
+  return pass({...held.evidence,writerBindingDigest:proof.bindingDigest,writerCommitDigest:proof.commitDigest});
+ };
+ const postmerge={check:call=>deps.observePostMerge(context,call),execute:bindPostmerge,
+  reconcile:bindPostmerge,observe:call=>deps.observePostMerge(context,call)};
  const mint={
   async check(call){invocation(context,call,'mint_acceptance_permit');const held=deps.observePostMerge(context,call);if(held.status!=='PASS')reject();let config;
    try{config=deps.liveConfig();}catch{return blocked();}if(!isProductionAcceptanceIdentity(config))reject();
@@ -228,7 +239,7 @@ export function createHeldProductionOperations(context,overrides={}){
     previousMainSha:context.input.previousMainSha,newMainSha:e.newMainSha,operationId:e.commanderRunId,attemptId:call.attemptId,stageInputDigest:call.inputDigest,
     checkOutputDigest:call.checkOutputDigest,sequenceInputDigest:context.input.inputDigest,registryDigest:RELEASE_REGISTRY_DIGEST,
     acceptedStagesDigest:hash(call.state.outputs),epochRunId:e.epochRunId,permitId:e.permitId,permitDigest:hash(inspectHeldAcceptanceHistory(context.journal.stream('release').events()).claims),
-    apiGeneration:e.apiGeneration,workerGeneration:e.workerGeneration,rollbackAcceptanceDigest:e.rollbackDigest,acceptedAt:deps.now()};
+    apiGeneration:e.apiGeneration,workerGeneration:e.workerGeneration,rollbackAcceptanceDigest:e.rollbackDigest,rollbackMode:'stopped-held',businessRecoveryVerified:false,acceptedAt:deps.now()};
    context.journal.stream('release').append({schema:1,type:'final_release_record_intent',record});deps.writeAccepted({record,root:deps.recordRoot,owner:0});},
   reconcile(call){invocation(context,call,'final_release_record',{attempt:true});const intent=context.journal.stream('release').events().find(row=>row?.type==='final_release_record_intent'&&row.record?.attemptId===call.attemptId);
    if(!intent)reject();deps.writeAccepted({record:intent.record,root:deps.recordRoot,owner:0});const found=deps.inspectRecord({releaseSha:context.input.releaseSha,root:deps.recordRoot,owner:0});

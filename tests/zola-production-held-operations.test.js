@@ -123,3 +123,21 @@ test('resumed six-read intents revalidate fixed identity, version, release and l
   assert.equal(collections,1,'unchanged configuration reaches the collector');
  }
 });
+
+test('postmerge writer publication binds the current HELD lifecycle before acceptance',async()=>{
+ const journal={stream:()=>({events:()=>[],append(){}})},context={input,release:{},journal};
+ const attemptId=randomUUID(),state={context:{operationId,releaseSha:candidate,workspace:input.workspace,principal:input.principal},
+  outputs:{capture_new_main_sha:{newMainSha:merged}},pending:{stage:'post_merge_held_epoch',attemptId}};
+ const call={input,state,ordinal:22,attemptId,inputDigest:'4'.repeat(64),checkOutputDigest:'5'.repeat(64)},calls=[];
+ let bad=false;
+ const operation=createHeldProductionOperations(context,{
+  observePostMerge:()=>({status:'PASS',evidence:{newMainSha:merged,epochRunId}}),
+  lifecycle:async()=>{calls.push('lifecycle');return{api:{generation:apiGeneration},worker:{generation:workerGeneration}};},
+  ensureWriterBinding:async bound=>{calls.push('binding');assert.deepEqual(bound,{releaseSha:merged,journal,stage:'post_merge_held_epoch',operationId,attemptId,
+   inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});return{status:'HELD_WRITER_BINDING_VERIFIED',releaseSha:merged,runId:epochRunId,
+    apiGeneration:bad?'9'.repeat(32):apiGeneration,workerGeneration,bindingDigest:'6'.repeat(64),commitDigest:'7'.repeat(64)};},
+ }).post_merge_held_epoch;
+ await operation.execute(call);const result=await operation.reconcile(call);
+ assert.equal(result.status,'PASS');assert.deepEqual(calls,['lifecycle','binding','lifecycle','binding']);
+ bad=true;await assert.rejects(()=>operation.reconcile(call),/rejected/);
+});

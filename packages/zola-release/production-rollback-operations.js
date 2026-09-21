@@ -1,3 +1,4 @@
+import {createPostmergeAuthorityRebind} from './postmerge-authority-rebind.js';
 import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,12 +42,12 @@ function safeProof(value,stage,binding,ids){
   ||value.attemptId!==ids.attemptId||!digest(value.observationDigest))reject();
  const common=['status','stage','binding','operationId','attemptId','observationDigest','artifactDigest','backupManifestDigest','backupSnapshotDigest','backupProofDigest'];
  const keys=stage==='rollback_acceptance'?[...common,'runtimeProofDigest','apiRecoveryCompatible','workerRecoveryCompatible','admissionCompatible','runtimeCompatible','journalResumable']
-  :[...common,'rollbackJournalDigest','previousStateDigest','apiGeneration','workerGeneration','previousPointerRecoverable','rollbackExecutable','noAttemptMixing','noStaleGeneration'];
+  :[...common,'rollbackJournalDigest','previousStateDigest','apiGeneration','workerGeneration','recoveryPointerAvailable','rollbackContainmentExecutable','rollbackMode','businessRecoveryVerified','noAttemptMixing','noStaleGeneration'];
  if(!exact(value,keys)||!['artifactDigest','backupManifestDigest','backupSnapshotDigest','backupProofDigest'].every(key=>digest(value[key])))reject();
  if(stage==='rollback_acceptance'&&(!digest(value.runtimeProofDigest)||['apiRecoveryCompatible','workerRecoveryCompatible','admissionCompatible','runtimeCompatible','journalResumable'].some(key=>value[key]!==true)))reject();
  if(stage==='rollback_verification'&&(!digest(value.rollbackJournalDigest)||!digest(value.previousStateDigest)
   ||![value.apiGeneration,value.workerGeneration].every(item=>typeof item==='string'&&/^[a-f0-9]{32}$/.test(item))
-  ||value.apiGeneration===value.workerGeneration||['previousPointerRecoverable','rollbackExecutable','noAttemptMixing','noStaleGeneration'].some(key=>value[key]!==true)))reject();
+  ||value.apiGeneration===value.workerGeneration||(['recoveryPointerAvailable','rollbackContainmentExecutable','noAttemptMixing','noStaleGeneration'].some(key=>value[key]!==true)||value.rollbackMode!=='stopped-held'||value.businessRecoveryVerified!==false)))reject();
  return structuredClone(value);
 }
 function rows(context,stage){return context.journal.stream('release').events().filter(row=>row?.type===`${stage}_probe_intent`||row?.type===`${stage}_probe_result`);}
@@ -160,14 +161,15 @@ async function defaultVerification(context,binding,ids,acceptanceProof){
   ||held.completed.join(',')!=='api_health,worker_readiness,generation_fence,six_live_reads,production_smoke,zero_paid_nexus,zero_unintended_mutation'
   ||held.pending&&held.pending.operation!=='rollback_verification')reject();
  const lifecycle=await observeHeldLifecycle({releaseSha:held.claims.mergeMainSha,runId:held.claims.epochRunId});
- if(lifecycle.proof.api.generation!==held.claims.apiGeneration||lifecycle.proof.worker.generation!==held.claims.workerGeneration
-  ||lifecycle.proof.artifactDigest!==cutover.intent.artifactDigest)reject();
+ if(lifecycle.api.generation!==held.claims.apiGeneration||lifecycle.worker.generation!==held.claims.workerGeneration
+  ||lifecycle.artifactDigest!==cutover.intent.artifactDigest)reject();
  const snapshot=cutover.intent.snapshot;
- if(snapshot.current!==path.join(RELEASE_ROOT,binding.rollbackSha)||hash(snapshot)!==cutover.intent.snapshotDigest
-  ||!snapshot.state||typeof snapshot.state!=='object'||!snapshot.api||!snapshot.worker)reject();
+ if(snapshot.current!==path.join(RELEASE_ROOT,cutover.intent.candidateSha)||cutover.intent.candidateSha!==binding.releaseSha||hash(snapshot)!==cutover.intent.snapshotDigest
+  ||!snapshot.state||typeof snapshot.state!=='object'||!snapshot.api||!snapshot.worker||snapshot.rollbackMode!=='stopped-held'
+  ||!createPostmergeAuthorityRebind(cutover.intent,{assertStopped:()=>{reject();}}).recoverable(snapshot.authorityRebind))reject();
  return{status:'PASS',...integrity,rollbackJournalDigest:hash(cutover.intent),previousStateDigest:hash(snapshot.state),
-  apiGeneration:held.claims.apiGeneration,workerGeneration:held.claims.workerGeneration,previousPointerRecoverable:true,
-  rollbackExecutable:true,noAttemptMixing:true,noStaleGeneration:true};
+  apiGeneration:held.claims.apiGeneration,workerGeneration:held.claims.workerGeneration,recoveryPointerAvailable:true,
+  rollbackContainmentExecutable:true,rollbackMode:'stopped-held',businessRecoveryVerified:false,noAttemptMixing:true,noStaleGeneration:true};
 }
 
 function operation(context,stage,precheck,collector,integrity){

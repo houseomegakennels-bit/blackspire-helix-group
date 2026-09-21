@@ -2,7 +2,7 @@ import {candidateHistory} from './helpers/candidate-deployment-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hash} from '../packages/zola-release/commander-journal.js';
-import {inspectVpsCutoverHistory,prepareVpsCutoverPlan,runVpsCutover,rollbackVpsCutover} from '../packages/zola-release/commander-vps.js';
+import {verifyVpsRetainedBackup,inspectVpsCutoverHistory,prepareVpsCutoverPlan,runVpsCutover,rollbackVpsCutover} from '../packages/zola-release/commander-vps.js';
 
 const candidate=candidateHistory();
 const snapshot={current:'/opt/blackspire-command/releases/'+'a'.repeat(40),state:{mode:'held'},api:{active:false},worker:{active:false}};
@@ -76,4 +76,13 @@ test('cutover refuses missing candidate evidence and never substitutes candidate
   const h=host();let result;try{result=await runVpsCutover({plan:p,journal:j},{host:h});}catch{result={status:'STOPPED'};}
   assert.equal(result.status,'STOPPED');assert.equal(h.calls.length,0);
  }
+});
+
+test('cutover retains candidate-bound rollback backup across distinct new-main SHA',async()=>{
+ const proof={status:'PROTECTED_BACKUP_VERIFIED',releaseSha:plan.candidateSha};
+ assert.notEqual(plan.candidateSha,plan.newMainSha);
+ const current={...plan,backupDigest:hash(proof)};
+ const verify=async input=>{assert.deepEqual(input,{releaseSha:plan.candidateSha,manifestFile:plan.backupManifestFile});return proof;};
+ assert.equal(await verifyVpsRetainedBackup(current,{verify}),true);
+ assert.equal(await verifyVpsRetainedBackup({...current,backupDigest:'0'.repeat(64)},{verify}),false);
 });

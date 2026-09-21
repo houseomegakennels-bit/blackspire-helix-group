@@ -15,6 +15,7 @@ import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspect
 const ADMISSION='/etc/blackspire/release-admission',VERCEL_TOKEN='/var/lib/blackspire-operator/vercel-token';
 const RELEASE_ROOT='/opt/blackspire-command',REPOSITORY='https://github.com/houseomegakennels-bit/blackspire-helix-group.git';
 const SOURCE_ROOT=fileURLToPath(new URL('../../',import.meta.url));
+const GATEWAY='blackspire-buyer-writer-gateway.service';
 const API='blackspire-command.service',WORKER='blackspire-command-worker.service',TARGET='blackspire-command.target';
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
@@ -52,8 +53,8 @@ function capturedMain(context,args,stage){
 }
 function fixedStopAndVerify(){
  const run=(file,args)=>{const result=spawnSync(file,args,{encoding:'utf8',timeout:30000,maxBuffer:4096,killSignal:'SIGKILL',stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});if(result.status!==0||result.error)reject();return result.stdout.trim();};
- run('/usr/bin/systemctl',['stop','--',TARGET]);
- for(const unit of [API,WORKER]){const fields=Object.fromEntries(run('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,MainPID','--',unit]).split('\n').map(line=>line.split('=')));
+ run('/usr/bin/systemctl',['stop','--',TARGET,API,WORKER,GATEWAY]);
+ for(const unit of [API,WORKER,GATEWAY]){const fields=Object.fromEntries(run('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,MainPID','--',unit]).split('\n').map(line=>line.split('=')));
   if(fields.ActiveState!=='inactive'||fields.MainPID!=='0')reject();}
 }
 export async function materializeFixedNewMainArtifact(newMainSha,{run=execFileSync,inspect=inspectSealedBuyerWriterArtifact}={}){
@@ -91,6 +92,9 @@ async function ensureHeld(context,args,dependencies){
   {root:ADMISSION,groupId:dependencies.admissionGroup(),stopAndVerify:dependencies.stopAndVerify});
 }
 async function driveVps(context,args,dependencies){
+ const newMainSha=capturedMain(context,args,'journaled_vps_cutover'),ci=dependencies.readCiProof(context,args);
+ const verified=dependencies.verifyMerged({releaseSha:context.input.releaseSha,previousMainSha:context.input.previousMainSha,...ci,newMainSha});
+ if(verified.status!=='MERGED_IDENTITY_VERIFIED')reject();
  const held=await ensureHeld(context,args,dependencies),history=inspectVpsCutoverHistory(context.journal.stream('release').events());let plan,options,reconcile;
  if(history.started){plan=Object.fromEntries(['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','candidateSha','rollbackSha','artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'].map(key=>[key,history.intent[key]]));reconcile=true;}
  else{const prepared=await dependencies.prepareVps({plan:await vpsBase(context,args,held,dependencies)});plan=prepared.plan;options={snapshot:prepared.snapshot};reconcile=false;}

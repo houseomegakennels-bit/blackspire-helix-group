@@ -21,7 +21,7 @@ const acceptanceProof={status:'PASS',artifactDigest:'d'.repeat(64),backupManifes
  backupProofDigest:'6'.repeat(64),runtimeProofDigest:'1'.repeat(64),apiRecoveryCompatible:true,workerRecoveryCompatible:true,admissionCompatible:true,runtimeCompatible:true,journalResumable:true};
 const verificationProof={status:'PASS',artifactDigest:'d'.repeat(64),backupManifestDigest:'e'.repeat(64),backupSnapshotDigest:'f'.repeat(64),
  backupProofDigest:'6'.repeat(64),rollbackJournalDigest:'2'.repeat(64),previousStateDigest:'3'.repeat(64),apiGeneration:'4'.repeat(32),workerGeneration:'5'.repeat(32),
- previousPointerRecoverable:true,rollbackExecutable:true,noAttemptMixing:true,noStaleGeneration:true};
+ recoveryPointerAvailable:true,rollbackContainmentExecutable:true,rollbackMode:'stopped-held',businessRecoveryVerified:false,noAttemptMixing:true,noStaleGeneration:true};
 const checks={checkAcceptance:async()=>({status:'PASS',rollbackCandidatePresent:true,protectedBackupPresent:true}),
  checkVerification:async()=>({status:'PASS',rollbackArtifactRetained:true,cutoverJournalComplete:true,heldGenerationsCurrent:true})};
 
@@ -57,12 +57,12 @@ test('rollback verification binds post-cutover proof to the same outer operation
  const rollback=createRollbackProductionOperations(context(j),{...checks,observeAcceptance:async()=>acceptanceProof,
   observeAcceptanceIntegrity:async()=>({status:'PASS'}),observeVerification:async(_context,binding,ids)=>{
    verificationCalls++;assert.equal(binding.rollbackSha,input.recoverySha);assert.match(ids.attemptId,/^[a-f0-9-]{36}$/);return verificationProof;
-  },observeVerificationIntegrity:async(_context,_binding,proof)=>{assert.equal(proof.rollbackExecutable,true);return{status:'PASS'};}});
+  },observeVerificationIntegrity:async(_context,_binding,proof)=>{assert.equal(proof.rollbackContainmentExecutable,true);return{status:'PASS'};}});
  const result=await runReleaseSequence({input,journal:j,adapters:adapters(rollback,'final_release_record')});
  assert.equal(result.releaseState,'BLOCKED_EXTERNAL');assert.equal(result.stage,'final_release_record');assert.equal(verificationCalls,1);
  assert.equal(inspectReleaseCommander(j).status,'OBSERVED');
  const accepted=j.events.find(row=>row.type==='rollback_acceptance_probe_result'),verified=j.events.find(row=>row.type==='rollback_verification_probe_result');
- assert.equal(verified.proof.rollbackExecutable,true);assert.equal(verified.proof.noAttemptMixing,true);assert.equal(verified.proof.noStaleGeneration,true);
+ assert.equal(verified.proof.rollbackContainmentExecutable,true);assert.equal(verified.proof.noAttemptMixing,true);assert.equal(verified.proof.noStaleGeneration,true);
  assert.equal(verified.operationId,accepted.operationId);assert.notEqual(verified.attemptId,accepted.attemptId);
 });
 

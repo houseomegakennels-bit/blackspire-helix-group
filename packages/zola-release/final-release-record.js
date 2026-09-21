@@ -46,8 +46,9 @@ function createExact(filename,value,owner){
 }
 
 function validateAccepted(value){
- const keys=['schema','kind','releaseSha','previousMainSha','newMainSha','operationId','attemptId','stageInputDigest','checkOutputDigest','sequenceInputDigest','registryDigest','acceptedStagesDigest','epochRunId','permitId','permitDigest','apiGeneration','workerGeneration','rollbackAcceptanceDigest','acceptedAt'];
+ const keys=['schema','kind','releaseSha','previousMainSha','newMainSha','operationId','attemptId','stageInputDigest','checkOutputDigest','sequenceInputDigest','registryDigest','acceptedStagesDigest','epochRunId','permitId','permitDigest','apiGeneration','workerGeneration','rollbackAcceptanceDigest','rollbackMode','businessRecoveryVerified','acceptedAt'];
  if(!exact(value,keys)||value.schema!==1||value.kind!=='zola_release_accepted_held'||![value.releaseSha,value.previousMainSha,value.newMainSha].every(sha)
+  ||value.rollbackMode!=='stopped-held'||value.businessRecoveryVerified!==false
   ||value.newMainSha===value.previousMainSha||![value.operationId,value.attemptId,value.epochRunId,value.permitId].every(uuid)
   ||!['stageInputDigest','checkOutputDigest','sequenceInputDigest','registryDigest','acceptedStagesDigest','permitDigest','rollbackAcceptanceDigest'].every(key=>digest(value[key]))
   ||!generation(value.apiGeneration)||!generation(value.workerGeneration)||value.apiGeneration===value.workerGeneration

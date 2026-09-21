@@ -12,7 +12,7 @@ const accepted=()=>({schema:1,kind:'zola_release_accepted_held',releaseSha:a,pre
  operationId:'11111111-1111-4111-8111-111111111111',attemptId:'66666666-6666-4666-8666-666666666666',stageInputDigest:d('stage-input'),checkOutputDigest:d('check'),sequenceInputDigest:d('input'),registryDigest:d('registry'),acceptedStagesDigest:d('stages'),
  epochRunId:'22222222-2222-4222-8222-222222222222',permitId:'33333333-3333-4333-8333-333333333333',permitDigest:d('permit'),
  apiGeneration:'4'.repeat(32),workerGeneration:'5'.repeat(32),
- rollbackAcceptanceDigest:d('rollback'),acceptedAt:'2026-09-11T16:00:00.000Z'});
+ rollbackAcceptanceDigest:d('rollback'),rollbackMode:'stopped-held',businessRecoveryVerified:false,acceptedAt:'2026-09-11T16:00:00.000Z'});
 function root(){const value=fs.mkdtempSync(path.join(os.tmpdir(),'zola-record-'));fs.chmodSync(value,0o700);return value;}
 
 test('accepted HELD and OPEN are separate immutable records',()=>{const directory=root(),held=accepted();
@@ -39,4 +39,11 @@ test('tamper and permissive directory are rejected',()=>{const directory=root(),
 });
 test('records require production-shaped systemd generation identities',()=>{const directory=root(),held=accepted();
  assert.throws(()=>writeAcceptedHeldReleaseRecord({record:{...held,apiGeneration:'44444444-4444-4444-8444-444444444444'},root:directory,owner}));
+});
+
+test('accepted record states stopped HELD recovery scope explicitly',()=>{
+ for(const change of [{rollbackMode:'active'},{businessRecoveryVerified:true},{rollbackMode:undefined}]){
+  const directory=root();try{assert.throws(()=>writeAcceptedHeldReleaseRecord({record:{...accepted(),...change},root:directory,owner}));}
+  finally{fs.rmSync(directory,{recursive:true,force:true});}
+ }
 });
