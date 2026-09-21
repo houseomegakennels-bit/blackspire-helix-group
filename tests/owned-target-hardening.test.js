@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {OWNED_BUYER_RELATIONS,OWNED_BUYER_FOREIGN_KEYS,prepareOwnedBuyerMigrationExecution,ownedBuyerMigrationReceipt} from '../packages/buyer-writer/owned-data-migration.js';
@@ -17,6 +18,8 @@ function setup(){
  let receipt=null,staged=null,bodyCalls=0,loseCommit=false,badCheck=false;const events=[],calls=[];
  const client={async query(sql,args){calls.push(sql);
  if(sql===OWNED_DATABASE_IDENTITY_SQL)return{rows:[{systemIdentifier:profile.systemIdentifier,database:'postgres',actor:'postgres',creatorOid:profile.creatorOid,version:170006,recovery:false}]};
+ if(sql.startsWith('WITH RECURSIVE closure'))return{rows:[{metadata:JSON.parse(readFileSync(new URL('../packages/buyer-writer/owned-source-schema.json',import.meta.url),'utf8'))}]};
+ if(sql.startsWith("SELECT session_user='postgres'"))return{rows:[{safe:true}]};
  if(sql.includes('AS safe FROM pg_class'))return{rows:[{safe:true}]};
  if(sql.includes('pg_try_advisory'))return{rows:[{acquired:true}]};
  if(sql.startsWith('SELECT receipt FROM owned_buyer_migration.copy_receipts'))return{rows:[{receipt:copy}]};
@@ -46,4 +49,16 @@ test('lost commit ACK and repeated verification never replay SQL or duplicate te
 test('copy mismatch and lost precommit attempt refuse replay and preserve unknown outcome',async()=>{
  const f=setup();f.copy.manifestDigest='f'.repeat(64);await assert.rejects(executeOwnedTargetHardening({...f,mode:'apply',fence:async()=>{}},{inspectSnapshot:async()=>f.copy.relations}));assert.equal(f.bodyCalls,0);
  await assert.rejects(executeOwnedTargetHardening({...f,mode:'reconcile',fence:async()=>{}},{inspectSnapshot:async()=>f.copy.relations}));assert.equal(f.bodyCalls,0);
+});
+
+test('unsafe receipt catalog, manager identity, or changed copied relation shape reject before any business row scan',async()=>{
+ for(const kind of ['storage','manager','relations']){
+  const f=setup(),query=f.client.query;let snapshots=0;
+  f.client.query=async(sql,args)=>{
+   if(kind==='storage'&&sql.includes('AS safe FROM pg_class')||kind==='manager'&&sql.startsWith("SELECT session_user='postgres'"))return{rows:[{safe:false}]};
+   if(kind==='relations'&&sql.startsWith('WITH RECURSIVE closure'))return{rows:[{metadata:{relations:[]}}]};return query(sql,args);
+  };
+  await assert.rejects(executeOwnedTargetHardening({...f,mode:'apply',fence:async()=>{}},{inspectSnapshot:async()=>{snapshots++;return f.copy.relations;}}));
+  assert.equal(snapshots,0);assert.equal(f.bodyCalls,0);assert.equal(f.events.length,1);
+ }
 });
