@@ -61,6 +61,14 @@ try{
  const assertConfigured=async b=>{
   const store=records(b),binding=retained(b),intent=store.value('intent',true),result=store.value('result',true);
   if(!same(store.value('authority',true),binding)||!intent||!result||!same(intent.binding,result.binding)||result.binding.sourceDigest!==binding.sourceDigest||result.binding.profileDigest!==binding.profileDigest||result.binding.namespace!==b.namespace)fail();
+  verifyReleaseSource(release.releaseSha);
+  if(!same(source,read(sourceFile))||!same(configuration,read(release.packageConfigurationFile))||backup!==readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024)||!same(profile,readOwnedDatabaseProfile())||key!==readReleaseProtectedBytes(keyFile,16384).trim())fail();
+  const host=createHeldWriterBindingHost(),record=heldRecord(b);
+  try{await host.lease(release.releaseSha);await host.check(record.plan);
+   const metadata=await createOwnedN8nCredentialTransport(key)('GET','/api/v1/credentials/RzOyDmXYmx58yZHi');
+   if(!same(metadata,result.after))fail();const proof=await host.inspect(record.plan);
+   if(proof.bindingDigest!==record.result.bindingDigest||proof.commitDigest!==record.result.commitDigest||!same(currentBinding(),b))fail();
+  }finally{host.close();}
  };
  const synchronize=async b=>{
   const store=records(b),record=heldRecord(b),authority=retained(b),host=createHeldWriterBindingHost();
