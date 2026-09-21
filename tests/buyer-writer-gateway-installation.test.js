@@ -121,3 +121,31 @@ test('gateway installer CLI is explicit, gateway-only, and never switches the mu
   assert.doesNotMatch(source,/release-switch\.sh|systemctl',\['(?:stop|restart)',(?:'blackspire-command\.service'|'blackspire-command-worker\.service')/);
   assert.doesNotMatch(source,/n8n|BLACKSPIRE_BUYER_WRITER_GATEWAY_CONFIG=.*(?:password|capability)/i);
 });
+
+test('stopped preparation binds artifact, configuration, unit backup and unchanged service enablement',async()=>{
+ const {encodeGatewayPreparedState,validateGatewayPreparedObservation}=await import('../packages/buyer-writer/gateway-installation.js');
+ const installedUnit=renderGatewayUnit(template,{sha}),previousUnit='old immutable unit',artifactDigest='1'.repeat(64),configurationSha256='2'.repeat(64);
+ const state=decodeGatewayInstallState(encodeGatewayPreparedState({sha,unitBackup:'/protected/backups/old.service',previousUnit,installedUnit,previousEnabled:true,previousActive:false,artifactDigest,configurationSha256}));
+ const observed={sha,artifactDigest,configurationSha256,installedUnit,backupUnit:previousUnit,enabled:true,servicesStopped:true,daemonReloaded:true};
+ assert.equal(validateGatewayPreparedObservation(state,observed).status,'UNIT_PREPARED');
+ for(const change of [{artifactDigest:'3'.repeat(64)},{configurationSha256:'3'.repeat(64)},{installedUnit:'drift'},{backupUnit:'drift'},{enabled:false},{servicesStopped:false},{daemonReloaded:false}])
+  assert.throws(()=>validateGatewayPreparedObservation(state,{...observed,...change}));
+ assert.throws(()=>encodeGatewayPreparedState({sha,unitBackup:'/protected/backups/old.service',previousUnit,installedUnit,previousActive:true,artifactDigest,configurationSha256}));
+ assert.deepEqual(gatewayRollbackActions(state),[['disable','--now',GATEWAY_SERVICE],['daemon-reload'],['enable',GATEWAY_SERVICE]]);
+});
+
+test('preparation records rollback intent before publication and interrupted reconciliation never rewrites',async()=>{
+ const {runGatewayUnitPreparation}=await import('../packages/buyer-writer/gateway-installation.js');
+ for(const lostAt of ['persist','publish','reload',null]){
+  const calls=[];let intent=false,published=false,reloaded=false;
+  const host={prepare:async()=>{calls.push('prepare');return{bounded:true};},persist:async()=>{calls.push('persist');intent=true;if(lostAt==='persist')throw new Error('lost');},
+   publish:async()=>{assert.equal(intent,true);calls.push('publish');published=true;if(lostAt==='publish')throw new Error('lost');},
+   reload:async()=>{calls.push('reload');reloaded=true;if(lostAt==='reload')throw new Error('lost');},
+   inspect:async()=>{calls.push('inspect');if(!published||!reloaded)throw new Error('unconfirmed');return{status:'UNIT_PREPARED'};}};
+  if(lostAt)await assert.rejects(runGatewayUnitPreparation({}, {host}));else assert.equal((await runGatewayUnitPreparation({}, {host})).status,'UNIT_PREPARED');
+  const effects=calls.filter(x=>x!=='inspect').length;
+  if(published&&reloaded)assert.equal((await runGatewayUnitPreparation({reconcile:true},{host})).status,'UNIT_PREPARED');
+  else await assert.rejects(runGatewayUnitPreparation({reconcile:true},{host}));
+  assert.equal(calls.filter(x=>x!=='inspect').length,effects);
+ }
+});

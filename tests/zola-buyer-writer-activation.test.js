@@ -6,9 +6,10 @@ const bound={releaseSha:'a'.repeat(40),operationId:'11111111-1111-4111-8111-1111
  attemptId:'22222222-2222-4222-8222-222222222222',inputDigest:'3'.repeat(64),
  checkOutputDigest:'4'.repeat(64)};
 function fixture({loseUpgrade=false}={}){
- const events=[],calls=[],state={gateway:false,upgrade:false,compliant:false,lost:loseUpgrade};
+ const events=[],calls=[],state={gateway:false,upgrade:false,compliant:false,unit:false,lost:loseUpgrade};
  const journal={stream:()=>({events:()=>structuredClone(events),append:event=>events.push(structuredClone(event))})};
  const io={lstatSync(filename){
+  if(filename.includes('gateway-installation')&&state.unit)return {};
   if(filename.endsWith('.intent.json')&&state.gateway)return {};
   if(filename.includes('gateway-configuration-upgrade')&&state.upgrade)return {};
   const error=new Error('absent');error.code='ENOENT';throw error;
@@ -29,6 +30,7 @@ function fixture({loseUpgrade=false}={}){
    if(mode==='--verify')return {status:'COMPLIANT'};
    state.compliant=true;return {status:'PROVISIONED'};
   }
+  if(script.includes('buyer-writer-gateway-install')){state.unit=true;return{status:'UNIT_PREPARED'};}
   if(script.includes('zola-config-install'))return {status:'INSTALLED_RELOAD_REQUIRED'};
   throw new Error('unexpected script');
  };
@@ -52,7 +54,7 @@ test('pre-HELD activation durably orders every production prerequisite',async()=
  const f=fixture(),result=await activateBuyerWriterBeforeHeld(bound,options(f));
  assert.equal(result.status,'BUYER_WRITER_PRE_HELD_READY');
  assert.deepEqual(f.events.filter(row=>row.type==='buyer_writer_activation_result').map(row=>row.phase),
-  ['source_v1','gateway_v4','gateway_upgrade','database_provisioning','configuration_install']);
+  ['source_v1','gateway_v4','gateway_upgrade','database_provisioning','configuration_install','gateway_unit']);
  assert.ok(f.calls.indexOf('scripts/prepare-buyer-writer-source-v1.js:--prepare')
   <f.calls.indexOf('scripts/upgrade-buyer-writer-gateway-configuration.js:--upgrade'));
  assert.ok(f.calls.indexOf('scripts/provision-buyer-writer-production.js:--apply')
@@ -84,4 +86,15 @@ test('systemd reload failure keeps configuration activation incomplete',async()=
  assert.deepEqual(f.events.filter(row=>row.type==='buyer_writer_activation_result').map(row=>row.phase),
   ['source_v1','gateway_v4','gateway_upgrade','database_provisioning']);
  assert.ok(f.calls.includes('scripts/zola-config-install.js:--install'));
+});
+
+test('lost gateway unit acknowledgement reconciles retained state without repeating prior activation',async()=>{
+ const f=fixture(),original=f.run;let lost=true;
+ f.run=async(script,args)=>{const result=await original(script,args);if(script.includes('buyer-writer-gateway-install')&&lost){lost=false;throw new Error('unit acknowledgement lost');}return result;};
+ await assert.rejects(activateBuyerWriterBeforeHeld(bound,options(f)),/unit acknowledgement lost/);
+ const before=f.calls.filter(s=>!s.includes('buyer-writer-gateway-install')).length;
+ await activateBuyerWriterBeforeHeld(bound,options(f));
+ assert.equal(f.calls.filter(s=>!s.includes('buyer-writer-gateway-install')).length,before);
+ assert.ok(f.calls.includes('scripts/buyer-writer-gateway-install.js:--reconcile-prepared'));
+ assert.equal(f.calls.filter(s=>s==='scripts/buyer-writer-gateway-install.js:--prepare').length,1);
 });

@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — stopped gateway unit preparation integrated locally
+
+The pre-HELD activation now includes a final gateway-unit phase after protected configuration installation. The existing gateway installer gains explicit preparation and observation-only reconciliation modes. Preparation requires API, worker and gateway inactive/dead with PID zero, verifies the exact sealed artifact and installed configuration authority, retains the prior unit and enablement, and publishes a version-4 rollback state before replacing the unit and reloading systemd. It never builds a release, provisions an identity, changes enablement or starts a service. Reconciliation verifies the exact unit/configuration/artifact/backup bindings and reload state without repeating publication. Existing rollback supports both historical version-3 and new version-4 state.
+
+Twenty-two focused installer, activation, HELD and composed-history tests pass, including interruption at intent/publication/reload, configuration and backup drift, preserved service state and lost unit-phase acknowledgement. Root build, lint and syntax/typecheck pass. Actual systemd preparation and production startup remain UNVERIFIED; no production changes or push occurred. Independent review and final integrated validation are required before release.
+
 ## 2026-09-21 — composed production history validation integrated
 
 Local integration `98d9d23` accepts supported production event families only through strict validators bound to their enclosing sequence attempts. Candidate reads, Buyer Writer activation, retained writer handles, rollback probes, HELD acceptance and final records no longer fail solely because their legitimate event type was omitted from the commander whitelist. Unknown or malformed rows still fail closed, mutation reporting remains cumulative, and a fresh observational preflight is refused after sequence mutation. The implementation agent reports 44/44 focused tests; independent review and final composed validation remain pending. This commit depends on the separately developed candidate-deployment module, not yet integrated, and the checkout is not release-ready at this intermediate point. No production history was changed.

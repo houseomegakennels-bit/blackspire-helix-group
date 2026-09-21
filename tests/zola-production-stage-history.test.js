@@ -15,7 +15,7 @@ function fixture(){
  const adapters=Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,{check:stage==='generation_revalidation'?stop:pass,observe:pass,
   ...(MUTATING_STAGES.has(stage)?{execute:()=>{},reconcile:pass}:{})}]));
  const statuses={'source-v1':'BUYER_WRITER_SOURCE_V1_PREPARED','gateway-v4':'BUYER_WRITER_GATEWAY_V4_PREPARED',
-  'upgrade-buyer':'UPGRADED','zola-config-install':'INSTALLED_RELOAD_REQUIRED'};
+  'upgrade-buyer':'UPGRADED','zola-config-install':'INSTALLED_RELOAD_REQUIRED','buyer-writer-gateway-install':'UNIT_PREPARED'};
  const held=createHeldProductionOperations({input,journal,release:{}},{
   candidate:()=>({releaseSha:input.releaseSha,candidatePass:true}),
   activate:bound=>activateBuyerWriterBeforeHeld(bound,{journal,
@@ -36,7 +36,7 @@ function fixture(){
 }
 test('commander accepts composed candidate and real activation journal producers without losing mutation state',async()=>{
  const f=fixture(),result=await f.run();assert.equal(result.stage,'generation_revalidation');
- assert.equal(f.events.filter(row=>row.type==='buyer_writer_activation_result').length,5);
+ assert.equal(f.events.filter(row=>row.type==='buyer_writer_activation_result').length,6);
  assert.equal(inspectReleaseCommander(f.journal).mutationSent,true);
  let reads=0;
  const preflight=await runReleasePreflight({input:{releaseSha:input.releaseSha,packageConfigurationFile:'/a',backupFile:'/b',diskConfigurationFile:'/c',backupManifestFile:'/d'},journal:f.journal},{verifySource:()=>reads++});

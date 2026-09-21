@@ -15,11 +15,12 @@ const ROOT=fileURLToPath(new URL('../../',import.meta.url));
 const SHA=/^[a-f0-9]{40}$/;
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const DIGEST=/^[a-f0-9]{64}$/;
-const PHASES=['source_v1','gateway_v4','gateway_upgrade','database_provisioning','configuration_install'];
+const PHASES=['source_v1','gateway_v4','gateway_upgrade','database_provisioning','configuration_install','gateway_unit'];
 const PREPARATION='/var/lib/blackspire-operator/preparation';
 export const BUYER_WRITER_ACTIVATION_PATHS=Object.freeze({
  credentialSource:`${PREPARATION}/zola-gateway-6f7e0c2-provisioning.json`,source:`${PREPARATION}/source-v1.json`,
  candidate:releaseSha=>`${PREPARATION}/buyer-writer-v4-${releaseSha}.json`,
+ gatewayInstallationState:'/var/lib/blackspire-operator/gateway-installation/state.json',
  management:'/etc/blackspire-buyer-writer-gateway/management.json',
  configJournal:operationId=>`${PREPARATION}/zola-config-${operationId}.journal.jsonl`,
  artifactRoot:releaseSha=>`/opt/blackspire-command/releases/${releaseSha}`,
@@ -70,7 +71,7 @@ export function inspectBuyerWriterActivationHistory(events){
  const bound=binding(rows[0].binding);
  const observed=history(events,bound);
  const statuses={source_v1:['BUYER_WRITER_SOURCE_V1_PREPARED'],gateway_v4:['BUYER_WRITER_GATEWAY_V4_PREPARED','COMPLETE'],
-  gateway_upgrade:['UPGRADED'],database_provisioning:['COMPLIANT','PROVISIONED','ALREADY_COMPLIANT'],configuration_install:['INSTALLED_AND_RELOADED']};
+  gateway_upgrade:['UPGRADED'],database_provisioning:['COMPLIANT','PROVISIONED','ALREADY_COMPLIANT'],configuration_install:['INSTALLED_AND_RELOADED'],gateway_unit:['UNIT_PREPARED']};
  for(let index=0;index<events.length;index++){
   const row=events[index];if(!rows.includes(row))continue;
   if(!exact(row,row.type==='buyer_writer_activation_intent'?['schema','type','binding','bindingDigest']
@@ -164,6 +165,11 @@ async function configPhase(bound,run,paths,reloadSystemd){
   reloadEvidenceDigest:hash(reloaded)});
 }
 
+async function gatewayUnitPhase(bound,run,paths,io){
+ let mode='--prepare';try{io.lstatSync(paths.gatewayInstallationState);mode='--reconcile-prepared';}catch(error){if(error.code!=='ENOENT')throw error;}
+ return requireStatus(await run('scripts/buyer-writer-gateway-install.js',[mode,bound.releaseSha]),['UNIT_PREPARED']);
+}
+
 export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRun,io=fs,
  inspectArtifact=inspectSealedBuyerWriterArtifact,readJson=readRootOwnedJson,
  reloadSystemd=defaultReloadSystemd,paths:overrides={}}={}){
@@ -180,7 +186,7 @@ export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRu
   gateway_v4:()=>gatewayPhase(bound,run,paths,io),
   gateway_upgrade:()=>upgradePhase(bound,run,paths,io,inspectArtifact,readJson),
   database_provisioning:()=>provisionPhase(bound,run,paths,io,readJson),
-  configuration_install:()=>configPhase(bound,run,paths,reloadSystemd)};
+  configuration_install:()=>configPhase(bound,run,paths,reloadSystemd),gateway_unit:()=>gatewayUnitPhase(bound,run,paths,io)};
  for(const phase of PHASES){
   if(observed.completed.has(phase))continue;
   const result=await actions[phase]();
