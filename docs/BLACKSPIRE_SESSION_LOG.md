@@ -2166,3 +2166,7 @@ Implemented source-bound protected phase journaling, empty-cluster initializatio
 ## 2026-09-21 — owned materializer pre-start review corrections
 
 Moved complete database unit/TLS/container/network checks before service start and added exact mount/tmpfs/network validation. Six focused tests and actual disposable Docker metadata positives/negative variants pass. No production effects; final independent re-review pending.
+
+## 2026-09-21 — refuse foreign stopped Buyer store rootfs contents
+
+Fixed the independently observed namespace inventory gap. Exact empty mount scaffolding and release symlink remain accepted; foreign content refuses before preparation. Three focused tests pass; no production effects.

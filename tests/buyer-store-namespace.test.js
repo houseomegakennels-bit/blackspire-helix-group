@@ -21,3 +21,19 @@ test('namespace preparation requires quiescence and refuses foreign retained rel
   await assert.rejects(prepareBuyerStoreNamespace(sha,{...options,run:()=> '0\n100\n0\n'}));
  }finally{fs.rmSync(base,{recursive:true,force:true});}
 });
+
+test('namespace rejects foreign content and accepts only empty mountpoint scaffolding',{skip:process.getuid()!==0},async()=>{
+ const {verifyBuyerStoreNamespaceInventory}=await import('../packages/buyer-store/namespace.js');
+ const base=fs.mkdtempSync('/root/buyer-namespace-inventory-'),sha='a'.repeat(40),root=base+'/rootfs',dropin=base+'/unit/namespace.conf';
+ const options={root,dropin,run:()=> '0\n0\n0\n',inspect:async()=>({artifactDigest:'b'.repeat(64)})};
+ try{
+  await prepareBuyerStoreNamespace(sha,options);
+  fs.mkdirSync(root+'/etc',{mode:0o755});fs.writeFileSync(root+'/etc/passwd','',{mode:0o644});
+  fs.mkdirSync(root+'/usr/bin',{recursive:true});assert.equal(verifyBuyerStoreNamespaceInventory(sha,{root}),true);
+  for(const [file,contents] of [['/etc/passwd','synthetic private data'],['/etc/foreign','synthetic'],['/usr/bin/foreign','synthetic']]){
+   fs.writeFileSync(root+file,contents,{mode:0o600});await assert.rejects(prepareBuyerStoreNamespace(sha,options));fs.unlinkSync(root+file);
+  }
+  fs.symlinkSync('/etc',root+'/etc/foreign');await assert.rejects(prepareBuyerStoreNamespace(sha,options));fs.unlinkSync(root+'/etc/foreign');
+  fs.mkdirSync(root+'/home');await assert.rejects(prepareBuyerStoreNamespace(sha,options));
+ }finally{fs.rmSync(base,{recursive:true,force:true});}
+});

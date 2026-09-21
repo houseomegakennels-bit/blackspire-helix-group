@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — stopped store namespace inventory enforced
+
+Independent review found that the rootfs preparer accepted unrelated retained files despite its empty namespace contract. Preparation now inventories the stopped root before and after publication, accepting only exact empty mountpoint scaffolding, zero-byte fixed file placeholders and the release-bound current symlink. Foreign files, directories, symlinks, ownership or writable modes refuse. Lifecycle rebinding can reuse this validator while the store is stopped.
+
+Three focused tests pass, including foreign credential-shaped content under both the root and allowed mount directories. Production namespace transitions and integrated HTTP-to-database acceptance remain UNVERIFIED. No production changes occurred.
+
 ## 2026-09-21 — owned Buyer API integration prepared
 
 The API now forwards bounded named Buyer operations to the authenticated local repository service and connects consumed Buyer read authority to isolated profile reads and signed, bounded frontend deal context. Protected credentials use the fixed private API supplementary group. Readiness probes the authenticated daemon; the public operation path remains subject to ordinary release admission. Fatal UTF-8 decoding preserves exact request bytes across HTTP chunks.
