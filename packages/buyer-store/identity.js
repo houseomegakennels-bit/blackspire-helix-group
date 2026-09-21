@@ -9,3 +9,11 @@ export function resolveBuyerStoreIdentity({run=execFileSync,uid=process.getuid()
   ||uid===0||gid===0||Number(user[2])!==uid||Number(user[3])!==gid||Number(group[2])!==gid||!Number.isInteger(Number(ipc[2]))||Number(ipc[2])<=0||Number(ipc[2])===gid||!groups.includes(Number(ipc[2])))fail();
  return {uid,gid,ipcGroupId:Number(ipc[2])};
 }
+export function resolveBuyerStoreApiGroup({run=execFileSync,uid=process.getuid(),groups=process.getgroups()}={}){
+ const options={encoding:'utf8',timeout:1000,maxBuffer:4096,env:{PATH:'/usr/bin:/bin'}};
+ const user=run('/usr/bin/getent',['passwd','blackspire-api'],options).trim().split(':');
+ const group=run('/usr/bin/getent',['group','blackspire-api'],options).trim().split(':');
+ const gid=Number(group[2]);
+ if(user.length!==7||user[0]!=='blackspire-api'||Number(user[2])!==uid||uid===0||group.length!==4||group[0]!=='blackspire-api'||!Number.isInteger(gid)||gid<=0||!groups.includes(gid))fail();
+ return gid;
+}

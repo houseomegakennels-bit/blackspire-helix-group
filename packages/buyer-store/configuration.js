@@ -1,3 +1,4 @@
+import {resolveBuyerStoreApiGroup} from './identity.js';
 import {createHash} from 'node:crypto';
 import {readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
 import {validateOwnedPostgresProfile,ownedPostgresProfileDigest} from '../buyer-writer/owned-postgres.js';
@@ -21,6 +22,6 @@ function protectedRead(filename,groupId,readSnapshot){
 export function loadBuyerStoreConfiguration({groupId=process.getgid(),readSnapshot=readRootOwnedJsonSnapshot}={}){
  return validateBuyerStoreConfiguration(protectedRead(BUYER_STORE_CONFIGURATION,groupId,readSnapshot));
 }
-export function loadBuyerStoreClientConfiguration({groupId=process.getgid(),readSnapshot=readRootOwnedJsonSnapshot}={}){
+export function loadBuyerStoreClientConfiguration({groupId=resolveBuyerStoreApiGroup(),readSnapshot=readRootOwnedJsonSnapshot}={}){
  return validateClientConfiguration(protectedRead(BUYER_STORE_CLIENT_CONFIGURATION,groupId,readSnapshot));
 }
