@@ -1,3 +1,4 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {readOwnedDatabaseProfile,databaseProfileDigest,OWNED_DATABASE_MANAGEMENT} from '../buyer-writer/database-profile.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import fs from 'node:fs';
@@ -55,6 +56,11 @@ function defaultReloadSystemd(){
  return Object.freeze({status:'SYSTEMD_RELOADED'});
 }
 function history(events,bound){
+ const partition=partitionRetiredReleaseHistory(events);
+ if(partition.retired){
+  inspectBuyerWriterActivationHistory(partition.prefix);
+  return history(partition.current,bound);
+ }
  const rows=events.filter(row=>row?.type==='buyer_writer_activation_intent'
   ||row?.type==='buyer_writer_activation_result');
  if(rows.length===0)return {intent:null,completed:new Map()};
@@ -71,6 +77,12 @@ function history(events,bound){
  return {intent,completed};
 }
 export function inspectBuyerWriterActivationHistory(events){
+ const partition=partitionRetiredReleaseHistory(events);
+ if(partition.retired){
+  const prior=inspectBuyerWriterActivationHistory(partition.prefix);
+  if(prior.completed.size!==3)reject();
+  return inspectBuyerWriterActivationHistory(partition.current);
+ }
  const rows=events.filter(row=>['buyer_writer_activation_intent','buyer_writer_activation_result'].includes(row?.type));
  if(!rows.length)return {intent:null,completed:new Map()};
  const bound=binding(rows[0].binding);

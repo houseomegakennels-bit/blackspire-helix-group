@@ -2188,3 +2188,7 @@ Added explicit owned candidate/VPS history versions, protected configuration and
 ## 2026-09-21 — owned lifecycle native review corrections
 
 Corrected root private-group resolution and exact empty artifact mountpoint rebinding discovered by independent review. Eight focused transition tests pass, including realistic systemd remnants and refusal to remove content. No production effects.
+
+## 2026-09-21 — exact blocked-operation retirement preparation
+
+Implemented explicit terminal retirement with preserved historical mutation evidence and strict successor identity. Four focused tests plus the existing sequence lane pass. Read-only original PostgreSQL and host checks confirm roles absent, services stopped and unchanged blocked state. No release-journal event, provider privilege, source-data or production configuration was changed.

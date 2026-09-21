@@ -1,3 +1,4 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {randomUUID} from 'node:crypto';
 import {hash} from './commander-journal.js';
 
@@ -51,6 +52,13 @@ export function inspectReleaseSequence(events){
 // original registry, then discard its observations from executable current state.
 // The original on-disk rows and hash chain remain untouched.
 export function inspectReleaseSequenceHistory(events){
+ const partition=partitionRetiredReleaseHistory(events);
+ if(partition.retired){
+  const prior=inspectReleaseSequenceHistory(partition.prefix);
+  if(prior.pending?.stage!=='admission_lease'||prior.nextOrdinal!==5||prior.mutationState!==null)reject();
+  const active=inspectReleaseSequenceHistory(partition.current);
+  return Object.freeze({...active,retired:partition.retired});
+ }
  const rows=events.filter(row=>String(row?.type??'').startsWith('sequence_'));
  if(!rows.length||rows[0]?.registryDigest===RELEASE_REGISTRY_DIGEST)return inspectReleaseSequence(events);
  if(rows.length>4096||hash(HISTORICAL_STAGES.map((stage,ordinal)=>({ordinal,stage,mutating:MUTATING_STAGES.has(stage)})))!==HISTORICAL_REGISTRY_DIGEST)reject();
@@ -157,6 +165,9 @@ export async function runReleaseSequence({input,journal,adapters}){
   state=inspectReleaseSequenceHistory(stream.events());
   wasStarted=state.started;
   if(!state.started){
+   if(state.retired&&(input.releaseSha!==state.retired.successorReleaseSha
+    ||input.previousMainSha!=='2775fd5043ad422418a4177f686671961e9a9738'
+    ||input.recoverySha!=='2c0b600c268faa0571f08322e16d7f81f37789be'))reject();
    const start={schema:4,type:'sequence_started',operationId:randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequenceHistory(stream.events());
   }else if(!['releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest'].every(key=>state.context[key]===input[key])){
    const sequenceRows=stream.events().filter(row=>String(row?.type??'').startsWith('sequence_')),last=sequenceRows.at(-1);

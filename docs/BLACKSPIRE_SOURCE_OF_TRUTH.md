@@ -18,6 +18,11 @@ The postmerge sequence stops the store before rebinding, starts API and worker, 
 Independent review found that the rootfs preparer accepted unrelated retained files despite its empty namespace contract. Preparation now inventories the stopped root before and after publication, accepting only exact empty mountpoint scaffolding, zero-byte fixed file placeholders and the release-bound current symlink. Foreign files, directories, symlinks, ownership or writable modes refuse. Lifecycle rebinding can reuse this validator while the store is stopped.
 
 Three focused tests pass, including foreign credential-shaped content under both the root and allowed mount directories. Production namespace transitions and integrated HTTP-to-database acceptance remain UNVERIFIED. No production changes occurred.
+## 2026-09-21 — explicit blocked release retirement prepared
+
+A root-only helper can append a narrowly bound terminal retirement event for the exact 68-row historical release prefix and blocked 7bd0323 activation attempt. It preserves every original row, the successful n8n backup/candidate fixture work and three completed preparation phases, the original recovery/main identities, and historical mutation truth. It binds the successor source and owned database profile; arbitrary pending operations cannot use this path. The executable requires two fixed read-only original-database role/ACL observations, unchanged stopped host/current pointer, absent admission state, the exact fail-closed provisioning record and unchanged six-observation n8n journal before retaining proof and appending one event.
+
+Four focused tests and the existing sequence lane verify append-only behavior, wrong-successor refusal before append, altered history/proof denial and independent old/new candidate and activation validation. A real read-only host/database observation confirms all five original writer roles absent, four services stopped, the old current pointer unchanged and no admission state. Actual retirement has not run; native publication and successor release acceptance remain UNVERIFIED pending independent review.
 
 ## 2026-09-21 — owned Buyer API integration prepared
 
