@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — fresh production inspection and journal-only upgrade recovery
+
+Fresh read-only inspection confirms the production release pointer remains `6f7e0c268b75c86f8f6318725d40e3d774a59091`; API, worker and Buyer Writer gateway are inactive/dead with MainPID 0. A catalog-only query confirms the issuer, owner, runtime and admission-login roles are absent. PR #146 is open at `eedda6977ffcf127648d3a11d219a7b530890764` with its main CI check successful. That CI does not cover this new working-tree repair.
+
+Completed the pre-existing unfinished journal-prefix repair. Under the existing exclusive upgrade lock, a prior journal can resume only when every durable replacement artifact is absent, the protected current configuration matches the exact old digest, all services are quiesced and the entire journal is limited to valid pre-preparation history. Interrupted prefixes retain their audit rows and receive a fail-closed boundary before a new start. Any durable state, backup, candidate, restore, binding drift, later phase or invalid sequence refuses; post-preparation work continues through the existing reconciler.
+
+Focused real-file and CLI coverage passes 32/32, including repeated interruption, unchanged configuration, artifact refusal, digest drift, quiescence refusal and append failure. Lint, syntax/typecheck, build and whitespace checks pass. The pinned contained suite passes 2,176 total / 2,099 passed / 77 intended skips / zero failures, with all 221 files completed, zero test-tree mutation, drained output and zero remaining descendants. The four new root-only regression groups are skipped in containment and passed in the separate 32/32 direct run. No production configuration, service, database or release mutation occurred. Fresh independent review, publication and exact-head CI remain required before release integration.
+
 ## 2026-09-21 — acceptance owner bound into clean gateway preparation locally
 
 PR #146 advanced to exact research head `22ae00ddc37bf0804028e78646de490dddd6aadb`. Blackspire Command CI run `35545100781` passed on attempt 2, including the full suite, disposable PostgreSQL Buyer Writer/admission/recovery checks, build, lint, typecheck, scan and audit. Attempt 1 reached the audit step after all preceding gates passed but the npm registry quick-audit endpoint returned HTTP 400; the exact-head rerun completed successfully. Push access was immediately disabled again and all production services remained inactive.

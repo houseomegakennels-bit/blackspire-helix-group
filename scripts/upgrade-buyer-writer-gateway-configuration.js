@@ -13,6 +13,7 @@ import {
 import {
   BUYER_WRITER_GATEWAY_CONFIG_FILE,BUYER_WRITER_GATEWAY_UPGRADE_STATE,
   createBuyerWriterGatewayConfigurationFileControls,
+  recoverBuyerWriterGatewayConfigurationJournalPrefix,
   reconcileBuyerWriterGatewayConfigurationFile,
   rollbackBuyerWriterGatewayConfigurationFile,
 } from '../packages/buyer-writer/gateway-configuration-upgrade-files.js';
@@ -167,7 +168,17 @@ try{
         writerGroupId:groupId,proveQuiesced});
       process.stdout.write(JSON.stringify(result)+'\n');
     }else{
-      safeStateDirectory();stream=journal(operationId);
+      safeStateDirectory();
+      try{stream=journal(operationId);}catch(error){
+        if(error?.code!=='EEXIST')throw error;
+        stream=journal(operationId,{resume:true});
+        await recoverBuyerWriterGatewayConfigurationJournalPrefix({
+          ...bound,oldConfigDigest:inspection.oldConfigDigest,
+          newConfigDigest:inspection.newConfigDigest,
+          journalEvents:stream.events,appendJournal:event=>stream.append(event),
+          writerGroupId:groupId,proveQuiesced,
+        });
+      }
       const controls=createBuyerWriterGatewayConfigurationFileControls({
         ...bound,writerGroupId:groupId,proveQuiesced});
       const result=await upgradeBuyerWriterGatewayConfiguration({

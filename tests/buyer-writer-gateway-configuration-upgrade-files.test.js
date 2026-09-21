@@ -5,6 +5,7 @@ import path from 'node:path';
 import {createHash,generateKeyPairSync,randomBytes,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {createBuyerWriterGatewayConfigurationFileControls,
+  recoverBuyerWriterGatewayConfigurationJournalPrefix,
   reconcileBuyerWriterGatewayConfigurationFile,
   rollbackBuyerWriterGatewayConfigurationFile} from
   '../packages/buyer-writer/gateway-configuration-upgrade-files.js';
@@ -64,6 +65,72 @@ function journalPrefix(f,phases=['started','quiesced','prepared']){
     ...f.bound,phase,status:'IN_PROGRESS',oldConfigDigest:digest(f.values.oldConfiguration),
     newConfigDigest:digest(f.values.newConfiguration),updatedAt:'2026-09-19T00:00:00.000Z'}));
 }
+
+function prefixInput(f,events){
+  const row=journalPrefix(f,['started'])[0];
+  return {...f.bound,oldConfigDigest:row.oldConfigDigest,newConfigDigest:row.newConfigDigest,
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true,
+    journalEvents:events,appendJournal:async event=>events.push(event)};
+}
+test('journal-only crash recovery preserves history and completes one real file upgrade',rootOnly,async t=>{
+  for(const phases of [[],['started'],['started','quiesced']]){
+    const f=fixture(t),events=journalPrefix(f,phases);
+    const before=fs.statSync(f.configurationFile).ino;
+    const result=await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+    assert.equal(result.status,'JOURNAL_PREFIX_RECOVERED');
+    assert.equal(fs.statSync(f.configurationFile).ino,before);
+    assert.deepEqual(fs.readdirSync(f.stateDirectory),[]);
+    if(phases.length)assert.equal(events.at(-1).status,'FAIL_CLOSED');
+    assert.equal((await upgradeBuyerWriterGatewayConfiguration({...f.input,
+      appendJournal:async event=>events.push(event)})).status,'UPGRADED');
+    const recovered=await reconcileBuyerWriterGatewayConfigurationFile({
+      ...f.bound,...f.values,writerGroupId:f.writerGroupId,
+      configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
+      proveQuiesced:async()=>true,journalEvents:events,
+      appendJournal:async event=>events.push(event)});
+    assert.equal(recovered.status,'UPGRADED');
+  }
+});
+test('journal-only recovery refuses durable artifacts, drift and unavailable quiescence',rootOnly,async t=>{
+  for(const suffix of ['.state.json','.backup.json','.candidate','.restore']){
+    const f=fixture(t),events=journalPrefix(f,['started']);
+    const name=suffix==='.candidate'||suffix==='.restore'
+      ?'.'+f.operationId+suffix:f.operationId+suffix;
+    fs.writeFileSync(path.join(f.stateDirectory,name),'{}',{mode:0o600});
+    await assert.rejects(()=>recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events)));
+    assert.equal(events.length,1);
+  }
+  for(const change of [
+    input=>({...input,proveQuiesced:async()=>false}),
+    input=>({...input,oldConfigDigest:'0'.repeat(64)}),
+    input=>({...input,candidateDigest:'0'.repeat(64)}),
+    input=>({...input,appendJournal:async()=>{throw new Error('disk failure');}}),
+  ]){
+    const f=fixture(t),events=journalPrefix(f,['started']);
+    await assert.rejects(()=>recoverBuyerWriterGatewayConfigurationJournalPrefix(change(prefixInput(f,events))));
+    assert.deepEqual(read(f.configurationFile),f.values.oldConfiguration);
+    assert.deepEqual(fs.readdirSync(f.stateDirectory),[]);
+  }
+});
+test('journal-only recovery refuses later phases and malformed order without appending',rootOnly,async t=>{
+  for(const phases of [['quiesced'],['started','quiesced','prepared'],
+    ['started','started'],['started','quiesced','prepared','configuration-published']]){
+    const f=fixture(t),events=journalPrefix(f,phases),before=JSON.stringify(events);
+    await assert.rejects(()=>recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events)));
+    assert.equal(JSON.stringify(events),before);
+  }
+});
+test('journal-only repeated interruption remains recoverable without discarding audit rows',rootOnly,async t=>{
+  const f=fixture(t),events=journalPrefix(f,['started']);
+  await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+  events.push(...journalPrefix(f,['started','quiesced']));
+  await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+  const before=events.length;
+  await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+  assert.equal(events.length,before);
+  assert.equal(events.filter(row=>row.phase==='fail-closed').length,2);
+});
 
 test('actual files atomically upgrade, retain a root-only exact backup and durable completed state',rootOnly,async t=>{
   const f=fixture(t);

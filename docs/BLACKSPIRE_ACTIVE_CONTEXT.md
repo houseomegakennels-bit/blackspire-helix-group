@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-21 — current continuation checkpoint
+
+Current research base is `eedda6977ffcf127648d3a11d219a7b530890764`, also the open PR #146 head with successful CI. A new local journal-only crash recovery repair is verified by 32 focused tests; the contained suite passes 2,176 total / 2,099 passed / 77 intended skips / zero failures across all 221 files, with clean containment. Root-only recovery regressions passed in the separate direct run. Production inspection confirms all three services stopped, current release `6f7e0c2`, and all four Buyer Writer roles absent. Production is not accepted. The September 18 sections below are historical milestones; candidate preparation and ordered pre-HELD activation have since been implemented, as recorded in the source of truth.
+
 ## 2026-09-18 — admitted application caller and signer custody prepared locally
 
 The API-side production runtime now composes the local gateway through a fail-closed admitted-client adapter. `issue`, `cancel`, `reconcile`, `apply` and `receipt` receive fresh 30-second Ed25519 permits and use only the gateway admission bridge; `context` remains a restricted read-only call. Explicit recovery signs a distinct recovery request bound to the original dispatch evidence and never replays the original mutation. Admission denial, malformed success, signer failure and transport failure never fall back to a legacy mutation. Production startup additionally requires a protected signer descriptor whose permit binding matches the exact gateway authority. No recovery HTTP route was added.

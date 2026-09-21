@@ -182,15 +182,16 @@ function binding({releaseSha,operationId,attemptId,artifactDigest,candidateDiges
     ||operationId===attemptId||!DIGEST.test(artifactDigest??'')||!DIGEST.test(candidateDigest??''))fail();
   return {releaseSha,operationId,attemptId,artifactDigest,candidateDigest};
 }
-function inspectJournal(events,bound,oldConfigDigest,newConfigDigest){
-  if(!Array.isArray(events)||events.length<1)fail();
+function inspectJournal(events,bound,oldConfigDigest,newConfigDigest,
+  {allowEmpty=false,journalOnly=false}={}){
+  if(!Array.isArray(events)||(!allowEmpty&&events.length<1))fail();
   const next={started:['quiesced','fail-closed'],
     quiesced:['prepared','rolled-back','fail-closed'],
     prepared:['configuration-published','rolled-back','fail-closed'],
     'configuration-published':['configuration-verified','rolled-back','fail-closed'],
     'configuration-verified':['completed','rolled-back','fail-closed'],
     completed:[],'rolled-back':[],'fail-closed':[]};
-  let prior;
+  let prior,durable=false;
   for(const row of events){
     const keys=['version','kind','releaseSha','operationId','attemptId','artifactDigest',
       'candidateDigest','phase','status','oldConfigDigest','newConfigDigest','updatedAt'];
@@ -200,18 +201,54 @@ function inspectJournal(events,bound,oldConfigDigest,newConfigDigest){
       ||Object.keys(bound).some(key=>row[key]!==bound[key])
       ||row.oldConfigDigest!==oldConfigDigest||row.newConfigDigest!==newConfigDigest
       ||!Object.hasOwn(next,row.phase)||!Number.isFinite(Date.parse(row.updatedAt))
-      ||(prior===undefined?row.phase!=='started':!next[prior].includes(row.phase)))fail();
+      ||(journalOnly&&!['started','quiesced','fail-closed'].includes(row.phase))
+      ||(prior===undefined?row.phase!=='started'
+        :prior==='fail-closed'&&!durable?row.phase!=='started':!next[prior].includes(row.phase)))fail();
     const expected=row.phase==='completed'?'COMPLETED':row.phase==='rolled-back'?'ROLLED_BACK'
       :row.phase==='fail-closed'?'FAIL_CLOSED':'IN_PROGRESS';
-    if(row.status!==expected)fail();prior=row.phase;
+    if(row.status!==expected)fail();
+    if(row.phase==='prepared')durable=true;
+    prior=row.phase;
   }
   return prior;
 }
 function journalRow(bound,state,phase,now){
   return {version:1,kind:'buyer_writer_gateway_configuration_upgrade',...bound,phase,
-    status:phase==='completed'?'COMPLETED':phase==='rolled-back'?'ROLLED_BACK':'IN_PROGRESS',
+    status:phase==='completed'?'COMPLETED':phase==='rolled-back'?'ROLLED_BACK'
+      :phase==='fail-closed'?'FAIL_CLOSED':'IN_PROGRESS',
     oldConfigDigest:state.oldConfigDigest,newConfigDigest:state.newConfigDigest,
     updatedAt:new Date(now()).toISOString()};
+}
+
+export async function recoverBuyerWriterGatewayConfigurationJournalPrefix({
+  releaseSha,operationId,attemptId,artifactDigest,candidateDigest,
+  oldConfigDigest,newConfigDigest,journalEvents,appendJournal,now=Date.now,
+  writerGroupId,configurationFile=BUYER_WRITER_GATEWAY_CONFIG_FILE,
+  stateDirectory=BUYER_WRITER_GATEWAY_UPGRADE_STATE,io=fs,aclTool=spawnSync,proveQuiesced,
+}={}){
+  try{
+    const bound=binding({releaseSha,operationId,attemptId,artifactDigest,candidateDigest});
+    if(!DIGEST.test(oldConfigDigest??'')||!DIGEST.test(newConfigDigest??'')
+      ||typeof appendJournal!=='function'||typeof now!=='function'
+      ||!Number.isSafeInteger(writerGroupId)||writerGroupId<1
+      ||typeof proveQuiesced!=='function'||await proveQuiesced()!==true)fail();
+    safeDirectory(io,path.dirname(configurationFile),{uid:0,gid:writerGroupId,mode:0o750,aclTool});
+    safeDirectory(io,stateDirectory,{uid:0,gid:0,mode:0o700,aclTool});
+    for(const name of [operationId+'.state.json',operationId+'.backup.json',
+      '.'+operationId+'.candidate','.'+operationId+'.restore'])
+      requireAbsent(io,path.join(stateDirectory,name));
+    const current=snapshot(io,configurationFile,{uid:0,gid:writerGroupId,mode:0o640,aclTool});
+    if(hash(Buffer.from(JSON.stringify(current.value)+'\n'))!==oldConfigDigest)fail();
+    const prior=inspectJournal(journalEvents,bound,oldConfigDigest,newConfigDigest,
+      {allowEmpty:true,journalOnly:true});
+    if(['started','quiesced'].includes(prior)){
+      await appendJournal(journalRow(bound,{oldConfigDigest,newConfigDigest},'fail-closed',now));
+    }
+    return Object.freeze({status:'JOURNAL_PREFIX_RECOVERED',operationId,priorPhase:prior??null});
+  }catch(error){
+    if(error?.message==='Buyer writer gateway configuration file upgrade failed')throw error;
+    fail();
+  }
 }
 
 export async function rollbackBuyerWriterGatewayConfigurationFile({

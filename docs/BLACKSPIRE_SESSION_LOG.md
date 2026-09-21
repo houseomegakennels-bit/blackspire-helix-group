@@ -1,5 +1,13 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-21 — production inspected; interrupted pre-preparation upgrade repair continued
+
+Recovered research head `eedda6977ffcf127648d3a11d219a7b530890764` and preserved/completed its existing two-file unfinished journal-prefix change. Read-only observations confirm the installed release remains `6f7e0c268b75c86f8f6318725d40e3d774a59091`, all three production services are inactive/dead with MainPID 0, and all four expected Buyer Writer roles are absent. PR #146 is open at the research base with successful main CI; no upstream is configured locally.
+
+The upgrade CLI can now resume an existing pre-preparation journal under its exclusive lock only after proving no state/backup/candidate/restore exists, exact protected old-configuration digest, valid bound pre-preparation history and service quiescence. History is retained; interrupted prefixes are marked fail-closed before restarting preparation. Durable or ambiguous work remains refused. Added real-file regressions for successful recovery and subsequent reconciliation, repeated interruptions, malformed/late history, durable artifact refusal, digest drift, quiescence refusal and failed journal append.
+
+Focused verification passes 32/32 under pinned Node 22.23.1; lint, syntax/typecheck, build, living-memory, secret scan and whitespace checks pass. The pinned contained suite passes 2,176 total / 2,099 passed / 77 intended skips / zero failures, with all 221 files completed, zero test-tree mutation, drained output and zero remaining descendants. The four new root-only regression groups are skipped in containment and passed in the separate 32/32 direct run. No production mutation, role creation, service start, release switch, push, merge or deployment occurred. Independent review and new exact-head publication/CI remain pending.
+
 ## 2026-09-21 — exact-head CI passed; acceptance-owner P1 repaired locally
 
 Consumed one authorized push for `22ae00ddc37bf0804028e78646de490dddd6aadb`, immediately restored `disabled://local-research-no-push`, verified PR/remote exact identity and kept all production services inactive. CI run `35545100781` failed attempt 1 only because npm registry's retiring quick-audit endpoint returned HTTP 400 after every earlier gate passed. A failed-job rerun on the same SHA completed successfully on attempt 2, including npm audit.
