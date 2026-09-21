@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — composed production history validation integrated
+
+Local integration `98d9d23` accepts supported production event families only through strict validators bound to their enclosing sequence attempts. Candidate reads, Buyer Writer activation, retained writer handles, rollback probes, HELD acceptance and final records no longer fail solely because their legitimate event type was omitted from the commander whitelist. Unknown or malformed rows still fail closed, mutation reporting remains cumulative, and a fresh observational preflight is refused after sequence mutation. The implementation agent reports 44/44 focused tests; independent review and final composed validation remain pending. This commit depends on the separately developed candidate-deployment module, not yet integrated, and the checkout is not release-ready at this intermediate point. No production history was changed.
+
 ## 2026-09-21 — reviewed-main memory reconciliation and integrated checks
 
 The recorded implementation anchor now identifies independently reviewed main `2775fd5043ad422418a4177f686671961e9a9738`, including the marketing, demo-access and operator-boundary delta from the prior anchor. This review found three invitation/expiry defects; the anchor is not a clean-main or production-acceptance certification. Their integrated repair `2304bca` was independently approved, runtime/test diff digest `dd5280de4c0be688a997daaa08bdf651259625bfba68ec9580442a76eb7daa3d`. Deployed main remains unfixed for those findings until that repair is published. The checker and its allowlist are unchanged.

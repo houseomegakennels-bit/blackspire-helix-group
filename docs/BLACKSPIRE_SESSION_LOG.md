@@ -1931,3 +1931,7 @@ The contained suite for `b00754d` passes 2,193 total / 2,116 passed / 77 intende
 ## 2026-09-21 — read-only bounded-writer history inspection
 
 A pure bounded-writer history inspector validates each persisted handle against its original pending sequence prefix, exact binding, digest and operation order. It can inspect those retained handles after the outer stage is confirmed without permitting new appends or replay. Ten focused journal tests pass, including confirmed-stage history, late-handle refusal, tampering and unchanged input bytes. Integration into strict commander event validation is separate work; no production journal changed.
+
+## 2026-09-21 — composed production history validation integrated
+
+Local integration `98d9d23` accepts supported production event families only through strict validators bound to their enclosing sequence attempts. Candidate reads, Buyer Writer activation, retained writer handles, rollback probes, HELD acceptance and final records no longer fail solely because their legitimate event type was omitted from the commander whitelist. Unknown or malformed rows still fail closed, mutation reporting remains cumulative, and a fresh observational preflight is refused after sequence mutation. The implementation agent reports 44/44 focused tests; independent review and final composed validation remain pending. This commit depends on the separately developed candidate-deployment module, not yet integrated, and the checkout is not release-ready at this intermediate point. No production history was changed.
