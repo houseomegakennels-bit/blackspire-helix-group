@@ -37,7 +37,8 @@ export function validateVpsHeldHttp({health,ready},{releaseSha,workerExpected,wo
  const expected=['releaseAdmission','lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter',...(owned?['buyerStore']:[])];
  if(!r.checks||Object.keys(r.checks).sort().join(',')!==expected.sort().join(',')||r.checks.releaseAdmission!==false
   ||r.checks.worker!==workerExpected||typeof r.checks.buyerWriter!=='boolean')reject();
- for(const key of ['lifecycle','database','productionConfig','scheduler','deploymentIdentity',...(owned?['buyerStore']:[])])if(r.checks[key]!==true)reject();
+ for(const key of ['lifecycle','database','productionConfig','scheduler','deploymentIdentity'])if(r.checks[key]!==true)reject();
+ if(owned&&r.checks.buyerStore!==workerExpected)reject();
  // Writer operation availability can remain false while HELD; its health must
  // still be true above. Admission and generation-bound acceptance authorize use.
  return true;
