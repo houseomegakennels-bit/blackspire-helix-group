@@ -4,6 +4,7 @@
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
+import {assertOwnedN8nInstalledIngress,verifyOwnedN8nProtectedAsyncFence} from '../packages/zola-release/owned-n8n-installed-fence.js';
 import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
 import {synchronizeOwnedN8nWriter,createOwnedN8nCredentialTransport} from '../packages/zola-release/owned-n8n-credential.js';
 const canonical='/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-release-20260921/';
@@ -24,11 +25,13 @@ try{
  const {readReleaseProtectedBytes,verifyReleaseSource}=await load('packages/zola-release/commander-host.js');
  const {openReleaseJournal}=await load('packages/zola-release/commander-journal.js');
  const {inspectReleaseSequenceHistory}=await load('packages/zola-release/commander-sequence.js');
- const {readRootOwnedJsonSnapshot}=await load('packages/buyer-writer/protected-json.js');
+ const {readRootOwnedJsonSnapshot,readRootOwnedJsonDigestSnapshot}=await load('packages/buyer-writer/protected-json.js');
  const {readOwnedDatabaseProfile,databaseProfileDigest,validateDatabaseTarget}=await load('packages/buyer-writer/database-profile.js');
  const {validateBuyerWriterConfiguration,validateBuyerWriterGatewayAuthority}=await load('packages/buyer-writer/configuration.js');
  const {createBuyerStoreProtectedFiles}=await load('packages/buyer-store/protected-files.js');
  const {prepareN8nTransition,createN8nTransport,WORKFLOW_ID}=await load('packages/zola-release/commander-n8n.js');
+ const {lookupBuyerWriterIdentity}=await load('packages/buyer-writer/runtime-identity.js');
+ const {installedBuyerWriterManifestPath}=await load('packages/zola-release/installed-buyer-writer.js');
  const {createHeldWriterBindingHost,inspectHeldWriterBindingHistory}=await load('packages/zola-release/held-writer-binding.js');
  const input=loadProductionReleaseInput(inputFile),release=input.value;
  if(release.schema!==2||release.backendProfile!=='owned-postgres-v1')fail();
@@ -58,27 +61,37 @@ try{
   if(!record?.result||record.plan.releaseSha!==b.releaseSha||record.plan.operationId!==b.operationId)fail();return record;
  };
  const retained=b=>({version:1,operatorSha,...b,profileDigest:release.profileDigest,sourceDigest:hash(source),held:heldRecord(b)});
+ const protectedSnapshot=(b,record,identity)=>{
+  verifyReleaseSource(release.releaseSha);
+  if(!same(currentBinding(),b)||git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain'])
+   ||!same(source,read(sourceFile))||!same(configuration,read(release.packageConfigurationFile))||backup!==readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024)||!same(profile,readOwnedDatabaseProfile())||key!==readReleaseProtectedBytes(keyFile,16384).trim())fail();
+  const manifest=readRootOwnedJsonDigestSnapshot(installedBuyerWriterManifestPath(release.releaseSha),{groupId:0,maxBytes:16384});
+  if(!/^\/etc\/blackspire\/buyer-writer-ingress-[a-f0-9]{64}\.json$/.test(manifest.value.ingressConfig?.path??''))fail();
+  const ingress=readRootOwnedJsonDigestSnapshot(manifest.value.ingressConfig.path,{groupId:identity.credentialGroupId,maxBytes:65536});
+  assertOwnedN8nInstalledIngress({manifest,ingress,source:v,releaseSha:release.releaseSha,artifactDigest:record.plan.artifactDigest});
+  return {manifest,ingress,authority:retained(b)};
+ };
  const assertConfigured=async b=>{
   const store=records(b),binding=retained(b),intent=store.value('intent',true),result=store.value('result',true);
   if(!same(store.value('authority',true),binding)||!intent||!result||!same(intent.binding,result.binding)||result.binding.sourceDigest!==binding.sourceDigest||result.binding.profileDigest!==binding.profileDigest||result.binding.namespace!==b.namespace)fail();
-  verifyReleaseSource(release.releaseSha);
-  if(!same(source,read(sourceFile))||!same(configuration,read(release.packageConfigurationFile))||backup!==readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024)||!same(profile,readOwnedDatabaseProfile())||key!==readReleaseProtectedBytes(keyFile,16384).trim())fail();
-  const host=createHeldWriterBindingHost(),record=heldRecord(b);
-  try{await host.lease(release.releaseSha);await host.check(record.plan);
-   const metadata=await createOwnedN8nCredentialTransport(key)('GET','/api/v1/credentials/RzOyDmXYmx58yZHi');
-   if(!same(metadata,result.after))fail();const proof=await host.inspect(record.plan);
-   if(proof.bindingDigest!==record.result.bindingDigest||proof.commitDigest!==record.result.commitDigest||!same(currentBinding(),b))fail();
+  const host=createHeldWriterBindingHost(),record=heldRecord(b),identity=await lookupBuyerWriterIdentity();
+  try{await host.lease(release.releaseSha);
+   await verifyOwnedN8nProtectedAsyncFence({snapshot:()=>protectedSnapshot(b,record,identity),verifyAsync:async()=>{
+    await host.check(record.plan);const metadata=await createOwnedN8nCredentialTransport(key)('GET','/api/v1/credentials/RzOyDmXYmx58yZHi');
+    if(!same(metadata,result.after))fail();const proof=await host.inspect(record.plan);
+    if(proof.bindingDigest!==record.result.bindingDigest||proof.commitDigest!==record.result.commitDigest)fail();
+   }});
   }finally{host.close();}
  };
  const synchronize=async b=>{
   const store=records(b),record=heldRecord(b),authority=retained(b),host=createHeldWriterBindingHost();
-  const deadline=Date.now()+15*60*1000;
+  const deadline=Date.now()+15*60*1000,identity=await lookupBuyerWriterIdentity();
   const fence=async()=>{
-   if(Date.now()>=deadline||!same(currentBinding(),b)||git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
-   verifyReleaseSource(release.releaseSha);
-   if(!same(source,read(sourceFile))||!same(configuration,read(release.packageConfigurationFile))||backup!==readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024)||!same(profile,readOwnedDatabaseProfile())||key!==readReleaseProtectedBytes(keyFile,16384).trim()||!same(authority,retained(b)))fail();
-   await host.check(record.plan);const proof=await host.inspect(record.plan);
-   if(proof.bindingDigest!==record.result.bindingDigest||proof.commitDigest!==record.result.commitDigest)fail();
+   const snapshot=()=>{if(Date.now()>=deadline||!same(authority,retained(b)))fail();return protectedSnapshot(b,record,identity);};
+   await verifyOwnedN8nProtectedAsyncFence({snapshot,verifyAsync:async()=>{
+    await host.check(record.plan);const proof=await host.inspect(record.plan);
+    if(proof.bindingDigest!==record.result.bindingDigest||proof.commitDigest!==record.result.commitDigest)fail();
+   }});
   };
   try{
    await host.lease(release.releaseSha);await fence();
