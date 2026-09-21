@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — integrated authenticated callback review complete
+
+Independent review approves callback patch `eea6a7079d7a4ac12bcf37d7625d8b95b061d53d`, integrated as `e6db3af`. The exact authenticated callback first attempts ordinary admission, then permits only an explicit HELD refusal before consumer entry to enter its dedicated, bounded shared-lease scope. Current candidate/live read authority, exact persisted task, generation, grant, worker ownership, proof and single-use SQLite consumption remain enforced. Ordinary admission and public readiness stay closed.
+
+Root reran the integrated admission/authority/HTTP lane: 19/19 passed, including real candidate/live API-to-worker-to-frontend-validator-to-API callback and durable consumption. OS runtime identity is modeled in that composition; this is not production acceptance. Build, lint, syntax/typecheck, secret scan and the complete release-base whitespace range pass. Canonical history is preserved. The combined callback and formatting update is ready for exact-head PR151 CI; no additional production mutation occurred during integration.
+
 ## 2026-09-21 — CI range whitespace correction
 
 PR151 run 35577594482 at `5020209` passed the complete runtime suite, all disposable PostgreSQL lanes, build, lint, typecheck, secret scan, audit and shell syntax. Its full PR-range whitespace gate failed on trailing spaces in two added files and an extra EOF blank line in one fixture. Those three formatting defects are removed without behavior changes. Earlier local working-tree whitespace checks did not cover committed additions; subsequent validation checks the complete release-base range. This run is not a successful release gate; the reviewed callback repair and final exact-source CI remain required. No additional production action occurred.
