@@ -89,3 +89,29 @@ async function operatorMatches(plan,currentOperatorSha){
  const {validateOwnedN8nCloudWorkflowAdoption}=await import('./owned-n8n-cloud-workflow.js');validateOwnedN8nCloudWorkflowAdoption(plan,read('workflow-created'),read('workflow-adoption'),currentOperatorSha);return true;
 }
 export async function adoptOwnedN8nCloudWorkflowNative(){const c=await nativeContext();try{const plan=validatePlan(read('plan'));if(plan.operatorSha!=='4a1a329a35e10691af2eadbf4088c8bb306d505f'||c.operatorSha===plan.operatorSha||plan.sourceDigest!==hash(c.s)||read('serve-intent')||read('cleanup-intent'))fail();const {adoptOwnedN8nCloudWorkflow}=await import('./owned-n8n-cloud-workflow.js');const result=await adoptOwnedN8nCloudWorkflow(plan,{repairOperatorSha:c.operatorSha,workflowId:'JjlvgzqIgFQSWOM7'},{request:c.request,store:ownedCloudProofStore,fence:c.fence});return{status:'CLOUD_WORKFLOW_ADOPTED',workflowId:'JjlvgzqIgFQSWOM7',proofDigest:hash(result),originOperatorSha:plan.operatorSha,repairOperatorSha:c.operatorSha};}finally{c.close();}}
+
+// Separate failure cleanup: never produces possession or release authorization.
+export async function cleanupOwnedN8nCloudFailureNative(){
+ const c=await nativeContext();try{
+  const {cleanupOwnedN8nCloudFailure,validateOwnedN8nCloudFailedWorkflow}=await import('./owned-n8n-cloud-failure-cleanup.js');
+  const {buildOwnedN8nCloudWorkflow,validateOwnedN8nCloudWorkflowAdoption}=await import('./owned-n8n-cloud-workflow.js');
+  const names=['plan','proxy-bytes','serve-intent','proxy-intent','proxy-result','cleanup-intent','cleanup-result','workflow-intent','workflow-adoption','workflow-created'];
+  const capture=()=>Object.fromEntries(names.map(n=>[n,read(n)])),original=capture(),plan=validatePlan(original.plan),created=original['workflow-created'],adoption=original['workflow-adoption'],p=retainedProxy(plan),planDigest=hash(plan);
+  if(plan.operatorSha!=='4a1a329a35e10691af2eadbf4088c8bb306d505f'||created?.workflow?.id!=='JjlvgzqIgFQSWOM7')fail();
+  validateOwnedN8nCloudWorkflowAdoption(plan,created,adoption,'e90fe1fb6db183b927806a6cffe02c162171dfbd');
+  for(const [field,value] of Object.entries({sourceDigest:hash(c.s),authorityDigest:hash(c.authority),originalIntentDigest:hash(c.originalIntent),reassertionIntentDigest:hash(c.reassertionIntent),reassertionAckDigest:hash(c.reassertionAck),reassertionHeadersDigest:hash(c.reassertionHeaders),reassertionBodyDigest:hash(c.reassertionBody),profileDigest:databaseProfileDigest(c.profile),ingressDigest:c.initialInstalled.ingress.digest}))if(plan[field]!==value)fail();
+  if(!same(original['workflow-intent'],{version:1,planDigest,workflow:buildOwnedN8nCloudWorkflow(plan)})||!same(original['serve-intent'],{version:1,planDigest})||!same(original['cleanup-intent'],{version:1,planDigest})||!same(original['cleanup-result'],{version:1,planDigest,proxyRestored:true,listenerClosed:true}))fail();
+  for(const n of ['proxy-intent','proxy-result'])if(!same(original[n],{version:1,planDigest}))fail();
+  const check=()=>{if(!same(original,capture())||proxy()!==p.before||read('server-receipt')||read('execution-observed')||read('execution-proof')||read('workflow-proof')||read('workflow-delete-intent')||read('workflow-deleted'))fail();noListener();};
+  const fence=async()=>{check();await c.fence();check();};
+  const closure=async()=>{
+   let diagnostic=0;
+   const request=async(method,route,body)=>{const response=await c.request(method,route,body);if(method==='GET'&&route.startsWith('/api/v1/workflows?')&&response.status===200&&Array.isArray(response.body?.data)){
+    const data=[];for(const w of response.body.data){if(w.id==='JjlvgzqIgFQSWOM7'){validateOwnedN8nCloudFailedWorkflow(plan,created,w);diagnostic++;}else data.push(w);}return{...response,body:{...response.body,data}};
+   }return response;};
+   await fence();const proof=await observeOwnedN8nConsumerClosure({request,tokenSubject:c.tokenSubject});if(diagnostic!==0&&diagnostic!==2||!same(proof,plan.initialClosure))fail();await fence();return proof;
+  };
+  await fence();const result=await cleanupOwnedN8nCloudFailure({plan,created,adoption,executionId:'1',operatorSha:c.operatorSha},{request:c.request,store:ownedCloudProofStore,fence,closure});await fence();
+  return{status:'FAILED_CLOUD_WORKFLOW_CLEANED',workflowId:'JjlvgzqIgFQSWOM7',executionId:'1',receiptDigest:hash(result),credentialPossessionVerified:false,releaseReady:false};
+ }finally{c.close();}
+}

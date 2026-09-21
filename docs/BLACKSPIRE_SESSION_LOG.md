@@ -2374,3 +2374,7 @@ Implemented one-use loopback verifier, exact nginx publication/restoration, save
 ## 2026-09-21 — GET-only diagnostic workflow adoption repair
 
 Prepared structural normalization and fixed workflow adoption after the provider returned semantically identical JSON in another property order. The separate repair preserves the original timed plan and records its own code identity. No workflow POST, edit or execution was performed during implementation. Focused tests cover reordered graph data, foreign workflow rejection and preserved original-versus-repair provenance.
+
+## 2026-09-21 — failed diagnostic workflow cleanup
+
+The single cloud diagnostic execution returned the verifier's negative response, with no authenticated server receipt. Root stopped the verifier; read-only checks confirmed the original nginx bytes restored and its loopback listener absent. Key possession remains UNVERIFIED: the negative response does not distinguish missing, duplicate or mismatched authentication headers. A separate operator cleanup retains the original plan, adoption, failed execution and prior uncertain credential outcomes. It permits one deletion of only the exact inactive diagnostic workflow after protected cleanup, HELD and consumer checks; uncertain deletion is observed without replay. Cleanup never creates successful possession evidence or authorizes release. Implementation and focused verification do not execute production deletion.
