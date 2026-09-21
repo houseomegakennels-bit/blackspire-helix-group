@@ -2180,3 +2180,7 @@ Added a disposable actual HTTP/Unix IPC/PostgreSQL/SQLite-authority composition.
 ## 2026-09-21 — owned acceptance target and loader integration
 
 Added separate owned target preparation with original Auth owner lock, descriptor-bound target transaction and exact retry. Fixed backend selection in gateway and admitted writer callers. Actual dual-cluster rehearsal and 64 focused loader/admission groups pass; metadata reader regression also passes. Production execution and combined installation-order rehearsal remain pending.
+
+## 2026-09-21 — owned lifecycle release binding and rollback
+
+Added explicit owned candidate/VPS history versions, protected configuration and namespace rebinding, generation-bound manifest publication before store startup, and exact stopped rollback without data rewind. Thirty-two focused tests, including actual root-filesystem recovery and adversarial drift, plus build/lint/syntax pass. Production transitions and complete root hook composition remain UNVERIFIED; no production effects.

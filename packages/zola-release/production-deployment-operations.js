@@ -1,3 +1,4 @@
+import {ownedBackendFields,createOwnedStoreTransition} from './owned-store-transition.js';
 import {inspectCandidateDeploymentHistory} from './candidate-deployment.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -75,7 +76,8 @@ async function vpsBase(context,args,held,dependencies){
  const candidate=inspectCandidateDeploymentHistory(context.journal.stream('release').events());
  if(!candidate.completed||candidate.plan.operationId!==binding.operationId||candidate.plan.releaseSha!==context.input.releaseSha
   ||candidate.plan.recoverySha!==context.input.recoverySha||candidate.plan.recoveryArtifactDigest!==rollback.artifactDigest)reject();
- return{candidateSha:candidate.plan.releaseSha,candidateArtifactDigest:candidate.plan.artifactDigest,candidateDeploymentDigest:hash(candidate.plan),operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
+ if(JSON.stringify(ownedBackendFields(candidate.plan))!==JSON.stringify(ownedBackendFields(context.input)))reject();
+ return{...ownedBackendFields(context.input),candidateSha:candidate.plan.releaseSha,candidateArtifactDigest:candidate.plan.artifactDigest,candidateDeploymentDigest:hash(candidate.plan),operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
   rollbackSha:context.input.recoverySha,artifactDigest:await dependencies.materializeArtifact(newMainSha),rollbackArtifactDigest:rollback.artifactDigest,
   backupDigest:rollback.backupProofDigest,backupManifestFile:context.release.backupManifestFile,
   admissionDigest:hash({version:1,mode:'held',releaseSha:newMainSha,runId:held.epochRunId,apiGeneration:null,workerGeneration:null})};
@@ -89,14 +91,14 @@ async function ensureHeld(context,args,dependencies){
   return{status:'POST_MERGE_HELD',newMainSha,epochRunId:completed.epochRunId,intakeOpen:false,reconciled:true};
  }
  return dependencies.beginHeld({commanderRunId,candidateSha:context.input.releaseSha,newMainSha,journal:context.journal},
-  {root:ADMISSION,groupId:dependencies.admissionGroup(),stopAndVerify:dependencies.stopAndVerify});
+  {root:ADMISSION,groupId:dependencies.admissionGroup(),stopAndVerify:async()=>{if(context.input.backendProfile){const r=dependencies.stopOwnedStore();if(r?.then)await r;}return dependencies.stopAndVerify();}});
 }
 async function driveVps(context,args,dependencies){
  const newMainSha=capturedMain(context,args,'journaled_vps_cutover'),ci=dependencies.readCiProof(context,args);
  const verified=dependencies.verifyMerged({releaseSha:context.input.releaseSha,previousMainSha:context.input.previousMainSha,...ci,newMainSha});
  if(verified.status!=='MERGED_IDENTITY_VERIFIED')reject();
  const held=await ensureHeld(context,args,dependencies),history=inspectVpsCutoverHistory(context.journal.stream('release').events());let plan,options,reconcile;
- if(history.started){plan=Object.fromEntries(['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','candidateSha','rollbackSha','artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'].map(key=>[key,history.intent[key]]));reconcile=true;}
+ if(history.started){plan={...ownedBackendFields(history.intent),...Object.fromEntries(['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','candidateSha','rollbackSha','artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'].map(key=>[key,history.intent[key]]))};reconcile=true;}
  else{const prepared=await dependencies.prepareVps({plan:await vpsBase(context,args,held,dependencies)});plan=prepared.plan;options={snapshot:prepared.snapshot};reconcile=false;}
  const result=await dependencies.runVps({plan,journal:context.journal,reconcile},options);
  if(result.status!=='VPS_CUTOVER_COMPLETE'||result.newMainSha!==plan.newMainSha)reject();
@@ -107,7 +109,7 @@ async function driveVps(context,args,dependencies){
 export function createDeploymentProductionOperations(context,overrides={}){
  const dependencies={observeMerge:observeExpectedHeadMerge,observeMergeability:observeReleaseMergeability,requestMerge:requestExpectedHeadMerge,
   verifyMerged:verifyMergedRelease,observeVercel:observeVercelProduction,readVercelToken:()=>readReleaseProtectedBytes(VERCEL_TOKEN,16384).trim(),
-  beginHeld:beginPostMergeHeldEpoch,admissionGroup:()=>fs.statSync(ADMISSION).gid,stopAndVerify:fixedStopAndVerify,
+  stopOwnedStore:()=>createOwnedStoreTransition().stop(),beginHeld:beginPostMergeHeldEpoch,admissionGroup:()=>fs.statSync(ADMISSION).gid,stopAndVerify:fixedStopAndVerify,
   prepareVps:prepareVpsCutoverPlan,runVps:runVpsCutover,readCiProof:ciProof,materializeArtifact:materializeFixedNewMainArtifact,...overrides};
  const merge={
   check(args){const binding=invocation(context,args,'expected_head_merge'),ci=dependencies.readCiProof(context,args),proof=dependencies.observeMergeability({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha});if(proof.status!=='PR_MERGEABLE')reject();return pass({...binding,...ci,expectedHead:true,mergeable:true});},

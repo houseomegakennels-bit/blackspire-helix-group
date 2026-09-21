@@ -1,3 +1,4 @@
+import {createOwnedStoreTransition,ownedBackendFields,validateOwnedStoreTransitionPlan} from './owned-store-transition.js';
 import {createReceiverOriginTransition,validateReceiverOriginPlan} from './receiver-origin-transition.js';
 // Candidate activation changes the current pointer while intake remains HELD.
 // The independently verified recovery release is never relabelled as candidate.
@@ -13,16 +14,17 @@ import {verifyAdmissionServicesStopped} from './admission-hold.js';
 const ROOT='/opt/blackspire-command',ADMISSION='/etc/blackspire/release-admission';
 const sha=v=>/^[a-f0-9]{40}$/.test(v??''),digest=v=>/^[a-f0-9]{64}$/.test(v??''),uuid=v=>/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v??'');
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),reject=()=>{throw new Error('Candidate deployment rejected; preserve journal and reconcile');};
-const steps=['pointer','runtime','receivers','reload'];
+const stepsFor=p=>p.backendProfile?['pointer','runtime','receivers','owned_store','reload']:['pointer','runtime','receivers','reload'];
 const keys=['operationId','releaseSha','recoverySha','runId','artifactDigest','recoveryArtifactDigest','previousSha','previousArtifactDigest','stateDigest','receiverOrigin'];
 function exact(v,k){return v&&Object.keys(v).sort().join(',')===[...k].sort().join(',');}
-function valid(p){if(!exact(p,keys)||!uuid(p.operationId)||!uuid(p.runId)||!['releaseSha','recoverySha','previousSha'].every(k=>sha(p[k]))||p.releaseSha===p.recoverySha||!['artifactDigest','recoveryArtifactDigest','previousArtifactDigest','stateDigest'].every(k=>digest(p[k])))reject();const r=validateReceiverOriginPlan(p.receiverOrigin);if(r.mode!=='preview'||r.releaseSha!==p.releaseSha)reject();return p;}
+const planKeys=p=>[...keys,...(ownedBackendFields(p).backendProfile?['backendProfile','profileDigest','ownedStore']:[])];
+function valid(p){if(!exact(p,planKeys(p))||!uuid(p.operationId)||!uuid(p.runId)||!['releaseSha','recoverySha','previousSha'].every(k=>sha(p[k]))||p.releaseSha===p.recoverySha||!['artifactDigest','recoveryArtifactDigest','previousArtifactDigest','stateDigest'].every(k=>digest(p[k])))reject();const r=validateReceiverOriginPlan(p.receiverOrigin);if(r.mode!=='preview'||r.releaseSha!==p.releaseSha)reject();if(p.backendProfile){const o=validateOwnedStoreTransitionPlan(p.ownedStore);if(o.releaseSha!==p.releaseSha||o.profileDigest!==p.profileDigest||o.origin!==r.origin)reject();}return p;}
 export function inspectCandidateDeploymentHistory(events){
  let plan=null,pending=null,next=0,completed=false;
  for(const row of events.filter(e=>String(e?.type??'').startsWith('candidate_deployment_'))){
   const extras=['candidate_deployment_step_intent','candidate_deployment_step_result'].includes(row.type)?['step']:[];
-  if(row.schema!==1||!exact(row,['schema','type',...keys,...extras]))reject();
-  const p=valid(Object.fromEntries(keys.map(k=>[k,row[k]])));
+  if(row.schema!==(row.backendProfile?2:1)||!exact(row,['schema','type',...planKeys(row),...extras]))reject();
+  const p=valid(Object.fromEntries(planKeys(row).map(k=>[k,row[k]]))),steps=stepsFor(p);
   if(!plan){if(row.type!=='candidate_deployment_intent')reject();plan=p;continue;}
   if(!same(plan,p)||completed)reject();
   if(row.type==='candidate_deployment_step_intent'){if(pending||row.step!==steps[next])reject();pending=row.step;}
@@ -36,7 +38,7 @@ function command(file,args,env={}){const r=spawnSync(file,args,{encoding:'utf8',
 function sync(dir){const fd=fs.openSync(dir,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
 export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run=command,
  inspectSealed=inspectSealedBuyerWriterArtifact,inspectDeployed=inspectBuyerWriterArtifact,
- stopped=verifyAdmissionServicesStopped,acquire=acquireReleaseAdmissionLock,receiver=createReceiverOriginTransition({assertStopped:stopped})}={}){
+ stopped=verifyAdmissionServicesStopped,acquire=acquireReleaseAdmissionLock,receiver=createReceiverOriginTransition({assertStopped:stopped}),ownedStore=createOwnedStoreTransition()}={}){
  const ROOT=root,ADMISSION=admission;
  const repository=fileURLToPath(new URL('../../',import.meta.url));
  const gid=()=>fs.statSync(path.join(ADMISSION,'state.json')).gid;
@@ -49,7 +51,9 @@ export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run
   async prepare(input){stopped();const state=readState();if(state.mode!=='held'||state.releaseSha!==input.releaseSha||state.apiGeneration!==null||state.workerGeneration!==null)reject();
    const previousSha=current();if(previousSha===input.releaseSha)reject();
    const [candidate,recovery,previous]=await Promise.all([artifact(input.releaseSha,true),artifact(input.recoverySha,true),artifact(previousSha,false)]);
-   return valid({...input,runId:state.runId,artifactDigest:candidate.artifactDigest,recoveryArtifactDigest:recovery.artifactDigest,previousSha,previousArtifactDigest:previous.artifactDigest,stateDigest:hash(state),receiverOrigin:await receiver.prepare({releaseSha:input.releaseSha,mode:'preview'})});},
+   const receiverOrigin=await receiver.prepare({releaseSha:input.releaseSha,mode:'preview'});
+   const owned=input.backendProfile?{ownedStore:await ownedStore.prepare({releaseSha:input.releaseSha,origin:receiverOrigin.origin,...ownedBackendFields(input)})}:{};
+   return valid({...input,...owned,runId:state.runId,artifactDigest:candidate.artifactDigest,recoveryArtifactDigest:recovery.artifactDigest,previousSha,previousArtifactDigest:previous.artifactDigest,stateDigest:hash(state),receiverOrigin});},
   async execute(step,p){check(p);stopped();
    if(step==='pointer'){if(current()!==p.previousSha||(await artifact(p.previousSha,false)).artifactDigest!==p.previousArtifactDigest||(await artifact(p.releaseSha,true)).artifactDigest!==p.artifactDigest)reject();
     run('/bin/bash',[path.join(repository,'scripts/release-switch.sh'),p.releaseSha],{BLACKSPIRE_RELEASE_ROOT:ROOT,BLACKSPIRE_DEPLOYMENT_ENVIRONMENT:'production'});}
@@ -58,6 +62,7 @@ export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run
      fd=fs.openSync(temporary,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);fs.fchownSync(fd,0,gid());fs.fchmodSync(fd,0o640);fs.writeFileSync(fd,runtime(p));fs.fsyncSync(fd);fs.closeSync(fd);fd=undefined;fs.renameSync(temporary,file);sync(ADMISSION);
     }finally{if(fd!==undefined)fs.closeSync(fd);}}
    else if(step==='receivers')await receiver.publish(p.receiverOrigin);
+   else if(step==='owned_store')await ownedStore.publish(p.ownedStore);
    else if(step==='reload')run('/usr/bin/systemctl',['daemon-reload']);else reject();},
   async observe(step,p){check(p);
    if(current()!==p.releaseSha||(await artifact(p.releaseSha,false)).artifactDigest!==p.artifactDigest)return false;
@@ -67,6 +72,8 @@ export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run
    if(step==='runtime')return true;
    if(!receiver.observe(p.receiverOrigin))return false;
    if(step==='receivers')return true;
+   if(p.backendProfile&&!ownedStore.observe(p.ownedStore))return false;
+   if(step==='owned_store')return true;
    if(step!=='reload')reject();
    for(const unit of ['blackspire-command.service','blackspire-command-worker.service']){
     const values=Object.fromEntries(run('/usr/bin/systemctl',['show','--no-pager','--property=NeedDaemonReload,WorkingDirectory','--',unit]).trim().split('\n').map(s=>s.split('=')));
@@ -75,17 +82,17 @@ export function createCandidateDeploymentHost({root=ROOT,admission=ADMISSION,run
   }};
 }
 export async function prepareCandidateDeployment(input,{journal,host=createCandidateDeploymentHost()}={}){
- if(!exact(input,['operationId','releaseSha','recoverySha'])||!uuid(input.operationId)||!sha(input.releaseSha)||!sha(input.recoverySha)||input.releaseSha===input.recoverySha)reject();
+ if(!exact(input,['operationId','releaseSha','recoverySha',...Object.keys(ownedBackendFields(input))])||!uuid(input.operationId)||!sha(input.releaseSha)||!sha(input.recoverySha)||input.releaseSha===input.recoverySha)reject();
  const stream=journal.stream('release');let state=inspectCandidateDeploymentHistory(stream.events()),lease;
  try{lease=host.lease();lease.assertIdentity();
-  if(!state.plan){const plan=valid(await host.prepare(input));if(!Object.keys(input).every(k=>plan[k]===input[k]))reject();stream.append({schema:1,type:'candidate_deployment_intent',...plan});state=inspectCandidateDeploymentHistory(stream.events());}
-  const p=state.plan;if(!Object.keys(input).every(k=>p[k]===input[k]))reject();host.check(p);
+  if(!state.plan){const plan=valid(await host.prepare(input));if(!Object.keys(input).every(k=>plan[k]===input[k]))reject();stream.append({schema:plan.backendProfile?2:1,type:'candidate_deployment_intent',...plan});state=inspectCandidateDeploymentHistory(stream.events());}
+  const p=state.plan,steps=stepsFor(p);if(!Object.keys(input).every(k=>p[k]===input[k]))reject();host.check(p);
   for(let i=state.next;i<steps.length;i++){const step=steps[i];lease.assertIdentity();host.check(p);
-   if(!state.pending){stream.append({schema:1,type:'candidate_deployment_step_intent',...p,step});await host.execute(step,p);}
-   if(await host.observe(step,p)!==true)reject();stream.append({schema:1,type:'candidate_deployment_step_result',...p,step});state=inspectCandidateDeploymentHistory(stream.events());
+   if(!state.pending){stream.append({schema:p.backendProfile?2:1,type:'candidate_deployment_step_intent',...p,step});await host.execute(step,p);}
+   if(await host.observe(step,p)!==true)reject();stream.append({schema:p.backendProfile?2:1,type:'candidate_deployment_step_result',...p,step});state=inspectCandidateDeploymentHistory(stream.events());
   }
   if(await host.observe('reload',p)!==true)reject();lease.assertIdentity();
-  if(!state.completed)stream.append({schema:1,type:'candidate_deployment_result',...p});return {...p,completed:true};
+  if(!state.completed)stream.append({schema:p.backendProfile?2:1,type:'candidate_deployment_result',...p});return {...p,completed:true};
  }finally{lease?.close();}
 }
 export async function verifyCandidateDeploymentForStart({releaseSha,runId,journal},{host=createCandidateDeploymentHost()}={}){
