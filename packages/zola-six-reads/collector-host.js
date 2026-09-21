@@ -81,7 +81,7 @@ export async function observeCollectorHttpGeneration(config,workerGeneration){
   const health=await boundedRequest(config,'/health'),ready=await boundedRequest(config,'/ready');
   if([4,5,6,7].includes(config.version)){
     try{validateVpsHeldHttp({health:{status:health.status,value:health.data},ready:{status:ready.status,value:ready.data}},
-      {releaseSha:config.releaseSha,workerExpected:true,workerGeneration});}catch{refuse('RUNTIME_HEALTH_PAIRING_MISMATCH');}
+      {releaseSha:config.releaseSha,workerExpected:true,workerGeneration,...([6,7].includes(config.version)?{backendProfile:config.backendProfile,profileDigest:config.profileDigest}:{})});}catch{refuse('RUNTIME_HEALTH_PAIRING_MISMATCH');}
     return;
   }
   for(const [endpoint,{status,data}] of [['/health',health],['/ready',ready]]){
