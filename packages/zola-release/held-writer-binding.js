@@ -61,10 +61,11 @@ export function createHeldWriterBindingHost({root=RELEASE_ADMISSION_ROOT,profile
   if(!same(current,initial)||current.artifactDigest!==p.artifactDigest||current.configurationDigest!==p.configurationDigest||current.context.apiGeneration!==p.apiGeneration||current.workerGeneration!==p.workerGeneration
    ||hash(proof)!==p.lifecycleDigest||proof.artifactDigest!==p.artifactDigest||proof.api.generation!==p.apiGeneration||proof.worker.generation!==p.workerGeneration||proof.api.pid!==current.context.apiPid)reject();heldCheck();
  };
+ const readinessBackend=()=>initial.backendProfile==='owned-postgres-v1'?{backendProfile:initial.backendProfile,profileDigest:initial.profileDigest}:{};
  const inspectCommitted=async p=>{
   await check(p);const ctx=initial.context,proof=await inspectBinding(ctx);
   if(proof?.approved!==true||proof.credentialsSeparated!==true||proof.apiGeneration!==p.apiGeneration||proof.workerGeneration!==p.workerGeneration||proof.releaseSha!==p.releaseSha||proof.workspace!=='blackspire-command')reject();
-  await checkReadiness({...ctx,workerGeneration:p.workerGeneration,requirePreparation:true,preparationCredential:initial.preparationCredential,verifyHeld:heldCheck});
+  await checkReadiness({...ctx,...readinessBackend(),workerGeneration:p.workerGeneration,requirePreparation:true,preparationCredential:initial.preparationCredential,verifyHeld:heldCheck});
   const binding=snapshot(ctx.filename),commit=snapshot(ctx.filename+'.commit.json');await check(p);return {bindingDigest:binding.digest,commitDigest:commit.digest};
  };
  return {
@@ -75,7 +76,7 @@ export function createHeldWriterBindingHost({root=RELEASE_ADMISSION_ROOT,profile
    for(const step of steps.slice(0,2)){const {file,archive,prior:expected}=paths(p,step);if(!absent(archive)||(expected===null?!absent(file):snapshot(file).digest!==expected))reject();}
    return p;},check,
   async execute(step,p){await check(p);
-   if(step==='publish'){await publish({context:initial.context,checkReadiness:options=>checkReadiness({...options,requirePreparation:options.requirePreparation||options.requireWriterReady,preparationCredential:initial.preparationCredential,verifyHeld:heldCheck})});}
+   if(step==='publish'){await publish({context:initial.context,checkReadiness:options=>checkReadiness({...options,...readinessBackend(),requirePreparation:options.requirePreparation||options.requireWriterReady,preparationCredential:initial.preparationCredential,verifyHeld:heldCheck})});}
    else {const {file,archive,prior}=paths(p,step);if(prior!==null){if(!absent(archive)||snapshot(file).digest!==prior)reject();fs.linkSync(file,archive);fs.unlinkSync(file);sync(path.dirname(file));}}
    await check(p);
   },

@@ -1,3 +1,4 @@
+import {observeOwnedMigrationPrerequisites} from '../buyer-writer/owned-target-hardening-host.js';
 import {ensureHeldWriterBinding} from './held-writer-binding.js';
 import {runPremergeReadPermit} from './premerge-read-permit.js';
 import {isProductionAcceptanceIdentity,PRODUCTION_ACCEPTANCE_WORKSPACE,PRODUCTION_ACCEPTANCE_PRINCIPAL} from './production-runtime-identity.js';
@@ -174,7 +175,7 @@ export function wrapHeldAcceptanceOperations(context,operations,overrides={}){
 }
 
 export function createHeldProductionOperations(context,overrides={}){
- const deps={premergeReadPermit:runPremergeReadPermit,ensureWriterBinding:input=>import('./held-writer-binding.js').then(module=>module.ensureHeldWriterBinding(input)),observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
+ const deps={verifyOwnedPrerequisites:observeOwnedMigrationPrerequisites,premergeReadPermit:runPremergeReadPermit,ensureWriterBinding:input=>import('./held-writer-binding.js').then(module=>module.ensureHeldWriterBinding(input)),observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
   options:()=>admissionOptions(context),premergeConfig:()=>protectedConfig(FIXED_PREMERGE_SIX_READ_CONFIGURATION),
   liveConfig:()=>protectedConfig(FIXED_LIVE_SIX_READ_CONFIGURATION),collect:collectFixed,now:()=>new Date().toISOString(),inspectRecord:inspectFinalReleaseRecord,
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
@@ -191,10 +192,17 @@ export function createHeldProductionOperations(context,overrides={}){
  const writerBinding=async call=>{const ids=invocation(context,call,'admission_lease',{attempt:true});
   const proof=await deps.ensureWriterBinding({journal:context.journal,stage:'admission_lease',releaseSha:context.input.releaseSha,operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
   if(proof?.status!=='HELD_WRITER_BINDING_VERIFIED'||proof.releaseSha!==context.input.releaseSha)reject();return proof;};
+ const activationPrerequisites=async operationId=>{
+  if(context.release?.backendProfile!=='owned-postgres-v1')return;
+  const proof=await deps.verifyOwnedPrerequisites({releaseSha:context.input.releaseSha,operationId,profileDigest:context.release.profileDigest,
+   sourceSecurityConfigurationFile:context.release.sourceSecurityConfigurationFile,ownedMigrationConfigurationFile:context.release.ownedMigrationConfigurationFile});
+  if(proof?.status!=='OWNED_MIGRATION_PREREQUISITES_VERIFIED'||proof.releaseSha!==context.input.releaseSha||proof.operationId!==operationId||proof.profileDigest!==context.release.profileDigest
+   ||proof.sourceWritesDenied!==true||proof.targetBrowserSecurityVerified!==true||proof.originalSourceMigrationsReapplied!==false)reject();
+ };
  const admission={check(call){invocation(context,call,'admission_lease');return pass({stage:'admission_lease',fixedAdmissionRoot:RELEASE_ADMISSION_ROOT,intakeOpen:false});},
-  async execute(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await deps.activate({releaseSha:context.input.releaseSha,
+  async execute(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await activationPrerequisites(ids.operationId);await deps.activate({releaseSha:context.input.releaseSha,
    operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});await deps.establishHeld();await writerBinding(call);},
-  async reconcile(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await deps.activate({releaseSha:context.input.releaseSha,
+  async reconcile(call){const ids=invocation(context,call,'admission_lease',{attempt:true});await activationPrerequisites(ids.operationId);await deps.activate({releaseSha:context.input.releaseSha,
    operationId:ids.operationId,attemptId:ids.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
    const result=await deps.establishHeld();await writerBinding(call);if(result.status!=='HELD_LIFECYCLE_OBSERVED'||result.releaseSha!==context.input.releaseSha)reject();return pass({stage:'admission_lease',releaseSha:result.releaseSha,
     epochRunId:result.runId,artifactDigest:result.proof.artifactDigest,apiGeneration:result.proof.api.generation,workerGeneration:result.proof.worker.generation,intakeOpen:false});},observe(){reject();}};

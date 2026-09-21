@@ -12,7 +12,7 @@ import {validateBuyerWriterRehearsal} from './rehearsal.js';
 
 // Explicit API-only composition. A missing activation binding denies operations
 // but does not prevent API boot, so the worker can start before root approval.
-export async function createBuyerWriterRuntime({configurationFile,clientConfigurationFile,ingressConfigurationFile,signerConfigurationFile,workspace,releaseSha,apiGeneration,environment,startup,getHealth,getReadiness,
+export async function createBuyerWriterRuntime({backendProfile,profileDigest,configurationFile,clientConfigurationFile,ingressConfigurationFile,signerConfigurationFile,workspace,releaseSha,apiGeneration,environment,startup,getHealth,getReadiness,
   resolveIdentity=resolveBuyerWriterIdentity,readConfiguration=readRootOwnedJson,createPostgres,createClient=createBuyerWriterLocalClient,
   createSigner=createOperationPermitSigner,createAdmittedClient=createBuyerWriterAdmittedLocalClient,createBinding=createBuyerWriterBindingObserver}) {
   let database;
@@ -73,7 +73,7 @@ export async function createBuyerWriterRuntime({configurationFile,clientConfigur
       apiUid:identity.uid,workerUid:identity.workerUid,...units,inspectRuntime:createBuyerWriterRuntimeInspector(units)};
     const observeBinding=createBinding(bindingOptions);
     const available=createBuyerWriterAvailability({workspace,releaseSha,apiGeneration,environment,getHealth,getReadiness,observeBinding});
-    const prepared=createBuyerWriterPreparation({workspace,releaseSha,apiGeneration,environment,getHealth,getReadiness,
+    const prepared=createBuyerWriterPreparation({backendProfile,profileDigest,workspace,releaseSha,apiGeneration,environment,getHealth,getReadiness,
       observeBinding:createBinding({...bindingOptions,requireCommit:false})});
     let closed=false,closing;
     const checkAvailability=async()=>{

@@ -156,3 +156,18 @@ test('owned premerge collector requires its distinct version and immutable datab
  const legacy=createHeldProductionOperations({...context,release:{}},{premergeConfig:()=>config});
  assert.equal(legacy.six_reads.check(call).status,'BLOCKED_EXTERNAL');
 });
+
+
+test('owned admission proves current source freeze and target hardening before activation on apply and reconcile',async()=>{
+ const events=[],journal={stream:()=>({events:()=>events,append:e=>events.push(e)})};
+ const release={backendProfile:'owned-postgres-v1',profileDigest:'a'.repeat(64),sourceSecurityConfigurationFile:'/fixed/source',ownedMigrationConfigurationFile:'/fixed/copy'};
+ const context={input,release,journal},attemptId='33333333-3333-4333-8333-333333333333';
+ const call={input,state:{context:{operationId,releaseSha:candidate,workspace:input.workspace,principal:input.principal},outputs:{},pending:{stage:'admission_lease',attemptId}},ordinal:5,attemptId,inputDigest:'4'.repeat(64),checkOutputDigest:'5'.repeat(64)};
+ const order=[];let frozen=true;
+ const operations=createHeldProductionOperations(context,{verifyOwnedPrerequisites:async bound=>{order.push('proof');assert.equal(bound.sourceSecurityConfigurationFile,release.sourceSecurityConfigurationFile);return{status:'OWNED_MIGRATION_PREREQUISITES_VERIFIED',...bound,sourceWritesDenied:frozen,targetBrowserSecurityVerified:true,originalSourceMigrationsReapplied:false};},
+ activate:async()=>{order.push('activate');},establishHeld:async()=>{order.push('held');return{status:'HELD_LIFECYCLE_OBSERVED',releaseSha:candidate,runId:epochRunId,proof:{artifactDigest:'6'.repeat(64),api:{generation:apiGeneration},worker:{generation:workerGeneration}}};},
+ ensureWriterBinding:async()=>{order.push('binding');return{status:'HELD_WRITER_BINDING_VERIFIED',releaseSha:candidate};}});
+ await operations.admission_lease.execute(call);assert.deepEqual(order,['proof','activate','held','binding']);order.length=0;
+ await operations.admission_lease.reconcile(call);assert.deepEqual(order,['proof','activate','held','binding']);order.length=0;frozen=false;
+ await assert.rejects(operations.admission_lease.execute(call));assert.deepEqual(order,['proof']);
+});
