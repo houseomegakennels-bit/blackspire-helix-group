@@ -1,4 +1,4 @@
-import { withReleaseAdmission,withHeldReceiverAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
+import { withReleaseAdmission,withHeldReceiverAdmission,withHeldReceiverReadAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -30,11 +30,12 @@ import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task
 import { createBuyerWriterRuntime } from '../../packages/buyer-writer/runtime.js';
 import { createBuyerWriterApiLifecycle } from '../../packages/buyer-writer/api-lifecycle.js';
 import { serializeTaskWithCanonicalResult } from '../../packages/task-engine/canonical-result.js';
-import { consumeReceiverAuthority } from '../../packages/capabilities/receiver-authority.js';
+import { consumeReceiverAuthority, assertConsumedReceiverAuthority } from '../../packages/capabilities/receiver-authority.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
 let activeBuyerWriter = null;
+let activeBuyerStore = null;
 const writerClosures = new WeakMap();
 const serverWriters = new WeakMap();
 const serverShutdowns = new WeakMap();
@@ -95,7 +96,7 @@ function writeJson(res, status, body, headers = {}) {
   return json(res, status, body);
 }
 
-export async function consumeCapabilityAuthority(req, res, { consumer = consumeReceiverAuthority, env = process.env } = {}) {
+export async function consumeCapabilityAuthority(req, res, { consumer = consumeReceiverAuthority, verifier = assertConsumedReceiverAuthority, readBuyerData = activeBuyerStore?.readConsumedBuyerData, env = process.env } = {}) {
   if (String(req.headers['content-type'] || '').toLowerCase() !== 'application/json') return json(res, 404, { error: 'not found' });
   const expected = env.BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN?.trim() || '';
   const authorization = String(req.headers.authorization || '');
@@ -106,12 +107,29 @@ export async function consumeCapabilityAuthority(req, res, { consumer = consumeR
   try {
     for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new Error('oversize'); raw += chunk.toString('utf8'); }
     const body = JSON.parse(raw);
-    if (!body || Array.isArray(body) || Object.keys(body).join(',') !== 'authority') throw new Error('shape');
+    if (!body || Array.isArray(body)) throw new Error('shape');
+    const ownedRead=Object.keys(body).join(',')==='authority,request';
+    if(!ownedRead&&Object.keys(body).join(',')!=='authority')throw new Error('shape');
+    if(ownedRead&&(typeof readBuyerData!=='function'
+      ||!['buyer.profiles.search','buyer.matches.search'].includes(body.authority?.capabilityId)
+      ||!body.request||typeof body.request!=='object'||Array.isArray(body.request)
+      ||crypto.createHash('sha256').update(JSON.stringify(body.request)).digest('hex')!==body.authority.bodySha256))throw new Error('shape');
+    const consume=()=>{
+      const consumed=consumer(body.authority);
+      if(!ownedRead)return consumed;
+      const verify=()=>{
+        const observed=verifier(body.authority);
+        if(observed?.ok!==true||observed.bindingDigest!==consumed.bindingDigest)throw new Error('binding');
+      };
+      verify();
+      return Promise.resolve().then(()=>readBuyerData({authority:body.authority,request:body.request,bindingDigest:consumed.bindingDigest}))
+        .then(buyerData=>{verify();return {ok:true,bindingDigest:consumed.bindingDigest,buyerData};});
+    };
     let entered=false,result;
-    try { result=withReleaseAdmission(()=>{entered=true;return consumer(body.authority);}); }
+    try { result=await withReleaseAdmission(()=>{entered=true;return consume();}); }
     catch(error){
       if(entered||error?.code!=='RELEASE_ADMISSION_HELD')throw error;
-      result=withHeldReceiverAdmission(body.authority,()=>consumer(body.authority));
+      result=await (ownedRead?withHeldReceiverReadAdmission:withHeldReceiverAdmission)(body.authority,consume);
     }
     return json(res, 200, result);
   } catch { return json(res, 404, { error: 'not found' }); }

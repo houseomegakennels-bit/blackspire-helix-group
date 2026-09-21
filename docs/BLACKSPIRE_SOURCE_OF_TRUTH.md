@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — owned Buyer read callback boundary in development
+
+The approved separate-cluster implementation adds a dedicated asynchronous receiver-read lease for Buyer profile/match reads while preserving the synchronous legacy consumer contract. The new optional callback request must hash to the original issued authority before consumption. Consumed authority is revalidated before and after bounded reads against the current task, grant, worker, generation, expiry and started attempt; responses after revocation are refused. The asynchronous scope retains the shared release lease and tombstones its context on settlement, without granting ordinary task or writer admission.
+
+Focused admission, durable authority and HTTP boundary tests pass 21/21, including expiry, replay, request drift, absent storage and post-read revocation. The owned repository runtime is not yet connected; the new path refuses when unavailable. Separate cluster materialization, data migration, user/capability adapters, independent review and full release acceptance remain pending. No production changes occurred in this milestone.
+
 ## 2026-09-21 — integrated authenticated callback review complete
 
 Independent review approves callback patch `eea6a7079d7a4ac12bcf37d7625d8b95b061d53d`, integrated as `e6db3af`. The exact authenticated callback first attempts ordinary admission, then permits only an explicit HELD refusal before consumer entry to enter its dedicated, bounded shared-lease scope. Current candidate/live read authority, exact persisted task, generation, grant, worker ownership, proof and single-use SQLite consumption remain enforced. Ordinary admission and public readiness stay closed.

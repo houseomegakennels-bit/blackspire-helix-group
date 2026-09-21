@@ -107,12 +107,18 @@ export const heldReceiverContext=()=>{const value=heldReceiverStorage.getStore()
 export function withHeldReceiverAdmission(authority,fn,options){
  return withScopedReadAdmission({role:'api',receiverAuthority:authority},fn,options);
 }
+// Owned Buyer reads retain their dedicated receiver lease until bounded I/O settles.
+// This does not grant ordinary task or writer admission.
+export function withHeldReceiverReadAdmission(authority,fn,options){
+ if(!['buyer.profiles.search','buyer.matches.search'].includes(authority?.capabilityId))refuse();
+ return withScopedReadAdmission({role:'api',receiverAuthority:authority,receiverRead:true},fn,options);
+}
 
 // Narrow post-merge acceptance admission. It never changes the global HELD
 // state. The API must prove the opaque permit token; the worker can process
 // only the six exact task keys from the protected claims file. A shared lease
 // spans the entire async operation and therefore blocks OPEN publication.
-function withScopedReadAdmission({role,token=null,premerge,receiverAuthority=null},fn,{root=RELEASE_ADMISSION_ROOT,now=Date.now,
+function withScopedReadAdmission({role,token=null,premerge,receiverAuthority=null,receiverRead=false},fn,{root=RELEASE_ADMISSION_ROOT,now=Date.now,
   required=releaseAdmissionRequired,acquire=acquireReleaseAdmissionLock,context=currentReleaseAdmissionContext,read=file=>{
     const stat=fs.lstatSync(file);return readRootOwnedJson(file,{groupId:stat.gid,maxBytes:16384});
   }}={}){
@@ -145,11 +151,14 @@ function withScopedReadAdmission({role,token=null,premerge,receiverAuthority=nul
       const receiver={active:true,scope:scoped};
       const verify=()=>{lease.assertIdentity();const current=context();
         if(!['role','releaseSha','runId','apiGeneration','workerGeneration'].every(key=>current[key]===binding[key])||now()>=claims.expiresAt||now()>=active.expiresAt)refuse();};
+      const close=()=>{receiver.active=false;lease.close();};
       try{verify();const result=heldReceiverStorage.run(receiver,fn);
-        // Consumption is a synchronous database transaction. Never let a callback
-        // lease escape into an asynchronous continuation with authority attached.
-        if(result&&typeof result.then==='function')refuse();verify();return result;
-      }finally{receiver.active=false;lease.close();}
+        if(result&&typeof result.then==='function'){
+          if(!receiverRead)refuse();
+          return Promise.resolve(result).then(value=>{verify();return value;}).finally(close);
+        }
+        verify();close();return result;
+      }catch(error){close();throw error;}
     }
     const result=heldAcceptanceStorage.run(scoped,fn);
     if(result&&typeof result.then==='function')return Promise.resolve(result).finally(()=>lease.close());
