@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — reviewed HELD publication integrated; remaining live configuration blockers
+
+Independent review approves authority rebind `67e4e28`, API preparation `b5f3178`, final health port `109c5f4`, and HELD binding/publication through `6856581`. Their integrated binding, migration, history, lifecycle and authority lane passes 28/28. The publication composition exercises real protected manifest/crypto reads, binding and commit files, authenticated loopback HTTP and shared flock; systemd/process observations remain modeled. Zola is not live.
+
+The contained suite at intermediate `e90aa5b` completed with 2,252 tests: 2,156 passed, 94 intended skips and two failures, with output drained and zero surviving descendants. Both failures were the cold-start sequence fixture invoking the newly required native binding publisher instead of its simulated host. The fixture now models that boundary, validates its durable attempt binding, and asserts publication precedes provider observation; all 15 sequence tests pass. This is not a new full-suite pass. Later changes still require final exact-source CI.
+
+Fresh read-only host checks retain main `2775fd5`, release `f0c5921`, current artifact `6f7e0c2`, and all three services inactive with PID zero. The existing active operator grant includes all six required read permissions; no grant change is needed. Required API environment file `command-api.env` is absent, while all four worker capability origins still target production. Explicit credential isolation and candidate-to-production origin preparation are assigned alongside separate candidate HELD read authority. Native migration repeat-reconciliation also needs its reviewed repair. No production service, database row, configuration or journal was changed during these checks.
+
 ## 2026-09-21 — fixed production health destination corrected
 
 The final HELD health and smoke transport now uses the observed production API port 8789, consistent with the startup observer. It previously used development port 8787, which would prevent final acceptance even after healthy startup. The fixed loopback destination, bounded GET response, release identity, current worker generation and existing authority checks are preserved. Five focused tests pass, including an assertion of the actual transport destination. Production acceptance remains UNVERIFIED; no production action occurred.

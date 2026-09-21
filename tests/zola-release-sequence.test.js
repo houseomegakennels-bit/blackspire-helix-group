@@ -18,7 +18,7 @@ function adapters(calls,{throwStage}={}){
 }
 function coldStartFixture({isolation=true,catalogError=false,activationError=false}={}){
  const j=journal(),calls=[],set=adapters(calls);
- const host={roles:false,active:false,activations:0,isolation,catalogError,catalogReads:0};
+ const host={roles:false,active:false,writerBound:false,activations:0,isolation,catalogError,catalogReads:0};
  const proof={artifactDigest:'6'.repeat(64),api:{generation:'1'.repeat(32)},worker:{generation:'2'.repeat(32)}};
  const held=createHeldProductionOperations({input,journal:j,release:{activationConfigurationFile:'/protected/activation.json'}},{
   async activate(){
@@ -31,12 +31,21 @@ function coldStartFixture({isolation=true,catalogError=false,activationError=fal
     runId:'22222222-2222-4222-8222-222222222222',proof};
   },
   async lifecycle(){assert.equal(host.active,true);return proof;},
+  async ensureWriterBinding(bound){
+   assert.equal(host.active,true);assert.equal(bound.releaseSha,releaseSha);
+   assert.equal(bound.stage,'admission_lease');
+   const pending=inspectReleaseSequence(j.events).pending;
+   assert.equal(bound.attemptId,pending.attemptId);assert.equal(bound.inputDigest,pending.inputDigest);
+   assert.equal(bound.checkOutputDigest,pending.checkOutputDigest);
+   host.writerBound=true;calls.push('writer-binding');
+   return {status:'HELD_WRITER_BINDING_VERIFIED',releaseSha};
+  },
  });
  set.admission_lease=held.admission_lease;
  set.generation_revalidation=held.generation_revalidation;
  set.provider_acl_check=createProviderAclCheckOperation({
   query:async()=>{
-   calls.push('catalog');
+   assert.equal(host.writerBound,true);calls.push('catalog');
    host.catalogReads++;
    if(!host.roles||host.catalogError===true||host.catalogError==='second'&&host.catalogReads===2)
     throw new Error('catalog unavailable');
@@ -61,6 +70,7 @@ test('cold start provisions and establishes HELD before full provider isolation 
  const result=await runReleaseSequence({input,journal:f.j,adapters:f.set});
  assert.equal(result.stage,'n8n_migration');
  assert.equal(f.host.activations,1);assert.equal(f.host.active,true);
+ assert.ok(f.calls.indexOf('writer-binding')<f.calls.indexOf('catalog'));
  const observed=inspectReleaseSequence(f.j.events);
  assert.equal(observed.outputs.admission_lease.intakeOpen,false);
  assert.equal(observed.outputs.provider_acl_check.pgNetIsolationVerified,true);
