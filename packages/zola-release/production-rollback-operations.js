@@ -1,3 +1,4 @@
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -103,8 +104,7 @@ function defaultVerificationPrecheck(context,binding,ids){
  if(accepted?.status!=='PASS'||accepted.operationId!==ids.operationId||accepted.proof?.binding?.rollbackSha!==binding.rollbackSha)reject();
  const cutover=inspectVpsCutoverHistory(events),held=inspectHeldAcceptanceHistory(events);
  if(!cutover.completed||cutover.rollingBack||cutover.rollbackComplete||cutover.intent.commanderRunId!==ids.operationId
-  ||held.status!=='CONSUMING'||held.claims.commanderRunId!==ids.operationId||held.claims.workspace!==binding.workspace
-  ||held.claims.principal!==binding.principal||held.pending)reject();
+  ||held.status!=='CONSUMING'||held.claims.commanderRunId!==ids.operationId||!isProductionAcceptanceIdentity(held.claims)||held.pending)reject();
  return{status:'PASS',rollbackArtifactRetained:true,cutoverJournalComplete:true,heldGenerationsCurrent:true};
 }
 async function defaultAcceptance(context,binding,ids){
@@ -129,7 +129,7 @@ async function defaultVerification(context,binding,ids,acceptanceProof){
  if(!cutoverStage||cutoverStage.attemptId!==cutover.intent.operationId)reject();
  const held=inspectHeldAcceptanceHistory(events);
  if(held.status!=='CONSUMING'||held.claims.commanderRunId!==ids.operationId||held.claims.mergeMainSha!==cutover.intent.newMainSha
-  ||held.claims.workspace!==binding.workspace||held.claims.principal!==binding.principal
+  ||!isProductionAcceptanceIdentity(held.claims)
   ||held.completed.join(',')!=='api_health,worker_readiness,generation_fence,six_live_reads,production_smoke,zero_paid_nexus,zero_unintended_mutation'
   ||held.pending&&held.pending.operation!=='rollback_verification')reject();
  const lifecycle=await observeHeldLifecycle({releaseSha:held.claims.mergeMainSha,runId:held.claims.epochRunId});

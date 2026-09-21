@@ -27,9 +27,9 @@ function fixture(t){
   readSecret:()=>JSON.parse(fs.readFileSync(path.join(root,'acceptance-secret.json')))};
  const reads=HELD_ACCEPTANCE_CAPABILITIES.map((capability,index)=>{const idempotencyKey=`zola-six:${epochRunId}:${index}`,request=`read-${index}`;
   return{index,idempotencyKey,capability,permission:capability.replace(/\.(search|get|status)$/,'.read'),request,
-   requestDigest:hash({channel:'jarvis',workspaceId:input.workspace,text:request,idempotencyKey,executionIntent:'read_only'})};});
- mintHeldAcceptancePermit({commanderRunId:operationId,mergeMainSha:merged,expectedDeploymentSha:merged,epochRunId,workspace:input.workspace,
-  principal:input.principal,apiGeneration,workerGeneration,reads,journal,verifyGenerations},deps);
+   requestDigest:hash({channel:'jarvis',workspaceId:'blackspire-command',text:request,idempotencyKey,executionIntent:'read_only'})};});
+ mintHeldAcceptancePermit({commanderRunId:operationId,mergeMainSha:merged,expectedDeploymentSha:merged,epochRunId,workspace:'blackspire-command',
+  principal:'blackspire-operator',apiGeneration,workerGeneration,reads,journal,verifyGenerations},deps);
  const state={context:{operationId,releaseSha:candidate,workspace:input.workspace,principal:input.principal},
   outputs:{capture_new_main_sha:{newMainSha:merged}},pending:{stage:'api_health',attemptId:'33333333-3333-4333-8333-333333333333'}};
  const call={input,state,ordinal:24,attemptId:state.pending.attemptId,inputDigest:'4'.repeat(64),checkOutputDigest:'5'.repeat(64)};
@@ -72,4 +72,30 @@ test('admission activates the exact buyer writer attempt before any HELD service
  });
  await operations.admission_lease.execute(call);
  assert.deepEqual(order,['activate','held']);
+});
+
+
+test('mint maps fixed runtime identity without substituting release journal authority',async()=>{
+ const journal={stream:()=>({events:()=>[],append(){}})},context={input,release:{},journal};
+ const attemptId='33333333-3333-4333-8333-333333333333';
+ const state={context:{operationId,releaseSha:candidate,workspace:input.workspace,principal:input.principal},
+  outputs:{capture_new_main_sha:{newMainSha:merged}},pending:{stage:'mint_acceptance_permit',attemptId}};
+ const call={input,state,ordinal:23,attemptId,inputDigest:'4'.repeat(64),checkOutputDigest:'5'.repeat(64)};
+ let config={workspace:'blackspire-command',principal:'blackspire-operator',dealId:'DE-0001'},minted=null;
+ const operations=createHeldProductionOperations(context,{
+  liveConfig:()=>config,options:()=>({}),observePostMerge:()=>({status:'PASS',evidence:{epochRunId}}),
+  lifecycle:async()=>({api:{generation:apiGeneration},worker:{generation:workerGeneration}}),
+  mint:value=>{minted=value;},
+ });
+ assert.equal((await operations.mint_acceptance_permit.check({...call,attemptId:null})).status,'PASS');
+ await operations.mint_acceptance_permit.execute(call);
+ assert.equal(minted.commanderRunId,operationId);assert.equal(minted.workspace,'blackspire-command');
+ assert.equal(minted.principal,'blackspire-operator');assert.equal(input.workspace,'zola-production');
+ for(const row of minted.reads)assert.equal(row.requestDigest,hash({channel:'jarvis',workspaceId:'blackspire-command',text:row.request,idempotencyKey:row.idempotencyKey,executionIntent:'read_only'}));
+ for(const bad of [{...config,workspace:input.workspace},{...config,principal:input.principal}]){
+  config=bad;minted=null;
+  await assert.rejects(()=>operations.mint_acceptance_permit.check({...call,attemptId:null}),/rejected/);
+  await assert.rejects(()=>operations.mint_acceptance_permit.execute(call),/rejected/);
+  assert.equal(minted,null);
+ }
 });

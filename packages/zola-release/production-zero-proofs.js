@@ -1,3 +1,4 @@
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -26,9 +27,9 @@ function invocation(context,call,operation,{attempt=true}={}){
  const merged=state?.outputs?.capture_new_main_sha?.newMainSha;
  if(!sha(merged)||held.status!=='CONSUMING'||held.pending?.operation!==operation||!claims||claims.commanderRunId!==operationId
   ||claims.mergeMainSha!==merged||claims.expectedDeploymentSha!==merged
-  ||claims.workspace!==input.workspace||claims.principal!==input.principal||!uuid(claims.epochRunId))reject();
- return{releaseSha:merged,operationId,stageAttemptId:attempt?call.attemptId:null,workspace:input.workspace,
-  principal:input.principal,epochRunId:claims.epochRunId,apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration,held,events};
+  ||!isProductionAcceptanceIdentity(claims)||!uuid(claims.epochRunId))reject();
+ return{releaseSha:merged,operationId,stageAttemptId:attempt?call.attemptId:null,workspace:claims.workspace,
+  principal:claims.principal,epochRunId:claims.epochRunId,apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration,held,events};
 }
 
 function secureFile(filename,root){

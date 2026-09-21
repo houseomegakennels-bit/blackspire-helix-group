@@ -1,3 +1,4 @@
+import {isProductionAcceptanceIdentity,PRODUCTION_ACCEPTANCE_WORKSPACE,PRODUCTION_ACCEPTANCE_PRINCIPAL} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -41,7 +42,7 @@ function heldBinding(context,call){
  const ids=invocation(context,call,call.state.pending?.stage??'mint_acceptance_permit',{attempt:Boolean(call.attemptId)}),history=inspectHeldAcceptanceHistory(context.journal.stream('release').events());
  const claims=history.claims,newMainSha=merged(call);
  if(!claims||claims.commanderRunId!==ids.operationId||claims.mergeMainSha!==newMainSha||claims.expectedDeploymentSha!==newMainSha
-  ||claims.workspace!==context.input.workspace||claims.principal!==context.input.principal||!uuid(claims.epochRunId))reject();
+  ||!isProductionAcceptanceIdentity(claims)||!uuid(claims.epochRunId))reject();
  return{mergeMainSha:newMainSha,expectedDeploymentSha:newMainSha,epochRunId:claims.epochRunId,workspace:claims.workspace,
   apiGeneration:claims.apiGeneration,workerGeneration:claims.workerGeneration};
 }
@@ -158,7 +159,7 @@ export function createHeldProductionOperations(context,overrides={}){
    return pass({stage:'generation_revalidation',releaseSha:context.input.releaseSha,epochRunId:prior.epochRunId,apiGeneration:prior.apiGeneration,workerGeneration:prior.workerGeneration,
     artifactDigest:prior.artifactDigest,generationCurrent:true});},async observe(call){return revalidation.check(call);}};
  const premergeReads={check(call){invocation(context,call,'six_reads');let config;try{config=deps.premergeConfig();}catch{return blocked();}
-   if(config.version!==4||config.releaseSha!==context.input.releaseSha||config.workspace!==context.input.workspace||config.principal!==context.input.principal)return blocked();
+   if(config.version!==4||config.releaseSha!==context.input.releaseSha||!isProductionAcceptanceIdentity(config))return blocked();
    return pass({stage:'six_reads',fixedCollector:true});},execute(call){invocation(context,call,'six_reads',{attempt:true});},
   async reconcile(call){invocation(context,call,'six_reads',{attempt:true});let report;try{report=await deps.collect(deps.premergeConfig());}catch{return blocked();}
    const evidence=safeCollector(report,false,context.input.releaseSha);return pass({stage:'six_reads',...evidence});},observe(){reject();}};
@@ -166,14 +167,15 @@ export function createHeldProductionOperations(context,overrides={}){
   reconcile:call=>deps.observePostMerge(context,call),observe:call=>deps.observePostMerge(context,call)};
  const mint={
   async check(call){invocation(context,call,'mint_acceptance_permit');const held=deps.observePostMerge(context,call);if(held.status!=='PASS')reject();let config;
-   try{config=deps.liveConfig();}catch{return blocked();}if(config.workspace!==context.input.workspace||config.principal!==context.input.principal)reject();
+   try{config=deps.liveConfig();}catch{return blocked();}if(!isProductionAcceptanceIdentity(config))reject();
    const proof=await deps.lifecycle({releaseSha:merged(call),runId:held.evidence.epochRunId});return pass({stage:'mint_acceptance_permit',newMainSha:merged(call),epochRunId:held.evidence.epochRunId,
     apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation,collectorConfigured:true});},
   async execute(call){invocation(context,call,'mint_acceptance_permit',{attempt:true});const held=deps.observePostMerge(context,call),proof=await deps.lifecycle({releaseSha:merged(call),runId:held.evidence.epochRunId});
-   const config=deps.liveConfig(),cases=readCases(config.dealId),reads=cases.map((row,index)=>{const idempotencyKey=`zola-six:${held.evidence.epochRunId}:${index}`;
-    return{index,idempotencyKey,capability:row.capability,permission:row.permissions[0],request:row.text,requestDigest:hash({channel:'jarvis',workspaceId:context.input.workspace,text:row.text,idempotencyKey,executionIntent:'read_only'})};});
+   const config=deps.liveConfig();if(!isProductionAcceptanceIdentity(config))reject();
+   const cases=readCases(config.dealId),reads=cases.map((row,index)=>{const idempotencyKey=`zola-six:${held.evidence.epochRunId}:${index}`;
+    return{index,idempotencyKey,capability:row.capability,permission:row.permissions[0],request:row.text,requestDigest:hash({channel:'jarvis',workspaceId:PRODUCTION_ACCEPTANCE_WORKSPACE,text:row.text,idempotencyKey,executionIntent:'read_only'})};});
    deps.mint({commanderRunId:call.state.context.operationId,mergeMainSha:merged(call),expectedDeploymentSha:merged(call),epochRunId:held.evidence.epochRunId,
-    workspace:context.input.workspace,principal:context.input.principal,apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation,reads,journal:context.journal,
+    workspace:PRODUCTION_ACCEPTANCE_WORKSPACE,principal:PRODUCTION_ACCEPTANCE_PRINCIPAL,apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation,reads,journal:context.journal,
     verifyGenerations:()=>({apiGeneration:proof.api.generation,workerGeneration:proof.worker.generation})},deps.options());},
   reconcile(call){invocation(context,call,'mint_acceptance_permit',{attempt:true});const history=inspectHeldAcceptanceHistory(context.journal.stream('release').events());
    if(!['MINTED','CONSUMING'].includes(history.status))reject();return pass({stage:'mint_acceptance_permit',permitId:history.claims.permitId,permitDigest:hash(history.claims),
@@ -186,7 +188,7 @@ export function createHeldProductionOperations(context,overrides={}){
    const core={stage:name,newMainSha:binding.mergeMainSha,epochRunId:binding.epochRunId,apiGeneration:binding.apiGeneration,workerGeneration:binding.workerGeneration,
     artifactDigest:first.artifactDigest,workerReady:true,generationCurrent:true};return pass({...core,observationDigest:hash(core)});},observe(){reject();}});
  const liveReads=Object.freeze({check(call){invocation(context,call,'six_live_reads');let config;try{config=deps.liveConfig();}catch{return blocked();}
-   const binding=heldBinding(context,{...call,attemptId:null});if(config.version!==5||config.releaseSha!==binding.mergeMainSha||config.releaseRunId!==binding.epochRunId)return blocked();return pass({stage:'six_live_reads',fixedCollector:true});},
+   const binding=heldBinding(context,{...call,attemptId:null});if(config.version!==5||!isProductionAcceptanceIdentity(config)||config.releaseSha!==binding.mergeMainSha||config.releaseRunId!==binding.epochRunId)return blocked();return pass({stage:'six_live_reads',fixedCollector:true});},
   execute(call){invocation(context,call,'six_live_reads',{attempt:true});},async reconcile(call){invocation(context,call,'six_live_reads',{attempt:true});let report;
    try{report=await deps.collect(deps.liveConfig());}catch{return blocked();}return pass({stage:'six_live_reads',...safeCollector(report,true,merged(call))});},observe(){reject();}});
 

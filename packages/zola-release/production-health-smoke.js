@@ -1,3 +1,4 @@
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import http from 'node:http';
 import {hash} from './commander-journal.js';
 import {inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
@@ -41,7 +42,7 @@ function claimsFor(context,state,operation){
  const merged=state?.outputs?.capture_new_main_sha?.newMainSha;
  if(!sha(merged)||history.status!=='CONSUMING'||history.pending?.operation!==operation||!claims
   ||claims.mergeMainSha!==merged||claims.expectedDeploymentSha!==merged
-  ||claims.commanderRunId!==state.context.operationId||claims.workspace!==context.input.workspace||claims.principal!==context.input.principal
+  ||claims.commanderRunId!==state.context.operationId||!isProductionAcceptanceIdentity(claims)
   ||!uuid(claims.epochRunId)||!generation(claims.apiGeneration)||!generation(claims.workerGeneration))reject();
  return{history,claims};
 }

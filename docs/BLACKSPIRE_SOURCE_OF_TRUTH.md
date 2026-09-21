@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — runtime acceptance identity separated from release coordinator
+
+The fixed production acceptance identity is now `blackspire-operator` in `blackspire-command`, distinct from the root release journal identity `blackspire-release-root` in `zola-production`. HELD minting, collector configuration checks, health/smoke, zero-effect proofs and rollback permit checks consistently enforce the runtime identity while preserving the exact enclosing release operation, attempts, epoch and generations. The collector's existing protected process bearer, active authorization, task ownership and receiver-proof validation remain unchanged. No new operator identity or grant is provisioned.
+
+Seven composed regressions reproduced the prior mismatch; 39 focused lifecycle, collector, adapter and proof tests pass after repair. New negatives reject alternate runtime names and internally consistent wrong-identity permits before transport, and mint tests verify exact runtime request digests while retaining release-journal identity. Build, lint, syntax/typecheck, secret scan and whitespace checks pass. Full integrated validation and independent review remain required; the known historical living-memory anchor failure is retained. No production changes occurred in this implementation.
+
 ## 2026-09-21 — demo invitation review findings repaired
 
 Independent review of the main delta through `2775fd5043ad422418a4177f686671961e9a9738` found that invitation claims granted demo authority before the exclusive claim, and that missing or malformed demo expiry failed open. The local correction creates an unconfirmed client-only account, claims only an unexpired unused invitation, then confirms and promotes that account. Failed cleanup of a losing claim cannot leave demo authority. Missing, malformed and elapsed demo expiry now denies access. Successful promotion survives subsequent sign-in failure. Six focused behavioral tests pass; integrated frontend build and full validation remain pending. Main still contains the reviewed defects until this correction is deployed; no clean-review or live-acceptance claim is made for main.
