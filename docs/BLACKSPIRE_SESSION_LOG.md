@@ -2275,3 +2275,6 @@ Prepared a fixed, append-only partial-candidate retirement helper with retained 
 ## 2026-09-21 — reconnect and successor runtime verification
 
 Verified unchanged production candidate/processes and independently passed the integrated confined runtime with actual disposable PostgreSQL TLS readiness. Strengthened schema-three production and n8n history tests; focused checks pass. No production stop, deployment or OPEN occurred.
+## 2026-09-21 — retained successor configuration
+
+Added explicit successor writer/store configuration preparation from the retired candidate. Only release/operation/attempt authority fields change; source-v1 bytes, passwords, signing keys, repository/deal secrets, profile and acceptance job identity are retained. Publication reconciles exact before/candidate bytes; stopped rollback restores configuration only. Frontend inheritance binds unchanged prior provider metadata rather than rewriting settings. Three focused tests cover preservation, interrupted publication/restore and frontend drift. Native successor execution remains UNVERIFIED; no production mutations occurred.

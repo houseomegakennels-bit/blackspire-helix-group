@@ -21,6 +21,9 @@ Candidate deployment, activation and writer-binding readers validate prior segme
 ## 2026-09-21 — explicit owned migration successor lineage
 
 A separate successor proof retains the original 2636/95a migration identity and exact protected source, copy and hardening record digests. It verifies a clean published descendant, the same owned cluster profile, current source freeze, durable SQL receipts and current target browser security through the existing native observer. The successor result has a distinct status and both identities; it never relabels the original snapshot as current row data. Preparation compares the fixed predecessor HELD marker and live API/worker proof against the retained lifecycle result before and after publishing only immutable lineage records under the commander guard; observation remains read-only and acquires no global or admission lease. No source SQL, copy or hardening operation is replayed. Seven focused tests cover identity/digest drift, security refusal, interrupted publication and source ancestry. Native database composition and production successor execution remain UNVERIFIED; no production changes occurred.
+## 2026-09-21 — retained successor configuration
+
+Added explicit successor writer/store configuration preparation from the retired candidate. Only release/operation/attempt authority fields change; source-v1 bytes, passwords, signing keys, repository/deal secrets, profile and acceptance job identity are retained. Publication reconciles exact before/candidate bytes; stopped rollback restores configuration only. Frontend inheritance binds unchanged prior provider metadata rather than rewriting settings. Three focused tests cover preservation, interrupted publication/restore and frontend drift. Native successor execution remains UNVERIFIED; no production mutations occurred.
 
 ## 2026-09-21 — release integration published and final preparation assembled
 
