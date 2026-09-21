@@ -157,5 +157,7 @@ export async function isAuthenticatedOperatorAdmin() {
     return false;
   }
 
+  const explicitRole = operator.app_metadata?.blackspire_role;
+  if (typeof explicitRole === "string") return explicitRole === "admin";
   return users[0]?.id === operator.id;
 }
