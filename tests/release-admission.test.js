@@ -7,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import http from 'node:http';
 import {createBuyerWriterHttpServer} from '../packages/buyer-writer/http.js';
-import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,heldAcceptanceContext,HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withPremergeReadAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
+import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,withHeldReceiverAdmission,heldReceiverContext,heldAcceptanceContext,HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withPremergeReadAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
 import {engageReleaseAdmissionHold,reconcileReleaseAdmissionHold,inspectAdmissionHoldHistory} from '../packages/zola-release/admission-hold.js';
 import {executeRegisteredCapability} from '../packages/capabilities/execute.js';
 
@@ -173,6 +173,19 @@ test('candidate read permit stays distinct from live acceptance and public OPEN 
   },deps('api')),7);
   assert.equal(withPremergeReadAdmission({role:'worker'},()=>heldAcceptanceContext().taskKeys.length,deps('worker')),6);
   assert.throws(()=>withHeldAcceptanceAdmission({role:'api',token},()=>0,deps('api')),/held/);
+  const authority={releaseSha:sha,releaseRunId:epoch,apiGeneration:api,workerGeneration:worker,workspaceId:claims.workspace,principalId:claims.principal,capabilityId:claims.reads[0].capability,permission:claims.reads[0].permission};
+  assert.equal(withHeldReceiverAdmission(authority,()=>{
+    assert.equal(heldAcceptanceContext(),null);assert.equal(heldReceiverContext().permitId,claims.permitId);
+    assert.throws(()=>f.guard.run(()=>0),/held/);assert.throws(()=>f.acquire({exclusive:true}),/held/);return 9;
+  },deps('api')),9);
+  assert.equal(heldReceiverContext(),null);
+  for(const change of [{principalId:'other'},{workspaceId:'other'},{workerGeneration:'f'.repeat(32)},{capabilityId:'arbitrary'},{permission:'workspace.manage'}])
+    assert.throws(()=>withHeldReceiverAdmission({...authority,...change},()=>assert.fail('dispatch'),deps('api')),/held/);
+  assert.throws(()=>withHeldReceiverAdmission(authority,()=>0,{...deps('api'),now:()=>2000}),/held/);
+  let inherited;
+  withHeldReceiverAdmission(authority,()=>{inherited=Promise.resolve().then(()=>heldReceiverContext());},deps('api'));
+  assert.equal(await inherited,null);
+
   assert.throws(()=>f.guard.run(()=>0),/held/);
   await assert.rejects(withPremergeReadAdmission({role:'worker'},()=>executeRegisteredCapability({idempotency_key:`unified:jarvis:zola-six:${epoch}:0`,request:'unclassified acceptance request'},{}),deps('worker')),/held/);
   assert.throws(()=>withPremergeReadAdmission({role:'api',token:'x'.repeat(43)},()=>0,deps('api')),/held/);

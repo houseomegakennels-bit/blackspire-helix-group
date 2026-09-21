@@ -1,4 +1,4 @@
-import { withReleaseAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
+import { withReleaseAdmission,withHeldReceiverAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -107,7 +107,13 @@ export async function consumeCapabilityAuthority(req, res, { consumer = consumeR
     for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new Error('oversize'); raw += chunk.toString('utf8'); }
     const body = JSON.parse(raw);
     if (!body || Array.isArray(body) || Object.keys(body).join(',') !== 'authority') throw new Error('shape');
-    return json(res, 200, consumer(body.authority));
+    let entered=false,result;
+    try { result=withReleaseAdmission(()=>{entered=true;return consumer(body.authority);}); }
+    catch(error){
+      if(entered||error?.code!=='RELEASE_ADMISSION_HELD')throw error;
+      result=withHeldReceiverAdmission(body.authority,()=>consumer(body.authority));
+    }
+    return json(res, 200, result);
   } catch { return json(res, 404, { error: 'not found' }); }
 }
 
@@ -121,6 +127,9 @@ async function route(req, res) {
     if(premergeToken&&heldToken)throw Object.assign(new Error('Ambiguous release admission'),{code:'RELEASE_ADMISSION_HELD'});
     if(premergeToken&&pathname==='/api/unified-input'&&req.method==='POST')return await withPremergeReadAdmission({role:'api',token:premergeToken},()=>routeAdmitted(req,res));
     if(heldToken&&pathname==='/api/unified-input'&&req.method==='POST')return await withHeldAcceptanceAdmission({role:'api',token:heldToken},()=>routeAdmitted(req,res));
+    if(req.url==='/api/internal/capability-authority/consume'&&req.method==='POST'){
+      setSecurityHeaders(req,res);return await consumeCapabilityAuthority(req,res);
+    }
     return await (observation||controls ? routeAdmitted(req,res) : withReleaseAdmission(()=>routeAdmitted(req,res)));
   }
   catch(error) {
