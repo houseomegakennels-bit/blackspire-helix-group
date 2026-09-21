@@ -2192,3 +2192,7 @@ Corrected root private-group resolution and exact empty artifact mountpoint rebi
 ## 2026-09-21 — exact blocked-operation retirement preparation
 
 Implemented explicit terminal retirement with preserved historical mutation evidence and strict successor identity. Four focused tests plus the existing sequence lane pass. Read-only original PostgreSQL and host checks confirm roles absent, services stopped and unchanged blocked state. No release-journal event, provider privilege, source-data or production configuration was changed.
+
+### 2026-09-21 — Retirement independent review repairs
+
+Retirement now reuses the strict owned migration host quiescence observer (required loaded/inactive/dead services; absent optional store requires process-identity scan). Protected retirement proof creation validates ancestor ownership and ACLs, fsyncs the parent directory, and revalidates/fsyncs the exact retained inode on retry before journal append. A successor selector guard requires the terminal event’s exact owned backend and profile digest; activation history independently cross-checks this binding. Seven focused tests pass, including real disposable protected-file durability and wrong-profile/legacy refusal. No production retirement or other production mutation was executed.

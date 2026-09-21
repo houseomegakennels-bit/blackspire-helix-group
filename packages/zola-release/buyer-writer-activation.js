@@ -1,4 +1,4 @@
-import {partitionRetiredReleaseHistory} from './retired-release-history.js';
+import {partitionRetiredReleaseHistory,assertRetiredReleaseSuccessor} from './retired-release-history.js';
 import {readOwnedDatabaseProfile,databaseProfileDigest,OWNED_DATABASE_MANAGEMENT} from '../buyer-writer/database-profile.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import fs from 'node:fs';
@@ -59,6 +59,7 @@ function history(events,bound){
  const partition=partitionRetiredReleaseHistory(events);
  if(partition.retired){
   inspectBuyerWriterActivationHistory(partition.prefix);
+  assertRetiredReleaseSuccessor(events,bound);
   return history(partition.current,bound);
  }
  const rows=events.filter(row=>row?.type==='buyer_writer_activation_intent'
@@ -81,6 +82,8 @@ export function inspectBuyerWriterActivationHistory(events){
  if(partition.retired){
   const prior=inspectBuyerWriterActivationHistory(partition.prefix);
   if(prior.completed.size!==3)reject();
+  const active=partition.current.find(row=>row?.type==='buyer_writer_activation_intent');
+  if(active)assertRetiredReleaseSuccessor(events,active.binding);
   return inspectBuyerWriterActivationHistory(partition.current);
  }
  const rows=events.filter(row=>['buyer_writer_activation_intent','buyer_writer_activation_result'].includes(row?.type));

@@ -37,3 +37,10 @@ export function partitionRetiredReleaseHistory(events){
  if(start&&(start.releaseSha!==event.successorReleaseSha||start.previousMainSha!==BLOCKED_RELEASE.previousMainSha||start.recoverySha!==BLOCKED_RELEASE.recoverySha||start.operationId===event.operationId))fail();
  return {current,prefix,retired:Object.freeze({...structuredClone(event),historicalMutationState:true,status:'RETIRED_WITH_RETAINED_EFFECTS'})};
 }
+
+// Called by the production composition before constructing any stage adapters.
+export function assertRetiredReleaseSuccessor(events,release){
+ const {retired}=partitionRetiredReleaseHistory(events);
+ if(retired&&(release?.releaseSha!==retired.successorReleaseSha||release?.backendProfile!==retired.backendProfile||release?.profileDigest!==retired.profileDigest))fail();
+ return true;
+}

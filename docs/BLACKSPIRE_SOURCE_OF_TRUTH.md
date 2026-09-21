@@ -1023,3 +1023,7 @@ Local follow-up to `759970c07c8b6c86f60179a687252edeff75200e` rejects API creden
 Current-head CI correction (2026-09-08): full CI at dfd4197 exposed seven stale Buyer/Nexus helper fixture and source assertions after explicit read-client injection. Updated the tests to supply synthetic clients, preserve failure-source assertions and require observed response sealing. Production implementation is unchanged; full exact-head CI must pass after this correction.
 
 Independent read-only review approved exact repair `069d6ffca7f285b36d651f2b8c4c8908ad18001a`; the runtime/test diff SHA256 is `92a3990aae445a130ea447efd0a2e2e5fb926c02c47130ff36ee519d009f0474`. Draft PR #149 contains this repair. Production remains unchanged; remote CI and separate production approval are still required.
+
+### 2026-09-21 — Retirement independent review repairs
+
+Retirement now reuses the strict owned migration host quiescence observer (required loaded/inactive/dead services; absent optional store requires process-identity scan). Protected retirement proof creation validates ancestor ownership and ACLs, fsyncs the parent directory, and revalidates/fsyncs the exact retained inode on retry before journal append. A successor selector guard requires the terminal event’s exact owned backend and profile digest; activation history independently cross-checks this binding. Seven focused tests pass, including real disposable protected-file durability and wrong-profile/legacy refusal. No production retirement or other production mutation was executed.

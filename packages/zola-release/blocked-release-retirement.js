@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {readOwnedDatabaseProfile,databaseProfileDigest,validateManagementCredential,databaseTlsOptions,LEGACY_DATABASE_MANAGEMENT} from '../buyer-writer/database-profile.js';
@@ -28,13 +29,9 @@ export async function observeOriginalWriterRoles({Client}={}){
   return {rolesAbsent:true,providerAclDigest:hash(acl)};
  }finally{await client.end().catch(()=>{});}
 }
-export function observeBlockedReleaseHost(){
- const services=['blackspire-command.service','blackspire-command-worker.service','blackspire-buyer-writer-gateway.service','blackspire-buyer-store.service'];
- for(const service of services){
-  const output=execFileSync('/usr/bin/systemctl',['show','--property=ActiveState','--property=MainPID',service],{encoding:'utf8',timeout:1000,maxBuffer:4096});
-  const fields=Object.fromEntries(output.trim().split('\n').map(line=>line.split('=')));
-  if(fields.MainPID!=='0'||fields.ActiveState!=='inactive')fail();
- }
+export async function observeBlockedReleaseHost(){
+ const {verifyOwnedBuyerMigrationQuiescence}=await import('../buyer-writer/owned-migration-host.js');
+ verifyOwnedBuyerMigrationQuiescence();
  const current=fs.realpathSync('/opt/blackspire-command/current');
  if(current!=='/opt/blackspire-command/releases/'+BLOCKED_RELEASE.currentSha)fail();
  for(const p of ['/etc/blackspire/release-admission/state.json','/etc/blackspire/release-admission/pending.json']){
@@ -44,18 +41,28 @@ export function observeBlockedReleaseHost(){
  if(hash(state)!==BLOCKED_RELEASE.provisioningDigest)fail();
  return {hostStopped:true,currentSha:BLOCKED_RELEASE.currentSha,admissionAbsent:true,provisioningDigest:hash(state)};
 }
-function retainProof(proof){
- try{fs.mkdirSync(ROOT,{mode:0o700});}catch(e){if(e.code!=='EEXIST')throw e;}
- const stat=fs.lstatSync(ROOT);
- if(!stat.isDirectory()||stat.isSymbolicLink()||stat.uid!==0||(stat.mode&0o7777)!==0o700)fail();
- const name=ROOT+'/'+hash(proof)+'.json',data=JSON.stringify(proof)+'\n';let fd;
- try{fd=fs.openSync(name,fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW,0o600);fs.writeFileSync(fd,data);fs.fsyncSync(fd);}
- catch(e){if(e.code!=='EEXIST')throw e;if(JSON.stringify(readRootOwnedJson(name,{groupId:0,maxBytes:16384}))!==JSON.stringify(proof))fail();}
- finally{if(fd!==undefined)fs.closeSync(fd);}
- const directory=fs.openSync(ROOT,fs.constants.O_RDONLY);try{fs.fsyncSync(directory);}finally{fs.closeSync(directory);}
+export function retainBlockedReleaseProof(proof,{root=ROOT,io=fs,aclRun=execFileSync}={}){
+ const sync=dir=>{const fd=io.openSync(dir,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{io.fsyncSync(fd);}finally{io.closeSync(fd);}};
+ const acl=fd=>{if(aclRun('/usr/bin/getfacl',['--numeric','--omit-header','--skip-base','--logical','--','/proc/self/fd/3'],{encoding:'utf8',timeout:1000,maxBuffer:4096,stdio:['ignore','pipe','pipe',fd],env:{PATH:'/usr/bin:/bin'}})!=='')fail();};
+ const directory=dir=>{for(let p=dir;;p=path.dirname(p)){const s=io.lstatSync(p);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||(s.mode&0o022)!==0)fail();const fd=io.openSync(p,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{acl(fd);}finally{io.closeSync(fd);}if(p==='/')break;}};
+ directory(path.dirname(root));
+ try{io.mkdirSync(root,{mode:0o700});}catch(e){if(e.code!=='EEXIST')throw e;}
+ directory(root);const stat=io.lstatSync(root);if(stat.gid!==0||(stat.mode&0o7777)!==0o700)fail();
+ // Also synchronize an existing directory: its original mkdir may have lost acknowledgement.
+ sync(path.dirname(root));
+ const name=root+'/'+hash(proof)+'.json',data=Buffer.from(JSON.stringify(proof)+'\n');let fd;
+ try{
+  try{fd=io.openSync(name,fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_RDWR|fs.constants.O_NOFOLLOW,0o600);io.writeFileSync(fd,data);}
+  catch(e){if(e.code!=='EEXIST')throw e;fd=io.openSync(name,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);}
+  const before=io.fstatSync(fd);if(!before.isFile()||before.uid!==0||before.gid!==0||before.nlink!==1||(before.mode&0o7777)!==0o600||before.size!==data.length)fail();acl(fd);
+  const actual=Buffer.alloc(data.length);if(io.readSync(fd,actual,0,actual.length,0)!==data.length||!actual.equals(data))fail();
+  const after=io.fstatSync(fd);if(['dev','ino','uid','gid','mode','nlink','size','mtimeMs','ctimeMs'].some(k=>before[k]!==after[k]))fail();
+  io.fsyncSync(fd);
+ }finally{if(fd!==undefined)io.closeSync(fd);}
+ sync(root);
 }
 export async function retireBlockedRelease({successorReleaseSha,journal},{verifySource=verifyReleaseSource,readProfile=readOwnedDatabaseProfile,observeHost=observeBlockedReleaseHost,
- observeDatabase=observeOriginalWriterRoles,retain=retainProof,now=Date.now,uid=process.getuid()}={}){
+ observeDatabase=observeOriginalWriterRoles,retain=retainBlockedReleaseProof,now=Date.now,uid=process.getuid()}={}){
  if(uid!==0||!/^[a-f0-9]{40}$/.test(successorReleaseSha)||successorReleaseSha===BLOCKED_RELEASE.releaseSha)fail();
  const stream=journal.stream('release'),before=stream.events(),partition=partitionRetiredReleaseHistory(before);
  inspectReleaseCommander(journal);
@@ -68,12 +75,12 @@ export async function retireBlockedRelease({successorReleaseSha,journal},{verify
  if(sequence.pending?.attemptId!==BLOCKED_RELEASE.attemptId||sequence.nextOrdinal!==5)fail();
  await verifySource(successorReleaseSha);
  const profile=readProfile(),profileDigest=databaseProfileDigest(profile);
- const started=now(),host=observeHost(),database=await observeDatabase();
+ const started=now(),host=await observeHost(),database=await observeDatabase();
  const n8n=journal.stream('n8n').events(),n8nJournalDigest=hash(n8n);
  if(n8nJournalDigest!==BLOCKED_RELEASE.n8nJournalDigest)fail();
  // Both streams are held under the host-wide commander lock; old known
  // successful backup/fixture/preparation mutations remain in their original rows.
- const secondHost=observeHost(),secondDatabase=await observeDatabase();
+ const secondHost=await observeHost(),secondDatabase=await observeDatabase();
  if(JSON.stringify(host)!==JSON.stringify(secondHost)||JSON.stringify(database)!==JSON.stringify(secondDatabase)||database.rolesAbsent!==true
   ||now()-started>15000||JSON.stringify(readProfile())!==JSON.stringify(profile)||hash(stream.events())!==BLOCKED_RELEASE.prefixDigest||hash(journal.stream('n8n').events())!==n8nJournalDigest)fail();
  const proof={version:1,observedAt:now(),rolesAbsent:true,...host,retainedEffectsDigest:hash(before.slice(BLOCKED_RELEASE.segmentStart)),n8nJournalDigest,

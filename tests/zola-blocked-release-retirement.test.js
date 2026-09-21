@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {hash} from '../packages/zola-release/commander-journal.js';
-import {BLOCKED_RELEASE,partitionRetiredReleaseHistory} from '../packages/zola-release/retired-release-history.js';
-import {retireBlockedRelease} from '../packages/zola-release/blocked-release-retirement.js';
+import {BLOCKED_RELEASE,partitionRetiredReleaseHistory,assertRetiredReleaseSuccessor} from '../packages/zola-release/retired-release-history.js';
+import {retireBlockedRelease,retainBlockedReleaseProof} from '../packages/zola-release/blocked-release-retirement.js';
 import {inspectReleaseCommander} from '../packages/zola-release/commander.js';
 import {RELEASE_STAGES,runReleaseSequence,inspectReleaseSequenceHistory} from '../packages/zola-release/commander-sequence.js';
 import {inspectBuyerWriterActivationHistory} from '../packages/zola-release/buyer-writer-activation.js';
@@ -60,7 +60,7 @@ test('new candidate and owned activation histories coexist with preserved retire
    f.events.push({schema:1,type:'candidate_six_reads_result',attemptId:context.attemptId,releaseSha:successor,status:'PASS',reportDigest:'e'.repeat(64)});
   }
   if(stage==='admission_lease'){
-   const binding={releaseSha:successor,operationId:context.state.context.operationId,attemptId:context.attemptId,inputDigest:context.inputDigest,checkOutputDigest:context.checkOutputDigest,backendProfile:'owned-postgres-v1',profileDigest:'f'.repeat(64)};
+   const binding={releaseSha:successor,operationId:context.state.context.operationId,attemptId:context.attemptId,inputDigest:context.inputDigest,checkOutputDigest:context.checkOutputDigest,backendProfile:'owned-postgres-v1',profileDigest:f.events[68].profileDigest};
    const bindingDigest=hash(binding);
    f.events.push({schema:1,type:'buyer_writer_activation_intent',binding,bindingDigest});
    f.events.push({schema:1,type:'buyer_writer_activation_result',phase:'source_v1',bindingDigest,status:'BUYER_WRITER_SOURCE_V1_PREPARED',evidenceDigest:'1'.repeat(64)});
@@ -80,4 +80,21 @@ test('lost append acknowledgement reconciles retained terminal event without app
  assert.equal(f.events.length,69);assert.equal(f.retained.length,1);
  const result=await retireBlockedRelease({successorReleaseSha:successor,journal:f.journal},f.dependencies);
  assert.equal(result.status,'BLOCKED_RELEASE_ALREADY_RETIRED');assert.equal(f.events.length,69);assert.equal(f.retained.length,1);
+});
+
+test('retired successor requires exact owned profile and refuses legacy selectors',async()=>{
+ const f=fixture();await retireBlockedRelease({successorReleaseSha:successor,journal:f.journal},f.dependencies);
+ const release={releaseSha:successor,backendProfile:'owned-postgres-v1',profileDigest:f.events[68].profileDigest};
+ assert.equal(assertRetiredReleaseSuccessor(f.events,release),true);
+ for(const wrong of [{releaseSha:successor},{...release,profileDigest:'f'.repeat(64)},{...release,backendProfile:'legacy'}])assert.throws(()=>assertRetiredReleaseSuccessor(f.events,wrong));
+ assert.equal(f.events.length,69);
+});
+test('retained proof synchronizes directory creation and existing inode recovery',{skip:process.getuid()!==0},()=>{
+ const parent=fs.mkdtempSync('/root/retirement-proof-test-'),root=parent+'/proofs',proof={version:1,synthetic:true};
+ const observations=[],io={...fs,fsyncSync:fd=>{observations.push(fs.fstatSync(fd).isFile()?'file':'directory');fs.fsyncSync(fd);}};
+ try{
+  retainBlockedReleaseProof(proof,{root,io});assert.deepEqual(observations,['directory','file','directory']);
+  observations.length=0;retainBlockedReleaseProof(proof,{root,io});assert.deepEqual(observations,['directory','file','directory']);
+  const file=root+'/'+hash(proof)+'.json';fs.writeFileSync(file,'{}');assert.throws(()=>retainBlockedReleaseProof(proof,{root,io}));
+ }finally{fs.rmSync(parent,{recursive:true,force:true});}
 });
