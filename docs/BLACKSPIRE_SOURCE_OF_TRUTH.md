@@ -4,6 +4,12 @@
 
 The final HELD health and smoke transport now uses the observed production API port 8789, consistent with the startup observer. It previously used development port 8787, which would prevent final acceptance even after healthy startup. The fixed loopback destination, bounded GET response, release identity, current worker generation and existing authority checks are preserved. Five focused tests pass, including an assertion of the actual transport destination. Production acceptance remains UNVERIFIED; no production action occurred.
 
+## 2026-09-21 — API-only HELD writer preparation scoped locally
+
+The issuer-authenticated writer preparation endpoint can now observe a provisional or committed binding while release admission remains HELD. Its API-only shared admission lease binds the exact release/run and current API/worker generations; the HELD marker must contain either both unminted generation fields or the exact active pair. Lease identity, runtime context and marker are refreshed after asynchronous work. Preparation accepts only a false release-admission readiness check, with every other required base check true, healthy scheduler/worker and matching deployment identity. Missing checks, unrelated failures, restart/generation drift and expired scope fail closed. The preparation context never admits ordinary writer operations or changes public readiness; no writer query is issued by the endpoint.
+
+Thirty focused tests pass, including authenticated HTTP behavior, actual shared-flock exclusion, strict base-readiness failure cases, callback drift and asynchronous context expiry. Build, lint and syntax/typecheck pass. Root binding publication integration, independent review and live production verification remain pending. No production action, push or deployment occurred.
+
 ## 2026-09-21 — composed activation repairs reviewed; production preparation retained
 
 Independent review approves candidate deployment `7d1e28f8dd510bf3f2e4869bde173ea68e29fcda`, collector-resume correction `89a6192155c5e4f8baf344edc11544432d3d1904`, commander history integration through `0073ea6`, and gateway unit preparation `cd199fc007803c46e99507324771f1cc0608d138`. The combined activation/history lane passes 29/29; gateway/activation/history integration passes 18/18. Independent whole-history inspection validates the real 51-row release and three-row n8n chains without changing bytes; old observations yield zero current outputs. The bounded compatibility path is now validated against actual preserved history, not deployed.

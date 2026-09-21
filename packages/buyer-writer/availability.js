@@ -1,3 +1,4 @@
+import {heldWriterPreparationContext} from '../shared/release-admission.js';
 // Base snapshots must exclude this writer's own availability verdict. These
 // observations do not provide atomic fencing across systemd/SQLite/PostgreSQL.
 export function createBuyerWriterAvailability({workspace,releaseSha,apiGeneration,environment,getHealth,getReadiness,observeBinding,now=()=>performance.now()}) {
@@ -33,4 +34,37 @@ export function createBuyerWriterAvailability({workspace,releaseSha,apiGeneratio
     }catch{return false;}
     finally{clearTimeout(timer);}
   };
+}
+
+// A HELD preparation proof may omit only OPEN admission and committed writer
+// activation. Missing/false unrelated readiness checks remain hard failures.
+export function createBuyerWriterPreparation(options){
+  if(options.environment!=='production')return createBuyerWriterAvailability(options);
+  const bound=()=>{
+    const scope=heldWriterPreparationContext();
+    if(!scope||scope.role!=='api'||scope.releaseSha!==options.releaseSha
+      ||scope.apiGeneration!==options.apiGeneration)throw new Error('Buyer writer preparation unavailable');
+    return scope;
+  };
+  return createBuyerWriterAvailability({...options,
+    getHealth:()=>{
+      const scope=bound(),health=options.getHealth();
+      if(health?.dependencies?.scheduler?.ok!==true
+        ||health.dependencies?.worker?.restartDetected!==false
+        ||health.dependencies.worker.generationId!==scope.workerGeneration)throw new Error('Buyer writer preparation unavailable');
+      return health;
+    },
+    getReadiness:()=>{
+      const scope=bound(),ready=options.getReadiness();
+      const keys=['releaseAdmission','lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity'];
+      if(ready?.ok!==false||!ready.checks||Array.isArray(ready.checks)
+        ||Object.keys(ready.checks).length!==keys.length
+        ||keys.some(k=>!Object.hasOwn(ready.checks,k)||ready.checks[k]!== (k!=='releaseAdmission'))
+        ||ready.database!=='compatible'||ready.productionConfig?.ok!==true
+        ||ready.dependencies?.scheduler?.ok!==true
+        ||ready.dependencies?.worker?.restartDetected!==false
+        ||ready.dependencies.worker.generationId!==scope.workerGeneration)throw new Error('Buyer writer preparation unavailable');
+      return {...ready,ok:true};
+    },
+  });
 }

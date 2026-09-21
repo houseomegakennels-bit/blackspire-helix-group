@@ -117,6 +117,44 @@ export function withHeldAcceptanceAdmission({role,token=null},fn,{root=RELEASE_A
 }
 export const heldAcceptanceContext=()=>heldAcceptanceStorage.getStore()??null;
 
+// This scope permits only the authenticated API writer-preparation observer.
+// It is deliberately not consulted by ordinary admission or public readiness.
+const heldWriterPreparationStorage=new AsyncLocalStorage();
+export const heldWriterPreparationContext=()=>{
+  const scoped=heldWriterPreparationStorage.getStore();
+  return scoped?.active===true?scoped.binding:null;
+};
+export function withHeldWriterPreparation(fn,{required=releaseAdmissionRequired,
+  acquire=acquireReleaseAdmissionLock,context=currentReleaseAdmissionContext,
+  readState=()=>readRootOwnedJson(path.join(RELEASE_ADMISSION_ROOT,'state.json'),
+    {groupId:process.getgid(),maxBytes:2048})}={}){
+  let lease,scoped;
+  const close=()=>{if(scoped)scoped.active=false;lease?.close();};
+  try{
+    if(typeof fn!=='function')refuse();
+    if(!required())return fn();
+    lease=acquire({exclusive:false,allowPending:true});
+    const binding=structuredClone(context()),state=validateReleaseAdmissionState(readState());
+    const verify=()=>{
+      lease.assertIdentity();
+      const current=context(),observed=validateReleaseAdmissionState(readState());
+      if(binding.role!=='api'||binding.generation!==binding.apiGeneration
+        ||![binding.apiGeneration,binding.workerGeneration].every(v=>/^[a-f0-9]{32}$/.test(v??''))
+        ||binding.apiGeneration===binding.workerGeneration||state.mode!=='held'
+        ||state.releaseSha!==binding.releaseSha||state.runId!==binding.runId
+        ||!(state.apiGeneration===null&&state.workerGeneration===null
+          ||state.apiGeneration===binding.apiGeneration&&state.workerGeneration===binding.workerGeneration)
+        ||!['role','releaseSha','generation','runId','apiGeneration','workerGeneration'].every(k=>current[k]===binding[k])
+        ||!['version','mode','releaseSha','runId','apiGeneration','workerGeneration'].every(k=>observed[k]===state[k]))refuse();
+    };
+    verify();scoped={active:true,binding:Object.freeze(binding)};
+    const result=heldWriterPreparationStorage.run(scoped,fn);
+    if(result&&typeof result.then==='function')return Promise.resolve(result)
+      .then(value=>{verify();return value;}).finally(close);
+    verify();close();return result;
+  }catch{close();refuse();}
+}
+
 export function releaseAdmissionRequired(env=process.env) {
   return env.NODE_ENV==='production'||env.BLACKSPIRE_RUNTIME_MODE==='production'||env.BLACKSPIRE_STATE_OWNER==='vps-production'||env.BLACKSPIRE_RELEASE_RUN_ID!==undefined;
 }

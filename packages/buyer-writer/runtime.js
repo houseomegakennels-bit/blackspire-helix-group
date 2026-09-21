@@ -6,7 +6,7 @@ import {createBuyerWriterAdmittedLocalClient} from './admitted-local-client.js';
 import {createOperationPermitSigner,validateOperationPermitSigningConfiguration} from './operation-permit-signer.js';
 import {createBuyerWriterBindingObserver} from './binding.js';
 import {createBuyerWriterRuntimeInspector} from './runtime-inspection.js';
-import {createBuyerWriterAvailability} from './availability.js';
+import {createBuyerWriterAvailability,createBuyerWriterPreparation} from './availability.js';
 import {createBuyerWriterRequestHandler} from './http.js';
 import {validateBuyerWriterRehearsal} from './rehearsal.js';
 
@@ -73,7 +73,7 @@ export async function createBuyerWriterRuntime({configurationFile,clientConfigur
       apiUid:identity.uid,workerUid:identity.workerUid,...units,inspectRuntime:createBuyerWriterRuntimeInspector(units)};
     const observeBinding=createBinding(bindingOptions);
     const available=createBuyerWriterAvailability({workspace,releaseSha,apiGeneration,environment,getHealth,getReadiness,observeBinding});
-    const prepared=createBuyerWriterAvailability({workspace,releaseSha,apiGeneration,environment,getHealth,getReadiness,
+    const prepared=createBuyerWriterPreparation({workspace,releaseSha,apiGeneration,environment,getHealth,getReadiness,
       observeBinding:createBinding({...bindingOptions,requireCommit:false})});
     let closed=false,closing;
     const checkAvailability=async()=>{
