@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createHash,randomBytes} from 'node:crypto';
-import {createOwnedStoreTransition,ownedBackendFields} from '../packages/zola-release/owned-store-transition.js';
+import {createOwnedStoreTransition,ownedBackendFields,resolveOwnedStoreTransitionGroup} from '../packages/zola-release/owned-store-transition.js';
 import {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest} from '../packages/buyer-writer/owned-postgres.js';
 import {renderBuyerStoreNamespaceDropin} from '../packages/buyer-store/namespace.js';
 const hash=v=>createHash('sha256').update(typeof v==='string'?v:JSON.stringify(v)).digest('hex');
@@ -70,3 +70,6 @@ test('exact journaled namespace staging symlink can reconcile while foreign stag
  const f=fixture();try{const h=f.helper(),p=await h.prepare(f.input);await h.publish(p);fs.symlinkSync('releases/'+releaseSha,f.paths.current+'.owned-transition');await h.restore(p);assert.equal(fs.existsSync(f.paths.current+'.owned-transition'),false);assert.equal(h.restored(p),true);fs.symlinkSync('/foreign',f.paths.current+'.owned-transition');await assert.rejects(h.publish(p));assert.equal(fs.readlinkSync(f.paths.current+'.owned-transition'),'/foreign');
  }finally{f.cleanup();}
 });
+
+test('root transition resolves only the exact named private group without API process identity',()=>{assert.equal(resolveOwnedStoreTransitionGroup('blackspire-api',()=> 'blackspire-api:x:61011:\n'),61011);for(const output of ['blackspire:x:61011:','blackspire-api:x:0:','blackspire-api:x:61011:\nforeign:x:1:'])assert.throws(()=>resolveOwnedStoreTransitionGroup('blackspire-api',()=>output));});
+test('stopped namespace rebinding removes only the empty prior systemd artifact mountpoint and restores it exactly',{skip:process.getuid()!==0},async()=>{const f=fixture();try{fs.mkdirSync(f.dir+'/releases');fs.mkdirSync(f.dir+'/releases/'+oldSha,{mode:0o755});const p=await f.helper().prepare(f.input);await f.helper().publish(p);assert.equal(fs.existsSync(f.dir+'/releases/'+oldSha),false);fs.mkdirSync(f.dir+'/releases/'+releaseSha,{mode:0o755});await f.helper().restore(p);assert.equal(fs.existsSync(f.dir+'/releases/'+releaseSha),false);assert.equal(fs.statSync(f.dir+'/releases/'+oldSha).mode&0o7777,0o755);fs.writeFileSync(f.dir+'/releases/'+oldSha+'/foreign','x');await assert.rejects(f.helper().publish(p));assert.equal(fs.readFileSync(f.dir+'/releases/'+oldSha+'/foreign','utf8'),'x');}finally{f.cleanup();}});

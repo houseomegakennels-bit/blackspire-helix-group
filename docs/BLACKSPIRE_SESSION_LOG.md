@@ -2184,3 +2184,7 @@ Added separate owned target preparation with original Auth owner lock, descripto
 ## 2026-09-21 — owned lifecycle release binding and rollback
 
 Added explicit owned candidate/VPS history versions, protected configuration and namespace rebinding, generation-bound manifest publication before store startup, and exact stopped rollback without data rewind. Thirty-two focused tests, including actual root-filesystem recovery and adversarial drift, plus build/lint/syntax pass. Production transitions and complete root hook composition remain UNVERIFIED; no production effects.
+
+## 2026-09-21 — owned lifecycle native review corrections
+
+Corrected root private-group resolution and exact empty artifact mountpoint rebinding discovered by independent review. Eight focused transition tests pass, including realistic systemd remnants and refusal to remove content. No production effects.
