@@ -2103,3 +2103,8 @@ The release ACL stage requires the explicit owned backend/profile digest in both
 ## 2026-09-21 — Buyer store daemon and client preparation
 
 Implemented bounded authenticated Unix socket transport, protected configuration loading, fixed-role PostgreSQL runtime composition and dedicated service template. Two focused transport tests passed with real socket calls. Dependencies, deployment binding and integrated runtime acceptance remain UNVERIFIED; no production changes.
+## 2026-09-21 — owned-cluster Buyer migration planner and executor framework
+
+A separate migration planner binds source snapshot/quiescence and rollback digests, distinct source/target cluster identities, complete reviewed schema inventory and per-table counts/data digests. Closure is exactly BuyerProfile, BuyerReport, CleanSale, RawSale, SearchJob and exports, with the five observed foreign keys (exports uses ON DELETE CASCADE), preserved id primary keys and the auth.uid function dependency. Unknown dependencies, incomplete closure, same-cluster targets and changed metadata refuse.
+
+The injected host executor requires both business writers disabled, a held snapshot/fence, durable intent before destination work, FK-safe copy order and an atomic target receipt. Drift rolls back before commit; uncertain outcomes only reconcile a matching retained receipt and never repeat copying. Six offline regression groups pass, covering closure, identity/quiescence drift, partial copy failure and lost commit acknowledgement. This is a tested orchestration framework, not a production migration driver or data-copy claim. Native catalog/snapshot collection, protected fence/profile integration and real PostgreSQL copy/restore rehearsal remain required. No production data was copied or changed.
