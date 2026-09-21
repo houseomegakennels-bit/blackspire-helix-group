@@ -33,7 +33,7 @@ async function installedFixture(t,releaseSha){
  const inspectRuntime=async()=>structuredClone(runtime),collect=({role})=>structuredClone(role==='api'?api:worker);
  const profileOptions={configDirectory,gatewayDirectory,unitDirectory,resolveIdentity:async()=>({uid:994,credentialGroupId:984,workerUid:993}),capture:collect,inspectFactory:()=>inspectRuntime,
   run:(_file,args)=>args[0]==='group'?'blackspire-writer:x:982:\n':String(api.supervisor.pid)+'\n'};
- 
+
  return {collect:sha=>collectInstalledHeldWriterProfile(sha,profileOptions),apiGeneration,workerGeneration,artifactDigest:manifest.artifactDigest};
 }
 

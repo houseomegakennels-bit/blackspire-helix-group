@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — CI range whitespace correction
+
+PR151 run 35577594482 at `5020209` passed the complete runtime suite, all disposable PostgreSQL lanes, build, lint, typecheck, secret scan, audit and shell syntax. Its full PR-range whitespace gate failed on trailing spaces in two added files and an extra EOF blank line in one fixture. Those three formatting defects are removed without behavior changes. Earlier local working-tree whitespace checks did not cover committed additions; subsequent validation checks the complete release-base range. This run is not a successful release gate; the reviewed callback repair and final exact-source CI remain required. No additional production action occurred.
+
 ## 2026-09-21 — authority callback routing prepared in production
 
 Read-only integration tracing found that the configured authority-consumer domain still returned Nginx maintenance for every HTTPS path. Under the user's explicit production-change authorization, the reviewed exact callback location `/api/internal/capability-authority/consume` now forwards only POST requests without a query to loopback port 8789. Body size is capped at 16 KiB, upstream retries are disabled, and existing authentication remains in the API. General maintenance, TLS and other routing remain intact. Protected before/candidate bytes and durable intent/result are retained under `/var/lib/blackspire-operator/preparation/nginx-authority-callback-20260921`.

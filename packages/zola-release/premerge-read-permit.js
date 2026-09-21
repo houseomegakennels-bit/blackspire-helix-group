@@ -105,7 +105,7 @@ export async function runPremergeReadPermit({context,call,config,collect},{root=
   retire(claims,claimsDigest,'PASS');
   return result;
  }catch{
-  
+
   // Best-effort exact retirement never opens public admission or deletes claims.
   if(activated){try{
    const history=inspectPremergeReadHistory(stream.events());
