@@ -129,7 +129,7 @@ try{
    run:(script,args)=>{
     verifyReleaseSource(release.releaseSha);
     if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
-    const replacements={'scripts/prepare-buyer-writer-gateway-v4.js':'scripts/prepare-owned-gateway-transition.js','scripts/upgrade-buyer-writer-gateway-configuration.js':'scripts/upgrade-owned-gateway-transition.js','scripts/provision-buyer-writer-production.js':'scripts/provision-owned-buyer-writer-production.js'};
+    const replacements={'scripts/zola-config-install.js':'scripts/zola-owned-config-install.js','scripts/prepare-buyer-writer-gateway-v4.js':'scripts/prepare-owned-gateway-transition.js','scripts/upgrade-buyer-writer-gateway-configuration.js':'scripts/upgrade-owned-gateway-transition.js','scripts/provision-buyer-writer-production.js':'scripts/provision-owned-buyer-writer-production.js'};
     const selected=replacements[script]?operatorRoot+replacements[script]:script;
     const stdout=execFileSync('/bin/bash',['scripts/with-node.sh',selected,...args],{cwd:canonical,encoding:'utf8',timeout:120000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',LANG:'C'}});
     verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();return JSON.parse(stdout);

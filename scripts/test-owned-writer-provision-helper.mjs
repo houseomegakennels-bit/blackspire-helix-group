@@ -1,3 +1,4 @@
+import {createBuyerWriterGatewayPostgres} from '../packages/buyer-writer/local-gateway-postgres.js';
 import {verifyBuyerWriterProductionEvidence,verifyOwnedBuyerWriterProductionEvidence} from '../packages/buyer-writer/production-verifier.js';
 import {observeOwnedAclScoped,verifyOwnedOperatorAclResult} from '../packages/zola-release/owned-acl-operator-observer.js';
 import {ownedDatabaseAclParameters} from '../packages/buyer-writer/owned-database-evidence.js';
@@ -60,6 +61,8 @@ export async function proveOwnedWriterProvisioning({connect,profile,ca,owner,hos
   assert.equal(result.rows[0].writer.memberships.length,7);assert.equal(verifyOwnedOperatorAclResult(result,profile).writerIsolationVerified,true);
   assert.equal((await acl.query('SELECT current_user AS actor')).rows[0].actor,'postgres');await acl.query('ROLLBACK');
  }finally{await acl.end();}
+ const gatewayDatabase=await createBuyerWriterGatewayPostgres({runtime:gateway.runtime,issuer:gateway.issuer,creatorOid:profile.creatorOid,Pool:class extends pg.Pool{constructor(config){super({...config,host,port:5432,ssl:false});}}});
+ try{assert.equal(gatewayDatabase.isHealthy(),true);}finally{await gatewayDatabase.close();}
  assert.ok(journal.some(v=>v.phase==='verified-committed'&&v.status==='COMPLETED'));
  console.log('PASS: native apply refusal; bounded owned reconcile; unsafe superuser refusal; actual SCRAM login and wrong-password denial for all three writer roles; exact repeat performs no password binding; rollback and intact-layout recovery preserve credentials; altered layout refuses before rebinding; scoped ACL and exact seven-edge policy pass');
 }
