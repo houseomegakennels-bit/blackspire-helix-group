@@ -2200,3 +2200,6 @@ Retirement now reuses the strict owned migration host quiescence observer (requi
 ## 2026-09-21 — owned HELD wiring and integrated regression repairs
 
 Connected explicit owned candidate startup and versioned collectors. Integrated reviewed lifecycle/namespace/retirement changes and repaired legacy fixtures and exact source-audit entries. Initial full contained run had 21 failures; repaired focused lanes pass, including 36 combined lifecycle/acceptance tests. Complete updated-source CI and actual production acceptance remain pending. No production mutation.
+## 2026-09-21 — initial owned Buyer configuration and routing helper
+
+Implemented separately staged frontend/API configuration and exact eight-operation Nginx routing with protected retained plans, dedicated deal credentials, strict consumer equality and fail-closed ambiguous-create handling. Ten focused tests, actual protected filesystem checks and disposable Nginx HTTP transport checks passed. No production or Vercel settings were changed; independent review and integrated final validation remain required.
