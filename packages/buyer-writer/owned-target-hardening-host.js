@@ -1,3 +1,4 @@
+import {validateOwnedSourceCurrentSecurityProof} from './owned-source-demo-restriction.js';
 import pg from 'pg';
 import {openReleaseJournal} from '../zola-release/commander-journal.js';
 import {verifyReleaseSource} from '../zola-release/commander-host.js';
@@ -5,7 +6,7 @@ import {readRootOwnedJsonSnapshot,readRootOwnedMetadataSnapshot} from './protect
 import * as database from './database-profile.js';
 import {createOwnedSourceSecurityFiles} from './owned-source-security-host.js';
 import {verifyOwnedBuyerMigrationQuiescence} from './owned-migration-host.js';
-import {prepareOwnedSourceSecurityPackage,observeOwnedSourceSecurity} from './owned-source-security.js';
+import {prepareOwnedSourceSecurityPackage,observeOwnedSourceSecurity,observeOwnedSourceSecurityDemoRestriction} from './owned-source-security.js';
 import {prepareOwnedTargetHardening,executeOwnedTargetHardening,observeOwnedTargetHardening} from './owned-target-hardening.js';
 export const OWNED_TARGET_HARDENING_ROOT='/var/lib/blackspire-operator/owned-target-hardening';
 const fail=()=>{throw new Error('Owned migration prerequisite host rejected; retain records and reconcile');};
@@ -20,7 +21,7 @@ function paths(input){
  ||input.ownedMigrationConfigurationFile!==`/var/lib/blackspire-operator/owned-buyer-migration/${input.operationId}/manifest.json`)fail();
  return {work:`${OWNED_TARGET_HARDENING_ROOT}/${input.operationId}`,copyRoot:`/var/lib/blackspire-operator/owned-buyer-migration/${input.operationId}`};
 }
-async function withPrerequisites(input,deps,action){
+async function withPrerequisites(input,deps,action,currentExtension=false){
  const p=paths(input),read=deps.readSnapshot??snapshot,db=deps.database??database,verify=deps.verifySource??verifyReleaseSource;
  const profile=db.readOwnedDatabaseProfile();if(db.databaseProfileDigest(profile)!==input.profileDigest)fail();verify(input.releaseSha);
  const records=[input.sourceSecurityConfigurationFile,input.ownedMigrationConfigurationFile,p.copyRoot+'/intent.json',p.copyRoot+'/rollback.json'].map(file=>({file,record:read(file)}));
@@ -39,21 +40,28 @@ async function withPrerequisites(input,deps,action){
  ||!same(read(db.LEGACY_DATABASE_MANAGEMENT,true),sourceCredential)||!same(read(db.OWNED_DATABASE_MANAGEMENT,true),targetCredential)
  ||records.some(({file,record})=>!same(read(file),record)))fail();};
  let source,target;try{await fence();source=await(deps.connect??connect)(sourceConfig,db.databaseTlsOptions(sourceConfig));target=await(deps.connect??connect)(targetConfig,db.databaseTlsOptions(targetConfig));
- const sourceProof=await(deps.observeSource??observeOwnedSourceSecurity)(source,sourcePlan,migrationVersion);if(!sourceProof||sourceProof.status!=='OWNED_SOURCE_SECURITY_VERIFIED'||sourceProof.profileDigest!==input.profileDigest||sourceProof.operationId!==input.operationId||digest(sourceProof)!==migration.source.quiescenceDigest)fail();
- const result=await action({p,plan,target,fence,sourceProof});
- const after=await(deps.observeSource??observeOwnedSourceSecurity)(source,sourcePlan,migrationVersion);if(!same(after,sourceProof))fail();await fence();return result;
+ const observeSource=currentExtension?(deps.observeSourceExtension??observeOwnedSourceSecurityDemoRestriction):(deps.observeSource??observeOwnedSourceSecurity);
+ const sourceObservation=await observeSource(source,sourcePlan,migrationVersion),sourceProof=currentExtension?sourceObservation?.historicalProof:sourceObservation;
+ if(currentExtension)validateOwnedSourceCurrentSecurityProof(sourceObservation?.currentSecurity);
+ if(currentExtension&&(sourceObservation?.status!=='OWNED_SOURCE_CURRENT_SECURITY_EXTENSION_VERIFIED'||sourceObservation.currentSecurity?.status!=='OWNED_SOURCE_DEMO_RESTRICTION_VERIFIED'||sourceObservation.currentSecurity?.historicalProofDigest!==createHash('sha256').update(JSON.stringify(sourceProof)).digest('hex')||sourceObservation.currentSecurity?.manifestDigest!==sourceProof?.manifestDigest||sourceObservation.currentSecurity?.sourceWritesDenied!==true||sourceObservation.currentSecurity?.ownerReadPreserved!==true||sourceObservation.currentSecurity?.demoReadDenied!==true||sourceObservation.currentSecurity?.sourceSqlReapplied!==false))fail();
+ if(!sourceProof||sourceProof.status!=='OWNED_SOURCE_SECURITY_VERIFIED'||sourceProof.profileDigest!==input.profileDigest||sourceProof.operationId!==input.operationId||digest(sourceProof)!==migration.source.quiescenceDigest)fail();
+ const result=await action({p,plan,target,fence,sourceProof,currentSecurity:currentExtension?sourceObservation.currentSecurity:null});
+ const after=await observeSource(source,sourcePlan,migrationVersion);if(!same(after,sourceObservation))fail();await fence();return result;
  }finally{try{await target?.end();}finally{await source?.end();}}
 }
 // Safe after acceptance inserts and intended bounded roles exist: proves the
 // retained copy/hardening receipts and CURRENT source freeze/target browser ACL.
 // It does not claim current rows still equal the pre-acceptance copy snapshot.
-export async function observeOwnedMigrationPrerequisites(input,deps={}){
- return withPrerequisites(input,deps,async({p,plan,target,fence,sourceProof})=>{
+export async function observeOwnedMigrationPrerequisites(input,deps={}){return observePrerequisites(input,deps,false);}
+export async function observeOwnedMigrationPrerequisitesWithDemoRestriction(input,deps={}){return observePrerequisites(input,deps,true);}
+async function observePrerequisites(input,deps,currentExtension){
+ return withPrerequisites(input,deps,async({p,plan,target,fence,sourceProof,currentSecurity})=>{
  const read=deps.readSnapshot??snapshot,retained=read(p.work+'/plan.json');if(!same(retained.value,plan))fail();await fence();
  const targetProof=await(deps.observeTarget??observeOwnedTargetHardening)(target,plan);if(!targetProof||targetProof.status!=='OWNED_TARGET_HARDENING_VERIFIED'||targetProof.releaseSha!==plan.releaseSha||targetProof.operationId!==plan.operationId||targetProof.profileDigest!==plan.profileDigest||targetProof.copyManifestDigest!==plan.copyManifestDigest||targetProof.bodySha256!==plan.bodySha256||targetProof.rowsPreserved!==true)fail();
- if(!same(read(p.work+'/plan.json'),retained))fail();return Object.freeze({status:'OWNED_MIGRATION_PREREQUISITES_VERIFIED',releaseSha:input.releaseSha,operationId:input.operationId,profileDigest:input.profileDigest,
+ if(!same(read(p.work+'/plan.json'),retained))fail();const historicalPrerequisites=Object.freeze({status:'OWNED_MIGRATION_PREREQUISITES_VERIFIED',releaseSha:input.releaseSha,operationId:input.operationId,profileDigest:input.profileDigest,
  sourceSecurityManifestDigest:sourceProof.manifestDigest,copyManifestDigest:plan.copyManifestDigest,targetHardeningBodySha256:plan.bodySha256,sourceWritesDenied:true,targetBrowserSecurityVerified:true,originalSourceMigrationsReapplied:false});
- });
+ return currentExtension?Object.freeze({status:'OWNED_MIGRATION_CURRENT_SECURITY_VERIFIED',historicalPrerequisites,currentSecurity}):historicalPrerequisites;
+ },currentExtension);
 }
 export async function runOwnedTargetHardening({mode,...input},deps={}){
  if(!['apply','reconcile'].includes(mode)||(deps.uid??process.getuid)()!==0)fail();const guard=(deps.openGlobal??openReleaseJournal)();let local;

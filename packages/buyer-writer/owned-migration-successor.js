@@ -1,3 +1,4 @@
+import {validateOwnedSourceCurrentSecurityProof} from './owned-source-demo-restriction.js';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -5,7 +6,7 @@ import {verifyReleaseSource} from '../zola-release/commander-host.js';
 import {openReleaseJournal} from '../zola-release/commander-journal.js';
 import {readRootOwnedMetadataSnapshot} from './protected-json.js';
 import {readOwnedDatabaseProfile,databaseProfileDigest} from './database-profile.js';
-import {observeOwnedMigrationPrerequisites} from './owned-target-hardening-host.js';
+import {observeOwnedMigrationPrerequisitesWithDemoRestriction} from './owned-target-hardening-host.js';
 import {createOwnedSourceSecurityFiles} from './owned-source-security-host.js';
 import fs from 'node:fs';
 import {RELEASE_ADMISSION_ROOT,validateReleaseAdmissionState} from '../shared/release-admission.js';
@@ -33,12 +34,15 @@ async function run(request,prepare,deps){const bound=input(request);if((deps.uid
  const fence=()=>{verify(bound.releaseSha);if(profileHash(readProfile())!==P.profileDigest||!same(captureRecords(),OWNED_MIGRATION_PREDECESSOR_RECORD_DIGESTS))fail();};
  fence();const plan={version:1,kind:'owned-migration-successor-lineage-v1',...bound,predecessor:{...P},originalRecordDigests:{...OWNED_MIGRATION_PREDECESSOR_RECORD_DIGESTS},originalPaths:{...F},dataCopied:false,hardeningReapplied:false};
  const retained=files.read(file);if(retained!==null)validateOwnedMigrationSuccessorPlan(retained,bound);else if(!prepare)fail();
- const original=await(deps.observePredecessor??observeOwnedMigrationPrerequisites)({releaseSha:P.releaseSha,operationId:P.operationId,profileDigest:P.profileDigest,sourceSecurityConfigurationFile:F.sourceSecurityConfigurationFile,ownedMigrationConfigurationFile:F.ownedMigrationConfigurationFile},{verifySource:sha=>{if(sha!==P.releaseSha)fail();fence();}});
+ const observation=await(deps.observePredecessor??observeOwnedMigrationPrerequisitesWithDemoRestriction)({releaseSha:P.releaseSha,operationId:P.operationId,profileDigest:P.profileDigest,sourceSecurityConfigurationFile:F.sourceSecurityConfigurationFile,ownedMigrationConfigurationFile:F.ownedMigrationConfigurationFile},{verifySource:sha=>{if(sha!==P.releaseSha)fail();fence();}});
+ const original=observation?.historicalPrerequisites,currentSecurity=observation?.currentSecurity;validateOwnedSourceCurrentSecurityProof(currentSecurity);
+ if(observation?.status!=='OWNED_MIGRATION_CURRENT_SECURITY_VERIFIED'||currentSecurity?.status!=='OWNED_SOURCE_DEMO_RESTRICTION_VERIFIED'||currentSecurity.manifestDigest!==P.sourceSecurityManifestDigest||currentSecurity.originalBodySha256!==P.sourceBodySha256||currentSecurity.sourceWritesDenied!==true||currentSecurity.ownerReadPreserved!==true||currentSecurity.demoReadDenied!==true||currentSecurity.sourceSqlReapplied!==false||!['currentCatalogDigest','historicalProofDigest'].every(k=>/^[a-f0-9]{64}$/.test(currentSecurity[k]??'')))fail();
  if(original?.status!=='OWNED_MIGRATION_PREREQUISITES_VERIFIED'||original.releaseSha!==P.releaseSha||original.operationId!==P.operationId||original.profileDigest!==P.profileDigest||original.sourceWritesDenied!==true||original.targetBrowserSecurityVerified!==true||original.originalSourceMigrationsReapplied!==false||['sourceSecurityManifestDigest','copyManifestDigest','targetHardeningBodySha256'].some(k=>original[k]!==P[k]))fail();
  fence();const proof={status:'OWNED_MIGRATION_SUCCESSOR_VERIFIED',...bound,predecessorReleaseSha:P.releaseSha,predecessorOperationId:P.operationId,sourceSecurityManifestDigest:P.sourceSecurityManifestDigest,copyManifestDigest:P.copyManifestDigest,targetHardeningBodySha256:P.targetHardeningBodySha256,lineageDigest:hash(plan),predecessorProofDigest:hash(original),sourceWritesDenied:true,targetBrowserSecurityVerified:true,originalSourceMigrationsReapplied:false,dataCopied:false,hardeningReapplied:false};
- const resultFile=file.replace(/plan\.json$/,'result.json');
- if(prepare){await deps.preparationFence();files.directory(file.slice(0,file.lastIndexOf('/')));files.publish(file,plan);files.publish(resultFile,proof);fence();await deps.preparationFence();}else if(!same(files.read(resultFile),proof))fail();
- if(!same(files.read(file),plan))fail();return proof;
+ const resultFile=file.replace(/plan\.json$/,'result.json'),extensionFile=file.replace(/plan\.json$/,'current-source-security.json');
+ const extension={version:1,status:'OWNED_SUCCESSOR_CURRENT_SOURCE_SECURITY_VERIFIED',...bound,lineageDigest:hash(plan),historicalResultDigest:hash(proof),currentSecurity};
+ if(prepare){await deps.preparationFence();files.directory(file.slice(0,file.lastIndexOf('/')));files.publish(file,plan);files.publish(resultFile,proof);files.publish(extensionFile,extension);fence();await deps.preparationFence();}else if(!same(files.read(resultFile),proof)||!same(files.read(extensionFile),extension))fail();
+ if(!same(files.read(file),plan))fail();return {...proof,currentSourceSecurity:extension};
 }
 export async function observeOwnedMigrationPreparationHeld(journal,{observe=observeHeldLifecycle,readState}={}){
  const runId='3502c7e8-896e-49e3-bd58-618fe86d2b1c',file=RELEASE_ADMISSION_ROOT+'/state.json';

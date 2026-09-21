@@ -225,3 +225,21 @@ export async function validateOwnedSourceSecurityInTransaction(client,plan,migra
  if(lock?.rows?.length!==1||lock.rows[0].acquired!==true)reject();
  return observeInTransaction(client,plan,migrationVersion,{snapshot:true});
 }
+
+// Explicit successor-only current-security lineage. The historical body and
+// native observer above retain their original semantics and exact receipt bytes.
+export async function observeOwnedSourceSecurityDemoRestriction(client,plan,migrationVersion){
+ if(!plans.has(plan)||plan.releaseSha!=='2636a1e75cd0f422aff036dfee8a93a81cd5008b'||plan.operationId!=='95a11ea1-289f-46a9-b5cd-cc7805497242'||plan.profileDigest!=='2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505'||plan.manifestDigest!=='a07fb7bf9e998c976eb57abcdd422a463ba2718c1b9ec8c59c6108da4edb81ac'||plan.bodySha256!=='4687ea2738680ad3fa5b0bc522246a48298877167b91c3866f275e8217c71091')reject();
+ const {OWNED_DEMO_RESTRICTION_SQL,validateOwnedDemoRestrictionEvidence}=await import('./owned-source-demo-restriction.js');let began=false;
+ try{await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');began=true;
+  await client.query("SET LOCAL search_path=pg_catalog;SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='30s';SET LOCAL idle_in_transaction_session_timeout='10s';");
+  const locked=await client.query('SELECT pg_try_advisory_xact_lock(206994,126) AS acquired',[]);if(locked?.rows?.length!==1||locked.rows[0].acquired!==true)reject();
+  await client.query(plans.get(plan).sourceGuard);if(!await receipt(client,plan,migrationVersion))reject();
+  const freeze=await client.query(OWNED_SOURCE_FREEZE_CHECK_SQL,[]),e=freeze.rows?.[0]?.evidence;
+  if(freeze.rows?.length!==1||!exact(freeze.rows[0],['evidence'])||!exact(e,['transactionReadOnly','sourceWritesDenied','browserDenied','anonymousJobsDenied','ownReadPreserved'])||e.transactionReadOnly!==true||e.sourceWritesDenied!==true||e.browserDenied!==true||e.anonymousJobsDenied!==true||e.ownReadPreserved!==false)reject();
+  const current=await client.query(OWNED_DEMO_RESTRICTION_SQL,[]);if(current.rows?.length!==1||!exact(current.rows[0],['evidence']))reject();
+  const extension=validateOwnedDemoRestrictionEvidence(current.rows[0].evidence),historicalProof=proof(plan,'OWNED_SOURCE_SECURITY_VERIFIED',migrationVersion);
+  const result={status:'OWNED_SOURCE_CURRENT_SECURITY_EXTENSION_VERIFIED',historicalProof,currentSecurity:{...extension,historicalProofDigest:hash(JSON.stringify(historicalProof)),manifestDigest:plan.manifestDigest,originalBodySha256:plan.bodySha256}};
+  await client.query('ROLLBACK');began=false;return Object.freeze(result);
+ }finally{if(began)try{await client.query('ROLLBACK');}catch{}}
+}
