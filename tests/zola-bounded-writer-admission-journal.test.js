@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {hash} from '../packages/zola-release/commander-journal.js';
 import {RELEASE_STAGES,MUTATING_STAGES,RELEASE_REGISTRY_DIGEST} from '../packages/zola-release/commander-sequence.js';
-import {createBoundedWriterAdmissionJournal} from '../packages/zola-release/bounded-writer-admission-journal.js';
+import {createBoundedWriterAdmissionJournal,inspectBoundedWriterAdmissionHistory} from '../packages/zola-release/bounded-writer-admission-journal.js';
 import {createBuyerWriterAdmittedLocalClient} from '../packages/buyer-writer/admitted-local-client.js';
 import {createBoundedWriterE2eOperation,inspectFixedWriterAcceptance,runFixedWriterAcceptance} from '../packages/zola-release/production-acl-writer.js';
 
@@ -140,4 +140,21 @@ test('writer target namespace stays distinct from release journal and rejects au
   await assert.rejects(()=>denied.operation().execute(denied.call));
   assert.deepEqual(denied.originals,[]);
  }
+});
+
+
+test('read-only handle inspector preserves validation after outer stage confirmation',async()=>{
+ assert.deepEqual(inspectBoundedWriterAdmissionHistory([]),[]);
+ const f=fixture();await f.operation().execute(f.call);await f.operation().reconcile(f.call);
+ const before=JSON.stringify(f.events),count=inspectBoundedWriterAdmissionHistory(f.events).length;
+ assert.equal(count,4);assert.equal(JSON.stringify(f.events),before);
+ const output={accepted:true},pending=f.events.find(row=>row.type==='sequence_stage_intent'&&row.stage==='bounded_writer_e2e');
+ f.events.push({...pending,type:'sequence_stage_confirmed',output,outputDigest:hash(JSON.stringify(output))});
+ assert.equal(inspectBoundedWriterAdmissionHistory(f.events).length,count);
+ const stopped={schema:4,type:'sequence_stopped',operationId:f.bound.operationId,ordinal:10,stage:RELEASE_STAGES[10],releaseState:'BLOCKED_EXTERNAL',reason:'EXTERNAL_GATE'};
+ f.events.push(stopped);assert.equal(inspectBoundedWriterAdmissionHistory(f.events).length,count);
+ const late=structuredClone(f.events);late.push(late.find(row=>row.type==='bounded_writer_admission_handle'));
+ assert.throws(()=>inspectBoundedWriterAdmissionHistory(late));
+ const tampered=structuredClone(f.events);tampered.find(row=>row.type==='bounded_writer_admission_handle').handleDigest='0'.repeat(64);
+ assert.throws(()=>inspectBoundedWriterAdmissionHistory(tampered));
 });
