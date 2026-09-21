@@ -245,3 +245,7 @@ Authorization uses only server-resolved, credential-free admin/service principal
 - Runtime modes are explicit: mock is the credential-free default, restricted test permits only loopback fake Hermes with mock providers, and production can never be selected by fallback.
 - The Command API remains tested same-origin-only; no permissive CORS behavior or misleading cross-origin promise is configured.
 - Subscription Codex workers use only the official ChatGPT-authenticated Codex CLI with ephemeral, read-only, schema-bound execution; API-key conversion, direct Responses API calls, retries, fallback providers, and authentication-material access are prohibited.
+
+## 2026-09-21 — standing authority for completing Zola production
+
+The user explicitly authorizes all releases, changes and deployments required to bring Zola live, superseding the earlier requirement for separate production-change approval within this task. Required evidence, independent review and recovery safeguards remain mandatory. Live trading, funds movement and unrelated paid resources remain outside scope.
