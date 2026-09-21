@@ -167,7 +167,7 @@ export function createHeldProductionOperations(context,overrides={}){
   liveConfig:()=>protectedConfig(FIXED_LIVE_SIX_READ_CONFIGURATION),collect:collectFixed,now:()=>new Date().toISOString(),inspectRecord:inspectFinalReleaseRecord,
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
   recordRoot:FINAL_RELEASE_RECORD_ROOT,candidate:runCandidateCollector,
-  activate:input=>activateBuyerWriterBeforeHeld(input,{journal:context.journal}),
+  activate:input=>activateBuyerWriterBeforeHeld({...input,...(context.release.backendProfile==='owned-postgres-v1'?{backendProfile:context.release.backendProfile,profileDigest:context.release.profileDigest}:{})},{journal:context.journal}),
   establishHeld:()=>establishCandidateHeld(context),ensureWriterBinding:ensureHeldWriterBinding,...overrides};
  const journalResult=(kind,attemptId)=>context.journal.stream('release').events().find(row=>row?.schema===1&&row.type===`${kind}_result`&&row.attemptId===attemptId);
  const candidate={check(call){invocation(context,call,'candidate_six_reads');return pass({stage:'candidate_six_reads',fixedIsolatedCollector:true});},

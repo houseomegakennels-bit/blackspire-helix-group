@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {databaseTlsOptions} from '../packages/buyer-writer/database-profile.js';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import pg from 'pg';
@@ -16,8 +17,8 @@ try{
     env:{PATH:'/usr/bin:/bin',LC_ALL:'C',LANG:'C'},
   });
   const connect=async credential=>{
-    const client=new pg.Client({host:credential.host,port:5432,database:'postgres',user:'postgres',password:credential.password,
-      ssl:{rejectUnauthorized:true,ca:credential.ca},application_name:'blackspire-buyer-writer-production-provisioner',
+    const client=new pg.Client({host:credential.host,port:credential.port??5432,database:credential.database??'postgres',user:credential.user??'postgres',password:credential.password,
+      ssl:databaseTlsOptions(credential),application_name:'blackspire-buyer-writer-production-provisioner',
       connectionTimeoutMillis:5000,query_timeout:45000,
       options:'-c statement_timeout=30000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=30000 -c search_path=pg_catalog'});
     client.on('error',()=>{});

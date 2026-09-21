@@ -157,3 +157,36 @@ test('public CLI pins exact release source and emits only generic failure text',
   assert.match(source,/protected inputs and state were not disclosed/);
   assert.doesNotMatch(source,/process\.env/);
 });
+
+test('owned source derives the fresh creator only from matching descriptor and v2 catalog',async()=>{
+ const {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest}=await import('../packages/buyer-writer/owned-postgres.js');
+ const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:16401,systemIdentifier:'123456789',caSha256:hash(ca)};
+ const tags={backendProfile:'owned-postgres-v1',profileDigest:ownedPostgresProfileDigest(profile),host:profile.host,port:profile.port};
+ const source={...credentialSource,creatorOid:profile.creatorOid,runtime:{...runtime,...tags},issuer:{...issuer,...tags}};
+ const catalog=evidence({version:2,credentialSourceDigest:hash(Buffer.from(canonical(source))),target:{host:profile.host,port:profile.port,database:'postgres',serverMajor:17,backendProfile:tags.backendProfile,profileDigest:tags.profileDigest,systemIdentifier:profile.systemIdentifier},authentication:{...evidence().authentication,sessionUserOid:profile.creatorOid,currentUserOid:profile.creatorOid,creatorOid:profile.creatorOid}});
+ const input={releaseSha,artifact,credentialSource:source,catalogEvidence:catalog,ownedProfile:profile,now:()=>now};
+ const result=buildBuyerWriterSourceV1(input);assert.equal(result.configuration.runtime.profileDigest,tags.profileDigest);assert.equal(result.configuration.creatorOid,profile.creatorOid);
+ for(const patch of [{ownedProfile:undefined},{catalogEvidence:{...catalog,version:1}},{catalogEvidence:{...catalog,target:{...catalog.target,systemIdentifier:'987'}}},{credentialSource:{...source,creatorOid:16388}}])assert.throws(()=>buildBuyerWriterSourceV1({...input,...patch}),/preparation failed/);
+});
+
+test('fresh owned credential publication recovers exact retained random material after interrupted link',async()=>{
+ const {prepareOwnedBuyerWriterCredentialSource}=await import('../packages/buyer-writer/source-v1-preparation.js');
+ const {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest}=await import('../packages/buyer-writer/owned-postgres.js');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owned-source-')),translate=name=>root+name;
+ fs.mkdirSync(translate('/var/lib/blackspire-operator/preparation'),{recursive:true,mode:0o700});
+ const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:16401,systemIdentifier:'123456789',caSha256:hash(ca)};
+ const input={releaseSha,operationId,attemptId,credentialSourceFile:'/var/lib/blackspire-operator/preparation/owned-gateway-provisioning.json',managementConfigFile:'/etc/blackspire/owned-postgres/management.json',destinationFile:'/var/lib/blackspire-operator/preparation/owned-source-v1.json',artifactRoot:'/opt/blackspire-command/releases/'+releaseSha};
+ let lost=true,generated=0,stopped=0;
+ const io={lstatSync:name=>fs.lstatSync(translate(name)),openSync:(name,...args)=>fs.openSync(translate(name),...args),fstatSync:fd=>fs.fstatSync(fd),fsyncSync:fd=>fs.fsyncSync(fd),closeSync:fd=>fs.closeSync(fd),readSync:(...args)=>fs.readSync(...args),writeSync:(...args)=>fs.writeSync(...args),fchownSync:(...args)=>fs.fchownSync(...args),fchmodSync:(...args)=>fs.fchmodSync(...args),linkSync:(from,to)=>{if(lost){lost=false;throw new Error('lost before link');}fs.linkSync(translate(from),translate(to));},unlinkSync:name=>fs.unlinkSync(translate(name))};
+ const management={backendProfile:'owned-postgres-v1',profileDigest:ownedPostgresProfileDigest(profile),host:profile.host,password:secret(9),ca};
+ const readSnapshot=name=>({value:name===input.managementConfigFile?management:JSON.parse(fs.readFileSync(translate(name))),identity:{uid:0,gid:0,mode:0o600}});
+ const options={io,readSnapshot,readProfile:()=>profile,inspectArtifact:async()=>artifact,assertStopped:()=>{stopped++;},random:count=>Buffer.alloc(count,10+generated++),aclTool:()=>({status:0,error:undefined,signal:null,stdout:'',stderr:''})};
+ try{
+  await assert.rejects(()=>prepareOwnedBuyerWriterCredentialSource(input,options),/preparation failed/);assert.equal(generated,5);
+  const result=await prepareOwnedBuyerWriterCredentialSource(input,options);assert.equal(result.status,'OWNED_CREDENTIAL_SOURCE_PREPARED');assert.equal(generated,5);
+  const before=fs.readFileSync(translate(input.credentialSourceFile));await prepareOwnedBuyerWriterCredentialSource(input,options);assert.deepEqual(fs.readFileSync(translate(input.credentialSourceFile)),before);assert.equal(generated,5);
+  const saved=JSON.parse(before);assert.equal(saved.creatorOid,profile.creatorOid);assert.equal(saved.runtime.profileDigest,management.profileDigest);assert.equal(new Set([saved.writerCredential,saved.issuerCredential,saved.gatewayCapability,saved.runtime.password,saved.issuer.password,management.password]).size,6);assert.ok(stopped>=7);
+  await assert.rejects(()=>prepareOwnedBuyerWriterCredentialSource({...input,attemptId:'00000000-0000-4000-8000-000000000003'},options),/preparation failed/);
+  await assert.rejects(()=>prepareOwnedBuyerWriterCredentialSource(input,{...options,assertStopped:()=>{throw new Error('running');}}),/running/);assert.deepEqual(fs.readFileSync(translate(input.credentialSourceFile)),before);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

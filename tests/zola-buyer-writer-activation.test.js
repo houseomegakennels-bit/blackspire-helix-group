@@ -98,3 +98,19 @@ test('lost gateway unit acknowledgement reconciles retained state without repeat
  assert.ok(f.calls.includes('scripts/buyer-writer-gateway-install.js:--reconcile-prepared'));
  assert.equal(f.calls.filter(s=>s==='scripts/buyer-writer-gateway-install.js:--prepare').length,1);
 });
+
+test('owned activation binds its separate source and journal to the protected descriptor',async()=>{
+ const {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest}=await import('../packages/buyer-writer/owned-postgres.js');
+ const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:16401,systemIdentifier:'123456789',caSha256:'d'.repeat(64)};
+ const input={...bound,backendProfile:'owned-postgres-v1',profileDigest:ownedPostgresProfileDigest(profile)};
+ const f=fixture(),calls=[],run=f.run;f.run=async(script,args)=>{calls.push({script,args});return run(script,args);};
+ await activateBuyerWriterBeforeHeld(input,{...options(f),readProfile:()=>profile});
+ const source=calls.find(row=>row.script.includes('source-v1'));
+ assert.ok(source.args.includes('/var/lib/blackspire-operator/preparation/owned-gateway-provisioning.json'));
+ assert.ok(source.args.includes('/etc/blackspire/owned-postgres/management.json'));
+ assert.equal(f.events[0].binding.profileDigest,input.profileDigest);
+ const count=calls.length;
+ await assert.rejects(()=>activateBuyerWriterBeforeHeld(input,{...options(f),readProfile:()=>({...profile,creatorOid:16402})}),/activation rejected/);
+ assert.equal(calls.length,count);
+ await assert.rejects(()=>activateBuyerWriterBeforeHeld(bound,options(f)),/activation rejected/);
+});

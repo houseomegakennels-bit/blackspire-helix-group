@@ -77,7 +77,7 @@ function harness({exists=false,login=exists,compliant=exists,authWorks=exists,au
     name==='buyer_writer_issuer'?state.issuerLogin:false,
   inherit:false,superuser:false,createDb:false,createRole:false,replication:false,bypassRls:false}));
  const readSnapshot=filename=>{
-  if(filename.includes('gateway')){gatewayReads++;return {value:structuredClone(gateway),identity:{...identity(44,0o640),mtimeMs:drift&&gatewayReads>1?2:1}};}
+  if(filename.endsWith('/gateway.json')){gatewayReads++;return {value:structuredClone(gateway),identity:{...identity(44,0o640),mtimeMs:drift&&gatewayReads>1?2:1}};}
   return {value:structuredClone(management),identity:identity(0,0o600)};
  };
  const connect=async()=>{
@@ -109,7 +109,7 @@ function harness({exists=false,login=exists,compliant=exists,authWorks=exists,au
  };
  const authenticate=async kind=>{calls.push({authenticate:kind});if(!state.authWorks||authFailures.includes(kind))throw new Error(`auth ${kind} ${runtimeSecret}`);};
  const writeJournal=value=>{journals.push(value);if(value.phase===journalFailure)throw new Error(`journal ${managementSecret}`);return value;};
- return {state,calls,journals,clients,options:{managementConfigPath:'/var/lib/blackspire-operator/management.json',
+ return {state,calls,journals,clients,options:{managementConfigPath:'/etc/blackspire-buyer-writer-gateway/management.json',
   readSnapshot,lookupWriterGroup:()=> 'blackspire-writer:x:44:',connect,authenticate,writeJournal}};
 }
 
@@ -268,4 +268,25 @@ test('ambiguous fail-close commit reconnects and verifies disabled LOGIN state',
  const h=harness({exists:true,login:true,compliant:false,commitFailure:true});
  await assert.rejects(()=>provisionBuyerWriterProduction({mode:'verify',...h.options}),/production provisioning failed/);
  assert.ok(h.clients.length>=3);assert.equal(h.state.runtimeLogin,false);assert.equal(h.state.issuerLogin,false);
+});
+
+test('owned provisioning binds real query boundaries and separate version3 recovery journal',async()=>{
+ const {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest}=await import('../packages/buyer-writer/owned-postgres.js');
+ const {OWNED_DATABASE_IDENTITY_SQL}=await import('../packages/buyer-writer/database-profile.js');
+ const {OWNED_DATABASE_BOUNDARY_SQL}=await import('../packages/buyer-writer/owned-database-evidence.js');
+ const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:gateway.creatorOid,systemIdentifier:'123456789',caSha256:createHash('sha256').update(ca).digest('hex')};
+ const profileDigest=ownedPostgresProfileDigest(profile),tags={backendProfile:'owned-postgres-v1',profileDigest,host:profile.host,port:profile.port};
+ const ownedGateway=structuredClone(gateway);for(const value of [ownedGateway.runtime,ownedGateway.issuer,ownedGateway.admission.connection])Object.assign(value,tags);
+ const h=harness(),original=h.options.connect;let boundaries=0,identityQueries=0;
+ const boundary={database:'postgres',actor:'postgres',sessionActor:'postgres',creatorOid:String(profile.creatorOid),databaseOwnerOid:String(profile.creatorOid),systemIdentifier:profile.systemIdentifier,serverVersion:170006,recovery:false,readOnly:true,managementSuperuser:false,extensions:['plpgsql'],netSchemas:0,networkRoutines:0,foreignDataWrappers:0,foreignServers:0,foreignTables:0,userMappings:0};
+ const options={...h.options,managementConfigPath:'/etc/blackspire/owned-postgres/management.json',readProfile:()=>profile,
+  readSnapshot:name=>name.endsWith('/gateway.json')?{value:ownedGateway,identity:identity(44,0o640)}:{value:{...management,host:profile.host,backendProfile:tags.backendProfile,profileDigest},identity:identity(0,0o600)},
+  connect:async credential=>{assert.equal(credential.port,55432);const client=await original();const query=client.query.bind(client);client.query=async(text,values)=>{
+   if(text===OWNED_DATABASE_IDENTITY_SQL){identityQueries++;return {rows:[{systemIdentifier:profile.systemIdentifier,database:'postgres',actor:'postgres',creatorOid:profile.creatorOid,version:170006,recovery:false}]};}
+   if(text===OWNED_DATABASE_BOUNDARY_SQL){boundaries++;assert.equal(h.calls.at(-1).text,'begin read only');return {rows:[{boundary}]};}
+   const result=await query(text,values);if(text===BUYER_WRITER_PRODUCTION_VERIFY_SQL&&result.rows[0].evidence.pgNet)result.rows[0].evidence.pgNet=result.rows[0].evidence.pgNet.map(row=>({...row,signature:null,owner:null,publicExecute:false,ownerExecute:false,runtimeExecute:false,issuerExecute:false,admissionExecute:false}));return result;
+  };return client;}};
+ const result=await provisionBuyerWriterProduction({mode:'apply',...options});assert.equal(result.status,'PROVISIONED');assert.equal(boundaries,2);assert.equal(identityQueries,1);
+ assert.ok(h.journals.length>0);for(const row of h.journals){assert.equal(row.version,3);assert.equal(row.profileDigest,profileDigest);assert.equal(row.backendProfile,'owned-postgres-v1');}
+ const prior=h.journals.length;await provisionBuyerWriterProduction({mode:'apply',...options});assert.equal(h.journals.length,prior);
 });

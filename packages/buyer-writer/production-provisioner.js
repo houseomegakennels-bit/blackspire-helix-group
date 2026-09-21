@@ -1,3 +1,5 @@
+import {OWNED_DATABASE_BOUNDARY_SQL,verifyOwnedDatabaseBoundary} from './owned-database-evidence.js';
+import {databaseTlsOptions,ownedDatabaseConnection,validateDatabaseTarget,validateManagementCredential,readOwnedDatabaseProfile,verifyOwnedDatabaseIdentity,managementPathFor,databaseProfileDigest} from './database-profile.js';
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
@@ -14,7 +16,6 @@ export const BUYER_WRITER_INSTALLER_SHA256='5568619de6455722d783a9074632bccc26a1
 export const BUYER_WRITER_PROVISIONING_LOCK=Object.freeze([206994,127]);
 
 const INSTALLER=fileURLToPath(new URL('./sql/install.sql',import.meta.url));
-const HOST='db.kchtrvfcixnimvxxctkj.supabase.co';
 const fail=()=>{throw new Error('Buyer writer production provisioning failed');};
 const authenticationFail=()=>{throw new Error('Buyer writer production authentication failed');};
 const exact=(value,keys,optional=[])=>value&&typeof value==='object'&&!Array.isArray(value)
@@ -94,8 +95,8 @@ export async function authenticateBuyerWriterProductionIdentity({kind,credential
   if(!['runtime','issuer','admission'].includes(kind)||typeof Client!=='function'||!credential||typeof credential!=='object')authenticationFail();
   const admission=kind==='admission',expected=admission?BUYER_WRITER_ADMISSION_LOGIN:`buyer_writer_${kind}`;
   if(admission&&(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295||credential.user!==expected))authenticationFail();
-  const options={host:credential.host,port:5432,user:expected,password:credential.password,
-    ssl:{rejectUnauthorized:true,ca:credential.ca},application_name:`blackspire-buyer-writer-${kind}-provisioning-proof`,
+  const options={host:credential.host,port:credential.port??5432,user:expected,password:credential.password,
+    ssl:databaseTlsOptions(credential),application_name:`blackspire-buyer-writer-${kind}-provisioning-proof`,
     connectionTimeoutMillis:5000,query_timeout:10000};
   const prove=async(database,text,values,{setRole=false}={})=>{
     let client,failed=false;
@@ -128,18 +129,21 @@ function gatewayGroupId(lookup){
  }catch{fail();}
 }
 
-function validateGatewaySnapshot(snapshot){
+function validateGatewaySnapshot(snapshot,ownedProfile){
  try{
   const config=validateBuyerWriterGatewayServiceConfiguration(snapshot.value);
   const admission=config.admission?.connection;
   if(snapshot.identity.uid!==0||(snapshot.identity.mode&0o7777)!==0o640||config.version!==4||config.mode!=='research-admission'
-    ||config.workspace!=='blackspire-command'||config.runtime?.host!==HOST||config.issuer?.host!==HOST||admission?.host!==HOST)fail();
+    ||config.workspace!=='blackspire-command')fail();
+  if(ownedProfile&&config.creatorOid!==ownedProfile.creatorOid)fail();
+  for(const value of [config.runtime,config.issuer,admission])validateDatabaseTarget(value,{ownedProfile});
+  const tags=ownedProfile?['backendProfile','profileDigest']:[];
   for(const value of [config.runtime,config.issuer]){
-    if(!exact(value,['host','port','database','password','ca'])||value.port!==5432||value.database!=='postgres'
+    if(!exact(value,['host','port','database','password','ca',...tags])||value.port!==(ownedProfile?55432:5432)||value.database!=='postgres'
       ||!validPassword(value.password)||typeof value.ca!=='string'||value.ca.length>16384
       ||!value.ca.startsWith('-----BEGIN CERTIFICATE-----'))fail();
   }
-  if(!exact(admission,['host','port','database','user','password','ca'])||admission.port!==5432||admission.database!=='postgres'
+  if(!exact(admission,['host','port','database','user','password','ca',...tags])||admission.port!==(ownedProfile?55432:5432)||admission.database!=='postgres'
     ||admission.user!==BUYER_WRITER_ADMISSION_LOGIN||!validPassword(admission.password)
     ||config.runtime.ca!==config.issuer.ca||config.runtime.ca!==admission.ca
     ||new Set([config.runtime.password,config.issuer.password,admission.password,config.gatewayCapability]).size!==4)fail();
@@ -147,14 +151,15 @@ function validateGatewaySnapshot(snapshot){
  }catch{fail();}
 }
 
-function validateManagementSnapshot(snapshot,gateway){
+function validateManagementSnapshot(snapshot,gateway,ownedProfile){
  try{
   const value=snapshot.value;
   if(snapshot.identity.uid!==0||snapshot.identity.gid!==0||(snapshot.identity.mode&0o7777)!==0o600
-    ||!exact(value,['host','password','ca'])||value.host!==gateway.runtime.host||!validPassword(value.password)
+    ||!exact(value,['host','password','ca',...(ownedProfile?['backendProfile','profileDigest']:[])])||value.host!==gateway.runtime.host||!validPassword(value.password)
     ||value.password===gateway.runtime.password||value.password===gateway.issuer.password
     ||value.password===gateway.admission.connection.password||value.ca!==gateway.runtime.ca)fail();
-  return value;
+  const connection=validateManagementCredential(value,{ownedProfile});
+  return ownedProfile?connection:value;
  }catch{fail();}
 }
 
@@ -196,6 +201,15 @@ async function readiness(client){
   return roles;
 }
 
+async function ownedBoundary(client,profile){
+ if(!profile)return;let began=false;
+ try{await client.query('begin read only');began=true;
+  const result=await client.query(OWNED_DATABASE_BOUNDARY_SQL,[]);
+  if(result?.rows?.length!==1||!exact(result.rows[0],['boundary']))fail();
+  verifyOwnedDatabaseBoundary(result.rows[0].boundary,profile);
+  await client.query('rollback');began=false;
+ }finally{if(began)try{await client.query('rollback');}catch{}}
+}
 async function verified(client,creatorOid){
   return observeBuyerWriterProductionState((text,values)=>client.query(text,values),creatorOid);
 }
@@ -205,11 +219,11 @@ async function closeClient(client){
   try{await client?.end();}catch{}
 }
 
-async function disableLogins({connect,management,creatorOid,onLocked,onDisabled}){
+async function disableLogins({connect,management,creatorOid,onLocked,onDisabled,ownedProfile}){
   for(let attempt=0;attempt<2;attempt++){
     let client,began=false,commitSent=false;
     try{
-      client=await connect(management);await identityAndLock(client,creatorOid);onLocked?.();
+      client=await connect(management);if(ownedProfile)await verifyOwnedDatabaseIdentity(client,ownedProfile);await identityAndLock(client,creatorOid);onLocked?.();
       await client.query('begin');began=true;
       await client.query("set local search_path=pg_catalog; set local lock_timeout='5s'; set local statement_timeout='15s'");
       await client.query(FAIL_CLOSED_SQL,[]);
@@ -238,26 +252,28 @@ function sanitizedInspection(roles,evidence){
 // implementation; injection exists for deterministic, credential-free tests.
 export async function provisionBuyerWriterProduction({mode,managementConfigPath,
   gatewayConfigPath=BUYER_WRITER_GATEWAY_CONFIGURATION,readSnapshot=readRootOwnedJsonSnapshot,
-  lookupWriterGroup,connect,authenticate,writeJournal=writeBuyerWriterProvisioningJournal,io=fs}={}){
+  lookupWriterGroup,connect,authenticate,writeJournal=writeBuyerWriterProvisioningJournal,io=fs,readProfile=readOwnedDatabaseProfile}={}){
   if(!['inspect','apply','reconcile','verify','rollback'].includes(mode)||typeof connect!=='function'||typeof authenticate!=='function'
     ||gatewayConfigPath!==BUYER_WRITER_GATEWAY_CONFIGURATION||typeof managementConfigPath!=='string')fail();
   let groupId;
   try{groupId=gatewayGroupId(lookupWriterGroup);}catch{fail();}
-  let gatewaySnapshot,gateway,managementSnapshot,management;
+  let gatewaySnapshot,gateway,managementSnapshot,management,ownedProfile;
   try{
     gatewaySnapshot=readSnapshot(gatewayConfigPath,{groupId,maxBytes:65536});
-    gateway=validateGatewaySnapshot(gatewaySnapshot);
+    ownedProfile=ownedDatabaseConnection(gatewaySnapshot.value.runtime)?readProfile({readSnapshot}):undefined;
+    gateway=validateGatewaySnapshot(gatewaySnapshot,ownedProfile);
+    if(managementConfigPath!==managementPathFor(gateway.runtime))fail();
     managementSnapshot=readSnapshot(managementConfigPath,{groupId:0,maxBytes:65536});
-    management=validateManagementSnapshot(managementSnapshot,gateway);
+    management=validateManagementSnapshot(managementSnapshot,gateway,ownedProfile);
   }catch{fail();}
   const {releaseSha,operationId,attemptId}=gateway.authority;
   const journalMode=mode;
-  const journal=(phase,status)=>writeJournal({version:2,kind:'buyer_writer_production_provisioning',releaseSha,operationId,attemptId,
+  const journal=(phase,status)=>writeJournal({version:ownedProfile?3:2,...(ownedProfile?{backendProfile:'owned-postgres-v1',profileDigest:databaseProfileDigest(ownedProfile)}:{}),kind:'buyer_writer_production_provisioning',releaseSha,operationId,attemptId,
     installerSha256:BUYER_WRITER_INSTALLER_SHA256,mode:journalMode,phase,status,updatedAt:new Date().toISOString()});
   if(mode==='rollback'){
     let journalFailed=false;
     const safeJournal=(phase,status)=>{try{journal(phase,status);}catch{journalFailed=true;}};
-    const result=await disableLogins({connect,management,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
+    const result=await disableLogins({connect,management,ownedProfile,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
       onDisabled:()=>safeJournal('roles-disabled','IN_PROGRESS')});
     safeJournal('rollback-complete','COMPLETED');
     if(journalFailed){const error=new Error('Buyer writer production rollback completed without durable journal');error.rollbackSafe=true;throw error;}
@@ -266,12 +282,14 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
 
   let client,mutationStarted=false;
   try{
-    client=await connect(management);await identityAndLock(client,gateway.creatorOid);
+    client=await connect(management);if(ownedProfile)await verifyOwnedDatabaseIdentity(client,ownedProfile);await identityAndLock(client,gateway.creatorOid);
+    await ownedBoundary(client,ownedProfile);
     mutationStarted=mode!=='inspect';
     const recheckSnapshots=()=>{
       const gatewayAgain=readSnapshot(gatewayConfigPath,{groupId,maxBytes:65536});
       const managementAgain=readSnapshot(managementConfigPath,{groupId:0,maxBytes:65536});
-      validateGatewaySnapshot(gatewayAgain);validateManagementSnapshot(managementAgain,gateway);
+      validateGatewaySnapshot(gatewayAgain,ownedProfile);validateManagementSnapshot(managementAgain,gateway,ownedProfile);
+      if(ownedProfile&&JSON.stringify(readProfile({readSnapshot}))!==JSON.stringify(ownedProfile))fail();
       if(!sameSnapshot(gatewaySnapshot,gatewayAgain)||!sameSnapshot(managementSnapshot,managementAgain))fail();
     };
     const roles=await readiness(client);
@@ -342,7 +360,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
       await client.query('rollback');
       await authenticate('runtime',gateway.runtime,gateway.creatorOid);await authenticate('issuer',gateway.issuer,gateway.creatorOid);
         await authenticate('admission',gateway.admission.connection,gateway.creatorOid);
-      recheckSnapshots();
+      recheckSnapshots();await ownedBoundary(client,ownedProfile);
       if(finalEvidence.compliant!==true)fail();
       journal('verified-committed','COMPLETED');
       return Object.freeze({status:'PROVISIONED',idempotent:false,evidence:committedEvidence});
@@ -354,7 +372,7 @@ export async function provisionBuyerWriterProduction({mode,managementConfigPath,
     await closeClient(client);client=null;
     if(mutationStarted){
       const safeJournal=(phase,status)=>{try{journal(phase,status);}catch{}};
-      try{await disableLogins({connect,management,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
+      try{await disableLogins({connect,management,ownedProfile,creatorOid:gateway.creatorOid,onLocked:()=>safeJournal('started','IN_PROGRESS'),
         onDisabled:()=>safeJournal('roles-disabled','IN_PROGRESS')});}
       catch(error){safeJournal('failed','FAILED');throw error;}
       safeJournal('fail-closed','FAIL_CLOSED');
