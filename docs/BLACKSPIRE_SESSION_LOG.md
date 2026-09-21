@@ -2366,3 +2366,7 @@ Confirmed the seven-field native sequence input omitted protected backend select
 ## 2026-09-21 — administrative n8n reassertion operator
 
 Prepared an isolated operator successor to the retained provider fix. The original credential intent remains UNKNOWN; new request/response evidence and continuation authorization use separate protected records. Focused tests cover no replay after ambiguous responses, acknowledgment adoption, consumer closure, preserved authority and metadata drift. Runtime artifact and canonical release source are unchanged. No production credential request was dispatched during implementation; provider ancillary effects remain UNVERIFIED.
+
+## 2026-09-21 — isolated cloud credential proof preparation
+
+Implemented one-use loopback verifier, exact nginx publication/restoration, saved inactive diagnostic workflow and authenticated execution receipt validation, plus a distinct release continuation mode. Tests cover wrong/duplicate credentials, concurrency, expiry, cleanup uncertainty, foreign proxy bytes and missing final receipts. Required gates run before freezing the operator. No production proof endpoint, workflow or execution was created during implementation.

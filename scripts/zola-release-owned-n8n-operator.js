@@ -1,3 +1,4 @@
+import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
 import {retainOwnedN8nResponse} from '../packages/zola-release/owned-n8n-response-receipt.js';
 import {assertOwnedN8nRecoveryAuthority,createOwnedN8nRecoveryContinuation} from '../packages/zola-release/owned-n8n-recovery-authority.js';
 import {reassertOwnedN8nWriter,validateOwnedN8nReassertionProof} from '../packages/zola-release/owned-n8n-credential-reassertion.js';
@@ -26,7 +27,7 @@ const fail=()=>{throw new Error('Owned n8n operator stopped');};
 let journal;
 try{
  const [mode,inputFile]=process.argv.slice(2);
- if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||!['--release','--reassert-credential'].includes(mode)||process.argv.length!==4)fail();
+ if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||!['--release','--reassert-credential','--release-cloud-proof'].includes(mode)||process.argv.length!==4)fail();
  // Both the operator worktree and canonical runtime source must remain clean.
  const operatorRoot=fileURLToPath(new URL('../',import.meta.url));
  const git=(root,args)=>execFileSync('/usr/bin/git',['-C',root,...args],{encoding:'utf8',timeout:5000,maxBuffer:65536}).trim();
@@ -89,7 +90,7 @@ try{
  const recoveryStore=b=>{
   const directory='/var/lib/blackspire-operator/preparation/owned-n8n-credential-reassertion/'+b.releaseSha+'-'+b.operationId;
   if(mode==='--reassert-credential')files.directory(directory,{create:true});
-  return {value:(name,optional)=>{if(!['intent','http-ack','result','transport-headers','transport-body'].includes(name))fail();const file=directory+'/'+name+'.json',final=files.value(file,optional),staged=files.value(file+'.pending',true);if(final&&staged)fail();if(mode==='--release'&&staged)fail();return final??staged;},record:(name,value)=>{if(mode!=='--reassert-credential'||!['intent','http-ack','result','transport-headers','transport-body'].includes(name))fail();files.directory(directory,{create:true});return files.record(directory+'/'+name+'.json',value);}};
+  return {value:(name,optional)=>{if(!['intent','http-ack','result','transport-headers','transport-body'].includes(name))fail();const file=directory+'/'+name+'.json',final=files.value(file,optional),staged=files.value(file+'.pending',true);if(final&&staged)fail();if(mode!=='--reassert-credential'&&staged)fail();return final??staged;},record:(name,value)=>{if(mode!=='--reassert-credential'||!['intent','http-ack','result','transport-headers','transport-body'].includes(name))fail();files.directory(directory,{create:true});return files.record(directory+'/'+name+'.json',value);}};
  };
  const recoveryInputs=b=>({authority:retained(b),originalIntent:records(b).value('intent',true),originalResult:records(b).value('result',true),source:v,operatorSha});
  const recoveryProof=b=>{const store=recoveryStore(b),proof=validateOwnedN8nReassertionProof({...recoveryInputs(b),intent:store.value('intent',true),httpAck:store.value('http-ack',true),result:store.value('result',true)}),headers=store.value('transport-headers',true),body=store.value('transport-body',true),ack=store.value('http-ack',true);
@@ -114,10 +115,23 @@ try{
   try{await host.lease(release.releaseSha);await fence();const result=await action(fence);await fence();return result;}finally{host.close();}
  };
  // Both gate callbacks only observe the distinct acknowledged recovery proof.
- const {assertConfigured,synchronize}=createOwnedN8nRecoveryContinuation({withFence:withRecoveryFence,proof:recoveryProof,metadata:async()=>{const b=currentBinding();await observeOwnedN8nContinuationClosure({request:reassertRequest,tokenSubject:JSON.parse(Buffer.from(key.split('.')[1],'base64url').toString('utf8')).sub,plan,events:scopedJournal.stream('n8n').events(),initialClosure:recoveryStore(b).value('intent',true)?.closure});return createOwnedN8nCredentialTransport(key)('GET','/api/v1/credentials/RzOyDmXYmx58yZHi');}});
+ const cloudProof=async b=>{
+  const {readCompletedOwnedN8nCloudProof}=await import('../packages/zola-release/owned-n8n-cloud-host.js');
+  const complete=await readCompletedOwnedN8nCloudProof({releaseSha:b.releaseSha,operationId:b.operationId,stageAttemptId:b.stageAttemptId});
+  const store=recoveryStore(b),history=validateOwnedN8nCloudHistory({authority:retained(b),originalIntent:records(b).value('intent',true),originalResult:records(b).value('result',true),source:v,plan:complete.plan,
+   reassertion:{intent:store.value('intent',true),httpAck:store.value('http-ack',true),result:store.value('result',true),headers:store.value('transport-headers',true),body:store.value('transport-body',true)}});
+  const identity=await lookupBuyerWriterIdentity(),snapshot=protectedSnapshot(b,heldRecord(b),identity);
+  if(complete.plan.operatorSha!==operatorSha||complete.plan.ingressDigest!==snapshot.ingress.digest||!same(complete.initialClosure,history.initialClosure))fail();
+  return {after:complete.credentialMetadata,initialClosure:complete.initialClosure,history,receiptDigest:complete.receiptDigest,plan:complete.plan};
+ };
+ const metadata=()=>createOwnedN8nCredentialTransport(key)('GET','/api/v1/credentials/RzOyDmXYmx58yZHi');
+ const closure=(b,initialClosure)=>observeOwnedN8nContinuationClosure({request:reassertRequest,tokenSubject:JSON.parse(Buffer.from(key.split('.')[1],'base64url').toString('utf8')).sub,plan,events:scopedJournal.stream('n8n').events(),initialClosure});
+ const {assertConfigured,synchronize}=mode==='--release-cloud-proof'
+  ?createOwnedN8nCloudContinuation({withFence:withRecoveryFence,proof:cloudProof,metadata,closure})
+  :createOwnedN8nRecoveryContinuation({withFence:withRecoveryFence,proof:recoveryProof,metadata:async()=>{const b=currentBinding();await closure(b,recoveryStore(b).value('intent',true)?.closure);return metadata();}});
  const reassertRequest=async(method,route,body)=>{
   if(method==='GET'){if(body!==undefined||!/^\/api\/v1\/(?:users|projects|workflows|executions)(?:\?[^#]*)?$/.test(route)&&route!=='/api/v1/credentials/RzOyDmXYmx58yZHi'&&route!=='/api/v1/workflows/'+WORKFLOW_ID)fail();}
-  else if(method!=='PATCH'||route!=='/api/v1/credentials/RzOyDmXYmx58yZHi'||!same(body,{data:{name:'x-buyer-writer-key',value:v.writerCredential,allowedHttpRequestDomains:'domains',allowedDomains:'jarvis.blackspirehelix.com'},isPartialData:false}))fail();
+  else if(mode!=='--reassert-credential'||method!=='PATCH'||route!=='/api/v1/credentials/RzOyDmXYmx58yZHi'||!same(body,{data:{name:'x-buyer-writer-key',value:v.writerCredential,allowedHttpRequestDomains:'domains',allowedDomains:'jarvis.blackspirehelix.com'},isPartialData:false}))fail();
   const r=await fetch(N8N_ORIGIN+route,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{'X-N8N-API-KEY':key,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
   return retainOwnedN8nResponse(r,{store:method==='PATCH'?recoveryStore(currentBinding()):null,bodyDigest:body?hash(body):null,operatorSha});
  };
@@ -165,6 +179,6 @@ try{
   return {...fixed,provider_acl_check:providerAdapter};
  };
  const result=mode==='--reassert-credential'?await administrativeReassertion():await runProductionRelease({loadedInput:input,journal},{operations});
- process.stdout.write(JSON.stringify(mode==='--reassert-credential'?{status:'OWNED_N8N_CREDENTIAL_REASSERTED',proofDigest:hash(result),originalOutcome:'UNKNOWN',providerExtraEffects:'UNVERIFIED',releaseReady:false}:result)+'\n');if(mode==='--release'&&!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;
+ process.stdout.write(JSON.stringify(mode==='--reassert-credential'?{status:'OWNED_N8N_CREDENTIAL_REASSERTED',proofDigest:hash(result),originalOutcome:'UNKNOWN',providerExtraEffects:'UNVERIFIED',releaseReady:false}:result)+'\n');if(mode!=='--reassert-credential'&&!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;
 }catch{process.stdout.write(JSON.stringify({status:'STOPPED',reason:'OWNED_N8N_OPERATOR_REJECTED',releaseReady:false,reconciliationRequired:true})+'\n');process.exitCode=1;}
 finally{journal?.close();}

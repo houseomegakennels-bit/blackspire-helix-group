@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+import {register} from 'node:module';
+register(new URL('../packages/zola-release/owned-sequence-loader.js',import.meta.url));
+try{if(process.argv.length!==3&&!(process.argv.length===4&&process.argv[2]==='--finalize'))throw Error('args');const h=await import('../packages/zola-release/owned-n8n-cloud-host.js');const mode=process.argv[2];let result;if(mode==='--prepare')result=await h.prepareOwnedN8nCloudProof();else if(mode==='--create-workflow')result=await h.prepareOwnedN8nCloudWorkflowNative();else if(mode==='--finalize')result=await h.completeOwnedN8nCloudWorkflowNative(process.argv[3]);else if(mode==='--serve')result=await h.serveOwnedN8nCloudProof();else if(mode==='--cleanup')result=await h.cleanupOwnedN8nCloudProof();else throw Error('mode');process.stdout.write(JSON.stringify(result)+'\n');}catch{process.stdout.write(JSON.stringify({status:'STOPPED',reason:'OWNED_N8N_CLOUD_PROOF_REJECTED',releaseReady:false})+'\n');process.exitCode=1;}

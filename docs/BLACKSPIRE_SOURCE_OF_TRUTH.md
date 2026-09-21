@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — bounded cloud credential possession proof
+
+A separate operator can prepare a fifteen-minute exact nonce route on the existing Jarvis TLS origin, backed by an isolated loopback verifier. It compares the existing writer credential in constant time, records one authenticated receipt before replying, and restores the exact prior nginx bytes after response, expiry or handled termination. Unknown process or reload outcomes require explicit protected cleanup; a retained serve intent cannot restart the one-use endpoint. No sealed application source or business route is changed.
+
+An inactive saved Manual Trigger diagnostic workflow references the existing credential ID without embedding its value. The user initiates execution through the authenticated editor; the operator verifies the cloud execution against the retained graph and nonce receipt, deletes only that diagnostic workflow, and requires proxy/listener cleanup before release continuation. The proof establishes key possession; separate authenticated editor observation establishes the displayed header/domain configuration. It does not claim the masked value was read or that execution proves domain restriction semantics. Original synchronization remains UNKNOWN; the administrative attempt remains acknowledged HTTP405. Production proof execution and final release acceptance are still UNVERIFIED.
+
 ## 2026-09-21 — bounded administrative n8n credential reassertion
 
 The original writer credential synchronization has an unresolved intent and remains UNKNOWN. A separate reviewed operator mode prepares one new administrative replacement of the same credential ID and exact retained source value, under the existing HELD lease and global guard. It requires two complete owner, project, workflow and execution inventories. Separate protected records retain the request intent, received HTTP status, bounded response completeness/digest, acknowledgment and result. A second ambiguity never dispatches again. Provider hook, audit and dependency side effects remain UNVERIFIED. No test executes a production PATCH.
