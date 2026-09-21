@@ -2275,3 +2275,7 @@ Prepared a fixed, append-only partial-candidate retirement helper with retained 
 ## 2026-09-21 — successor final-input tooling
 
 Prepared the separate schema-three final-input operator with one retained operation UUID, unchanged original migration lineage, fresh candidate package/backup/disk bindings and predecessor HELD fences. Workflow observations are GET-only and never append to the global event streams. Six focused orchestration tests pass; native successor execution remains unverified. No production effects occurred, and activation/lineage are explicitly not claimed by preparation or inspection.
+
+## 2026-09-21 — deterministic successor output reconciliation
+
+Added observation-only adoption of complete exact bundle/input outputs after lost acknowledgment, including file/directory synchronization before recording success. Partial output and unknown random-path backup outcomes remain blocked without repeated effects. Nine focused tests, including actual file synchronization and partial/foreign output refusal, pass; no production execution occurred.
