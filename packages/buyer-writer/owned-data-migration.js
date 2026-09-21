@@ -9,7 +9,8 @@ export const OWNED_BUYER_FOREIGN_KEYS=Object.freeze([
 const plans=new WeakMap();
 const fail=()=>{throw new Error('Owned Buyer data migration rejected');};
 const hex=(value,length)=>typeof value==='string'&&new RegExp(`^[a-f0-9]{${length}}$`).test(value);
-const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+const digest=value=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 const keys=(value,names)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')===[...names].sort().join(',');
 const id=value=>typeof value==='string'&&/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(value);
 const clone=value=>JSON.parse(JSON.stringify(value));

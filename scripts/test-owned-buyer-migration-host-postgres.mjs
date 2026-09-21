@@ -18,7 +18,7 @@ try{
   assert.equal(state.HostConfig.PortBindings===null||Object.keys(state.HostConfig.PortBindings).length===0,true);const peers=Object.values(state.NetworkSettings.Networks);assert.equal(peers.length,1);assert.equal(peers[0].NetworkID,network);assert.match(peers[0].IPAddress,/^172\.[0-9]+\.[0-9]+\.[0-9]+$/);ports.push(peers[0].IPAddress);
   let ready=false;for(let n=0;n<40;n++){if(run(['exec',id,'pg_isready','-h','127.0.0.1','-U','postgres','-d','postgres']).status===0){ready=true;break;}await new Promise(resolve=>setTimeout(resolve,250));}assert.ok(ready,'disposable PostgreSQL readiness timed out');
  }
- const proof=spawnSync(process.execPath,['--max-old-space-size=256',new URL('./test-owned-buyer-copy-session.mjs',import.meta.url).pathname],{
+ const proof=spawnSync(process.execPath,['--max-old-space-size=256',new URL('./test-owned-buyer-migration-host-session.mjs',import.meta.url).pathname],{
   input:JSON.stringify({source:ports[0],target:ports[1]}),encoding:'utf8',timeout:90000,maxBuffer:65536,env:{PATH:'/usr/bin:/bin',ZOLA_DISPOSABLE_EXECUTOR:'1'},killSignal:'SIGKILL'});
  assert.equal(proof.status,0,proof.stderr?.slice(0,1500));console.log(proof.stdout.trim());
 }finally{

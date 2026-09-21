@@ -58,3 +58,10 @@ test('unknown outcome with no receipt never starts a transaction on reconciliati
  assert.equal((await executeOwnedBuyerMigration({plan,host:f.host,mode:'reconcile'})).status,'OWNED_BUYER_DATA_OUTCOME_UNKNOWN');assert.equal(f.events.includes('begin'),false);
  await assert.rejects(executeOwnedBuyerMigration({plan:{...plan},host:f.host,mode:'apply'}));
 });
+test('JSONB object-key ordering does not invalidate the same atomic receipt',async()=>{
+ const data=input(),plan=prepareOwnedBuyerMigrationExecution(data),f=fixture(data);
+ await executeOwnedBuyerMigration({plan,host:f.host,mode:'apply'});
+ const reorder=value=>Array.isArray(value)?value.map(reorder):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).reverse().map(key=>[key,reorder(value[key])])):value;
+ f.receipt=reorder(f.receipt);
+ assert.equal((await executeOwnedBuyerMigration({plan,host:f.host,mode:'reconcile'})).status,'OWNED_BUYER_DATA_RECONCILED');
+});

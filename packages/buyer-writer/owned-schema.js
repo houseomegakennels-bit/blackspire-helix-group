@@ -16,7 +16,7 @@ const expressions=new Set(['true','(user_id = auth.uid())','(auth.uid() = user_i
 // the owned cluster postgres role owns this minimal auth.uid dependency instead.
 export function prepareOwnedBuyerSchema(catalog){
  if(digest(catalog)!==OWNED_SOURCE_CATALOG_DIGEST)throw new Error('Owned Buyer schema catalog drift');
- const statements=['CREATE ROLE anon NOLOGIN','CREATE ROLE authenticated NOLOGIN','CREATE ROLE service_role NOLOGIN BYPASSRLS',
+ const statements=['CREATE ROLE anon NOLOGIN','CREATE ROLE authenticated NOLOGIN','CREATE ROLE service_role NOLOGIN NOBYPASSRLS',
   'SET LOCAL ROLE postgres','CREATE SCHEMA auth AUTHORIZATION postgres',`CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $owned_uid$${OWNED_AUTH_UID_BODY}$owned_uid$`,
   'REVOKE ALL ON SCHEMA auth FROM PUBLIC','GRANT USAGE ON SCHEMA auth TO anon,authenticated,service_role',
   'REVOKE ALL ON FUNCTION auth.uid() FROM PUBLIC','GRANT EXECUTE ON FUNCTION auth.uid() TO anon,authenticated,service_role'];
