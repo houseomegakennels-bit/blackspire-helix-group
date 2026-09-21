@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — final integrated source review and publication
+
+Independent review approves integrated runtime tree `7baf6b2ee6d2b8ee95d2da6029dc78045fee8fb1`. The final native observer and denial-session files exactly match their individually approved patches, and canonical documentation retains all earlier history. Root reran the combined focused lane: 23/23 passed. Build, lint, syntax/typecheck, secret scan, living-memory and whitespace checks pass. The earlier full runtime suite and frontend build remain the recorded broader evidence; exact final-source CI is still required.
+
+The authorized source branch is published as PR151 into `release/zola-production-live`. PR125 remains open for the controlled expected-head merge. No additional production configuration, database mutation, service startup or pointer switch occurred in this milestone. Zola remains offline; artifact preparation, exact candidate CI/receiver audit, controlled activation and final live acceptance remain outstanding.
+
 ## 2026-09-21 — full runtime validation and coordinated credential configuration
 
 The contained runtime suite at independently reviewed integration `c58bbb4` passes 2,273 tests: 2,170 passed, 103 intended skips and zero failures. All 238 intended files completed, the snapshot remained unchanged, output drained and no descendants survived. Candidate-read permits, exact-artifact collectors, receiver-origin transitions, API preparation, HELD writer publication and postmerge authority have independent approvals. The combined candidate/history/sequence lane passes 31/31. Subsequent preparation changes still require final exact-source CI.
