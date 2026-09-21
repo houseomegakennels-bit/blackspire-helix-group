@@ -1,5 +1,5 @@
 import {buyerWriterAdmissionHandleDigest} from '../buyer-writer/admitted-local-client.js';
-import {inspectReleaseSequence} from './commander-sequence.js';
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 
 const reject=()=>{throw new Error('Bounded writer admission journal rejected');};
 const keys=['releaseSha','operationId','workspace','principal','attemptId','inputDigest','checkOutputDigest'];
@@ -13,7 +13,7 @@ export function createBoundedWriterAdmissionJournal(stream,bound){
  if(!stream||typeof stream.events!=='function'||typeof stream.append!=='function'||!exact(bound,keys))reject();
  bound=Object.freeze({...bound});
  const inspect=()=>{
-  const events=stream.events(),sequence=inspectReleaseSequence(events),pending=sequence.pending;
+  const events=stream.events(),sequence=inspectReleaseSequenceHistory(events),pending=sequence.pending;
   if(!pending||pending.stage!=='bounded_writer_e2e'||sequence.context.releaseSha!==bound.releaseSha
    ||sequence.context.operationId!==bound.operationId||sequence.context.workspace!==bound.workspace
    ||sequence.context.principal!==bound.principal

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {hash} from './commander-journal.js';
-import {inspectReleaseSequence} from './commander-sequence.js';
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {HELD_ACCEPTANCE_CAPABILITIES,inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 import {compareDivisionSnapshots,validateOwnerWitness} from '../zola-six-reads/database-observer.js';
 import {digest as collectorDigest} from '../zola-six-reads/collector.js';
@@ -147,7 +147,7 @@ function mutationEvidence(context,binding,source){
  if(compared.netMutationDelta!==0||compared.tupleVersionDelta!==0||!after[0].evidence
   ||Object.entries(compared).some(([key,value])=>JSON.stringify(after[0].evidence[key])!==JSON.stringify(value))
   ||typeof after[0].evidence.ownerDenial!=='string'||typeof after[0].evidence.ownerScope!=='string')reject();
- const sequence=inspectReleaseSequence(context.journal.stream('release').events()),writer=sequence.outputs.bounded_writer_e2e;
+ const sequence=inspectReleaseSequenceHistory(context.journal.stream('release').events()),writer=sequence.outputs.bounded_writer_e2e;
  if(sequence.context.operationId!==binding.operationId||writer?.boundedWriterAcceptance!==true||writer.businessRowsChanged!==0
   ||writer.compensationComplete!==true||!digest(writer.receiptDigest)||!sequence.outputs.production_migrations||!sequence.outputs.migration_postconditions)reject();
  const allowedChanges={migrationDigest:hash({apply:sequence.outputs.production_migrations,postconditions:sequence.outputs.migration_postconditions}),

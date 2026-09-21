@@ -6,7 +6,7 @@ import {RECOVERY_ARTIFACT,RECOVERY_SHA} from '../zola-rollback/intake.js';
 import {validateIntegratedRecoveryReport} from '../zola-rollback/integrated-report.js';
 import {hash} from './commander-journal.js';
 import {verifyProtectedReleaseBackup} from './commander-backup.js';
-import {inspectReleaseSequence} from './commander-sequence.js';
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {inspectVpsCutoverHistory} from './commander-vps.js';
 import {inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 import {observeHeldLifecycle} from './held-lifecycle.js';
@@ -85,7 +85,7 @@ function recoveryProbe(){
   admissionCompatible:true,runtimeCompatible:true};
 }
 function acceptanceJournal(context,ids,{pending}){
- const state=inspectReleaseSequence(context.journal.stream('release').events());
+ const state=inspectReleaseSequenceHistory(context.journal.stream('release').events());
  if(!state.started||state.completed||state.context.operationId!==ids.operationId||state.context.releaseSha!==context.input.releaseSha
   ||state.context.recoverySha!==context.input.recoverySha||state.nextOrdinal!==14
   ||pending&&(state.pending?.stage!=='rollback_acceptance'||state.pending.attemptId!==ids.attemptId)

@@ -8,7 +8,7 @@ import {readReleaseProtectedBytes,verifyReleaseSource,verifyReleaseCi} from './c
 import {prepareN8nTransition,executeN8nTransition,createN8nTransport} from './commander-n8n.js';
 import {inspectAdmissionHoldHistory} from './admission-hold.js';
 import {inspectHeldLifecycleHistory} from './held-lifecycle.js';
-import {inspectReleaseSequence} from './commander-sequence.js';
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {inspectPostMergeAdmissionHistory} from './postmerge-admission.js';
 import {inspectVpsCutoverHistory} from './commander-vps.js';
 
@@ -42,7 +42,7 @@ const PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','protected_b
 const MIGRATION_PREFLIGHT_STAGES=Object.freeze(['source','ci','artifact_disk','protected_backup','migration_package','n8n_package','n8n_live','identity_recheck']);
 function history(journal){
  const events=journal.stream('release').events();
- inspectReleaseSequence(events);
+ inspectReleaseSequenceHistory(events);
  inspectPostMergeAdmissionHistory(events);
  inspectVpsCutoverHistory(events);
  inspectReleaseMigrationHistory(events);
