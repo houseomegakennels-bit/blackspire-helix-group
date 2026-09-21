@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — explicit successor release identity prepared
+
+Production input schema three names a new release operation and a separate fixed-path migration lineage plan while preserving the original source-security and copied-data receipt paths. It binds the fixed owned profile and rejects reuse of the predecessor operation or candidate. Admission and migration stages require the distinct successor proof status; schema two retains its original receipt semantics. Thirty-six focused binding, input, HELD and production composition tests pass. The lineage observer, retirement, configuration transition and corrected namespace runtime are still being integrated; no successor preparation, deployment, retirement or public opening has executed.
+
 ## 2026-09-21 — release integration published and final preparation assembled
 
 Draft PR #152 now targets the unchanged release branch; its first published head e5f95e7 passed the frontend preview build. CI completed 2,439 tests with 2,294 passes, 144 intentional skips and one failure: the exact source audit lacked the newly reviewed disposable full-order provider fixture. The local contained snapshot at 12d6094 reproduced that sole failure (2,438 tests, 2,293 passes, 144 skips), drained all output and left zero descendants. The individual synthetic fixture is now registered and the focused audit passes; final exact-head CI remains required.

@@ -1,4 +1,4 @@
-import {observeOwnedMigrationPrerequisites} from '../buyer-writer/owned-target-hardening-host.js';
+import {observeOwnedReleasePrerequisites,ownedReleasePrerequisiteInput,ownedReleasePrerequisiteStatus} from './owned-release-prerequisites.js';
 import {verifyHeldCanonicalWriter} from './held-writer-binding.js';
 import {createHash} from 'node:crypto';
 import pg from 'pg';
@@ -190,12 +190,11 @@ function fixedMigrations(context,dependencies={}){
 
 function fixedOwnedMigrations(context,dependencies={}){
  const release=context.release;
- if(release.schema!==2||release.backendProfile!=='owned-postgres-v1'||!digest(release.profileDigest))reject();
+ if(![2,3].includes(release.schema)||release.backendProfile!=='owned-postgres-v1'||!digest(release.profileDigest))reject();
  const inspect=async(stage,args,attempt=false)=>{
   const bound=binding(context,args,{attempt});
-  const proof=await(dependencies.observeOwned??observeOwnedMigrationPrerequisites)({releaseSha:release.releaseSha,operationId:bound.operationId,profileDigest:release.profileDigest,
-   sourceSecurityConfigurationFile:release.sourceSecurityConfigurationFile,ownedMigrationConfigurationFile:release.ownedMigrationConfigurationFile});
-  if(proof?.status!=='OWNED_MIGRATION_PREREQUISITES_VERIFIED'||proof.releaseSha!==release.releaseSha||proof.operationId!==bound.operationId||proof.profileDigest!==release.profileDigest
+  const proof=await(dependencies.observeOwned??(input=>observeOwnedReleasePrerequisites(release,input.operationId)))(ownedReleasePrerequisiteInput(release,bound.operationId));
+  if(proof?.status!==ownedReleasePrerequisiteStatus(release)||proof.releaseSha!==release.releaseSha||proof.operationId!==bound.operationId||proof.profileDigest!==release.profileDigest
    ||proof.sourceWritesDenied!==true||proof.targetBrowserSecurityVerified!==true||proof.originalSourceMigrationsReapplied!==false
    ||!['sourceSecurityManifestDigest','copyManifestDigest','targetHardeningBodySha256'].every(k=>digest(proof[k])))reject();
   const {status:verifiedStatus,...evidence}=proof;return Object.freeze({status:'PASS',evidence:Object.freeze({stage,...bound,...evidence,verificationStatus:verifiedStatus})});
@@ -208,5 +207,5 @@ function fixedOwnedMigrations(context,dependencies={}){
 
 export function createN8nMigrationProductionOperations(context,dependencies={}){
  if(!context?.release||context.release.releaseSha!==context.input?.releaseSha||typeof context.journal?.stream!=='function')reject();
- return Object.freeze({...fixedN8n(context,dependencies.n8n),...(context.release.schema===2?fixedOwnedMigrations(context,dependencies.migration):fixedMigrations(context,dependencies.migration))});
+ return Object.freeze({...fixedN8n(context,dependencies.n8n),...([2,3].includes(context.release.schema)?fixedOwnedMigrations(context,dependencies.migration):fixedMigrations(context,dependencies.migration))});
 }

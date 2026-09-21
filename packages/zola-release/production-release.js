@@ -15,8 +15,8 @@ const RELEASE_INPUT_KEYS=Object.freeze(['schema','kind','releaseSha','previousMa
 function sequenceInput(loadedInput){
  if(!exact(loadedInput,['value','inputDigest','source'])||!digest(loadedInput.inputDigest))reject();
  const value=loadedInput.value;
- if(!exact(value,[...RELEASE_INPUT_KEYS,...(value.schema===2?['backendProfile','profileDigest','sourceSecurityConfigurationFile','ownedMigrationConfigurationFile']:[])])||![1,2].includes(value.schema)
-  ||(value.schema===2&&(value.backendProfile!=='owned-postgres-v1'||!digest(value.profileDigest)||!['sourceSecurityConfigurationFile','ownedMigrationConfigurationFile'].every(key=>typeof value[key]==='string'&&value[key].startsWith('/var/lib/blackspire-operator/')&&!value[key].split('/').includes('..'))))||value.kind!=='zola_production_release'||![value.releaseSha,value.previousMainSha,value.recoverySha].every(sha)
+ if(!exact(value,[...RELEASE_INPUT_KEYS,...([2,3].includes(value.schema)?['backendProfile','profileDigest','sourceSecurityConfigurationFile','ownedMigrationConfigurationFile',...(value.schema===3?['operationId','successorLineageFile']:[])]:[])])||![1,2,3].includes(value.schema)
+  ||([2,3].includes(value.schema)&&(value.backendProfile!=='owned-postgres-v1'||!digest(value.profileDigest)||!['sourceSecurityConfigurationFile','ownedMigrationConfigurationFile'].every(key=>typeof value[key]==='string'&&value[key].startsWith('/var/lib/blackspire-operator/')&&!value[key].split('/').includes('..'))))||value.kind!=='zola_production_release'||![value.releaseSha,value.previousMainSha,value.recoverySha].every(sha)
   ||typeof value.workspace!=='string'||typeof value.principal!=='string')reject();
  ownedReleaseOperationId(value);
  const input={releaseSha:value.releaseSha,previousMainSha:value.previousMainSha,recoverySha:value.recoverySha,
@@ -90,7 +90,7 @@ export async function runProductionRelease({loadedInput,journal},dependencies={}
  try{
   const input=sequenceInput(loadedInput);
   const adapters=buildProductionAdapters({loadedInput,journal},dependencies);
-  return await (dependencies.sequence??runReleaseSequence)({input,journal,adapters,...(loadedInput.value.schema===2?{requestedOperationId:ownedReleaseOperationId(loadedInput.value)}:{})});
+  return await (dependencies.sequence??runReleaseSequence)({input,journal,adapters,...([2,3].includes(loadedInput.value.schema)?{requestedOperationId:ownedReleaseOperationId(loadedInput.value)}:{})});
  }catch{
   return{status:'STOPPED',releaseState:'FAIL_CLOSED',reason:'PRODUCTION_COMPOSITION_REJECTED',
    releaseReady:false,mutationSent:null,reconciliationRequired:true,resumeReady:true};

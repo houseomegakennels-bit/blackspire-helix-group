@@ -2254,3 +2254,7 @@ Published draft PR152 at e5f95e7 without changing the shared push guard. Fronten
 ## 2026-09-21 — owned n8n writer credential synchronization preparation
 
 Confirmed the owned source generates fresh writer ingress material while packages retain the approved n8n IDs. No existing n8n value-sync helper was found; the consumer synchronizer serves a separate authority. Official n8n source supports credential PATCH, and fresh metadata-only production GETs confirmed the exact writer ID/type/name and header schema. Added a narrow protected root command with inactive/drained workflow and stopped-service fences, durable intent/result, fixed writer-only domain restriction and no uncertain retry. Five focused tests pass. No production PATCH, workflow invocation or activation was performed; actual update access and end-to-end acceptance remain UNVERIFIED.
+
+## 2026-09-21 — successor release input binding
+
+Prepared schema-three operation and lineage bindings with original migration receipt paths preserved. Thirty-six focused tests pass. Runtime repair and successor host integration remain pending; no production mutation or OPEN occurred.
