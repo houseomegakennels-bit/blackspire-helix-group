@@ -8,6 +8,7 @@ export const ids=Object.freeze({
   operationId:'00000000-0000-4000-8000-000000000001',
   attemptId:'00000000-0000-4000-8000-000000000002',
   subject:'00000000-0000-4000-8000-000000000003',
+  jobId:'00000000-0000-4000-8000-000000000004',
 });
 export const keyId='zola-'+ids.releaseSha.slice(0,16);
 export const preparationRoot='/var/lib/blackspire-operator/preparation';
@@ -16,6 +17,7 @@ export const keyPath='/etc/blackspire/buyer-writer-signing-key-'+keyId+'.pem';
 export const sourceConfigurationFile=preparationRoot+'/source-v1.json';
 export const artifactRoot='/opt/blackspire-command/releases/'+ids.releaseSha;
 export const currentGatewayFile='/etc/blackspire-buyer-writer-gateway/gateway.json';
+export const acceptanceTargetPath='/var/lib/blackspire-operator/writer-acceptance.json';
 
 const secret=byte=>Buffer.alloc(32,byte).toString('base64url');
 export function inputFixture(overrides={}){
@@ -25,6 +27,12 @@ export function inputFixture(overrides={}){
   const sourceConfiguration={version:1,workspace:'blackspire-command',
     bindingFile:'/etc/blackspire/buyer-writer-binding.json',
     writerCredential:secret(1),issuerCredential:secret(2),creatorOid:16384,runtime,issuer};
+  const acceptanceTarget={schema:1,kind:'zola_bounded_writer_acceptance_target',
+    releaseSha:ids.releaseSha,workspace:'blackspire-command',principal:'zola-release',
+    capability:'buyer.writer.acceptance',jobId:ids.jobId,ownerId:ids.subject,
+    criteria:{state:'GA',county:'Fulton',property_type:'all',date_range_start:'2000-01-01',
+      date_range_end:'2000-01-01',min_purchases:1,cash_buyers_only:false,llc_buyers_only:false},
+    updatedAt:'2026-09-11T12:34:56.123456Z'};
   const currentGatewayConfiguration={version:2,workspace:'blackspire-command',
     socketPath:'/run/blackspire/buyer-writer.sock',gatewayCapability:secret(7),creatorOid:16384,
     authority:{releaseSha:'9'.repeat(40),operationId:'90000000-0000-4000-8000-000000000001',
@@ -36,7 +44,7 @@ export function inputFixture(overrides={}){
     preparationRoot,candidatePath,
     artifact:{releaseSha:ids.releaseSha,environment:'production',artifactDigest:'b'.repeat(64),
       status:'SEALED_ARTIFACT_VERIFIED',deployed:false,productionAccepted:false},
-    sourceConfiguration,currentGatewayConfiguration,...overrides,
+    sourceConfiguration,currentGatewayConfiguration,acceptanceTarget,...overrides,
   };
 }
 

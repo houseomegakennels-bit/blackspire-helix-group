@@ -1,5 +1,14 @@
 # Blackspire Canonical Session Log
 
+## 2026-09-21 — exact-head CI passed; acceptance-owner P1 repaired locally
+
+Consumed one authorized push for `22ae00ddc37bf0804028e78646de490dddd6aadb`, immediately restored `disabled://local-research-no-push`, verified PR/remote exact identity and kept all production services inactive. CI run `35545100781` failed attempt 1 only because npm registry's retiring quick-audit endpoint returned HTTP 400 after every earlier gate passed. A failed-job rerun on the same SHA completed successfully on attempt 2, including npm audit.
+
+The manual independent Codex review completed against exact `22ae00d` and found one P1: clean gateway preparation minted a random permit subject, but bounded writer acceptance sends the protected target `ownerId`, which the admitted protocol requires to equal the permit principal. The local correction derives the subject from the fixed protected acceptance target, validates that target, binds its full snapshot digest into durable preparation intent version 3, rechecks it before publication, verifies the published subject and blocks inspection/reconciliation after target value or inode drift.
+
+Focused validation passes 43/43. The pinned contained suite passes 2,172 total / 2,099 passed / 73 intended skips / zero failures; all 221 files completed with zero mutation, drained output and no surviving descendants. Lint, typecheck and whitespace checks pass. Build, secret scan, living-memory validation, commit, the newly authorized one-time push, fresh CI and independent re-review remain pending. No protected production state, service, database, provider, n8n workflow, release pointer, deployment, merge, cutover or OPEN transition changed.
+
+
 ## 2026-09-20 — PR #146 exact-head CI passed; latest review P1s repaired locally
 
 Pushed exact research head `dfbc4634b3a6f5c159fde4b76c1a4dc97caaa152` to PR #146 against `release/zola-production-live`. Blackspire Command CI run `35536941405` passed every step, including the complete suite, scoped Buyer Writer, native TLS/lock timeout, admitted gateway recovery, guarded migrations, build, packaging, lint, typecheck, secret scan, audit, shell, whitespace, read-only preflight and immutable metadata checks. All Vercel contexts passed. The push URL was immediately returned to `disabled://local-research-no-push`.

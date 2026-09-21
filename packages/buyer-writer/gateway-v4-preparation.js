@@ -18,8 +18,9 @@ const AUDIENCE='buyer-writer';
 const KEY_ROOT='/etc/blackspire';
 const PREPARATION_ROOT='/var/lib/blackspire-operator/preparation';
 const CURRENT_GATEWAY='/etc/blackspire-buyer-writer-gateway/gateway.json';
+const ACCEPTANCE_TARGET='/var/lib/blackspire-operator/writer-acceptance.json';
 const RELEASE_ROOT='/opt/blackspire-command/releases';
-const INTENT_VERSION=2;
+const INTENT_VERSION=3;
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const SHA=/^[a-f0-9]{40}$/;
@@ -37,6 +38,15 @@ function artifact(value,releaseSha){
     &&/^[a-f0-9]{64}$/.test(value.artifactDigest??'')
     &&value.status==='SEALED_ARTIFACT_VERIFIED'&&value.deployed===false
     &&value.productionAccepted===false;
+}
+function acceptanceTarget(value,releaseSha){
+  if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability',
+    'jobId','ownerId','criteria','updatedAt'])||value.schema!==1
+    ||value.kind!=='zola_bounded_writer_acceptance_target'||value.releaseSha!==releaseSha
+    ||value.workspace!==WORKSPACE||value.capability!=='buyer.writer.acceptance'
+    ||typeof value.principal!=='string'||!/^[a-z][a-z0-9-]{2,63}$/.test(value.principal)
+    ||!UUID.test(value.jobId??'')||!UUID.test(value.ownerId??''))fail();
+  return value;
 }
 function result(input,status,{candidateDigest,publicKeyDigest}={}){
   return Object.freeze({status,releaseSha:input.releaseSha,operationId:input.operationId,
@@ -219,7 +229,8 @@ function commitOwnedPreparation(io,prepared){
 }
 function validateInput(input){
   const keys=['releaseSha','operationId','attemptId','workspace','origin','keyId',
-    'preparationRoot','candidatePath','artifact','sourceConfiguration','currentGatewayConfiguration'];
+    'preparationRoot','candidatePath','artifact','sourceConfiguration','currentGatewayConfiguration',
+    'acceptanceTarget'];
   if(!exact(input,keys)||!SHA.test(input.releaseSha??'')||!UUID.test(input.operationId??'')
     ||!UUID.test(input.attemptId??'')||input.operationId===input.attemptId
     ||input.workspace!==WORKSPACE||input.origin!==ORIGIN
@@ -230,11 +241,12 @@ function validateInput(input){
   const source=validateBuyerWriterConfiguration(input.sourceConfiguration,
     {workspace:WORKSPACE,environment:'production'});
   const current=validateBuyerWriterGatewayServiceConfiguration(input.currentGatewayConfiguration);
+  const target=acceptanceTarget(input.acceptanceTarget,input.releaseSha);
   if(current.version!==2||source.units||source.rehearsalFile
     ||source.workspace!==current.workspace||source.creatorOid!==current.creatorOid
     ||!same(source.runtime,current.runtime)||!same(source.issuer,current.issuer)
     ||current.authority.releaseSha===input.releaseSha)fail();
-  return {source,current};
+  return {source,current,target};
 }
 function keyMaterial(generate){
   const pair=generate('ed25519');
@@ -246,15 +258,15 @@ function keyMaterial(generate){
   return {privateKey,publicKey};
 }
 export function buildBuyerWriterGatewayV4Preparation(input,{
-  now=Date.now,randomBytes:random=randomBytes,randomUUID:uuid=randomUUID,
+  now=Date.now,randomBytes:random=randomBytes,
   generateKeyPairSync:generate=generateKeyPairSync,apiUid,credentialGroupId,
 }={}){
   try{
-    const {source,current}=validateInput(input);
-    if(typeof now!=='function'||typeof random!=='function'||typeof uuid!=='function'
+    const {source,current,target}=validateInput(input);
+    if(typeof now!=='function'||typeof random!=='function'
       ||typeof generate!=='function'||!Number.isInteger(apiUid)||apiUid<=0
       ||!Number.isInteger(credentialGroupId)||credentialGroupId<=0)fail();
-    const admissionCredential=random(32).toString('base64url'),subject=uuid();
+    const admissionCredential=random(32).toString('base64url'),subject=target.ownerId;
     if(!UUID.test(subject)||!/^[A-Za-z0-9_-]{43}$/.test(admissionCredential)
       ||new Set([source.writerCredential,source.issuerCredential,current.gatewayCapability,
         source.runtime.password,source.issuer.password,admissionCredential]).size!==6)fail();
@@ -338,20 +350,20 @@ function deterministicStages(input,keyPath){
   return Object.freeze({candidateStagePath:path.join(PREPARATION_ROOT,`.zola-v4-${token}.candidate`),
     keyStagePath:path.join(KEY_ROOT,`.zola-v4-${token}.key`)});
 }
-function intentValue(input,source,current,artifactProof,state){
+function intentValue(input,source,current,acceptance,artifactProof,state){
   const stages=deterministicStages(input,state.input.keyPath);
   return Object.freeze({version:INTENT_VERSION,releaseSha:input.releaseSha,
     operationId:input.operationId,attemptId:input.attemptId,workspace:WORKSPACE,
     artifactDigest:artifactProof.artifactDigest,artifactProofDigest:stableDigest(artifactProof),
     sourceSnapshotDigest:stableDigest(source),currentSnapshotDigest:stableDigest(current),
-    candidatePath:input.candidatePath,keyPath:state.input.keyPath,...stages,
+    acceptanceTargetSnapshotDigest:stableDigest(acceptance),candidatePath:input.candidatePath,keyPath:state.input.keyPath,...stages,
     candidateDigest:state.digests.candidateDigest,keyDigest:digest(state.keyBytes),
     publicKeyDigest:state.digests.publicKeyDigest,candidateSize:state.candidateBytes.length,
     keySize:state.keyBytes.length});
 }
 const intentKeys=['version','releaseSha','operationId','attemptId','workspace',
   'artifactDigest','artifactProofDigest','sourceSnapshotDigest','currentSnapshotDigest',
-  'candidatePath','keyPath','candidateStagePath','keyStagePath','candidateDigest',
+  'acceptanceTargetSnapshotDigest','candidatePath','keyPath','candidateStagePath','keyStagePath','candidateDigest',
   'keyDigest','publicKeyDigest','candidateSize','keySize'];
 function validateIntent(value,input,identity){
   const keyPath=path.join(KEY_ROOT,'buyer-writer-signing-key-zola-'+input.releaseSha.slice(0,16)+'.pem');
@@ -362,7 +374,8 @@ function validateIntent(value,input,identity){
     ||value.candidatePath!==input.candidatePath||value.keyPath!==keyPath
     ||value.candidateStagePath!==stages.candidateStagePath||value.keyStagePath!==stages.keyStagePath
     ||![value.artifactDigest,value.artifactProofDigest,value.sourceSnapshotDigest,
-      value.currentSnapshotDigest,value.candidateDigest,value.keyDigest,value.publicKeyDigest]
+      value.currentSnapshotDigest,value.acceptanceTargetSnapshotDigest,value.candidateDigest,
+      value.keyDigest,value.publicKeyDigest]
       .every(item=>/^[a-f0-9]{64}$/.test(item??''))
     ||!Number.isSafeInteger(value.candidateSize)||value.candidateSize<2||value.candidateSize>65536
     ||!Number.isSafeInteger(value.keySize)||value.keySize<1||value.keySize>4096
@@ -477,6 +490,9 @@ async function loadPreparationState(input,{io=fs,aclTool=spawnSync,
     ||!Number.isInteger(identity.writerGroupId)||identity.writerGroupId<=0)fail();
   const source=readSnapshot(input.sourceConfigurationFile,{groupId:0,maxBytes:65536,io,aclTool});
   const current=readSnapshot(CURRENT_GATEWAY,{groupId:identity.writerGroupId,maxBytes:65536,io,aclTool});
+  const acceptance=readSnapshot(ACCEPTANCE_TARGET,{groupId:identity.credentialGroupId,
+    maxBytes:32768,io,aclTool});
+  acceptanceTarget(acceptance.value,input.releaseSha);
   const artifactProof=await inspectArtifact({artifactRoot:input.artifactRoot,
     releaseSha:input.releaseSha,environment:'production'});
   const intentPath=buyerWriterGatewayV4IntentPath(input.candidatePath);
@@ -489,8 +505,9 @@ async function loadPreparationState(input,{io=fs,aclTool=spawnSync,
     ||intent.artifactDigest!==artifactProof.artifactDigest
     ||intent.artifactProofDigest!==stableDigest(artifactProof)
     ||intent.sourceSnapshotDigest!==stableDigest(source)
-    ||intent.currentSnapshotDigest!==stableDigest(current))fail();
-  return {identity,intent,intentPath,source,current,artifactProof};
+    ||intent.currentSnapshotDigest!==stableDigest(current)
+    ||intent.acceptanceTargetSnapshotDigest!==stableDigest(acceptance))fail();
+  return {identity,intent,intentPath,source,current,acceptance,artifactProof};
 }
 export async function inspectBuyerWriterGatewayV4Preparation(input,deps={}){
   try{
@@ -648,13 +665,17 @@ async function prepareHigh(input,{
       io,aclTool});
     const current=readSnapshot(CURRENT_GATEWAY,{groupId:identity.writerGroupId,
       maxBytes:65536,io,aclTool});
+    const acceptance=readSnapshot(ACCEPTANCE_TARGET,{groupId:identity.credentialGroupId,
+      maxBytes:32768,io,aclTool});
+    acceptanceTarget(acceptance.value,input.releaseSha);
     const observed=await inspectArtifact({artifactRoot:input.artifactRoot,
       releaseSha:input.releaseSha,environment:'production'});
     const builtInput={releaseSha:input.releaseSha,operationId:input.operationId,
       attemptId:input.attemptId,workspace:WORKSPACE,origin:ORIGIN,
       keyId:`zola-${input.releaseSha.slice(0,16)}`,preparationRoot:PREPARATION_ROOT,
       candidatePath:input.candidatePath,artifact:observed,
-      sourceConfiguration:source.value,currentGatewayConfiguration:current.value};
+      sourceConfiguration:source.value,currentGatewayConfiguration:current.value,
+      acceptanceTarget:acceptance.value};
     const intentPath=buyerWriterGatewayV4IntentPath(input.candidatePath);
     const completePath=buyerWriterGatewayV4CompletePath(input.candidatePath);
     safeDirectory(io,KEY_ROOT);safeDirectory(io,PREPARATION_ROOT);
@@ -671,14 +692,17 @@ async function prepareHigh(input,{
       maxBytes:65536,io,aclTool});
     const freshCurrent=readSnapshot(CURRENT_GATEWAY,{groupId:identity.writerGroupId,
       maxBytes:65536,io,aclTool});
+    const freshAcceptance=readSnapshot(ACCEPTANCE_TARGET,{groupId:identity.credentialGroupId,
+      maxBytes:32768,io,aclTool});
+    acceptanceTarget(freshAcceptance.value,input.releaseSha);
     const freshArtifact=await inspectArtifact({artifactRoot:input.artifactRoot,
       releaseSha:input.releaseSha,environment:'production'});
     if(!snapshotSame(source,freshSource)||!snapshotSame(current,freshCurrent)
-      ||!same(observed,freshArtifact))fail();
+      ||!snapshotSame(acceptance,freshAcceptance)||!same(observed,freshArtifact))fail();
     const publicationIdentity=await resolveIdentity();
     if(!same(identity,publicationIdentity))fail();
     const state=plans.get(plan);let keyStage,candidateStage,intentPublished=false;
-    const intent=intentValue(input,source,current,observed,state);
+    const intent=intentValue(input,source,current,acceptance,observed,state);
     try{
       writeRootRecord(io,aclTool,intentPath,intent);intentPublished=true;
       keyStage=stageFile(io,aclTool,state.input.keyPath,intent.keyStagePath,state.keyBytes,
@@ -691,7 +715,7 @@ async function prepareHigh(input,{
       const prepared=result(state.input,'GATEWAY_V4_PREPARED',state.digests);
       const finalIdentity=await resolveIdentity();
       if(!same(publicationIdentity,finalIdentity))fail();
-      verifyPublished(io,aclTool,prepared,finalIdentity,readSnapshot);
+      verifyPublished(io,aclTool,prepared,finalIdentity,readSnapshot,acceptance.value);
       if(!heldMatches(io,state.input.candidatePath,candidateStage.fd)
         ||!heldMatches(io,state.input.keyPath,keyStage.fd))fail();
       writeRootRecord(io,aclTool,completePath,completeValue(intent));
@@ -745,9 +769,12 @@ function highInput(value){
 function snapshotSame(left,right){
   return same(left?.identity,right?.identity)&&same(left?.value,right?.value);
 }
-function verifyPublished(io,aclTool,prepared,identity,readSnapshot){
+function verifyPublished(io,aclTool,prepared,identity,readSnapshot,target){
   const candidate=readSnapshot(prepared.candidatePath,{groupId:0,maxBytes:65536,io,aclTool});
-  validateBuyerWriterGatewayProvisioningConfiguration(candidate.value,{workspace:WORKSPACE});
+  const validated=validateBuyerWriterGatewayProvisioningConfiguration(
+    candidate.value,{workspace:WORKSPACE});
+  const permit=JSON.parse(validated.operationPermitConfiguration);
+  if(permit.subject!==acceptanceTarget(target,prepared.releaseSha).ownerId)fail();
   const candidateBytes=Buffer.from(JSON.stringify(candidate.value)+'\n');
   if(digest(candidateBytes)!==prepared.candidateDigest)fail();
   let fd;
@@ -766,7 +793,7 @@ function verifyPublished(io,aclTool,prepared,identity,readSnapshot){
 export function prepareBuyerWriterGatewayV4(input,deps={}){
   const direct=exact(input,['releaseSha','operationId','attemptId','workspace','origin',
     'keyId','preparationRoot','candidatePath','artifact','sourceConfiguration',
-    'currentGatewayConfiguration']);
+    'currentGatewayConfiguration','acceptanceTarget']);
   if(!direct)return prepareHigh(input,deps);
   try{
     const plan=buildBuyerWriterGatewayV4Preparation(input,deps);
