@@ -1,3 +1,5 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
+import {rolloverOwnedSuccessorHeld} from './owned-successor-held.js';
 import {observeOwnedReleasePrerequisites,ownedReleasePrerequisiteInput,ownedReleasePrerequisiteStatus} from './owned-release-prerequisites.js';
 import {ensureHeldWriterBinding} from './held-writer-binding.js';
 import {runPremergeReadPermit} from './premerge-read-permit.js';
@@ -107,12 +109,13 @@ async function startCandidateServices(context,binding){
 }
 export async function establishCandidateHeld(context,{root=RELEASE_ADMISSION_ROOT,
  groupId=fs.existsSync(root)?fs.statSync(root).gid:fs.statSync('/etc/blackspire').gid,
- engage=engageReleaseAdmissionHold,reconcile=reconcileReleaseAdmissionHold,
+ engage=engageReleaseAdmissionHold,reconcile=reconcileReleaseAdmissionHold,successorHold=rolloverOwnedSuccessorHeld,
  prepare=prepareCandidateDeployment,lifecycle=runHeldLifecycle,sequence=inspectReleaseSequenceHistory,
  ownedStore=()=>import('./owned-store-transition.js').then(module=>module.createOwnedStoreTransition())}={}){
- const events=context.journal.stream('release').events();
+ const fullEvents=context.journal.stream('release').events(),events=partitionRetiredReleaseHistory(fullEvents).current;
  const confirmed=events.filter(e=>e.type==='release_hold_result').at(-1);
- if(inspectAdmissionHoldHistory(events))reconcile({journal:context.journal},{root,groupId});
+ if(context.release?.schema===3&&!confirmed){await successorHold({releaseSha:context.input.releaseSha,operationId:context.release.operationId,profileDigest:context.release.profileDigest,successorLineageFile:context.release.successorLineageFile,journal:context.journal});}
+ else if(inspectAdmissionHoldHistory(events))reconcile({journal:context.journal},{root,groupId});
  else if(!confirmed)engage({releaseSha:context.input.releaseSha,journal:context.journal},{root,groupId});
  else if(confirmed.releaseSha!==context.input.releaseSha)reject();
  // Exact retained HELD state is revalidated under the candidate and lifecycle
