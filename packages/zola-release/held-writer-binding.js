@@ -19,9 +19,9 @@ const generation=v=>/^[a-f0-9]{32}$/.test(v??'');
 const stages=['admission_lease','post_merge_held_epoch'];
 const steps=['retire_commit','retire_binding','publish'];
 const inputKeys=['releaseSha','stage','operationId','attemptId','inputDigest','checkOutputDigest'];
-const planKeys=[...inputKeys,'runId','apiGeneration','workerGeneration','artifactDigest','configurationDigest','priorBindingDigest','priorCommitDigest'];
+const planKeys=[...inputKeys,'runId','apiGeneration','workerGeneration','artifactDigest','configurationDigest','lifecycleDigest','priorBindingDigest','priorCommitDigest'];
 function validInput(v){if(!exact(v,inputKeys)||!/^[a-f0-9]{40}$/.test(v.releaseSha??'')||!stages.includes(v.stage)||!uuid(v.operationId)||!uuid(v.attemptId)||!digest(v.inputDigest)||!digest(v.checkOutputDigest))reject();return v;}
-function validPlan(p){validInput(Object.fromEntries(inputKeys.map(k=>[k,p[k]])));if(!exact(p,planKeys)||!uuid(p.runId)||!generation(p.apiGeneration)||!generation(p.workerGeneration)||p.apiGeneration===p.workerGeneration||!digest(p.artifactDigest)||!digest(p.configurationDigest)
+function validPlan(p){validInput(Object.fromEntries(inputKeys.map(k=>[k,p[k]])));if(!exact(p,planKeys)||!uuid(p.runId)||!generation(p.apiGeneration)||!generation(p.workerGeneration)||p.apiGeneration===p.workerGeneration||!digest(p.artifactDigest)||!digest(p.configurationDigest)||!digest(p.lifecycleDigest)
  ||!((p.priorBindingDigest===null&&p.priorCommitDigest===null)||(digest(p.priorBindingDigest)&&digest(p.priorCommitDigest)))||p.stage==='admission_lease'&&p.priorBindingDigest!==null)reject();return p;}
 function validResult(row,p){if(!exact(row,['schema','type','plan','bindingDigest','commitDigest'])||!digest(row.bindingDigest)||!digest(row.commitDigest)||!same(row.plan,p))reject();}
 export function inspectHeldWriterBindingHistory(events){
@@ -50,7 +50,7 @@ const result=p=>({status:'HELD_WRITER_BINDING_VERIFIED',releaseSha:p.plan.releas
 const sync=directory=>{const fd=fs.openSync(directory,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}};
 export function createHeldWriterBindingHost({root=RELEASE_ADMISSION_ROOT,profile=collectInstalledHeldWriterProfile,observe=observeHeldLifecycle,acquire=acquireReleaseAdmissionLock,publish=publishVerifiedBuyerWriterActivation,
  inspectBinding=context=>createBuyerWriterBindingObserver({...context,inspectRuntime:createBuyerWriterRuntimeInspector(context)})(),checkReadiness=checkBuyerWriterHeldReadiness}={}){
- let lease,initial,held;
+ let lease,initial,held,initialProof;
  const state=()=>{const file=path.join(root,'state.json');return validateReleaseAdmissionState(readRootOwnedJson(file,{groupId:fs.lstatSync(file).gid,maxBytes:2048}));};
  const heldCheck=()=>{lease.assertIdentity();if(!same(state(),held)||held.mode!=='held')reject();};
  const snapshot=file=>readRootOwnedJsonDigestSnapshot(file,{groupId:initial.context.credentialGroupId,maxBytes:4096});
@@ -59,7 +59,7 @@ export function createHeldWriterBindingHost({root=RELEASE_ADMISSION_ROOT,profile
  const check=async p=>{
   heldCheck();if(held.runId!==p.runId||held.releaseSha!==p.releaseSha||!((held.apiGeneration===null&&held.workerGeneration===null)||(held.apiGeneration===p.apiGeneration&&held.workerGeneration===p.workerGeneration)))reject();const current=await profile(p.releaseSha),proof=validateHeldLifecycleProof(await observe({releaseSha:p.releaseSha,runId:p.runId}),p);
   if(!same(current,initial)||current.artifactDigest!==p.artifactDigest||current.configurationDigest!==p.configurationDigest||current.context.apiGeneration!==p.apiGeneration||current.workerGeneration!==p.workerGeneration
-   ||proof.artifactDigest!==p.artifactDigest||proof.api.generation!==p.apiGeneration||proof.worker.generation!==p.workerGeneration||proof.api.pid!==current.context.apiPid)reject();heldCheck();
+   ||hash(proof)!==p.lifecycleDigest||proof.artifactDigest!==p.artifactDigest||proof.api.generation!==p.apiGeneration||proof.worker.generation!==p.workerGeneration||proof.api.pid!==current.context.apiPid)reject();heldCheck();
  };
  const inspectCommitted=async p=>{
   await check(p);const ctx=initial.context,proof=await inspectBinding(ctx);
@@ -69,8 +69,8 @@ export function createHeldWriterBindingHost({root=RELEASE_ADMISSION_ROOT,profile
  };
  return {
   async lease(releaseSha){if(process.getuid()!==0)reject();const gid=fs.lstatSync(path.join(root,'state.json')).gid;lease=acquire({root,exclusive:false,allowPending:true,owner:0,groupId:gid});held=state();initial=await profile(releaseSha);
-   if(held.mode!=='held'||held.releaseSha!==releaseSha)reject();heldCheck();return lease;},
-  async prepare(input,prior){const p=validPlan({...input,runId:held.runId,apiGeneration:initial.context.apiGeneration,workerGeneration:initial.workerGeneration,artifactDigest:initial.artifactDigest,configurationDigest:initial.configurationDigest,
+   if(held.mode!=='held'||held.releaseSha!==releaseSha)reject();initialProof=validateHeldLifecycleProof(await observe({releaseSha,runId:held.runId}),held);heldCheck();return lease;},
+  async prepare(input,prior){const p=validPlan({...input,runId:held.runId,apiGeneration:initial.context.apiGeneration,workerGeneration:initial.workerGeneration,artifactDigest:initial.artifactDigest,configurationDigest:initial.configurationDigest,lifecycleDigest:hash(initialProof),
    priorBindingDigest:prior?.result.bindingDigest??null,priorCommitDigest:prior?.result.commitDigest??null});await check(p);
    for(const step of steps.slice(0,2)){const {file,archive,prior:expected}=paths(p,step);if(!absent(archive)||(expected===null?!absent(file):snapshot(file).digest!==expected))reject();}
    return p;},check,

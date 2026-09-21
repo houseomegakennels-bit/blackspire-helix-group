@@ -8,7 +8,7 @@ const candidate='a'.repeat(40),main='b'.repeat(40);
 function fixture({lostStep=null,noEffect=false,alterInput=null,omitCandidate=false}={}){
  const input={releaseSha:candidate,previousMainSha:'c'.repeat(40),recoverySha:'d'.repeat(40),protectedInputDigest:'e'.repeat(64),workspace:'zola-production',principal:'blackspire-release-root'};input.inputDigest=hash(input);
  const events=[],journal={stream:()=>({events:()=>structuredClone(events),append:e=>events.push(structuredClone(e))})},calls=[],effects=new Set();let lost=false,drift=false;
- const host={async lease(sha){calls.push('lease:'+sha);},async prepare(input,prior){return {...input,runId:'11111111-1111-4111-8111-111111111111',apiGeneration:'1'.repeat(32),workerGeneration:'2'.repeat(32),artifactDigest:'3'.repeat(64),configurationDigest:'4'.repeat(64),priorBindingDigest:prior?.result.bindingDigest??null,priorCommitDigest:prior?.result.commitDigest??null};},
+ const host={async lease(sha){calls.push('lease:'+sha);},async prepare(input,prior){return {...input,runId:'11111111-1111-4111-8111-111111111111',apiGeneration:'1'.repeat(32),workerGeneration:'2'.repeat(32),artifactDigest:'3'.repeat(64),configurationDigest:'4'.repeat(64),lifecycleDigest:'9'.repeat(64),priorBindingDigest:prior?.result.bindingDigest??null,priorCommitDigest:prior?.result.commitDigest??null};},
   async check(){if(drift)throw new Error('drift');},async execute(step,p){assert.equal(events.at(-1).type,'held_writer_binding_step_intent');calls.push('effect:'+p.stage+':'+step);if(!noEffect)effects.add(p.stage+':'+step);if(step===lostStep&&!lost){lost=true;throw new Error('unknown');}},
   async observe(step,p){return effects.has(p.stage+':'+step);},async inspect(p){if(!effects.has(p.stage+':publish'))throw new Error('not committed');return{bindingDigest:(p.stage==='admission_lease'?'5':'7').repeat(64),commitDigest:(p.stage==='admission_lease'?'6':'8').repeat(64)};},close(){calls.push('close');}};
  const invoke=(call,stage)=>ensureHeldWriterBinding({journal,releaseSha:stage==='admission_lease'?candidate:main,stage,operationId:call.state.context.operationId,attemptId:call.attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest,...(alterInput??{})},{host});
@@ -56,6 +56,7 @@ test('native host retires only exact prior protected files while holding shared 
   for(const step of ['retire_commit','retire_binding','publish']){await host.execute(step,p);assert.equal(await host.observe(step,p),true);}
   assert.equal(fs.readFileSync(filename+'.retired-'+input.attemptId,'utf8'),previousBinding);
   assert.equal(fs.readFileSync(filename+'.commit.json.retired-'+input.attemptId,'utf8'),previousCommit);assert.equal(reads,1);
+  proof.worker.startTime='102';await assert.rejects(host.check(p));proof.worker.startTime='101';
   state.runId='44444444-4444-4444-8444-444444444444';fs.writeFileSync(path.join(root,'state.json'),JSON.stringify(state)+'\n');await assert.rejects(host.check(p));
  }finally{host.close();}assert.equal(held,false);
 });
