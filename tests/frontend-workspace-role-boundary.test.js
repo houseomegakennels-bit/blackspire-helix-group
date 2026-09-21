@@ -9,7 +9,7 @@ const executable=source=>stripTypeScriptTypes(source.replace(/^import[^;]+;\s*/g
 function fixture(role,expiresAt) {
   const operator=role===null?null:{id:'operator',app_metadata:{blackspire_role:role,demo_expires_at:expiresAt}};
   const response={json:(body,options={})=>({body,status:options.status??200})};
-  const guards=vm.runInNewContext(`${executable(read('lib/operator-access.ts'))}\n({guardSignedInApi,requireSignedInPage})`,{
+  const guards=vm.runInNewContext(`${executable(read('lib/operator-access.ts'))}\n({guardSignedInApi,guardWorkspaceApi,requireSignedInPage,requireWorkspacePage})`,{
     getAuthenticatedOperator:async()=>operator,listAuthUsers:async()=>[{id:'original-admin'},{id:'operator'}],
     NextResponse:response,redirect:location=>{throw new Error(`redirect:${location}`);},
   });
@@ -48,4 +48,16 @@ test('explicit admin and beta operators retain Studio and signed-in page access'
     assert.equal(f.effects(),2);
     assert.equal((await f.guards.requireSignedInPage()).role,role);
   }
+});
+
+test('unexpired demo operators can use the real-estate workspace without gaining Studio access',async()=>{
+  const active=fixture('demo_operator','2999-01-01T00:00:00Z');
+  assert.equal((await active.guards.guardWorkspaceApi()),null);
+  await active.guards.requireWorkspacePage();
+  assert.equal((await active.guards.guardSignedInApi()).status,403);
+  await assert.rejects(async()=>active.guards.requireSignedInPage(),error=>error.message==='redirect:/');
+
+  const expired=fixture('demo_operator','2000-01-01T00:00:00Z');
+  assert.equal((await expired.guards.guardWorkspaceApi()).status,403);
+  await assert.rejects(async()=>expired.guards.requireWorkspacePage(),error=>error.message==='redirect:/demo-expired');
 });

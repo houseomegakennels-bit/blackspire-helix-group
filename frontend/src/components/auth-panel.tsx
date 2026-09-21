@@ -95,7 +95,7 @@ export function AuthPanel() {
         ? "/workspaces"
         : payload.role === "beta_tester"
           ? "/beta"
-          : payload.role === "demo_viewer"
+          : payload.role === "demo_viewer" || payload.role === "demo_operator"
             ? "/demo"
             : "/";
       router.push(destination);

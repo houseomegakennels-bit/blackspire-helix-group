@@ -13,7 +13,7 @@ import { getAuthenticatedOperator, listAuthUsers } from "@/lib/buyer-engine-auth
  * existing accounts are migrated to explicit roles.
  */
 
-export type OperatorRole = "admin" | "beta_tester" | "demo_viewer" | "client_only" | "anonymous";
+export type OperatorRole = "admin" | "beta_tester" | "demo_viewer" | "demo_operator" | "client_only" | "anonymous";
 
 export type OperatorContext = {
   role: OperatorRole;
@@ -26,13 +26,14 @@ async function resolveRole(): Promise<OperatorContext> {
   const operator = await getAuthenticatedOperator();
   if (!operator?.id) return { role: "anonymous", operatorId: null, expiresAt: null, expired: false };
   const appRole = operator.app_metadata?.blackspire_role;
-  const explicitRole = typeof appRole === "string" && ["admin", "beta_tester", "demo_viewer", "client_only"].includes(appRole)
+  const explicitRole = typeof appRole === "string" && ["admin", "beta_tester", "demo_viewer", "demo_operator", "client_only"].includes(appRole)
     ? appRole as Exclude<OperatorRole, "anonymous">
     : null;
   const expiresAt = typeof operator.app_metadata?.demo_expires_at === "string"
     ? operator.app_metadata.demo_expires_at
     : null;
-  const expired = explicitRole === "demo_viewer" && Boolean(expiresAt && Date.parse(expiresAt) <= Date.now());
+  const expired = (explicitRole === "demo_viewer" || explicitRole === "demo_operator")
+    && Boolean(expiresAt && Date.parse(expiresAt) <= Date.now());
   if (explicitRole) return { role: explicitRole, operatorId: operator.id, expiresAt, expired };
   const users = await listAuthUsers().catch(() => []);
   const isAdmin = users.length > 0 && users[0]?.id === operator.id;
@@ -64,13 +65,21 @@ export async function guardAdminApi(): Promise<NextResponse | null> {
 
 /** For API route handlers — require an admitted workspace operator (beta or admin). */
 export async function guardSignedInApi(): Promise<NextResponse | null> {
-  return guardWorkspaceApi();
-}
-
-export async function guardWorkspaceApi(): Promise<NextResponse | null> {
   const { role } = await resolveRole();
   if (role === "anonymous") return NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 });
   if (role !== "admin" && role !== "beta_tester") {
+    return NextResponse.json({ ok: false, error: "Operator access is required." }, { status: 403 });
+  }
+  return null;
+}
+
+export async function guardWorkspaceApi(): Promise<NextResponse | null> {
+  const context = await resolveRole();
+  if (context.role === "anonymous") return NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 });
+  if (context.role === "demo_operator" && context.expired) {
+    return NextResponse.json({ ok: false, error: "Demonstration access has expired." }, { status: 403 });
+  }
+  if (context.role !== "admin" && context.role !== "beta_tester" && context.role !== "demo_operator") {
     return NextResponse.json({ ok: false, error: "Workspace access is required." }, { status: 403 });
   }
   return null;
@@ -92,16 +101,19 @@ export async function requireSignedInPage(): Promise<{ role: OperatorRole }> {
 }
 
 export async function requireWorkspacePage(): Promise<void> {
-  const { role } = await resolveRole();
-  if (role === "anonymous") redirect("/auth");
-  if (role !== "admin" && role !== "beta_tester") redirect(role === "demo_viewer" ? "/demo" : "/");
+  const context = await resolveRole();
+  if (context.role === "anonymous") redirect("/auth");
+  if (context.role === "demo_operator" && context.expired) redirect("/demo-expired");
+  if (context.role !== "admin" && context.role !== "beta_tester" && context.role !== "demo_operator") {
+    redirect(context.role === "demo_viewer" ? "/demo" : "/");
+  }
 }
 
 export async function requireDemoViewerPage(): Promise<OperatorContext> {
   const context = await resolveRole();
   if (context.role === "anonymous") redirect("/demo/login");
   if (context.role === "admin") return context;
-  if (context.role !== "demo_viewer") redirect("/");
+  if (context.role !== "demo_viewer" && context.role !== "demo_operator") redirect("/");
   if (context.expired) redirect("/demo-expired");
   return context;
 }
