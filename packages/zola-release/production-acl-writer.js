@@ -199,7 +199,7 @@ function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJson
  const snapshot=readSnapshot(file,{groupId,maxBytes:32768}),value=snapshot.value;
  if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability','jobId','ownerId','criteria','updatedAt'])
   ||value.schema!==1||value.kind!=='zola_bounded_writer_acceptance_target'||value.releaseSha!==bound.releaseSha
-  ||value.workspace!==bound.workspace||value.principal!==bound.principal||value.capability!==WRITER_CAPABILITY
+  ||value.workspace!==WRITER_WORKSPACE||value.principal!==bound.principal||value.capability!==WRITER_CAPABILITY
   ||!uuid(value.jobId)||!uuid(value.ownerId))reject();
  let captured;
  try{captured=captureBuyerJobVersion({...value.criteria,updated_at:value.updatedAt});}catch{reject();}
@@ -212,7 +212,10 @@ async function withFixedWriter(bound,work,{groupId,readAcceptanceSnapshot=readRo
   if(typeof acceptanceFile!=='string'||acceptanceFile!==WRITER_ACCEPTANCE_TARGET_FILE||typeof work!=='function'
    ||typeof openAdmittedClient!=='function')reject();
   const gid=groupId??apiGroupId(),acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
-  database=await openAdmittedClient(bound);
+  // The release journal is scoped to zola-production; the installed gateway,
+  // protected acceptance job and database permits use the fixed writer tenant.
+  // Preserve all release/attempt/principal bindings while selecting that tenant.
+  database=await openAdmittedClient(Object.freeze({...bound,workspace:WRITER_WORKSPACE}));
   if(database?.isHealthy?.()!==true||typeof database.runtimeQuery!=='function'||typeof database.issuerQuery!=='function'||typeof database.close!=='function')reject();
   const result=await work(database,acceptance.target);
   const acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
