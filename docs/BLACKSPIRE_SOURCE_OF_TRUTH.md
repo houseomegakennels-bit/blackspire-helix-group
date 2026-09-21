@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — successor runtime independently verified after reconnect
+
+Commander reconnection confirmed the same four production service processes and candidate2636 pointer; no production stop or successor deployment had occurred. The integrated successor runtime passed an independent actual non-root mount/network namespace test with the native repository daemon, authenticated IPC readiness, real PostgreSQL SCRAM over verified TLS, complete deployed artifact verification and fixed read-only systemd bus observations. Generation drift and fresh-process artifact tampering refuse. No fixture processes or containers remained before the rerun. Twenty composed lineage/retirement/operation checks and twelve production/chained-history checks pass, including actual schema-three original-receipt/new-operation separation. Configuration restoration/running observation, gateway unit publication, HELD rollover and successor preparation remain under implementation/review; Zola remains held.
+
 ## 2026-09-21 — explicit successor release identity prepared
 
 Production input schema three names a new release operation and a separate fixed-path migration lineage plan while preserving the original source-security and copied-data receipt paths. It binds the fixed owned profile and rejects reuse of the predecessor operation or candidate. Admission and migration stages require the distinct successor proof status; schema two retains its original receipt semantics. Thirty-six focused binding, input, HELD and production composition tests pass. The lineage observer, retirement, configuration transition and corrected namespace runtime are still being integrated; no successor preparation, deployment, retirement or public opening has executed.

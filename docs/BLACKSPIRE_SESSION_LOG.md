@@ -2271,3 +2271,7 @@ Read-only diagnosis confirmed that the deployed store could not use root-only se
 ## 2026-09-21 — partial2636 retirement implementation
 
 Prepared a fixed, append-only partial-candidate retirement helper with retained stop intent/result and exact successor lineage. Five core fault tests pass using the actual retained116/9-event fixtures and chained parser. Read-only production inspection confirmed pending writer publication has no binding/commit/staged files. No production stop, retirement, database write or successor deployment was executed by this work. Final independent review and native operational execution remain separate gates.
+
+## 2026-09-21 — reconnect and successor runtime verification
+
+Verified unchanged production candidate/processes and independently passed the integrated confined runtime with actual disposable PostgreSQL TLS readiness. Strengthened schema-three production and n8n history tests; focused checks pass. No production stop, deployment or OPEN occurred.
