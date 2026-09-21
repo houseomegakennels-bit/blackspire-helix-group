@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {readFileSync} from 'node:fs';
+import {OWNED_REPOSITORY_FRESH_CREDENTIAL_SQL,verifyOwnedRepositoryCredentialObservation} from '../packages/buyer-writer/owned-postgres-materializer.js';
 import {OWNED_DATABASE_BOUNDARY_SQL,verifyOwnedDatabaseBoundary} from '../packages/buyer-writer/owned-database-evidence.js';
 import {OWNED_POSTGRES_TARGET,OWNED_POSTGRES_BOOTSTRAP_SQL,OWNED_POSTGRES_TEMPLATE_SQL,OWNED_POSTGRES_OBSERVE_SQL} from '../packages/buyer-writer/owned-postgres.js';
 assert.equal(process.versions.node,'22.23.1');
@@ -36,7 +37,11 @@ try{
  sql(`SET SESSION AUTHORIZATION postgres;SET blackspire.buyer_writer_creator_oid='${observation.creatorOid}';`+installer,'postgres',true);
  sql('REVOKE ALL ON SEQUENCE net.queue_id FROM PUBLIC;DROP SCHEMA net CASCADE;');
  sql(`SET SESSION AUTHORIZATION postgres;SET blackspire.buyer_writer_creator_oid='${observation.creatorOid}';`+installer);
- console.log(JSON.stringify({ok:true,checks:8,postgres:'17.6',strictInstallerUnchanged:true,productionTouched:false}));
+ sql('CREATE ROLE buyer_repository_login NOLOGIN;CREATE ROLE buyer_capability_login NOLOGIN;');
+ assert.deepEqual(verifyOwnedRepositoryCredentialObservation(JSON.parse(sql(OWNED_REPOSITORY_FRESH_CREDENTIAL_SQL)),profile),{fresh:true});
+ sql("ALTER ROLE buyer_repository_login PASSWORD 'disposable-only';");
+ assert.deepEqual(verifyOwnedRepositoryCredentialObservation(JSON.parse(sql(OWNED_REPOSITORY_FRESH_CREDENTIAL_SQL)),profile),{fresh:false});
+ console.log(JSON.stringify({ok:true,checks:10,postgres:'17.6',strictInstallerUnchanged:true,productionTouched:false}));
 }finally{
  if(id){const c=JSON.parse(checked(['inspect',id]))[0];assert.equal(c.Config.Labels['blackspire.test-owner'],owner);checked(['rm','-f',id]);}
 }

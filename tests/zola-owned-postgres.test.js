@@ -10,7 +10,7 @@ test('owned target is exact and cluster-bound without ambient fallbacks',()=>{
 });
 test('fixed container plan uses pinned image, loopback, resource limits and dedicated data volume',()=>{
  const args=ownedPostgresContainerArguments();
- assert.ok(args.includes('127.0.0.1:55432:5432'));assert.ok(args.includes(OWNED_POSTGRES_TARGET.image));
+ assert.ok(!args.includes('--publish'));assert.equal(args[args.indexOf('--network')+1],'blackspire-owned-postgres');assert.ok(args.includes(OWNED_POSTGRES_TARGET.image));
  assert.equal(args[args.indexOf('--pull')+1],'never');assert.equal(args[args.indexOf('--memory')+1],'768m');
  assert.ok(args.some(v=>v.includes('src=/mnt/blackspire-builds/zola-owned-postgres/data')));
  assert.ok(!args.some(v=>v.includes('password')||v.includes('supabase')));

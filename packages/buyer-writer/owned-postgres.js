@@ -110,7 +110,7 @@ export function ownedPostgresContainerArguments(){
  return Object.freeze(['create','--name','blackspire-owned-postgres','--pull','never','--label','blackspire.role=owned-postgres-v1',
  '--network','blackspire-owned-postgres','--read-only','--user','70:70','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','768m','--cpus','1',
  '--pids-limit','128','--restart','no','--log-driver','local','--log-opt','max-size=10m','--log-opt','max-file=3',
- '--publish','127.0.0.1:55432:5432','--mount',`type=bind,src=${OWNED_POSTGRES_DATA_PATH},dst=/var/lib/postgresql/data`,
+ '--mount',`type=bind,src=${OWNED_POSTGRES_DATA_PATH},dst=/var/lib/postgresql/data`,
  '--mount','type=bind,src=/etc/blackspire/owned-postgres/server,dst=/etc/zola-postgres,readonly',
  '--tmpfs','/var/run/postgresql:rw,noexec,nosuid,size=8m,uid=70,gid=70',OWNED_POSTGRES_TARGET.image,
  'postgres','-D','/var/lib/postgresql/data','-c','config_file=/etc/zola-postgres/postgresql.conf']);
@@ -130,3 +130,40 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 `;
+
+// Docker internal networks deliberately do not publish host ports. A separate
+// host loopback socket proxies TLS bytes to the retained internal container IP.
+export const OWNED_POSTGRES_PROXY_SOCKET=`[Unit]
+Description=Zola owned PostgreSQL loopback TLS transport
+Requires=blackspire-owned-postgres.service
+After=blackspire-owned-postgres.service
+[Socket]
+ListenStream=127.0.0.1:55432
+NoDelay=true
+Backlog=40
+[Install]
+WantedBy=sockets.target
+`;
+export function ownedPostgresProxyService(ip){
+ if(typeof ip!=='string'||!(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/).test(ip)||ip.split('.').length!==4||ip.split('.').some(v=>!(/^(0|[1-9][0-9]{0,2})$/).test(v)||Number(v)>255))throw new Error('Owned PostgreSQL proxy target rejected');
+ return `[Unit]
+Description=Zola owned PostgreSQL internal TLS proxy
+Requires=blackspire-owned-postgres.service
+After=blackspire-owned-postgres.service
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd --connections-max=40 --exit-idle-time=5min ${ip}:5432
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ${ip}/32
+MemoryMax=64M
+TasksMax=16
+CPUQuota=50%
+TimeoutStartSec=10
+TimeoutStopSec=10
+`;
+}

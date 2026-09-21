@@ -16,6 +16,7 @@ const files={
  'pg_hba.conf':owned.OWNED_POSTGRES_HBA,
  'pg_ident.conf':owned.OWNED_POSTGRES_IDENT,
  'blackspire-owned-postgres.service':owned.OWNED_POSTGRES_SERVICE,
+ 'blackspire-owned-postgres-proxy.socket':owned.OWNED_POSTGRES_PROXY_SOCKET,
  'container-arguments.json':JSON.stringify(owned.ownedPostgresContainerArguments(),null,2)+'\n',
 };
 const source=readFileSync(new URL('../packages/buyer-writer/owned-postgres.js',import.meta.url));

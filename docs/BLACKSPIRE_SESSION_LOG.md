@@ -2158,3 +2158,7 @@ The root-only owned migration command binds clean release source, fixed protecte
 Actual two-cluster PostgreSQL host composition passes copy, atomic receipt, read-only reconciliation and tamper refusal with source grants actually frozen. Root files/profile, systemd and source security history/auth-owner observations are modeled in that composition; their separate real host integration remains required. This exposed JSONB key-order differences, now fixed by canonical object-key hashing and an explicit regression. Thirteen focused groups pass. The owned baseline service_role is NOLOGIN NOBYPASSRLS; no consumer requires its legacy bypass attribute. Test readiness now waits for TCP rather than the temporary initialization socket.
 
 No production migration or source freeze was executed by this patch. The source-security dependency and owned profile/TLS dependency must be integrated and reviewed before the new command can run. Dedicated owned acceptance-target preparation remains in progress; legacy target files are untouched.
+
+## 2026-09-21 — owned cluster materialization and TLS proxy
+
+Implemented source-bound protected phase journaling, empty-cluster initialization, retained private configuration and explicit internal-network loopback proxy materialization. Actual disposable proxy/TLS/SQL succeeds and wrong CA/IP fail; five focused tests and ten PostgreSQL checks pass. Production helper execution and independent final review remain pending. No production changes.
