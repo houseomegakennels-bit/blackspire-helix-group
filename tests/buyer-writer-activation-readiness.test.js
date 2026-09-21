@@ -59,3 +59,16 @@ test('HELD readiness requires exact closed intake, authenticated preparation and
  let calls=0;await assert.rejects(checkBuyerWriterHeldReadiness({...options,verifyHeld:()=>{if(++calls===2)throw new Error('generation drift');}}));
  assert.equal(calls,2);
 }));
+
+test('owned activation and HELD probes require buyerStore true under an explicit backend binding',async()=>fixture(async f=>{
+ const {checkBuyerWriterHeldReadiness}=await import('../packages/buyer-writer/activation-readiness.js');
+ const options={...f.options,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)};
+ await assert.rejects(checkBuyerWriterActivationReadiness(options));f.ready.checks.buyerStore=true;
+ assert.equal((await checkBuyerWriterActivationReadiness(options)).verified,true);
+ await assert.rejects(checkBuyerWriterActivationReadiness(f.options));f.ready.checks.buyerStore=false;
+ await assert.rejects(checkBuyerWriterActivationReadiness(options));f.ready.checks.buyerStore=true;
+ for(const value of [f.health,f.ready])value.deploymentIdentity.environment.value='production';
+ f.ready.checks.releaseAdmission=false;const held={...options,environment:'production',verifyHeld:()=>{}};
+ assert.equal((await checkBuyerWriterHeldReadiness(held)).verified,true);
+ f.ready.checks.buyerStore=false;await assert.rejects(checkBuyerWriterHeldReadiness(held));
+}));
