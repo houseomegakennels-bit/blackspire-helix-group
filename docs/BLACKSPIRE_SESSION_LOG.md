@@ -2279,3 +2279,7 @@ Prepared the separate schema-three final-input operator with one retained operat
 ## 2026-09-21 — deterministic successor output reconciliation
 
 Added observation-only adoption of complete exact bundle/input outputs after lost acknowledgment, including file/directory synchronization before recording success. Partial output and unknown random-path backup outcomes remain blocked without repeated effects. Nine focused tests, including actual file synchronization and partial/foreign output refusal, pass; no production execution occurred.
+
+## 2026-09-21 — successor reconciliation prerequisite durability
+
+Independent review identified that a staged intent could be observed without promotion before the adopted output result. Reconciliation now synchronizes/promotes that exact intent before recording its result. Ten focused regressions pass, including explicit staged-intent ordering. No production effects occurred.

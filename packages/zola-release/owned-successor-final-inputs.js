@@ -15,7 +15,7 @@ export async function prepareOwnedSuccessorFinalInputs({releaseSha,inspect=false
   if(result){if(result.version!==1||result.planDigest!==hash(plan)||result.stage!==stage||Object.keys(result).sort().join(',')!=='planDigest,stage,value,version')fail();await host.verify(stage,plan,results,result.value);results[stage]=result.value;if(!inspect){host.publish(stage+'.intent.json',intent);host.publish(stage+'.result.json',result);}continue;}
   if(inspect)fail();let value;if(old){if(!['bundle','input'].includes(stage)||typeof host.reconcile!=='function')fail();value=await host.reconcile(stage,plan,results);}
   else{host.publish(stage+'.intent.json',intent);value=await host.execute(stage,plan,results);}await fence();await host.verify(stage,plan,results,value);
-  host.publish(stage+'.result.json',{version:1,planDigest:hash(plan),stage,value});results[stage]=value;
+  host.publish(stage+'.intent.json',intent);host.publish(stage+'.result.json',{version:1,planDigest:hash(plan),stage,value});results[stage]=value;
  }
  await fence();return {status:inspect?'OWNED_SUCCESSOR_FINAL_INPUTS_VERIFIED':'OWNED_SUCCESSOR_FINAL_INPUTS_PREPARED',releaseSha,operationId:plan.operationId,productionInputFile:results.input.productionInputFile,successorLineageFile:results.input.successorLineageFile,lineageRequired:true,activationReady:false,productionAccepted:false};
 }
