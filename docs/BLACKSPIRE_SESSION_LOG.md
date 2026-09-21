@@ -2246,3 +2246,7 @@ Independent review identified retained-result durability repair and interrupted-
 ## 2026-09-21 — native copy host guards
 
 Added exact retained receipt catalog and bounded manager checks before reads, with protected input stability across apply and reconciliation. Shared receipt SQL preserves hardening guards. Seventeen focused tests, native copy-host and full installation PostgreSQL fixtures pass; production execution remains UNVERIFIED. No production changes.
+
+## 2026-09-21 — final owned preparation integration and first remote CI
+
+Published draft PR152 at e5f95e7 without changing the shared push guard. Frontend preview passed; remote and local full suites exposed only the missing exact synthetic fixture source-audit entry, now repaired with the focused audit passing. Integrated reviewed schema2/config6/7 operation binding, target cutover retention, public routing recovery/identity and async emergency-stop readiness. Root combined focused lanes and static/security gates pass; native copy-host guard repair is independently approved with seventeen focused tests and actual full-order PostgreSQL verification. Final exact-source CI, release merge and all database/service/cutover/live acceptance actions remain pending.
