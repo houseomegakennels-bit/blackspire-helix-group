@@ -47,6 +47,7 @@ try{
  const input=loadProductionReleaseInput(inputFile),release=input.value;
  if(![2,3].includes(release.schema)||release.backendProfile!=='owned-postgres-v1')fail();
  verifyReleaseSource(release.releaseSha);journal=openReleaseJournal();
+ if(release.releaseSha==='a8e05ef40e44b6695df5b30356af0e411fe36f1a'){const {verifyOwnedSequenceOperator}=await import('../packages/zola-release/owned-sequence-operator-fence.js');verifyOwnedSequenceOperator(release,journal);}
  const read=file=>readRootOwnedJsonSnapshot(file,{groupId:0,maxBytes:65536});
  const sourceFile='/var/lib/blackspire-operator/preparation/owned-gateway-provisioning.json';
  let source,v;

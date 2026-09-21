@@ -1,0 +1,28 @@
+{
+  "schema": 5,
+  "type": "sequence_retired",
+  "operationId": "95a11ea1-289f-46a9-b5cd-cc7805497242",
+  "releaseSha": "2636a1e75cd0f422aff036dfee8a93a81cd5008b",
+  "attemptId": "8d2ea693-f0b6-4849-93c4-22e4997f824e",
+  "ordinal": 5,
+  "stage": "admission_lease",
+  "prefixDigest": "40e9766960c6072a69fe0dfdc92316f1f190722ba6aaecc989733930acb2c2f9",
+  "segmentDigest": "34412e83b57a4f24a92c67c183d5781a4cf6ad4f9702d28d863b3006a3b619d0",
+  "successorReleaseSha": "a8e05ef40e44b6695df5b30356af0e411fe36f1a",
+  "successorOperationId": "c8b00904-7017-434a-918e-8aaadbae82fd",
+  "backendProfile": "owned-postgres-v1",
+  "profileDigest": "2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505",
+  "proof": {
+    "version": 1,
+    "runId": "3502c7e8-896e-49e3-bd58-618fe86d2b1c",
+    "currentSha": "2636a1e75cd0f422aff036dfee8a93a81cd5008b",
+    "hostStopped": true,
+    "bindingAbsent": true,
+    "retainedEffects": true,
+    "n8nJournalDigest": "822259725bd732f43220215d648319c6cf910074c44bdeedf43ded39d9034ac5",
+    "stopPlanDigest": "87b179002130c18d8835ffe0d320e62004ec9ff2f195294e566e72eb9fc93c32",
+    "stopResultDigest": "b4038d16babe12d8991df182799eb79bc9d58bbb778f32d5e0c845961bece6b8",
+    "lineageDigest": "d3e30ecae7c83e52d964d0b0fe763bd8e310af5df229504c1ff7c9d4fccca6d2"
+  },
+  "proofDigest": "d38512c835293518d9b065c32dff8094090b7e7c30fcf5c5bd0a2010823de04a"
+}
