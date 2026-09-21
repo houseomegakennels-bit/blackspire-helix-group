@@ -76,6 +76,8 @@ function receipt(plan,data){return {schema:1,kind:'owned-buyer-data-copy-receipt
  snapshotDigest:data.source.snapshotDigest,schemaDigest:data.inventory.schemaDigest,rollbackDigest:data.rollbackDigest,
  relations:data.inventory.relations.map(({name,rowCount,dataDigest})=>({name,rowCount,dataDigest}))};}
 
+export function ownedBuyerMigrationReceipt(plan){const data=plans.get(plan);if(!data)fail();return freeze(clone(receipt(plan,data)));}
+
 // This orchestrator has no ambient connection discovery and no production CLI.
 // Host must hold the source snapshot and database fences continuously, pin both
 // physical clusters, supply full closure observations, and use one dedicated
