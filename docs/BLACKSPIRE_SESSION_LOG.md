@@ -2162,3 +2162,7 @@ No production migration or source freeze was executed by this patch. The source-
 ## 2026-09-21 — owned cluster materialization and TLS proxy
 
 Implemented source-bound protected phase journaling, empty-cluster initialization, retained private configuration and explicit internal-network loopback proxy materialization. Actual disposable proxy/TLS/SQL succeeds and wrong CA/IP fail; five focused tests and ten PostgreSQL checks pass. Production helper execution and independent final review remain pending. No production changes.
+
+## 2026-09-21 — owned materializer pre-start review corrections
+
+Moved complete database unit/TLS/container/network checks before service start and added exact mount/tmpfs/network validation. Six focused tests and actual disposable Docker metadata positives/negative variants pass. No production effects; final independent re-review pending.

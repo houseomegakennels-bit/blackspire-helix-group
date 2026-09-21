@@ -33,6 +33,29 @@ function inspect(kind,name){try{return JSON.parse(docker(kind==='network'?['netw
 }}
 function fileProof(p,{uid=0,gid=uid,mode=0o600}={}){const s=fs.lstatSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.uid!==uid||s.gid!==gid||(s.mode&0o7777)!==mode)fail();return{sha256:hash(fs.readFileSync(p)),size:s.size,uid,mode};}
 
+export function validateOwnedContainerMetadata(c,{imageId,imageConfig,operationId,bootstrap=false}){
+ if(!c?.Config||!c.HostConfig||!Array.isArray(c.Mounts))fail();
+ const h=c.HostConfig,mode=bootstrap?'none':NAME;
+ if(JSON.stringify(c.Config.Cmd)!==JSON.stringify(['postgres','-D','/var/lib/postgresql/data','-c','config_file=/etc/zola-postgres/postgresql.conf'])
+  ||JSON.stringify(c.Config.Entrypoint)!==JSON.stringify(imageConfig.Entrypoint)||JSON.stringify(c.Config.Env)!==JSON.stringify(imageConfig.Env)
+  ||h.LogConfig?.Type!=='local'||h.LogConfig.Config?.['max-size']!=='10m'||h.LogConfig.Config?.['max-file']!=='3'
+  ||c.Config.Labels?.['blackspire.materialization']!==operationId||c.Image!==imageId||c.Config.User!=='70:70'
+  ||!h.ReadonlyRootfs||h.Memory!==768*1024**2||h.PidsLimit!==128||h.NanoCpus!==1000000000||h.NetworkMode!==mode||h.Privileged
+  ||h.CapAdd?.length||JSON.stringify(h.CapDrop)!=='["ALL"]'||JSON.stringify(h.SecurityOpt)!=='["no-new-privileges"]'
+  ||h.Devices?.length||h.DeviceRequests?.length||h.PidMode!==''||h.IpcMode!=='private'||h.UTSMode!=='')fail();
+ const mounts=c.Mounts;
+ if(mounts.length!==2||!mounts.some(m=>m.Type==='bind'&&m.Source===owned.OWNED_POSTGRES_DATA_PATH&&m.Destination==='/var/lib/postgresql/data'&&m.RW===true)
+  ||!mounts.some(m=>m.Type==='bind'&&m.Source===SERVER&&m.Destination==='/etc/zola-postgres'&&m.RW===false)
+  ||JSON.stringify(h.Tmpfs)!==JSON.stringify({'/var/run/postgresql':'rw,noexec,nosuid,size=8m,uid=70,gid=70'})
+  ||Object.keys(h.PortBindings??{}).length||JSON.stringify(Object.keys(c.NetworkSettings?.Networks??{}))!==JSON.stringify([mode]))fail();
+ return Object.freeze({id:c.Id,imageId:c.Image});
+}
+export function validateOwnedDatabaseStart({unitSha256,fragmentPath,dropInPaths,needsReload,containerProof,networkProof,tlsProof,bootstrapRunning}){
+ if(unitSha256!==hash(owned.OWNED_POSTGRES_SERVICE)||fragmentPath!==UNIT||dropInPaths!==''||needsReload!=='no'
+  ||!containerProof||!networkProof||!tlsProof||bootstrapRunning!==false)fail();
+ return true;
+}
+
 // A durable intent is a no-replay boundary. Unknown partial effects always stop;
 // only a complete independently observed result may close an interrupted stage.
 export async function runOwnedMaterializationStages({stages,load,save,binding}){
@@ -87,17 +110,18 @@ export async function materializeOwnedPostgres({releaseSha}){
    files['server.key']=fileProof(SERVER+'/server.key',{uid:70,mode:0o600});files.ca=fileProof(ROOT+'/ca.crt');
    for(const [name,value] of [['postgresql.conf',owned.OWNED_POSTGRES_CONFIGURATION],['pg_hba.conf',owned.OWNED_POSTGRES_HBA],['pg_ident.conf',owned.OWNED_POSTGRES_IDENT]])if(files[name].sha256!==hash(value))fail();return files;};
   const container=(name,bootstrap=false)=>{const c=inspect('container',name);if(!c)return null;
-   const h=c.HostConfig,image=JSON.parse(docker(['image','inspect',owned.OWNED_POSTGRES_TARGET.image]))[0];
-   if(JSON.stringify(c.Config.Cmd)!==JSON.stringify(['postgres','-D','/var/lib/postgresql/data','-c','config_file=/etc/zola-postgres/postgresql.conf'])||JSON.stringify(c.Config.Entrypoint)!==JSON.stringify(image.Config.Entrypoint)||JSON.stringify(c.Config.Env)!==JSON.stringify(image.Config.Env)||h.LogConfig.Type!=='local'||h.LogConfig.Config['max-size']!=='10m'||h.LogConfig.Config['max-file']!=='3')fail();
-   if(c.Config.Labels?.['blackspire.materialization']!==state.operationId||c.Image!==state.imageId||c.Config.User!=='70:70'||!h.ReadonlyRootfs||h.Memory!==768*1024**2||h.PidsLimit!==128||h.NanoCpus!==1000000000||h.NetworkMode!==(bootstrap?'none':NAME)||h.Privileged||h.CapAdd?.length||!h.CapDrop?.includes('ALL')||!h.SecurityOpt?.includes('no-new-privileges'))fail();
-   const mounts=c.Mounts.filter(m=>m.Type==='bind');if(mounts.length!==2||!mounts.some(m=>m.Source===owned.OWNED_POSTGRES_DATA_PATH&&m.Destination==='/var/lib/postgresql/data'&&m.RW)||!mounts.some(m=>m.Source===SERVER&&m.Destination==='/etc/zola-postgres'&&!m.RW))fail();
-   if(Object.keys(h.PortBindings??{}).length)fail();
-   return{id:c.Id,imageId:c.Image};};
+   const image=JSON.parse(docker(['image','inspect',owned.OWNED_POSTGRES_TARGET.image]))[0];
+   return validateOwnedContainerMetadata(c,{imageId:state.imageId,imageConfig:image.Config,operationId:state.operationId,bootstrap});};
+  const beforeDatabaseStart=()=>validateOwnedDatabaseStart({unitSha256:fileProof(UNIT,{mode:0o644}).sha256,
+   fragmentPath:run('/usr/bin/systemctl',['show',NAME+'.service','--property=FragmentPath','--value']),
+   dropInPaths:run('/usr/bin/systemctl',['show',NAME+'.service','--property=DropInPaths','--value']),
+   needsReload:run('/usr/bin/systemctl',['show',NAME+'.service','--property=NeedDaemonReload','--value']),
+   containerProof:container(NAME),networkProof:network(),tlsProof:tls(),bootstrapRunning:inspect('container',INIT)?.State.Running});
   const sql=(statement,database='postgres')=>docker(['exec','--user','70:70','-i',INIT,'psql','-X','-qAt','-U','blackspire_cluster_admin','-d',database,'-v','ON_ERROR_STOP=1'],statement);
   const observation=()=>JSON.parse(sql(owned.OWNED_POSTGRES_OBSERVE_SQL));
   const runtimeProof=async()=>{
    if(run('/usr/bin/systemctl',['show','blackspire-owned-postgres.service','--property=ActiveState','--value'])!=='active'||inspect('container',NAME)?.State.Running!==true)return null;
-   if(inspect('container',INIT)?.State.Running)fail();cleanUnit('blackspire-owned-postgres.service');network();container(NAME);tls();proxyProof();
+   beforeDatabaseStart();proxyProof();
    const profile=owned.validateOwnedPostgresProfile(read(CONFIG+'/profile.json')),credential=read(CONFIG+'/management.json');
    if(credential.backendProfile!=='owned-postgres-v1'||credential.host!==profile.host||credential.profileDigest!==owned.ownedPostgresProfileDigest(profile)||hash(credential.ca)!==profile.caSha256)fail();
    const client=new pg.Client({host:profile.host,port:profile.port,database:profile.database,user:profile.managementUser,password:credential.password,ssl:databaseTlsOptions({...profile,ca:credential.ca}),connectionTimeoutMillis:3000,query_timeout:5000,options:'-c default_transaction_read_only=on -c statement_timeout=5000 -c search_path=pg_catalog'});
@@ -136,7 +160,7 @@ export async function materializeOwnedPostgres({releaseSha}){
    {name:'bootstrap_container',before:()=>{if(inspect('container',INIT))fail();},apply:()=>{
     const args=[...owned.ownedPostgresContainerArguments()];args[args.indexOf('--name')+1]=INIT;args[args.indexOf('--network')+1]='none';args.splice(1,0,'--label',label);docker(args);
    },observe:()=>container(INIT,true)},
-   {name:'bootstrap_start',historical:true,before:()=>{if(inspect('container',INIT)?.State.Running)fail();},apply:()=>docker(['start',INIT]),observe:()=>{if(!inspect('container',INIT)?.State.Running)return null;for(let i=0;i<50;i++){try{if(sql('SELECT 1')==='1')return{ready:true};}catch{/* bounded socket readiness */}run('/usr/bin/sleep',['0.2']);}return null;}},
+   {name:'bootstrap_start',historical:true,before:()=>{if(inspect('container',INIT)?.State.Running||!container(INIT,true)||!tls()||!directories())fail();},apply:()=>docker(['start',INIT]),observe:()=>{if(!container(INIT,true)||!tls()||!directories()||!inspect('container',INIT)?.State.Running)return null;for(let i=0;i<50;i++){try{if(sql('SELECT 1')==='1')return{ready:true};}catch{/* bounded socket readiness */}run('/usr/bin/sleep',['0.2']);}return null;}},
    {name:'template',historical:true,before:()=>{},apply:()=>sql(owned.OWNED_POSTGRES_TEMPLATE_SQL,'template1'),observe:()=>sql("SELECT NOT EXISTS(SELECT FROM pg_namespace n CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a WHERE n.nspname='public' AND a.grantee=0)",'template1')==='t'?{inert:true}:null},
    {name:'bootstrap_sql',historical:true,before:()=>{if(sql("SELECT count(*) FROM pg_roles WHERE rolname='postgres'")!=='0')fail();},apply:()=>sql(owned.OWNED_POSTGRES_BOOTSTRAP_SQL),observe:()=>{
     if(sql("SELECT count(*) FROM pg_roles WHERE rolname='postgres'")!=='1')return null;if(sql("SELECT NOT rolsuper AND NOT rolcanlogin AND rolcreatedb AND rolcreaterole AND rolreplication AND rolbypassrls FROM pg_roles WHERE rolname='postgres'")!=='t')fail();const o=observation();if(!o.ownerMatches||!o.providerObjectsAbsent||!o.sourceCredentialsAbsent||o.database!=='postgres'||o.creatorOid<=10)fail();return o;
@@ -150,7 +174,7 @@ export async function materializeOwnedPostgres({releaseSha}){
    {name:'bootstrap_stop',before:()=>{},apply:()=>docker(['stop','--time','60',INIT]),observe:()=>inspect('container',INIT)?.State.Running===false?{stopped:true}:null},
    {name:'runtime_container',before:()=>{if(inspect('container',NAME)||inspect('container',INIT)?.State.Running)fail();},apply:()=>{const args=[...owned.ownedPostgresContainerArguments()];args.splice(1,0,'--label',label);docker(args);},observe:()=>container(NAME)},
    {name:'service',before:()=>{if(fs.existsSync(UNIT))fail();},apply:()=>{write(UNIT,owned.OWNED_POSTGRES_SERVICE,0o644);run('/usr/bin/systemctl',['daemon-reload']);},observe:()=>fs.existsSync(UNIT)&&fileProof(UNIT,{mode:0o644}).sha256===hash(owned.OWNED_POSTGRES_SERVICE)&&run('/usr/bin/systemctl',['show','blackspire-owned-postgres.service','--property=NeedDaemonReload','--value'])==='no'?{unitSha256:hash(owned.OWNED_POSTGRES_SERVICE)}:null},
-   {name:'service_start',before:()=>{if(inspect('container',INIT)?.State.Running)fail();},apply:()=>run('/usr/bin/systemctl',['start','blackspire-owned-postgres.service']),observe:()=>run('/usr/bin/systemctl',['show','blackspire-owned-postgres.service','--property=ActiveState','--value'])==='active'&&inspect('container',NAME)?.State.Running?{active:true}:null},
+   {name:'service_start',before:beforeDatabaseStart,apply:()=>run('/usr/bin/systemctl',['start','blackspire-owned-postgres.service']),observe:()=>{beforeDatabaseStart();return run('/usr/bin/systemctl',['show','blackspire-owned-postgres.service','--property=ActiveState','--value'])==='active'&&inspect('container',NAME)?.State.Running?{active:true}:null;}},
    {name:'proxy',before:()=>{if(fs.existsSync(PROXY+'.socket')||fs.existsSync(PROXY+'.service')||fs.existsSync(ROOT+'/proxy-binding.json'))fail();},apply:()=>{
     const n=network(),c=inspect('container',NAME);container(NAME);const ip=c.NetworkSettings.Networks[NAME].IPAddress,service=owned.ownedPostgresProxyService(ip);
     write(ROOT+'/proxy-binding.json',JSON.stringify({binding,networkId:n.id,containerId:c.Id,ip})+'\n');
