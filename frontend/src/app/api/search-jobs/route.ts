@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { after, NextResponse } from "next/server";
 import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
 import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
@@ -14,6 +15,9 @@ import { guardBetaAction } from "@/lib/beta-server";
 import { guardWorkspaceApi } from "@/lib/operator-access";
 
 export async function GET(request: Request) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;
@@ -47,6 +51,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const gate = await guardBetaAction("sweep");
     if ("response" in gate) return gate.response;

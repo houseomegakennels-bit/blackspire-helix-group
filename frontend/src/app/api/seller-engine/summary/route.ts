@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { generateSellerLeadSummary } from "@/lib/seller-engine-server";
@@ -5,6 +6,9 @@ import type { SellerLeadView } from "@/lib/seller-engine-demo";
 import { guardWorkspaceApi } from "@/lib/operator-access";
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;

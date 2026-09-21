@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { bulkUpdateSellerLeads } from "@/lib/seller-engine-server";
@@ -6,6 +7,9 @@ import type { SellerLeadStatus } from "@/lib/seller-engine";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const body = (await request.json()) as {
       ids?: string[];

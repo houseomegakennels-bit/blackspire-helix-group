@@ -33,7 +33,7 @@ async function resolveRole(): Promise<OperatorContext> {
     ? operator.app_metadata.demo_expires_at
     : null;
   const expired = (explicitRole === "demo_viewer" || explicitRole === "demo_operator")
-    && Boolean(expiresAt && Date.parse(expiresAt) <= Date.now());
+    && (!expiresAt || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now());
   if (explicitRole) return { role: explicitRole, operatorId: operator.id, expiresAt, expired };
   const users = await listAuthUsers().catch(() => []);
   const isAdmin = users.length > 0 && users[0]?.id === operator.id;
@@ -79,7 +79,7 @@ export async function guardWorkspaceApi(): Promise<NextResponse | null> {
   if (context.role === "demo_operator" && context.expired) {
     return NextResponse.json({ ok: false, error: "Demonstration access has expired." }, { status: 403 });
   }
-  if (context.role !== "admin" && context.role !== "beta_tester" && context.role !== "demo_operator") {
+  if (context.role !== "admin" && context.role !== "beta_tester") {
     return NextResponse.json({ ok: false, error: "Workspace access is required." }, { status: 403 });
   }
   return null;
@@ -96,7 +96,7 @@ export async function requireAdminPage(): Promise<void> {
 export async function requireSignedInPage(): Promise<{ role: OperatorRole }> {
   const { role } = await resolveRole();
   if (role === "anonymous") redirect("/auth");
-  if (role !== "admin" && role !== "beta_tester") redirect(role === "demo_viewer" ? "/demo" : "/");
+  if (role !== "admin" && role !== "beta_tester") redirect((role === "demo_viewer" || role === "demo_operator") ? "/demo" : "/");
   return { role };
 }
 
@@ -104,8 +104,8 @@ export async function requireWorkspacePage(): Promise<void> {
   const context = await resolveRole();
   if (context.role === "anonymous") redirect("/auth");
   if (context.role === "demo_operator" && context.expired) redirect("/demo-expired");
-  if (context.role !== "admin" && context.role !== "beta_tester" && context.role !== "demo_operator") {
-    redirect(context.role === "demo_viewer" ? "/demo" : "/");
+  if (context.role !== "admin" && context.role !== "beta_tester") {
+    redirect((context.role === "demo_viewer" || context.role === "demo_operator") ? "/demo" : "/");
   }
 }
 

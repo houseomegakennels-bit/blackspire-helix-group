@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -9,6 +10,9 @@ async function readJson(target: string, fallback: Record<string, unknown>) {
 }
 
 export async function GET() {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   const r1Path = process.env.HELIX_RESEARCH_STATUS_PATH || path.resolve(process.cwd(), "..", "helix-trade-command", "evidence", "latest-status.json");
   const v2Path = process.env.HELIX_V2_RESEARCH_STATUS_PATH || path.resolve(process.cwd(), "..", "helix-trade-command", "evidence", "v2", "latest-status.json");
   const r1 = await readJson(r1Path, { hypothesis: "R1-H1", validation_start: "2026-09-12", days_recorded: 0, events: 0, wins: 0, success_pct: null, wilson95: [null, null], gate_status: "PROVISIONAL", events_remaining: 30, live_trading: false });

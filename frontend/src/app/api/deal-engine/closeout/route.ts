@@ -1,8 +1,12 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { saveDealCloseout } from "@/lib/deal-engine-server";
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   const body = (await request.json()) as {
     dealId?: string;
     outcome?: string;
