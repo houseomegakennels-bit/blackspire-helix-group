@@ -3,6 +3,11 @@
 ## 2026-09-21 — explicit successor release identity prepared
 
 Production input schema three names a new release operation and a separate fixed-path migration lineage plan while preserving the original source-security and copied-data receipt paths. It binds the fixed owned profile and rejects reuse of the predecessor operation or candidate. Admission and migration stages require the distinct successor proof status; schema two retains its original receipt semantics. Thirty-six focused binding, input, HELD and production composition tests pass. The lineage observer, retirement, configuration transition and corrected namespace runtime are still being integrated; no successor preparation, deployment, retirement or public opening has executed.
+## 2026-09-21 — exact chained partial retirement history prepared
+
+A second, distinct retirement grammar is limited to the observed 116-event release prefix for candidate `2636a1e75cd0f422aff036dfee8a93a81cd5008b`. It preserves and validates the original `7bd0323` retirement, requires the same owned profile, explicit successor SHA and operation, stopped HELD containment and retained lineage/stop proofs, and rejects a third retirement or any changed historical byte. Historical mutations remain reported as retained effects; no rollback or role absence is claimed.
+
+Candidate deployment, activation and writer-binding readers validate prior segments before selecting the successor segment. Completed HOLD/lifecycle authority cannot reuse the retired epoch. The n8n view excludes only the exact nine pinned baseline GET observations and refuses altered history or mutation rows. Twelve focused tests pass, including a composed synthetic successor candidate/activation/HOLD/lifecycle/binding sequence and wrong-operation refusal before append. Production stop/retirement and native successor execution remain separate reviewed operations; this parser work performed no production mutation.
 
 ## 2026-09-21 — release integration published and final preparation assembled
 

@@ -1,3 +1,4 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 // HELD-only lifecycle transaction. No production start adapter or OPEN publisher
 // is exported. The injected start seam is for disposable rehearsal until all
 // enclosing release gates and external systemd lifecycle serialization exist.
@@ -102,6 +103,7 @@ export function inspectHeldLifecycleHistory(events){
 // the release being applied. Multiple lifecycle epochs in the same operation
 // journal are ambiguous and therefore cannot authorize SQL.
 export function inspectCompletedHeldLifecycle(events,releaseSha){
+  const partition=partitionRetiredReleaseHistory(events);if(partition.retired){if(inspectHeldLifecycleHistory(partition.prefix)||inspectAdmissionHoldHistory(partition.prefix))fail();return inspectCompletedHeldLifecycle(partition.current,releaseSha);}
   try{
     if(!sha(releaseSha)||inspectHeldLifecycleHistory(events)||inspectAdmissionHoldHistory(events))fail();
     const lifecycle=events.filter(row=>row?.type==='release_lifecycle_result');

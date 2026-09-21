@@ -1,3 +1,4 @@
+import {PARTIAL_RELEASE} from './partial-retirement-history.js';
 import {hash} from './commander-journal.js';
 import {BLOCKED_RELEASE,partitionRetiredReleaseHistory,assertRetiredReleaseSuccessor} from './retired-release-history.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
@@ -12,13 +13,14 @@ export function createOwnedN8nRetiredJournalView({journal,release,plan}){
  const validate=rows=>{
   const all=journal.stream('release').events(),partition=partitionRetiredReleaseHistory(all);
   assertRetiredReleaseSuccessor(all,release);const state=inspectReleaseSequenceHistory(all);
-  if(!partition.retired||partition.retired.proof.n8nJournalDigest!==BLOCKED_RELEASE.n8nJournalDigest
+  const boundary=partition.retired?.schema===5?PARTIAL_RELEASE:BLOCKED_RELEASE,count=partition.retired?.schema===5?PARTIAL_RELEASE.n8nEventCount:6;
+  if(!partition.retired||partition.retired.proof.n8nJournalDigest!==boundary.n8nJournalDigest
    ||state.started&&(state.context.releaseSha!==release.releaseSha||state.context.operationId!==operationId))fail();
-  const prefix=rows.slice(0,6);
-  if(prefix.length!==6||hash(prefix)!==BLOCKED_RELEASE.n8nJournalDigest||prefix.some(e=>keys(e)!=='namespace,releaseSha,state,type'||e.type!=='observation'
+  const prefix=rows.slice(0,count);
+  if(prefix.length!==count||hash(prefix)!==boundary.n8nJournalDigest||prefix.some(e=>keys(e)!=='namespace,releaseSha,state,type'||e.type!=='observation'
    ||keys(e.state)!=='active,definitionDigest,kind,versionId'||e.state.kind!=='BASELINE'||e.state.active!==true
    ||e.state.definitionDigest!==plan.baselineDigest||e.state.versionId!==plan.baselineVersion))fail();
-  const current=rows.slice(6),attempts=partition.current.filter(e=>e.type==='sequence_stage_intent'&&e.stage==='n8n_migration');
+  const current=rows.slice(count),attempts=partition.current.filter(e=>e.type==='sequence_stage_intent'&&e.stage==='n8n_migration');
   if(attempts.length>1)fail();const attempt=attempts[0];
   for(const row of current){
    if(row.namespace!==plan.namespace||row.releaseSha!==release.releaseSha)fail();

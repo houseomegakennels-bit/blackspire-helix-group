@@ -2258,3 +2258,6 @@ Confirmed the owned source generates fresh writer ingress material while package
 ## 2026-09-21 — successor release input binding
 
 Prepared schema-three operation and lineage bindings with original migration receipt paths preserved. Thirty-six focused tests pass. Runtime repair and successor host integration remain pending; no production mutation or OPEN occurred.
+## 2026-09-21 — chained partial retirement parser and current history views
+
+Prepared exact schema-five second retirement over the pinned 116-event production prefix, preserving the earlier schema-four retirement unchanged. Successor SHA/profile/operation binding and strict family parsing prevent old candidate, activation, lifecycle or writer-binding records becoming current authority. The nine-row n8n boundary remains read-only baseline history. Twelve focused tests pass, including altered-prefix/third-retirement refusals and a composed synthetic successor operation. No production journal, service, database or source state changed. Native retirement and successor execution remain UNVERIFIED.

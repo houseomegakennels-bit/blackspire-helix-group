@@ -1,3 +1,4 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {createOwnedStoreTransition,ownedBackendFields,validateOwnedStoreTransitionPlan} from './owned-store-transition.js';
 import {createReceiverOriginTransition,validateReceiverOriginPlan} from './receiver-origin-transition.js';
 // Candidate activation changes the current pointer while intake remains HELD.
@@ -20,6 +21,7 @@ function exact(v,k){return v&&Object.keys(v).sort().join(',')===[...k].sort().jo
 const planKeys=p=>[...keys,...(ownedBackendFields(p).backendProfile?['backendProfile','profileDigest','ownedStore']:[])];
 function valid(p){if(!exact(p,planKeys(p))||!uuid(p.operationId)||!uuid(p.runId)||!['releaseSha','recoverySha','previousSha'].every(k=>sha(p[k]))||p.releaseSha===p.recoverySha||!['artifactDigest','recoveryArtifactDigest','previousArtifactDigest','stateDigest'].every(k=>digest(p[k])))reject();const r=validateReceiverOriginPlan(p.receiverOrigin);if(r.mode!=='preview'||r.releaseSha!==p.releaseSha)reject();if(p.backendProfile){const o=validateOwnedStoreTransitionPlan(p.ownedStore);if(o.releaseSha!==p.releaseSha||o.profileDigest!==p.profileDigest||o.origin!==r.origin)reject();}return p;}
 export function inspectCandidateDeploymentHistory(events){
+ const partition=partitionRetiredReleaseHistory(events);if(partition.retired){inspectCandidateDeploymentHistory(partition.prefix);return inspectCandidateDeploymentHistory(partition.current);}
  let plan=null,pending=null,next=0,completed=false;
  for(const row of events.filter(e=>String(e?.type??'').startsWith('candidate_deployment_'))){
   const extras=['candidate_deployment_step_intent','candidate_deployment_step_result'].includes(row.type)?['step']:[];

@@ -76,6 +76,7 @@ function history(journal){
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
+  if(row?.schema===5&&row.type==='sequence_retired')continue;
   if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')))continue;
   if([3,4,5,6].includes(row?.schema)&&String(row.type).startsWith('vps_'))continue;
   if(row?.schema===2&&String(row.type).startsWith('candidate_deployment_'))continue;

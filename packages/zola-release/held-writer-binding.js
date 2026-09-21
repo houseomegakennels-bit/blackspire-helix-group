@@ -1,3 +1,4 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {hash} from './commander-journal.js';
@@ -25,6 +26,7 @@ function validPlan(p){validInput(Object.fromEntries(inputKeys.map(k=>[k,p[k]])))
  ||!((p.priorBindingDigest===null&&p.priorCommitDigest===null)||(digest(p.priorBindingDigest)&&digest(p.priorCommitDigest)))||p.stage==='admission_lease'&&p.priorBindingDigest!==null)reject();return p;}
 function validResult(row,p){if(!exact(row,['schema','type','plan','bindingDigest','commitDigest'])||!digest(row.bindingDigest)||!digest(row.commitDigest)||!same(row.plan,p))reject();}
 export function inspectHeldWriterBindingHistory(events){
+ const partition=partitionRetiredReleaseHistory(events);if(partition.retired){inspectHeldWriterBindingHistory(partition.prefix);return inspectHeldWriterBindingHistory(partition.current);}
  const records=new Map();
  for(let i=0;i<events.length;i++){
   const row=events[i];if(!String(row?.type??'').startsWith('held_writer_binding_'))continue;
