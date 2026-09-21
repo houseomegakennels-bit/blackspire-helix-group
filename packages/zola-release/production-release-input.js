@@ -39,8 +39,8 @@ export function loadProductionReleaseInput(filename,{
  assertRootOnly(identity);assertRepository(repository);assertInputFile(filename,policy.preparationRoot,policy.owner);
  const raw=readBytes(filename,65536);let value;try{value=JSON.parse(raw);}catch{reject();}
  if(raw!==`${JSON.stringify(value)}\n`)reject();
- if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!==[...fields].sort().join(',')
-  ||value.schema!==1||value.kind!=='zola_production_release'||![value.releaseSha,value.previousMainSha,value.recoverySha].every(sha)
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!==[...fields,...(value.schema===2?['backendProfile','profileDigest']:[])].sort().join(',')
+  ||![1,2].includes(value.schema)||(value.schema===2&&(value.backendProfile!=='owned-postgres-v1'||!(/^[a-f0-9]{64}$/).test(value.profileDigest??'')))||value.kind!=='zola_production_release'||![value.releaseSha,value.previousMainSha,value.recoverySha].every(sha)
   ||new Set([value.releaseSha,value.previousMainSha,value.recoverySha]).size!==3
   ||value.workspace!==PRODUCTION_WORKSPACE||value.principal!==PRODUCTION_PRINCIPAL||value.preparationRoot!==policy.preparationRoot)reject();
  for(const key of fields.slice(8))if(!under(policy.operatorRoot,value[key]))reject();

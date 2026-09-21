@@ -31,3 +31,17 @@ test('loader rejects duplicate-key/noncanonical input and the wrong runtime',()=
  const duplicate='{"schema":1,"schema":1}\n';assert.throws(()=>loadProductionReleaseInput(file,{policy,identity,readBytes:()=>duplicate,verifySource:()=>({})}));
  assert.throws(()=>loadProductionReleaseInput(file,{policy,identity,runtimeVersion:'22.22.0',readBytes:()=>'{ }\n',verifySource:()=>({})}));
 });
+
+test('owned release input is explicitly versioned and changes immutable input digest',()=>{
+ const operator=fs.mkdtempSync(path.join(os.tmpdir(),'zola-owned-input-')),root=path.join(operator,'preparation'),value=input();
+ fs.mkdirSync(root,{mode:0o700});value.preparationRoot=root;
+ for(const key of Object.keys(value).filter(key=>key.endsWith('File')))value[key]=path.join(root,path.basename(value[key]));
+ const file=path.join(root,'input.json');fs.writeFileSync(file,'{}\n',{mode:0o600});
+ const options={policy:{preparationRoot:root,operatorRoot:operator,owner:process.getuid()},identity:{getuid:()=>0,geteuid:()=>0},verifySource:releaseSha=>({releaseSha,clean:true})};
+ const load=v=>loadProductionReleaseInput(file,{...options,readBytes:()=>JSON.stringify(v)+'\n'});
+ try{
+  const legacy=load(value),owned=load({...value,schema:2,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)});
+  assert.notEqual(owned.inputDigest,legacy.inputDigest);assert.equal(owned.value.backendProfile,'owned-postgres-v1');
+  for(const patch of [{schema:1,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)},{schema:2},{schema:2,backendProfile:'supabase',profileDigest:'d'.repeat(64)},{schema:2,backendProfile:'owned-postgres-v1',profileDigest:'bad'}])assert.throws(()=>load({...value,...patch}),/rejected/);
+ }finally{fs.rmSync(operator,{recursive:true,force:true});}
+});

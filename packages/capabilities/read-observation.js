@@ -12,8 +12,12 @@ export function decodeObservedResponse(text, response, route, expectedAuthorityB
     if (header.length > 1024 || !result || typeof result !== 'object') throw new Error();
     const value = JSON.parse(header);
     if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length || keys.some(k => !Object.hasOwn(value,k)) ||
-        value.version !== 1 || !(value.releaseSha === null || (typeof value.releaseSha === 'string' && /^[a-f0-9]{40}$/.test(value.releaseSha))) ||
-        value.transport !== 'bounded PostgREST GET/HEAD' || value.scope !== 'supplied read client only' || value.forbiddenAttempts !== 0 ||
+        ![1,2].includes(value.version) || !(value.releaseSha === null || (typeof value.releaseSha === 'string' && /^[a-f0-9]{40}$/.test(value.releaseSha))) ||
+        !(value.version===1
+          ?value.transport==='bounded PostgREST GET/HEAD'&&value.scope==='supplied read client only'
+          :value.transport==='bounded owned PostgreSQL SELECT and Supabase GET/HEAD'&&value.scope==='authority-bound Buyer read only'
+            &&route==='/api/internal/capabilities/buyer-profiles'&&expectedAuthorityBinding&&authorityBinding===expectedAuthorityBinding
+            &&typeof value.releaseSha==='string') || value.forbiddenAttempts !== 0 ||
         !Number.isSafeInteger(value.requests) || value.requests < 1 || value.requests > 12 ||
         !Number.isSafeInteger(value.responseBytes) || value.responseBytes < 0 || value.responseBytes > 2*1024*1024 ||
         !Number.isSafeInteger(value.latencyMs) || value.latencyMs < 0 || value.latencyMs > 11000 ||

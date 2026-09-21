@@ -1,3 +1,4 @@
+import {ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
 import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES} from './routine-policy.js';
 
 // Explicit credentials only. No environment, credential file, database URL or
@@ -252,8 +253,10 @@ from checked`;
 };
 
 function configuration(value,kind) {
+  const keys=['host','port','database','password','ca',...(ownedDatabaseConnection(value)?['backendProfile','profileDigest']:[])];
+  if(ownedDatabaseConnection(value))validateOwnedConnectionShape(value);
   if(!value||typeof value!=='object'||Array.isArray(value)
-    ||Object.keys(value).some(k=>!['host','port','database','password','ca'].includes(k))
+    ||Object.keys(value).some(k=>!keys.includes(k))
     ||typeof value.host!=='string'||value.host.length>253||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(value.host)
     ||!Number.isInteger(value.port)||value.port<1||value.port>65535
     ||typeof value.database!=='string'||!/^[a-zA-Z0-9_-]{1,63}$/.test(value.database)
@@ -273,7 +276,8 @@ export async function createBuyerWriterPostgres({runtime,issuer,creatorOid,Pool}
   const configs={runtime:configuration(runtime,'runtime'),issuer:configuration(issuer,'issuer')};
   if(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295
     ||runtime.password===issuer.password||runtime.host.toLowerCase()!==issuer.host.toLowerCase()
-    ||runtime.port!==issuer.port||runtime.database!==issuer.database)throw unavailable();
+    ||runtime.port!==issuer.port||runtime.database!==issuer.database
+    ||runtime.backendProfile!==issuer.backendProfile||runtime.profileDigest!==issuer.profileDigest)throw unavailable();
   const pools={};const counts={runtime:0,issuer:0};const clients=new Set();
   let closed=false,healthy=true,closing;
   const close=()=>{

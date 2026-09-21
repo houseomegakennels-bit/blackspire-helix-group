@@ -1,3 +1,4 @@
+import {ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
 import path from 'node:path';
 import {matchesBuyerWriterRehearsal} from './rehearsal.js';
 import {validateOperationPermitVerificationConfiguration} from './operation-permit-keyring.js';
@@ -56,7 +57,8 @@ export function validateBuyerWriterGatewayProvisioningConfiguration(value,{works
       ||value.version!==4||value.workspace!==workspace||!canonicalPath(value.bindingFile)
       ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)throw new Error();
     for(const config of [value.runtime,value.issuer]){
-      if(!exact(config,['host','port','database','password','ca'])||typeof config.host!=='string'||config.host.length>253
+      if(ownedDatabaseConnection(config))validateOwnedConnectionShape(config);
+      if(!exact(config,['host','port','database','password','ca'],ownedDatabaseConnection(config)?['backendProfile','profileDigest']:[])||typeof config.host!=='string'||config.host.length>253
         ||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(config.host)||!Number.isInteger(config.port)||config.port<1||config.port>65535
         ||typeof config.database!=='string'||!/^[a-zA-Z0-9_-]{1,63}$/.test(config.database)
         ||typeof config.ca!=='string'||config.ca.length<1||config.ca.length>16384||!config.ca.includes('-----BEGIN CERTIFICATE-----'))throw new Error();
@@ -65,7 +67,7 @@ export function validateBuyerWriterGatewayProvisioningConfiguration(value,{works
       value.runtime.password,value.issuer.password];
     if(credentials.some(value=>!secret(value))||new Set(credentials).size!==credentials.length
       ||value.runtime.host.toLowerCase()!==value.issuer.host.toLowerCase()||value.runtime.port!==value.issuer.port
-      ||value.runtime.database!==value.issuer.database||value.runtime.ca!==value.issuer.ca)throw new Error();
+      ||value.runtime.database!==value.issuer.database||value.runtime.backendProfile!==value.issuer.backendProfile||value.runtime.profileDigest!==value.issuer.profileDigest||value.runtime.ca!==value.issuer.ca)throw new Error();
     const authority=validateBuyerWriterGatewayAuthority(value.authority,{workspace});
     const permit=JSON.parse(permitConfiguration(value.operationPermitConfiguration,authority,workspace));
     const verificationConfiguration=validateOperationPermitVerificationConfiguration(value.operationPermitVerificationConfiguration);
@@ -90,7 +92,8 @@ export function validateBuyerWriterConfiguration(value,{workspace,environment='p
       ||value.version!==1||value.workspace!==workspace||!canonicalPath(value.bindingFile)
       ||!Number.isInteger(value.creatorOid)||value.creatorOid<1||value.creatorOid>4294967295)throw new Error();
     for(const config of [value.runtime,value.issuer]){
-      if(!exact(config,['host','port','database','password'],['ca'])||typeof config.host!=='string'||config.host.length>253
+      if(ownedDatabaseConnection(config))validateOwnedConnectionShape(config);
+      if(!exact(config,['host','port','database','password'],['ca',...(ownedDatabaseConnection(config)?['backendProfile','profileDigest']:[])])||typeof config.host!=='string'||config.host.length>253
         ||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(config.host)||!Number.isInteger(config.port)||config.port<1||config.port>65535
         ||typeof config.database!=='string'||!/^[a-zA-Z0-9_-]{1,63}$/.test(config.database)
         ||(config.ca!==undefined&&(typeof config.ca!=='string'||config.ca.length>16384||!config.ca.includes('-----BEGIN CERTIFICATE-----'))))throw new Error();
@@ -105,7 +108,7 @@ export function validateBuyerWriterConfiguration(value,{workspace,environment='p
     const credentials=[value.writerCredential,value.issuerCredential,value.runtime.password,value.issuer.password];
     if(credentials.some(value=>!secret(value))||new Set(credentials).size!==4
       ||value.runtime.host.toLowerCase()!==value.issuer.host.toLowerCase()||value.runtime.port!==value.issuer.port
-      ||value.runtime.database!==value.issuer.database)throw new Error();
+      ||value.runtime.database!==value.issuer.database||value.runtime.backendProfile!==value.issuer.backendProfile||value.runtime.profileDigest!==value.issuer.profileDigest)throw new Error();
     return Object.freeze({...value,runtime:Object.freeze({...value.runtime}),issuer:Object.freeze({...value.issuer}),...(value.units?{units:Object.freeze({...value.units})}:{})});
   }catch{throw new Error('Buyer writer configuration rejected');}
 }

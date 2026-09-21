@@ -21,3 +21,14 @@ test('legacy absent observation never becomes observed proof', () => {
   const result = decodeObservedResponse('{}', new Response('{}'), route);
   assert.equal(observationForResult(result), null);
 });
+
+test('owned observation is a distinct authority-bound Buyer transport',()=>{
+ const binding='b'.repeat(64),owned={...observation,version:2,transport:'bounded owned PostgreSQL SELECT and Supabase GET/HEAD',scope:'authority-bound Buyer read only'};
+ const reply=value=>new Response('{}',{headers:{'x-zola-read-observation':JSON.stringify(value),'x-blackspire-authority-binding':binding}});
+ const buyerRoute='/api/internal/capabilities/buyer-profiles';
+ const result=decodeObservedResponse('{}',reply(owned),buyerRoute,binding);
+ assert.equal(observationForResult(result).version,2);
+ for(const [value,target,expected] of [[owned,route,binding],[owned,buyerRoute,null],[owned,buyerRoute,'c'.repeat(64)],[{...owned,releaseSha:null},buyerRoute,binding],[{...owned,transport:observation.transport},buyerRoute,binding]]){
+  assert.throws(()=>decodeObservedResponse('{}',reply(value),target,expected),/rejected/);
+ }
+});

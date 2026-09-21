@@ -1,3 +1,4 @@
+import {ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
 import {X509Certificate} from 'node:crypto';
 import {
  ADMISSION_READINESS_SQL,AdmissionUnavailableError,admissionIdentityValues,createAttestedAdmissionExecutor,
@@ -47,10 +48,12 @@ function validCertificateBundle(value){
 }
 
 function validateConnection(value){
+ const keys=[...allowedKeys,...(ownedDatabaseConnection(value)?['backendProfile','profileDigest']:[])];
+ if(ownedDatabaseConnection(value))validateOwnedConnectionShape(value);
  if(!value||typeof value!=='object'||Array.isArray(value)
-  ||Object.keys(value).length!==allowedKeys.length
-  ||!allowedKeys.every(key=>Object.hasOwn(value,key))
-  ||Object.keys(value).some(key=>!allowedKeys.includes(key))
+  ||Object.keys(value).length!==keys.length
+  ||!keys.every(key=>Object.hasOwn(value,key))
+  ||Object.keys(value).some(key=>!keys.includes(key))
   ||typeof value.host!=='string'||value.host.length>253
   ||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(value.host)
   ||!Number.isInteger(value.port)||value.port<1||value.port>65535
