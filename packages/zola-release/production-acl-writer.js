@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {readOwnedDatabaseProfile,databaseProfileDigest,validateManagementCredential} from '../buyer-writer/database-profile.js';
+import {readOwnedDatabaseProfile,databaseProfileDigest,validateManagementCredential,databaseTlsOptions} from '../buyer-writer/database-profile.js';
 import {OWNED_DATABASE_ACL_SQL,ownedDatabaseAclParameters,verifyOwnedDatabaseAclResult} from '../buyer-writer/owned-database-evidence.js';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
@@ -69,7 +69,7 @@ export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,l
     ||runtime.profileDigest!==profileDigest||runtime.host!==profile.host||runtime.port!==profile.port||runtime.database!==profile.database)reject();
    const connection=validateManagementCredential(management.value,{ownedProfile:profile});
    const DriverPool=Pool??(await import('pg')).Pool;
-   pool=new DriverPool({...connection,ssl:{rejectUnauthorized:true,ca:connection.ca},application_name:'zola-owned-acl-observer',max:1,
+   pool=new DriverPool({...connection,ssl:databaseTlsOptions(connection),application_name:'zola-owned-acl-observer',max:1,
     connectionTimeoutMillis:2000,query_timeout:8000,idleTimeoutMillis:1000,
     options:'-c default_transaction_read_only=on -c statement_timeout=7000 -c lock_timeout=1000 -c search_path=pg_catalog'});
    client=await pool.connect();await client.query('begin isolation level repeatable read read only');
