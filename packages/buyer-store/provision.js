@@ -1,3 +1,4 @@
+import {databaseTlsOptions} from '../buyer-writer/database-profile.js';
 import {provisionBuyerStorePasswords} from './password-provision.js';
 import {observeFreshOwnedRepositoryCredentials} from '../buyer-writer/owned-postgres-materializer.js';
 import fs from 'node:fs';
@@ -56,7 +57,7 @@ export async function provisionBuyerStore(releaseSha,{Client}={}){
   const config=validateBuyerStoreConfiguration(plan.configuration);
   if(plan.version!==1||plan.releaseSha!==releaseSha||plan.artifactDigest!==artifact.artifactDigest||config.client.profileDigest!==ownedPostgresProfileDigest(profile)||config.publicKey!==verifier.publicKey||config.operatorOwnerId!==verifier.operatorOwnerId||config.ipcGroupId!==ipcGroupId)fail();
   const intent={version:1,planDigest:digest(plan),roles};
-  const options=(user,password)=>({host:profile.host,port:profile.port,database:profile.database,user,password,ssl:{rejectUnauthorized:true,ca:credential.ca},connectionTimeoutMillis:3000,query_timeout:8000});
+  const options=(user,password)=>({host:profile.host,port:profile.port,database:profile.database,user,password,ssl:databaseTlsOptions({...profile,ca:credential.ca}),connectionTimeoutMillis:3000,query_timeout:8000});
   const verify=async()=>{
    for(const [index,user] of roles.entries()){
     const client=new Driver(options(user,index===0?config.repositoryPassword:config.capabilityPassword));

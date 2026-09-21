@@ -31,5 +31,5 @@ export function createBuyerStoreAttestation(configuration,{read=readRootOwnedJso
   const after=snapshot();if(JSON.stringify(before)!==JSON.stringify(after))fail();
   return before.digest;
  };
- return Object.freeze({verify,verifyUnchanged:async digest=>{if(await verify()!==digest)fail();}});
+ return Object.freeze({binding:()=>structuredClone(snapshot().value),verify,verifyUnchanged:async digest=>{if(await verify()!==digest)fail();}});
 }

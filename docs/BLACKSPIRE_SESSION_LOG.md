@@ -2130,3 +2130,7 @@ Added IPC-only group isolation, fixed OS identity, exact installed artifact and 
 ## 2026-09-21 — Buyer credential reconciliation and installed manifest tests
 
 Disposable PostgreSQL 17.6 SCRAM tests prove initial-password refusal and uncertain-commit reconciliation without repeat rotation. Added authenticated readiness and concrete retained installed-manifest publication/restoration. Four focused tests pass; the root-filesystem publisher test intentionally skips without root. Full production adapter execution remains UNVERIFIED. No production mutations.
+
+## 2026-09-21 — disconnected daemon work retains admission fence
+
+Added a daemon-owned release lease and strict OPEN user-operation gate. Actual socket disconnect and cross-process flock contention remain fenced until completion; HELD user refusal and generation checks pass. Six focused tests pass, with no production mutation.
