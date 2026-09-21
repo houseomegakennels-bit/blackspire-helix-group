@@ -7,7 +7,7 @@ export function createBuyerWriterAvailability({workspace,releaseSha,apiGeneratio
     ||!['production','staging','disposable-staging'].includes(environment)
     ||[getHealth,getReadiness,observeBinding,now].some(value=>typeof value!=='function'))throw new Error('Buyer writer availability configuration rejected');
   const snapshot=async()=>{
-    const health=await getHealth(),ready=await getReadiness();
+    const ready=await getReadiness(),health=await getHealth();
     if(health?.ok!==true||ready?.ok!==true||health.emergencyStop!==false||health.database!=='available')return null;
     for(const value of [health,ready]){
       if(value.service!=='blackspire-command-api'||value.lifecycle!=='ready'||value.deploymentIdentity?.state!=='VERIFIED'
@@ -26,7 +26,7 @@ export function createBuyerWriterAvailability({workspace,releaseSha,apiGeneratio
       const started=now();
       return await Promise.race([
         (async()=>{const before=await snapshot();if(before===null||expired||now()-started>2000)return false;
-          const proof=await observeBinding(),after=await snapshot();
+          const proof=await observeBinding();if(expired||now()-started>2000)return false;const after=await snapshot();
           return now()-started<=2000&&after!==null&&before===after&&proof?.approved===true&&proof.credentialsSeparated===true
             &&proof.apiGeneration===apiGeneration&&proof.workerGeneration===after&&proof.releaseSha===releaseSha&&proof.workspace===workspace;
         })(),

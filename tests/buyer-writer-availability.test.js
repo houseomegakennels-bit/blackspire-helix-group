@@ -50,3 +50,10 @@ test('a stalled async base snapshot stays within the availability deadline and n
  const f=fixture();let finish,calls=0;f.options.getReadiness=()=>new Promise(resolve=>{finish=resolve;});f.options.observeBinding=async()=>{calls++;return f.proof;};
  assert.equal(await createBuyerWriterAvailability(f.options)(),false);finish(f.readiness);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,0);
 });
+
+
+test('emergency stop during the final asynchronous store probe uses fresh health and denies',async()=>{
+ const f=fixture();let reads=0;f.options.getHealth=()=>structuredClone(f.health);
+ f.options.getReadiness=async()=>{await Promise.resolve();if(++reads===2)f.health.emergencyStop=true;return structuredClone(f.readiness);};
+ assert.equal(await createBuyerWriterAvailability(f.options)(),false);assert.equal(reads,2);
+});
