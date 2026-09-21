@@ -40,8 +40,11 @@ test('owned release input is explicitly versioned and changes immutable input di
  const options={policy:{preparationRoot:root,operatorRoot:operator,owner:process.getuid()},identity:{getuid:()=>0,geteuid:()=>0},verifySource:releaseSha=>({releaseSha,clean:true})};
  const load=v=>loadProductionReleaseInput(file,{...options,readBytes:()=>JSON.stringify(v)+'\n'});
  try{
-  const legacy=load(value),owned=load({...value,schema:2,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)});
+  const ownedValue={...value,schema:2,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64),sourceSecurityConfigurationFile:path.join(root,'source-security.json'),ownedMigrationConfigurationFile:path.join(root,'owned-migration.json')};
+  const legacy=load(value),owned=load(ownedValue);
   assert.notEqual(owned.inputDigest,legacy.inputDigest);assert.equal(owned.value.backendProfile,'owned-postgres-v1');
+  assert.equal(owned.value.migrationConfigurationFile,value.migrationConfigurationFile);
+  for(const key of ['sourceSecurityConfigurationFile','ownedMigrationConfigurationFile']){assert.throws(()=>load({...ownedValue,[key]:undefined}),/rejected/);assert.throws(()=>load({...ownedValue,[key]:'/tmp/unprotected.json'}),/rejected/);assert.notEqual(load({...ownedValue,[key]:path.join(root,'other.json')}).inputDigest,owned.inputDigest);}
   for(const patch of [{schema:1,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)},{schema:2},{schema:2,backendProfile:'supabase',profileDigest:'d'.repeat(64)},{schema:2,backendProfile:'owned-postgres-v1',profileDigest:'bad'}])assert.throws(()=>load({...value,...patch}),/rejected/);
  }finally{fs.rmSync(operator,{recursive:true,force:true});}
 });

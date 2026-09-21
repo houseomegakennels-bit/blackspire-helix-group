@@ -10,6 +10,7 @@ export const PRODUCTION_OPERATOR_ROOT='/var/lib/blackspire-operator';
 export const PRODUCTION_PRINCIPAL='blackspire-release-root';
 export const PRODUCTION_WORKSPACE='zola-production';
 const fields=['schema','kind','releaseSha','previousMainSha','recoverySha','workspace','principal','preparationRoot','packageConfigurationFile','n8nBackupFile','diskConfigurationFile','backupManifestFile','migrationConfigurationFile','activationConfigurationFile'];
+const ownedFields=['backendProfile','profileDigest','sourceSecurityConfigurationFile','ownedMigrationConfigurationFile'];
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const reject=()=>{throw new Error('Protected production release input rejected');};
 const under=(root,value)=>typeof value==='string'&&path.isAbsolute(value)&&path.resolve(value)===value&&value.startsWith(`${root}/`)&&!value.includes('\0');
@@ -39,11 +40,11 @@ export function loadProductionReleaseInput(filename,{
  assertRootOnly(identity);assertRepository(repository);assertInputFile(filename,policy.preparationRoot,policy.owner);
  const raw=readBytes(filename,65536);let value;try{value=JSON.parse(raw);}catch{reject();}
  if(raw!==`${JSON.stringify(value)}\n`)reject();
- if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!==[...fields,...(value.schema===2?['backendProfile','profileDigest']:[])].sort().join(',')
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!==[...fields,...(value.schema===2?ownedFields:[])].sort().join(',')
   ||![1,2].includes(value.schema)||(value.schema===2&&(value.backendProfile!=='owned-postgres-v1'||!(/^[a-f0-9]{64}$/).test(value.profileDigest??'')))||value.kind!=='zola_production_release'||![value.releaseSha,value.previousMainSha,value.recoverySha].every(sha)
   ||new Set([value.releaseSha,value.previousMainSha,value.recoverySha]).size!==3
   ||value.workspace!==PRODUCTION_WORKSPACE||value.principal!==PRODUCTION_PRINCIPAL||value.preparationRoot!==policy.preparationRoot)reject();
- for(const key of fields.slice(8))if(!under(policy.operatorRoot,value[key]))reject();
+ for(const key of [...fields.slice(8),...(value.schema===2?ownedFields.slice(2):[])])if(!under(policy.operatorRoot,value[key]))reject();
  const source=verifySource(value.releaseSha);
  const second=readBytes(filename,65536);if(second!==raw)reject();
  const inputDigest=hash({bytes:raw,filename,repositoryRoot:PRODUCTION_REPOSITORY_ROOT,workspace:value.workspace,principal:value.principal});
