@@ -2272,9 +2272,44 @@ Read-only diagnosis confirmed that the deployed store could not use root-only se
 
 Prepared a fixed, append-only partial-candidate retirement helper with retained stop intent/result and exact successor lineage. Five core fault tests pass using the actual retained116/9-event fixtures and chained parser. Read-only production inspection confirmed pending writer publication has no binding/commit/staged files. No production stop, retirement, database write or successor deployment was executed by this work. Final independent review and native operational execution remain separate gates.
 
-## 2026-09-21 — successor final-input tooling
+## 2026-09-21 — reconnect and successor runtime verification
+
+Verified unchanged production candidate/processes and independently passed the integrated confined runtime with actual disposable PostgreSQL TLS readiness. Strengthened schema-three production and n8n history tests; focused checks pass. No production stop, deployment or OPEN occurred.
+## 2026-09-21 — retained successor configuration
+
+Added explicit successor writer/store configuration preparation from the retired candidate. Only release/operation/attempt authority fields change; source-v1 bytes, passwords, signing keys, repository/deal secrets, profile and acceptance job identity are retained. Publication reconciles exact before/candidate bytes; stopped rollback restores configuration only. Frontend inheritance binds unchanged prior provider metadata rather than rewriting settings. Three focused tests cover preservation, interrupted publication/restore and frontend drift. Native successor execution remains UNVERIFIED; no production mutations occurred.
+
+Successor installation follow-up: exact retained live gateway and API writer drop-in are replaced before invoking the native owned configuration installer. The native installer rechecks scoped database identities and emits new content-addressed files/manifest. An actual root-owned file fixture verifies partial gateway/drop-in ordering, lost final acknowledgement, retained signing-key bytes/inode and exact stopped restore; database health transport is modeled in that fixture. Eight focused tests pass, no production changes.
+
+## 2026-09-21 — successor running replay and restoration barrier
+
+Successor configuration now exposes a read-only running observer requiring final retained publication records, exact protected writer files and native installed manifest, plus the published store transition. It performs no service or publication effects. Any pending/completed restore blocks normal prepare, publish and observe; restoration requires its original publication intent. Nine focused tests pass, including interrupted restore, running replay and every installed-byte drift, with actual protected installer recovery covered separately. Native successor execution remains UNVERIFIED; no production changes.
+
+## 2026-09-21 — successor preview operator prepared
+
+Added a separate exact-SHA successor preview workflow using unchanged inherited frontend settings and per-release durable records. It preserves prior credentials, refuses ambiguous redeployment, restores the retained project-ignore setting and validates READY origin before publication. Ten focused regressions pass. Production execution and independent review remain pending; no remote settings or deployment were changed by this implementation.
+## 2026-09-21 — Successor gateway unit transition
+
+Implemented a separate protected successor unit plan, intent and completion receipt while retaining the original gateway installation state. Exact retired-release lineage, owned profile, HELD state and four stopped services bind preparation and replacement. Only the rendered unit and daemon reload change; no identity provisioning, credential rotation, enable or start occurs. Lost replacement or reload acknowledgements recover from exact retained bytes. Running observation performs no publication, and postmerge reads the distinct completed receipt with all predecessor dependencies. Six disposable protected-file tests cover recovery, authority drift, foreign units/dropins and running observation. Native production installation remains UNVERIFIED; no production action was taken.
+## 2026-09-21 — controlled successor HELD handoff
 
 Added explicit retirement-bound HELD rollover and current-segment candidate establishment. Retained predecessor files, one fresh run and exact interrupted publication are tested with protected files and flock; the composed establishment test verifies rollover precedes candidate/lifecycle/manifest. Existing retirement and HELD regressions pass. Native service/provider observations remain modeled and production execution UNVERIFIED. No production changes occurred.
+
+## 2026-09-21 — postmerge successor unit lineage
+
+Added exact successor unit receipt dependencies to postmerge authority publication, preserving the original installation record. Eight postmerge tests pass; production execution remains pending.
+
+## 2026-09-21 — successor final-input tooling
+
+Prepared the separate schema-three final-input operator with one retained operation UUID, unchanged original migration lineage, fresh candidate package/backup/disk bindings and predecessor HELD fences. Workflow observations are GET-only and never append to the global event streams. Six focused orchestration tests pass; native successor execution remains unverified. No production effects occurred, and activation/lineage are explicitly not claimed by preparation or inspection.
+
+## 2026-09-21 — deterministic successor output reconciliation
+
+Added observation-only adoption of complete exact bundle/input outputs after lost acknowledgment, including file/directory synchronization before recording success. Partial output and unknown random-path backup outcomes remain blocked without repeated effects. Nine focused tests, including actual file synchronization and partial/foreign output refusal, pass; no production execution occurred.
+
+## 2026-09-21 — successor reconciliation prerequisite durability
+
+Independent review identified that a staged intent could be observed without promotion before the adopted output result. Reconciliation now synchronizes/promotes that exact intent before recording its result. Ten focused regressions pass, including explicit staged-intent ordering. No production effects occurred.
 
 ## 2026-09-21 — successor candidate store plan reuse
 
