@@ -2345,3 +2345,7 @@ PR #153 merged as 3019785f108f3da78720da265bb5ccc6e17ae2d4 after exact-head CI 3
 ## 2026-09-21 — successor historical/current main separation
 
 Prepared explicit current-mainf3ac3d3 binding without rewriting predecessor2775 input or migration lineage. Fixed remote and ancestry checks reject stale/foreign main before protected preparation stages; focused tests preserve immutable old input. Source integration and production execution remain pending.
+
+## 2026-09-21 — reconcile concurrent main and reviewed anchor
+
+Reviewed the main3019785 demo delta and integrated it with preserved release authorization, owned routing and invitation CAS behavior; documentation-onlyf3ac is also retained. Fifty-five focused tests and frontend TypeScript/normal production build pass. Updated the implementation anchor to reviewed3019785 without changing the checker; successor output independently pins currentf3ac while historical input remains2775. Source demo-policy compatibility proof and final exact-source validation remain pending. Production remains HELD and unchanged by this milestone.

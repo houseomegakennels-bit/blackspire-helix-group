@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — concurrent main reviewed and reconciled
+
+The reviewed implementation anchor advances to main3019785; current mainf3ac is its documentation-only descendant. Review and conflict resolution preserve the release’s stricter admin gates, owned Buyer routing and claim-before-authority invitation repair while retaining isolated demo functionality. Fifty-five focused tests, frontend TypeScript and the normal Turbopack production build pass. The predecessor input remains bound to historical2775; new successor input separately pins actual currentf3ac and verifies the full ancestry. This anchor records reviewed implementation, not production acceptance. The already-applied restrictive demo policy changes the source catalog; current source compatibility remains pending its explicit read-only successor proof. Original migration/copy/hardening evidence is retained.
+
+The earlier full contained snapshot ran 2,561 tests: 2,382 passed, 168 skipped and eleven failed solely because protected root fixtures lacked nonroot guards. Corrected guards pass separately as root (18 passed) and unprivileged (7 passed,11 skipped); the full snapshot drained output and left zero descendants. Final exact-source CI remains required. No successor production deployment or public opening occurred.
+
 ## 2026-09-21 — explicit successor current-main binding
 
 Successor final-input preparation now preserves the immutable predecessor main2775 binding while separately requiring reviewed feature main3019785 and its documentation-only current mainf3ac3d3. The new input and retained snapshot bind that exact current main after fixed-URL remote observation and explicit historical-to-feature-to-current-to-candidate ancestry checks. Foreign or stale main refuses; predecessor input, source/copy/hardening receipts and recovery pins remain unchanged. Focused binding and refusal tests pass. Main-feature integration and production successor execution remain separate gates; this change performs no production actions.
@@ -1085,7 +1091,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `2775fd5043ad422418a4177f686671961e9a9738`
+- Last verified implementation commit: `3019785f108f3da78720da265bb5ccc6e17ae2d4`
 
 ## 2026-09-04 — Activation recovery delta
 
