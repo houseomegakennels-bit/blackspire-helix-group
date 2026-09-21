@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — explicit successor current-main binding
+
+Successor final-input preparation now preserves the immutable predecessor main2775 binding while separately requiring reviewed current main3019785. The new input and retained snapshot bind that exact current main after fixed-URL remote observation and both historical-to-current and current-to-candidate ancestry checks. Foreign or stale main refuses; predecessor input, source/copy/hardening receipts and recovery pins remain unchanged. Focused binding and refusal tests pass. Main-feature integration and production successor execution remain separate gates; this change performs no production actions.
+
 ## 2026-09-21 — deployed acceptance artifact authority
 
 Running six-read collection and denial issuance now require deployed artifact evidence, resolving the contradiction where they previously demanded an absent deployment record before reading installed runtime evidence. Preparation still requires sealed artifacts. Seventeen focused tests pass, including real digest/tree/deployment-record verification composed with running denial and collector source authority, rejecting undeployed or tampered artifacts. Production execution remains UNVERIFIED; no production changes.

@@ -1,3 +1,4 @@
+import {PREDECESSOR_MAIN,bindSuccessorMain,observeSuccessorMain} from './owned-successor-main.js';
 import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +20,7 @@ export async function synchronizeKnownSuccessorOutputs(paths,verify){
  await verify();for(const p of [...paths,...new Set(paths.map(p=>path.dirname(p)))]){const fd=fs.openSync(p,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}await verify();
 }
 const OLD='/var/lib/blackspire-operator/preparation/owned-final-2636a1e-95a11ea1-289f-46a9-b5cd-cc7805497242-56ef766c-ed0d-413d-a9fb-730cd38654bc/production-release.json';
-const MAIN='2775fd5043ad422418a4177f686671961e9a9738',RECOVERY='2c0b600c268faa0571f08322e16d7f81f37789be';
+const RECOVERY='2c0b600c268faa0571f08322e16d7f81f37789be';
 const metadata=p=>{const r=readRootOwnedMetadataSnapshot(p,{groupId:0});if(r.identity.uid!==0||r.identity.gid!==0||(r.identity.mode&4095)!==0o600)fail();return r.value;};
 export function createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect=false}){
  if(process.getuid?.()!==0||!/^[a-f0-9]{40}$/.test(releaseSha??'')||releaseSha===P.releaseSha)fail();
@@ -28,17 +29,17 @@ export function createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect=f
  const read=n=>{const p=filename(n),v=files.read(p),pending=files.read(p+'.pending');if(v!==null&&pending!==null)fail();return v??pending;};
  let captured;
  const snapshot=async sha=>{
-  verifyReleaseSource(sha);const profile=readOwnedDatabaseProfile(),old=metadata(OLD);if(databaseProfileDigest(profile)!==P.profileDigest||old.schema!==2||old.releaseSha!==P.releaseSha||old.previousMainSha!==MAIN||old.recoverySha!==RECOVERY||old.profileDigest!==P.profileDigest||old.sourceSecurityConfigurationFile!==F.sourceSecurityConfigurationFile||old.ownedMigrationConfigurationFile!==F.ownedMigrationConfigurationFile)fail();
+  verifyReleaseSource(sha);const currentMainSha=observeSuccessorMain(sha);const profile=readOwnedDatabaseProfile(),old=metadata(OLD);if(databaseProfileDigest(profile)!==P.profileDigest||old.schema!==2||old.releaseSha!==P.releaseSha||old.previousMainSha!==PREDECESSOR_MAIN||old.recoverySha!==RECOVERY||old.profileDigest!==P.profileDigest||old.sourceSecurityConfigurationFile!==F.sourceSecurityConfigurationFile||old.ownedMigrationConfigurationFile!==F.ownedMigrationConfigurationFile)fail();
   const originals={};for(const [key,p]of Object.entries(F)){originals[key]=metadata(p);if(hash(originals[key])!==D[key])fail();}
   const n8n=metadata(old.packageConfigurationFile),disk={...metadata(old.diskConfigurationFile),artifactRoot:'/opt/blackspire-command/releases/'+sha};
   if(disk.databasePath!=='/opt/blackspire-command/shared/database/command.sqlite'||disk.releaseRoot!=='/opt/blackspire-command')fail();
   const proof=await verifyReleaseArtifactDisk({releaseSha:sha,configuration:disk}),held=await observeOwnedMigrationPreparationHeld(journal);
-  const oldBackup=readReleaseProtectedBytes(old.n8nBackupFile,2*1024*1024);captured={profile,old,originals,n8n,disk,oldBackup};
-  return {oldInputDigest:hash(old),profileDigest:P.profileDigest,originalDigests:D,n8nDigest:hash(n8n),oldBackupDigest:hash(oldBackup),disk,artifactDigest:proof.artifact.artifactDigest,held};
+  const oldBackup=readReleaseProtectedBytes(old.n8nBackupFile,2*1024*1024);captured={currentMainSha,profile,old,originals,n8n,disk,oldBackup};
+  return {currentMainSha,oldInputDigest:hash(old),profileDigest:P.profileDigest,originalDigests:D,n8nDigest:hash(n8n),oldBackupDigest:hash(oldBackup),disk,artifactDigest:proof.artifact.artifactDigest,held};
  };
  const bundle=(plan,workflow)=>{const backupBytes=JSON.stringify(workflow.observation)+'\n',n8n={...captured.n8n,releaseSha:plan.releaseSha,backupSha256:hash(backupBytes)},source=captured.originals.sourceSecurityConfigurationFile;
   return {backupBytes,n8n,prepared:prepareOfflineReleaseBundle({releaseSha:plan.releaseSha,n8nConfiguration:n8n,providerManifest:source.providerManifest,creatorOid:source.sourceCreatorOid,backupBytes})};};
- const input=(plan,results)=>{const old=captured.old;const legacy=Object.fromEntries(['schema','kind','releaseSha','previousMainSha','recoverySha','workspace','principal','preparationRoot','packageConfigurationFile','n8nBackupFile','diskConfigurationFile','backupManifestFile','migrationConfigurationFile','activationConfigurationFile'].map(k=>[k,old[k]]));
+ const input=(plan,results)=>{const old=bindSuccessorMain(captured.old,captured.currentMainSha);const legacy=Object.fromEntries(['schema','kind','releaseSha','previousMainSha','recoverySha','workspace','principal','preparationRoot','packageConfigurationFile','n8nBackupFile','diskConfigurationFile','backupManifestFile','migrationConfigurationFile','activationConfigurationFile'].map(k=>[k,old[k]]));
   Object.assign(legacy,{schema:1,releaseSha:plan.releaseSha,packageConfigurationFile:root+'/bundle/n8n-configuration.json',n8nBackupFile:root+'/n8n-backup.json',diskConfigurationFile:root+'/disk.json',backupManifestFile:results.backup.manifestFile,migrationConfigurationFile:root+'/bundle/migration-input.json',activationConfigurationFile:root+'/activation-location.json'});
   return prepareOwnedSuccessorProductionReleaseInput({legacy,profile:captured.profile,operationId:plan.operationId});};
  const verify=async(stage,plan,results,value)=>{
