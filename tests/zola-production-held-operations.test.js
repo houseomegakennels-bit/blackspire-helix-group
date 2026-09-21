@@ -158,6 +158,7 @@ test('owned premerge collector requires its distinct version and immutable datab
 });
 
 
+
 test('owned admission proves current source freeze and target hardening before activation on apply and reconcile',async()=>{
  const events=[],journal={stream:()=>({events:()=>events,append:e=>events.push(e)})};
  const release={backendProfile:'owned-postgres-v1',profileDigest:'a'.repeat(64),sourceSecurityConfigurationFile:'/fixed/source',ownedMigrationConfigurationFile:'/fixed/copy'};
@@ -170,4 +171,17 @@ test('owned admission proves current source freeze and target hardening before a
  await operations.admission_lease.execute(call);assert.deepEqual(order,['proof','activate','held','binding']);order.length=0;
  await operations.admission_lease.reconcile(call);assert.deepEqual(order,['proof','activate','held','binding']);order.length=0;frozen=false;
  await assert.rejects(operations.admission_lease.execute(call));assert.deepEqual(order,['proof']);
+});
+
+
+test('owned guarded OPEN retains intent before routing and retries routing before admission', {skip:process.getuid()!==0},async t=>{
+ const f=fixture(t),claims=inspectHeldAcceptanceHistory(f.events).claims,claimsDigest=hash(claims),evidenceDigests=[];
+ f.events.push({schema:1,type:'held_acceptance_consume_intent',permitId:claims.permitId,claimsDigest});
+ for(const operation of HELD_ACCEPTANCE_OPERATIONS){const attemptId=randomUUID(),evidence={modeled:true,operation};evidenceDigests.push(hash(evidence));f.events.push({schema:1,type:'held_acceptance_operation_intent',permitId:claims.permitId,claimsDigest,operation,attemptId},{schema:1,type:'held_acceptance_operation_result',permitId:claims.permitId,claimsDigest,operation,attemptId,evidence,evidenceDigest:hash(evidence)});}
+ f.events.push({schema:1,type:'held_acceptance_consumed',permitId:claims.permitId,claimsDigest,operationsDigest:hash(HELD_ACCEPTANCE_OPERATIONS),acceptanceDigest:hash({claimsDigest,operations:[...HELD_ACCEPTANCE_OPERATIONS],evidenceDigests})});
+ f.call.state.pending.stage='guarded_held_to_open';Object.assign(f.call.state.outputs,{journaled_vps_cutover:{newMainSha:merged,artifactDigest:'a'.repeat(64)},n8n_migration:{},production_migrations:{},six_reads:{},rollback_verification:{observationDigest:'b'.repeat(64)},ci_security:{},production_smoke:{observationDigest:'c'.repeat(64)},six_live_reads:{readCount:6,crossOwnerDenials:6},zero_paid_nexus:{paidProviderCalls:0},zero_unintended_mutation:{mutationDelta:0}});
+ const order=[],accepted={modeled:true};let rejectRouting=true,open;
+ const operations=createHeldProductionOperations({input,journal:f.journal,release:{backendProfile:'owned-postgres-v1'}},{prepareOpen:async()=>({exactPlan:true}),inspectRecord:()=>({accepted,open,phase:open?'OPEN':'ACCEPTED_HELD'}),writeOpen:({record})=>{open=record;},options:()=>({}),publicRouting:async bound=>{assert.equal(bound.releaseSha,candidate);assert.equal(bound.newMainSha,merged);assert.equal(bound.journal,f.journal);assert.equal(f.events.filter(v=>v.type==='final_release_open_record_intent').length,1);order.push('routing');if(rejectRouting)throw Error('routing unavailable');return{status:'PUBLIC_COMMAND_ROUTING_VERIFIED',planDigest:'f'.repeat(64)};},publishOpen:async()=>{order.push('open');}});
+ await assert.rejects(operations.guarded_held_to_open.execute(f.call),/routing unavailable/);assert.deepEqual(order,['routing']);rejectRouting=false;
+ assert.equal((await operations.guarded_held_to_open.reconcile(f.call)).status,'PASS');assert.deepEqual(order,['routing','routing','open']);assert.equal(f.events.filter(v=>v.type==='final_release_open_record_intent').length,1);
 });

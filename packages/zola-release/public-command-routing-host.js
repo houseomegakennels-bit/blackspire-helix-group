@@ -5,6 +5,10 @@ import {hash} from './commander-journal.js';
 import {inspectReleaseCommander} from './commander.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {inspectFinalReleaseRecord,inspectFinalReleaseRecordHistory} from './final-release-record.js';
+import {createBuyerStoreLocalClient} from '../buyer-store/local-client.js';
+import {validateClientConfiguration} from '../buyer-store/local-protocol.js';
+import {readOwnedDatabaseProfile,databaseProfileDigest} from '../buyer-writer/database-profile.js';
+import {observeBuyerWriterRuntimeIsolation} from './pg-net-host-observer.js';
 import {observeHeldLifecycle} from './held-lifecycle.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {acquireReleaseAdmissionLock,RELEASE_ADMISSION_ROOT,validateReleaseAdmissionState} from '../shared/release-admission.js';
@@ -19,8 +23,12 @@ const bytes=(p,options)=>readOwnedConfigurationBytes(p,options);
 const sync=p=>{const fd=fs.openSync(p,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}};
 function makeDirectory(p){try{fs.mkdirSync(p,{mode:0o700});sync(p.slice(0,p.lastIndexOf('/')));}catch(e){if(e.code!=='EEXIST')throw e;}const s=fs.lstatSync(p);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||s.gid!==0||(s.mode&0o7777)!==0o700)fail();}
 function remoteMain(expected){const observed=run('/usr/bin/git',['--no-replace-objects','-C',fileURLToPath(new URL('../../',import.meta.url)),'ls-remote','--exit-code','https://github.com/houseomegakennels-bit/blackspire-helix-group.git','refs/heads/main']);if(observed!==expected+'\trefs/heads/main')fail();}
-export function createPublicCommandRoutingHost({releaseSha,newMainSha,journal,lease,groupId}){
- if(process.getuid()!==0||![releaseSha,newMainSha].every(v=>/^[a-f0-9]{40}$/.test(v??''))||!lease)fail();
+export function validatePublicCommandAdmission(s,record,newMainSha,hasResult){
+ const exact=s.apiGeneration===record.apiGeneration&&s.workerGeneration===record.workerGeneration;
+ if(s.releaseSha!==newMainSha||s.runId!==record.epochRunId||!['held','open'].includes(s.mode)||s.mode==='held'&&!(exact||s.apiGeneration===null&&s.workerGeneration===null)||s.mode==='open'&&!(exact&&hasResult))fail();return true;
+}
+export function createPublicCommandRoutingHost({releaseSha,newMainSha,profileDigest,journal,lease,groupId}){
+ if(process.getuid()!==0||![releaseSha,newMainSha].every(v=>/^[a-f0-9]{40}$/.test(v??''))||!lease||!(/^[a-f0-9]{64}$/).test(profileDigest??''))fail();
  const root=BASE+'/'+releaseSha;makeDirectory(BASE);makeDirectory(root);
  const current=()=>{const s=fs.lstatSync(ENABLED);if(!s.isSymbolicLink()||s.uid!==0||fs.realpathSync(ENABLED)!==FILE)fail();return bytes(FILE,{mode:0o644});};
  const state=()=>{lease.assertIdentity();return validateReleaseAdmissionState(readRootOwnedJson(RELEASE_ADMISSION_ROOT+'/state.json',{groupId,maxBytes:2048}));};
@@ -34,12 +42,18 @@ export function createPublicCommandRoutingHost({releaseSha,newMainSha,journal,le
    ||sequence.pending?.stage!=='guarded_held_to_open'&&sequence.completed!==true)fail();
   return {record:record.accepted,sequence};};
  const authorize=async()=>{verifyReleaseSource(releaseSha);remoteMain(newMainSha);const {record,sequence}=accepted(),s=state();
-  if(s.releaseSha!==newMainSha||s.runId!==record.epochRunId||s.mode==='held'&&(s.apiGeneration!==null||s.workerGeneration!==null)
-   ||s.mode==='open'&&(s.apiGeneration!==record.apiGeneration||s.workerGeneration!==record.workerGeneration||!read('result')))fail();
+  validatePublicCommandAdmission(s,record,newMainSha,Boolean(read('result')));
+  const isolation=await observeBuyerWriterRuntimeIsolation({releaseSha:newMainSha});if(!isolation||!['gatewayTransportVerified','applicationDbCredentialsAbsent','arbitrarySqlDenied','arbitraryFunctionDenied','arbitraryUrlDenied'].every(k=>isolation[k]===true))fail();
   for(const unit of ['blackspire-buyer-writer-gateway.service','blackspire-buyer-store.service']){const values=run('/usr/bin/systemctl',['show','--property=ActiveState,SubState,MainPID','--value',unit]).split('\n');if(!values.includes('active')||!values.includes('running')||!values.some(v=>/^[1-9][0-9]*$/.test(v)))fail();}
+  const storeState=Object.fromEntries(run('/usr/bin/systemctl',['show','--property=Id,User,Group,RootDirectory,NeedDaemonReload','blackspire-buyer-store.service']).split('\n').map(line=>{const at=line.indexOf('=');return[line.slice(0,at),line.slice(at+1)];}));
+  if(Object.keys(storeState).length!==5||storeState.Id!=='blackspire-buyer-store.service'||storeState.User!=='blackspire-buyer-store'||storeState.Group!=='blackspire-buyer-store'||storeState.RootDirectory!=='/var/lib/blackspire-buyer-store/rootfs'||storeState.NeedDaemonReload!=='no')fail();
+  const apiGroup=run('/usr/bin/getent',['group','blackspire-api']).split(':');if(apiGroup.length!==4||apiGroup[0]!=='blackspire-api'||!(/^[1-9][0-9]*$/).test(apiGroup[2]))fail();
+  const clientFile='/etc/blackspire/command-buyer-store-client.json',readClient=()=>bytes(clientFile,{gid:Number(apiGroup[2]),mode:0o640}),clientBytes=readClient(),configuration=validateClientConfiguration(JSON.parse(clientBytes));
+  if(configuration.releaseSha!==newMainSha||configuration.profileDigest!==profileDigest||databaseProfileDigest(readOwnedDatabaseProfile())!==profileDigest)fail();
+  await createBuyerStoreLocalClient({configuration}).readiness();if(readClient()!==clientBytes)fail();
   const lifecycle=await observeHeldLifecycle({releaseSha:newMainSha,runId:record.epochRunId});
   if(lifecycle.api.generation!==record.apiGeneration||lifecycle.worker.generation!==record.workerGeneration||lifecycle.artifactDigest!==sequence.outputs.journaled_vps_cutover?.artifactDigest)fail();
-  return {releaseSha,newMainSha,operationId:record.operationId,epochRunId:record.epochRunId,apiGeneration:record.apiGeneration,workerGeneration:record.workerGeneration,artifactDigest:lifecycle.artifactDigest,acceptedRecordDigest:hash(record)};};
+  return {releaseSha,newMainSha,profileDigest,storeClientDigest:hash(configuration),operationId:record.operationId,epochRunId:record.epochRunId,apiGeneration:record.apiGeneration,workerGeneration:record.workerGeneration,artifactDigest:lifecycle.artifactDigest,acceptedRecordDigest:hash(record)};};
  const requireHeld=async()=>{await authorize();if(state().mode!=='held')fail();};
  const request=(uri,method='GET',body)=>{const args=['--silent','--show-error','--path-as-is','--resolve','command.blackspirehelix.com:443:127.0.0.1','--connect-timeout','2','--max-time','5','--request',method,'--write-out','\n%{http_code}',...(body===undefined?[]:['--header','content-type: application/json','--data-binary',body]),'https://command.blackspirehelix.com'+uri];const result=run('/usr/bin/curl',args),at=result.lastIndexOf('\n');return {status:Number(result.slice(at+1)),body:result.slice(0,at)};};
  return {read,publish,current,authorize,requireHeld,

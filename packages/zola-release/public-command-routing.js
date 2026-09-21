@@ -39,14 +39,14 @@ function validate(plan,binding){
 // Separate protected records preserve the existing release event grammar. All
 // effects occur only with the caller's exclusive admission lease held.
 export async function ensurePublicCommandRouting({host}){
- if(host.read('rejected')||host.read('restored'))fail();const binding=await host.authorize(),retained=host.read('plan');
+ if(host.read('rejected')||host.read('restored')||host.read('restore-intent'))fail();const binding=await host.authorize(),retained=host.read('plan');
  let plan=retained;
  if(!plan){await host.requireHeld();await host.validate();const before=host.current();plan={version:1,binding,before,after:preparePublicCommandConfiguration(before)};host.publish('plan',plan);}
  validate(plan,binding);host.publish('plan',plan);
  const receipt={version:1,planDigest:hash(plan)},result=host.read('result');
  if(result&&!same(result,receipt)||host.read('restored'))fail();
  const current=host.current();if(current!==plan.before&&current!==plan.after)fail();
- if(result){if(current!==plan.after)fail();await host.verify();return{status:'PUBLIC_COMMAND_ROUTING_VERIFIED',planDigest:hash(plan),intakeOpened:false};}
+ if(result){if(current!==plan.after||!same(host.read('intent'),receipt))fail();await host.verify();if(host.current()!==plan.after||!same(await host.authorize(),binding))fail();host.publish('result',receipt);return{status:'PUBLIC_COMMAND_ROUTING_VERIFIED',planDigest:hash(plan),intakeOpened:false};}
  await host.requireHeld();host.publish('intent',receipt);host.replace(plan.before,plan.after);
  try{await host.validate();}catch{host.replace(plan.after,plan.before);await host.validate();host.publish('rejected',receipt);fail();}
  if(host.read('rejected'))fail();await host.requireHeld();await host.reload();await host.verify();

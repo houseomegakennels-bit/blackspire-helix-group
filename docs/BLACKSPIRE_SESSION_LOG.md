@@ -2239,3 +2239,7 @@ Extended the native full-order rehearsal through repository.execute exports-list
 ## 2026-09-21 — guarded public command route implementation
 
 Prepared a separate exact-byte maintenance-to-API transition for the canonical command hostname under accepted final-main HELD authority. Existing scoped routes and TLS/header configuration are preserved; protected intent precedes publication, retained candidates reconcile without foreign overwrite, and stopped HELD restoration retains the original bytes. Twelve focused tests and actual disposable Nginx HTTP positive/negative probes pass. Exact production TLS, authenticated public login and final OPEN smoke remain UNVERIFIED; no production mutation occurred.
+
+## 2026-09-21 — public routing recovery review corrections
+
+Independent review identified retained-result durability repair and interrupted-restoration barriers; both now refuse invalid prefixes and preserve exact protected evidence. Eighteen focused tests pass, including real staged-file promotion/re-synchronization, accepted HELD generation states and composed routing-failure/reconcile ordering before OPEN. Fresh gateway isolation and signed store readiness are required under the exclusive lease; the command accepts the explicit owned profile digest. Build, lint, syntax, security, memory and whitespace validation are recorded with the follow-up. Production public routing and authenticated smoke remain UNVERIFIED; no production action occurred.
