@@ -213,3 +213,15 @@ test('completed proof and final OPEN binding are recomputed before fast-path suc
   assert.equal((await runReleaseSequence({input,journal:journal(rows),adapters:adapters([])})).status,'STOPPED');
  }
 });
+
+
+test('prepared operation identity starts and resumes exactly, while mismatched or reused authority appends nothing',async()=>{
+ const requestedOperationId='11111111-1111-4111-8111-111111111111',j=journal(),calls=[],set=adapters(calls);
+ set.exact_sha_verification.check=async()=>({status:'BLOCKED_EXTERNAL'});
+ await runReleaseSequence({input,journal:j,adapters:set,requestedOperationId});assert.equal(j.events[0].operationId,requestedOperationId);
+ await runReleaseSequence({input,journal:j,adapters:set,requestedOperationId});assert.equal(j.events.filter(e=>e.type==='sequence_started').length,1);
+ const before=JSON.stringify(j.events);
+ for(const id of ['invalid','22222222-2222-4222-8222-222222222222']){await runReleaseSequence({input,journal:j,adapters:set,requestedOperationId:id});assert.equal(JSON.stringify(j.events),before);}
+ const changed={...input,protectedInputDigest:'f'.repeat(64)};const {inputDigest:unused,...body}=changed;changed.inputDigest=createHash('sha256').update(JSON.stringify(body)).digest('hex');
+ await runReleaseSequence({input:changed,journal:j,adapters:set,requestedOperationId});assert.equal(JSON.stringify(j.events),before);
+});

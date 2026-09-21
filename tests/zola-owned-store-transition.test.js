@@ -10,27 +10,28 @@ const oldSha='a'.repeat(40),releaseSha='b'.repeat(40),apiGid=61011,storeGid=6101
 const json=v=>JSON.stringify(v)+'\n';
 function fixture(){
  const dir=fs.mkdtempSync('/run/owned-transition-');fs.chmodSync(dir,0o700);
- const paths=Object.fromEntries(['runtime','client','deal','manifest','namespace','current'].map(k=>[k,dir+'/'+k]));paths.root=dir+'/retained';
+ const paths=Object.fromEntries(['runtime','client','deal','target','manifest','namespace','current'].map(k=>[k,dir+'/'+k]));paths.root=dir+'/retained';
  const ca='synthetic test certificate';const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:16385,systemIdentifier:'7000000000000000001',caSha256:hash(ca)};
  const profileDigest=ownedPostgresProfileDigest(profile),client={version:1,releaseSha:oldSha,profileDigest,key:randomBytes(32).toString('base64url')};
  const runtime={version:1,client,profile,ca,repositoryPassword:randomBytes(32).toString('base64url'),capabilityPassword:randomBytes(32).toString('base64url'),publicKey:'sb_publishable_fixture',operatorOwnerId:null,ipcGroupId:61013};
  const deal={version:1,releaseSha:oldSha,origin:'https://fixture.vercel.app',key:randomBytes(32).toString('base64url')};
  const write=(k,v,g,m=0o640)=>{fs.writeFileSync(paths[k],typeof v==='string'?v:json(v));fs.chownSync(paths[k],0,g);fs.chmodSync(paths[k],m);};
- write('runtime',runtime,storeGid);write('client',client,apiGid);write('deal',deal,apiGid);write('manifest',{old:'retained-exact'},storeGid);write('namespace',renderBuyerStoreNamespaceDropin(oldSha),0,0o600);fs.symlinkSync('releases/'+oldSha,paths.current);
- const before=Object.fromEntries(['runtime','client','deal','manifest','namespace'].map(k=>[k,fs.readFileSync(paths[k])]));
+ const target={schema:1,kind:'zola_owned_bounded_writer_acceptance_target',backendProfile:'owned-postgres-v1',profileDigest,releaseSha:oldSha,workspace:'blackspire-command',principal:'blackspire-release-root',capability:'buyer.writer.acceptance',jobId:'11111111-1111-4111-8111-111111111111',ownerId:'22222222-2222-4222-8222-222222222222',criteria:{state:'FL',county:'Zola Acceptance',property_type:'acceptance',date_range_start:'2026-01-01',date_range_end:'2026-01-02',min_purchases:1,cash_buyers_only:false,llc_buyers_only:false},updatedAt:'2026-09-21T00:00:00.000000Z'};
+ write('target',target,apiGid);write('runtime',runtime,storeGid);write('client',client,apiGid);write('deal',deal,apiGid);write('manifest',{old:'retained-exact'},storeGid);write('namespace',renderBuyerStoreNamespaceDropin(oldSha),0,0o600);fs.symlinkSync('releases/'+oldSha,paths.current);
+ const before=Object.fromEntries(['runtime','client','deal','target','manifest','namespace'].map(k=>[k,fs.readFileSync(paths[k])]));
  let interrupted=false,crash=null,active=false,published=0;
  const io=new Proxy(fs,{get(t,k){if(k==='renameSync')return(...args)=>{const r=fs.renameSync(...args);if(crash===args[1]&&!interrupted){interrupted=true;throw new Error('simulated process interruption');}return r;};return t[k];}});
  const options={paths,io,verifyNamespace:()=>{},apiGroup:()=>apiGid,storeGroup:()=>storeGid,inspect:async()=>({artifactDigest:'c'.repeat(64)}),
   run:(_file,args)=>{if(args[0]==='start'){active=true;return '';}if(args[0]==='stop'){active=false;return '';}const running=active&&args.at(-1)==='blackspire-buyer-store.service';return running?'ActiveState=active\nSubState=running\nMainPID=123\n':'ActiveState=inactive\nSubState=dead\nMainPID=0\n';},
   publishManifest:async b=>{published++;const configuration=JSON.parse(fs.readFileSync(paths.runtime));write('manifest',{version:1,kind:'buyer-store-installed',releaseSha:b.releaseSha,artifactDigest:'c'.repeat(64),configurationDigest:hash(configuration),runId:b.runId,apiGeneration:b.apiGeneration,workerGeneration:b.workerGeneration},storeGid);return{status:'BUYER_STORE_MANIFEST_PUBLISHED'};}};
- return{dir,paths,before,runtime,client,deal,options,helper:()=>createOwnedStoreTransition(options),input:{releaseSha,previousSha:oldSha,origin:'https://blackspirehelix.com',backendProfile:'owned-postgres-v1',profileDigest},crash:file=>{crash=file;},published:()=>published,cleanup:()=>fs.rmSync(dir,{recursive:true,force:true})};
+ return{dir,paths,before,runtime,client,deal,target,options,helper:()=>createOwnedStoreTransition(options),input:{releaseSha,previousSha:oldSha,origin:'https://blackspirehelix.com',backendProfile:'owned-postgres-v1',profileDigest},crash:file=>{crash=file;},published:()=>published,cleanup:()=>fs.rmSync(dir,{recursive:true,force:true})};
 }
 test('owned profile selection never reinterprets partial or legacy inputs',()=>{assert.deepEqual(ownedBackendFields({}),{});for(const v of [{backendProfile:'owned-postgres-v1'},{profileDigest:'a'.repeat(64)},{backendProfile:'supabase',profileDigest:'a'.repeat(64)}])assert.throws(()=>ownedBackendFields(v));});
 test('real protected transition preserves keys, restores exact config and namespace after partial publication',{skip:process.getuid()!==0},async()=>{
  const f=fixture();try{const p=await f.helper().prepare(f.input);assert.equal(JSON.stringify(p).includes(f.client.key),false);assert.equal(JSON.stringify(p).includes('repositoryPassword'),false);
  f.crash(f.paths.runtime);await assert.rejects(f.helper().publish(p));assert.equal(JSON.parse(fs.readFileSync(f.paths.runtime)).client.releaseSha,releaseSha);
  await f.helper().publish(p);assert.equal(f.helper().observe(p),true);const r=JSON.parse(fs.readFileSync(f.paths.runtime)),c=JSON.parse(fs.readFileSync(f.paths.client)),d=JSON.parse(fs.readFileSync(f.paths.deal));
- assert.deepEqual({...r,client:f.runtime.client},f.runtime);assert.equal(c.key,f.client.key);assert.equal(d.key,f.deal.key);assert.equal(d.origin,f.input.origin);assert.equal(fs.readlinkSync(f.paths.current),'releases/'+releaseSha);
+ assert.deepEqual({...r,client:f.runtime.client},f.runtime);assert.equal(c.key,f.client.key);assert.equal(d.key,f.deal.key);assert.equal(d.origin,f.input.origin);assert.deepEqual(JSON.parse(fs.readFileSync(f.paths.target)),{...f.target,releaseSha});assert.equal(fs.readlinkSync(f.paths.current),'releases/'+releaseSha);
  await f.helper().restore(p);assert.equal(f.helper().restored(p),true);for(const[k,b]of Object.entries(f.before))assert.deepEqual(fs.readFileSync(f.paths[k]),b);assert.equal(fs.readlinkSync(f.paths.current),'releases/'+oldSha);
  }finally{f.cleanup();}
 });
@@ -73,3 +74,12 @@ test('exact journaled namespace staging symlink can reconcile while foreign stag
 
 test('root transition resolves only the exact named private group without API process identity',()=>{assert.equal(resolveOwnedStoreTransitionGroup('blackspire-api',()=> 'blackspire-api:x:61011:\n'),61011);for(const output of ['blackspire:x:61011:','blackspire-api:x:0:','blackspire-api:x:61011:\nforeign:x:1:'])assert.throws(()=>resolveOwnedStoreTransitionGroup('blackspire-api',()=>output));});
 test('stopped namespace rebinding removes only the empty prior systemd artifact mountpoint and restores it exactly',{skip:process.getuid()!==0},async()=>{const f=fixture();try{fs.mkdirSync(f.dir+'/releases');fs.mkdirSync(f.dir+'/releases/'+oldSha,{mode:0o755});const p=await f.helper().prepare(f.input);await f.helper().publish(p);assert.equal(fs.existsSync(f.dir+'/releases/'+oldSha),false);fs.mkdirSync(f.dir+'/releases/'+releaseSha,{mode:0o755});await f.helper().restore(p);assert.equal(fs.existsSync(f.dir+'/releases/'+releaseSha),false);assert.equal(fs.statSync(f.dir+'/releases/'+oldSha).mode&0o7777,0o755);fs.writeFileSync(f.dir+'/releases/'+oldSha+'/foreign','x');await assert.rejects(f.helper().publish(p));assert.equal(fs.readFileSync(f.dir+'/releases/'+oldSha+'/foreign','utf8'),'x');}finally{f.cleanup();}});
+
+
+test('target SHA transition retains owner/job/profile and recovers lost publication without changing target data',{skip:process.getuid()!==0},async()=>{
+ const f=fixture();try{const h=f.helper(),p=await h.prepare(f.input);f.crash(f.paths.target);await assert.rejects(h.publish(p));
+ assert.deepEqual(JSON.parse(fs.readFileSync(f.paths.target)),{...f.target,releaseSha});await h.publish(p);assert.equal(h.observe(p),true);
+ await h.restore(p);assert.deepEqual(fs.readFileSync(f.paths.target),f.before.target);
+ const bad={...f.target,profileDigest:'f'.repeat(64)};fs.writeFileSync(f.paths.target,json(bad));await assert.rejects(h.prepare(f.input));assert.deepEqual(JSON.parse(fs.readFileSync(f.paths.target)),bad);
+ }finally{f.cleanup();}
+});

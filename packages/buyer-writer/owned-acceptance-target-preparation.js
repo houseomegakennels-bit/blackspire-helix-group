@@ -101,6 +101,12 @@ function target(v,releaseSha,owner,profileDigest){
   ||typeof v.updatedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(v.updatedAt))fail();
  return v;
 }
+// Shape/authority validation only; host callers still require protected snapshots
+// and database owner/job witnesses. No alternate target or authentication is created.
+export function validateOwnedAcceptanceTargetDocument(value,{releaseSha,profileDigest}){
+ const owner=ownerInput({schema:1,kind:'zola_acceptance_owner',ownerId:value?.ownerId,criteria:value?.criteria});
+ return Object.freeze(structuredClone(target(value,releaseSha,owner,profileDigest)));
+}
 function matchesRow(row,v){
  if(!row||row.id!==v.jobId||row.owner!==v.ownerId||row.updated!==v.updatedAt
   ||row.created!==v.updatedAt||row.status!=='pending'||row.total_sales_analyzed!==null
