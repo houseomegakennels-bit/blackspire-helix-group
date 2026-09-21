@@ -84,11 +84,28 @@ export function validateHeldAcceptanceActive(value,claims){
   return structuredClone(value);
 }
 
+export function validatePremergeReadClaims(value){
+ if(!value||value.kind!=='held-premerge-reads'||Object.hasOwn(value,'mergeMainSha')
+  ||!Object.hasOwn(value,'candidateSha')||JSON.stringify(value.operations)!=='["six_reads"]')refuse();
+ const {candidateSha,...rest}=value;
+ validateHeldAcceptanceClaims({...rest,kind:'held-epoch-acceptance',mergeMainSha:candidateSha,operations:[...HELD_OPERATIONS]});
+ return structuredClone(value);
+}
+export function validatePremergeReadActive(value,claims){
+ if(!value||Object.keys(value).sort().join(',')!=='attemptId,claimsDigest,expiresAt,kind,operation,permitId,schema'
+  ||value.schema!==1||value.kind!=='held-premerge-reads-active'||value.operation!=='six_reads'
+  ||value.permitId!==claims.permitId||value.claimsDigest!==heldDigest(claims)||value.expiresAt!==claims.expiresAt
+  ||!(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/).test(value.attemptId??''))refuse();
+ return structuredClone(value);
+}
+export function withHeldAcceptanceAdmission({role,token=null},fn,options){return withScopedReadAdmission({role,token,premerge:false},fn,options);}
+export function withPremergeReadAdmission({role,token=null},fn,options){return withScopedReadAdmission({role,token,premerge:true},fn,options);}
+
 // Narrow post-merge acceptance admission. It never changes the global HELD
 // state. The API must prove the opaque permit token; the worker can process
 // only the six exact task keys from the protected claims file. A shared lease
 // spans the entire async operation and therefore blocks OPEN publication.
-export function withHeldAcceptanceAdmission({role,token=null},fn,{root=RELEASE_ADMISSION_ROOT,now=Date.now,
+function withScopedReadAdmission({role,token=null,premerge},fn,{root=RELEASE_ADMISSION_ROOT,now=Date.now,
   required=releaseAdmissionRequired,acquire=acquireReleaseAdmissionLock,context=currentReleaseAdmissionContext,read=file=>{
     const stat=fs.lstatSync(file);return readRootOwnedJson(file,{groupId:stat.gid,maxBytes:16384});
   }}={}){
@@ -98,11 +115,12 @@ export function withHeldAcceptanceAdmission({role,token=null},fn,{root=RELEASE_A
     const binding=context();if(binding.role!==role)refuse();
     const stateFile=path.join(root,'state.json'),stateStat=fs.lstatSync(stateFile);
     lease=acquire({root,exclusive:false,allowPending:true,owner:0,groupId:stateStat.gid});lease.assertIdentity();
-    const state=validateReleaseAdmissionState(read(stateFile)),claims=validateHeldAcceptanceClaims(read(path.join(root,'acceptance.json')));
-    const active=validateHeldAcceptanceActive(read(path.join(root,HELD_ACCEPTANCE_ACTIVE_FILE)),claims);
-    if(state.mode!=='held'||state.releaseSha!==claims.mergeMainSha||state.runId!==claims.epochRunId
-      ||state.apiGeneration!==claims.apiGeneration||state.workerGeneration!==claims.workerGeneration
-      ||binding.releaseSha!==claims.mergeMainSha||binding.runId!==claims.epochRunId
+    const state=validateReleaseAdmissionState(read(stateFile)),claims=(premerge?validatePremergeReadClaims:validateHeldAcceptanceClaims)(read(path.join(root,premerge?'premerge-reads.json':'acceptance.json')));
+    const active=(premerge?validatePremergeReadActive:validateHeldAcceptanceActive)(read(path.join(root,premerge?'premerge-reads-active.json':HELD_ACCEPTANCE_ACTIVE_FILE)),claims);
+    const releaseSha=premerge?claims.candidateSha:claims.mergeMainSha;
+    if(state.mode!=='held'||state.releaseSha!==releaseSha||state.runId!==claims.epochRunId
+      ||(premerge?(state.apiGeneration!==null||state.workerGeneration!==null):(state.apiGeneration!==claims.apiGeneration||state.workerGeneration!==claims.workerGeneration))
+      ||binding.releaseSha!==releaseSha||binding.runId!==claims.epochRunId
       ||binding.apiGeneration!==claims.apiGeneration||binding.workerGeneration!==claims.workerGeneration||now()>=claims.expiresAt||now()>=active.expiresAt)refuse();
     if(role==='api'){
       const supplied=Buffer.from(heldDigest(String(token??'')),'hex'),expected=Buffer.from(claims.tokenDigest,'hex');

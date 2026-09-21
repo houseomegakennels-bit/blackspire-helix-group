@@ -2021,3 +2021,7 @@ Added fixed exact-preview metadata verification, worker-only four-origin overrid
 ## 2026-09-21 — protected missing API profile preparer
 
 Added a fixed-path root preparer for the absent API authentication environment. It preserves the retained operator password, durably retains distinct generated bearer/session material, consumes the separately synchronized consumer credential and publishes only an absent API-only profile. Four fault/regression groups and root build/lint/typecheck pass. Host execution remains UNVERIFIED; independent review precedes production use. No production mutation or push occurred.
+
+## 2026-09-21 — distinct candidate read admission boundary
+
+A separate protected candidate-read permit kind admits only the six exact requests during premerge `six_reads`, with token, candidate SHA, HELD epoch, actual API/worker generations, principal, workspace and request/capability digests enforced. It uses separate protected files and a separate API header; postmerge acceptance history and ordinary OPEN admission are unchanged. Candidate admission state retains null published generations, with the narrow permit independently checking the actual service-generation pair. Eleven admission tests pass, including live/candidate kind separation and denial of public OPEN admission. The root permit producer, collector integration and composed production-path validation are still pending; this intermediate commit is not deployable and made no production changes.

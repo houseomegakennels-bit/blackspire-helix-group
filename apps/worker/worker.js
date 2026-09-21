@@ -1,4 +1,4 @@
-import { withReleaseAdmission,withHeldAcceptanceAdmission } from '../../packages/shared/release-admission.js';
+import { withReleaseAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission } from '../../packages/shared/release-admission.js';
 import { claimNext, getFlag, getTask, setFlag } from '../../packages/task-engine/tasks.js';
 import { processTask } from '../../packages/hermes/hermes.js';
 import { drainTelegramOutbox } from '../../packages/unified-input/unified.js';
@@ -37,7 +37,10 @@ export function startWorker({
     catch(error) {
       if(error?.code!=='RELEASE_ADMISSION_HELD')throw error;
       try{return await withHeldAcceptanceAdmission({role:'worker'},()=>executeAdmittedTick({acceptance:true}));}
-      catch(heldError){if(heldError?.code==='RELEASE_ADMISSION_HELD')return;throw heldError;}
+      catch(heldError){if(heldError?.code!=='RELEASE_ADMISSION_HELD')throw heldError;
+        try{return await withPremergeReadAdmission({role:'worker'},()=>executeAdmittedTick({acceptance:true}));}
+        catch(premergeError){if(premergeError?.code==='RELEASE_ADMISSION_HELD')return;throw premergeError;}
+      }
     }
   }
   async function executeAdmittedTick({acceptance=false}={}) {

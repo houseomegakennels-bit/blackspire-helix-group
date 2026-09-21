@@ -1,4 +1,4 @@
-import { withReleaseAdmission,withHeldAcceptanceAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
+import { withReleaseAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -117,7 +117,9 @@ async function route(req, res) {
   const observation=['GET','HEAD','OPTIONS'].includes(req.method);
   const controls=['/api/auth/login','/api/auth/session','/api/auth/logout','/api/auth/rotate','/api/auth/revoke-all','/api/stop','/api/stop/reset'].includes(pathname);
   try {
-    const heldToken=String(req.headers['x-blackspire-held-acceptance']||'');
+    const heldToken=String(req.headers['x-blackspire-held-acceptance']||''),premergeToken=String(req.headers['x-blackspire-held-premerge']||'');
+    if(premergeToken&&heldToken)throw Object.assign(new Error('Ambiguous release admission'),{code:'RELEASE_ADMISSION_HELD'});
+    if(premergeToken&&pathname==='/api/unified-input'&&req.method==='POST')return await withPremergeReadAdmission({role:'api',token:premergeToken},()=>routeAdmitted(req,res));
     if(heldToken&&pathname==='/api/unified-input'&&req.method==='POST')return await withHeldAcceptanceAdmission({role:'api',token:heldToken},()=>routeAdmitted(req,res));
     return await (observation||controls ? routeAdmitted(req,res) : withReleaseAdmission(()=>routeAdmitted(req,res)));
   }

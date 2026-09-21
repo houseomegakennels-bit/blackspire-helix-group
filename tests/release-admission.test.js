@@ -7,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import http from 'node:http';
 import {createBuyerWriterHttpServer} from '../packages/buyer-writer/http.js';
-import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,heldAcceptanceContext,HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
+import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,heldAcceptanceContext,HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withPremergeReadAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
 import {engageReleaseAdmissionHold,reconcileReleaseAdmissionHold,inspectAdmissionHoldHistory} from '../packages/zola-release/admission-hold.js';
 import {executeRegisteredCapability} from '../packages/capabilities/execute.js';
 
@@ -148,4 +148,34 @@ test('HELD acceptance admits only the bound API token or worker role under one s
   assert.throws(()=>withHeldAcceptanceAdmission({role:'api',token:'x'.repeat(43)},()=>0,deps('api')),/held/);
   assert.throws(()=>withHeldAcceptanceAdmission({role:'worker'},()=>0,{...deps('worker'),now:()=>2000}),/held/);
   assert.throws(()=>withHeldAcceptanceAdmission({role:'worker'},()=>0,{...deps('worker'),read:file=>path.basename(file)==='state.json'?state:path.basename(file)===HELD_ACCEPTANCE_ACTIVE_FILE?{...active,attemptId:'bad'}:claims}),/held/);
+});
+
+test('candidate read permit stays distinct from live acceptance and public OPEN admission',async t=>{
+  const f=fixture(t),epoch='22345678-1234-4234-8234-123456789abc',token='t'.repeat(43),api='1'.repeat(32),worker='2'.repeat(32);
+  const crypto=await import('node:crypto'),claims={schema:1,kind:'held-premerge-reads',permitId:'32345678-1234-4234-8234-123456789abc',
+    commanderRunId:'42345678-1234-4234-8234-123456789abc',candidateSha:sha,expectedDeploymentSha:sha,epochRunId:epoch,workspace:'blackspire-command',principal:'operator',
+    apiGeneration:api,workerGeneration:worker,issuedAt:1000,expiresAt:2000,
+    operations:['six_reads'],
+    reads:['seller.opportunities.search','buyer.profiles.search','buyer.matches.search','deal.records.search','deal.analysis.get','nexus.enrichment.status'].map((capability,index)=>{const idempotencyKey=`zola-six:${epoch}:${index}`,request=`read-${index}`;return{index,
+      idempotencyKey,capability,permission:['seller.opportunities.read','buyer.profiles.read','buyer.matches.read','deal.records.read','deal.analysis.read','nexus.enrichment.read'][index],request,
+      requestDigest:crypto.createHash('sha256').update(JSON.stringify({channel:'jarvis',workspaceId:'blackspire-command',text:request,idempotencyKey,executionIntent:'read_only'})).digest('hex')};}),
+    tokenDigest:crypto.createHash('sha256').update(token).digest('hex')};
+  const state={version:1,mode:'held',releaseSha:sha,runId:epoch,apiGeneration:null,workerGeneration:null};
+  const active={schema:1,kind:'held-premerge-reads-active',permitId:claims.permitId,claimsDigest:crypto.createHash('sha256').update(JSON.stringify(claims)).digest('hex'),operation:'six_reads',attemptId:'52345678-1234-4234-8234-123456789abc',expiresAt:claims.expiresAt};
+  fs.writeFileSync(f.filename,JSON.stringify(state));
+  const binding=role=>({role,releaseSha:sha,runId:epoch,generation:role==='api'?api:worker,apiGeneration:api,workerGeneration:worker});
+  const deps=role=>({root:f.root,required:()=>true,now:()=>1500,context:()=>binding(role),
+    acquire:o=>f.acquire({...o,owner:process.getuid(),groupId:process.getgid(),allowPending:true}),
+    read:file=>path.basename(file)==='state.json'?state:path.basename(file)==='premerge-reads-active.json'?active:claims});
+  assert.throws(()=>withPremergeReadAdmission({role:'api',token},()=>0,{...deps('api'),read:file=>path.basename(file)==='state.json'?state:claims}),/held/);
+  assert.equal(await withPremergeReadAdmission({role:'api',token},async()=>{
+    assert.equal(heldAcceptanceContext().role,'api');return withReleaseAdmission(()=>7);
+  },deps('api')),7);
+  assert.equal(withPremergeReadAdmission({role:'worker'},()=>heldAcceptanceContext().taskKeys.length,deps('worker')),6);
+  assert.throws(()=>withHeldAcceptanceAdmission({role:'api',token},()=>0,deps('api')),/held/);
+  assert.throws(()=>f.guard.run(()=>0),/held/);
+  await assert.rejects(withPremergeReadAdmission({role:'worker'},()=>executeRegisteredCapability({idempotency_key:`unified:jarvis:zola-six:${epoch}:0`,request:'unclassified acceptance request'},{}),deps('worker')),/held/);
+  assert.throws(()=>withPremergeReadAdmission({role:'api',token:'x'.repeat(43)},()=>0,deps('api')),/held/);
+  assert.throws(()=>withPremergeReadAdmission({role:'worker'},()=>0,{...deps('worker'),now:()=>2000}),/held/);
+  assert.throws(()=>withPremergeReadAdmission({role:'worker'},()=>0,{...deps('worker'),read:file=>path.basename(file)==='state.json'?state:path.basename(file)==='premerge-reads-active.json'?{...active,attemptId:'bad'}:claims}),/held/);
 });
