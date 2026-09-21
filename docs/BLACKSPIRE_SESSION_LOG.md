@@ -2203,3 +2203,6 @@ Connected explicit owned candidate startup and versioned collectors. Integrated 
 ## 2026-09-21 — initial owned Buyer configuration and routing helper
 
 Implemented separately staged frontend/API configuration and exact eight-operation Nginx routing with protected retained plans, dedicated deal credentials, strict consumer equality and fail-closed ambiguous-create handling. Ten focused tests, actual protected filesystem checks and disposable Nginx HTTP transport checks passed. No production or Vercel settings were changed; independent review and integrated final validation remain required.
+## 2026-09-21 — source-security CLI and retained host configuration
+
+Added fixed-path source-security preparation, apply and reconcile wrapper with global exclusion, protected retained configuration/version and dedicated hash journal. Ten focused tests and four existing actual PostgreSQL SQL checks pass; build/lint/syntax pass. Full native host composition and production execution remain UNVERIFIED. No production actions.
