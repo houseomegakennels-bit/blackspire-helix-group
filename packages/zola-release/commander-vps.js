@@ -1,3 +1,4 @@
+import {createReceiverOriginTransition} from './receiver-origin-transition.js';
 import {observeVpsHeldHttp} from './vps-held-http.js';
 import {createPostmergeAuthorityRebind} from './postmerge-authority-rebind.js';
 import {inspectCandidateDeploymentHistory} from './candidate-deployment.js';
@@ -68,6 +69,7 @@ function productionHost(){
  const state=()=>validateReleaseAdmissionState(readRootOwnedJson(path.join(ADMISSION,'state.json'),{groupId:fs.statSync(path.join(ADMISSION,'state.json')).gid,maxBytes:2048}));
  const active=unit=>{const output=command('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,SubState,MainPID,InvocationID','--',unit]);return Object.fromEntries(output.split('\n').map(line=>line.split('=')));};
  const stopped=()=>{if([API,WORKER,GATEWAY].some(unit=>{const value=active(unit);return value.ActiveState!=='inactive'||value.SubState!=='dead'||value.MainPID!=='0';}))reject();};
+ const receivers=createReceiverOriginTransition({assertStopped:stopped});
  const authority=plan=>createPostmergeAuthorityRebind(plan,{assertStopped:stopped});
  const waitHeldHttp=async(plan,workerExpected)=>{for(let attempt=0;attempt<10;attempt++){try{
   const proof=workerExpected?await observeHeldLifecycle({releaseSha:plan.newMainSha,runId:plan.epochRunId}):null;
@@ -91,20 +93,20 @@ function productionHost(){
    const runtimeFile=path.join(ADMISSION,'runtime.env');let runtime=null;
    try{const stat=fs.lstatSync(runtimeFile);if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.nlink!==1||(stat.mode&0o7777)!==0o640)reject();runtime={bytes:fs.readFileSync(runtimeFile,'utf8'),gid:stat.gid};}
    catch(error){if(error.code!=='ENOENT')throw error;}
-   stopped();const authorityRebind=await authority(plan).prepare();
-   return{current,state:state(),runtime,targetEnabled:enabled(),api:active(API),worker:active(WORKER),authorityRebind,rollbackMode:'stopped-held'};
+   stopped();const authorityRebind=await authority(plan).prepare(),receiverOrigin=await receivers.prepare({releaseSha:plan.newMainSha,mode:'production',candidateSha:plan.candidateSha});
+   return{current,state:state(),runtime,targetEnabled:enabled(),api:active(API),worker:active(WORKER),authorityRebind,receiverOrigin,rollbackMode:'stopped-held'};
   },
   async observe(step,plan,snapshot){
    assertAdmission(plan);
    if(step==='backup')return verifyVpsRetainedBackup(plan);
    if(step==='artifact'){command('/bin/bash',[path.join(repository,'scripts/release-preflight.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT});
     const proof=await inspectSealedBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.newMainSha),releaseSha:plan.newMainSha,environment:'production'});return proof.artifactDigest===plan.artifactDigest;}
-   if(step==='state_pointer'){if(!authority(plan).observe(snapshot.authorityRebind))return false;
-    for(const unit of [API,GATEWAY])if(command('/usr/bin/systemctl',['show','--value','--property=NeedDaemonReload','--',unit])!=='no')return false;
+   if(step==='state_pointer'){if(!authority(plan).observe(snapshot.authorityRebind)||!receivers.observe(snapshot.receiverOrigin))return false;
+    for(const unit of [API,WORKER,GATEWAY])if(command('/usr/bin/systemctl',['show','--value','--property=NeedDaemonReload','--',unit])!=='no')return false;
     const file=path.join(ADMISSION,'runtime.env'),stat=fs.lstatSync(file);return stat.isFile()&&!stat.isSymbolicLink()&&stat.uid===0
     &&stat.gid===fs.statSync(ADMISSION).gid&&stat.nlink===1&&(stat.mode&0o7777)===0o640&&fs.readFileSync(file).equals(bindingBytes(plan.epochRunId))
     &&fs.realpathSync(path.join(ROOT,'current'))===path.join(ROOT,'releases',plan.newMainSha);}
-   if(step==='api_start')return authority(plan).observe(snapshot.authorityRebind)&&active(API).ActiveState==='active'&&active(GATEWAY).ActiveState==='active';
+   if(step==='api_start')return authority(plan).observe(snapshot.authorityRebind)&&receivers.observe(snapshot.receiverOrigin)&&active(API).ActiveState==='active'&&active(GATEWAY).ActiveState==='active';
    if(step==='health'){await waitHeldHttp(plan,false);return true;}
    if(step==='stopped_worker_rejection')return active(WORKER).ActiveState==='inactive'&&active(WORKER).MainPID==='0';
    if(step==='worker_start')return active(WORKER).ActiveState==='active';
@@ -117,15 +119,15 @@ function productionHost(){
    assertAdmission(plan);
    if(step==='backup'||step==='health'||step==='stopped_worker_rejection'||step==='generation_fence')return;
    if(step==='artifact')command('/bin/bash',[path.join(repository,'scripts/release-create.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT,BLACKSPIRE_SOURCE_ROOT:repository});
-   else if(step==='state_pointer'){await authority(plan).publish(snapshot.authorityRebind);const gid=fs.statSync(ADMISSION).gid;atomicFile(path.join(ADMISSION,'runtime.env'),bindingBytes(plan.epochRunId),{gid});command('/bin/bash',[path.join(repository,'scripts/release-switch.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT,BLACKSPIRE_DEPLOYMENT_ENVIRONMENT:'production'});command('/usr/bin/systemctl',['daemon-reload']);}
-   else if(step==='api_start'){stopped();if(!authority(plan).observe(snapshot.authorityRebind))reject();command('/usr/bin/systemctl',['start',GATEWAY]);command('/usr/bin/systemctl',['start',API]);}
-   else if(step==='worker_start'){if(!authority(plan).observe(snapshot.authorityRebind))reject();command('/usr/bin/systemctl',['start',WORKER]);}
+   else if(step==='state_pointer'){await receivers.publish(snapshot.receiverOrigin);await authority(plan).publish(snapshot.authorityRebind);const gid=fs.statSync(ADMISSION).gid;atomicFile(path.join(ADMISSION,'runtime.env'),bindingBytes(plan.epochRunId),{gid});command('/bin/bash',[path.join(repository,'scripts/release-switch.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT,BLACKSPIRE_DEPLOYMENT_ENVIRONMENT:'production'});command('/usr/bin/systemctl',['daemon-reload']);}
+   else if(step==='api_start'){stopped();if(!authority(plan).observe(snapshot.authorityRebind)||!receivers.observe(snapshot.receiverOrigin))reject();command('/usr/bin/systemctl',['start',GATEWAY]);command('/usr/bin/systemctl',['start',API]);}
+   else if(step==='worker_start'){if(!authority(plan).observe(snapshot.authorityRebind)||!receivers.observe(snapshot.receiverOrigin))reject();command('/usr/bin/systemctl',['start',WORKER]);}
    else if(step==='readiness')await waitHeldHttp(plan,true);
    else if(step==='enable')command('/usr/bin/systemctl',['enable',TARGET]);
    else reject();
   },
   async rollback(plan,snapshot){command('/usr/bin/systemctl',['stop',TARGET,API,WORKER,GATEWAY]);command('/usr/bin/systemctl',['disable',TARGET,API,WORKER,GATEWAY]);
-   stopped();if(await authority(plan).restore(snapshot.authorityRebind)!==true)reject();
+   stopped();if(await receivers.restore(snapshot.receiverOrigin)!==true||await authority(plan).restore(snapshot.authorityRebind)!==true)reject();
    const proof=await inspectSealedBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.rollbackSha),releaseSha:plan.rollbackSha,environment:'production'});if(proof.artifactDigest!==plan.rollbackArtifactDigest)reject();
    const gid=fs.statSync(ADMISSION).gid,rollbackState={version:1,mode:'held',releaseSha:plan.rollbackSha,runId:plan.rollbackEpochRunId,apiGeneration:null,workerGeneration:null};
    atomicFile(path.join(ADMISSION,'state.json'),Buffer.from(JSON.stringify(rollbackState)+'\n'),{gid});
@@ -138,7 +140,7 @@ function productionHost(){
   async observeRollback(plan,snapshot){const rollbackState=state();return rollbackState.mode==='held'&&rollbackState.releaseSha===plan.rollbackSha&&rollbackState.runId===plan.rollbackEpochRunId
    &&fs.readFileSync(path.join(ADMISSION,'runtime.env')).equals(bindingBytes(plan.rollbackEpochRunId))
    &&fs.realpathSync(path.join(ROOT,'current'))===path.join(ROOT,'releases',plan.rollbackSha)
-   &&!enabled()&&await authority(plan).restored(snapshot.authorityRebind)
+   &&!enabled()&&receivers.restored(snapshot.receiverOrigin)&&await authority(plan).restored(snapshot.authorityRebind)
    &&[API,WORKER,GATEWAY].every(unit=>{const value=active(unit);return value.ActiveState==='inactive'&&value.SubState==='dead'&&value.MainPID==='0'
     &&command('/usr/bin/systemctl',['show','--value','--property=UnitFileState','--',unit])==='disabled';});},
  });

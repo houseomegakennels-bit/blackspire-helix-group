@@ -5,23 +5,24 @@ import path from 'node:path';
 import {hash} from '../packages/zola-release/commander-journal.js';
 import {createCandidateDeploymentHost,prepareCandidateDeployment,inspectCandidateDeploymentHistory,verifyCandidateDeploymentForStart} from '../packages/zola-release/candidate-deployment.js';
 const input={operationId:'11111111-1111-4111-8111-111111111111',releaseSha:'a'.repeat(40),recoverySha:'b'.repeat(40)};
+const receiverOrigin={schema:1,mode:'preview',releaseSha:input.releaseSha,origin:'https://fixture.vercel.app',deploymentId:'dpl_fixture',previousOrigin:null,previousDropin:false};
 const previousSha='c'.repeat(40),runId='22222222-2222-4222-8222-222222222222';
 function fixture(){
  const events=[],calls=[],done=new Set(),state={mode:'held',releaseSha:input.releaseSha,runId,apiGeneration:null,workerGeneration:null};
- const plan={...input,runId,previousSha,artifactDigest:'1'.repeat(64),recoveryArtifactDigest:'2'.repeat(64),previousArtifactDigest:'3'.repeat(64),stateDigest:hash(state)};
+ const plan={...input,runId,previousSha,artifactDigest:'1'.repeat(64),recoveryArtifactDigest:'2'.repeat(64),previousArtifactDigest:'3'.repeat(64),stateDigest:hash(state),receiverOrigin};
  const journal={stream:()=>({events:()=>structuredClone(events),append:v=>events.push(structuredClone(v))})};let locked=false;
  const host={lease:()=>{assert.equal(locked,false);locked=true;return{assertIdentity(){assert.equal(locked,true);},close(){locked=false;}};},prepare:async()=>plan,check(){assert.equal(state.mode,'held');},
   execute:async step=>{calls.push(step);done.add(step);},observe:async step=>done.has(step)};
  return{events,calls,done,state,plan,journal,host};
 }
 test('candidate journal preserves distinct current, candidate and recovery identities and completed replay is inert',async()=>{
- const f=fixture();await prepareCandidateDeployment(input,f);assert.deepEqual(f.calls,['pointer','runtime','reload']);
+ const f=fixture();await prepareCandidateDeployment(input,f);assert.deepEqual(f.calls,['pointer','runtime','receivers','reload']);
  const s=inspectCandidateDeploymentHistory(f.events);assert.equal(s.completed,true);assert.equal(s.plan.previousSha,previousSha);assert.equal(s.plan.recoverySha,input.recoverySha);
- await prepareCandidateDeployment(input,f);assert.equal(f.calls.length,3);
+ await prepareCandidateDeployment(input,f);assert.equal(f.calls.length,4);
  await verifyCandidateDeploymentForStart({releaseSha:input.releaseSha,runId,journal:f.journal},{host:f.host});
  f.state.mode='open';await assert.rejects(verifyCandidateDeploymentForStart({releaseSha:input.releaseSha,runId,journal:f.journal},{host:f.host}));
 });
-for(const step of ['pointer','runtime','reload'])test(`unknown ${step} outcome is observed without repeating effects`,async()=>{
+for(const step of ['pointer','runtime','receivers','reload'])test(`unknown ${step} outcome is observed without repeating effects`,async()=>{
  const f=fixture(),execute=f.host.execute;let once=true;f.host.execute=async s=>{await execute(s);if(s===step&&once){once=false;throw new Error('lost acknowledgement');}};
  await assert.rejects(prepareCandidateDeployment(input,f));assert.equal(inspectCandidateDeploymentHistory(f.events).pending,step);
  await prepareCandidateDeployment(input,f);assert.equal(f.calls.filter(s=>s===step).length,1);assert.equal(inspectCandidateDeploymentHistory(f.events).completed,true);
@@ -45,7 +46,8 @@ test('native candidate host switches real pointer, writes protected epoch file a
   fs.symlinkSync(path.join(root,'releases',previousSha),path.join(root,'current'));
   const state={version:1,mode:'held',releaseSha:input.releaseSha,runId,apiGeneration:null,workerGeneration:null};fs.writeFileSync(path.join(admission,'state.json'),JSON.stringify(state),{mode:0o640});
   const proof=async ({releaseSha})=>({releaseSha,environment:'production',artifactDigest:releaseSha===input.releaseSha?'1'.repeat(64):releaseSha===input.recoverySha?'2'.repeat(64):'3'.repeat(64)});
-  const host=createCandidateDeploymentHost({root,admission,inspectSealed:proof,inspectDeployed:proof,stopped(){calls.push('stopped');},acquire:()=>({assertIdentity(){},close(){}}),run(file,args,env){
+  let receiversPrepared=false;
+  const host=createCandidateDeploymentHost({receiver:{prepare:async()=>receiverOrigin,publish:async()=>{assert.equal(inspectCandidateDeploymentHistory(events).pending,'receivers');receiversPrepared=true;},observe:()=>receiversPrepared},root,admission,inspectSealed:proof,inspectDeployed:proof,stopped(){calls.push('stopped');},acquire:()=>({assertIdentity(){},close(){}}),run(file,args,env){
    calls.push(args.includes('daemon-reload')?'reload':args[0]);
    if(args[0].endsWith('release-switch.sh')){assert.equal(env.BLACKSPIRE_DEPLOYMENT_ENVIRONMENT,'production');assert.equal(inspectCandidateDeploymentHistory(events).pending,'pointer');fs.unlinkSync(path.join(root,'current'));fs.symlinkSync(path.join(root,'releases',args[1]),path.join(root,'current'));}
    if(args.includes('show'))return `NeedDaemonReload=no\nWorkingDirectory=${root}/current\n`;return '';
@@ -65,7 +67,7 @@ test('composed confirmed HELD rerun does not re-enter the stopped-only hold or r
   engage(){engages++;f.events.push({...hold,type:'release_hold_intent'},hold);},sequence:()=>({context:{operationId:input.operationId}}),
   prepare:(value)=>prepareCandidateDeployment(value,f),lifecycle:async()=>{lifecycles++;return{status:'HELD_LIFECYCLE_OBSERVED'};}};
  await establishCandidateHeld(context,deps);await establishCandidateHeld(context,deps);
- assert.equal(engages,1);assert.equal(lifecycles,2);assert.deepEqual(f.calls,['pointer','runtime','reload']);
+ assert.equal(engages,1);assert.equal(lifecycles,2);assert.deepEqual(f.calls,['pointer','runtime','receivers','reload']);
  f.events.find(e=>e.type==='release_hold_result').releaseSha=previousSha;
  await assert.rejects(establishCandidateHeld(context,deps));assert.equal(lifecycles,2);
 });

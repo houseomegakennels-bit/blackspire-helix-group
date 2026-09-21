@@ -2013,3 +2013,7 @@ Fresh read-only host checks retain main `2775fd5`, release `f0c5921`, current ar
 ## 2026-09-21 — migration reconciliation retry repair
 
 Independent review reproduced a third-result append after successful reconciliation. The native adapter now rechecks the real read-only executor and authority fences without rewriting terminal history. Regression covers successful replay and missing history, busy lock, query, fence and lease-close failures; 26 focused tests pass. No production mutation or push occurred.
+
+## 2026-09-21 — worker receiver-origin transition implementation
+
+Added fixed exact-preview metadata verification, worker-only four-origin override, candidate durable substep and postmerge production/rollback hooks. Thirty focused tests pass using real protected files and mocked Vercel API observations; credential files remain byte-identical. Root preparation must supply reviewed exact candidate metadata before activation. No production mutation or push; independent review and integrated validation pending.
