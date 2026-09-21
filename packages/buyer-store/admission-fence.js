@@ -21,9 +21,11 @@ export function createBuyerStoreAdmissionFence({attestation,groupId=admissionGro
     if(lane==='user'&&state.mode!=='open')fail();
     if(!['user','profiles-read','ready'].includes(lane)||state.releaseSha!==binding.releaseSha||state.runId!==binding.runId)fail();
     if(state.mode==='held'){
-     if(lane!=='profiles-read'||state.apiGeneration!==null||state.workerGeneration!==null)fail();
+     if(lane!=='profiles-read'||!((state.apiGeneration===null&&state.workerGeneration===null)
+      ||(state.apiGeneration===binding.apiGeneration&&state.workerGeneration===binding.workerGeneration)))fail();
      // Installed manifest and actual systemd generations are verified by the
-     // dispatcher. HELD state deliberately retains null generation fields.
+     // dispatcher. Candidate HELD may be unstamped; accepted live HELD
+     // carries the exact same generation pair as the installed manifest.
     }else if(state.apiGeneration!==binding.apiGeneration||state.workerGeneration!==binding.workerGeneration)fail();
     const current=attestation.binding();
     if(JSON.stringify(current)!==JSON.stringify(binding))fail();

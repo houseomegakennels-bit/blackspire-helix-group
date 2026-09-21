@@ -2264,3 +2264,6 @@ Prepared exact schema-five second retirement over the pinned 116-event productio
 ## 2026-09-21 — owned migration successor lineage
 
 Added distinct predecessor-bound successor plan and observer, preserving original migration receipts and requiring current source freeze/target security. Verified protected original metadata digests read-only and seven focused modeled tests. No production writes or database sessions were performed. Actual successor execution remains UNVERIFIED.
+## 2026-09-21 — Confined store runtime attestation successor
+
+Read-only diagnosis confirmed that the deployed store could not use root-only sealed artifact inspection or systemctl discovery inside its service namespace. The successor adds an explicitly nonroot deployed artifact reader with the same complete ownership, evidence and content checks, a fixed read-only system bus generation observer, and exact null-or-stamped HELD generation handling. Root publication verifiers and namespace privileges remain unchanged. A disposable test passed with the actual nonroot confined daemon, authenticated readiness IPC, real PostgreSQL SCRAM/TLS, deployed artifact verification and generation/tamper rejection. Synthetic resources only were changed. This implementation is not deployed; production readiness remains UNVERIFIED.
