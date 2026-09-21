@@ -2236,3 +2236,6 @@ Composed native source freeze/receipt, locked copy/receipt/reconcile, target har
 ## 2026-09-21 — copied export repository operations composed
 
 Extended the native full-order rehearsal through repository.execute exports-list and export-create. Copied owner export returned; foreign list empty; owner creation/retry succeeded exactly once; foreign job reference and reused ID refused. Actual writer identity and retained hardening checks still pass after repository mutations. Only synthetic disposable data changed.
+## 2026-09-21 — guarded public command route implementation
+
+Prepared a separate exact-byte maintenance-to-API transition for the canonical command hostname under accepted final-main HELD authority. Existing scoped routes and TLS/header configuration are preserved; protected intent precedes publication, retained candidates reconcile without foreign overwrite, and stopped HELD restoration retains the original bytes. Twelve focused tests and actual disposable Nginx HTTP positive/negative probes pass. Exact production TLS, authenticated public login and final OPEN smoke remain UNVERIFIED; no production mutation occurred.

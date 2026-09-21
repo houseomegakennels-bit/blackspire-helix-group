@@ -11,6 +11,11 @@ Existing Vercel CLI refresh authorization restored exact project/team access. A 
 ## 2026-09-21 — imported export owner policy remains executable
 
 The isolated repository user now receives EXECUTE on the fixed invoker auth.uid function required by the imported exports owner policy. The grant is limited to buyer_repository_user; PUBLIC and the capability reader gain nothing, and no legacy role membership is introduced. Actual disposable PostgreSQL verifies own export reads, foreign-row denial and absent capability execution privilege with PUBLIC execution revoked. Existing repository ownership, budgets and role checks also pass. No production changes occurred.
+## 2026-09-21 — guarded public command routing prepared
+
+The canonical command hostname previously retained a general maintenance response even after an admission OPEN. A separate root helper now replaces only that exact maintenance location with the existing Jarvis API proxy contract, preserving TLS, headers, the eight scoped Buyer routes and authority callback denials. Publication requires the strict accepted release record and journal, exact current main, sealed API/worker generations, active gateway/store and an exclusive HELD lease. The guarded OPEN stage retains its final intent before routing and opens intake only after local TLS HTTP probes verify the exact UI, unauthenticated session and continued admission refusal.
+
+Protected before/candidate bytes and intent/result records support exact interrupted publication/reload reconciliation; foreign bytes refuse. Explicit restoration requires stopped services and HELD containment and restores the original maintenance bytes. Five state tests, seven existing HELD-operation tests and an actual disposable Nginx harness pass, including public UI/API routing, overwritten spoofed forwarding headers and preserved method/query/encoded-path denials. Production publication, TLS endpoint verification, authenticated public login and final OPEN smoke remain UNVERIFIED. No production configuration, service or admission state changed.
 
 ## 2026-09-21 — integrated owned lifecycle and regression repair
 

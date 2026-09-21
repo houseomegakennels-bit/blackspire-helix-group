@@ -179,6 +179,7 @@ export function createHeldProductionOperations(context,overrides={}){
   options:()=>admissionOptions(context),premergeConfig:()=>protectedConfig(FIXED_PREMERGE_SIX_READ_CONFIGURATION),
   liveConfig:()=>protectedConfig(FIXED_LIVE_SIX_READ_CONFIGURATION),collect:collectFixed,now:()=>new Date().toISOString(),inspectRecord:inspectFinalReleaseRecord,
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
+  publicRouting:input=>import('./public-command-routing-host.js').then(module=>module.publishPublicCommandRouting(input)),
   recordRoot:FINAL_RELEASE_RECORD_ROOT,candidate:runCandidateCollector,
   activate:input=>activateBuyerWriterBeforeHeld({...input,...(context.release?.backendProfile==='owned-postgres-v1'?{backendProfile:context.release.backendProfile,profileDigest:context.release.profileDigest}:{})},{journal:context.journal}),
   establishHeld:()=>establishCandidateHeld(context),ensureWriterBinding:ensureHeldWriterBinding,...overrides};
@@ -278,14 +279,15 @@ export function createHeldProductionOperations(context,overrides={}){
   reconcile(call){invocation(context,call,'final_release_record',{attempt:true});const intent=context.journal.stream('release').events().find(row=>row?.type==='final_release_record_intent'&&row.record?.attemptId===call.attemptId);
    if(!intent)reject();deps.writeAccepted({record:intent.record,root:deps.recordRoot,owner:0});const found=deps.inspectRecord({releaseSha:context.input.releaseSha,root:deps.recordRoot,owner:0});
    if(found.phase!=='ACCEPTED_HELD'||hash(found.accepted)!==hash(intent.record))reject();return pass({stage:'final_release_record',acceptedRecordDigest:hash(intent.record),acceptedHeld:true});},observe(){reject();}};
+ const publicRouting=async()=>{if(context.release?.backendProfile==='owned-postgres-v1'){const state=inspectReleaseSequenceHistory(context.journal.stream('release').events()),newMainSha=state.outputs.capture_new_main_sha?.newMainSha;const proof=await deps.publicRouting({releaseSha:context.input.releaseSha,newMainSha,journal:context.journal});if(proof?.status!=='PUBLIC_COMMAND_ROUTING_VERIFIED'||!digest(proof.planDigest))reject();}};
  const guardedOpen={check(call){invocation(context,call,'guarded_held_to_open');if(call.state.outputs.final_release_record?.acceptedHeld!==true)reject();openEvidence(call);return pass({stage:'guarded_held_to_open',allPriorStagesConfirmed:true});},
   async execute(call){invocation(context,call,'guarded_held_to_open',{attempt:true});const evidence=openEvidence(call),plan=await deps.prepareOpen({commanderRunId:evidence.commanderRunId,newMainSha:evidence.newMainSha,epochRunId:evidence.epochRunId,verify:async()=>openEvidence(call)});
    const accepted=deps.inspectRecord({releaseSha:context.input.releaseSha,root:deps.recordRoot,owner:0}).accepted;
    const record={schema:1,kind:'zola_release_open',releaseSha:context.input.releaseSha,newMainSha:evidence.newMainSha,operationId:evidence.commanderRunId,attemptId:call.attemptId,
     stageInputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest,acceptedRecordDigest:hash(accepted),openAdmissionDigest:hash(plan),openedAt:deps.now()};
-   context.journal.stream('release').append({schema:1,type:'final_release_open_record_intent',record});await deps.publishOpen({plan,journal:context.journal},deps.options());deps.writeOpen({record,root:deps.recordRoot,owner:0});},
+   context.journal.stream('release').append({schema:1,type:'final_release_open_record_intent',record});await publicRouting();await deps.publishOpen({plan,journal:context.journal},deps.options());deps.writeOpen({record,root:deps.recordRoot,owner:0});},
   async reconcile(call){invocation(context,call,'guarded_held_to_open',{attempt:true});const intent=context.journal.stream('release').events().find(row=>row?.type==='final_release_open_record_intent'&&row.record?.attemptId===call.attemptId);
-   if(!intent)reject();const evidence=openEvidence(call),plan=await deps.prepareOpen({commanderRunId:evidence.commanderRunId,newMainSha:evidence.newMainSha,epochRunId:evidence.epochRunId,verify:async()=>openEvidence(call)});
+   if(!intent)reject();await publicRouting();const evidence=openEvidence(call),plan=await deps.prepareOpen({commanderRunId:evidence.commanderRunId,newMainSha:evidence.newMainSha,epochRunId:evidence.epochRunId,verify:async()=>openEvidence(call)});
    if(hash(plan)!==intent.record.openAdmissionDigest)reject();await deps.publishOpen({plan,journal:context.journal},deps.options());deps.writeOpen({record:intent.record,root:deps.recordRoot,owner:0});const found=deps.inspectRecord({releaseSha:context.input.releaseSha,root:deps.recordRoot,owner:0});
    if(found.phase!=='OPEN'||hash(found.open)!==hash(intent.record))reject();return pass({stage:'guarded_held_to_open',open:true,newMainSha:intent.record.newMainSha,openRecordDigest:hash(intent.record)});},observe(){reject();}};
  return Object.freeze({candidate_six_reads:Object.freeze(candidate),admission_lease:Object.freeze(admission),generation_revalidation:Object.freeze(revalidation),six_reads:Object.freeze(premergeReads),
